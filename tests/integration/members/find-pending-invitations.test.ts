@@ -72,7 +72,7 @@ async function seedPlan(tenantSlug: string, userId: string) {
       planId: PLAN_ID,
       planYear: 2026,
       planName: { en: 'Pending Inv Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

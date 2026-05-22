@@ -70,7 +70,7 @@ async function seedPaidInvoice(
       planId,
       planYear: 2026,
       planName: { en: 'R4-I3 Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

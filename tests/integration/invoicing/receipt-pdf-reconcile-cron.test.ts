@@ -72,7 +72,7 @@ async function seedFailedInvoice(
       planId,
       planYear: 2026,
       planName: { en: 'R1-CG-2 Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

@@ -80,6 +80,9 @@ function makeAudit(): {
       async emit(_tx, e) {
         emits.push(e);
       },
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
+      },
     },
   };
 }
@@ -107,6 +110,9 @@ function makeRepo(opts: RepoOpts = {}): {
     async updateDraft() {
       throw new Error('not used');
     },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in reject-broadcast fixture');
+    },
     async findById() {
       return null;
     },
@@ -120,7 +126,7 @@ function makeRepo(opts: RepoOpts = {}): {
       transitions.push({ status, fields });
       if (opts.applyTransitionThrows) {
         throw new BroadcastConcurrentMutationError(
-          'test-tenant',
+          'test-tenant' as never,
           broadcastId,
           'sending',
         );
@@ -197,6 +203,10 @@ function makeBroadcast(status: BroadcastStatus, fields: unknown): Broadcast {
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };

@@ -79,12 +79,27 @@ export async function runIdempotencyGuard(
   );
 
   if (classification.kind === 'replay') {
+    // Re-emit cached headers verbatim so diagnostic signals
+    // (X-Audit-Backfill-Required, X-Audit-Error-Type, etc.) survive
+    // the replay. Without this, SRE alert routing keyed on response
+    // headers silently loses the discriminator on retry.
+    const init: ResponseInit = {
+      status: classification.previousResponse.status,
+    };
+    // The `!== undefined` guard is intentional. `new Headers(undefined)`
+    // would produce an empty Headers — semantically equivalent at the
+    // HTTP level — but the guard prevents a spurious `init.headers =
+    // new Headers({})` assignment that would obscure the
+    // "no diagnostic headers cached" case from downstream telemetry
+    // distinguishability. Routes that legitimately need to re-emit an
+    // empty Headers object explicitly pass `headers: {}` to
+    // rememberIdempotentResponse.
+    if (classification.previousResponse.headers !== undefined) {
+      init.headers = new Headers(classification.previousResponse.headers);
+    }
     return {
       kind: 'response',
-      response: NextResponse.json(
-        classification.previousResponse.body,
-        { status: classification.previousResponse.status },
-      ),
+      response: NextResponse.json(classification.previousResponse.body, init),
     };
   }
 
@@ -103,7 +118,26 @@ export async function runIdempotencyGuard(
     };
   }
 
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // Surface Redis-down as 503 instead of silently continuing. A
+  // fire-and-forget call would let a retry create a duplicate
+  // plan/clone/etc. when the reservation was dropped during an
+  // Upstash outage.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return {
+      kind: 'response',
+      response: NextResponse.json(
+        {
+          error: {
+            code: 'idempotency_reservation_failed',
+            message:
+              'Idempotency reservation temporarily unavailable. Retry shortly.',
+          },
+        },
+        { status: 503, headers: { 'Retry-After': '5' } },
+      ),
+    };
+  }
 
   return { kind: 'proceed', key: keyCheck.key, bodyHash, tenant };
 }

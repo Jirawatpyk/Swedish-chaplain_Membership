@@ -136,6 +136,41 @@ const RULES: Readonly<Record<Broadcast['status'], ReadonlyArray<FieldRule>>> = {
     { field: 'quotaYearConsumed', mustBeNull: true },
     { field: 'quotaConsumedAt', mustBeNull: true },
   ],
+  // F7.1a US1 (Phase 3 B0 — added 2026-05-19, FR-008a/b).
+  // `partially_sent`: in-flight; sendingStartedAt set, manualRetryCount
+  // 0-3, NOT yet quotaConsumed (consumed only on terminal `sent` per
+  // FR-007). May still progress to `sending` (admin retry) or
+  // `partial_delivery_accepted` (admin accept).
+  partially_sent: [
+    { field: 'submittedAt', mustBeNull: false },
+    { field: 'approvedAt', mustBeNull: false },
+    { field: 'sendingStartedAt', mustBeNull: false },
+    { field: 'sentAt', mustBeNull: true },
+    { field: 'rejectedAt', mustBeNull: true },
+    { field: 'cancelledAt', mustBeNull: true },
+    { field: 'failedToDispatchAt', mustBeNull: true },
+    { field: 'partialDeliveryAcceptedAt', mustBeNull: true },
+    { field: 'partialDeliveryAcceptedByUserId', mustBeNull: true },
+    { field: 'quotaYearConsumed', mustBeNull: true },
+    { field: 'quotaConsumedAt', mustBeNull: true },
+  ],
+  // `partial_delivery_accepted` (TERMINAL): admin explicit accept of
+  // partial delivery; sets partial_delivery_accepted_at + _by_user_id.
+  // Quota IS consumed (the delivered batches count as a real send;
+  // FR-008c semantics).
+  partial_delivery_accepted: [
+    { field: 'submittedAt', mustBeNull: false },
+    { field: 'approvedAt', mustBeNull: false },
+    { field: 'sendingStartedAt', mustBeNull: false },
+    { field: 'partialDeliveryAcceptedAt', mustBeNull: false },
+    { field: 'partialDeliveryAcceptedByUserId', mustBeNull: false },
+    { field: 'sentAt', mustBeNull: true },
+    { field: 'rejectedAt', mustBeNull: true },
+    { field: 'cancelledAt', mustBeNull: true },
+    { field: 'failedToDispatchAt', mustBeNull: true },
+    { field: 'quotaYearConsumed', mustBeNull: false },
+    { field: 'quotaConsumedAt', mustBeNull: false },
+  ],
 };
 
 export function enforceOneActiveBroadcastState(

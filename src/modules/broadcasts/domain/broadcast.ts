@@ -154,6 +154,34 @@ export interface Broadcast {
   // Audit retention (Constitution v1.4.0)
   readonly retentionYears: 5 | 10;
 
+  // F7.1a US1 (Phase 2 0162 ADD COLUMN + Phase 3 B0 type extension).
+  // `manualRetryCount` — admin retry budget per FR-008a (CHECK 0..3
+  // in migration 0162). Defaults to 0 on existing F7 MVP rows.
+  // `partialDeliveryAcceptedAt` + `partialDeliveryAcceptedByUserId` —
+  // set when admin clicks "Accept partial delivery" (FR-008c).
+  readonly manualRetryCount: number;
+  readonly partialDeliveryAcceptedAt: Date | null;
+  readonly partialDeliveryAcceptedByUserId: string | null;
+
+  /**
+   * F7.1a US7 — canonical view of the template-snapshot provenance.
+   * `null` when the draft was Blank; non-null carries BOTH the
+   * template id AND the denormalised template name at snapshot time
+   * (FR-019 critique P9 — survives template deletion for forensic
+   * audit) so callers can't accidentally see one-without-the-other.
+   *
+   * R6.1 H2 — single canonical reader. The underlying `BroadcastRow`
+   * (Infrastructure schema type) keeps `started_from_template_id` +
+   * `template_name_snapshot` nullable columns; the Drizzle mapper at
+   * `infrastructure/db/drizzle-broadcasts-repo.ts:deriveTemplateProvenance`
+   * is the SINGLE writer of this field, enforcing the
+   * "either-both-or-neither" XOR invariant + logging mapper
+   * corruption when exactly one column is non-null.
+   */
+  readonly templateProvenance:
+    | { readonly templateId: string; readonly templateNameSnapshot: string }
+    | null;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -218,6 +246,20 @@ export type BroadcastPhase =
       readonly kind: 'failed_to_dispatch';
       readonly failedToDispatchAt: Date;
       readonly failureReason: string | null;
+    }
+  // F7.1a US1 (Phase 3 B0 — added 2026-05-19, FR-008a/b).
+  | {
+      readonly kind: 'partially_sent';
+      readonly sendingStartedAt: Date;
+      readonly approvedAt: Date;
+      readonly manualRetryCount: number; // 0..3 (CHECK in migration 0162)
+    }
+  | {
+      readonly kind: 'partial_delivery_accepted';
+      readonly partialDeliveryAcceptedAt: Date;
+      readonly partialDeliveryAcceptedByUserId: string;
+      readonly quotaYearConsumed: number;
+      readonly quotaConsumedAt: Date;
     };
 
 /**
@@ -317,5 +359,178 @@ export function phaseOf(b: Broadcast): BroadcastPhase {
         failedToDispatchAt: b.failedToDispatchAt,
         failureReason: b.failureReason,
       };
+    case 'partially_sent':
+      if (b.sendingStartedAt === null || b.approvedAt === null) {
+        throw new Error(
+          `BroadcastPhaseInvariantViolation: status='partially_sent' but sendingStartedAt or approvedAt null (broadcastId=${b.broadcastId})`,
+        );
+      }
+      return {
+        kind: 'partially_sent',
+        sendingStartedAt: b.sendingStartedAt,
+        approvedAt: b.approvedAt,
+        manualRetryCount: b.manualRetryCount,
+      };
+    case 'partial_delivery_accepted':
+      if (
+        b.partialDeliveryAcceptedAt === null ||
+        b.partialDeliveryAcceptedByUserId === null ||
+        b.quotaYearConsumed === null ||
+        b.quotaConsumedAt === null
+      ) {
+        throw new Error(
+          `BroadcastPhaseInvariantViolation: status='partial_delivery_accepted' but required fields null (broadcastId=${b.broadcastId})`,
+        );
+      }
+      return {
+        kind: 'partial_delivery_accepted',
+        partialDeliveryAcceptedAt: b.partialDeliveryAcceptedAt,
+        partialDeliveryAcceptedByUserId: b.partialDeliveryAcceptedByUserId,
+        quotaYearConsumed: b.quotaYearConsumed,
+        quotaConsumedAt: b.quotaConsumedAt,
+      };
   }
 }
+
+// ---------------------------------------------------------------------------
+// T043 (F7.1a US1) — Broadcast aggregate state-transition methods.
+//
+// Standalone functions over the flat `Broadcast` interface (matches F7
+// MVP pattern — class-style aggregates were rejected during F7 design
+// per Round 5 review type-design; flat interfaces + phase narrowing
+// keep Drizzle row mapping trivial).
+//
+// All return `Result<Broadcast, BroadcastStateError>` so callers can
+// chain transitions without throwing. Persistence is the caller's
+// responsibility (Application use-case writes the resulting Broadcast
+// via repo); these functions are PURE — no I/O, no clock injection.
+// Callers pass `now` from their `ClockPort` for testability.
+// ---------------------------------------------------------------------------
+
+export type BroadcastStateError =
+  | {
+      readonly code: 'broadcast.invalid_state_for_action';
+      readonly action:
+        | 'recordPartialSend'
+        | 'transitionToRetrying'
+        | 'acceptPartialDelivery';
+      readonly currentStatus: BroadcastStatus;
+      readonly requiredStatus: BroadcastStatus | readonly BroadcastStatus[];
+    }
+  | {
+      readonly code: 'broadcast.manual_retry_budget_exhausted';
+      readonly broadcastId: BroadcastId;
+      readonly currentCount: number;
+      readonly maxAllowed: 3;
+    };
+
+/**
+ * Transition `sending → partially_sent` when ≥1 batch reached terminal
+ * `failed` after exhausting per-batch retry budget (FR-008a).
+ *
+ * Caller (Application use case Phase 3 T044/T045 reconcile-stuck-
+ * sending extension OR T056 webhook ext) supplies the list of failed
+ * batch IDs purely for the audit-event payload — Broadcast itself
+ * doesn't track failed-batch state (that's in broadcast_batch_manifests).
+ *
+ * Returns the mutated broadcast snapshot. Caller persists via repo
+ * inside the same `runInTenant` transaction that touched the
+ * batch_manifest rows.
+ */
+export function recordPartialSend(
+  broadcast: Broadcast,
+  _failedBatchIds: readonly string[],
+  _now: Date,
+): Result<Broadcast, BroadcastStateError> {
+  if (broadcast.status !== 'sending') {
+    return err({
+      code: 'broadcast.invalid_state_for_action',
+      action: 'recordPartialSend',
+      currentStatus: broadcast.status,
+      requiredStatus: 'sending',
+    });
+  }
+  return ok({ ...broadcast, status: 'partially_sent' });
+}
+
+/**
+ * Transition `partially_sent → sending` on admin retry click.
+ * Increments `manualRetryCount` (CHECK 0..3 enforced at DB layer +
+ * here at Domain layer).
+ *
+ * Application use case T047 wraps this in a `pg_advisory_xact_lock(
+ * 'broadcasts-retry:'+tenantId+':'+broadcastId)` per FR-008d to
+ * serialise concurrent admin retries. The lock is the use case's
+ * responsibility — this function is pure.
+ */
+export function transitionToRetrying(
+  broadcast: Broadcast,
+  _actor: { readonly userId: string },
+  _now: Date,
+): Result<Broadcast, BroadcastStateError> {
+  if (broadcast.status !== 'partially_sent') {
+    return err({
+      code: 'broadcast.invalid_state_for_action',
+      action: 'transitionToRetrying',
+      currentStatus: broadcast.status,
+      requiredStatus: 'partially_sent',
+    });
+  }
+  const MAX_RETRIES = 3 as const;
+  if (broadcast.manualRetryCount >= MAX_RETRIES) {
+    return err({
+      code: 'broadcast.manual_retry_budget_exhausted',
+      broadcastId: broadcast.broadcastId,
+      currentCount: broadcast.manualRetryCount,
+      maxAllowed: MAX_RETRIES,
+    });
+  }
+  return ok({
+    ...broadcast,
+    status: 'sending',
+    manualRetryCount: broadcast.manualRetryCount + 1,
+  });
+}
+
+/**
+ * Transition `partially_sent → partial_delivery_accepted` (terminal)
+ * on admin "Accept partial delivery" action. Records actor + accept
+ * timestamp (caller-supplied so the same `now` shows up in audit
+ * payload + row).
+ *
+ * Note: this transition CONSUMES quota (FR-007 + FR-008c) — the
+ * partially-delivered count is real send activity. The caller's use
+ * case (T048) ALSO sets `quotaYearConsumed` + `quotaConsumedAt` if
+ * they weren't already set (e.g., admin accepts before all batches
+ * even attempted). The `one-active-broadcast-state` invariant
+ * (Domain/invariants/) requires both quota fields non-null in the
+ * terminal state.
+ */
+export function acceptPartialDelivery(
+  broadcast: Broadcast,
+  actor: { readonly userId: string },
+  now: Date,
+): Result<Broadcast, BroadcastStateError> {
+  if (broadcast.status !== 'partially_sent') {
+    return err({
+      code: 'broadcast.invalid_state_for_action',
+      action: 'acceptPartialDelivery',
+      currentStatus: broadcast.status,
+      requiredStatus: 'partially_sent',
+    });
+  }
+  return ok({
+    ...broadcast,
+    status: 'partial_delivery_accepted',
+    partialDeliveryAcceptedAt: now,
+    partialDeliveryAcceptedByUserId: actor.userId,
+  });
+}
+
+// R3.2 H-9 (Phase 5 Round 2 close-out) — `startedFromTemplate(...)`
+// helper deleted. Was T098 dead code: never called from src/ or tests/.
+// The snapshot use-case writes startedFromTemplateId + templateNameSnapshot
+// directly via `BroadcastsRepo.updateDraftFromTemplate` per
+// `snapshot-template-to-draft.ts`. The Drizzle row→domain mapper
+// (`drizzle-broadcasts-repo.ts:205-212`) is the sole production
+// constructor of `templateProvenance`.

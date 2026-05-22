@@ -953,6 +953,7 @@ pino's redact list (see § 22.4).
 | `broadcasts.audience_drift_detected.count` | counter | `tenant` | F7.1-IMP5 — emitted whenever idempotency-replay observes a recipient-count mismatch between expected and Resend audience reality. **Black swan event** — should be 0 over weeks; > 0 / 24 h pages ops to investigate partial-delivery scope. Backed by audit event `broadcast_resend_audience_drift`. |
 | `broadcasts.drift_check_unverifiable.count` | counter | `tenant` | Round-5 R5-S1 — emitted when `getAudienceContactCount` fails on a non-404 (Resend 5xx / network) during idempotency replay. The replay still advances to `sending` but recipients-delivered count cannot be verified. Backed by audit event `broadcast_resend_drift_check_unverifiable`. > 1 / hour alarm. |
 | `broadcasts.dispatch_budget_exhausted.count` | counter | `tenant`, `sub_kind` (network\|timeout\|server_5xx\|api) | **Phase 8 / FR-021 / AS2 (E2 verify-fix 2026-05-02)** — incremented when the 1-hour retry budget elapses with Resend still failing → row transitioned to `failed_to_dispatch`. **Steady state = 0**; any non-zero count in a 15-minute window pages on-call (a member's scheduled E-Blast did not go out). Backed by audit event `broadcast_failed_to_dispatch` + Slice E member transactional notification email. |
+| `broadcasts_audit_emit_failed_total` | counter | `tenant`, `event_type` | **R8.5 (R7 silent-failure MED-1 close)** — wired in `safeAuditEmit` + `safeAuditEmitTyped` catch arms (`src/modules/broadcasts/application/use-cases/_safe-audit-emit.ts`). Increments when audit-storage hiccups during a security-rejection / read-only forensic-emit path. **Alert F7-A1**: any non-zero rate sustained ≥ 1 min pages on-call (Principle VIII audit invariant; forensic-trail gap on a swallowable catch arm). Companion to F8-A2 / F6 cron-audit alarms — mirrors the same SIEM-actionable signal-loss pattern. Runbook: `docs/runbooks/audit-emit-loss.md`. |
 
 **Cardinality**: `precondition`, `failure_reason`, `reason`, `event_type`
 are bounded enums; `tenant` is small-cardinality (≤ a few hundred over
@@ -1072,6 +1073,31 @@ Per perf.md CHK049:
 - **alarm** → `#oncall-platform` Slack + on-call email digest
 - **page** → PagerDuty primary on-call rotation
 - **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥ 1 / 5 min escalation
+
+### 22.9 F7.1a Email Broadcast Advanced — metrics catalogue (T122)
+
+Extends § 22.1 with **5 new metrics** for pagination (US1) + image embedding (US2). Module path: `src/lib/metrics/broadcasts-f71a.ts`. Cardinality discipline carries from § 22.1; the explicit `broadcast_id` label on `broadcasts.manual_retry_count` is intentional for ad-hoc forensics and is documented in the module header.
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts.batch_dispatch_duration_ms` | histogram | `tenant`, `batch_index` (0..4 for 50k ceiling) | US1 per-batch latency; F7.1a SLO target p95 < 90s sustained ≥15 min ⇒ warn |
+| `broadcasts.partial_send_count` | counter | `tenant` | US1 — broadcasts that landed in `partially_sent` terminal state |
+| `broadcasts.manual_retry_count` | counter | `tenant`, `broadcast_id` | US1 — admin-initiated retries on `partially_sent` broadcasts (3-budget per FR-008d) |
+| `broadcasts.image_scan_duration_ms` | histogram | `tenant`, `verdict` ∈ {clean,infected,error,timeout} | US2 — ClamAV scan latency; SC-005 p95 < 500ms |
+| `broadcasts.clamav_signature_age_hours` | observable gauge | (none — shared infra) | US2 — age of most-recent signature DB load, probed hourly via `CLAMD VERSION` |
+
+### 22.10 F7.1a Email Broadcast Advanced — alert rules (T123)
+
+Extends § 22.3 with **4 new alerts**:
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts.clamav_signature_age_hours` > 48 | **page** | freshclam stopped pulling new signatures — image scans are increasingly stale | `docs/runbooks/clamav-signature-stale.md` |
+| `broadcasts.image_scan_duration_ms` p99 > 5000 over 5 min OR no scan completes in 2 min when uploads attempted (proxy for daemon-unreachable) | **page** | ClamAV daemon down or Fly.io VM unreachable; member upload UX banner already shown | `docs/runbooks/clamav-daemon-down.md` |
+| `broadcasts.partial_send_count[1h] / broadcasts.submit.count[1h]` > 0.05 | **alarm** | Partial-send rate > 5% sustained — likely Resend rate-limit pressure or batch-boundary tuning required | `docs/runbooks/broadcast-partial-send-recovery.md` |
+| `dispatch_concurrency_saturation` > 0.80 sustained 15 min (computed: active batches / cap 4) | **alarm** | Concurrency cap saturating — batch fan-out may queue; review concurrency policy if persistent | `docs/runbooks/broadcasts-perf-regression.md` |
+
+The 4 F7.1a alerts route per § 22.8 (alarm → `#oncall-platform`; page → PagerDuty). Two F7.1a-specific runbooks land under `docs/runbooks/` for the ClamAV alerts; the partial-send alert shares the broadcasts-perf-regression triage tree plus a dedicated `broadcast-partial-send-recovery.md` decision tree.
 
 ---
 

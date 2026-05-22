@@ -182,7 +182,7 @@ describe('T127 — credit-note PDF render-input golden (live Neon)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'T127 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

@@ -4,12 +4,16 @@ import {
   canAdminMutatePlan,
   canCloneYear,
   canManagerReadPlan,
-  canMutateFeeConfig,
-  canReadFeeConfig,
   canReadPlan,
 } from '@/modules/plans/domain/policies';
 
-describe('Plans + FeeConfig RBAC policies', () => {
+// NOTE: `canReadFeeConfig` / `canMutateFeeConfig` cases retired in
+// R7/R8 consolidation (post-ship R6 C5 sweep, 2026-05-19). Migration
+// 0029 dropped `tenant_fee_config`; F4 `tenant_invoice_settings` is
+// authoritative now and carries its own RBAC surface in the invoicing
+// module.
+
+describe('Plans RBAC policies', () => {
   const roles: Role[] = ['admin', 'manager', 'member'];
 
   it('canReadPlan — admin + manager yes, member no', () => {
@@ -34,17 +38,5 @@ describe('Plans + FeeConfig RBAC policies', () => {
     expect(canCloneYear('admin')).toBe(true);
     expect(canCloneYear('manager')).toBe(false);
     expect(canCloneYear('member')).toBe(false);
-  });
-
-  it('canReadFeeConfig — admin + manager yes, member no', () => {
-    expect(canReadFeeConfig('admin')).toBe(true);
-    expect(canReadFeeConfig('manager')).toBe(true);
-    expect(canReadFeeConfig('member')).toBe(false);
-  });
-
-  it('canMutateFeeConfig — admin only', () => {
-    expect(canMutateFeeConfig('admin')).toBe(true);
-    expect(canMutateFeeConfig('manager')).toBe(false);
-    expect(canMutateFeeConfig('member')).toBe(false);
   });
 });

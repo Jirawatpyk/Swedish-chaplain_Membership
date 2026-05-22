@@ -22,7 +22,10 @@ const requireAdminContextMock = vi.fn();
 const uploadTenantLogoMock = vi.fn();
 const classifyIdempotencyRequestMock = vi.fn();
  
-const reserveIdempotencyRecordMock = vi.fn(async (..._args: unknown[]) => undefined);
+const reserveIdempotencyRecordMock = vi.fn(
+  async (..._args: unknown[]) =>
+    ({ ok: true, value: { kind: 'reserved' as const } }) as const,
+);
  
 const rememberIdempotentResponseMock = vi.fn(async (..._args: unknown[]) => undefined);
 

@@ -162,8 +162,10 @@
     "pagination": {
       "prev": "Gå till föregående sida",
       "next": "Gå till nästa sida",
-      "morePages": "Fler sidor"
+      "morePages": "Fler sidor",
+      "navAriaLabel": "Sidnavigering"
     },
+    "editorLoading": "Laddar redigerare",
     "breadcrumbUI": {
       "label": "Brödsmulor",
       "more": "Mer"
@@ -202,6 +204,10 @@
     "close": "Stäng",
     "back": "Tillbaka",
     "retry": "Försök igen"
+  },
+  "common": {
+    "yes": "Ja",
+    "no": "Nej"
   },
   "admin": {
     "home": {
@@ -325,7 +331,8 @@
         "memberType": "Medlemstyp",
         "year": "År",
         "status": "Status",
-        "actions": "Åtgärder"
+        "actions": "Åtgärder",
+        "actionsFor": "Åtgärder för {planName}"
       },
       "filters": {
         "all": "Alla",
@@ -369,10 +376,12 @@
       "create": {
         "title": "Nytt paket",
         "steps": {
+          "wizardAriaLabel": "Stegen i guiden för att skapa paket",
           "basics": "Grunder",
           "fees": "Avgifter",
           "benefits": "Förmåner",
-          "review": "Granska"
+          "review": "Granska",
+          "mobileSummary": "Steg {current}/{total} — {label}"
         },
         "matrix": {
           "section": {
@@ -485,6 +494,9 @@
           "save": "Spara paket",
           "saving": "Sparar…",
           "cancel": "Avbryt"
+        },
+        "errors": {
+          "stepValidation": "Granska föregående steg — några obligatoriska fält saknas eller är ogiltiga."
         }
       },
       "edit": {
@@ -547,6 +559,9 @@
         "forbidden": "Du har inte behörighet att göra det.",
         "validation": "Korrigera de markerade fälten.",
         "priorYearLocked": "Dessa fält är låsta på historiska paket: {fields}. Klona paketet till innevarande år för att redigera.",
+        "feeConfigMissing": "Konfigurationen för kammarens avgifter är inte initialiserad. Kör seed-skriptet.",
+        "loadFailed": "Det gick inte att läsa in paket.",
+        "backToList": "Tillbaka till paket",
         "duplicateKey": "Ett paket med detta ID finns redan för {year}.",
         "memberAttached": "{count} aktiva medlemmar använder detta paket. Flytta dem till ett annat paket före borttagning.",
         "idempotencyConflict": "Denna förfrågan har redan hanterats med andra data. Uppdatera och försök igen.",
@@ -1494,6 +1509,7 @@
       "queue": {
         "title": "Granskningskö för E-Blast",
         "subtitle": "Granska och godkänn utskick som medlemmar har skickat in.",
+        "templatesEntryButton": "Mallar",
         "empty": "När medlemmar skickar in utskick visas de här för granskning.",
         "emptyTitle": "Kön är tom",
         "totalPending": "{count} väntar",
@@ -1539,7 +1555,9 @@
           "sent": "Skickad",
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
-          "failed_to_dispatch": "Misslyckades"
+          "failed_to_dispatch": "Misslyckades",
+          "partially_sent": "Delvis skickad",
+          "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "actorRole": {
           "member_self_service": "Medlem",
@@ -1564,6 +1582,8 @@
         "subtitle": "Granska innehåll + godkänn, avvisa eller avbryt.",
         "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
         "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
+        "batchLoadFailedTitle": "Detaljer per batch är tillfälligt otillgängliga",
+        "batchLoadFailedHint": "Vi kunde inte ladda batchlistan. Uppdatera sidan om en stund. Drift har larmats via den strukturerade loggen.",
         "fields": {
           "subject": "Ämne",
           "body": "Meddelande",
@@ -1693,6 +1713,189 @@
         "viewBroadcast": "Visa utskick",
         "viewHaltedMembers": "Visa spärrade medlemmar",
         "ackHelp": "Att häva spärren är en avsiktlig administratörsåtgärd. Granska utskickets innehåll och studsar innan du häver."
+      },
+      "batches": {
+        "title": "Leveransdetaljer per batch",
+        "description": "Detta utskick delades i {count} batcher eftersom mottagarlistan översteg Resends gräns på 10 000 per audience. Varje batch skickas oberoende.",
+        "expandLabel": "Visa batch-detaljer",
+        "collapseLabel": "Dölj batch-detaljer",
+        "summary": "{succeeded} skickade · {failed} misslyckade · {pending} väntar av totalt {total} batcher",
+        "tableCaption": "Leveransdetaljer per batch, {count} batcher",
+        "columns": {
+          "batchIndex": "Batch",
+          "recipientRange": "Intervall",
+          "recipientCount": "Mottagare",
+          "status": "Status",
+          "dispatchedAt": "Skickad",
+          "delivered": "Levererade",
+          "bounced": "Studsade",
+          "complained": "Anmälda",
+          "unsubscribed": "Avslutade",
+          "retryCount": "Försök"
+        },
+        "batchLabel": "Batch {index} av {total}",
+        "rangeLabel": "{start}–{end}",
+        "retryCountLabel": "{count} / 5",
+        "manualRetryRemaining": "Återstående manuella försök: {remaining} / 3",
+        "manualRetryExhausted": "Alla 3 manuella försök är förbrukade",
+        "batchStatus": {
+          "pending": "Väntar",
+          "sending": "Skickar",
+          "sent": "Skickad",
+          "failed": "Misslyckad",
+          "cancelled": "Avbruten"
+        },
+        "notSplit": "Detta utskick var litet nog att skickas som en enskild audience och delades inte."
+      },
+      "retryDialog": {
+        "trigger": "Försök igen med misslyckade batcher",
+        "triggerAria": "Försök igen med {count} misslyckade batcher",
+        "triggerDisabledAria": "Försök igen otillgängligt — alla försök förbrukade",
+        "title": "Försök igen med misslyckade batcher?",
+        "description": "{count} misslyckade batcher köas om för ett nytt försök. Detta räknas som ett av dina 3 manuella försök.",
+        "budgetLine": "Du har {remaining} av 3 manuella försök kvar.",
+        "warning": "Att skicka om förbrukar Resend API-kvot och kan orsaka dubbletter om de ursprungliga mottagarna redan har fått meddelandet.",
+        "confirm": "Försök igen nu",
+        "cancel": "Avbryt",
+        "submitting": "Försöker igen…"
+      },
+      "acceptPartialDialog": {
+        "trigger": "Godkänn partiell leverans",
+        "triggerAria": "Godkänn partiell leverans och slutför utskick",
+        "title": "Godkänn partiell leverans?",
+        "description": "Detta utskick markeras som slutfört i nuvarande tillstånd. Misslyckade batcher kommer inte att försökas igen, och utskickets status kan inte ändras efteråt.",
+        "summary": "{sent} av {total} batcher levererades framgångsrikt.",
+        "reasonLabel": "Anledning (valfri)",
+        "reasonPlaceholder": "Valfri — t.ex. Resend rate-limit kvarstår, medlem informerad separat…",
+        "reasonHelp": "Valfri kontext för granskningsspår. Max 500 tecken.",
+        "reasonCounter": "{count} / 500",
+        "confirm": "Bekräfta partiell leverans",
+        "cancel": "Avbryt",
+        "submitting": "Bekräftar…"
+      },
+      "toast": {
+        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
+        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
+        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
+        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
+        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
+        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
+        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
+        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
+        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
+      },
+      "templates": {
+        "pageTitle": "Utskicksmallar",
+        "pageDescription": "Återanvändbara utgångspunkter för medlemmarnas E-utskick. Startmallar levereras färdiga; admin-författade mallar ligger sida vid sida.",
+        "newTemplateButton": "Ny mall",
+        "newPageTitle": "Ny utskicksmall",
+        "newPageDescription": "Lägg till en återanvändbar mall som medlemmar kan välja när de skriver ett E-utskick.",
+        "editPageTitle": "Redigera utskicksmall",
+        "editPageDescription": "Uppdatera namn, ämne eller innehåll. Utkast som redan startats från denna mall påverkas INTE (snapshot-semantik).",
+        "starterBadge": "Start",
+        "starterBadgeAria": "Förseedad av plattformen",
+        "starterEditBannerTitle": "Detta är en startmall",
+        "starterEditBannerBody": "Redigering skapar en kammar-specifik version. Plattformen uppdaterar inte denna mall automatiskt om startinnehåll förfinas.",
+        "starterEditBannerDismiss": "Stäng startmallsvarning för {name}",
+        "filterLegend": "Filtrera mallar efter källa",
+        "filterPill": {
+          "all": "Alla",
+          "starter": "Endast startmallar",
+          "authored": "Kammar-författade"
+        },
+        "filterCount": "{count, plural, =0 {Inga mallar matchar} one {# mall} other {# mallar}}",
+        "filterEmpty": "Inga mallar matchar det här filtret.",
+        "emptyState": {
+          "title": "Inga mallar ännu",
+          "body": "När mallar läggs till visas de här. Startmallar som förseedats vid kammarens uppstart visas också med en Start-etikett.",
+          "cta": "Skapa din första mall"
+        },
+        "columns": {
+          "name": "Namn",
+          "subjectPreview": "Ämne",
+          "locale": "Språk",
+          "startedFrom": "Använd",
+          "startedFromAria": "Antal utkast som startats från denna mall",
+          "updatedAt": "Senast ändrad",
+          "actions": "Åtgärder"
+        },
+        "locale": {
+          "en": "English",
+          "th": "ไทย",
+          "sv": "Svenska"
+        },
+        "rowAction": {
+          "edit": "Redigera",
+          "editAria": "Redigera {name}",
+          "delete": "Ta bort",
+          "deleteAria": "Ta bort {name}"
+        },
+        "fields": {
+          "name": "Namn",
+          "nameHelp": "Upp till 100 tecken. Unik per kammare + språk.",
+          "subject": "Ämne",
+          "subjectHelp": "Upp till 200 tecken. Kan innehålla '{{chamber_name}}'-platshållare.",
+          "bodyHtml": "Innehåll (HTML)",
+          "bodyHtmlHelp": "Upp till 200 KB. Använd [text inom hakparenteser] som platshållare som medlemmen kan redigera; '{{chamber_name}}' ersätts vid utkaststart.",
+          "localeLabel": "Språk"
+        },
+        "saveButton": "Spara mall",
+        "cancelButton": "Avbryt",
+        "savingButton": "Sparar…",
+        "savedToast": "Mallen sparad.",
+        "errors": {
+          "invalid_input": "Vissa fält är ogiltiga. Granska och försök igen.",
+          "field_required": "Detta fält är obligatoriskt.",
+          "template_body_unsafe": "Innehållet innehåller bildkällor som inte finns på kammarens tillåtelselista.",
+          "template_name_duplicate": "En mall med detta namn + språk finns redan.",
+          "template_not_found": "Mallen hittades inte.",
+          "template_soft_deleted": "Denna mall har raderats. Välj en annan eller starta tom.",
+          "storage_error": "Ett lagringsfel inträffade. Försök igen.",
+          "unknown": "Ett oväntat fel inträffade."
+        }
+      },
+      "settings": {
+        "pageTitle": "Inställningar för utskick",
+        "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
+        "allowlist": {
+          "heading": "Tillåtna bildkällor",
+          "description": "Endast bilder som ligger på dessa värdnamn får visas i utskickets innehåll. Standardposter kan inte tas bort.",
+          "hostnameLabel": "Värdnamn",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "Små bokstäver, minst en punkt, inga wildcards.",
+          "addButton": "Lägg till värdnamn",
+          "removeButton": "Ta bort",
+          "removeAria": "Ta bort {hostname}",
+          "tableCaption": "Poster i bildkällsregistret",
+          "colHostname": "Värdnamn",
+          "colSource": "Källa",
+          "colActions": "Åtgärder",
+          "defaultBadge": "Standard (låst)",
+          "defaultBadgeInline": "(standard)",
+          "customBadge": "Tillagd av administratören",
+          "propagationFootnote": "Träder i kraft inom 60 sekunder för aktiva utkastsessioner.",
+          "addedToast": "Värdnamn tillagt.",
+          "removedToast": "Värdnamn borttaget.",
+          "addedAnnouncement": "{hostname} har lagts till i registret.",
+          "removedAnnouncement": "{hostname} har tagits bort från registret.",
+          "removeConfirm": {
+            "title": "Ta bort {hostname}?",
+            "body": "Medlemmar som skapar utskick kommer inte längre att kunna bädda in bilder från denna domän. Ändringen träder i kraft inom 60 sekunder.",
+            "cancel": "Avbryt",
+            "confirm": "Ta bort"
+          },
+          "errors": {
+            "invalid_hostname": "Ogiltigt värdnamnsformat.",
+            "cannot_remove_default": "Standardposter kan inte tas bort.",
+            "duplicate": "Värdnamnet finns redan i registret.",
+            "not_found": "Värdnamnet hittades inte.",
+            "storage_error": "Kunde inte spara ändringar. Försök igen.",
+            "feature_disabled": "Bildinbäddning är inte aktiverad.",
+            "invalid_body": "Ogiltig begäran.",
+            "internal_error": "Ett oväntat fel inträffade. Försök igen.",
+            "unknown": "Okänt fel."
+          }
+        }
       }
     },
     "renewals": {
@@ -3064,7 +3267,8 @@
       "newInvoice": "Skapa ny faktura",
       "issueRefund": "Utfärda återbetalning — hitta betald faktura",
       "reviewBroadcasts": "Granska utskickskön",
-      "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning"
+      "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning",
+      "newBroadcastTemplate": "Skapa ny E-Blast-mall"
     },
     "navigate": {
       "plansList": "Paketlista",
@@ -3076,6 +3280,8 @@
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
       "broadcastsQueue": "Granskningskö för E-Blast",
+      "broadcastTemplates": "Mallbibliotek för E-Blast",
+      "broadcastImageSettings": "Bildkällsinställningar för E-Blast",
       "renewalsList": "Förnyelsepipeline",
       "renewalSchedules": "Förnyelseschemaprinciper",
       "escalationTasks": "Uppföljningsuppgifter",
@@ -3094,6 +3300,7 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
+      "settingsBroadcasts": "Inställningar för utskick",
       "settingsIntegrationEventcreate": "EventCreate-integration",
       "events": "Evenemang",
       "sections": {
@@ -3143,7 +3350,11 @@
     "schedules": "Påminnelseschema",
     "invoicing": "Fakturainställningar",
     "integrations": "Integrationer",
-    "eventcreate": "EventCreate"
+    "eventcreate": "EventCreate",
+    "broadcasts": "Utskick",
+    "templates": "Mallar",
+    "newTemplate": "Ny mall",
+    "editTemplate": "Redigera mall"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -3308,6 +3519,22 @@
       "compose": {
         "title": "Skapa E-Blast",
         "subtitle": "Skicka ett meddelande till din kammares medlemmar.",
+        "templatePicker": {
+          "triggerLabel": "Börja från en mall",
+          "blankOption": "Tom — börja från noll",
+          "starterSuffix": "Start",
+          "starterBadgeAria": "Förseedad av plattformen",
+          "searchPlaceholder": "Sök mallar efter namn",
+          "emptyMessage": "Inga mallar matchar din sökning",
+          "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar."
+        },
+        "staleDraftBanner": {
+          "title": "Mallen har uppdaterats",
+          "body": "Mallen \"{templateName}\" har redigerats sedan du startade detta utkast. Klicka uppdatera för att ladda nuvarande version (dina ändringar i ämne och innehåll skrivs över).",
+          "refreshButton": "Uppdatera från nuvarande",
+          "refreshingButton": "Uppdaterar…",
+          "dismissAria": "Stäng meddelandet om föråldrat utkast för {templateName}"
+        },
         "fields": {
           "subject": "Ämne",
           "subjectPlaceholder": "Ämnesrad (max 200 tecken)",
@@ -3339,6 +3566,7 @@
         "comingSoon": "(kommer snart)",
         "tierLabel": "Nivåkod",
         "editor": {
+          "bracketHint": "Klicka på [text inom hakparenteser] för att ersätta med ditt innehåll.",
           "aria": {
             "toolbar": "Formateringsverktygsfält",
             "bold": "Fet (Ctrl+B)",
@@ -3394,6 +3622,7 @@
           "broadcast_subject_empty": "Ämne krävs.",
           "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
           "broadcast_body_unsafe_html": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
+          "broadcast_body_image_source_unsafe": "Ditt meddelande innehåller bildkällor som inte är tillåtna i din kammares register. Se listan under redigeraren för att åtgärda eller ta bort dem.",
           "broadcast_empty_segment_blocked": "Inga matchande mottagare hittades.",
           "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på 5 000.",
           "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
@@ -3410,6 +3639,32 @@
           "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
           "confirm": "Ta bort",
           "cancel": "Fortsätt redigera"
+        },
+        "imageUpload": {
+          "pickerLabel": "Välj en bild att ladda upp",
+          "uploadButton": "Ladda upp bild",
+          "uploadingLabel": "Laddar upp…",
+          "progressAria": "Förlopp för bilduppladdning",
+          "uploadingAria": "Laddar upp bild — vänta",
+          "uploadedToast": "Bilden har laddats upp.",
+          "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
+          "disallowedSourcesHeading": "Dessa bildkällor är inte tillåtna:",
+          "disallowedSourceItem": "{host} — ersätt med en bild från kammarens tillåtna lista.",
+          "errors": {
+            "broadcast_image_too_large": "Bilden är större än 5 MB.",
+            "broadcast_image_unsafe": "Bilden markerades av virusskannern och avvisades.",
+            "broadcast_image_invalid_mime": "Endast bilder i formaten PNG, JPG, WebP och GIF tillåts.",
+            "storage_unavailable": "Bildlagringen är tillfälligt otillgänglig. Försök igen om en stund.",
+            "feature_disabled": "Bildinbäddning är inte tillgänglig just nu.",
+            "invalid_body": "Uppladdningsbegäran var felaktig.",
+            "internal_error": "Ett oväntat fel inträffade under uppladdningen.",
+            "unknown": "Uppladdningen misslyckades. Försök igen."
+          }
+        },
+        "clamavBanner": {
+          "title": "Virusskannern är tillfälligt otillgänglig",
+          "description": "Bilduppladdningar pausas medan vi återansluter till skannern. Utkast utan bilder kan fortfarande sparas och skickas in."
         }
       },
       "quota": {
@@ -3461,7 +3716,9 @@
           "sent": "Skickad",
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
-          "failed_to_dispatch": "Misslyckades"
+          "failed_to_dispatch": "Misslyckades",
+          "partially_sent": "Delvis skickad",
+          "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "pagination": {
           "previous": "Föregående",

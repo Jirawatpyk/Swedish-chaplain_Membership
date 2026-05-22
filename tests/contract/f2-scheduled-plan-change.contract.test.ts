@@ -43,33 +43,58 @@
  * the `at most one pending` invariant at the DB layer.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { ok } from '@/lib/result';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
   scheduleNextRenewalPlanChange,
   getEffectivePlanForRenewal,
+  makeScheduledPlanChange,
+  type AuditPort,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
   type ScheduledPlanChangeStatus,
   type CurrentPlanResolverPort,
 } from '@/modules/plans';
 
-// ── In-memory repo helpers ────────────────────────────────────────────────────
-
-// Mutable mirror so the in-memory repo can flip readonly fields to
-// simulate the Drizzle adapter's UPDATE behaviour without `as any` casts.
-type MutableScheduledPlanChange = {
-  -readonly [K in keyof ScheduledPlanChange]: ScheduledPlanChange[K];
+// Post-ship R6 I2 — stub AuditPort (always succeeds). The contract
+// test asserts repo behaviour; audit-emit branch coverage lives in
+// the unit suite (`tests/unit/plans/application/...`).
+const stubAudit: AuditPort = {
+  record: vi.fn(async () => ok(undefined as void)),
 };
 
+// ── In-memory repo helpers ────────────────────────────────────────────────────
+
+// R3 Batch 4e (R3-S6) — the local `MutableScheduledPlanChange` shadowed
+// the same-named symbol now exported from `@/modules/plans`. Renamed
+// to `MutableSchedRow` to avoid shadowing. Local type is a truly
+// mutable mirror (no `readonly`) of the loose hydration shape, so the
+// in-memory repo can mutate rows in place to simulate UPDATE semantics
+// (e.g., flipping `status` from `pending` → `superseded` + setting
+// `supersededAt`). Port methods that return `ScheduledPlanChange`
+// (the discriminated union) narrow via the helper below.
+type MutableSchedRow = {
+  -readonly [K in keyof import('@/modules/plans').MutableScheduledPlanChange]: import('@/modules/plans').MutableScheduledPlanChange[K];
+};
+
+function narrowRow(row: MutableSchedRow): ScheduledPlanChange {
+  // The mock controls the invariant; this narrows to the discriminated
+  // union for return types matching the port contract. If the in-memory
+  // repo ever drifts (e.g., status='applied' without appliedAt), the
+  // assertion throws + the test fails loudly.
+  // Cast through unknown because the truly-mutable type strips readonly,
+  // which differs structurally from the domain `MutableScheduledPlanChange`.
+  // The runtime assert is the source of truth.
+  const _shape: import('@/modules/plans').MutableScheduledPlanChange = row;
+  void _shape;
+  return row as unknown as ScheduledPlanChange;
+}
+
 function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRepo {
-  const rows: MutableScheduledPlanChange[] = seed.map((r) => ({ ...r }));
+  const rows: MutableSchedRow[] = seed.map((r) => ({ ...r }));
 
   return {
     // Wave B verify-run F1 remediation — atomic supersede+insert.
-    // The mock is synchronous + can't fail mid-pair, but the contract
-    // assertion below (Contract 7) verifies the result shape returned
-    // to the use-case is faithful to the SupersedeAndInsertResult type
-    // so the Drizzle adapter (Phase 5+) ships against the same contract.
     supersedeAndInsertPendingAtomically: vi.fn(async (ctx, input) => {
       const prior = rows.find(
         (r) =>
@@ -82,9 +107,9 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
       if (prior) {
         prior.status = 'superseded';
         prior.supersededAt = '2026-05-03T12:05:00Z';
-        supersededRow = prior;
+        supersededRow = narrowRow(prior);
       }
-      const insertedRow: MutableScheduledPlanChange = {
+      const insertedRow: MutableSchedRow = {
         tenantId: ctx.slug,
         scheduledChangeId: `mem-${rows.length + 1}`,
         memberId: input.memberId,
@@ -100,18 +125,28 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
         cancelledAt: null,
       };
       rows.push(insertedRow);
-      return { inserted: insertedRow, superseded: supersededRow };
+      return { inserted: narrowRow(insertedRow), superseded: supersededRow };
     }),
     findPendingForCycle: vi.fn(async (ctx, memberId, cycleId) => {
-      return (
+      const r =
         rows.find(
-          (r) =>
-            r.tenantId === ctx.slug &&
-            r.memberId === memberId &&
-            r.effectiveAtCycleId === cycleId &&
-            r.status === 'pending',
-        ) ?? null
-      );
+          (row) =>
+            row.tenantId === ctx.slug &&
+            row.memberId === memberId &&
+            row.effectiveAtCycleId === cycleId &&
+            row.status === 'pending',
+        ) ?? null;
+      return r === null ? null : narrowRow(r);
+    }),
+    // R2 Batch 3g (R2-I16) — primary-key lookup.
+    findById: vi.fn(async (ctx, scheduledChangeId) => {
+      const r =
+        rows.find(
+          (row) =>
+            row.tenantId === ctx.slug &&
+            row.scheduledChangeId === scheduledChangeId,
+        ) ?? null;
+      return r === null ? null : narrowRow(r);
     }),
     transitionStatus: vi.fn(async (ctx, scheduledChangeId, nextStatus) => {
       const row = rows.find(
@@ -129,10 +164,12 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
       if (nextStatus === 'applied') row.appliedAt = now;
       if (nextStatus === 'superseded') row.supersededAt = now;
       if (nextStatus === 'cancelled') row.cancelledAt = now;
-      return row;
+      return narrowRow(row);
     }),
     listForMember: vi.fn(async (ctx, memberId) =>
-      rows.filter((r) => r.tenantId === ctx.slug && r.memberId === memberId),
+      rows
+        .filter((r) => r.tenantId === ctx.slug && r.memberId === memberId)
+        .map(narrowRow),
     ),
   };
 }
@@ -149,7 +186,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
   it('Contract 1: happy path — inserts pending row with caller-supplied fields preserved', async () => {
     const repo = makeMemoryRepo();
     const r = await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -176,7 +220,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     const repo = makeMemoryRepo();
     // First schedule
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -187,7 +238,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     );
     // Re-schedule with a different toPlanId on the SAME (member, cycle)
     const r2 = await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -215,7 +273,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
   it('Contract 3: tenant scope — repo always receives the caller TenantContext (compile-enforced)', async () => {
     const repo = makeMemoryRepo();
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -235,7 +300,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     const repo = makeMemoryRepo();
     // First schedule — superseded should be null (no prior pending row).
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -257,7 +329,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
 
     // Second schedule on same (member, cycle) — superseded surfaces the prior pending row.
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -346,23 +425,26 @@ describe('Contract — F2 getEffectivePlanForRenewal', () => {
       'cancelled',
     ];
     for (const status of terminalStatuses) {
-      const seed: ScheduledPlanChange[] = [
-        {
-          tenantId: 'test-swecham',
-          scheduledChangeId: `term-${status}`,
-          memberId: MEMBER_ID,
-          effectiveAtCycleId: CYCLE_ID,
-          fromPlanId: 'corporate-regular',
-          toPlanId: 'corporate-premier',
-          scheduledByUserId: ADMIN_USER_ID,
-          reason: null,
-          status,
-          scheduledAt: '2026-05-03T12:00:00Z',
-          appliedAt: status === 'applied' ? '2026-05-03T12:01:00Z' : null,
-          supersededAt: status === 'superseded' ? '2026-05-03T12:01:00Z' : null,
-          cancelledAt: status === 'cancelled' ? '2026-05-03T12:01:00Z' : null,
-        },
-      ];
+      // R3 Batch 4e (R3-S6) — discriminated union seed via factory.
+      const base = {
+        tenantId: 'test-swecham',
+        scheduledChangeId: `term-${status}`,
+        memberId: MEMBER_ID,
+        effectiveAtCycleId: CYCLE_ID,
+        fromPlanId: 'corporate-regular',
+        toPlanId: 'corporate-premier',
+        scheduledByUserId: ADMIN_USER_ID,
+        reason: null,
+        scheduledAt: '2026-05-03T12:00:00Z',
+      };
+      const TIMESTAMP = '2026-05-03T12:01:00Z';
+      const seedRow: ScheduledPlanChange =
+        status === 'applied'
+          ? makeScheduledPlanChange(base, 'applied', TIMESTAMP)
+          : status === 'superseded'
+            ? makeScheduledPlanChange(base, 'superseded', TIMESTAMP)
+            : makeScheduledPlanChange(base, 'cancelled', TIMESTAMP);
+      const seed: ScheduledPlanChange[] = [seedRow];
       const repo = makeMemoryRepo(seed);
       const currentPlanResolver: CurrentPlanResolverPort = {
         resolveCurrentPlanId: vi.fn(async () => 'corporate-regular'),
@@ -405,7 +487,14 @@ describe('Contract — Terminal coexistence (Contract 6)', () => {
     const repo = makeMemoryRepo(seed);
 
     const r = await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,

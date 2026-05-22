@@ -73,6 +73,9 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
       async emit(_tx, e) {
         emits.push(e);
       },
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
+      },
     },
   };
 }
@@ -117,6 +120,10 @@ function makeBroadcast(
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -148,6 +155,9 @@ function makeRepo(opts: RepoOpts): {
       async updateDraft() {
         throw new Error('not used');
       },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in cancel-broadcast fixture');
+      },
       async findById() {
         return null;
       },
@@ -163,7 +173,7 @@ function makeRepo(opts: RepoOpts): {
         transitions.push({ status, fields });
         if (opts.applyTransitionThrows) {
           throw new BroadcastConcurrentMutationError(
-            'test-tenant',
+            'test-tenant' as never,
             broadcastId,
             'sending',
           );
@@ -577,6 +587,9 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const repo = makeRepo({ existing: makeBroadcast('sent') });
     const auditPort: AuditPort = {
       async emit() {
+        throw new Error('audit table down');
+      },
+      async emitTyped() {
         throw new Error('audit table down');
       },
     };

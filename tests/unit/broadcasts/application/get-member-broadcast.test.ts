@@ -40,6 +40,9 @@ function makeRepoMocks(opts: {
     updateDraft: async () => {
       throw new Error('not used');
     },
+    updateDraftFromTemplate: async () => {
+      throw new Error('not used in get-member-broadcast fixture');
+    },
     findById: async () => null,
     findByIdInTx: async () => null,
     lockForUpdate: async () => null,
@@ -78,8 +81,9 @@ function makeRepoMocks(opts: {
 
 function makeAuditEmitMock() {
   const emit = vi.fn<AuditPort['emit']>(async () => undefined);
-  const audit: AuditPort = { emit };
-  return { audit, emit };
+  const emitTyped = vi.fn<AuditPort['emitTyped']>(async () => undefined);
+  const audit: AuditPort = { emit, emitTyped };
+  return { audit, emit, emitTyped };
 }
 
 describe('getMemberBroadcast', () => {
@@ -129,6 +133,9 @@ describe('getMemberBroadcast', () => {
       emit: vi.fn<AuditPort['emit']>(async () => {
         throw new Error('audit transport down');
       }),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => {
+        throw new Error('audit transport down');
+      }),
     };
     const broadcastsRepo = makeRepoMocks({
       findOwned: async () => ({ broadcast: null, probeKind: 'cross_member' }),
@@ -159,6 +166,11 @@ describe('getMemberBroadcast', () => {
         bodyHtml: '<p/>',
         status: 'sent',
         estimatedRecipientCount: 1,
+        // R4.1 C-4 — R3.3 H-4 made templateProvenance REQUIRED on
+        // Broadcast. This fixture uses `as unknown as Broadcast` cast
+        // which bypasses the compile-time check, so the field has to
+        // be added by hand to keep production-vs-test shape aligned.
+        templateProvenance: null,
       } as unknown as Broadcast,
       probeKind: 'owned' as const,
     }));
@@ -194,6 +206,8 @@ describe('getMemberBroadcast', () => {
       estimatedRecipientCount: 130,
       submittedAt: new Date(),
       sentAt: new Date(),
+      // R4.1 C-4 — see L165 sibling comment for rationale.
+      templateProvenance: null,
     } as unknown as Broadcast;
     const broadcastsRepo = makeRepoMocks({
       findOwned: async () => ({ broadcast, probeKind: 'owned' }),

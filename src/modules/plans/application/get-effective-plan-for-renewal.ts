@@ -1,9 +1,9 @@
 /**
- * T012 (F8 Phase 2 Wave B) — `getEffectivePlanForRenewal` resolver.
+ * `getEffectivePlanForRenewal` resolver (F2).
  *
  * Resolves the plan_id that an upcoming renewal invoice should be
- * priced against. F4's renewal-invoice-creation hook calls this at
- * cycle-creation time (Phase 5+ — US5 T183).
+ * priced against. Called from F4's renewal-invoice-creation hook at
+ * cycle-creation time.
  *
  * Resolution order:
  *   1. If there is a `pending` `scheduled_plan_changes` row for

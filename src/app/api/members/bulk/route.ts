@@ -119,7 +119,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // Post-ship R6 Batch 2b — surface Upstash outage as 503 instead of
+  // silently continuing. Mirrors `_idempotency-guard.ts:106-125` from
+  // Batch 1d. Bulk operations are especially sensitive because a
+  // silent drop + retry would duplicate the entire batch.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'idempotency_reservation_failed',
+          message:
+            'Idempotency reservation temporarily unavailable. Retry shortly.',
+        },
+      },
+      { status: 503, headers: { 'Retry-After': '5' } },
+    );
+  }
 
   // 5. Rate limit check (per-actor token bucket — single enforcement point).
   const rateLimitKey = `bulk:${tenant.slug}:${ctx.current.user.id}`;

@@ -85,6 +85,10 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     resendAudienceId: 'aud-1',
     resendBroadcastId: 'rsb-stuck',
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
     ...overrides,
@@ -105,6 +109,7 @@ function makeBroadcastsRepo(args: {
     },
     async insertDraft() { throw new Error('not used'); },
     async updateDraft() { throw new Error('not used'); },
+    async updateDraftFromTemplate() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async findById() { return current; },
     async findByIdInTx() { return current; },
     async lockForUpdate() { return current?.status ?? null; },
@@ -169,6 +174,7 @@ function makeAudit(): { port: AuditPort; emits: Array<AuditEmitInput> } {
     emits,
     port: {
       async emit(_tx, e) { emits.push(e); },
+      async emitTyped(_tx, e) { emits.push(e as AuditEmitInput); },
     },
   };
 }

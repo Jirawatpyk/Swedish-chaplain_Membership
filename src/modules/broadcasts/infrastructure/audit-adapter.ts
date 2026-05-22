@@ -16,9 +16,12 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  AuditPortInvariantError,
   f7RetentionFor,
   type AuditEmitInput,
   type AuditPort,
+  type F7AuditPayloadShapes,
+  type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
 
@@ -31,9 +34,13 @@ export const f7AuditAdapter: AuditPort = {
     // wrong RLS slice. Fail fast at the adapter so the bug surfaces at
     // the call site, not in a downstream RLS audit log scan.
     if (txUnknown !== null && event.tenantId === null) {
-      throw new Error(
-        `f7AuditAdapter: mutation tx requires non-null tenantId ` +
-          `(eventType=${event.eventType}). Use tx=null for system audits.`,
+      // F7.1b B3 closure 2026-05-21: use tagged class for instanceof
+      // discrimination; keep the same message body so log scans + the
+      // legacy `f7AuditAdapter:`-prefix back-compat check continue to
+      // work during the migration window.
+      throw new AuditPortInvariantError(
+        event.eventType,
+        `mutation tx requires non-null tenantId. Use tx=null for system audits.`,
       );
     }
 
@@ -53,5 +60,25 @@ export const f7AuditAdapter: AuditPort = {
          ${event.tenantId},
          ${retentionYears})
     `);
+  },
+  /**
+   * R4.3 M-15 — typed counterpart of `emit`. At runtime the two paths
+   * are indistinguishable; the only difference is the call-site type
+   * narrowing (payload constrained by `F7AuditPayloadShapes[E]`).
+   * Forward the typed input through the wide-payload INSERT.
+   *
+   * R6.2 M-2 — dispatch via `this.emit(...)` instead of the module-
+   * level binding `f7AuditAdapter.emit(...)`. The dynamic dispatch
+   * lets future audit-pipeline middleware wrap the adapter via
+   * `Object.create(f7AuditAdapter)` + override `emit`, and have
+   * `emitTyped` route through the wrapper's overridden method. The
+   * 2 production call sites use `deps.audit.emitTyped(tx, event)`
+   * which preserves the receiver binding; no destructuring exists.
+   */
+  async emitTyped<E extends keyof F7AuditPayloadShapes>(
+    txUnknown: unknown,
+    event: TypedAuditEmitInput<E>,
+  ): Promise<void> {
+    await this.emit(txUnknown, event as AuditEmitInput);
   },
 };

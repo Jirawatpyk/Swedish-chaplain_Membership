@@ -10,19 +10,17 @@
  * This use-case then transitions any `accepted_pending_apply`
  * suggestion targeting that cycle to `applied` + emits the audit.
  *
- * **F2 plan-flip status** (Phase 7 review-fix Round 2 IMP-4):
+ * **F2 plan-flip status**:
  * F4's invoice-creation step consults F2's `getEffectivePlanForRenewal`
  * resolver — pending `scheduled_plan_changes` rows DRIVE the invoice
- * price even though `members.plan_id` itself is not flipped here. F2's
- * `scheduled_plan_changes.status` transition from `pending` → `applied`
- * + the `members.plan_id` flip are tracked as a Phase 5+ follow-up;
- * see `specs/011-renewal-reminders/research.md` § R13 for the full
- * lifecycle and `src/modules/plans/application/schedule-next-renewal-
- * plan-change.ts:14` self-described "(Phase 5+)" marker. The current
- * F4 invoice-paid path commits this F8 suggestion `applied` transition
- * only — the F2-side state machine apply is deferred. Until that lands,
- * the audit chain `tier_upgrade_applied_at_renewal` represents the F8
- * canonical apply event.
+ * price even though `members.plan_id` itself is not flipped here. The
+ * F2 `scheduled_plan_changes.status` transition from `pending` →
+ * `applied` (atomic with this F8 suggestion transition's commit) lives
+ * in `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-
+ * paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`.
+ * The audit chain `tier_upgrade_applied_at_renewal` is the F8 canonical apply
+ * event; the F2 audit chain (`plan_change_applied`) lands post-tx
+ * alongside it. `members.plan_id` flip remains a future feature.
  *
  * Audit: emits `tier_upgrade_applied_at_renewal` (atomic with the
  * suggestion transition).

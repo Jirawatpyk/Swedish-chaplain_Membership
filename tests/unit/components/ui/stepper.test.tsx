@@ -54,4 +54,49 @@ describe('<Stepper>', () => {
     const list = screen.getByRole('list');
     expect(list.getAttribute('data-orientation')).toBe('vertical');
   });
+
+  // F2 polish round 2 — `status='error'` variant
+  it('renders an error step with AlertCircle icon + aria-invalid + destructive label class', () => {
+    const stepsWithError: StepperStep[] = [
+      { id: 'basics', label: 'Basics', status: 'complete' },
+      { id: 'fees', label: 'Fees', status: 'error' },
+      { id: 'review', label: 'Review', status: 'upcoming' },
+    ];
+    render(<Stepper steps={stepsWithError} aria-label="Wizard" />);
+    const items = screen.getAllByRole('listitem');
+    const errorItem = items[1]!;
+    expect(errorItem.getAttribute('data-status')).toBe('error');
+    expect(errorItem.getAttribute('aria-invalid')).toBe('true');
+    // Indicator carries an SVG (lucide AlertCircle); fall-through index
+    // number must NOT be rendered alongside the icon.
+    expect(errorItem.querySelector('svg')).not.toBeNull();
+    expect(within(errorItem).queryByText('2')).toBeNull();
+    // Label gets text-destructive class (visual cue + SR-independent).
+    const label = errorItem.querySelector('[data-slot="stepper-label"]')!;
+    expect(label.className).toMatch(/text-destructive/);
+  });
+
+  // F2 polish round 2 — `compact` mode toggles a responsive utility
+  // class so labels collapse below sm:640px. Vitest's jsdom has no real
+  // viewport, so we assert on the class string rather than visibility.
+  it('compact mode hides labels under sm (via hidden sm:block utility)', () => {
+    render(<Stepper steps={steps} aria-label="Flow" compact />);
+    const labels = screen
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('[data-slot="stepper-label"]')!.parentElement!);
+    for (const wrapper of labels) {
+      expect(wrapper.className).toMatch(/hidden/);
+      expect(wrapper.className).toMatch(/sm:block/);
+    }
+  });
+
+  it('default (non-compact) keeps labels visible at all breakpoints', () => {
+    render(<Stepper steps={steps} aria-label="Flow" />);
+    const labels = screen
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('[data-slot="stepper-label"]')!.parentElement!);
+    for (const wrapper of labels) {
+      expect(wrapper.className).not.toMatch(/\bhidden\b/);
+    }
+  });
 });

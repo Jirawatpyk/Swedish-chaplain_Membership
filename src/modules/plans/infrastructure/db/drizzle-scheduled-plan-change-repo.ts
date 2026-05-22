@@ -26,16 +26,24 @@ import type {
   ScheduledPlanChangeRepo,
   SupersedeAndInsertResult,
 } from '../../application/ports';
-import type {
-  ScheduleNextRenewalPlanChangeInput,
-  ScheduledPlanChange,
-  ScheduledPlanChangeStatus,
+import {
+  assertValidScheduledPlanChange,
+  type MutableScheduledPlanChange,
+  type ScheduleNextRenewalPlanChangeInput,
+  type ScheduledPlanChange,
+  type ScheduledPlanChangeStatus,
 } from '../../domain/scheduled-plan-change';
 
 // --- Row → Domain translation -----------------------------------------------
 
 function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
-  return {
+  // Build the loose `MutableScheduledPlanChange` shape from raw DB
+  // columns, then have `assertValidScheduledPlanChange` narrow it to
+  // the discriminated `ScheduledPlanChange` union. The status↔timestamp
+  // invariant lives in the type system from this point on (consumers
+  // can `if (row.status === 'applied') row.appliedAt.length` without
+  // a non-null bang).
+  const candidate: MutableScheduledPlanChange = {
     tenantId: row.tenantId,
     scheduledChangeId: row.scheduledChangeId,
     memberId: row.memberId,
@@ -51,6 +59,14 @@ function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
     supersededAt: row.supersededAt ? row.supersededAt.toISOString() : null,
     cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
   };
+  // Defence-in-depth status↔timestamp invariant. Throws
+  // `InvalidScheduledPlanChangeError` on DB CHECK drift; the canonical
+  // DB CHECK is in migration 0086 (`scheduled_plan_changes` table
+  // creation). The asserts predicate narrows `candidate` from
+  // `MutableScheduledPlanChange` to `ScheduledPlanChange`, so the
+  // return type carries the type-level invariant.
+  assertValidScheduledPlanChange(candidate);
+  return candidate;
 }
 
 // --- Adapter ----------------------------------------------------------------
@@ -133,6 +149,23 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
             eq(scheduledPlanChanges.status, 'pending'),
           ),
         )
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    });
+  },
+
+  // Primary-key lookup. RLS scopes to caller's tenant; explicit
+  // tenant_id filter intentionally omitted per the
+  // two-layer defence pattern (research.md § 7.1).
+  async findById(
+    tenant: TenantContext,
+    scheduledChangeId: string,
+  ): Promise<ScheduledPlanChange | null> {
+    return runInTenant(tenant, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.scheduledChangeId, scheduledChangeId))
         .limit(1);
       return rows[0] ? rowToDomain(rows[0]) : null;
     });

@@ -62,7 +62,7 @@ describe('F4 credit_notes immutability trigger — behavioral (N8)', () => {
         planId: 'cn-imm-plan',
         planYear: 2026,
         planName: { en: 'CN Imm Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

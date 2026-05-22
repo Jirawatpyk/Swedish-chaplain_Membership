@@ -1,0 +1,57 @@
+# F7.1a US7 (T010 / T134) — fail PRs that drift the starter-template
+# seed migration from its markdown source. Mirrors the single-concern
+# workflow pattern of `multi-tenant-readiness.yml` so a hang or
+# failure here cannot mask other CI signal.
+#
+# Triggers only on the three files involved in the drift contract:
+#
+#   1. specs/014-email-broadcast-advance/starter-templates.md
+#      (the human-edited source-of-truth content)
+#   2. scripts/generate-template-seed-migration.ts
+#      (the generator + parser logic)
+#   3. drizzle/migrations/0168_f71a_default_template_seed.sql
+#      (the committed output that must match what the generator
+#       emits at HEAD)
+#
+# Why a dedicated workflow vs adding a step to ci.yml: this check
+# runs in ~30 s and most PRs do not touch any of the trigger paths,
+# so a path-filtered workflow is strictly cheaper than an always-on
+# step. The pre-push hook (`pnpm check:template-seed`) catches local
+# pushes; this workflow is the safety net against `git push
+# --no-verify` and direct branch pushes.
+
+name: F7.1a template-seed drift
+
+on:
+  pull_request:
+    paths:
+      - 'specs/014-email-broadcast-advance/starter-templates.md'
+      - 'scripts/generate-template-seed-migration.ts'
+      - 'drizzle/migrations/0168_f71a_default_template_seed.sql'
+  # Allow manual re-runs from the Actions UI without opening a PR.
+  workflow_dispatch: {}
+
+jobs:
+  drift-check:
+    name: Regenerate seed and diff against committed SQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      # Frozen lockfile — same as the main CI does. Failure here
+      # means pnpm-lock.yaml drift, which is a separate bug; we want
+      # to surface it loudly rather than silently regenerating.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify seed migration matches starter-templates.md
+        run: pnpm check:template-seed

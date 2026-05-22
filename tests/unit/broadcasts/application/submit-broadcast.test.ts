@@ -71,6 +71,14 @@ interface FixtureOpts {
     memberId: string;
     primaryContactEmail: string | null;
   }>;
+  // R2.1 H-test-1 (FR-022): provenance fields read by submit-broadcast
+  // use-case to populate broadcast_submitted audit payload. Wired into
+  // makeBroadcast default + applyTransition mock so the submitted
+  // event carries the template UUID instead of always null.
+  readonly draftRow?: {
+    startedFromTemplateId?: string | null;
+    templateNameSnapshot?: string | null;
+  };
 }
 
 function makeAuditEmits(): {
@@ -83,6 +91,9 @@ function makeAuditEmits(): {
     port: {
       async emit(_tx, event) {
         emits.push(event);
+      },
+      async emitTyped(_tx, event) {
+        emits.push(event as AuditEmitInput);
       },
     },
   };
@@ -166,10 +177,26 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     },
     async insertDraft(_tx, input): Promise<Broadcast> {
       inserted.push(input);
-      return makeBroadcast(input);
+      // R6.1 H2 — raw fields no longer on `Broadcast`; fixture only
+      // sets the canonical `templateProvenance` discriminant. Source
+      // of truth is the test's `draftRow` input pair below.
+      return {
+        ...makeBroadcast(input),
+        templateProvenance:
+          opts.draftRow?.startedFromTemplateId != null &&
+          opts.draftRow?.templateNameSnapshot != null
+            ? {
+                templateId: opts.draftRow.startedFromTemplateId,
+                templateNameSnapshot: opts.draftRow.templateNameSnapshot,
+              }
+            : null,
+      };
     },
     async updateDraft() {
       throw new Error('not used in submit happy path (no existing draft)');
+    },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in submit-broadcast fixture');
     },
     async findById() {
       return null;
@@ -204,7 +231,19 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
         estimatedRecipientCount: 0,
         scheduledFor: null,
       };
-      return { ...makeBroadcast(base), status };
+      // R6.1 H2 — see `insertDraft` sibling block.
+      return {
+        ...makeBroadcast(base),
+        status,
+        templateProvenance:
+          opts.draftRow?.startedFromTemplateId != null &&
+          opts.draftRow?.templateNameSnapshot != null
+            ? {
+                templateId: opts.draftRow.startedFromTemplateId,
+                templateNameSnapshot: opts.draftRow.templateNameSnapshot,
+              }
+            : null,
+      };
     },
     async attachResendIds() {},
       async attachAudienceId() {},
@@ -273,6 +312,11 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    // F7.1a US1 + US7 defaults (Phase 2 + 3 B0).
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -711,6 +755,37 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       expect(submitted.payload['memberId']).toBe('m-1');
       expect(submitted.payload['segmentType']).toBe('all_members');
       expect(submitted.payload['estimatedRecipientCount']).toBe(1);
+      // R2.1 H-test-1 (FR-022): startedFromTemplateId is always present
+      // on broadcast_submitted (null for blank-canvas drafts, the
+      // template UUID for snapshotted drafts). Static-shape contract
+      // for forensic timeline + downstream analytics filters.
+      expect('startedFromTemplateId' in submitted.payload).toBe(true);
+      expect(submitted.payload['startedFromTemplateId']).toBeNull();
+    }
+  });
+
+  it('R2.1 H-test-1: broadcast_submitted.startedFromTemplateId pass-through when draft snapshotted from template', async () => {
+    const { audit, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'r@example.com' },
+      ],
+      // Pre-populate a draft that carries the snapshot provenance —
+      // mirrors what snapshotTemplateToDraft would have written.
+      draftRow: {
+        startedFromTemplateId: '99999999-9999-9999-9999-999999999999',
+        templateNameSnapshot: 'Monthly Newsletter',
+      },
+    });
+    await submitBroadcast(deps, baseInput);
+    const submitted = audit.emits.find(
+      (e) => e.eventType === 'broadcast_submitted',
+    );
+    expect(submitted).toBeDefined();
+    if (submitted !== undefined) {
+      expect(submitted.payload['startedFromTemplateId']).toBe(
+        '99999999-9999-9999-9999-999999999999',
+      );
     }
   });
 
@@ -793,6 +868,9 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     // Override the audit port to throw on every emit
     (deps as { audit: AuditPort }).audit = {
       async emit() {
+        throw new Error('audit DB unreachable');
+      },
+      async emitTyped() {
         throw new Error('audit DB unreachable');
       },
     };
@@ -878,6 +956,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       resendAudienceId: null,
       resendBroadcastId: null,
       retentionYears: 5,
+      manualRetryCount: 0,
+      partialDeliveryAcceptedAt: null,
+      partialDeliveryAcceptedByUserId: null,
+      startedFromTemplateId: null,
+      templateNameSnapshot: null,
+      templateProvenance: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -919,6 +1003,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         resendAudienceId: null,
         resendBroadcastId: null,
         retentionYears: 5,
+        manualRetryCount: 0,
+        partialDeliveryAcceptedAt: null,
+        partialDeliveryAcceptedByUserId: null,
+        startedFromTemplateId: null,
+        templateNameSnapshot: null,
+        templateProvenance: null,
         createdAt: FROZEN_NOW,
         updatedAt: FROZEN_NOW,
       };
@@ -993,6 +1083,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       resendAudienceId: null,
       resendBroadcastId: null,
       retentionYears: 5,
+      manualRetryCount: 0,
+      partialDeliveryAcceptedAt: null,
+      partialDeliveryAcceptedByUserId: null,
+      startedFromTemplateId: null,
+      templateNameSnapshot: null,
+      templateProvenance: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1034,6 +1130,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         resendAudienceId: null,
         resendBroadcastId: null,
         retentionYears: 5,
+        manualRetryCount: 0,
+        partialDeliveryAcceptedAt: null,
+        partialDeliveryAcceptedByUserId: null,
+        startedFromTemplateId: null,
+        templateNameSnapshot: null,
+        templateProvenance: null,
         createdAt: FROZEN_NOW,
         updatedAt: FROZEN_NOW,
       };
@@ -1152,6 +1254,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       resendAudienceId: null,
       resendBroadcastId: null,
       retentionYears: 5,
+      manualRetryCount: 0,
+      partialDeliveryAcceptedAt: null,
+      partialDeliveryAcceptedByUserId: null,
+      startedFromTemplateId: null,
+      templateNameSnapshot: null,
+      templateProvenance: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1193,6 +1301,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         resendAudienceId: null,
         resendBroadcastId: null,
         retentionYears: 5,
+        manualRetryCount: 0,
+        partialDeliveryAcceptedAt: null,
+        partialDeliveryAcceptedByUserId: null,
+        startedFromTemplateId: null,
+        templateNameSnapshot: null,
+        templateProvenance: null,
         createdAt: FROZEN_NOW,
         updatedAt: FROZEN_NOW,
       };
@@ -1253,6 +1367,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       resendAudienceId: null,
       resendBroadcastId: null,
       retentionYears: 5,
+      manualRetryCount: 0,
+      partialDeliveryAcceptedAt: null,
+      partialDeliveryAcceptedByUserId: null,
+      startedFromTemplateId: null,
+      templateNameSnapshot: null,
+      templateProvenance: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });

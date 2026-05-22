@@ -1,25 +1,38 @@
 /**
  * T125 — Integration: soft-delete plan with attached members (US4 FR-010).
  *
- * Critique P7 — F2 does not ship a `members` table, so the
- * `plan_has_active_members` refusal path cannot be covered end-to-end
- * with real data in F2. Instead we swap in a stub
- * `MemberAttachmentChecker` that returns a configurable count, so we
- * can exercise both branches of `softDeletePlan`:
+ * Scenarios 1 + 2 — stub-based contract coverage of the
+ * `MemberAttachmentChecker` port: a fake checker returns configurable
+ * counts so both branches of `softDeletePlan` are exercised
+ * independently of F3 wiring.
  *
- *   Scenario 1 — stub returns 3 → soft-delete refuses with
+ *   Scenario 1 — stub returns 3 → refuses with
  *                `{type: 'has_active_members', count: 3}`.
- *   Scenario 2 — stub returns 0 → soft-delete succeeds, `deleted_at` set.
+ *   Scenario 2 — stub returns 0 → soft-delete succeeds.
  *
- * The real Drizzle-backed checker lands in F3 alongside the `members`
- * table; the Application-layer contract does not change — F3 just
- * swaps the Infrastructure implementation through the same port.
+ * Scenarios 3 + 4 (post-ship R6 C1, 2026-05-19) — real F3-backed
+ * checker. F3 has shipped a `members` table; the stub-only world is
+ * obsolete (closes I6 too). The Drizzle-backed
+ * `drizzleMemberAttachmentChecker` queries the real F3 schema via the
+ * `@/modules/members` public-barrel free function
+ * `countActiveMembersOnPlan(ctx, planId, planYear)` (Constitution
+ * Principle III — no deep cross-module imports).
+ *
+ *   Scenario 3 — 2 real F3 members (1 active, 1 inactive) attached
+ *                to the plan → refuses with count=2 (archived rows
+ *                deliberately excluded — they're tombstoned).
+ *   Scenario 4 — 1 F3 member with status='archived' → soft-delete
+ *                succeeds (archived members don't block).
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { runInTenant } from '@/lib/db';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
+import { drizzleMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/drizzle-member-attachment-checker';
 import { softDeletePlan } from '@/modules/plans/application/soft-delete-plan';
 import { asPlanSlug, asPlanYear } from '@/modules/plans/domain/plan';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import type {
   ClockPort,
@@ -54,7 +67,7 @@ function seed(userId: string): PlanDraftInput {
     plan_id: 'premium',
     plan_year: 2027,
     plan_name: { en: 'Premium' },
-    description: { en: '' },
+    description: { en: 'Test description' },
     sort_order: 10,
     plan_category: 'corporate',
     member_type_scope: 'company',
@@ -162,5 +175,100 @@ describe('Integration: soft-delete with attached members (T125)', () => {
       asPlanYear(2027),
     );
     expect(reloaded?.deleted_at).not.toBeNull();
+  });
+
+  // -------------------------------------------------------------------
+  // Scenarios 3 + 4 — real F3 members (post-ship R6 C1, closes I6)
+  // -------------------------------------------------------------------
+
+  async function seedMember(
+    tenantSlug: string,
+    planId: string,
+    planYear: number,
+    status: 'active' | 'inactive' | 'archived',
+  ): Promise<void> {
+    await runInTenant({ slug: tenantSlug } as never, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenantSlug,
+        memberId: randomUUID(),
+        companyName: `Test Co ${status}`,
+        country: 'TH',
+        planId,
+        planYear,
+        registrationFeePaid: false,
+        status,
+        // R6 QA fix — F3 schema enforces a status↔archived_at CHECK
+        // constraint (`members_archived_at_iff_archived`). Setting
+        // status='archived' WITHOUT archived_at violates the invariant
+        // and the row is rejected with PostgresError 23514. Pair the
+        // archived flag with a current timestamp; for non-archived
+        // statuses leave archived_at as the column default (null).
+        ...(status === 'archived' ? { archivedAt: new Date() } : {}),
+      });
+    });
+  }
+
+  it('Scenario 3 — 2 real F3 members (active + inactive) → refuses with count=2', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+    await planRepo.insert(tenant.ctx, seed(user.userId));
+    await seedMember(tenant.ctx.slug, 'premium', 2027, 'active');
+    await seedMember(tenant.ctx.slug, 'premium', 2027, 'inactive');
+
+    const result = await softDeletePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-del-3',
+        sourceIp: null,
+        idempotencyKey: 'idem-del-3',
+      },
+      {
+        tenant: tenant.ctx,
+        planRepo,
+        audit: planAuditAdapter,
+        clock: currentYearClock,
+        members: drizzleMemberAttachmentChecker,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected err');
+    expect(result.error.type).toBe('has_active_members');
+    if (result.error.type === 'has_active_members') {
+      expect(result.error.count).toBe(2);
+    }
+  });
+
+  it('Scenario 4 — 1 archived F3 member → soft-delete succeeds (archived excluded)', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+    await planRepo.insert(tenant.ctx, seed(user.userId));
+    await seedMember(tenant.ctx.slug, 'premium', 2027, 'archived');
+
+    const result = await softDeletePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-del-4',
+        sourceIp: null,
+        idempotencyKey: 'idem-del-4',
+      },
+      {
+        tenant: tenant.ctx,
+        planRepo,
+        audit: planAuditAdapter,
+        clock: currentYearClock,
+        members: drizzleMemberAttachmentChecker,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.deleted_at).not.toBeNull();
   });
 });

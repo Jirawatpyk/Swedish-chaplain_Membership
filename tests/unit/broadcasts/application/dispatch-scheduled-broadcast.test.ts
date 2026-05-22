@@ -59,6 +59,9 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
       async emit(_tx, e) {
         emits.push(e);
       },
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
+      },
     },
   };
 }
@@ -100,6 +103,10 @@ function makeBroadcast(status: BroadcastStatus = 'approved'): Broadcast {
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -133,6 +140,9 @@ function makeRepo(opts: RepoOpts): {
       },
       async updateDraft() {
         throw new Error('not used');
+      },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in dispatch-scheduled-broadcast fixture');
       },
       async findById() {
         return null;

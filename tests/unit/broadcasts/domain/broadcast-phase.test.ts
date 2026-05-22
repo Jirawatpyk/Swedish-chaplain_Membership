@@ -46,6 +46,11 @@ const baseBroadcast: Broadcast = {
   resendAudienceId: null,
   resendBroadcastId: null,
   retentionYears: 5,
+  // F7.1a US1 + US7 fields (Phase 2 + 3 B0 extension defaults).
+  manualRetryCount: 0,
+  partialDeliveryAcceptedAt: null,
+  partialDeliveryAcceptedByUserId: null,
+  templateProvenance: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z'),
 };

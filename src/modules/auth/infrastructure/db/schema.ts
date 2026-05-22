@@ -71,6 +71,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'plan_undeleted',
   'plan_not_found',
   'plan_cross_tenant_probe',
+  // LEGACY: `fee_config_updated` was retired in R7/R8 consolidation
+  // (migration 0029 dropped `tenant_fee_config`; F4 `tenant_invoice_settings`
+  // is now authoritative). The pgEnum value remains for backward compat
+  // with any historical audit rows. F2 Domain no longer declares this
+  // event type and no current code path emits it (removed from F2
+  // audit-event.ts 2026-05-19 — post-ship R6 C5).
   'fee_config_updated',
   // --- F3 member + contact events (23) — added by migration 0010 ---
   'member_created',

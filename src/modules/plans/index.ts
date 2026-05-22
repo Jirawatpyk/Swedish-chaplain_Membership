@@ -56,6 +56,13 @@ export {
 
 export type {
   BenefitMatrix,
+  // Discriminated variants of `BenefitMatrix` by `partnership` field.
+  // Use these directly when a code site
+  // already knows the variant (e.g., the partnership-only editor
+  // panel) — the compiler will then refuse to access undefined
+  // partnership-only fields on a corporate-typed value.
+  CorporateBenefitMatrix,
+  PartnershipBenefitMatrix,
   PartnershipBenefits,
   WebsitePageType,
   HomepageLogoCategory,
@@ -64,18 +71,32 @@ export type {
   VideoFrequencyScope,
   DirectoryAdPosition,
 } from './domain/benefit-matrix';
+export {
+  asBenefitMatrix,
+  InvalidBenefitMatrixError,
+} from './domain/benefit-matrix';
 
 export type { LocaleText, LocaleKey } from './domain/locale-text';
 export {
   LOCALE_KEYS,
   hasMissingTranslations,
   pickLocaleText,
+  asLocaleText,
+  EmptyEnLocaleTextError,
 } from './domain/locale-text';
+
+// Opt-in re-export of F1's `UserId` brand for future F2 code that
+// wants to brand `Plan.created_by` /
+// `ScheduledPlanChange.scheduledByUserId` / etc. The fields are
+// `string` today for back-compat; new code should adopt `UserId`
+// where it constructs these values to inherit F1's brand guarantees.
+export type { UserId } from '@/modules/auth';
 
 export type { Money, CurrencyCode } from './domain/money';
 export {
   asMinorUnits,
   asMoney,
+  planAnnualFee,
   addMoney,
   subtractMoney,
   multiplyMoney,
@@ -85,8 +106,6 @@ export {
   InvalidMoneyError,
   SUPPORTED_CURRENCIES,
 } from './domain/money';
-
-export type { TenantFeeConfig } from './domain/fee-config';
 
 export type {
   PlanState,
@@ -109,12 +128,14 @@ export type {
   AuditSeverity,
   AuditDiff,
   MutableAuditDiff,
+  DiffableField,
 } from './domain/audit-event';
 export {
   auditPayloadSchema,
   EVENT_SEVERITY,
   F2_AUDIT_EVENT_TYPES,
   isF2AuditEventType,
+  KNOWN_DIFF_FIELDS,
 } from './domain/audit-event';
 
 export {
@@ -136,8 +157,6 @@ export {
   canReadPlan,
   canManagerReadPlan,
   canCloneYear,
-  canReadFeeConfig,
-  canMutateFeeConfig,
 } from './domain/policies';
 
 // --- Application: port types (for Presentation + tests) ---------------------
@@ -277,17 +296,26 @@ export {
   type PlanLookupError,
 } from './application/get-plan-for-member';
 
-// --- F8 cross-module use-cases (Wave B — Complexity Tracking #4) -----------
-// `scheduled_plan_changes` table ships in Wave C migration 0086
-// (data-model.md § 2.9). The Drizzle adapter implementing
-// `ScheduledPlanChangeRepo` lands when US5 wires the F4 renewal-
-// invoice-creation hook (Phase 5+); Wave B contract tests use an
-// in-memory mock.
+// --- F8 cross-module use-cases (Complexity Tracking #4) --------------------
+// `scheduled_plan_changes` table at
+// `specs/011-renewal-reminders/data-model.md § 2.9` (migration 0086);
+// Drizzle adapter at
+// `src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts`;
+// contract tests at `tests/contract/f2-scheduled-plan-change.contract.test.ts`
+// (in-memory mock for shape pinning).
 export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
 export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
+// `cancelScheduledPlanChange` closes the `plan_change_cancelled`
+// deferred-emitter TODO. Ready-to-call use-case
+// with no API route yet; future admin "cancel scheduled change" surface
+// or F8 auto-supersede flow wires the caller at composition root.
+export { cancelScheduledPlanChange } from './application/cancel-scheduled-plan-change';
 export type {
   ScheduleNextRenewalPlanChangeDeps,
 } from './application/schedule-next-renewal-plan-change';
+export type {
+  CancelScheduledPlanChangeDeps,
+} from './application/cancel-scheduled-plan-change';
 export type {
   GetEffectivePlanForRenewalDeps,
   GetEffectivePlanForRenewalInput,
@@ -310,12 +338,31 @@ export type {
 export {
   SCHEDULED_PLAN_CHANGE_STATUSES,
   isTerminalStatus,
+  assertValidScheduledPlanChange,
+  // Discriminated-union factory + loose hydration type.
+  // `makeScheduledPlanChange` is the canonical way to
+  // construct a `ScheduledPlanChange` in test fixtures; the type
+  // overloads enforce the status↔timestamp invariant at compile time.
+  makeScheduledPlanChange,
+  InvalidScheduledPlanChangeError,
 } from './domain/scheduled-plan-change';
 export type {
   ScheduledPlanChange,
+  PendingScheduledPlanChange,
+  AppliedScheduledPlanChange,
+  SupersededScheduledPlanChange,
+  CancelledScheduledPlanChange,
+  // Loose hydration shape used by the Drizzle adapter's `rowToDomain`
+  // + test-fixture helpers + the
+  // `assertValidScheduledPlanChange` defence-in-depth input. Code
+  // consumers should accept the discriminated `ScheduledPlanChange`
+  // (the carry-the-invariant-in-the-type variant) wherever possible.
+  MutableScheduledPlanChange,
   ScheduledPlanChangeStatus,
   ScheduleNextRenewalPlanChangeInput,
   ScheduleNextRenewalPlanChangeError,
+  CancelScheduledPlanChangeInput,
+  CancelScheduledPlanChangeError,
   EffectivePlanForRenewal,
   GetEffectivePlanForRenewalError,
 } from './domain/scheduled-plan-change';

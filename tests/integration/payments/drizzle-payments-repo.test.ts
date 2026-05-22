@@ -117,7 +117,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
           planId: `${prefix}-plan`,
           planYear: 2026,
           planName: { en: `${prefix} Plan` },
-          description: { en: '' },
+          description: { en: 'Test description' },
           sortOrder: 10,
           planCategory: 'corporate',
           memberTypeScope: 'company',

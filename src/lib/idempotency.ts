@@ -35,6 +35,7 @@ import { createHash } from 'node:crypto';
 import { Redis } from '@upstash/redis';
 import { env } from './env';
 import { logger } from './logger';
+import { err, ok, type Result } from './result';
 import type { TenantContext } from '@/modules/tenants';
 
 // --- Types -------------------------------------------------------------------
@@ -184,16 +185,33 @@ export async function classifyIdempotencyRequest(
 }
 
 /**
+ * Reservation outcome for `reserveIdempotencyRecord`. Post-ship R6 C3
+ * (2026-05-19): the function previously failed silently on Redis
+ * outage which let duplicate concurrent writes through. Now returns
+ * `Result.err('redis_unavailable')` so route handlers can short-
+ * circuit with 503 + Retry-After.
+ */
+export type ReserveError = {
+  readonly kind: 'redis_unavailable';
+  readonly message: string;
+};
+
+/**
  * Reserve the key + body hash immediately (before processing the
  * request). Subsequent calls for the same key during processing will
  * see a `null` response and return `conflict` — preventing duplicate
  * concurrent writes. Called at the START of the handler.
+ *
+ * Returns `Result.err({kind: 'redis_unavailable'})` on Redis outage.
+ * Route handlers MUST surface this as 503 with a `Retry-After` header
+ * to preserve idempotency guarantees — silently continuing would let
+ * a retry create a duplicate plan/clone/etc. Post-ship R6 C3.
  */
 export async function reserveIdempotencyRecord(
   tenant: TenantContext,
   key: string,
   bodyHash: string,
-): Promise<void> {
+): Promise<Result<{ readonly kind: 'reserved' }, ReserveError>> {
   const record: StoredRecord = {
     bodyHash,
     response: null,
@@ -201,11 +219,14 @@ export async function reserveIdempotencyRecord(
   };
   try {
     await redis.set(redisKey(tenant, key), record, { ex: IDEMPOTENCY_TTL_SECONDS });
+    return ok({ kind: 'reserved' });
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
     logger.warn(
-      { err: e instanceof Error ? e.message : String(e), tenant: tenant.slug, key },
-      'idempotency: Redis reserve failed — continuing without reservation',
+      { err: message, tenant: tenant.slug, key },
+      'idempotency: Redis reserve failed — caller must surface 503',
     );
+    return err({ kind: 'redis_unavailable', message });
   }
 }
 
@@ -245,7 +266,9 @@ export type WithIdempotencyResult<T> =
   | { readonly kind: 'first'; readonly proceed: () => Promise<T> }
   | { readonly kind: 'replay'; readonly previousResponse: StoredResponse }
   | { readonly kind: 'conflict' }
-  | { readonly kind: 'invalid'; readonly reason: 'missing' | 'malformed' };
+  | { readonly kind: 'invalid'; readonly reason: 'missing' | 'malformed' }
+  // Post-ship R6 C3 — Redis reservation failed; caller MUST 503.
+  | { readonly kind: 'reservation_failed'; readonly error: ReserveError };
 
 /**
  * High-level helper that route handlers can use directly:
@@ -265,11 +288,12 @@ export async function withIdempotency(
   body: unknown,
   routeSalt: string,
 ): Promise<Omit<WithIdempotencyResult<never>, 'kind'> & {
-  kind: 'first' | 'replay' | 'conflict' | 'invalid';
+  kind: 'first' | 'replay' | 'conflict' | 'invalid' | 'reservation_failed';
   key?: string;
   bodyHash?: string;
   reason?: 'missing' | 'malformed';
   previousResponse?: StoredResponse;
+  error?: ReserveError;
 }> {
   const parsed = parseIdempotencyKey(headers);
   if (!parsed.ok) return { kind: 'invalid', reason: parsed.reason };
@@ -288,7 +312,13 @@ export async function withIdempotency(
   if (classification.kind === 'conflict') {
     return { kind: 'conflict', key: parsed.key, bodyHash };
   }
-  // First — reserve the slot so concurrent workers see a conflict
-  await reserveIdempotencyRecord(tenant, parsed.key, bodyHash);
+  // First — reserve the slot so concurrent workers see a conflict.
+  // Post-ship R6 C3 (2026-05-19): surface the reservation failure
+  // explicitly so the caller can 503 instead of letting duplicate
+  // writes slip through on Redis outage.
+  const reserved = await reserveIdempotencyRecord(tenant, parsed.key, bodyHash);
+  if (!reserved.ok) {
+    return { kind: 'reservation_failed', error: reserved.error };
+  }
   return { kind: 'first', key: parsed.key, bodyHash };
 }

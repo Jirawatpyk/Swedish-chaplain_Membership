@@ -388,6 +388,49 @@ body {
   overflow: hidden;
 }
 
+/* --- Bracket placeholder (F7.1a US7 T116 + T160) -----------------------
+   Tiptap Decoration.inline class applied to [bracketed text] matches by
+   `broadcastBracketPlaceholderExtension`. Visual: muted background +
+   dashed border so members spot template placeholders to replace.
+   No animation — reduced-motion safe by construction.
+
+   T160 (closed 2026-05-21, review finding enterprise-ux-designer H-1):
+   the dashed-border + muted-background decoration is the universal
+   affordance — works identically on hover-capable AND touch devices.
+   Click handler is universal (caret enters the bracket region on tap
+   or click; Tiptap's text-editing mode handles both pointer types
+   via the standard contenteditable semantics). On hover-capable
+   devices the @media (hover: hover) block below adds a subtle
+   background-shift on hover to signal interactivity. The first-use
+   microcopy ("Click any [bracketed text] to replace with your
+   content.") is rendered by the COMPOSE PAGE as a static caption
+   ABOVE the editor when a template is selected — not as a tooltip,
+   because tooltips require either a JS portal (overlap risk with the
+   Tiptap selection UI) or HTML `title` attr (silent on touch). The
+   static caption is read by all SR + visible on all viewports. */
+.bracket-placeholder {
+  background: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+  cursor: text;
+  transition: background-color 120ms ease;
+}
+
+@media (hover: hover) {
+  .bracket-placeholder:hover {
+    background: color-mix(in srgb, var(--muted) 70%, var(--foreground) 8%);
+  }
+}
+
+/* prefers-reduced-motion: disable the 120ms transition on the hover
+   state so SC 2.3.3 + ux-standards reduced-motion invariant holds. */
+@media (prefers-reduced-motion: reduce) {
+  .bracket-placeholder {
+    transition: none;
+  }
+}
+
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
 .skeleton-shimmer {
   background: linear-gradient(

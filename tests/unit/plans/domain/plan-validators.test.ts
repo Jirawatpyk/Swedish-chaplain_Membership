@@ -8,7 +8,7 @@ const validCorporateInput = {
   plan_id: 'premium',
   plan_year: 2026,
   plan_name: { en: 'Premium Corporate' },
-  description: { en: '' },
+  description: { en: 'Test description' },
   sort_order: 10,
   plan_category: 'corporate' as const,
   member_type_scope: 'company' as const,

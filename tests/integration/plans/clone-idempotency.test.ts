@@ -48,7 +48,7 @@ function buildDrafts(
         plan_id: `clone-src-${i}`,
         plan_year: year,
         plan_name: { en: `Source ${i}` },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sort_order: i * 10,
         plan_category: 'corporate',
         member_type_scope: 'company',

@@ -21,6 +21,7 @@
  */
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+import { logger } from '@/lib/logger';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -38,6 +39,8 @@ export type F7RouteErrorCode =
   | 'broadcast_subject_empty'
   | 'broadcast_body_too_large'
   | 'broadcast_body_unsafe_html'
+  // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 / AS2 closure.
+  | 'broadcast_body_image_source_unsafe'
   | 'broadcast_custom_recipient_unknown'
   | 'broadcast_custom_recipient_invalid_format'
   | 'broadcast_custom_recipient_empty'
@@ -56,10 +59,23 @@ export type F7RouteErrorCode =
   | 'broadcast_rejection_reason_too_long'
   | 'broadcast_cancel_reason_too_long'
   | 'broadcast_member_not_found'
+  // F7.1a US1 — admin retry + partial-delivery flows
+  | 'broadcast_manual_retry_budget_exhausted'
+  | 'broadcast_already_retrying_in_progress'
+  | 'broadcast_partial_delivery_reason_too_long'
   // Generic HTTP-shape codes
   | 'invalid_body'
   | 'forbidden'
   | 'feature_disabled'
+  // R3.6 L-1 — typed code for 401 unauthenticated requests on member-
+  // facing surfaces (was stringly-typed 'no-session' in templates GET
+  // route). Provides bilingual message + status mapping.
+  | 'no_session'
+  // R4.2 H-1 — typed code for 400 invalid `locale` query parameter on
+  // GET /api/broadcasts/templates. Was stringly-typed 'invalid_locale'
+  // via `jsonError(400, 'invalid_locale', ...)` pre-R4.2; now flows
+  // through `errorResponse` so the bilingual envelope lands.
+  | 'invalid_locale'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -107,6 +123,12 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   broadcast_body_unsafe_html: {
     message: 'Message body contains forbidden HTML — please remove unsupported elements.',
     messageThai: 'เนื้อหามี HTML ที่ไม่อนุญาต กรุณาลบองค์ประกอบที่ไม่รองรับ',
+  },
+  broadcast_body_image_source_unsafe: {
+    message:
+      'Message body contains images from sources not in your chamber\'s allowlist. Replace or remove the listed images.',
+    messageThai:
+      'เนื้อหาอีเมลมีรูปภาพจากแหล่งที่ไม่อยู่ในรายการอนุญาตของหอการค้า กรุณาเปลี่ยนหรือลบรูปภาพที่ระบุไว้',
   },
   broadcast_custom_recipient_unknown: {
     message: 'Some custom recipients are not in your tenant directory.',
@@ -176,6 +198,23 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'Member not found in this tenant.',
     messageThai: 'ไม่พบสมาชิกในผู้เช่ารายนี้',
   },
+  // F7.1a US1 — admin retry + partial-delivery error messages
+  broadcast_manual_retry_budget_exhausted: {
+    message:
+      'All 3 manual retry attempts have been used. Consider accepting partial delivery.',
+    messageThai:
+      'ใช้สิทธิ์ลองส่งซ้ำครบ 3 ครั้งแล้ว ลองยอมรับการส่งบางส่วนแทน',
+  },
+  broadcast_already_retrying_in_progress: {
+    message:
+      'Another admin is currently retrying this broadcast. Please wait a moment and refresh.',
+    messageThai:
+      'มีผู้ดูแลคนอื่นกำลังลองส่งซ้ำ E-Blast นี้อยู่ กรุณารอสักครู่แล้วรีเฟรช',
+  },
+  broadcast_partial_delivery_reason_too_long: {
+    message: 'Reason must be 500 characters or fewer.',
+    messageThai: 'เหตุผลต้องมีไม่เกิน 500 ตัวอักษร',
+  },
   invalid_body: {
     message: 'Request body is invalid.',
     messageThai: 'ข้อมูลคำขอไม่ถูกต้อง',
@@ -187,6 +226,14 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   feature_disabled: {
     message: 'Email broadcasts are temporarily unavailable.',
     messageThai: 'ระบบ E-Blast ปิดใช้งานชั่วคราว',
+  },
+  no_session: {
+    message: 'You must be signed in to access this resource.',
+    messageThai: 'คุณต้องเข้าสู่ระบบเพื่อเข้าถึงทรัพยากรนี้',
+  },
+  invalid_locale: {
+    message: 'The locale parameter is invalid (must be one of: en, th, sv).',
+    messageThai: 'พารามิเตอร์ภาษาไม่ถูกต้อง (ต้องเป็น en, th, หรือ sv)',
   },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
@@ -207,6 +254,30 @@ export function baseHeaders(
     'X-Correlation-Id': correlationId,
     ...(extra ?? {}),
   };
+}
+
+/**
+ * R2.2 A1 — Shared `{ error: code, ...extra }` envelope used by F7.1a
+ * template + image-upload routes (admin templates, member snapshot,
+ * upload). Distinct from `errorResponse` above (which wraps the
+ * bilingual `messages[code]` envelope used by Submit/Save/Quota).
+ *
+ * Use this helper when the error surface speaks to a single audience
+ * (admin-only or member-only) and the i18n is handled client-side
+ * via the route's specific `admin.broadcasts.templates.errors.{code}`
+ * key set. Use `errorResponse` for surfaces shared between member +
+ * admin where bilingual server-side text is required.
+ */
+export function jsonError(
+  status: number,
+  code: string,
+  correlationId: string,
+  extra?: Record<string, unknown>,
+): NextResponse {
+  return NextResponse.json(
+    { error: code, ...(extra ?? {}) },
+    { status, headers: baseHeaders(correlationId) },
+  );
 }
 
 export interface ErrorResponseExtra {
@@ -266,9 +337,22 @@ export async function resolveTenantDisplayName(
     if (settings !== null && settings.identity.legal_name_en.length > 0) {
       return settings.identity.legal_name_en;
     }
-  } catch {
+  } catch (err) {
     // Best-effort — never 5xx the broadcast submit because settings
     // lookup failed. Fall through to slug.
+    //
+    // R6.4 (silent-failure-M5) — surface the failure at warn level so
+    // SRE can correlate "members complain about email showing raw
+    // slug instead of legal name" against schema-drift / RLS-config /
+    // pool-exhaustion incidents. The bare `catch {}` made this class
+    // of failure invisible per Constitution Principle VIII.
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        tenantId,
+      },
+      'broadcasts.tenant_display_name.settings_lookup_failed',
+    );
   }
   return tenantId;
 }
@@ -288,6 +372,7 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   broadcast_subject_empty: 422,
   broadcast_body_too_large: 422,
   broadcast_body_unsafe_html: 422,
+  broadcast_body_image_source_unsafe: 422,
   broadcast_custom_recipient_unknown: 422,
   broadcast_custom_recipient_invalid_format: 422,
   broadcast_custom_recipient_empty: 422,
@@ -304,9 +389,15 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   broadcast_rejection_reason_too_long: 400,
   broadcast_cancel_reason_too_long: 400,
   broadcast_member_not_found: 404,
+  // F7.1a US1
+  broadcast_manual_retry_budget_exhausted: 409,
+  broadcast_already_retrying_in_progress: 409,
+  broadcast_partial_delivery_reason_too_long: 400,
   invalid_body: 400,
   forbidden: 403,
   feature_disabled: 503,
+  no_session: 401,
+  invalid_locale: 400,
   internal_error: 500,
 };
 

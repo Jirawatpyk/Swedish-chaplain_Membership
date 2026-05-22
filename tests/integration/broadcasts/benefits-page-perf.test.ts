@@ -123,7 +123,7 @@ describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () 
         planId,
         planYear: 2026,
         planName: { en: 'Perf Premium' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

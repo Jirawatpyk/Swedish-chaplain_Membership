@@ -137,6 +137,15 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/broadcasts?status=halted',
     requires: 'admin',
   },
+  // F7.1a US7 Round 1 R4-S7 L2 — direct ⌘K jump to author a new
+  // broadcast template. High-frequency admin task once chambers
+  // start customising starter templates (J4-B9 smart-feature pattern).
+  {
+    id: 'broadcast.newTemplate',
+    label: 'palette.actions.newBroadcastTemplate',
+    url: '/admin/broadcasts/templates/new',
+    requires: 'admin',
+  },
 ];
 
 const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
@@ -202,6 +211,27 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.broadcastsQueue',
     url: '/admin/broadcasts',
     requires: 'read',
+  },
+  // F7.1a US7 Round 1 R4-S7 L2 — admin broadcast templates library.
+  // Read-only requires for visibility (manager can browse the library
+  // even though they cannot edit; matches the templates page RBAC).
+  {
+    id: 'nav.broadcastTemplates',
+    label: 'palette.navigate.broadcastTemplates',
+    url: '/admin/broadcasts/templates',
+    requires: 'read',
+  },
+  // F7.1a US2 image-allowlist editor (UX M-1 fix 2026-05-21,
+  // review finding enterprise-ux-designer M-1). Admin surface for
+  // managing the per-tenant `<img src>` hostname allowlist. `admin`
+  // required (write surface — manager cannot mutate even via palette
+  // jump). Without this entry, ⌘K cannot reach the allowlist editor,
+  // forcing the admin to remember the sidebar nesting.
+  {
+    id: 'nav.broadcastImageSettings',
+    label: 'palette.navigate.broadcastImageSettings',
+    url: '/admin/broadcasts/settings',
+    requires: 'admin',
   },
   // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without
   // these entries, ⌘K-driven jumps to the renewal pipeline +
@@ -299,7 +329,12 @@ export async function searchPlans(
   input: SearchPlansInput,
   deps: SearchPlansDeps,
 ): Promise<Result<SearchPlansSuccess, SearchPlansError>> {
-  const limit = input.limit ?? 20;
+  // Clamp user-controlled limit to 100 to bound the in-memory filter
+  // cost. At SweCham scale (~10 plans + ~50 registry entries) this is
+  // a small protection, but a future multi-tenant ramp could see
+  // thousands of plans where an unclamped `limit: 10_000` would page
+  // the whole table.
+  const limit = Math.min(input.limit ?? 20, 100);
   const currentYear = asPlanYear(deps.clock.currentYear());
   const q = input.q.trim();
 

@@ -179,7 +179,7 @@ describe('T136 concurrent initiatePayment for same invoice (R2-E2)', () => {
         planId: 't136-plan',
         planYear: 2026,
         planName: { en: 'T136 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

@@ -18,13 +18,14 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { asTenantContext } from '@/modules/tenants';
+import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import {
   asBroadcastId,
   type Broadcast,
   type BroadcastId,
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
   ListByTenantStatusOpts,
@@ -33,6 +34,7 @@ import type {
 } from '../../application/ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
 } from '../../application/ports/broadcasts-repo';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
@@ -144,7 +146,62 @@ async function assertTenantBoundTx(
 // Row → Domain mapping
 // ---------------------------------------------------------------------------
 
-function rowToBroadcast(row: BroadcastRow): Broadcast {
+/**
+ * R6.1 H2 + M14 — derive the canonical `templateProvenance` DU from
+ * the raw column pair on `BroadcastRow`. SINGLE writer of the field;
+ * the Domain interface no longer exposes the raw columns (they live
+ * on the Infrastructure-only Row type).
+ *
+ * Invariant: either BOTH columns are populated (snapshot path) or
+ * BOTH are null (blank canvas). If EXACTLY ONE is non-null the row
+ * is corrupt (out-of-band SQL / failed migration / etc); the mapper
+ * still returns `null` (safer than half-truth) and emits an error log
+ * so SRE has a forensic trail to find the offending row.
+ *
+ * Indexed-access return type `Broadcast['templateProvenance']` tracks
+ * Domain drift automatically — if the Domain DU shape changes, this
+ * helper surfaces the mismatch at compile time. Direct `!== null`
+ * guards in the `if` block let TS flow-narrow without `as string`
+ * casts.
+ */
+export function deriveTemplateProvenance(
+  row: BroadcastRow,
+): Broadcast['templateProvenance'] {
+  if (
+    row.startedFromTemplateId !== null &&
+    row.templateNameSnapshot !== null
+  ) {
+    return {
+      templateId: row.startedFromTemplateId,
+      templateNameSnapshot: row.templateNameSnapshot,
+    };
+  }
+  if (
+    (row.startedFromTemplateId !== null) !==
+    (row.templateNameSnapshot !== null)
+  ) {
+    logger.error(
+      {
+        broadcastId: row.broadcastId,
+        tenantId: row.tenantId,
+        hasStartedFromTemplateId: row.startedFromTemplateId !== null,
+        hasTemplateNameSnapshot: row.templateNameSnapshot !== null,
+      },
+      'broadcasts.mapper.template_provenance_half_populated',
+    );
+  }
+  return null;
+}
+
+/**
+ * @internal — exported solely for the R8.5 end-to-end mapper test
+ * (`tests/unit/broadcasts/infrastructure/drizzle-broadcasts-repo-mapper.test.ts`).
+ * Production callers SHOULD invoke the repo's `findById` / other port
+ * methods which wrap this with `runInTenant`. Importing `rowToBroadcast`
+ * directly from outside this file bypasses the Drizzle adapter's
+ * tenant-bound tx + Domain port boundary.
+ */
+export function rowToBroadcast(row: BroadcastRow): Broadcast {
   return {
     tenantId: row.tenantId,
     broadcastId: asBroadcastId(row.broadcastId),
@@ -188,6 +245,14 @@ function rowToBroadcast(row: BroadcastRow): Broadcast {
     resendBroadcastId: row.resendBroadcastId,
 
     retentionYears: row.retentionYears as 5 | 10,
+
+    // F7.1a US1 + US7 columns (Phase 2 0162 + 3 B0 Domain type extension).
+    // DB defaults: manual_retry_count=0; the 4 nullable fields default
+    // to NULL on existing F7 MVP rows (ADD COLUMN was non-destructive).
+    manualRetryCount: row.manualRetryCount,
+    partialDeliveryAcceptedAt: row.partialDeliveryAcceptedAt,
+    partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
+    templateProvenance: deriveTemplateProvenance(row),
 
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -301,7 +366,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async updateDraft(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       patch: Partial<NewBroadcastDraftInput>,
     ): Promise<Broadcast> {
@@ -372,8 +437,83 @@ export function makeDrizzleBroadcastsRepo(
       return rowToBroadcast(row as BroadcastRow);
     },
 
+    async updateDraftFromTemplate(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      snapshot: {
+        // R3.3 H-3 — brand flows end-to-end. The adapter accepts
+        // ChamberSubstitutedBody (Domain VO output) to match the port
+        // contract; Drizzle's `text` column type structurally accepts
+        // the brand (it's a string subtype) so no runtime cast needed
+        // at the .set() call.
+        readonly subject: ChamberSubstitutedBody;
+        readonly bodyHtml: ChamberSubstitutedBody;
+        readonly bodySource: ChamberSubstitutedBody;
+        readonly startedFromTemplateId: string;
+        readonly templateNameSnapshot: string;
+      },
+    ): Promise<Broadcast> {
+      // Narrow UPDATE for template snapshot: subject + body_html +
+      // body_source + started_from_template_id + template_name_snapshot.
+      // Refuses unless status='draft' so the immutable-after-submit
+      // invariant (Q3) holds for template-based mutations too. R1.2
+      // H-code-1: assertTenantBoundTx as defence-in-depth so a future
+      // cross-port-tx-sharing bug (e.g. snapshot use-case passing a tx
+      // bound to tenant A while this repo is constructed for tenant B)
+      // fails loudly instead of silently writing into the wrong slice.
+      // Mirrors attachResendIds/attachAudienceId/pruneExpiredDrafts.
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'updateDraftFromTemplate');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          subject: snapshot.subject,
+          bodyHtml: snapshot.bodyHtml,
+          bodySource: snapshot.bodySource,
+          startedFromTemplateId: snapshot.startedFromTemplateId,
+          templateNameSnapshot: snapshot.templateNameSnapshot,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'draft'),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        const probe = await tx
+          .select({ status: broadcasts.status })
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.broadcastId, broadcastId),
+            ),
+          )
+          .limit(1);
+        const probeRow = probe[0];
+        if (probeRow !== undefined) {
+          throw new BroadcastConcurrentMutationError(
+            tenantIdArg,
+            broadcastId,
+            probeRow.status,
+          );
+        }
+        // R3.3 H-6 — typed error so the snapshot use-case catch can
+        // narrow (vs bare Error → generic 500). Should never fire
+        // post-ownership-check (Constitution I clause 2 invariant
+        // violation if it does — log severity stays loud at caller).
+        throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
+      }
+      return rowToBroadcast(row as BroadcastRow);
+    },
+
     async findById(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
     ): Promise<Broadcast | null> {
       return runInTenant(ctx, async (tx) => {
@@ -395,7 +535,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async findByIdInTx(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
     ): Promise<Broadcast | null> {
       const tx = txUnknown as TenantTx;
@@ -414,7 +554,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async lockForUpdate(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
     ): Promise<BroadcastStatus | null> {
       const tx = txUnknown as TenantTx;
@@ -439,7 +579,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async applyTransition(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       target: BroadcastStatus,
       fields: Partial<Broadcast>,
@@ -504,7 +644,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async attachResendIds(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendAudienceId: string,
       resendBroadcastId: string,
@@ -543,7 +683,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async attachAudienceId(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendAudienceId: string,
     ): Promise<void> {
@@ -572,7 +712,7 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     async listByTenantStatus(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       opts: ListByTenantStatusOpts,
     ): Promise<ListByTenantStatusResult> {
       return runInTenant(ctx, async (tx) => {
@@ -638,7 +778,7 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     async countForMemberQuota(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       memberId: string,
       quotaYear: number,
     ): Promise<{
@@ -688,7 +828,7 @@ export function makeDrizzleBroadcastsRepo(
     async findByResendBroadcastIdBypassRls(
       resendBroadcastId: string,
     ): Promise<
-      { readonly tenantId: string; readonly broadcast: Broadcast } | null
+      { readonly tenantId: TenantSlug; readonly broadcast: Broadcast } | null
     > {
       // Webhook pre-tenant resolution path (FR-024 / T160). Reads via
       // the default `db` connection — the schema owner has BYPASSRLS
@@ -703,14 +843,21 @@ export function makeDrizzleBroadcastsRepo(
         .where(eq(broadcasts.resendBroadcastId, resendBroadcastId))
         .limit(1);
       if (row === undefined) return null;
+      // Brand the row's tenant_id back to `TenantSlug` at the
+      // bypass-RLS adapter boundary. The DB column is `text` so
+      // it lacks the brand; the regex guard inside `asTenantContext`
+      // is the source of truth for slug validity — but we don't need
+      // a full ctx here, just the brand. Cast is safe because the
+      // row is sourced from a tenant-isolated insert path (the only
+      // writes to `broadcasts.tenant_id` go through `runInTenant`).
       return {
-        tenantId: row.tenantId,
+        tenantId: row.tenantId as TenantSlug,
         broadcast: rowToBroadcast(row as BroadcastRow),
       };
     },
 
     async listForMemberPaginated(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       memberId: string,
       opts: { readonly page: number; readonly perPage: number },
     ): Promise<{

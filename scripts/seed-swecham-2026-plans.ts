@@ -20,9 +20,9 @@
  *   - BOOTSTRAP_ADMIN_EMAIL (or an admin user) must exist to satisfy
  *     the `created_by` FK to users(id).
  *
- * Audit: appends 9 `plan_created` + 1 `fee_config_updated` events,
- * each with the correct payload shape. They provide an audit-log
- * trail for the seed operation (useful for forensics if the script
+ * Audit: appends 9 `plan_created` events with the correct payload
+ * shape. They provide an audit-log trail for the seed operation
+ * (useful for forensics if the script
  * accidentally runs twice in a short window).
  *
  * Usage:
@@ -36,12 +36,14 @@
 
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { db } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import type { PlanDraftInput } from '@/modules/plans/application/ports';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { asBenefitMatrix } from '@/modules/plans';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { runInTenant } from '@/lib/db';
@@ -103,7 +105,10 @@ const EVENT_BASE = {
 
 // --- Corporate seed rows ----------------------------------------------------
 
-const CORPORATE_SEED: ReadonlyArray<{
+// Exported so SC-005 fixture tests (`tests/integration/plans/
+// seed-swecham-2026-fixture.test.ts`) can assert against the
+// canonical fee table + 6+3 split without re-running the seed.
+export const CORPORATE_SEED: ReadonlyArray<{
   readonly id: string;
   readonly name: { readonly en: string; readonly th: string; readonly sv: string };
   readonly fee: number;
@@ -302,7 +307,8 @@ const PARTNERSHIP_SHARED: Pick<
   tailor_made_services: true,
 };
 
-const PARTNERSHIP_SEED: ReadonlyArray<{
+// Exported for SC-005 fixture tests — see CORPORATE_SEED above.
+export const PARTNERSHIP_SEED: ReadonlyArray<{
   readonly id: string;
   readonly name: { readonly en: string; readonly th: string; readonly sv: string };
   readonly fee: number;
@@ -431,7 +437,12 @@ async function stageA_FeeConfig(ctx: TenantContext): Promise<'inserted' | 'exist
   });
 }
 
-async function stageB_Plans(
+// Exported for the smoke test
+// (`tests/integration/scripts/seed-swecham-2026-plans-runs.test.ts`)
+// which calls this directly against a throwaway tenant to catch
+// EmptyEnLocaleTextError-class crashes pre-merge. Not exported for
+// production callers — they go through `main()`.
+export async function stageB_Plans(
   ctx: TenantContext,
   ownerUserId: string,
 ): Promise<{ inserted: number; skipped: boolean }> {
@@ -439,6 +450,13 @@ async function stageB_Plans(
   if (existingCount > 0) {
     return { inserted: 0, skipped: true };
   }
+
+  // Single correlation id for ALL 9 plan_created audit emits so
+  // cross-event log queries can stitch the seed run together as one
+  // unit-of-work. Without this, each `randomUUID()` per emit would
+  // produce 9 unrelated requestIds and forensics would have to grep
+  // by payload.plan_id (lossy when seed runs interleave).
+  const runUUID = randomUUID();
 
   // Build the draft list once, insert one-by-one through the repo.
   // Could batch but one-per-call keeps the audit-event writer happy
@@ -450,7 +468,12 @@ async function stageB_Plans(
       plan_id: row.id,
       plan_year: 2026,
       plan_name: row.name,
-      description: { en: '' },
+      // Non-empty EN required: `asLocaleText` wired into
+      // `plan-repo.ts:rowToPlan` rejects empty `en` with
+      // `EmptyEnLocaleTextError`. Fallback the description to the
+      // plan name so the integrity invariant holds + the seed
+      // remains idempotent.
+      description: { en: row.name.en, th: row.name.th, sv: row.name.sv },
       sort_order: row.sortOrder,
       plan_category: 'corporate',
       member_type_scope: row.memberType,
@@ -460,7 +483,20 @@ async function stageB_Plans(
       max_turnover_minor_units: row.maxTurnover,
       max_duration_years: row.maxDuration,
       max_member_age: row.maxAge,
-      benefit_matrix: row.matrix,
+      // Wrap brand call in try/catch so a seed matrix that drifts
+      // (e.g., corporate row accidentally gets a partnership block)
+      // fails fast with [seed] context.
+      benefit_matrix: (() => {
+        try {
+          return asBenefitMatrix(row.matrix, 'corporate');
+        } catch (e) {
+          console.error(
+            `[seed] benefit matrix integrity violation for ${row.id} (corporate):`,
+            (e as Error).message,
+          );
+          process.exit(1);
+        }
+      })(),
       isActive: true,
       createdBy: ownerUserId,
       updatedBy: ownerUserId,
@@ -472,7 +508,8 @@ async function stageB_Plans(
       plan_id: row.id,
       plan_year: 2026,
       plan_name: row.name,
-      description: { en: '' },
+      // Non-empty EN required (see CORPORATE_SEED above).
+      description: { en: row.name.en, th: row.name.th, sv: row.name.sv },
       sort_order: row.sortOrder,
       plan_category: 'partnership',
       member_type_scope: 'company',
@@ -482,21 +519,85 @@ async function stageB_Plans(
       max_turnover_minor_units: null,
       max_duration_years: null,
       max_member_age: null,
-      benefit_matrix: row.matrix,
+      // try/catch with [seed] context (see CORPORATE_SEED above).
+      benefit_matrix: (() => {
+        try {
+          return asBenefitMatrix(row.matrix, 'partnership');
+        } catch (e) {
+          console.error(
+            `[seed] benefit matrix integrity violation for ${row.id} (partnership):`,
+            (e as Error).message,
+          );
+          process.exit(1);
+        }
+      })(),
       isActive: true,
       createdBy: ownerUserId,
       updatedBy: ownerUserId,
     } as PlanDraftInput);
   }
 
+  // Per-draft tx semantics (honest documentation).
+  //
+  // `planRepo.insert(ctx, draft)` and `planAuditAdapter.record(...)`
+  // each open their OWN `runInTenant` → `db.transaction(...)` (see
+  // src/lib/db.ts:243), which is a top-level singleton call. Nested
+  // calls do NOT produce Postgres SAVEPOINTs (that would require
+  // threading `tx.transaction(...)` from an outer tx handle, which
+  // neither adapter accepts today). So each draft commits via 2
+  // independent transactions on potentially-different pool connections.
+  //
+  // Failure on draft N (R5-I3 corrected semantics):
+  //   - drafts 1..(N-1) + their audit rows: already committed
+  //   - draft N's plan row: ALWAYS committed (the await chain at
+  //     `await planRepo.insert(ctx, draft);` runs BEFORE the audit
+  //     emit at `await planAuditAdapter.record(...)`; the audit throw
+  //     can only land AFTER planRepo.insert returns successfully).
+  //   - draft N's audit row: NOT committed (it's the source of the throw).
+  //   - drafts (N+1)..9: not attempted.
+  //   - Idempotency guard `if (existingCount > 0) return skipped:true`
+  //     above will then BLOCK the next run from completing the
+  //     catalogue.
+  //
+  // Operator-cleanup procedure on failure (run as SUPERUSER):
+  //   DELETE FROM audit_log
+  //     WHERE event_type = 'plan_created'
+  //       AND tenant_id = 'swecham'
+  //       AND payload->>'plan_year' = '2026'
+  //       AND request_id LIKE 'seed-stageB-%';
+  //   DELETE FROM membership_plans
+  //     WHERE plan_year = 2026 AND tenant_id = 'swecham';
+  //
+  // R5-I10 — the `request_id LIKE 'seed-stageB-%'` filter scopes the
+  // audit DELETE to seed-script runs only, avoiding accidental
+  // deletion of `plan_created` audit rows from production admin
+  // actions on 2026 plans (e.g., a chamber admin creating a custom
+  // plan tier mid-year). The seed script writes audit rows with
+  // `requestId: \`seed-stageB-${runUUID}\`` (single correlation id
+  // per seed run); production routes use `requestId: ctx.requestId`
+  // (typically a UUID without the `seed-stageB-` prefix).
+  //
+  // True single-tx atomicity would require extending planRepo.insert
+  // + planAuditAdapter.record to accept an optional `tx` parameter
+  // (invasive — shared adapters with many callers), OR inlining raw
+  // SQL under one explicit `runInTenant(ctx, async (tx) => ...)`
+  // scope (bypasses repo abstractions). Neither is justified for a
+  // one-off catalogue seed — the idempotency guard + manual cleanup
+  // procedure is the pragmatic contract.
   for (const draft of drafts) {
     const inserted = await planRepo.insert(ctx, draft);
-    // Audit — fire and forget, one event per plan
-    await planAuditAdapter.record(
+    // Capture audit Result. F2 invariant (`recordAuditEvent`) requires
+    // audit success to be paired with domain mutation; throw on
+    // failure so the operator sees the per-draft failure point + can
+    // run the cleanup procedure above before retrying.
+    const auditResult = await planAuditAdapter.record(
       {
         tenant: ctx,
         actorUserId: ownerUserId,
-        requestId: `seed-${randomUUID()}`,
+        // Single correlation id across all 9 emits (see runUUID
+        // above). The `seed-stageB-` prefix distinguishes from
+        // ad-hoc `seed-<random>` emits in other scripts.
+        requestId: `seed-stageB-${runUUID}`,
         sourceIp: null,
       },
       {
@@ -511,6 +612,25 @@ async function stageB_Plans(
         },
       },
     );
+    if (!auditResult.ok) {
+      // R5-I3 — error message reflects the corrected per-draft tx
+      // semantics. `drafts.indexOf(draft)` is 0-based index of the
+      // current draft (the one that failed); prior drafts at indices
+      // 0..(idx-1) are fully committed (plan + audit). Draft idx's
+      // plan row IS committed (insert awaits before audit fires);
+      // its audit row is NOT (this throw is the audit failure).
+      //
+      // R6-S1 — render the prior-drafts range as "no prior drafts"
+      // when `failedIdx === 0`. Otherwise the message reads
+      // "drafts 1..0 ALREADY committed" which is a zero-width range
+      // that momentarily confuses operators reading the CLI output.
+      const failedIdx = drafts.indexOf(draft);
+      const priorDraftsSummary =
+        failedIdx === 0 ? 'no prior drafts' : `drafts 1..${failedIdx}`;
+      throw new Error(
+        `[seed] plan_created audit failed for ${inserted.plan_id} (${priorDraftsSummary} ALREADY committed + draft ${failedIdx + 1}'s plan row committed + ${failedIdx} audit rows emitted; run cleanup procedure before retry): ${JSON.stringify(auditResult.error)}`,
+      );
+    }
   }
 
   return { inserted: drafts.length, skipped: false };
@@ -538,14 +658,23 @@ async function main(): Promise<void> {
   console.log('[seed] DONE');
 }
 
-main()
-  .catch((e) => {
-    console.error('[seed] FAILED:', e instanceof Error ? e.message : e);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    // Close any pooled connections so the script exits cleanly
-    // (Drizzle's `db` doesn't expose an end() — the postgres.js client
-    // used under the hood will be collected on process exit).
-    void sql;
-  });
+// Only invoke main() when this file is executed as a CLI entry point.
+// Test files that import the exported fixture constants
+// (CORPORATE_SEED / PARTNERSHIP_SEED) must NOT trigger the seed.
+const isCliEntry =
+  process.argv[1] !== undefined &&
+  process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isCliEntry) {
+  main()
+    .catch((e) => {
+      console.error('[seed] FAILED:', e instanceof Error ? e.message : e);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      // Close any pooled connections so the script exits cleanly
+      // (Drizzle's `db` doesn't expose an end() — the postgres.js
+      // client used under the hood will be collected on process exit).
+      void sql;
+    });
+}

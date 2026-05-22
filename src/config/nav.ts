@@ -13,6 +13,7 @@ import {
   CalendarClockIcon,
   CalendarDaysIcon,
   PlugZapIcon,
+  Settings2Icon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -170,6 +171,23 @@ export const staffNavConfig: NavConfig = {
           icon: CalendarClockIcon,
           href: '/admin/settings/renewals/schedules',
           activePattern: '/admin/settings/renewals',
+        },
+        // F7.1a US2 — Broadcast settings (image-source allowlist).
+        // Relocated 2026-05-21 from `/admin/broadcasts/settings` to
+        // `/admin/settings/broadcasts` per the centralised-settings IA
+        // convention (matches F8 renewal-schedules + F4 invoice-settings
+        // + F6 EventCreate-integration patterns). The auto-derived
+        // breadcrumb reads "Settings / Broadcasts" instead of the
+        // misleading "Broadcasts / Settings" the old URL produced.
+        // Surface gated by `isF71aUs2Enabled()` server-side — when
+        // the flag is OFF the page returns notFound(); the nav entry
+        // stays visible (mirrors F6 EventCreate pattern at lines
+        // 198-208 below which does not gate on the kill-switch either).
+        {
+          titleKey: 'nav.staff.settingsBroadcasts',
+          icon: Settings2Icon,
+          href: '/admin/settings/broadcasts',
+          activePattern: '/admin/settings/broadcasts',
         },
         // F6 EventCreate integration. Spec round-2 R1 noted that the
         // entry "is a navigation-affordance decision" — initially we

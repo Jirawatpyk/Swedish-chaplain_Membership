@@ -6,7 +6,8 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
  *
  * Shape mirrors the initial "basics" step that the wizard renders on
  * first mount:
- *   - 4-item step indicator ("1. Basics · 2. Fees · 3. Benefits · 4. Review")
+ *   - 4-item step indicator approximating the canonical `<Stepper>`
+ *     primitive (size-7 circles spaced flex-1 with hairline connectors)
  *   - Separator line
  *   - "Basics" section: h2 + 2-column grid (plan_id, plan_year,
  *     plan_category, member_type_scope) + full-width plan_name label
@@ -20,12 +21,42 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
 export function PlanFormWizardSkeleton() {
   return (
     <div className="space-y-6" aria-busy="true">
-      {/* Step indicator — 4 steps */}
-      <div className="flex items-center gap-4">
+      {/* Step indicator — 4 steps; mirrors `<Stepper compact>` shape
+          (size-7 circle + connector hairlines flex-1) to keep CLS
+          minimal when the real wizard hydrates. Labels are hidden in
+          compact mode on <sm, so no SkeletonBlock for label slots. */}
+      <div className="flex w-full items-start gap-0">
         {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonBlock key={i} className="h-4 w-24" />
+          <div
+            key={i}
+            className="flex min-w-0 flex-1 flex-col items-center text-center"
+          >
+            <div className="flex w-full items-center">
+              <span
+                aria-hidden="true"
+                className={
+                  i === 0
+                    ? 'h-px flex-1 bg-transparent'
+                    : 'h-px flex-1 bg-border'
+                }
+              />
+              <SkeletonBlock className="size-7 shrink-0 rounded-full" />
+              <span
+                aria-hidden="true"
+                className={
+                  i === 3
+                    ? 'h-px flex-1 bg-transparent'
+                    : 'h-px flex-1 bg-border'
+                }
+              />
+            </div>
+          </div>
         ))}
       </div>
+      {/* Mobile compact-summary placeholder — matches the real wizard's
+          `<p className="sm:hidden">Step 2/4 — {label}</p>` so the row
+          doesn't pop in on hydrate (CLS-0). */}
+      <SkeletonBlock className="mx-auto h-4 w-32 sm:hidden" />
       {/* Separator */}
       <div className="border-t border-border" />
       {/* Basics section */}

@@ -127,7 +127,7 @@ export async function createThrowawayTenant(
         planId: 'regular',
         planYear: 2026,
         planName: { en: 'E2E Throwaway Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

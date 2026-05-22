@@ -78,8 +78,9 @@ export function isMemberTypeScope(value: unknown): value is MemberTypeScope {
  * Infrastructure repos translate to/from snake_case columns via Drizzle.
  *
  * Money fields use integer minor units only (see `money.ts`). Currency
- * lives once per tenant on `TenantFeeConfig.currency_code` — no
- * per-plan currency column exists in F2 (critique P3).
+ * is resolved per tenant via F4 `getTenantTaxPolicy` (reading
+ * `tenant_invoice_settings` — R8 consolidation, post-migration 0029).
+ * No per-plan currency column exists in F2 (critique P3).
  */
 export type Plan = {
   // Identity

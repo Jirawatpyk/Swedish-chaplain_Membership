@@ -32,7 +32,7 @@ const basePlan: Plan = {
   plan_id: asPlanSlug('premium'),
   plan_year: asPlanYear(2026),
   plan_name: planName,
-  description: { en: '' },
+  description: { en: 'Test description' },
   sort_order: 10,
   plan_category: 'corporate',
   member_type_scope: 'company',

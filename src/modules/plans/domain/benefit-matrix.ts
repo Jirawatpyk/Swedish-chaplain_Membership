@@ -47,6 +47,10 @@ export type PartnershipBenefits = {
   readonly booth_included: boolean;
   readonly rollup_logo_at_events: boolean;
   readonly logo_on_merch: boolean;
+  // Narrow union `1.0 | 1.5` enforced both at the zod write boundary
+  // (`partnershipBenefitsSchema`) AND at hydration via
+  // `asBenefitMatrix` (which now asserts the narrow values when
+  // `planCategory === 'partnership'`).
   readonly video_duration_minutes: 1.0 | 1.5;
   readonly video_frequency_scope: VideoFrequencyScope;
   readonly website_logo_months: number; // 12 / 6 / 3
@@ -58,7 +62,12 @@ export type PartnershipBenefits = {
 
 // --- Full benefit matrix ------------------------------------------------------
 
-export type BenefitMatrix = {
+/**
+ * Base fields shared by every plan category. Discriminated subtypes
+ * (`CorporateBenefitMatrix` / `PartnershipBenefitMatrix`) below add the
+ * category-specific `partnership` shape.
+ */
+type BenefitMatrixBase = {
   // Brand Visibility (both categories)
   readonly eblast_per_year: number;
   readonly website_page_type: WebsitePageType | null;
@@ -70,11 +79,148 @@ export type BenefitMatrix = {
   readonly events_cobranded_access: boolean;
   readonly cultural_tickets_per_year: number;
 
-  // Additional corporate benefits
+  // Additional corporate benefits (semantically partnership plans don't
+  // expose M2M / referrals / tailor-made — schema/DB still stores
+  // boolean, validator enforces shape per data-model.md § 2.2).
   readonly m2m_benefits_access: boolean;
   readonly business_referrals: boolean;
   readonly tailor_made_services: boolean;
+};
 
-  // Partnership-only — null for corporate plans
+/**
+ * Compile-time discriminated union over the `partnership` field. The
+ * partnership↔corporate invariant (`plan_category === 'partnership'`
+ * ⇔ non-null `partnership`) is encoded in the TYPE (not just in the
+ * smart constructor + data-model.md § 2.2 comments).
+ *
+ * Code consumers narrow via `if (matrix.partnership !== null)` to get
+ * `PartnershipBenefitMatrix`; the structural-union surface remains
+ * compatible with the existing reader call sites in
+ * `src/components/plans/**` + `src/app/(staff)/admin/plans/**`.
+ *
+ * Scope note: `Plan.benefit_matrix` continues to be `BenefitMatrix`
+ * (the union) rather than discriminating `Plan` itself. The discriminant
+ * is reachable via the matrix's `partnership` field — narrowing once
+ * via `matrix.partnership !== null` gives the consumer the variant
+ * shape it needs.
+ *
+ * Enforcement model (Option C scope-down — no symbol brand):
+ *   - Runtime: `asBenefitMatrix` smart constructor at `rowToPlan` +
+ *     the API-boundary zod schema validates the partnership↔category
+ *     invariant on every data-in path.
+ *   - Compile-time: ESLint `no-restricted-syntax` rule in
+ *     `eslint.config.mjs` bans inline `BenefitMatrix` literal
+ *     construction in `src/modules/**`, `src/components/**`,
+ *     `src/app/**`. Covered patterns: variable declaration,
+ *     `as BenefitMatrix` cast, `satisfies BenefitMatrix`, conditional
+ *     init, function-return (declaration + arrow), and class
+ *     property declaration.
+ *
+ * Tests INTENTIONALLY exempt (~92 inline literals across
+ * F4/F6/F7/F8/auth/e2e seed fixtures). They write directly to
+ * `membership_plans` via Drizzle, bypassing the smart constructor
+ * — the brand-via-symbol approach was attempted in Batch 5e but
+ * reverted (~92-file sweep didn't justify the value at that scope).
+ *
+ * A future cleanup batch could adopt the shared
+ * `DEFAULT_TEST_BENEFIT_MATRIX` helper (`tests/integration/helpers/
+ * test-benefit-matrix.ts`) in place of the per-file inline literals,
+ * then upgrade Option C → full symbol brand once the surface is
+ * consolidated. Not in scope for R4.
+ */
+export type CorporateBenefitMatrix = BenefitMatrixBase & {
+  readonly partnership: null;
+};
+
+export type PartnershipBenefitMatrix = BenefitMatrixBase & {
+  readonly partnership: PartnershipBenefits;
+};
+
+export type BenefitMatrix = CorporateBenefitMatrix | PartnershipBenefitMatrix;
+
+export class InvalidBenefitMatrixError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidBenefitMatrixError';
+  }
+}
+
+/**
+ * Loose input shape — accepts the structural type before the
+ * discriminated union narrows. Mirrors `MutableScheduledPlanChange`:
+ * the smart constructor takes this looser shape, runtime-validates,
+ * and returns the discriminated variant.
+ */
+type BenefitMatrixInput = BenefitMatrixBase & {
   readonly partnership: PartnershipBenefits | null;
 };
+
+/**
+ * Smart constructor enforcing the partnership↔corporate integrity
+ * invariant at the Domain boundary (zod `benefitMatrixSchema` covers
+ * the HTTP edge; this catches non-zod construction paths like seed
+ * scripts, test fixtures, and `plan-repo.ts:rowToPlan` hydration).
+ *
+ * - `planCategory === 'corporate'` → `partnership` MUST be null
+ * - `planCategory === 'partnership'` → `partnership` MUST be non-null
+ *
+ * Overloads narrow the return type to the discriminated variant
+ * matching the caller's `planCategory`. A code site that calls
+ * `asBenefitMatrix(m, 'partnership')` gets `PartnershipBenefitMatrix`
+ * (with non-null `partnership` field at the type level) — no need for
+ * `if (matrix.partnership !== null)` guards downstream.
+ *
+ * @throws InvalidBenefitMatrixError on mismatch
+ */
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
+  planCategory: 'corporate',
+): CorporateBenefitMatrix;
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
+  planCategory: 'partnership',
+): PartnershipBenefitMatrix;
+// Overload #3 (union-input → union-output) is INTENTIONALLY
+// kept. `plan-repo.ts:rowToPlan` calls
+// `asBenefitMatrix(matrix, row.planCategory)` where `row.planCategory`
+// is `'corporate' | 'partnership'` (the DB-pgEnum-derived union).
+// Dropping this overload would force every union-typed caller to
+// branch with `row.planCategory === 'corporate' ? asBenefitMatrix(m, 'corporate') : asBenefitMatrix(m, 'partnership')`
+// at every call site — verbose without value. Literal-string callers
+// (seed scripts, tests) resolve to the narrow overloads above.
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
+  planCategory: 'corporate' | 'partnership',
+): BenefitMatrix;
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
+  planCategory: 'corporate' | 'partnership',
+): BenefitMatrix {
+  if (planCategory === 'corporate' && input.partnership !== null) {
+    throw new InvalidBenefitMatrixError(
+      'asBenefitMatrix: corporate plan must have `partnership: null`',
+    );
+  }
+  if (planCategory === 'partnership' && input.partnership === null) {
+    throw new InvalidBenefitMatrixError(
+      'asBenefitMatrix: partnership plan must have a non-null `partnership` block',
+    );
+  }
+  // Runtime-assert the narrow union when planCategory='partnership'.
+  // Zod enforces this at write boundary; DB JSONB return is `number`
+  // which the structural type widens. A migration-introduced typo
+  // (e.g., 1.25) would otherwise slip through hydration; the smart
+  // constructor catches it.
+  if (planCategory === 'partnership' && input.partnership !== null) {
+    const v = input.partnership.video_duration_minutes;
+    if (v !== 1.0 && v !== 1.5) {
+      throw new InvalidBenefitMatrixError(
+        `asBenefitMatrix: partnership.video_duration_minutes must be 1.0 or 1.5, got ${v}`,
+      );
+    }
+  }
+  // The runtime checks above narrow `input` to the matching variant.
+  // The discriminated-union type system can't statically track that
+  // narrowing across two distinct `if` branches, so cast to the union.
+  return input as BenefitMatrix;
+}

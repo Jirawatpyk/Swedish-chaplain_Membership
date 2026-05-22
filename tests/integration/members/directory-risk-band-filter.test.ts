@@ -57,7 +57,7 @@ async function seedPlan(tenant: TestTenant, user: TestUser): Promise<string> {
       planId,
       planYear: 2026,
       planName: { en: 'Risk Band Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

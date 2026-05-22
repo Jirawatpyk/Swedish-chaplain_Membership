@@ -1,7 +1,7 @@
 /**
- * T028 — `AuditPort` Application port (F7).
+ * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 37 F7 audit event types as a const tuple + discriminated union for
+ * 58 audit event types as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -21,12 +21,22 @@
  *     `email.delivered` webhook events — was incorrectly aliased to
  *     `broadcast_send_started`)
  *   - Cross-tenant probes: 2 events
+ *   - Phase 3F.11.3 M3 operational-forensic webhook race: 1 event
+ *     (`broadcast_webhook_batch_missing` — split from cross-tenant probe)
  *   - Unsubscribe + suppression (US5): 4 events
  *   - Webhook (US4): 1 event
  *   - Plan-expiry edge (US6): 1 event
  *   - Clarifications session 5 (Q14 + Q15): 3 events
  *   - Phase 8 verify-fix R3: 2 events
- *   = 43 total
+ *   - F7.1a Phase 2 T031 (US1+US2+US7 initial CRUD): 11 events
+ *     (4 US1 retry + 4 US2 image + 3 US7 CRUD)
+ *   - R1.1 CRIT-4 snapshot moment: 1 event
+ *   - R2.1 M-test-2 seed skip: 1 event
+ *   - R3.1 C-3 snapshot refusal: 1 event
+ *   = 58 total. Static-assert at line ~170 (`extends 58`) is the
+ *   source of truth; the header summary is informational only and
+ *   should be re-derived when the assert changes. R4.3 M-8 fixed
+ *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -70,6 +80,14 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_cross_member_probe',
   'broadcast_cross_tenant_probe',
 
+  // --- Phase 3F.11.3 M3 (Round 2 closure) — operational-forensic ----
+  // `broadcast_webhook_batch_missing` covers the BENIGN Resend webhook
+  // race (BYPASSRLS resolves tenant, incrementCounter finds 0 rows
+  // because the batch was force-deleted). Separated from the
+  // security-forensic `broadcast_cross_tenant_probe` to keep SIEM
+  // alerts noise-free. Added via migration 0173.
+  'broadcast_webhook_batch_missing',
+
   // --- Unsubscribe + suppression (US5) — 4 events --------------------
   // All US5-deferred — emit sites land with the public unsubscribe
   // page + suppression-applied state machine in a follow-up phase.
@@ -98,15 +116,60 @@ export const F7_AUDIT_EVENT_TYPES = [
   // (F3 archive cascade / contact deletion). Audit records the missed
   // notification so compliance review has a durable trail.
   'broadcast_dispatch_failure_notif_skipped_no_email',
+
+  // --- F7.1a US1 (Pagination + retry loop) — 4 events ----------------
+  // (T031 Phase 2, FR-002 / FR-008a-d). Migration 0167 added these enum
+  // values to the DB; this list mirrors the DB enum + data-model § 7
+  // taxonomy. All 5y retention via Constitution v1.4.0 trigger.
+  'broadcast_dispatched_in_batches',
+  'broadcast_retry_initiated',
+  'broadcast_retry_completed',
+  'broadcast_partial_delivery_accepted',
+
+  // --- F7.1a US2 (Image embedding + allowlist + scan) — 4 events ----
+  'broadcast_body_image_source_unsafe',
+  'broadcast_image_too_large',
+  'broadcast_image_unsafe',
+  'broadcast_image_allowlist_updated',
+
+  // --- F7.1a US7 (Template library CRUD) — 4 events -----------------
+  'broadcast_template_created',
+  'broadcast_template_updated',
+  'broadcast_template_deleted',
+  // R1.1 (review Round 1 CRIT-4): snapshot moment audit so forensics
+  // can answer "who pulled which template into draft X at when". Emitted
+  // inside the snapshot use-case's withTx atomically with the body+
+  // counter mutations (Constitution I clause 3).
+  'broadcast_template_snapshotted',
+  // R2.1 M-test-2 (review Round 1 close-out): seed-time skip event for
+  // forensic forensics when the migration 0168 ON CONFLICT DO NOTHING
+  // path silently drops a starter template row because the tenant
+  // pre-seeded a template with the same (name, locale) tuple. Forward-
+  // looking emit hook — current migration runs ONCE at first apply
+  // (rare conflict surface); a future Application-layer re-seed use-
+  // case will be the primary emit caller.
+  'broadcast_template_seed_skipped_existing_name',
+  // R3.1 C-3 (Round 2 close-out): distinct event for when the snapshot
+  // use-case refuses a soft-deleted template (TOCTOU race after the
+  // picker rendered). Round 1 mistakenly reused `broadcast_template_
+  // snapshotted` for both success + refusal, breaking SIEM count
+  // filters (refusals counted as successes). Same payload shape as the
+  // success event so forensic pivots can join the two.
+  'broadcast_template_snapshot_refused_deleted',
 ] as const;
 
 /**
- * Static assertion: count matches the declared 43. Catches drift if a
- * spec amendment adds an event without updating this file. The check
- * lives at type level; if the count is wrong, TypeScript errors here
- * with "Type '44' is not assignable to type '43'" (or similar).
+ * Static assertion: count matches the declared 58 (= 43 F7 MVP + 11
+ * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
+ * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
+ * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted` +
+ * 1 R2.1 M-test-2 `broadcast_template_seed_skipped_existing_name` +
+ * 1 R3.1 C-3 `broadcast_template_snapshot_refused_deleted`).
+ * Catches drift if a spec amendment adds an event without updating this
+ * file. The check lives at type level; if the count is wrong, TypeScript
+ * errors here with "Type '59' is not assignable to type '58'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 43
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 58
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -164,8 +227,8 @@ export function isF7AuditEventType(
  * test-first principle).
  *
  * If a new event needs typed-payload enforcement, add it to this map
- * AND a `F7AuditPayloadFor<E>` derivation in the typed-emit helper
- * (`emitTyped` below).
+ * and the `keyof F7AuditPayloadShapes` constraint on `emitTyped<E>`
+ * (below) automatically admits the new event.
  */
 export interface F7AuditPayloadShapes {
   readonly broadcast_submitted: {
@@ -173,6 +236,9 @@ export interface F7AuditPayloadShapes {
     readonly actorRole: 'member_self_service' | 'admin_proxy';
     readonly segmentType: string;
     readonly estimatedRecipientCount: number;
+    // R1.1 M-code-2: FR-022 analytics field — null when draft began
+    // Blank, populated when draft was started from a template via T102.
+    readonly startedFromTemplateId: string | null;
   };
   readonly broadcast_cancelled: {
     readonly broadcastId: string;
@@ -197,11 +263,53 @@ export interface F7AuditPayloadShapes {
   };
   readonly broadcast_cross_tenant_probe: {
     readonly probedTenantId: string;
-    readonly probedBroadcastId: string;
+    // R1.1 H-code-4: one of probedBroadcastId | probedTemplateId is set,
+    // discriminated by resourceKind. Older emit sites pre-R1.1 omit
+    // resourceKind (treated as 'broadcast' default for back-compat).
+    readonly probedBroadcastId?: string;
+    readonly probedTemplateId?: string;
+    readonly resourceKind?: 'broadcast' | 'template';
   };
   readonly broadcast_cross_member_probe: {
     readonly probedMemberId: string;
     readonly probedBroadcastId: string;
+  };
+  readonly broadcast_webhook_batch_missing: {
+    readonly broadcastId: string;
+    readonly batchManifestId: string;
+    readonly batchIndex: number;
+    readonly resendEventId: string;
+    readonly resendEventType: string;
+  };
+  // R1.1 CRIT-4: snapshot-moment forensic audit. Emitted inside the
+  // snapshot use-case's withTx so audit row + body mutation + counter
+  // increment co-commit (Constitution I clause 3 atomicity).
+  readonly broadcast_template_snapshotted: {
+    readonly broadcastId: string;
+    readonly templateId: string;
+    readonly templateNameSnapshot: string;
+    readonly memberId: string;
+  };
+  // R2.1 M-test-2 — seed-time conflict between a starter template's
+  // (name, locale) and a tenant-pre-existing template with the same
+  // tuple. ON CONFLICT DO NOTHING in migration 0168 silently dropped
+  // the starter row; this audit row makes the skip forensically
+  // visible.
+  readonly broadcast_template_seed_skipped_existing_name: {
+    readonly tenantId: string;
+    readonly attemptedName: string;
+    readonly locale: 'en' | 'th' | 'sv';
+    readonly source: 'starter_seed' | 'admin_reseed';
+  };
+  // R3.1 C-3 — snapshot use-case refused a soft-deleted template
+  // (TOCTOU race after picker rendered). Same payload shape as the
+  // success event `broadcast_template_snapshotted` so SIEM can
+  // pivot/join the two for "refusal-to-success ratio" alerts.
+  readonly broadcast_template_snapshot_refused_deleted: {
+    readonly broadcastId: string;
+    readonly templateId: string;
+    readonly templateNameSnapshot: string;
+    readonly memberId: string;
   };
   readonly broadcast_webhook_signature_rejected: {
     readonly reason:
@@ -212,15 +320,14 @@ export interface F7AuditPayloadShapes {
   };
 }
 
-/**
- * Mapped type — `F7AuditPayloadFor<'broadcast_submitted'>` resolves to
- * the per-event payload shape, defaulting to the wide
- * `Record<string, unknown>` for events not yet in `F7AuditPayloadShapes`.
- */
-export type F7AuditPayloadFor<E extends F7AuditEventType> =
-  E extends keyof F7AuditPayloadShapes
-    ? F7AuditPayloadShapes[E]
-    : Record<string, unknown>;
+// R8.1 M-2 — the `F7AuditPayloadFor<E>` mapped type (Round 5 type-
+// design) was retired here. Post-R6.7, `emitTyped<E>` constrains
+// `E extends keyof F7AuditPayloadShapes`, so the mapped type's
+// `: Record<string, unknown>` fallback arm became dead code (no
+// caller could trigger it). The remaining typed call sites use
+// `F7AuditPayloadShapes[E]` directly via `TypedAuditEmitInput<E>`.
+// Untyped legacy emit sites continue to use `AuditEmitInput.payload`
+// (wide `Record<string, unknown>`) below.
 
 /**
  * F7 audit event payload contract. F7 emit sites populate `payload`
@@ -228,11 +335,10 @@ export type F7AuditPayloadFor<E extends F7AuditEventType> =
  * `broadcast_submitted` carries `broadcastId`, `segmentType`,
  * `estimatedRecipientCount`, etc.).
  *
- * The structural payload contract is `F7AuditPayloadShapes` /
- * `F7AuditPayloadFor<E>` above (Round 5 type-design). The port keeps
- * the wide `Record<string, unknown>` payload field for back-compat
- * with the ~50 untyped emit sites; new emit sites SHOULD migrate to
- * the typed helper once a per-event entry is added to
+ * The structural payload contract is `F7AuditPayloadShapes`. The port
+ * keeps the wide `Record<string, unknown>` payload field for back-
+ * compat with the ~50 untyped emit sites; new emit sites SHOULD use
+ * `emitTyped<E>` once a per-event entry is added to
  * `F7AuditPayloadShapes`.
  */
 export interface F7AuditEvent {
@@ -240,6 +346,31 @@ export interface F7AuditEvent {
   readonly actorUserId: string;
   readonly summary: string;
   readonly payload: Record<string, unknown>;
+}
+
+/**
+ * Tagged error class for AuditPort adapter invariant violations.
+ *
+ * F7.1b B3 closure 2026-05-21 — replaces the previous fragile string-
+ * prefix matching (`message.startsWith('f7AuditAdapter:')`) with a
+ * proper `instanceof AuditPortInvariantError` discriminator. The
+ * adapter throws this when a programmer-bug is detected (e.g. a
+ * mutation tx passed with null tenantId) — distinct from transient
+ * storage failures that should be swallowed by `safeAuditEmit` +
+ * metered via `broadcastsMetrics.auditEmitFailed`.
+ *
+ * Callers (in `safeAuditEmit` / `safeAuditEmitTyped`) re-throw on
+ * `instanceof AuditPortInvariantError` so the bug surfaces as a 5xx at
+ * the route boundary instead of silently dropping the audit row.
+ */
+export class AuditPortInvariantError extends Error {
+  constructor(
+    public readonly eventType: string,
+    detail: string,
+  ) {
+    super(`AuditPortInvariantError(${eventType}): ${detail}`);
+    this.name = 'AuditPortInvariantError';
+  }
 }
 
 export interface AuditEmitInput extends F7AuditEvent {
@@ -277,4 +408,51 @@ export interface AuditEmitInput extends F7AuditEvent {
  */
 export interface AuditPort {
   emit(tx: unknown, event: AuditEmitInput): Promise<void>;
+  /**
+   * R4.3 M-15 — typed emit variant. The `payload` field is constrained
+   * by `F7AuditPayloadShapes[E]` (the per-event payload shape) so the
+   * compiler catches missing or misshapen fields at the call site.
+   *
+   * R6.2 H1 — REQUIRED on the port. The R4.3 M-15 optional marker
+   * caused TypeScript to lose narrowing at every call site that fell
+   * back via `(audit.emitTyped ?? audit.emit).call(...)` (function-
+   * union + `Function.prototype.call` widened the payload type back
+   * to `Record<string, unknown>`). Every adapter MUST implement it;
+   * the production `f7AuditAdapter` provides a structural pass-through
+   * to `emit`, and test fixtures declare both methods (typically the
+   * same `vi.fn()` so behaviour mirrors).
+   *
+   * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
+   * (all 58 events) to `keyof F7AuditPayloadShapes` (12 typed events).
+   * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
+   * 'broadcast_drafted', payload: { whatever } })` and the payload
+   * silently fell back to `Record<string, unknown>` via a now-retired
+   * `F7AuditPayloadFor<E>` mapped-type (R8.1 M-2 dropped). Now the
+   * constraint forces a deliberate choice: untyped events MUST go
+   * through `emit`; only events with a declared `F7AuditPayloadShapes`
+   * entry are eligible for `emitTyped`. Adding a new event to the
+   * typed map immediately makes it available to `emitTyped`.
+   */
+  emitTyped<E extends keyof F7AuditPayloadShapes>(
+    tx: unknown,
+    event: TypedAuditEmitInput<E>,
+  ): Promise<void>;
+}
+
+/**
+ * Typed counterpart of `AuditEmitInput`. The discriminant
+ * `eventType: E` narrows the payload shape via `F7AuditPayloadShapes[E]`.
+ *
+ * R6.7 M12 — generic constraint mirrors `AuditPort.emitTyped<E>`:
+ * `keyof F7AuditPayloadShapes` (NOT `F7AuditEventType`) so the typed
+ * input shape only admits events whose payload is structurally
+ * declared.
+ */
+export interface TypedAuditEmitInput<E extends keyof F7AuditPayloadShapes> {
+  readonly eventType: E;
+  readonly actorUserId: string;
+  readonly summary: string;
+  readonly payload: F7AuditPayloadShapes[E];
+  readonly tenantId: string | null;
+  readonly requestId: string | null;
 }

@@ -1,6 +1,7 @@
 /**
- * F2 audit events — 10 new snake_case event types extending F1's
- * `audit_event_type` pgEnum.
+ * F2 audit events — 13 snake_case event types extending F1's
+ * `audit_event_type` pgEnum (9 `plan_*` lifecycle + 4 `plan_change_*`
+ * scheduled-plan-change lifecycle).
  *
  * See data-model.md § 2.6 + § 2.6a for the normative payload shapes
  * and critique P9 for the single-source-of-truth zod schema design
@@ -18,9 +19,27 @@
  */
 
 import { z } from 'zod';
+import type { Plan } from './plan';
 
 // --- Event type union ---------------------------------------------------------
 
+// Emit sites:
+//   plan_{created,updated,cloned,activated,deactivated,soft_deleted,
+//         undeleted,not_found,cross_tenant_probe}
+//     → F2 Application use-cases under `src/modules/plans/application/**`
+//   plan_change_scheduled / plan_change_superseded
+//     → `src/modules/plans/application/schedule-next-renewal-plan-change.ts` +
+//       `src/modules/renewals/application/use-cases/accept-tier-upgrade.ts` post-tx
+//   plan_change_cancelled
+//     → `src/modules/plans/application/cancel-scheduled-plan-change.ts`
+//       (admin route at `src/app/api/admin/scheduled-plan-changes/[id]/cancel/route.ts`)
+//   plan_change_applied
+//     → `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`
+//       (post-tx, after F4 invoice-paid commits)
+//
+// `fee_config_updated` was retired in R7/R8 (migration 0029); the
+// pgEnum value remains in F1 schema for historical rows but is NOT in
+// this Domain union.
 export const F2_AUDIT_EVENT_TYPES = [
   'plan_created',
   'plan_updated',
@@ -31,12 +50,6 @@ export const F2_AUDIT_EVENT_TYPES = [
   'plan_undeleted',
   'plan_not_found',
   'plan_cross_tenant_probe',
-  'fee_config_updated',
-  // F8 Phase 2 Wave C T029c (migration 0095) — scheduled-plan-change
-  // lifecycle audit trail. Wave B G1 verify-run remediation carry-over.
-  // Emitted by the F2 scheduled-plan-change use-cases (Wave G+ when
-  // composition root wires the audit emit hook into the use-cases
-  // alongside the Drizzle adapter that ships per Phase 5+).
   'plan_change_scheduled',
   'plan_change_superseded',
   'plan_change_cancelled',
@@ -59,7 +72,6 @@ export const EVENT_SEVERITY: Record<F2AuditEventType, AuditSeverity> = {
   plan_undeleted: 'info',
   plan_not_found: 'info',
   plan_cross_tenant_probe: 'high',
-  fee_config_updated: 'info',
   // F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle.
   plan_change_scheduled: 'info',
   plan_change_superseded: 'info',
@@ -70,11 +82,48 @@ export const EVENT_SEVERITY: Record<F2AuditEventType, AuditSeverity> = {
 // --- Normative diff shape (critique P9) ---------------------------------------
 
 /**
+ * Typed enum of diffable Plan field names. A typo like `'plan_naem'`
+ * in an emit site would otherwise log under
+ * the wrong key + silently fail any downstream "diff keys must be
+ * valid Plan field names" assertion. The `as const satisfies` chain
+ * ties the runtime literal array to `keyof Plan` so a future Plan
+ * field rename fails compile here.
+ *
+ * `tenant_id` + identity fields (`plan_id`, `plan_year`) are EXCLUDED
+ * because they're immutable post-create — a diff entry referencing
+ * them would be a bug.
+ */
+export const KNOWN_DIFF_FIELDS = [
+  'plan_name',
+  'description',
+  'sort_order',
+  'plan_category',
+  'member_type_scope',
+  'annual_fee_minor_units',
+  'includes_corporate_plan_id',
+  'min_turnover_minor_units',
+  'max_turnover_minor_units',
+  'max_duration_years',
+  'max_member_age',
+  'benefit_matrix',
+  'is_active',
+  'deleted_at',
+  'updated_at',
+  'updated_by',
+] as const satisfies ReadonlyArray<keyof Plan>;
+
+export type DiffableField = (typeof KNOWN_DIFF_FIELDS)[number];
+
+/**
  * `{ [field]: { before, after } }` — only changed fields appear.
  * Create events have `before: null`; delete events have `after: null`.
+ *
+ * Keys are constrained to `DiffableField`. Emit sites that pass an
+ * unknown field name are rejected at the zod boundary AND at the
+ * TypeScript level via the `AuditDiff` type below.
  */
 export const auditDiffSchema = z.record(
-  z.string(),
+  z.enum(KNOWN_DIFF_FIELDS),
   z.object({
     before: z.unknown(),
     after: z.unknown(),
@@ -86,14 +135,31 @@ export const auditDiffSchema = z.record(
  * could cause the recorded audit event to diverge from the caller's
  * intent if the write is async-interleaved.
  *
+ * Keys are constrained to `DiffableField`. Emit sites that try to log
+ * under an arbitrary string key get a compile error. `Partial<>`
+ * because not every field is in every diff (only changed fields appear).
+ *
  * Use `MutableAuditDiff` for construction, then widen to `AuditDiff`.
  */
+// `before?: unknown; after?: unknown` (optional, not required)
+// to match the zod inference of `z.unknown()` which makes fields
+// optional. The drift guard at the bottom of this file now asserts
+// mutual assignability between this hand-written type and
+// `z.infer<typeof auditPayloadSchema>`; making the fields optional
+// here aligns the two sides without altering runtime semantics
+// (callers always supply both fields in practice — `recordAuditEvent`
+// emit sites build diffs via `MutableAuditDiff` and never partially
+// populate).
 export type AuditDiff = Readonly<
-  Record<string, Readonly<{ before: unknown; after: unknown }>>
+  Partial<
+    Record<DiffableField, Readonly<{ before?: unknown; after?: unknown }>>
+  >
 >;
 
 /** Mutable builder type — use for constructing diffs, then assign to `AuditDiff`. */
-export type MutableAuditDiff = Record<string, { before: unknown; after: unknown }>;
+export type MutableAuditDiff = Partial<
+  Record<DiffableField, { before?: unknown; after?: unknown }>
+>;
 
 // --- Per-event payload schemas (single source of truth per data-model § 2.6) --
 
@@ -149,10 +215,6 @@ const planCrossTenantProbePayload = z.object({
   original_event_id: z.string().min(1),
   actor_user_id: z.string().min(1),
   escalation_reason: z.string().min(1).max(500),
-});
-
-const feeConfigUpdatedPayload = z.object({
-  diff: auditDiffSchema,
 });
 
 // --- F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle payloads ---
@@ -211,7 +273,6 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
     event_type: z.literal('plan_cross_tenant_probe'),
     payload: planCrossTenantProbePayload,
   }),
-  z.object({ event_type: z.literal('fee_config_updated'), payload: feeConfigUpdatedPayload }),
   // F8 Phase 2 Wave C T029c.
   z.object({
     event_type: z.literal('plan_change_scheduled'),
@@ -231,9 +292,200 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
   }),
 ]);
 
-export type F2AuditEvent = z.infer<typeof auditPayloadSchema>;
+/**
+ * Hand-written discriminated union for `F2AuditEvent`. Previously
+ * `F2AuditEvent = z.infer<typeof auditPayloadSchema>` chained the
+ * Domain type to a specific zod version forever (every consumer
+ * transitively imported zod). The hand-written union below decouples
+ * Domain types from the runtime validator: `auditPayloadSchema`
+ * validates HTTP-boundary input; `F2AuditEvent` is the compile-time
+ * contract that propagates through use-cases, ports, and adapters.
+ *
+ * **Drift defence**: the `_AssertHandWrittenMatchesZodInfer` type
+ * + `_handWrittenMatchesZodInfer` const witness below use mutual
+ * structural assignability to fail compilation if the hand-written
+ * union diverges from `z.infer<typeof auditPayloadSchema>`. Any
+ * future payload-schema change must update BOTH the zod schema
+ * (above) AND the hand-written type (below) — TypeScript catches
+ * the drift instantly.
+ */
+export type F2AuditEvent =
+  | {
+      readonly event_type: 'plan_created';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly plan_name_en: string;
+        readonly annual_fee_minor_units: number;
+        readonly category: 'corporate' | 'partnership';
+        readonly member_type_scope: 'company' | 'individual' | 'both';
+      };
+    }
+  | {
+      readonly event_type: 'plan_updated';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff: AuditDiff;
+      };
+    }
+  | {
+      readonly event_type: 'plan_cloned';
+      readonly payload: {
+        readonly source_year: number;
+        readonly target_year: number;
+        readonly plan_ids: ReadonlyArray<string>;
+        readonly count: number;
+      };
+    }
+  | {
+      readonly event_type: 'plan_activated';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_deactivated';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_soft_deleted';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_undeleted';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_not_found';
+      readonly payload: {
+        readonly requested_plan_id: string;
+        readonly requested_year: number;
+        readonly method: 'GET' | 'PATCH' | 'DELETE' | 'POST';
+        readonly route: string;
+      };
+    }
+  | {
+      readonly event_type: 'plan_cross_tenant_probe';
+      readonly payload: {
+        readonly requested_plan_id: string;
+        readonly found_in_tenant_id: string;
+        readonly original_event_id: string;
+        readonly actor_user_id: string;
+        readonly escalation_reason: string;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_scheduled';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly from_plan_id: string;
+        readonly to_plan_id: string;
+        readonly reason?: string | null | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_superseded';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly superseded_by_scheduled_change_id?: string | null | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_cancelled';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly reason?: string | null | undefined;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_applied';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly from_plan_id: string;
+        readonly to_plan_id: string;
+        readonly applied_at_invoice_id?: string | null | undefined;
+      };
+    };
 
-/** Narrow runtime check that a value is one of the 10 F2 event types. */
+// Compile-time drift defence. Mutual structural assignability between
+// the hand-written union (above) and the zod-inferred type (below).
+// If either diverges, this assertion fails compile and the maintainer
+// must update BOTH.
+//
+// The pattern uses a mutual-conditional TUPLE with a const
+// witness so the assertion is actually evaluated. A bare unused
+// `type` alias that resolves to `never` does NOT trigger a compile
+// error in TypeScript — only assignment of an incompatible value
+// (`true` to `never`) does. Mirror of `_gatewayResultArmsLocked` in
+// `src/modules/renewals/application/use-cases/accept-tier-upgrade.ts`.
+//
+// Both sides are normalised via `DeepReadonly` before comparison so
+// readonly-modifier drift (the hand-written union uses
+// `readonly`/`ReadonlyArray`; zod infers mutable arrays/objects)
+// does not cause spurious divergence. The drift guard fails ONLY on
+// genuine field-shape divergence — extra/missing/renamed fields,
+// wrong literal types, etc.
+//
+// Optional-vs-required drift IS caught (validated empirically when
+// `_AssertHandWrittenMatchesZodInfer` was wired in Batch 5b — the
+// guard surfaced 8 pre-existing nullable-optional field divergences
+// across plan_activated/plan_deactivated/plan_soft_deleted/plan_undeleted
+// /plan_change_scheduled/plan_change_superseded/plan_change_cancelled/
+// plan_change_applied). For example: `z.string().nullable().optional()`
+// infers as `T | null | undefined` with optional key — if the hand-
+// written declares `field: string | null` (REQUIRED key) or `field?:
+// string | null` (optional key WITHOUT undefined value under
+// `exactOptionalPropertyTypes: true`), the guard catches the
+// asymmetry. Similarly, `z.string().default('')` infers as `string`
+// (required, non-nullable); a hand-written `?: string` mismatch
+// would fail.
+// Note: this DeepReadonly assumes plain-object payloads only — no
+// `Map`, `Set`, `Date`, or function types. F2 audit-event payloads
+// contain primitives + nested objects + ReadonlyArrays only, so the
+// assumption holds today. If a future payload schema adds a `Map`-
+// or `Date`-valued field, extend the mapped type before relying on
+// the drift guard.
+type DeepReadonly<T> = T extends ReadonlyArray<infer U>
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T;
+type _ZodInfer = DeepReadonly<z.infer<typeof auditPayloadSchema>>;
+type _F2AuditEventCanonical = DeepReadonly<F2AuditEvent>;
+type _AssertHandWrittenMatchesZodInfer = [
+  _F2AuditEventCanonical extends _ZodInfer ? true : never,
+  _ZodInfer extends _F2AuditEventCanonical ? true : never,
+];
+const _handWrittenMatchesZodInfer: _AssertHandWrittenMatchesZodInfer = [
+  true,
+  true,
+];
+void _handWrittenMatchesZodInfer;
+
+/** Narrow runtime check that a value is one of the 13 F2 event types. */
 export function isF2AuditEventType(value: unknown): value is F2AuditEventType {
   return (
     typeof value === 'string' &&

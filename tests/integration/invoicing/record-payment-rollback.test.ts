@@ -67,7 +67,7 @@ async function seedIssuedInvoice(
       planId,
       planYear: 2026,
       planName: { en: 'R3-S1 Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

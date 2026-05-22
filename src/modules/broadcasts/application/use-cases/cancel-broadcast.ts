@@ -19,9 +19,11 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
+import { asTxToken } from '../ports/advisory-lock-port';
 import type { AuditPort } from '../ports/audit-port';
 import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
@@ -59,6 +61,19 @@ export interface CancelBroadcastDeps {
   readonly emailTransactional?: EmailTransactionalPort;
   /** R4 Types-#6 — see approve-broadcast.ts. */
   readonly membersBridge?: MembersBridgePort;
+  /**
+   * F7.1a US1 FR-004 (Phase 3E.3 fix 2026-05-19) — halt all not-yet-
+   * dispatched batch_manifests when the broadcast is cancelled in
+   * `sending` state. Optional for backward compat with F7 MVP tests
+   * that mock the deps without batch awareness; production factory
+   * (`makeCancelBroadcastDeps`) wires the real Drizzle port.
+   *
+   * When undefined: batches are not halted (F7 MVP behaviour). When
+   * provided: cancellation calls `markCancelled(slug, pendingIds)`
+   * before the broadcast-row transition so the dispatcher cron can
+   * no longer pick up the now-stale pending rows.
+   */
+  readonly batchManifests?: import('../ports/batch-manifests-port').BatchManifestsPort;
 }
 
 export interface CancelBroadcastInput {
@@ -102,6 +117,27 @@ export async function cancelBroadcast(
         input.broadcastId,
       );
       if (existing === null) {
+        // Phase 3F.11.3 (M1 — Round 2 fix) + H5 Round 2 closure 2026-05-21
+        // (review finding simplifier H5): consolidated to the canonical
+        // `emitCrossTenantProbe` helper — mirrors the retry-failed-batches
+        // + accept-partial-delivery pattern. Member-actor branch BELOW
+        // intentionally returns the same `broadcast_not_found` shape
+        // WITHOUT audit emit to avoid existence-leak (member probing
+        // another member's broadcast must look identical to a probe of
+        // a nonexistent one).
+        if (input.actor.kind === 'admin') {
+          await emitCrossTenantProbe({
+            audit: deps.audit,
+            tenantId: deps.tenant.slug,
+            actorUserId,
+            requestId: input.requestId,
+            surface: {
+              kind: 'broadcast',
+              broadcastId: input.broadcastId as string,
+              useCase: 'cancel-broadcast',
+            },
+          });
+        }
         return err({
           kind: 'broadcast_not_found',
           broadcastId: input.broadcastId as string,
@@ -120,7 +156,29 @@ export async function cancelBroadcast(
         });
       }
 
-      const policyResult = authorizeCancel(existing.status);
+      // Phase 3F.1 (Finding 4 fix) — pre-check pending batches BEFORE
+      // policy authorization. The widened `authorizeCancel(status,
+      // hasBatches)` accepts `sending` IFF the broadcast was split
+      // into batches (F7.1a US1 path). When NO batches exist (F7 MVP
+      // single-audience path), the original `sending → cutoff` rule
+      // still applies — we can't recall a Resend-accepted broadcast.
+      // Phase 3F.11.3 (M1 — Round 2 fix) — skip pending-batch lookup
+      // unless status carries batches (saves a DB roundtrip on the
+      // common cancel-of-non-multi-audience path).
+      let pendingBatchIds: readonly string[] = [];
+      let hasBatches = false;
+      const statusMightHaveBatches =
+        existing.status === 'approved' || existing.status === 'sending';
+      if (deps.batchManifests !== undefined && statusMightHaveBatches) {
+        const pendingBatches = await deps.batchManifests.findPendingByBroadcast(
+          deps.tenant.slug as never,
+          input.broadcastId,
+        );
+        pendingBatchIds = pendingBatches.map((b) => b.id);
+        hasBatches = pendingBatchIds.length > 0;
+      }
+
+      const policyResult = authorizeCancel(existing.status, hasBatches);
       if (!policyResult.ok) {
         // R7 staff-review MED-R2 — `null` tx is intentional here: the
         // policy reject branch performs NO state mutation (no UPDATE,
@@ -167,6 +225,39 @@ export async function cancelBroadcast(
       }
 
       let cancelled: Broadcast;
+      // F7.1a US1 FR-004 (Phase 3F.1 hardening — F-21 atomicity fix).
+      // When the broadcast has pending batches (already discovered
+      // above for the policy check), halt them BEFORE the broadcast-
+      // row transition AND WITHIN the same withTx scope (pass `tx` to
+      // markCancelled). If the subsequent applyTransition throws, the
+      // outer tx rollback now also reverts the batch halts → no half-
+      // committed "M batches cancelled + broadcast still sending"
+      // inconsistency. Log halt count for ops observability.
+      let haltedCount = 0;
+      if (hasBatches) {
+        // Phase 3F.11.13 (Step 3) — brand the raw `tx` (typed as
+        // `unknown` by F7 MVP `BroadcastsRepo.withTx`'s callback —
+        // not widened in Step 2 since F7 MVP shares this repo). The
+        // markCancelled port now requires TxToken, so we brand at
+        // the call site (last surviving asTxToken boundary).
+        haltedCount = await deps.batchManifests!.markCancelled(
+          deps.tenant.slug as never,
+          pendingBatchIds,
+          asTxToken(tx),
+        );
+        if (haltedCount < pendingBatchIds.length) {
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              requested: pendingBatchIds.length,
+              halted: haltedCount,
+            },
+            'broadcasts.cancel.batch_halt_partial',
+          );
+        }
+      }
+
       try {
         // Verify-fix R3 (Code-M1, 2026-05-02): pass `expectedFromStatus`
         // (G1 race-guard) so a concurrent dispatch worker that just

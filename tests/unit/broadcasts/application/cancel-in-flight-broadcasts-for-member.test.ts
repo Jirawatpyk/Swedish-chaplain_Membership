@@ -142,7 +142,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       applyTransitionImpl: async ({ broadcastId }) => {
         if (broadcastId === broadcastIdA) {
           throw new BroadcastConcurrentMutationError(
-            'test-tenant',
+            'test-tenant' as never,
             broadcastIdA as never,
             'sending',
           );

@@ -1,0 +1,32 @@
+-- ---------------------------------------------------------------------------
+-- F7.1a Phase 3F.11.3 (M3 — Round 2 closure) — Operational-forensic
+-- audit event split.
+--
+-- Round 2 review surfaced that `broadcast_cross_tenant_probe` (added
+-- in F7 MVP for security-forensic admin/member probes) was being
+-- emitted by the Resend webhook race-window path in
+-- apply-batch-webhook-event.ts. This pollutes the security audit
+-- feed because the webhook race is BENIGN (admin force-deleted a
+-- batch between BYPASSRLS lookup and incrementCounter — operational
+-- concern, not a security probe).
+--
+-- This migration adds `broadcast_webhook_batch_missing` as a distinct
+-- operational-forensic event type, separating the SIEM-relevant
+-- security feed from the ops-only operational-forensic alerts.
+--
+-- All F7.1a audit events default to 5-year retention via the
+-- Constitution v1.4.0 trigger on audit_log.retention_years (added
+-- in migration 0063). No per-event retention grant needed —
+-- broadcast_webhook_batch_missing carries no tax-document or
+-- regulated-data semantic.
+--
+-- Application-layer emit site: apply-batch-webhook-event.ts (was
+-- emitting broadcast_cross_tenant_probe; updated in this same Phase
+-- 3F.11.3 commit to emit broadcast_webhook_batch_missing).
+--
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot share a tx with
+-- other DDL — single ADD VALUE statement, IF NOT EXISTS for idempotent
+-- re-apply per migration 0167's established pattern.
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_webhook_batch_missing';

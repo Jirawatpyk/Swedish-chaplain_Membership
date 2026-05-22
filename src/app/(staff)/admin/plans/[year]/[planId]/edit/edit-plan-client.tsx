@@ -92,15 +92,17 @@ export function EditPlanClient({
       const errorCode = body?.error?.code ?? 'generic';
       if (errorCode === 'prior_year_locked_fields') {
         const fields = (body.error.details?.locked_fields ?? []).join(', ');
-        toast.error(
-          `Cannot edit locked fields on prior-year plan: ${fields}. Use the clone flow instead.`,
-        );
+        toast.error(t('errors.priorYearLocked', { fields }));
       } else if (errorCode === 'not_found') {
         toast.error(t('errors.notFound'));
       } else {
         toast.error(t('errors.generic'));
       }
-    } catch {
+    } catch (err) {
+      // Surface client-side throws (network, AbortError, TypeError) to
+      // browser DevTools so they aren't swallowed under a generic
+      // "network" toast.
+      console.error('[plans/edit] submit threw', err);
       toast.error(t('errors.network'));
     } finally {
       setSubmitting(false);

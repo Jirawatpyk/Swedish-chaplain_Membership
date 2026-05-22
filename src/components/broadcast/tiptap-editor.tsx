@@ -10,56 +10,84 @@
  *   - `StarterKit` is loaded as-is (Image extension is NOT registered
  *     by default in StarterKit ≥ 3.x, so no explicit disable required —
  *     verified against package.json @tiptap/starter-kit@3.22.5).
+ *   - F7.1a US2 (T078): when `imagesEnabled` is true, the
+ *     `broadcastImageExtension` (T073) is registered and the paste
+ *     sanitiser permits `<img src,alt>` for http(s) only — mirroring
+ *     the server DOMPurify policy. The inline-image uploader +
+ *     ClamAV-unreachable banner render inside the editor wrapper
+ *     when enabled.
  *   - Paste handler runs `isomorphic-dompurify` on pasted HTML and emits
  *     a `sanitiser-strip-warn` toast when the sanitiser strips content
  *     (R2-NEW-2; signals user that some formatting was removed)
  *   - ARIA-live region announces editor state changes (CHK029)
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import DOMPurify from 'isomorphic-dompurify';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Info } from 'lucide-react';
 import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
+import { broadcastImageExtension } from '@/modules/broadcasts/infrastructure/tiptap-image-extension-config';
+import { broadcastBracketPlaceholderExtension } from '@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config';
+import { ComposeInlineImageUploader } from './compose-inline-image-uploader';
+import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
 
-const SANITIZER_CONFIG = Object.freeze({
-  ALLOWED_TAGS: [
-    'p',
-    'br',
-    'strong',
-    'em',
-    'u',
-    'a',
-    'ul',
-    'ol',
-    'li',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'blockquote',
-    'hr',
-  ],
-  ALLOWED_ATTR: ['href'],
-  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
-  FORBID_TAGS: [
-    'script',
-    'style',
-    'iframe',
-    'form',
-    'link',
-    'meta',
-    'base',
-    'object',
-    'embed',
-    'svg',
-    'img',
-  ],
-  FORBID_ATTR: ['style'],
-  KEEP_CONTENT: true,
-  RETURN_TRUSTED_TYPE: false,
-});
+const SANITIZER_BASE_TAGS = [
+  'p',
+  'br',
+  'strong',
+  'em',
+  'u',
+  'a',
+  'ul',
+  'ol',
+  'li',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'blockquote',
+  'hr',
+];
+
+const SANITIZER_FORBID_BASE = [
+  'script',
+  'style',
+  'iframe',
+  'form',
+  'link',
+  'meta',
+  'base',
+  'object',
+  'embed',
+  'svg',
+];
+
+/**
+ * Two frozen paste-sanitiser configs — the editor picks one at mount
+ * time based on `imagesEnabled`. The paste sanitiser MUST mirror the
+ * server-side DOMPurify policy (`dompurify-sanitizer.ts`) so users
+ * don't see content survive paste only to be stripped at submit.
+ */
+function makeSanitizerConfig(imagesEnabled: boolean): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    ALLOWED_TAGS: imagesEnabled
+      ? [...SANITIZER_BASE_TAGS, 'img']
+      : [...SANITIZER_BASE_TAGS],
+    ALLOWED_ATTR: imagesEnabled
+      ? ['href', 'src', 'alt']
+      : ['href'],
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
+    FORBID_TAGS: imagesEnabled
+      ? [...SANITIZER_FORBID_BASE]
+      : [...SANITIZER_FORBID_BASE, 'img'],
+    FORBID_ATTR: ['style'],
+    KEEP_CONTENT: true,
+    RETURN_TRUSTED_TYPE: false,
+  });
+}
 
 export interface TiptapEditorProps {
   readonly initialHtml: string;
@@ -67,6 +95,37 @@ export interface TiptapEditorProps {
   readonly disabled?: boolean;
   /** id of the visible <Label> for the editor — wires aria-labelledby on the editable region. */
   readonly labelledById?: string;
+  /**
+   * R3.5 M-13 — id(s) of help-text + error elements that describe
+   * the editor's current state. Forwarded as `aria-describedby` on
+   * the inner contenteditable so SR users hear the description when
+   * focus lands on the editor (template-form's body-field error path
+   * pre-R3.5 placed aria-invalid on a wrapper div, which AT couldn't
+   * associate with the editable region).
+   */
+  readonly describedById?: string;
+  /**
+   * R3.5 M-13 — when true, sets `aria-invalid="true"` on the inner
+   * contenteditable so SR users hear the invalid state on focus.
+   * Pre-R3.5 the form wrapped the editor in a `<div aria-invalid>`
+   * which AT did not propagate to the editable region.
+   */
+  readonly invalid?: boolean;
+  /**
+   * F7.1a US2 (T078) — when true, registers `broadcastImageExtension`,
+   * relaxes the paste sanitiser to allow `<img src,alt>`, and renders
+   * the inline-image uploader + ClamAV-unreachable banner. Wired from
+   * the server page via `isF71aUs2Enabled()` so the toolbar surface
+   * only appears when the kill-switch is fully ON.
+   */
+  readonly imagesEnabled?: boolean;
+  /**
+   * Required to upload inline images (the API ties uploads to a draft
+   * for ownership + retention scope). When null and `imagesEnabled` is
+   * true, the uploader renders in a disabled state with a "save draft
+   * first" hint so the member knows what to do.
+   */
+  readonly draftId?: string | null;
 }
 
 export default function TiptapEditor({
@@ -74,14 +133,36 @@ export default function TiptapEditor({
   onChange,
   disabled = false,
   labelledById,
+  describedById,
+  invalid = false,
+  imagesEnabled = false,
+  draftId = null,
 }: TiptapEditorProps): React.ReactElement {
   const tEditor = useTranslations('portal.broadcasts.compose.editor');
   const tToast = useTranslations('portal.broadcasts.compose.toast');
+  const tImage = useTranslations('portal.broadcasts.compose.imageUpload');
   const [announcement, setAnnouncement] = useState<string>('');
   const lastSanitiseWarnAt = useRef<number>(0);
 
+  const sanitizerConfig = useMemo(
+    () => makeSanitizerConfig(imagesEnabled),
+    [imagesEnabled],
+  );
+  // T116 (F7.1a US7) — bracketPlaceholder loaded unconditionally
+  // because [bracketed text] semantics are universal across the
+  // broadcast body editor (admin authors them in templates; members
+  // see + replace them in compose). Decoration is style-only — no
+  // schema mutation, so safe to always-on.
+  const extensions = useMemo(
+    () =>
+      imagesEnabled
+        ? [StarterKit, broadcastImageExtension, broadcastBracketPlaceholderExtension]
+        : [StarterKit, broadcastBracketPlaceholderExtension],
+    [imagesEnabled],
+  );
+
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions,
     content: initialHtml,
     editable: !disabled,
     immediatelyRender: false,
@@ -92,9 +173,16 @@ export default function TiptapEditor({
         role: 'textbox',
         'aria-multiline': 'true',
         ...(labelledById !== undefined && { 'aria-labelledby': labelledById }),
+        // R3.5 M-13 — describedby + invalid on the contenteditable
+        // (not a wrapper) so SR users get the error + help-text on
+        // focus.
+        ...(describedById !== undefined && {
+          'aria-describedby': describedById,
+        }),
+        ...(invalid && { 'aria-invalid': 'true' }),
       },
       transformPastedHTML(html: string): string {
-        const sanitised = DOMPurify.sanitize(html, SANITIZER_CONFIG) as string;
+        const sanitised = DOMPurify.sanitize(html, sanitizerConfig) as string;
         if (sanitised !== html) {
           const now = Date.now();
           if (now - lastSanitiseWarnAt.current > 1500) {
@@ -118,25 +206,64 @@ export default function TiptapEditor({
     [tEditor],
   );
 
+  const handleUploaded = useCallback(
+    (blobUrl: string): void => {
+      if (!editor) return;
+      // Tiptap's image extension `setImage` chain command inserts an
+      // <img src=blobUrl> at the current cursor position. The server-
+      // side sanitiser will preserve it (http(s) blob URL); the
+      // `validateImageSourceAllowlist` use-case enforces tenant
+      // hostname allowlist at submit time. The Vercel Blob default-
+      // seed hostname is already in the allowlist (T072 seedDefaults).
+      editor.chain().focus().setImage({ src: blobUrl }).run();
+    },
+    [editor],
+  );
+
   if (!editor) {
     return <div className="min-h-[280px] rounded-md border bg-muted/40" />;
   }
 
   return (
-    <div
-      className="rounded-md border focus-within:ring-2 focus-within:ring-ring min-w-0 overflow-hidden"
-      data-testid="tiptap-editor"
-    >
-      <TiptapToolbar editor={editor} onAnnounce={announceState} />
-      <EditorContent editor={editor} />
-      <span
-        role="status"
-        aria-live="polite"
-        className="sr-only"
-        data-testid="tiptap-aria-live"
+    <div className="space-y-2">
+      {imagesEnabled && <ClamavUnreachableBanner />}
+      <div
+        className={
+          invalid
+            ? 'rounded-md border border-destructive focus-within:ring-2 focus-within:ring-destructive min-w-0 overflow-hidden'
+            : 'rounded-md border focus-within:ring-2 focus-within:ring-ring min-w-0 overflow-hidden'
+        }
+        data-testid="tiptap-editor"
       >
-        {announcement}
-      </span>
+        <TiptapToolbar editor={editor} onAnnounce={announceState} />
+        <EditorContent editor={editor} />
+        <span
+          role="status"
+          aria-live="polite"
+          className="sr-only"
+          data-testid="tiptap-aria-live"
+        >
+          {announcement}
+        </span>
+      </div>
+      {imagesEnabled && (
+        <div className="flex flex-col gap-1">
+          {draftId !== null ? (
+            <ComposeInlineImageUploader
+              draftId={draftId}
+              onUploaded={handleUploaded}
+            />
+          ) : (
+            // PR-review fix 2026-05-20 UX-M3 — pair the hint with an
+            // Info icon + alert styling (was plain <p>, blended into
+            // surrounding body text). Matches F7 quota-warning pattern.
+            <div className="flex items-start gap-2 text-muted-foreground text-sm">
+              <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+              <p>{tImage('draftRequiredHint')}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

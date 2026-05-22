@@ -90,7 +90,7 @@ describe('sweepStalePendingRefunds — live Neon (T130a)', () => {
         planId: 'sweep-plan',
         planYear: 2026,
         planName: { en: 'Sweep Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

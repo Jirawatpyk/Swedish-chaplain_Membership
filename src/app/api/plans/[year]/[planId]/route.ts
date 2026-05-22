@@ -41,6 +41,7 @@ import {
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from '@/app/api/plans/_serialise-plan';
 import { planPathSchema as pathSchema } from '@/app/api/plans/_schemas';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 export async function GET(
   request: NextRequest,
@@ -134,6 +135,10 @@ export async function PATCH(
   });
   if ('response' in ctx) return ctx.response;
 
+  // Emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
+
   const raw = await params;
   const parsedPath = pathSchema.safeParse(raw);
   if (!parsedPath.success) {
@@ -209,7 +214,22 @@ export async function PATCH(
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // 503 on Redis outage.
+  {
+    const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+    if (!reserved.ok) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'idempotency_reservation_failed',
+            message:
+              'Idempotency reservation temporarily unavailable. Retry shortly.',
+          },
+        },
+        { status: 503, headers: { 'Retry-After': '5' } },
+      );
+    }
+  }
 
   const deps = buildPlansDeps(tenant);
 
@@ -336,6 +356,10 @@ export async function DELETE(
   });
   if ('response' in ctx) return ctx.response;
 
+  // Emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
+
   const raw = await params;
   const parsedPath = pathSchema.safeParse(raw);
   if (!parsedPath.success) {
@@ -393,7 +417,22 @@ export async function DELETE(
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // 503 on Redis outage.
+  {
+    const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+    if (!reserved.ok) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'idempotency_reservation_failed',
+            message:
+              'Idempotency reservation temporarily unavailable. Retry shortly.',
+          },
+        },
+        { status: 503, headers: { 'Retry-After': '5' } },
+      );
+    }
+  }
 
   const deps = buildPlansDeps(tenant);
 

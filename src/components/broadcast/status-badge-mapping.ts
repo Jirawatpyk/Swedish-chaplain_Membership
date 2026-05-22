@@ -41,6 +41,29 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
   rejected: { variant: 'destructive' },
   cancelled: { variant: 'outline', className: 'text-muted-foreground' },
   failed_to_dispatch: { variant: 'destructive' },
+  // F7.1a US1 (Phase 3 B0 — added 2026-05-19). `partially_sent` is
+  // non-terminal with admin retry/accept actions; use `destructive`
+  // variant to signal attention needed. `partial_delivery_accepted`
+  // is terminal-after-admin-accept; muted secondary matches `cancelled`
+  // visual weight (operational end-state, not error).
+  // Phase 3F.7 (UX F-5 fix) — motion-reduce users get a static ring
+  // instead of the missed pulse animation. Without this, reduced-
+  // motion preference would suppress the "attention needed" visual
+  // affordance entirely → admin might miss the partially-sent
+  // actionable state.
+  // Phase 3F.11.2 (H3 — Round 2 fix) → Phase 3F.11.8 (Round 3 MEDIUM-2):
+  // ring color was `ring-destructive/60` on `bg-destructive` (≈<3:1, fails
+  // WCAG SC 1.4.11). 3F.11.2 switched to `ring-background` (theme-aware
+  // token) — works in light theme (white ring ≥7:1 on red bg) but may
+  // fail in dark theme where `--background` is near-black on a desat-
+  // urated red destructive bg. 3F.11.8 pins to static `ring-white` so
+  // contrast is ≥4.5:1 in BOTH themes — white-on-red is unambiguous.
+  partially_sent: {
+    variant: 'destructive',
+    className:
+      'motion-safe:animate-pulse motion-reduce:ring-2 motion-reduce:ring-white motion-reduce:ring-offset-1',
+  },
+  partial_delivery_accepted: { variant: 'secondary', className: 'text-muted-foreground' },
 };
 
 export function getBroadcastStatusBadgeProps(

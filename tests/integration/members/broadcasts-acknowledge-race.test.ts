@@ -64,7 +64,7 @@ async function seedPlan(tenantSlug: string, userId: string) {
       planId,
       planYear: 2026,
       planName: { en: 'Ack Race Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

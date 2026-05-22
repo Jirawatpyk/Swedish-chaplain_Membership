@@ -162,8 +162,10 @@
     "pagination": {
       "prev": "ไปหน้าก่อนหน้า",
       "next": "ไปหน้าถัดไป",
-      "morePages": "หน้าเพิ่มเติม"
+      "morePages": "หน้าเพิ่มเติม",
+      "navAriaLabel": "การแบ่งหน้า"
     },
+    "editorLoading": "กำลังโหลดตัวแก้ไข",
     "breadcrumbUI": {
       "label": "เส้นทางนำทาง",
       "more": "เพิ่มเติม"
@@ -202,6 +204,10 @@
     "close": "ปิด",
     "back": "ย้อนกลับ",
     "retry": "ลองอีกครั้ง"
+  },
+  "common": {
+    "yes": "ใช่",
+    "no": "ไม่ใช่"
   },
   "admin": {
     "home": {
@@ -325,7 +331,8 @@
         "memberType": "ประเภทสมาชิก",
         "year": "ปี",
         "status": "สถานะ",
-        "actions": "การดำเนินการ"
+        "actions": "การดำเนินการ",
+        "actionsFor": "การดำเนินการสำหรับ {planName}"
       },
       "filters": {
         "all": "ทั้งหมด",
@@ -369,10 +376,12 @@
       "create": {
         "title": "สร้างแพ็กเกจใหม่",
         "steps": {
+          "wizardAriaLabel": "ขั้นตอนสร้างแพ็กเกจ",
           "basics": "ข้อมูลพื้นฐาน",
           "fees": "ค่าธรรมเนียม",
           "benefits": "สิทธิประโยชน์",
-          "review": "ตรวจสอบ"
+          "review": "ตรวจสอบ",
+          "mobileSummary": "ขั้นที่ {current}/{total} — {label}"
         },
         "matrix": {
           "section": {
@@ -485,6 +494,9 @@
           "save": "บันทึกแพ็กเกจ",
           "saving": "กำลังบันทึก…",
           "cancel": "ยกเลิก"
+        },
+        "errors": {
+          "stepValidation": "กรุณาตรวจสอบขั้นตอนก่อนหน้า — บางฟิลด์ที่จำเป็นยังไม่ครบหรือไม่ถูกต้อง"
         }
       },
       "edit": {
@@ -547,6 +559,9 @@
         "forbidden": "คุณไม่มีสิทธิ์ดำเนินการนี้",
         "validation": "กรุณาแก้ไขฟิลด์ที่ถูกทำเครื่องหมายไว้",
         "priorYearLocked": "ฟิลด์เหล่านี้ถูกล็อกในแพ็กเกจย้อนหลัง: {fields} กรุณาคัดลอกแพ็กเกจไปยังปีปัจจุบันเพื่อแก้ไข",
+        "feeConfigMissing": "ยังไม่ได้ตั้งค่าค่าธรรมเนียมของหอการค้า กรุณารัน seed script",
+        "loadFailed": "โหลดรายการแพ็กเกจไม่สำเร็จ",
+        "backToList": "กลับไปยังรายการแพ็กเกจ",
         "duplicateKey": "มีแพ็กเกจรหัสนี้อยู่แล้วในปี {year}",
         "memberAttached": "มีสมาชิก {count} คนใช้แพ็กเกจนี้อยู่ กรุณาย้ายสมาชิกไปแพ็กเกจอื่นก่อนลบ",
         "idempotencyConflict": "คำขอนี้ถูกประมวลผลไปแล้วด้วยข้อมูลที่แตกต่าง กรุณารีเฟรชและลองใหม่",
@@ -1494,6 +1509,7 @@
       "queue": {
         "title": "คิวตรวจสอบ E-Blast",
         "subtitle": "ตรวจสอบและอนุมัติ E-Blast ที่สมาชิกส่งมา",
+        "templatesEntryButton": "เทมเพลต",
         "empty": "เมื่อสมาชิกส่ง E-Blast จะปรากฏที่นี่ให้คุณตรวจสอบ",
         "emptyTitle": "ไม่มีรายการรอตรวจสอบ",
         "totalPending": "{count} รายการรอตรวจ",
@@ -1539,7 +1555,9 @@
           "sent": "ส่งแล้ว",
           "rejected": "ปฏิเสธ",
           "cancelled": "ยกเลิก",
-          "failed_to_dispatch": "ส่งไม่สำเร็จ"
+          "failed_to_dispatch": "ส่งไม่สำเร็จ",
+          "partially_sent": "ส่งสำเร็จบางส่วน",
+          "partial_delivery_accepted": "ยอมรับการส่งบางส่วนแล้ว"
         },
         "actorRole": {
           "member_self_service": "สมาชิก",
@@ -1564,6 +1582,8 @@
         "subtitle": "ดูเนื้อหา + อนุมัติ ปฏิเสธ หรือยกเลิก",
         "bodyRenderFailedTitle": "ไม่สามารถแสดงเนื้อหาอย่างปลอดภัย",
         "bodyRenderFailedHint": "ระบบทำความสะอาด HTML ไม่สำเร็จ ปุ่มอนุมัติถูกระงับ กรุณาติดต่อทีมปฏิบัติการ",
+        "batchLoadFailedTitle": "ไม่สามารถโหลดรายละเอียดการส่งแบบแบ่งกลุ่มได้ในขณะนี้",
+        "batchLoadFailedHint": "เราโหลดรายการกลุ่มไม่ได้ กรุณารีเฟรชหน้าใหม่ในอีกสักครู่ ทีมปฏิบัติการได้รับการแจ้งเตือนผ่าน log แล้ว",
         "fields": {
           "subject": "หัวข้อ",
           "body": "ข้อความ",
@@ -1693,6 +1713,189 @@
         "viewBroadcast": "ดู E-Blast",
         "viewHaltedMembers": "ดูสมาชิกที่ถูกล็อก",
         "ackHelp": "การปลดล็อกเป็นการดำเนินการของผู้ดูแลโดยเจตนา ตรวจสอบเนื้อหาและการตีกลับก่อนปลดล็อก"
+      },
+      "batches": {
+        "title": "รายละเอียดการส่งแบบแบ่งกลุ่ม",
+        "description": "E-Blast นี้ถูกแบ่งออกเป็น {count} กลุ่ม เนื่องจากรายชื่อผู้รับเกิน 10,000 รายต่อ audience ของ Resend แต่ละกลุ่มถูกส่งแยกอิสระ",
+        "expandLabel": "แสดงรายละเอียดต่อกลุ่ม",
+        "collapseLabel": "ซ่อนรายละเอียดต่อกลุ่ม",
+        "summary": "ส่งสำเร็จ {succeeded} · ล้มเหลว {failed} · รอส่ง {pending} จาก {total} กลุ่ม",
+        "tableCaption": "รายละเอียดการส่งแบบแบ่งกลุ่ม {count} กลุ่ม",
+        "columns": {
+          "batchIndex": "กลุ่ม",
+          "recipientRange": "ช่วง",
+          "recipientCount": "จำนวนผู้รับ",
+          "status": "สถานะ",
+          "dispatchedAt": "ส่งเมื่อ",
+          "delivered": "ส่งถึง",
+          "bounced": "ตีกลับ",
+          "complained": "ร้องเรียน",
+          "unsubscribed": "ยกเลิกรับ",
+          "retryCount": "รอบลองใหม่"
+        },
+        "batchLabel": "กลุ่มที่ {index} จาก {total}",
+        "rangeLabel": "{start}–{end}",
+        "retryCountLabel": "{count} / 5",
+        "manualRetryRemaining": "ลองส่งซ้ำได้อีก: {remaining} / 3 ครั้ง",
+        "manualRetryExhausted": "ใช้สิทธิ์ลองส่งซ้ำครบ 3 ครั้งแล้ว",
+        "batchStatus": {
+          "pending": "รอส่ง",
+          "sending": "กำลังส่ง",
+          "sent": "ส่งแล้ว",
+          "failed": "ล้มเหลว",
+          "cancelled": "ยกเลิก"
+        },
+        "notSplit": "E-Blast นี้ส่งเป็น audience เดียวเนื่องจากผู้รับน้อยพอ"
+      },
+      "retryDialog": {
+        "trigger": "ลองส่งซ้ำกลุ่มที่ล้มเหลว",
+        "triggerAria": "ลองส่งซ้ำ {count} กลุ่มที่ล้มเหลว",
+        "triggerDisabledAria": "ไม่สามารถลองส่งซ้ำได้ — ใช้สิทธิ์ครบแล้ว",
+        "title": "ลองส่งซ้ำกลุ่มที่ล้มเหลว?",
+        "description": "ระบบจะส่ง {count} กลุ่มที่ล้มเหลวอีกครั้ง การกระทำนี้นับเป็น 1 ใน 3 ครั้งของสิทธิ์ลองส่งซ้ำ",
+        "budgetLine": "เหลือสิทธิ์ลองส่งซ้ำอีก {remaining} จาก 3 ครั้ง",
+        "warning": "การส่งซ้ำใช้โควต้า Resend API และอาจทำให้ผู้รับได้รับอีเมลซ้ำหากการส่งครั้งก่อนสำเร็จไปแล้วบางส่วน",
+        "confirm": "ลองส่งซ้ำตอนนี้",
+        "cancel": "ยกเลิก",
+        "submitting": "กำลังลองส่งซ้ำ…"
+      },
+      "acceptPartialDialog": {
+        "trigger": "ยอมรับการส่งบางส่วน",
+        "triggerAria": "ยอมรับการส่งบางส่วนและปิด E-Blast นี้",
+        "title": "ยอมรับการส่งบางส่วน?",
+        "description": "E-Blast นี้จะถูกบันทึกว่าสำเร็จในสถานะปัจจุบัน ระบบจะไม่ลองส่งกลุ่มที่ล้มเหลวอีก และไม่สามารถเปลี่ยนสถานะภายหลังได้",
+        "summary": "ส่งสำเร็จ {sent} จาก {total} กลุ่ม",
+        "reasonLabel": "เหตุผล (ไม่บังคับ)",
+        "reasonPlaceholder": "ไม่บังคับ — เช่น Resend ติดขีดจำกัด rate-limit, สมาชิกได้รับการแจ้งทางอื่นแล้ว…",
+        "reasonHelp": "บริบทเพิ่มเติมสำหรับ audit trail ความยาวสูงสุด 500 ตัวอักษร",
+        "reasonCounter": "{count} / 500",
+        "confirm": "ยอมรับการส่งบางส่วน",
+        "cancel": "ยกเลิก",
+        "submitting": "กำลังยอมรับ…"
+      },
+      "toast": {
+        "retrySuccess": "เริ่มการลองส่งซ้ำครั้งที่ {attempt} สำหรับ {count} กลุ่มที่ล้มเหลว",
+        "retryBudgetExhausted": "ใช้สิทธิ์ลองส่งซ้ำครบ 3 ครั้งแล้ว ลองยอมรับการส่งบางส่วนเพื่อปิด E-Blast นี้",
+        "retryAlreadyInProgress": "มีผู้ดูแลคนอื่นกำลังลองส่งซ้ำ E-Blast นี้อยู่ กรุณารอสักครู่แล้วรีเฟรช",
+        "retryInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ลองส่งซ้ำ",
+        "retryServerError": "ลองส่งซ้ำไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อทีมสนับสนุน",
+        "acceptPartialSuccess": "ยอมรับการส่งบางส่วนเรียบร้อยแล้ว E-Blast นี้ถูกปิดแล้ว",
+        "acceptPartialInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ยอมรับการส่งบางส่วน",
+        "acceptPartialReasonTooLong": "เหตุผลต้องมีไม่เกิน 500 ตัวอักษร",
+        "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง"
+      },
+      "templates": {
+        "pageTitle": "เทมเพลต E-Blast",
+        "pageDescription": "จุดเริ่มต้นสำเร็จรูปสำหรับสมาชิกในการเขียน E-Blast เทมเพลตเริ่มต้นถูกตั้งค่ามาให้แล้ว และเทมเพลตของหอการค้าจะแสดงร่วมกัน",
+        "newTemplateButton": "เพิ่มเทมเพลต",
+        "newPageTitle": "เพิ่มเทมเพลต E-Blast",
+        "newPageDescription": "สร้างเทมเพลตที่สมาชิกสามารถเลือกใช้เมื่อเขียน E-Blast",
+        "editPageTitle": "แก้ไขเทมเพลต E-Blast",
+        "editPageDescription": "แก้ไขชื่อ หัวข้อ หรือเนื้อหา ฉบับร่างที่เริ่มจากเทมเพลตนี้ไปแล้วจะไม่ถูกแก้ไข (snapshot)",
+        "starterBadge": "เริ่มต้น",
+        "starterBadgeAria": "เทมเพลตเริ่มต้นจากระบบ",
+        "starterEditBannerTitle": "นี่คือเทมเพลตเริ่มต้น",
+        "starterEditBannerBody": "การแก้ไขจะสร้างเทมเพลตเฉพาะของหอการค้า ระบบจะไม่อัปเดตเทมเพลตนี้อัตโนมัติแม้เนื้อหาเริ่มต้นจะมีการปรับปรุง",
+        "starterEditBannerDismiss": "ปิดคำเตือนเทมเพลตเริ่มต้นสำหรับ {name}",
+        "filterLegend": "กรองเทมเพลตตามแหล่งที่มา",
+        "filterPill": {
+          "all": "ทั้งหมด",
+          "starter": "เริ่มต้นเท่านั้น",
+          "authored": "หอการค้าสร้างเอง"
+        },
+        "filterCount": "{count, plural, =0 {ไม่พบเทมเพลตที่ตรงกัน} other {# เทมเพลต}}",
+        "filterEmpty": "ไม่มีเทมเพลตที่ตรงกับตัวกรองนี้",
+        "emptyState": {
+          "title": "ยังไม่มีเทมเพลต",
+          "body": "เมื่อเพิ่มแล้ว เทมเพลตจะปรากฏที่นี่ เทมเพลตเริ่มต้นที่ถูกตั้งค่าตอนเริ่มใช้งานจะแสดงพร้อมป้าย เริ่มต้น",
+          "cta": "สร้างเทมเพลตแรกของคุณ"
+        },
+        "columns": {
+          "name": "ชื่อ",
+          "subjectPreview": "หัวข้อ",
+          "locale": "ภาษา",
+          "startedFrom": "ใช้แล้ว",
+          "startedFromAria": "จำนวนฉบับร่างที่เริ่มจากเทมเพลตนี้",
+          "updatedAt": "แก้ไขล่าสุด",
+          "actions": "การจัดการ"
+        },
+        "locale": {
+          "en": "English",
+          "th": "ไทย",
+          "sv": "Svenska"
+        },
+        "rowAction": {
+          "edit": "แก้ไข",
+          "editAria": "แก้ไข {name}",
+          "delete": "ลบ",
+          "deleteAria": "ลบ {name}"
+        },
+        "fields": {
+          "name": "ชื่อ",
+          "nameHelp": "ไม่เกิน 100 ตัวอักษร และไม่ซ้ำกันในระดับหอการค้า + ภาษา",
+          "subject": "หัวข้อ",
+          "subjectHelp": "ไม่เกิน 200 ตัวอักษร สามารถใช้ตัวแปร '{{chamber_name}}' ได้",
+          "bodyHtml": "เนื้อหา (HTML)",
+          "bodyHtmlHelp": "ไม่เกิน 200 KB ใช้ [ข้อความในวงเล็บเหลี่ยม] เป็น placeholder ที่สมาชิกแก้ไขได้ ส่วน '{{chamber_name}}' จะถูกแทนที่ตอนเริ่มฉบับร่าง",
+          "localeLabel": "ภาษา"
+        },
+        "saveButton": "บันทึกเทมเพลต",
+        "cancelButton": "ยกเลิก",
+        "savingButton": "กำลังบันทึก…",
+        "savedToast": "บันทึกเทมเพลตแล้ว",
+        "errors": {
+          "invalid_input": "ข้อมูลบางช่องไม่ถูกต้อง กรุณาตรวจสอบและลองอีกครั้ง",
+          "field_required": "ต้องกรอกช่องนี้",
+          "template_body_unsafe": "เนื้อหามีรูปภาพจากโดเมนที่ไม่ได้อยู่ในรายการที่อนุญาต",
+          "template_name_duplicate": "มีเทมเพลตที่ใช้ชื่อ + ภาษาเดียวกันนี้อยู่แล้ว",
+          "template_not_found": "ไม่พบเทมเพลต",
+          "template_soft_deleted": "เทมเพลตนี้ถูกลบแล้ว กรุณาเลือกเทมเพลตอื่นหรือเริ่มต้นจากแบบเปล่า",
+          "storage_error": "เกิดข้อผิดพลาดในการบันทึก กรุณาลองอีกครั้ง",
+          "unknown": "เกิดข้อผิดพลาดที่ไม่คาดคิด"
+        }
+      },
+      "settings": {
+        "pageTitle": "ตั้งค่าการส่งอีเมล",
+        "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
+        "allowlist": {
+          "heading": "รายชื่อโดเมนที่อนุญาตให้ฝังรูปภาพ",
+          "description": "รูปภาพในเนื้อหาอีเมลต้องมาจากโดเมนเหล่านี้เท่านั้น รายการเริ่มต้นไม่สามารถลบได้",
+          "hostnameLabel": "ชื่อโดเมน",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "ตัวอักษรพิมพ์เล็กและตัวเลขเท่านั้น มีจุดอย่างน้อยหนึ่งจุด และไม่ใช้สัญลักษณ์ wildcard",
+          "addButton": "เพิ่มโดเมน",
+          "removeButton": "ลบ",
+          "removeAria": "ลบ {hostname}",
+          "tableCaption": "รายการโดเมนสำหรับรูปภาพ",
+          "colHostname": "ชื่อโดเมน",
+          "colSource": "แหล่งที่มา",
+          "colActions": "การจัดการ",
+          "defaultBadge": "ค่าเริ่มต้น (ล็อกอยู่)",
+          "defaultBadgeInline": "(ค่าเริ่มต้น)",
+          "customBadge": "เพิ่มโดยผู้ดูแลระบบ",
+          "propagationFootnote": "การเปลี่ยนแปลงจะมีผลภายใน 60 วินาทีกับเซสชันการเขียนที่กำลังทำงานอยู่",
+          "addedToast": "เพิ่มโดเมนเรียบร้อย",
+          "removedToast": "ลบโดเมนเรียบร้อย",
+          "addedAnnouncement": "เพิ่ม {hostname} เข้ารายการอนุญาตแล้ว",
+          "removedAnnouncement": "ลบ {hostname} ออกจากรายการอนุญาตแล้ว",
+          "removeConfirm": {
+            "title": "ลบ {hostname} หรือไม่?",
+            "body": "สมาชิกจะไม่สามารถฝังรูปภาพจากโดเมนนี้ในการเขียน E-Blast ได้อีก การเปลี่ยนแปลงจะมีผลภายใน 60 วินาที",
+            "cancel": "ยกเลิก",
+            "confirm": "ลบ"
+          },
+          "errors": {
+            "invalid_hostname": "รูปแบบชื่อโดเมนไม่ถูกต้อง",
+            "cannot_remove_default": "ไม่สามารถลบรายการเริ่มต้นได้",
+            "duplicate": "โดเมนนี้อยู่ในรายการแล้ว",
+            "not_found": "ไม่พบโดเมนที่ต้องการ",
+            "storage_error": "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง",
+            "feature_disabled": "ฟีเจอร์ฝังรูปภาพยังไม่เปิดใช้งาน",
+            "invalid_body": "คำขอไม่ถูกต้อง",
+            "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองอีกครั้ง",
+            "unknown": "เกิดข้อผิดพลาดที่ไม่รู้จัก"
+          }
+        }
       }
     },
     "renewals": {
@@ -3064,7 +3267,8 @@
       "newInvoice": "สร้างใบแจ้งหนี้ใหม่",
       "issueRefund": "คืนเงิน — ค้นหาใบแจ้งหนี้ที่ชำระแล้ว",
       "reviewBroadcasts": "ตรวจสอบคิว E-Blast",
-      "broadcastsHalted": "สมาชิกที่ถูกระงับ — ตรวจสอบ E-Blast"
+      "broadcastsHalted": "สมาชิกที่ถูกระงับ — ตรวจสอบ E-Blast",
+      "newBroadcastTemplate": "สร้างเทมเพลต E-Blast ใหม่"
     },
     "navigate": {
       "plansList": "รายการแพ็กเกจ",
@@ -3076,6 +3280,8 @@
       "invoicesPaidOnline": "ใบแจ้งหนี้: ชำระออนไลน์ (กระทบยอด)",
       "creditNotesList": "รายการใบลดหนี้",
       "broadcastsQueue": "คิวตรวจสอบ E-Blast",
+      "broadcastTemplates": "คลังเทมเพลต E-Blast",
+      "broadcastImageSettings": "การตั้งค่าแหล่งรูปภาพ E-Blast",
       "renewalsList": "ไทม์ไลน์การต่ออายุสมาชิก",
       "renewalSchedules": "นโยบายตารางการต่ออายุ",
       "escalationTasks": "งานติดตามด่วน",
@@ -3094,6 +3300,7 @@
       "settings": "ตั้งค่า",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
+      "settingsBroadcasts": "ตั้งค่าการส่งอีเมล",
       "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
       "events": "กิจกรรม",
       "sections": {
@@ -3143,7 +3350,11 @@
     "schedules": "ตารางการแจ้งเตือนต่ออายุ",
     "invoicing": "ตั้งค่าใบแจ้งหนี้",
     "integrations": "การเชื่อมต่อ",
-    "eventcreate": "EventCreate"
+    "eventcreate": "EventCreate",
+    "broadcasts": "ส่งอีเมล",
+    "templates": "เทมเพลต",
+    "newTemplate": "เพิ่มเทมเพลต",
+    "editTemplate": "แก้ไขเทมเพลต"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",
@@ -3308,6 +3519,22 @@
       "compose": {
         "title": "เขียน E-Blast",
         "subtitle": "ส่งข้อความไปยังสมาชิกของหอการค้า",
+        "templatePicker": {
+          "triggerLabel": "เริ่มจากเทมเพลต",
+          "blankOption": "เว้นว่าง — เริ่มจากศูนย์",
+          "starterSuffix": "เริ่มต้น",
+          "starterBadgeAria": "เทมเพลตเริ่มต้นจากระบบ",
+          "searchPlaceholder": "ค้นหาเทมเพลตจากชื่อ",
+          "emptyMessage": "ไม่พบเทมเพลตที่ตรงกับการค้นหา",
+          "helpText": "การเลือกเทมเพลตจะเติมหัวข้อและเนื้อหาให้ คุณยังแก้ไขก่อนส่งได้"
+        },
+        "staleDraftBanner": {
+          "title": "เทมเพลตได้รับการอัปเดตแล้ว",
+          "body": "เทมเพลต \"{templateName}\" ถูกแก้ไขหลังจากที่คุณเริ่มฉบับร่างนี้ คลิกรีเฟรชเพื่อโหลดเวอร์ชันปัจจุบัน (การแก้ไขหัวข้อและเนื้อหาของคุณจะถูกเขียนทับ)",
+          "refreshButton": "รีเฟรชจากปัจจุบัน",
+          "refreshingButton": "กำลังรีเฟรช…",
+          "dismissAria": "ปิดการแจ้งเตือนฉบับร่างเก่าสำหรับ {templateName}"
+        },
         "fields": {
           "subject": "หัวข้อ",
           "subjectPlaceholder": "ระบุหัวข้อ (ไม่เกิน 200 ตัวอักษร)",
@@ -3339,6 +3566,7 @@
         "comingSoon": "(เร็ว ๆ นี้)",
         "tierLabel": "รหัสระดับ",
         "editor": {
+          "bracketHint": "คลิกที่ [ข้อความในวงเล็บ] เพื่อแทนที่ด้วยเนื้อหาของคุณ",
           "aria": {
             "toolbar": "แถบเครื่องมือจัดรูปแบบ",
             "bold": "ตัวหนา (Ctrl+B)",
@@ -3394,6 +3622,7 @@
           "broadcast_subject_empty": "กรุณากรอกหัวข้อ",
           "broadcast_body_too_large": "เนื้อหามีขนาดเกิน 200 KB",
           "broadcast_body_unsafe_html": "เนื้อหามีรูปแบบที่ระบบไม่รองรับ กรุณาลดความซับซ้อน",
+          "broadcast_body_image_source_unsafe": "ข้อความของคุณมีรูปภาพจากแหล่งที่ไม่ได้รับอนุญาตของหอการค้า ดูรายการด้านล่างเพื่อแก้ไขหรือลบออก",
           "broadcast_empty_segment_blocked": "ไม่พบผู้รับที่ตรงกับเงื่อนไข",
           "broadcast_audience_too_large": "จำนวนผู้รับเกินขีดจำกัด 5,000 ราย",
           "broadcast_custom_recipient_unknown": "อีเมลในรายการกำหนดเองบางรายการไม่อยู่ในไดเรกทอรี",
@@ -3410,6 +3639,32 @@
           "body": "ฉบับร่างจะถูกลบถาวรและไม่สามารถกู้คืนได้",
           "confirm": "ลบ",
           "cancel": "แก้ไขต่อ"
+        },
+        "imageUpload": {
+          "pickerLabel": "เลือกรูปภาพที่ต้องการอัปโหลด",
+          "uploadButton": "อัปโหลดรูปภาพ",
+          "uploadingLabel": "กำลังอัปโหลด…",
+          "progressAria": "ความคืบหน้าการอัปโหลดรูปภาพ",
+          "uploadingAria": "กำลังอัปโหลดรูปภาพ กรุณารอสักครู่",
+          "uploadedToast": "อัปโหลดรูปภาพเรียบร้อย",
+          "helpText": "รองรับไฟล์ PNG, JPG, WebP หรือ GIF ขนาดไม่เกิน 5 MB ระบบจะสแกนไวรัสก่อนอัปโหลด",
+          "draftRequiredHint": "กรุณาบันทึกฉบับร่างก่อนเพื่อเปิดใช้งานการอัปโหลดรูปภาพ",
+          "disallowedSourcesHeading": "แหล่งรูปภาพต่อไปนี้ไม่ได้รับอนุญาต:",
+          "disallowedSourceItem": "{host} — กรุณาเปลี่ยนเป็นรูปภาพจากรายการอนุญาตของหอการค้า",
+          "errors": {
+            "broadcast_image_too_large": "ขนาดไฟล์รูปภาพเกิน 5 MB",
+            "broadcast_image_unsafe": "ระบบสแกนไวรัสตรวจพบไฟล์ไม่ปลอดภัย ปฏิเสธการอัปโหลด",
+            "broadcast_image_invalid_mime": "รองรับเฉพาะไฟล์ PNG, JPG, WebP หรือ GIF เท่านั้น",
+            "storage_unavailable": "พื้นที่จัดเก็บรูปภาพไม่พร้อมใช้งานชั่วคราว กรุณาลองอีกครั้งในอีกสักครู่",
+            "feature_disabled": "ฟีเจอร์ฝังรูปภาพยังไม่พร้อมใช้งาน",
+            "invalid_body": "คำขออัปโหลดไม่ถูกต้อง",
+            "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิดระหว่างอัปโหลด",
+            "unknown": "อัปโหลดไม่สำเร็จ กรุณาลองอีกครั้ง"
+          }
+        },
+        "clamavBanner": {
+          "title": "เครื่องสแกนไวรัสไม่พร้อมใช้งานชั่วคราว",
+          "description": "ระงับการอัปโหลดรูปภาพไว้ระหว่างที่กำลังเชื่อมต่อใหม่ ฉบับร่างที่ไม่มีรูปภาพยังสามารถบันทึกและส่งได้ตามปกติ"
         }
       },
       "quota": {
@@ -3461,7 +3716,9 @@
           "sent": "ส่งแล้ว",
           "rejected": "ปฏิเสธ",
           "cancelled": "ยกเลิก",
-          "failed_to_dispatch": "ส่งไม่สำเร็จ"
+          "failed_to_dispatch": "ส่งไม่สำเร็จ",
+          "partially_sent": "ส่งสำเร็จบางส่วน",
+          "partial_delivery_accepted": "ยอมรับการส่งบางส่วนแล้ว"
         },
         "pagination": {
           "previous": "ก่อนหน้า",

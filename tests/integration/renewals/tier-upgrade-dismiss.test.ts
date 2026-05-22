@@ -84,7 +84,7 @@ async function seedPlan(
       planId,
       planYear: 2026,
       planName: { en: planId },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

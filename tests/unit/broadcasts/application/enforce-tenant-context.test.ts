@@ -37,6 +37,10 @@ function makeAudit(throwOnEmit = false): {
         if (throwOnEmit) throw new Error('audit DB unreachable');
         emits.push(event);
       },
+      async emitTyped(_tx, event) {
+        if (throwOnEmit) throw new Error('audit DB unreachable');
+        emits.push(event as AuditEmitInput);
+      },
     },
   };
 }

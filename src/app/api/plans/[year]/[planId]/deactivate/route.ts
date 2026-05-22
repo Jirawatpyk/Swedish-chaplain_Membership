@@ -14,6 +14,7 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from '@/app/api/plans/_serialise-plan';
 import { planPathSchema as pathSchema } from '@/app/api/plans/_schemas';
 import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 export async function POST(
   request: NextRequest,
@@ -24,6 +25,10 @@ export async function POST(
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // Emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   const raw = await params;
   const parsedPath = pathSchema.safeParse(raw);

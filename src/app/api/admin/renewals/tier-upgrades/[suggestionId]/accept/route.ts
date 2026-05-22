@@ -82,6 +82,20 @@ export async function POST(
             details: { message: result.error.message },
           });
         case 'server_error':
+          // Surface the typed server_error message + errorId
+          // so SRE alert routing keyed on `F8.ACCEPT_TIER.*` can match
+          // the discriminator. Without this emit, the
+          // `deploy-skew:unhandled-gateway-arm:*` message inserted by
+          // R3-S5 never reaches Sentry/Grafana.
+          logger.error(
+            {
+              errorId: 'F8.ACCEPT_TIER.SERVER_ERROR',
+              correlationId: ctx.correlationId,
+              suggestionId,
+              message: result.error.message,
+            },
+            'admin.renewals.tier-upgrades.accept_server_error',
+          );
           return errorResponse({
             status: 500,
             code: 'server_error',
@@ -101,8 +115,14 @@ export async function POST(
       ctx.correlationId,
     );
   } catch (e) {
+    // Attach errorId so the F8 alert rule keyed on
+    // `errorId: 'F8.ACCEPT_TIER.*'` actually catches uncaught throws.
+    // R3-C3 pre-tx wrap blocks the documented escape paths, but
+    // defence-in-depth: any future async-arm regression still emits
+    // a routable signal.
     logger.error(
       {
+        errorId: 'F8.ACCEPT_TIER.UNEXPECTED',
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         suggestionId,

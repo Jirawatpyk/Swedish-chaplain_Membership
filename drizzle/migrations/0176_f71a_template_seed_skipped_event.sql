@@ -1,0 +1,22 @@
+-- ---------------------------------------------------------------------------
+-- R2.1 M-test-2 (Phase 5 Round 1 review close-out) —
+-- broadcast_template_seed_skipped_existing_name audit event type.
+--
+-- Adds an audit event for the seed-time conflict between a starter
+-- template's (name, locale) and a tenant-pre-existing template with
+-- the same tuple. Migration 0168's ON CONFLICT DO NOTHING silently
+-- drops the starter row in this case; this audit event makes the
+-- skip forensically visible.
+--
+-- Forward-looking emit hook — the current migration runs ONCE at
+-- first apply (rare conflict surface); a future Application-layer
+-- `reseedStarterTemplates` use-case will be the primary emit caller.
+--
+-- Source of truth: src/modules/broadcasts/application/ports/audit-
+-- port.ts F7_AUDIT_EVENT_TYPES const tuple (event #57 of 57).
+--
+-- 5-year retention via Constitution v1.4.0 trigger on
+-- audit_log.retention_years (no per-event grant needed).
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_template_seed_skipped_existing_name';

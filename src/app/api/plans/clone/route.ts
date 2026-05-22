@@ -23,6 +23,7 @@ import {
 import { logger } from '@/lib/logger';
 import { clonePlansToYear, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 const bodySchema = z.object({
   source_year: z.number().int().min(2000).max(2100),
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     action: 'clone',
   });
   if ('response' in ctx) return ctx.response;
+
+  // Emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   // Parse body before validating idempotency header so we can hash it
   let rawBody: unknown;
@@ -120,7 +125,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // 503 on Redis outage.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'idempotency_reservation_failed',
+          message:
+            'Idempotency reservation temporarily unavailable. Retry shortly.',
+        },
+      },
+      { status: 503, headers: { 'Retry-After': '5' } },
+    );
+  }
 
   const deps = buildPlansDeps(tenant);
   const sourceIp = ctx.sourceIp ?? null;
@@ -202,15 +220,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       );
     case 'audit_failed':
+      // clone-plans commits all N rows inside a single Postgres tx
+      // BEFORE emitting audit, so a failure here means the clone fully
+      // succeeded but the audit trail is missing. "may be partial" was
+      // a lie. Surface source/target years so on-call can backfill the
+      // audit row by scanning the affected plans.
       logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'clone-plans: audit write failed',
+        {
+          requestId: ctx.requestId,
+          source_year: parsed.data.source_year,
+          target_year: parsed.data.target_year,
+          err: result.error,
+        },
+        'clone-plans: rows committed but audit write failed — operator backfill needed',
       );
       return NextResponse.json(
         {
           error: {
             code: 'audit_failed',
-            message: 'Audit trail write failed — clone may be partial.',
+            message:
+              'Plans were cloned but audit trail write failed. Contact ops.',
           },
         },
         { status: 500 },

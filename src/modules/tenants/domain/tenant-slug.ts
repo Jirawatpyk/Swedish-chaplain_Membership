@@ -50,10 +50,30 @@ export function asTenantSlug(slug: string): TenantSlug {
 }
 
 /**
- * Unchecked brand — for test fixtures and for cases where validation has
- * already run upstream (e.g. `peekTokenTenantId` does its own structural
- * check before returning, and `runInTenant` binds RLS using the same
- * value). Caller asserts the input is a syntactically valid slug.
+ * Unchecked brand — escape hatch for cases where the slug HAS BEEN
+ * VALIDATED upstream and re-running `asTenantSlug` would either be
+ * redundant or impossible (e.g., the brand was lost through a JSON
+ * round-trip that the upstream validator already verified).
+ *
+ * **R2 Batch 3g (R2-I15) — allowed call sites are tightly enumerated.**
+ * New call sites require ≥2 reviewer approvals per Constitution
+ * § Development Workflow (security-sensitive code surface):
+ *
+ *   1. Test fixtures (`tests/**`) — bypassing validation is acceptable
+ *      because the test author owns the input string.
+ *   2. Seed scripts (`scripts/**`) — same rationale; tooling not
+ *      exposed to untrusted input.
+ *   3. Trust-boundary peeks where a structural validator has already
+ *      rejected malformed input:
+ *      - `src/modules/broadcasts/infrastructure/unsubscribe-token/hmac-signer.ts`
+ *        (HMAC token decode — Svix signature + zod schema validate
+ *        the payload before this brand is applied)
+ *      - `src/lib/tenant-context.ts` (peekTokenTenantId — structural
+ *        check before return)
+ *
+ * Any other production call site MUST go through `asTenantSlug`
+ * (validates the [a-z0-9-]{1,63} pattern). Importing this function
+ * outside the allowed set is a security-review failure.
  */
 export function unsafeBrandTenantSlug(slug: string): TenantSlug {
   return slug as TenantSlug;

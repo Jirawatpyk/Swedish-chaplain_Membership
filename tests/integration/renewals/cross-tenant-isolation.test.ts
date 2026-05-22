@@ -1003,7 +1003,7 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
             planId: `xt-evalplan-${randomUUID().slice(0, 8)}`,
             planYear: 2026,
             planName: { en: 'Eval Probe Plan' },
-            description: { en: '' },
+            description: { en: 'Test description' },
             sortOrder: 99,
             planCategory: 'corporate',
             memberTypeScope: 'company',

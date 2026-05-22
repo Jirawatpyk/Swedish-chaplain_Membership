@@ -152,9 +152,37 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               }).then((r) => ({ inv, result: r })),
             ),
           );
+          // Aggregate per-invoice typed errors into a
+          // `Map<errorKind, count>` capped at 5 distinct shapes —
+          // best-effort attribution that covers the wide-outage case
+          // where multiple error kinds fire at once. Distinct-kind
+          // #6 onwards is dropped from the Map but counted in
+          // `errorKindsTruncatedAt` so totals reconcile and operators
+          // can spot when the cap was reached. Without this aggregator
+          // only the first error survived; if 10 invoices failed
+          // across 3 distinct error shapes, operators saw only one.
+          const failedInvoiceIds: string[] = [];
+          const errorKindCounts = new Map<string, number>();
+          const ERROR_KIND_CAP = 5;
           const items: PaletteRefundableInvoiceEntity[] = [];
           for (const { inv, result } of activities) {
-            if (!result.ok) continue;
+            if (!result.ok) {
+              failedInvoiceIds.push(String(inv.invoiceId));
+              const errorKind =
+                (result.error as { code?: string; kind?: string }).code ??
+                (result.error as { code?: string; kind?: string }).kind ??
+                'unknown';
+              if (
+                errorKindCounts.has(errorKind) ||
+                errorKindCounts.size < ERROR_KIND_CAP
+              ) {
+                errorKindCounts.set(
+                  errorKind,
+                  (errorKindCounts.get(errorKind) ?? 0) + 1,
+                );
+              }
+              continue;
+            }
             const remaining = computeRemainingRefundable(result.value);
             if (!remaining) continue;
 
@@ -174,10 +202,61 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             });
           }
           refundableInvoices = items;
+          if (failedInvoiceIds.length > 0) {
+            // R5-S10 — escalate warn → error when ≥10 invoices fail
+            // (suggested threshold for "wide F5 outage"). SRE alert
+            // rules keyed on error-level catch the wide outage;
+            // warn-level remains for partial degradation (1-9 failed).
+            const structured = {
+              errorId: 'F2.PALETTE.REFUNDABLE_ACTIVITY_UNAVAILABLE',
+              requestId: ctx.requestId,
+              failedInvoiceIds,
+              failedCount: failedInvoiceIds.length,
+              // Map serialised to object for structured logs.
+              // Keys are error codes/kinds; values are occurrence
+              // counts.
+              errorKindCounts: Object.fromEntries(errorKindCounts),
+              errorKindsTruncatedAt:
+                errorKindCounts.size >= ERROR_KIND_CAP
+                  ? ERROR_KIND_CAP
+                  : null,
+            };
+            const WIDE_OUTAGE_THRESHOLD = 10;
+            if (failedInvoiceIds.length >= WIDE_OUTAGE_THRESHOLD) {
+              logger.error(
+                structured,
+                'palette.refundable_invoice_activity_unavailable (wide outage)',
+              );
+            } else {
+              logger.warn(
+                structured,
+                'palette.refundable_invoice_activity_unavailable',
+              );
+            }
+          }
+        } else {
+          // Surface listInvoicesPaged Result.err (F5 disabled,
+          // kill-switch flipped, RBAC drift, etc.). The outer
+          // try/catch only handles thrown exceptions; a typed
+          // Result.err would otherwise be invisible to ops. The
+          // errorId provides alert-routing parity with the
+          // F2.PLAN_CHANGE.* convention used in F8 callbacks.
+          logger.warn(
+            {
+              errorId: 'F2.PALETTE.REFUNDABLE_LIST_UNAVAILABLE',
+              requestId: ctx.requestId,
+              err: paid.error,
+            },
+            'palette.refundable_invoices_list_unavailable',
+          );
         }
       } catch (e) {
         logger.warn(
-          { requestId: ctx.requestId, err: e },
+          {
+            errorId: 'F2.PALETTE.REFUNDABLE_SEARCH_THREW',
+            requestId: ctx.requestId,
+            err: e,
+          },
           'palette.refundable_invoices_search_failed',
         );
       }

@@ -78,6 +78,12 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
       async emit(_tx, e) {
         emits.push(e);
       },
+      // R6.2 H1 — typed-emit mirror: production code may call either
+      // method depending on whether the event has a typed payload in
+      // F7AuditPayloadShapes; tests assert on `emits` regardless.
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
+      },
     },
   };
 }
@@ -129,6 +135,10 @@ function makeBroadcast(
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
     ...fields,
@@ -153,6 +163,9 @@ function makeRepo(opts: RepoOpts): {
       async updateDraft() {
         throw new Error('not used');
       },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in approve-broadcast fixture');
+      },
       async findById() {
         return null;
       },
@@ -166,7 +179,7 @@ function makeRepo(opts: RepoOpts): {
         transitions.push({ status, fields });
         if (opts.applyTransitionThrows) {
           throw new BroadcastConcurrentMutationError(
-            'test-tenant',
+            'test-tenant' as never,
             broadcastId,
             'cancelled',
           );
@@ -619,6 +632,10 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       async emit(_tx, e) {
         auditWasInsideTx = txOpened && !txClosed;
         audit.emits.push(e);
+      },
+      async emitTyped(_tx, e) {
+        auditWasInsideTx = txOpened && !txClosed;
+        audit.emits.push(e as AuditEmitInput);
       },
     };
     await approveBroadcast(

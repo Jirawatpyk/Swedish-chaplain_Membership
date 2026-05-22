@@ -387,6 +387,53 @@ export const outboxMetrics = {
 //   - `document_type` ∈ {invoice, receipt, credit_note} (3 values)
 //   - `bounce_reason` ∈ {max_retries, invalid_recipient, no_template_handler} (3)
 
+// ============================================================
+// F2 — Plans
+// ============================================================
+
+export const planMetrics = {
+  /**
+   * Plan PATCH no-op short-circuit count. `updatePlan` returns the
+   * existing row WITHOUT a DB write or audit emit when the computed
+   * diff is empty (client sent fields whose values match the stored
+   * row — common when a client re-submits a form with no actual
+   * changes). The counter detects noisy clients or buggy forms that
+   * repeatedly POST phantom edits.
+   */
+  updateNoOpShortCircuit(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'plans_update_no_op_short_circuit_total',
+        'F2 updatePlan returned existing row because diff was empty (no DB write, no audit)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `cancelScheduledPlanChange` returned 200 + `X-Audit-Backfill-Required: 1`
+   * because the cancel mutation already landed but the audit emit
+   * failed. SRE backfill SLO depth = sum(this counter) - sum(audit
+   * rows successfully backfilled). Labels distinguish the failure
+   * mode (zod-rejection vs DB-rejection) so dashboards can split
+   * deploy-skew investigations from RLS/connection-pool issues.
+   */
+  cancelAuditBackfillRequired(
+    tenantId: string,
+    auditErrorType: 'invalid_payload' | 'persist_failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'plans_cancel_audit_backfill_required_total',
+        'F2 cancelScheduledPlanChange returned 200 + X-Audit-Backfill-Required because audit emit failed but the cancel mutation already committed',
+      ).add(1, { tenant: tenantId, audit_error_type: auditErrorType });
+    });
+  },
+};
+
+// ============================================================
+// F4 — Invoicing
+// ============================================================
+
 export const invoicingMetrics = {
   /**
    * Successful invoice issuance count. Incremented inside the
@@ -1204,6 +1251,8 @@ export const broadcastsMetrics = {
       | 'subject_too_long'
       | 'body_too_large'
       | 'body_unsafe_html'
+      // R4-H4 — keep in sync with submit-broadcast.ts SubmitPrecondition
+      | 'body_image_source_unsafe'
       | 'audience_too_large'
       | 'custom_recipient_unknown'
       | 'member_missing_primary_contact_email'
@@ -1829,6 +1878,27 @@ export const renewalsMetrics = {
       counter(
         'renewals_tier_upgrade_apply_post_paid_failed_total',
         'F8 apply-pending threw after F4 committed paid invoice — suggestion stuck in accepted_pending_apply against a paid cycle',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R2 Batch 3a (R2-C1) — F2 finaliser invocations counter. Bumped at
+   * the F8 onPaid callback site BEFORE running
+   * `finaliseF2ScheduledPlanChangeForCycle`. The finaliser runs in its
+   * own `runInTenant` tx that is SEPARATE from F4's `withTx`, so a
+   * non-zero value here that doesn't correlate 1:1 with F4
+   * `invoice_paid` audit rows is the signal for F4-commit-failure-
+   * after-F2-commit (the bounded temporal divergence window). Used by
+   * SRE to detect when the eventual-consistency assumption is being
+   * violated repeatedly; if so, escalate to the architectural fix
+   * (RecordPaymentDeps.onAfterCommitCallbacks).
+   */
+  f2FinaliseBeforeF4Commit(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_f2_finalise_before_f4_commit_total',
+        'F2 scheduled-plan-change finaliser invoked from F8 onPaid callback before F4 commits — bounded temporal divergence signal',
       ).add(1, { tenant: tenantId });
     });
   },

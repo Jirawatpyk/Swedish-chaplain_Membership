@@ -1,0 +1,148 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"outbox INSERT failed","tenantId":"test-tenant","broadcastId":"11111111-1111-1111-1111-111111111111","templateKey":"broadcast_rejected","msg":"broadcasts.member_notification.enqueue_failed"}
+ [32m✓[39m tests/unit/broadcasts/application/reject-broadcast.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"outbox INSERT failed","tenantId":"test-tenant","broadcastId":"22222222-2222-2222-2222-222222222222","templateKey":"broadcast_cancelled","msg":"broadcasts.member_notification.enqueue_failed"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"audit table down","tenantId":"test-tenant","broadcastId":"22222222-2222-2222-2222-222222222222","actorUserId":"admin-7","phase":"cancel_too_late","msg":"broadcasts.cancel.audit_emit_failed"}
+ [32m✓[39m tests/unit/broadcasts/application/cancel-broadcast.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/reconcile-stuck-sending.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"outbox INSERT failed","tenantId":"test-tenant","broadcastId":"33333333-3333-3333-3333-333333333333","templateKey":"broadcast_approved","msg":"broadcasts.member_notification.enqueue_failed"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"db write failed after resend success","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","resendAudienceId":"aud-fake-1","resendBroadcastId":"bcast-fake-1","phase":"db_write_after_resend_success","severity":"critical","msg":"broadcasts.dispatch.db_write_after_resend_success"}
+ [32m✓[39m tests/unit/broadcasts/application/approve-broadcast.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"notifications_outbox INSERT failed: connection terminated","tenantId":"test-tenant","broadcastId":"33333333-3333-3333-3333-333333333333","memberId":"44444444-4444-4444-4444-444444444444","msg":"broadcasts.delivered_email.enqueue_failed"}
+ [32m✓[39m tests/unit/broadcasts/application/process-webhook-event.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 56[2mms[22m[39m
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","expectedRecipientCount":2,"actualRecipientCount":1,"severity":"critical","msg":"broadcasts.dispatch.audience_drift_detected"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"Resend 503 โ€” service unavailable","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","resendBroadcastId":"bcast-fake-1","expectedRecipientCount":1,"severity":"critical","msg":"broadcasts.dispatch.audience_count_check_failed"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"simulated plansBridge.getPlanForMember failure","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","memberId":"m-1","msg":"broadcasts.dispatch.expired_plan_check_threw"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","subKind":"api","reason":"[REDACTED]","scheduledFor":"2026-06-15T03:55:00.000Z","epochForBudget":"2026-06-15T03:55:00.000Z","sendMode":"scheduled","elapsedMs":3900000,"severity":"critical","msg":"broadcasts.dispatch.retry_budget_exhausted"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","err":"simulated emailTransactional.sendMemberEmail failure","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","msg":"broadcasts.dispatch_failure_email.enqueue_failed"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","subKind":"api","reason":"[REDACTED]","scheduledFor":"2026-06-15T03:55:00.000Z","epochForBudget":"2026-06-15T03:55:00.000Z","sendMode":"scheduled","elapsedMs":3900000,"severity":"critical","msg":"broadcasts.dispatch.retry_budget_exhausted"}
+{"level":"error","time":1781499600000,"service":"swecham-membership","env":"test","tenantId":"test-tenant","broadcastId":"44444444-4444-4444-4444-444444444444","reason":"[REDACTED]","msg":"broadcasts.dispatch.idempotency_conflict_pre_send"}
+ [32m✓[39m tests/unit/broadcasts/application/dispatch-scheduled-broadcast.test.ts [2m([22m[2m33 tests[22m[2m)[22m[90m 91[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/unsubscribe-recipient.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit table down","tenantId":"test-tenant","memberId":"m-42","actorUserId":"admin-7","msg":"broadcasts.clear_halt.audit_emit_failed"}
+ [32m✓[39m tests/unit/broadcasts/application/clear-halt.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 40[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/domain/invariants.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Neon: connection terminated","tenantId":"test-tenant","memberId":"00000000-0000-0000-0000-00000000bbbb","userId":"user-1","requestId":"req-1","msg":"broadcasts.acknowledge.repo_error"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit transport down","tenantId":"test-tenant","memberId":"00000000-0000-0000-0000-00000000aaaa","broadcastId":"11111111-1111-1111-1111-111111111111","actorUserId":"user-1","requestId":"req-1","msg":"broadcasts.cross_member_probe.audit_emit_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit transport down","tenantId":"test-tenant","memberId":"00000000-0000-0000-0000-00000000bbbb","userId":"user-1","bannerLocale":"en","acknowledgedAt":"2026-05-01T05:00:00.000Z","requestId":"req-1","msg":"broadcasts.acknowledge.audit_emit_failed"}
+ [32m✓[39m tests/unit/broadcasts/application/acknowledge-broadcasts-terms.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/validate-custom-recipients.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/get-member-broadcast.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 41[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/resolve-segment-recipients.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 80[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/compute-quota-counter.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/save-draft.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 129[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"DOMPurify init failure","rawHtmlBytes":10,"msg":"broadcasts.sanitize.sanitizer_unavailable"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"unknown sanitiser error","rawHtmlBytes":10,"msg":"broadcasts.sanitize.sanitizer_unavailable"}
+ [32m✓[39m tests/unit/broadcasts/application/submit-broadcast.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 241[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/sanitize-html.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 291[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/cancel-in-flight-broadcasts-for-member.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/proxy-submit-broadcast.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 124[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/batch-boundary.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 100[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/unsubscribe-token-signer.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/resend-broadcasts-webhook-verifier.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/prune-expired-drafts.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [31m❯[39m tests/unit/broadcasts/application/audit-event-type-emission.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 70[2mms[22m[39m
+[31m   [31m×[31m F7 audit-event emission-site parity (Round 5)[2m > [22mevery event in F7_AUDIT_EVENT_TYPES has at least one emission site (or is in KNOWN_NOT_YET_EMITTED)[90m 64[2mms[22m[31m[39m
+[31m     → F7 audit events declared but never emitted from src: broadcast_body_image_source_unsafe, broadcast_image_too_large, broadcast_image_allowlist_updated, broadcast_template_created, broadcast_template_updated, broadcast_template_deleted: expected [ …(6) ] to deeply equal [][39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/clamav-virus-scanner.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/dompurify-link-hardening.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 71[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/clamav-endpoint-resolver.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [31m❯[39m tests/unit/broadcasts/domain/broadcast-state-machine.test.ts [2m([22m[2m32 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[90m 34[2mms[22m[39m
+[31m   [31m×[31m BROADCAST_STATUSES[2m > [22mcontains all 8 lifecycle states[90m 16[2mms[22m[31m[39m
+[31m     → expected [ 'draft', 'submitted', …(8) ] to deeply equal [ 'draft', 'submitted', …(6) ][39m
+[31m   [31m×[31m BROADCAST_STATUSES[2m > [22mcount matches data-model + DB enum (8 values)[90m 4[2mms[22m[31m[39m
+[31m     → expected [ 'draft', 'submitted', …(8) ] to have a length of 8 but got 10[39m
+ [32m✓[39m tests/unit/broadcasts/domain/broadcast-phase.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/tick-memoized-members-bridge.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/application/enforce-tenant-context.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/components/status-badge-mapping.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/domain/quota-counter.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/benefits-page-helpers.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/infrastructure/delivery-aggregate-reduce.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/domain/email-lower.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/broadcasts/domain/broadcast-branding.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 3 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/broadcasts/application/audit-event-type-emission.test.ts[2m > [22mF7 audit-event emission-site parity (Round 5)[2m > [22mevery event in F7_AUDIT_EVENT_TYPES has at least one emission site (or is in KNOWN_NOT_YET_EMITTED)
+[31m[1mAssertionError[22m: F7 audit events declared but never emitted from src: broadcast_body_image_source_unsafe, broadcast_image_too_large, broadcast_image_allowlist_updated, broadcast_template_created, broadcast_template_updated, broadcast_template_deleted: expected [ …(6) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "broadcast_body_image_source_unsafe",[39m
+[31m+   "broadcast_image_too_large",[39m
+[31m+   "broadcast_image_allowlist_updated",[39m
+[31m+   "broadcast_template_created",[39m
+[31m+   "broadcast_template_updated",[39m
+[31m+   "broadcast_template_deleted",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/unit/broadcasts/application/audit-event-type-emission.test.ts:[2m103:7[22m[39m
+    [90m101| [39m      missing[33m,[39m
+    [90m102| [39m      [32m`F7 audit events declared but never emitted from src: [39m[36m${[39mmissing[33m.[39m…
+    [90m103| [39m    )[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m      [31m^[39m
+    [90m104| [39m  })[33m;[39m
+    [90m105| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/broadcasts/domain/broadcast-state-machine.test.ts[2m > [22mBROADCAST_STATUSES[2m > [22mcontains all 8 lifecycle states
+[31m[1mAssertionError[22m: expected [ 'draft', 'submitted', …(8) ] to deeply equal [ 'draft', 'submitted', …(6) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  Array [[22m
+[2m    "draft",[22m
+[2m    "submitted",[22m
+[2m    "approved",[22m
+[2m    "sending",[22m
+[2m    "sent",[22m
+[2m    "rejected",[22m
+[2m    "cancelled",[22m
+[2m    "failed_to_dispatch",[22m
+[31m+   "partially_sent",[39m
+[31m+   "partial_delivery_accepted",[39m
+[2m  ][22m
+
+[36m [2m❯[22m tests/unit/broadcasts/domain/broadcast-state-machine.test.ts:[2m27:32[22m[39m
+    [90m 25| [39m[34mdescribe[39m([32m'BROADCAST_STATUSES'[39m[33m,[39m () [33m=>[39m {
+    [90m 26| [39m  [34mit[39m([32m'contains all 8 lifecycle states'[39m[33m,[39m () [33m=>[39m {
+    [90m 27| [39m    [34mexpect[39m([33mBROADCAST_STATUSES[39m)[33m.[39m[34mtoEqual[39m([
+    [90m   | [39m                               [31m^[39m
+    [90m 28| [39m      [32m'draft'[39m[33m,[39m
+    [90m 29| [39m      [32m'submitted'[39m[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/broadcasts/domain/broadcast-state-machine.test.ts[2m > [22mBROADCAST_STATUSES[2m > [22mcount matches data-model + DB enum (8 values)
+[31m[1mAssertionError[22m: expected [ 'draft', 'submitted', …(8) ] to have a length of 8 but got 10[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 8[39m
+[31m+ 10[39m
+
+[36m [2m❯[22m tests/unit/broadcasts/domain/broadcast-state-machine.test.ts:[2m40:32[22m[39m
+    [90m 38| [39m
+    [90m 39| [39m  [34mit[39m([32m'count matches data-model + DB enum (8 values)'[39m[33m,[39m () [33m=>[39m {
+    [90m 40| [39m    [34mexpect[39m([33mBROADCAST_STATUSES[39m)[33m.[39m[34mtoHaveLength[39m([34m8[39m)[33m;[39m
+    [90m   | [39m                               [31m^[39m
+    [90m 41| [39m  })[33m;[39m
+    [90m 42| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m35 passed[39m[22m[90m (37)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m535 passed[39m[22m[90m (538)[39m
+[2m   Start at [22m 23:35:21
+[2m   Duration [22m 62.65s[2m (transform 14.86s, setup 28.38s, collect 322.96s, tests 1.90s, environment 82.05s, prepare 24.00s)[22m
+

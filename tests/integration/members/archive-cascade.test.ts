@@ -61,7 +61,7 @@ async function seedPlan(tenantSlug: string, userId: string, planId: string) {
       planId,
       planYear: 2026,
       planName: { en: 'Archive Test Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

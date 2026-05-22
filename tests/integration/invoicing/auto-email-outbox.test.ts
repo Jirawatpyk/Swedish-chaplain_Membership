@@ -90,7 +90,7 @@ async function seedTenantForIssuance(
       planId,
       planYear,
       planName: { en: 'T105 Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

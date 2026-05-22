@@ -24,6 +24,8 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   broadcast_subject_empty: 422,
   broadcast_body_too_large: 422,
   broadcast_body_unsafe_html: 422,
+  // F7.1a US2 (FR-011, AS2 closure 2026-05-20)
+  broadcast_body_image_source_unsafe: 422,
   broadcast_custom_recipient_unknown: 422,
   broadcast_custom_recipient_invalid_format: 422,
   broadcast_custom_recipient_empty: 422,
@@ -41,10 +43,21 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   broadcast_rejection_reason_too_long: 400,
   broadcast_cancel_reason_too_long: 400,
   broadcast_member_not_found: 404,
+  // F7.1a US1 — admin retry + partial-delivery
+  broadcast_manual_retry_budget_exhausted: 409,
+  broadcast_already_retrying_in_progress: 409,
+  broadcast_partial_delivery_reason_too_long: 400,
   // Generic HTTP-shape codes
   invalid_body: 400,
   forbidden: 403,
   feature_disabled: 503,
+  // R3.6 L-1 — typed 401 code for unauthenticated member-facing
+  // routes (was stringly-typed 'no-session' in templates GET route
+  // pre-R3.6).
+  no_session: 401,
+  // R4.2 H-1 — typed 400 code for invalid `locale` query parameter
+  // on GET /api/broadcasts/templates (was stringly-typed pre-R4.2).
+  invalid_locale: 400,
   internal_error: 500,
 };
 

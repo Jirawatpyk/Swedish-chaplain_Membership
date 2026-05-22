@@ -192,8 +192,17 @@ function joinMultilineQuotedRows(text: string): string[] {
         i++;
         continue;
       }
-      // Any other char (including \r / \n) inside a quote is part of
-      // the cell content.
+      // Embedded line endings inside a quoted cell: normalise to `\n`
+      // (drop `\r`, fold `\r\n` → `\n`). This matches the RFC 4180 § 2.6
+      // intent + downstream consumer expectations (callers compare cell
+      // content against literal `\n` separators). F6.1 / Feature 013 ·
+      // T009 fixture row 1 has `attendee_company = "Acme\r\nMulti-line Co"`
+      // — must parse as `"Acme\nMulti-line Co"`.
+      if (ch === '\r') {
+        buffer += '\n';
+        i += text[i + 1] === '\n' ? 2 : 1;
+        continue;
+      }
       buffer += ch;
       i++;
       continue;

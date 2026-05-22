@@ -164,7 +164,23 @@ export async function PATCH(
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // Post-ship R6 Batch 2b — surface Upstash outage as 503 instead of
+  // silently continuing. Mirrors `_idempotency-guard.ts:106-125` from
+  // Batch 1d. PATCH on a member can mutate plan/status — a silent
+  // drop + retry could double-apply the change.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'idempotency_reservation_failed',
+          message:
+            'Idempotency reservation temporarily unavailable. Retry shortly.',
+        },
+      },
+      { status: 503, headers: { 'Retry-After': '5' } },
+    );
+  }
 
   const deps = buildMembersDeps(tenant);
   const meta = { actorUserId: ctx.current.user.id, requestId: ctx.requestId };

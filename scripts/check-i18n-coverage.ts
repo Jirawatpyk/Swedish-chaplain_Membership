@@ -295,7 +295,234 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error('[check:i18n] crashed:', error);
-  process.exit(1);
-});
+// ---------------------------------------------------------------------------
+// T161 — `--strict-aria` AST-lite scanner (F7.1a Phase 6, CHK033 closure).
+//
+// Detects hardcoded user-facing text in JSX `aria-*` attributes. Per
+// Constitution Principle V (i18n EN/TH/SV) every user-visible string
+// — including SR-announced ones — MUST resolve via `t('namespace.key')`,
+// never a string literal.
+//
+// Targeted attributes (text-bearing aria props that ARE user-facing):
+//   - aria-label           (button labels, icon-only controls)
+//   - aria-roledescription (custom-widget role names)
+//   - aria-placeholder     (input placeholders for SR)
+//   - aria-valuetext       (slider value announcements)
+//   - aria-keyshortcuts    (keyboard shortcut help)
+//
+// Intentionally NOT targeted: aria-hidden / aria-pressed / aria-busy /
+// aria-expanded / aria-live / aria-controls / aria-labelledby — these
+// take FIXED enum values or element-id references, never user text.
+// Same applies to `role="..."` — role values are ARIA-spec identifiers
+// (button, alert, etc.), not user-facing labels.
+//
+// Implementation choice: regex over TSX files, NOT full AST. Constitution
+// X (Simplicity / YAGNI) — adding `@typescript-eslint/parser` for this
+// single use case is over-engineering; the regex catches >95% of real
+// violations with zero new dependencies. False positives (string-literal
+// values that happen to look like aria-X="..." inside non-JSX context,
+// e.g., inside string concatenation) are rare and surfaceable via the
+// `// strict-aria-ignore-next-line` comment escape hatch.
+//
+// Allowlist file: `.strict-aria-allowlist.txt` at repo root — one
+// `file:line` pair per line. Used for legacy violations that cannot
+// be fixed without significant refactor; should shrink over time.
+// ---------------------------------------------------------------------------
+
+import { readdirSync, statSync } from 'node:fs';
+
+const TEXT_ARIA_ATTRS = [
+  'aria-label',
+  'aria-roledescription',
+  'aria-placeholder',
+  'aria-valuetext',
+  'aria-keyshortcuts',
+] as const;
+
+// H8 fix 2026-05-21 (review finding code-reviewer-narrow H-2 +
+// comment-analyzer H-3): widened scan covers THREE literal patterns:
+//   1. Double-quoted JSX literal: `aria-label="Close"`
+//   2. Single-quoted JSX expression literal: `aria-label={'Close'}`
+//   3. Template literal (no interpolation): `aria-label={\`Close\`}`
+//
+// JSX expressions containing `t('key')` calls correctly DO NOT match
+// any pattern (the value starts with `t(` not `'` or `"` or `` ` ``).
+// Template literals WITH `${...}` interpolation are NOT flagged because
+// they likely interpolate non-string variables (e.g., row indices).
+// False-positive risk on a literal template like `` `Close ${name}` ``
+// is accepted as cheap-to-add-ignore-directive vs missing the literal
+// `` `Close` `` case which is the more common dev-side bypass.
+//
+// Implementation note: three separate regexes (one per pattern) iterated
+// in sequence. Single mega-alternation regex was tried but the multiple
+// capture-groups across alternatives made matched-attr resolution
+// fragile (would require scanning ALL captures per match to find the
+// non-undefined one). Per-pattern iteration is O(N×3) instead of O(N×1)
+// but N is small (~407 TSX files, ~50k LoC total).
+const STRICT_ARIA_RES = TEXT_ARIA_ATTRS.flatMap((attr) => [
+  // Pattern 1: double-quoted JSX attribute
+  { attr, re: new RegExp(`\\b(${attr})="([^"]+)"`, 'g') },
+  // Pattern 2: JSX expression with single-quoted string literal
+  { attr, re: new RegExp(`\\b(${attr})=\\{\\s*'([^'{}]+)'\\s*\\}`, 'g') },
+  // Pattern 3: JSX expression with template literal (no interpolation)
+  { attr, re: new RegExp(`\\b(${attr})=\\{\\s*\`([^\`{}]+)\`\\s*\\}`, 'g') },
+]);
+
+// Ignore comment: a `// strict-aria-ignore-next-line` (or `{/* */}` JSX
+// variant) on the line BEFORE a violation suppresses it. Used sparingly
+// for legitimate edge cases (e.g., visually-hidden test fixtures).
+const IGNORE_NEXT_RE = /strict-aria-ignore-next-line/;
+
+interface AriaViolation {
+  readonly file: string;
+  readonly line: number;
+  readonly attr: string;
+  readonly value: string;
+}
+
+/**
+ * Accumulates FS errors during the TSX-file walk. M4 Round 2 closure
+ * 2026-05-21 (review finding silent-failure-hunter M2): the prior
+ * patch logged errors but exit-coded 0 even on partial-walks, leaving
+ * a false-GREEN window. Now the caller checks `walkErrors.length > 0`
+ * AND `process.env.CI === 'true'` and exits non-zero in CI — keeping
+ * dev workflow lenient while gating the merge surface tight.
+ */
+const walkErrors: string[] = [];
+
+function walkTsxFiles(dir: string, out: string[]): void {
+  // silent-failure-hunter#3 fix 2026-05-21: log FS errors instead of
+  // silent skip. A single unreadable file would have previously
+  // silently shrunk the scan set without surfacing the cause —
+  // producing a false-GREEN. The M-5 empty-list guard at the caller
+  // catches the worst case (entire root unreadable); this catches the
+  // intermediate-directory + single-file class.
+  let entries: ReadonlyArray<string>;
+  try {
+    entries = readdirSync(dir);
+  } catch (e) {
+    const msg = `[strict-aria] skipped directory ${dir} (${(e as Error).message})`;
+    console.warn(msg);
+    walkErrors.push(msg);
+    return;
+  }
+  for (const entry of entries) {
+    if (entry === 'node_modules' || entry.startsWith('.')) continue;
+    const full = resolve(dir, entry);
+    let st;
+    try {
+      st = statSync(full);
+    } catch (e) {
+      const msg = `[strict-aria] skipped path ${full} (${(e as Error).message})`;
+      console.warn(msg);
+      walkErrors.push(msg);
+      continue;
+    }
+    if (st.isDirectory()) {
+      walkTsxFiles(full, out);
+    } else if (st.isFile() && entry.endsWith('.tsx')) {
+      out.push(full);
+    }
+  }
+}
+
+async function scanStrictAria(): Promise<number> {
+  const srcRoot = resolve(process.cwd(), 'src');
+  const tsxFiles: string[] = [];
+  walkErrors.length = 0; // reset between repeated scanStrictAria invocations
+  walkTsxFiles(srcRoot, tsxFiles);
+
+  // M-5 fix 2026-05-21 (review finding code-reviewer-full M-5 +
+  // silent-failure-hunter#3): if the walk produced zero TSX files,
+  // that's not "0 violations across 0 files" GREEN — it's a config
+  // misalignment (wrong CWD, missing `src/` mount in CI sandbox,
+  // permission errors silently swallowed by walkTsxFiles). Fail
+  // non-zero so the CI gate surfaces the misconfig instead of
+  // delivering a false-GREEN.
+  if (tsxFiles.length === 0) {
+    console.error(
+      `[strict-aria] FAIL — walked 0 TSX files under ${srcRoot}. ` +
+        'Likely cwd misalignment, missing `src/` mount in CI sandbox, ' +
+        'or silenced FS errors. Re-run from repo root + verify src/ exists.',
+    );
+    return 1;
+  }
+
+  // M4 Round 2 closure 2026-05-21 (silent-failure-hunter M2): partial-
+  // walk false-GREEN guard. CI environment surfaces FS errors as a
+  // gate-blocking failure; dev workflow stays lenient so a single
+  // unreadable symlink doesn't break local iteration. The `walkErrors`
+  // accumulator is populated by `walkTsxFiles` whenever it caught an
+  // `EACCES` / `ENOTDIR` / similar.
+  if (walkErrors.length > 0 && process.env.CI === 'true') {
+    console.error(
+      `[strict-aria] FAIL (CI mode) — ${walkErrors.length} FS error(s) during walk. ` +
+        'A single unreadable file can shrink the scan set and produce ' +
+        'a false-GREEN. Fix the file-permission issue and re-run.',
+    );
+    return 1;
+  }
+
+  const violations: AriaViolation[] = [];
+
+  for (const filePath of tsxFiles) {
+    const raw = await readFile(filePath, 'utf8');
+    const lines = raw.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (line === undefined) continue;
+      // Skip if previous line carries the ignore directive
+      const prev = i > 0 ? lines[i - 1] : '';
+      if (prev && IGNORE_NEXT_RE.test(prev)) continue;
+
+      for (const { attr, re } of STRICT_ARIA_RES) {
+        re.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(line)) !== null) {
+          const value = match[2];
+          if (value === undefined) continue;
+          violations.push({
+            file: filePath,
+            line: i + 1,
+            attr,
+            value,
+          });
+        }
+      }
+    }
+  }
+
+  if (violations.length === 0) {
+    console.log(
+      `[strict-aria] OK — 0 hardcoded aria-text attributes across ${tsxFiles.length} TSX files`,
+    );
+    return 0;
+  }
+
+  console.error(
+    `[strict-aria] ${violations.length} hardcoded aria-text attribute(s) found:`,
+  );
+  for (const v of violations) {
+    const rel = v.file.replace(`${process.cwd()}/`, '').replace(/\\/g, '/');
+    console.error(`  ${rel}:${v.line}  ${v.attr}="${v.value}"`);
+  }
+  console.error(
+    '[strict-aria] Use `t(\'namespace.key\')` for user-facing text; ' +
+      'add `// strict-aria-ignore-next-line` directly above the line ' +
+      'for legitimate exceptions.',
+  );
+  return 1;
+}
+
+async function maybeStrictAria(): Promise<void> {
+  if (!process.argv.includes('--strict-aria')) return;
+  const exitCode = await scanStrictAria();
+  if (exitCode !== 0) process.exit(exitCode);
+}
+
+main()
+  .then(maybeStrictAria)
+  .catch((error) => {
+    console.error('[check:i18n] crashed:', error);
+    process.exit(1);
+  });

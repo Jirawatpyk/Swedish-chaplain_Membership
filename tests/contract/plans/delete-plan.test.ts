@@ -46,7 +46,7 @@ vi.mock('@/lib/idempotency', () => ({
     return { ok: true, key };
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
-  reserveIdempotencyRecord: vi.fn(async () => undefined),
+  reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'deterministic-hash'),
 }));
@@ -87,7 +87,7 @@ const SAMPLE_DELETED_PLAN = {
   plan_id: 'premium',
   plan_year: 2026,
   plan_name: { en: 'Premium' },
-  description: { en: '' },
+  description: { en: 'Test description' },
   sort_order: 10,
   plan_category: 'corporate' as const,
   member_type_scope: 'company' as const,

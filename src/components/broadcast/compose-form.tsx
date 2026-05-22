@@ -34,12 +34,15 @@ import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
+import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
   onChange: (html: string) => void;
   disabled?: boolean;
   labelledById?: string;
+  imagesEnabled?: boolean;
+  draftId?: string | null;
 }>(() => import('./tiptap-editor'));
 
 const SubmitSchema = z.object({
@@ -63,6 +66,11 @@ const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
   broadcast_subject_empty: 'subject',
   broadcast_body_too_large: 'body',
   broadcast_body_unsafe_html: 'body',
+  // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 + AS2 closure.
+  // Field focus jumps to body editor; structured list of disallowed
+  // image sources renders below via <UnsafeImageSourcesList /> from
+  // route response `error.details.disallowedSources`.
+  broadcast_body_image_source_unsafe: 'body',
   broadcast_empty_segment_blocked: 'segment',
   broadcast_audience_too_large: 'segment',
   broadcast_custom_recipient_unknown: 'customList',
@@ -97,6 +105,13 @@ export interface ComposeFormProps {
   readonly initialSubject?: string;
   readonly initialBodyHtml?: string;
   readonly initialQuota?: QuotaSnapshot | null;
+  /**
+   * F7.1a US2 (T078) — when true, the Tiptap editor registers the
+   * image extension + renders the inline-image uploader. Resolved
+   * server-side via `isF71aUs2Enabled()` so the surface only appears
+   * when the kill-switch is fully ON.
+   */
+  readonly imagesEnabled?: boolean;
 }
 
 export function ComposeForm({
@@ -104,6 +119,7 @@ export function ComposeForm({
   initialSubject = '',
   initialBodyHtml = '<p></p>',
   initialQuota = null,
+  imagesEnabled = false,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -111,6 +127,14 @@ export function ComposeForm({
 
   const [subject, setSubject] = useState<string>(initialSubject);
   const [bodyHtml, setBodyHtml] = useState<string>(initialBodyHtml);
+  // E2E + UX bug fix 2026-05-21: track the draft id locally so the
+  // Tiptap editor's `draftId` prop is the AUTHORITATIVE source for
+  // whether the inline-image uploader renders (gated behind
+  // `draftId !== null`). Initialised from the server prop; updated
+  // when `Save as draft` POST returns a new broadcastId.
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(
+    initialDraftId,
+  );
   const [segment, setSegment] = useState<SegmentPickerValue>({
     kind: 'all_members',
     tierCodes: [],
@@ -123,6 +147,13 @@ export function ComposeForm({
     field: ServerErrorField;
     message: string;
   } | null>(null);
+  // PR-review fix 2026-05-20 UX-C1 — accumulated <img src> URLs the
+  // server rejected because their hostname is not in the tenant's
+  // image-source allowlist. Cleared when the user edits the body OR
+  // re-submits successfully.
+  const [unsafeImageSources, setUnsafeImageSources] = useState<
+    readonly string[] | null
+  >(null);
 
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyContainerRef = useRef<HTMLDivElement>(null);
@@ -186,7 +217,7 @@ export function ComposeForm({
         segment: buildSegmentPayload(segment, customLines),
         scheduledFor,
       };
-      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+      if (currentDraftId !== null) body['draftId'] = currentDraftId;
 
       const res = await fetch('/api/broadcasts/submit', {
         method: 'POST',
@@ -195,12 +226,41 @@ export function ComposeForm({
         body: JSON.stringify(body),
       });
 
-      const responseBody = (await res.json().catch(() => ({}))) as {
-        error?: { code?: string; message?: string };
+      // PR-review fix 2026-05-20 SF-M1 — distinguish malformed-JSON
+      // from network failure. The previous `.catch(() => ({}))` made
+      // them indistinguishable in the toast layer. Now: success-path
+      // JSON parse failure logs + shows specific toast; error path
+      // keeps the silent default.
+      let responseBody: {
+        error?: {
+          code?: string;
+          message?: string;
+          details?: { disallowedSources?: ReadonlyArray<string> };
+        };
         broadcastId?: string;
-      };
+      } = {};
+      try {
+        responseBody = (await res.json()) as typeof responseBody;
+      } catch (parseErr) {
+        if (res.ok) {
+          // 2xx with malformed body — server bug, not user fault.
+          // Log + treat as failure so the success-redirect path
+          // doesn't fire on a missing broadcastId.
+           
+          console.error(
+            { err: String(parseErr), status: res.status },
+            'broadcasts.submit.response_invalid_json',
+          );
+          toast.error(tErr('internal_error'));
+          return;
+        }
+        // Non-2xx + malformed body — fall through to error-mapping
+        // with the default empty {} (route was reachable but didn't
+        // return JSON; likely 5xx with HTML error page).
+      }
 
       if (res.ok && responseBody.broadcastId) {
+        setUnsafeImageSources(null);
         toast.success(t('toast.submitted'), {
           description: t('toast.submittedSlaHint'),
         });
@@ -211,6 +271,18 @@ export function ComposeForm({
       }
 
       const code = responseBody.error?.code ?? 'internal_error';
+      // PR-review fix 2026-05-20 UX-C1 — surface accumulated list of
+      // disallowed image sources from route payload so the
+      // <UnsafeImageSourcesList /> below the editor can render each
+      // offender (AS2 + FR-011).
+      if (
+        code === 'broadcast_body_image_source_unsafe' &&
+        Array.isArray(responseBody.error?.details?.disallowedSources)
+      ) {
+        setUnsafeImageSources(responseBody.error.details.disallowedSources);
+      } else {
+        setUnsafeImageSources(null);
+      }
       // Use the i18n key if recognised; fall back to the server message.
       let msg: string;
       try {
@@ -222,6 +294,14 @@ export function ComposeForm({
       setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
       toast.error(msg);
     } catch (e) {
+      // PR-review fix 2026-05-20 SF-M2 — log network failures so CSP /
+      // CORS / offline are distinguishable in browser console; toast
+      // copy stays generic for the member.
+       
+      console.error(
+        { err: String(e) },
+        'broadcasts.submit.network_failed',
+      );
       toast.error(
         e instanceof Error ? e.message : tErr('internal_error'),
       );
@@ -243,8 +323,8 @@ export function ComposeForm({
         customRecipientEmails: segment.kind === 'custom' ? customLines : null,
         scheduledFor,
       };
-      const method = initialDraftId !== null ? 'PUT' : 'POST';
-      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+      const method = currentDraftId !== null ? 'PUT' : 'POST';
+      if (currentDraftId !== null) body['draftId'] = currentDraftId;
 
       const res = await fetch('/api/broadcasts/draft', {
         method,
@@ -267,6 +347,32 @@ export function ComposeForm({
         return;
       }
       toast.success(t('toast.drafted'));
+
+      // E2E + UX bug fix 2026-05-21: when the FIRST `Save as draft` POST
+      // creates a new draft, the API returns `{ broadcastId }` but the
+      // component previously dropped the id on the floor — `currentDraftId`
+      // stayed `null`, so the Tiptap editor's inline-image uploader
+      // remained hidden (gated behind `draftId !== null`). Real-world
+      // symptom: member saves draft, expects to upload an image, sees
+      // only the "Save draft first" hint indefinitely. Fix: capture the
+      // new broadcastId from the response + update local `currentDraftId`
+      // state so the TiptapEditor re-renders with the new draftId prop
+      // (which renders the inline-image uploader instead of the hint).
+      // The compose page (server component) does not yet support
+      // `?draftId=` resume — that is F7.1b scope — so we manage the
+      // draft-id transition entirely in client state.
+      if (currentDraftId === null) {
+        try {
+          const respBody = (await res.json().catch(() => null)) as {
+            broadcastId?: string;
+          } | null;
+          if (respBody?.broadcastId) {
+            setCurrentDraftId(respBody.broadcastId);
+          }
+        } catch {
+          // best-effort — the toast already confirmed success
+        }
+      }
     } finally {
       setSubmitting(false);
     }
@@ -384,10 +490,22 @@ export function ComposeForm({
               onChange={(next) => {
                 setBodyHtml(next);
                 if (serverError?.field === 'body') setServerError(null);
+                // PR-review fix 2026-05-20 UX-C1 — clear disallowed-
+                // sources list when the user edits the body (they may
+                // be acting on the listed offenders).
+                if (unsafeImageSources !== null) setUnsafeImageSources(null);
               }}
               disabled={submitting}
               labelledById="broadcast-body-label"
+              imagesEnabled={imagesEnabled}
+              draftId={currentDraftId}
             />
+            {/* PR-review fix 2026-05-20 UX-C1 — accumulated disallowed
+                image sources list. role=alert so SR users hear it
+                immediately on submit. */}
+            {unsafeImageSources !== null && unsafeImageSources.length > 0 ? (
+              <UnsafeImageSourcesList urls={unsafeImageSources} />
+            ) : null}
             {serverError?.field === 'body' ? (
               <p
                 id="broadcast-body-error"

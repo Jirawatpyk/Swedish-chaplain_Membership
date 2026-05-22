@@ -42,6 +42,22 @@ import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expi
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
+// F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k)
+import type { SplitBroadcastIntoBatchesDeps } from '../application/use-cases/split-broadcast-into-batches';
+import type { RetryFailedBatchesDeps } from '../application/use-cases/retry-failed-batches';
+import type { AcceptPartialDeliveryDeps } from '../application/use-cases/accept-partial-delivery';
+import type { AutoRetryFailedBatchesDeps } from '../application/use-cases/auto-retry-failed-batches';
+import type { ApplyBatchWebhookEventDeps } from '../application/use-cases/apply-batch-webhook-event';
+import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
+import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
+import { pgAdvisoryLockAdapter } from './pg-advisory-lock-adapter';
+// F7.1a Phase 4 (US2 — Image embedding + allowlist + ClamAV scan)
+import { makeDrizzleImageAllowlistRepo } from './drizzle-image-allowlist-repo';
+import { vercelBlobImageStorage } from './vercel-blob-image-storage';
+import { makeClamavVirusScanner } from './clamav-virus-scanner';
+import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-image-allowlist';
+import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
+import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
@@ -67,6 +83,10 @@ export function makeSubmitBroadcastDeps(
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     sanitizer: dompurifySanitizer,
+    // PR-review fix 2026-05-20 UX-C1 — wire image-source allowlist
+    // validation into submit pipeline so the spec's AS2 + FR-011
+    // reject-with-disallowed-srcs UX surface actually fires.
+    imageAllowlistPort: makeDrizzleImageAllowlistRepo(),
     membersBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,
@@ -182,6 +202,13 @@ export function makeCancelBroadcastDeps(
     // R4 Types-#6 — member-preferred-locale lookup (today returns
     // null; future-extensibility for F12 white-label).
     membersBridge,
+    // F7.1a US1 FR-004 (Phase 3E.3) — pre-cancel pending batch halt.
+    // Production wiring includes the Drizzle BatchManifestsPort so
+    // cancel-broadcast can call `markCancelled` on pending batch rows
+    // BEFORE the broadcast-row transition. Test fixtures (F7 MVP era)
+    // can continue to mock CancelBroadcastDeps without this field
+    // since it's typed optional — backward compat preserved.
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
   };
 }
 
@@ -452,5 +479,276 @@ export async function resolveTenantByResendBroadcastId(
   return {
     tenantId: lookup.tenantId,
     broadcastId: lookup.broadcast.broadcastId,
+  };
+}
+
+// =====================================================================
+// F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) — use-case factories
+// =====================================================================
+
+/**
+ * T044 — composition root for `splitBroadcastIntoBatches` use case.
+ * Called by the cron dispatcher (Phase 3 T055) after recipient
+ * resolution completes; runs inside `runInTenant(ctx)` provided by the
+ * factory-bound `batchManifests` adapter.
+ */
+export function makeSplitBroadcastIntoBatchesDeps(
+  tenantId: string,
+): SplitBroadcastIntoBatchesDeps {
+  return {
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T047 — composition root for `retryFailedBatches` use case (admin
+ * route T050). Phase 3E.1 (2026-05-19) wired the production
+ * `pgAdvisoryLockAdapter` — T047's body runs in `broadcasts.withTx`
+ * so the lock holds across snapshot + increment + fan-out + audit
+ * (true SC-007 semantics). The inline comment on the `advisoryLock`
+ * line below is the authoritative reference.
+ */
+export function makeRetryFailedBatchesDeps(
+  tenantId: string,
+): RetryFailedBatchesDeps {
+  return {
+    broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    // Phase 3E production AdvisoryLockPort — replaces the 3C.1 noOp
+    // stub. T047 retry use case now wraps its body in
+    // `broadcasts.withTx` so the lock holds across snapshot read +
+    // increment + batch fan-out + audit emit (true SC-007 semantics).
+    advisoryLock: pgAdvisoryLockAdapter,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T048 — composition root for `acceptPartialDelivery` use case (admin
+ * route T051). No advisory lock needed — the underlying
+ * `acceptPartial` SQL uses `WHERE status='partially_sent'` so
+ * concurrent clicks serialise via DB row lock; the loser surfaces
+ * INVALID_STATE_TRANSITION.
+ */
+export function makeAcceptPartialDeliveryDeps(
+  tenantId: string,
+): AcceptPartialDeliveryDeps {
+  return {
+    broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T056 — composition root for `autoRetryFailedBatches` /
+ * `sweepAutoRetryFailedBatches` (reconcile-stuck-sending cron
+ * extension). FR-005: 5-attempt auto-retry budget per batch.
+ */
+export function makeAutoRetryFailedBatchesDeps(
+  tenantId: string,
+): AutoRetryFailedBatchesDeps {
+  return {
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T057 — composition root for `applyBatchWebhookEvent`. Called by
+ * `/api/webhooks/resend-broadcasts/route.ts` after the bypass-RLS
+ * batch lookup resolves the tenant context.
+ */
+export function makeApplyBatchWebhookEventDeps(
+  tenantId: string,
+): ApplyBatchWebhookEventDeps {
+  return {
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * Bypass-RLS lookup helper for the F7.1a webhook routing fallback.
+ * Mirrors `resolveTenantByResendBroadcastId` (F7 MVP single-audience
+ * lookup) but scans `broadcast_batch_manifests` instead of `broadcasts`.
+ * Caller is the webhook route handler — runs BEFORE
+ * `app.current_tenant` is bound, so we use a placeholder repo and
+ * call the bypass-RLS method directly.
+ */
+export async function resolveTenantByBatchProviderBroadcastId(
+  providerBroadcastId: string,
+): Promise<{
+  readonly tenantId: string;
+  readonly broadcastId: string;
+  readonly batchManifestId: string;
+  readonly batchIndex: number;
+  readonly recipientCount: number;
+} | null> {
+  const placeholderRepo = makeDrizzleBatchManifestsRepo('lookup');
+  const lookup =
+    await placeholderRepo.findBatchByProviderBroadcastIdBypassRls(
+      providerBroadcastId,
+    );
+  if (lookup === null) return null;
+  return {
+    tenantId: lookup.tenantId,
+    broadcastId: lookup.broadcastId as unknown as string,
+    batchManifestId: lookup.batchManifestId,
+    batchIndex: lookup.batchIndex,
+    recipientCount: lookup.recipientCount,
+  };
+}
+
+// ----- F7.1a Phase 4 (US2 — Image embedding) ---------------------------------
+//
+// Composition roots for the 3 US2 use-cases. Each is per-tenant for
+// symmetry with the rest of the F7 deps shape; tenant scoping is
+// enforced via `runInTenant()` at the API route layer + RLS+FORCE on
+// the underlying tables (migration 0166).
+
+/**
+ * T072 — composition root for `manageImageAllowlist` use case
+ * (admin POST /api/admin/broadcasts/settings/allowlist).
+ */
+export function makeManageImageAllowlistDeps(
+  _tenantId: string,
+): ManageImageAllowlistDeps {
+  return {
+    port: makeDrizzleImageAllowlistRepo(),
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T071 — composition root for `uploadInlineImage` use case
+ * (member POST /api/member/broadcasts/inline-image-upload).
+ * Wires ClamAV scanner + Vercel Blob image storage. The allowlist
+ * port is here for symmetry — the use case currently does not
+ * consult it directly, but a future tightening (e.g. require host
+ * pre-registered before upload) could read from it.
+ */
+export function makeUploadInlineImageDeps(
+  _tenantId: string,
+): UploadInlineImageDeps {
+  return {
+    allowlistPort: makeDrizzleImageAllowlistRepo(),
+    // `clamav-virus-scanner` exports a FACTORY (per Phase 2 T025
+    // pattern — adapter holds Phase 1 connectivity probe state) not a
+    // singleton. Compile-fix 2026-05-20 after dev-server build error
+    // surfaced the import mismatch (contract tests use mocks so
+    // didn't catch).
+    scanner: makeClamavVirusScanner(),
+    storage: vercelBlobImageStorage,
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T070 — composition root for `validateImageSourceAllowlist` use case
+ * (called from F7 MVP sanitiser integration path or directly from
+ * submit-broadcast follow-up wiring).
+ */
+export function makeValidateImageSourceAllowlistDeps(
+  _tenantId: string,
+): ValidateImageSourceAllowlistDeps {
+  return {
+    allowlistPort: makeDrizzleImageAllowlistRepo(),
+    audit: f7AuditAdapter,
+  };
+}
+
+// ----- F7.1a Phase 5 (US7 — Template library) ------------------------------
+//
+// Composition roots for the 5 US7 use-cases (T099-T103). Each is per-
+// tenant for symmetry with the rest of F7 deps shape; tenant scoping
+// is enforced via `runInTenant()` inside the port (templates repo
+// withTenantTx helper) and RLS+FORCE on broadcast_templates (migration
+// 0166).
+
+import { makeDrizzleBroadcastTemplatesRepo } from './drizzle-broadcast-templates-repo';
+import { envTenantDisplayName } from './env-tenant-display-name';
+import type { CreateBroadcastTemplateDeps } from '../application/use-cases/create-broadcast-template';
+import type { UpdateBroadcastTemplateDeps } from '../application/use-cases/update-broadcast-template';
+import type { DeleteBroadcastTemplateDeps } from '../application/use-cases/delete-broadcast-template';
+import type { SnapshotTemplateToDraftDeps } from '../application/use-cases/snapshot-template-to-draft';
+import type { ListBroadcastTemplatesDeps } from '../application/use-cases/list-broadcast-templates';
+
+/**
+ * T099 — composition root for `createBroadcastTemplate` use case
+ * (admin POST /api/admin/broadcasts/templates).
+ */
+export function makeCreateBroadcastTemplateDeps(
+  tenantId: string,
+): CreateBroadcastTemplateDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+    sanitizer: dompurifySanitizer,
+    validateImageSourceAllowlist:
+      makeValidateImageSourceAllowlistDeps(tenantId),
+  };
+}
+
+/**
+ * T100 — composition root for `updateBroadcastTemplate` use case
+ * (admin PATCH /api/admin/broadcasts/templates/:id).
+ */
+export function makeUpdateBroadcastTemplateDeps(
+  tenantId: string,
+): UpdateBroadcastTemplateDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+    sanitizer: dompurifySanitizer,
+    validateImageSourceAllowlist:
+      makeValidateImageSourceAllowlistDeps(tenantId),
+  };
+}
+
+/**
+ * T101 — composition root for `deleteBroadcastTemplate` use case
+ * (admin DELETE /api/admin/broadcasts/templates/:id).
+ */
+export function makeDeleteBroadcastTemplateDeps(
+  _tenantId: string,
+): DeleteBroadcastTemplateDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T102 — composition root for `snapshotTemplateToDraft` use case
+ * (member POST /api/member/broadcasts/draft/:id/snapshot-template).
+ * Wires the env-backed TenantDisplayName adapter — swap to a Drizzle-
+ * backed adapter when the multi-tenant SaaS `tenants` table lands.
+ */
+export function makeSnapshotTemplateToDraftDeps(
+  _tenantId: string,
+): SnapshotTemplateToDraftDeps {
+  return {
+    templatesPort: makeDrizzleBroadcastTemplatesRepo(),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(_tenantId),
+    tenantDisplayName: envTenantDisplayName,
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T103 — composition root for `listBroadcastTemplates` use case
+ * (member + admin GET /api/broadcasts/templates).
+ */
+export function makeListBroadcastTemplatesDeps(
+  _tenantId: string,
+): ListBroadcastTemplatesDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
   };
 }

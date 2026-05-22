@@ -1111,22 +1111,155 @@
 		{
 			"idx": 158,
 			"version": "7",
-			"when": 1779033600000,
+			"when": 1796371200000,
 			"tag": "0158_audit_f1_post_ship_event_types",
 			"breakpoints": true
 		},
 		{
 			"idx": 159,
 			"version": "7",
-			"when": 1779120000000,
+			"when": 1796457600000,
 			"tag": "0159_hash_session_and_token_ids",
 			"breakpoints": true
 		},
 		{
 			"idx": 160,
 			"version": "7",
-			"when": 1779200000000,
+			"when": 1796544000000,
 			"tag": "0160_event_registrations_payment_status_extend",
+			"breakpoints": true
+		},
+		{
+			"idx": 161,
+			"version": "7",
+			"when": 1796630400000,
+			"tag": "0161_f71a_broadcast_templates",
+			"breakpoints": true
+		},
+		{
+			"idx": 162,
+			"version": "7",
+			"when": 1796716800000,
+			"tag": "0162_f71a_broadcast_extensions",
+			"breakpoints": true
+		},
+		{
+			"idx": 163,
+			"version": "7",
+			"when": 1796803200000,
+			"tag": "0163_f71a_broadcast_batch_manifests",
+			"breakpoints": true
+		},
+		{
+			"idx": 164,
+			"version": "7",
+			"when": 1796889600000,
+			"tag": "0164_f71a_tenant_image_source_allowlist",
+			"breakpoints": true
+		},
+		{
+			"idx": 165,
+			"version": "7",
+			"when": 1796976000000,
+			"tag": "0165_f71a_tenant_broadcast_settings",
+			"breakpoints": true
+		},
+		{
+			"idx": 166,
+			"version": "7",
+			"when": 1797062400000,
+			"tag": "0166_f71a_rls_policies",
+			"breakpoints": true
+		},
+		{
+			"idx": 167,
+			"version": "7",
+			"when": 1797148800000,
+			"tag": "0167_f71a_audit_event_grants",
+			"breakpoints": true
+		},
+		{
+			"idx": 168,
+			"version": "7",
+			"when": 1797235200000,
+			"tag": "0168_f71a_default_template_seed",
+			"breakpoints": true
+		},
+		{
+			"idx": 169,
+			"version": "7",
+			"when": 1797321600000,
+			"tag": "0169_f71a_broadcast_status_partially_sent",
+			"breakpoints": true
+		},
+		{
+			"idx": 170,
+			"version": "7",
+			"when": 1797408000000,
+			"tag": "0170_f71a_batch_provider_broadcast_id",
+			"breakpoints": true
+		},
+		{
+			"idx": 171,
+			"version": "7",
+			"when": 1797494400000,
+			"tag": "0171_f71a_estimated_recipient_cap_50k",
+			"breakpoints": true
+		},
+		{
+			"idx": 172,
+			"version": "7",
+			"when": 1797580800000,
+			"tag": "0172_f71a_chamber_app_grants",
+			"breakpoints": true
+		},
+		{
+			"idx": 173,
+			"version": "7",
+			"when": 1797667200000,
+			"tag": "0173_f71a_webhook_batch_missing_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 174,
+			"version": "7",
+			"when": 1797753600000,
+			"tag": "0174_membership_plans_en_locale_non_empty",
+			"breakpoints": true
+		},
+		{
+			"idx": 175,
+			"version": "7",
+			"when": 1797840000000,
+			"tag": "0175_f71a_template_snapshotted_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 176,
+			"version": "7",
+			"when": 1797926400000,
+			"tag": "0176_f71a_template_seed_skipped_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 177,
+			"version": "7",
+			"when": 1798012800000,
+			"tag": "0177_f71a_image_unsafe_event_sweep",
+			"breakpoints": true
+		},
+		{
+			"idx": 178,
+			"version": "7",
+			"when": 1798099200000,
+			"tag": "0178_f71a_template_snapshot_refused_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 179,
+			"version": "7",
+			"when": 1798185600000,
+			"tag": "0179_f71a_broadcasts_template_provenance_xor",
 			"breakpoints": true
 		}
 	]

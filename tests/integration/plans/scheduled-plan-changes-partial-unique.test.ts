@@ -28,6 +28,11 @@ import { runInTenant } from '@/lib/db';
 import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
 import { createTwoTestTenants } from '../helpers/test-tenant';
+// R2 Batch 3b-bis — migration 0125 added FK chain
+// scheduled_plan_changes → renewal_cycles → members. This helper
+// seeds the prerequisite (member, cycle) pair before the test inserts
+// scheduled_plan_changes rows.
+import { seedMemberAndRenewalCycle } from '../helpers/seed-renewal-cycle';
 
 describe('Integration — scheduled_plan_changes partial-unique invariant', () => {
   const cleanups: (() => Promise<void>)[] = [];
@@ -41,8 +46,12 @@ describe('Integration — scheduled_plan_changes partial-unique invariant', () =
     cleanups.push(pair.a.cleanup, pair.b.cleanup);
     const tenant = pair.a;
 
-    const memberId = randomUUID();
-    const cycleId = randomUUID();
+    // R2 Batch 3b-bis — seed member + renewal_cycle BEFORE inserting
+    // scheduled_plan_changes (migration 0125 FK chain).
+    const { memberId, cycleId, ownerCleanup } = await seedMemberAndRenewalCycle({
+      tenant: tenant.ctx,
+    });
+    cleanups.push(ownerCleanup);
     const adminId = randomUUID();
 
     // First schedule — superseded should be null.
@@ -93,8 +102,11 @@ describe('Integration — scheduled_plan_changes partial-unique invariant', () =
     cleanups.push(pair.a.cleanup, pair.b.cleanup);
     const tenant = pair.a;
 
-    const memberId = randomUUID();
-    const cycleId = randomUUID();
+    // R2 Batch 3b-bis — seed member + renewal_cycle (migration 0125 FK).
+    const { memberId, cycleId, ownerCleanup } = await seedMemberAndRenewalCycle({
+      tenant: tenant.ctx,
+    });
+    cleanups.push(ownerCleanup);
     const adminId = randomUUID();
 
     // Insert one pending row directly — bypassing the adapter to simulate
@@ -159,8 +171,12 @@ describe('Integration — scheduled_plan_changes partial-unique invariant', () =
     cleanups.push(pair.a.cleanup, pair.b.cleanup);
     const { a: tenantA, b: tenantB } = pair;
 
-    const memberId = randomUUID();
-    const cycleId = randomUUID();
+    // R2 Batch 3b-bis — seed member + renewal_cycle in tenantA
+    // (migration 0125 FK chain).
+    const { memberId, cycleId, ownerCleanup } = await seedMemberAndRenewalCycle({
+      tenant: tenantA.ctx,
+    });
+    cleanups.push(ownerCleanup);
     const adminId = randomUUID();
 
     await drizzleScheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(

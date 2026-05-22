@@ -102,6 +102,16 @@ export {
   type BroadcastTransitionError,
 } from './domain/policies/broadcast-status-transitions';
 
+// --- Application error types — public contract --------------------------
+// Typed errors that callers (route handlers, cron jobs) need for
+// `instanceof` narrowing. Phase 3F.11.9 (HIGH-1 — Round 3): the
+// split-large-broadcasts cron narrows on `BroadcastConcurrentMutationError`
+// to distinguish benign race-lost from real DB outage. Port
+// INTERFACES (BroadcastsRepo, GatewayPort, etc.) remain unexported
+// per Constitution III boundary; the ERROR CLASS is a value-level
+// API surface analogous to `BroadcastTransitionError` above.
+export { BroadcastConcurrentMutationError } from './application/ports/broadcasts-repo';
+
 // --- Application audit-event types (T028) --------------------------------
 // Exported for F1+F2+F3 audit-log consumers + observability dashboards.
 // Port interfaces (BroadcastsRepo, GatewayPort, etc.) are NOT re-exported.
@@ -112,7 +122,8 @@ export {
   isF7AuditEventType,
   type F7AuditEvent,
   type F7AuditEventType,
-  type F7AuditPayloadFor,
+  // R8.1 M-2 — `F7AuditPayloadFor<E>` dropped; consumers use
+  // `F7AuditPayloadShapes[E]` directly (or `TypedAuditEmitInput<E>`).
   type F7AuditPayloadShapes,
 } from './application/ports/audit-port';
 
@@ -244,6 +255,67 @@ export {
   makeCancelInFlightBroadcastsForMemberDeps,
 } from './infrastructure/broadcasts-deps';
 
+// --- F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) -------------------
+export {
+  splitBroadcastIntoBatches,
+  type SplitBroadcastIntoBatchesDeps,
+  type SplitBroadcastIntoBatchesError,
+  type SplitBroadcastIntoBatchesInput,
+  type SplitBroadcastIntoBatchesOutput,
+} from './application/use-cases/split-broadcast-into-batches';
+export {
+  retryFailedBatches,
+  MANUAL_RETRY_BUDGET,
+  type RetryFailedBatchesDeps,
+  type RetryFailedBatchesError,
+  type RetryFailedBatchesInput,
+  type RetryFailedBatchesOutput,
+} from './application/use-cases/retry-failed-batches';
+export {
+  acceptPartialDelivery,
+  MAX_REASON_LENGTH,
+  type AcceptPartialDeliveryDeps,
+  type AcceptPartialDeliveryError,
+  type AcceptPartialDeliveryInput,
+  type AcceptPartialDeliveryOutput,
+} from './application/use-cases/accept-partial-delivery';
+export {
+  makeSplitBroadcastIntoBatchesDeps,
+  makeRetryFailedBatchesDeps,
+  makeAcceptPartialDeliveryDeps,
+  makeAutoRetryFailedBatchesDeps,
+  makeApplyBatchWebhookEventDeps,
+  resolveTenantByBatchProviderBroadcastId,
+} from './infrastructure/broadcasts-deps';
+export {
+  autoRetryFailedBatch,
+  sweepAutoRetryFailedBatches,
+  AUTO_RETRY_BUDGET,
+  AUTO_RETRY_COOLOFF_SECONDS,
+  type AutoRetryFailedBatchesDeps,
+  type AutoRetryFailedBatchesError,
+  type AutoRetryFailedBatchesInput,
+  type AutoRetryFailedBatchesOutput,
+  type AutoRetrySweepInput,
+  type AutoRetrySweepOutcome,
+  type AutoRetrySweepOutput,
+} from './application/use-cases/auto-retry-failed-batches';
+export {
+  applyBatchWebhookEvent,
+  type ApplyBatchWebhookEventDeps,
+  type ApplyBatchWebhookEventError,
+  type ApplyBatchWebhookEventInput,
+  type BatchWebhookEventType,
+} from './application/use-cases/apply-batch-webhook-event';
+export {
+  isF71aUs1Enabled,
+  f71aUs1DisabledReason,
+  type F71aUs1DisabledReason,
+  isF71aUs7Enabled,
+  f71aUs7DisabledReason,
+  type F71aUs7DisabledReason,
+} from './infrastructure/feature-flags';
+
 // --- Application use-cases (Phase 5 US3) ---------------------------------
 export {
   acknowledgeBroadcastsTerms,
@@ -362,6 +434,21 @@ export { makeTickMemoizedMembersBridge } from './infrastructure/tick-memoized-me
 // `member_acknowledged_broadcasts_terms` event AFTER the F3 use-case
 // completes, outside its port boundary (Round-4 CRIT-B).
 export { f7AuditAdapter } from './infrastructure/audit-adapter';
+
+// F7.1b B2 closure 2026-05-21 — Infrastructure singletons + factories
+// exposed at the barrel so the 2 broadcasts cron routes
+// (`/api/cron/broadcasts/dispatch-batches` + `split-large-broadcasts`)
+// can compose their deps without 12+ deep imports from
+// `@/modules/broadcasts/infrastructure/...`. Closes ~28 entries from
+// the `broadcasts-barrel.test.ts` KNOWN_BACKLOG (Round 2 staff-review
+// W3 architectural warning).
+export { makeDrizzleBatchManifestsRepo } from './infrastructure/drizzle-batch-manifests-repo';
+export { makeDrizzleBroadcastsRepo } from './infrastructure/db/drizzle-broadcasts-repo';
+export { makeDrizzleMarketingUnsubscribesRepo } from './infrastructure/db/drizzle-marketing-unsubscribes-repo';
+export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
+export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
+export { noOpAdvisoryLock } from './infrastructure/noop-advisory-lock';
+export { dispatchAllPendingBatches } from './application/services/batch-dispatcher';
 export type {
   MemberHaltSummary,
   MemberRecipient,
@@ -391,3 +478,124 @@ export {
   type BuildBroadcastCancelledEmailInput,
   type BroadcastNotificationLocale,
 } from './infrastructure/email/broadcast-notification-emails';
+
+// ---------------------------------------------------------------------------
+// F7.1a Phase 2 T030 — Domain-typed surface for the 3 new aggregates.
+//
+// Only TYPES are exported here (Constitution Principle III). Use-case
+// factories + composition root wiring land in Phase 3 (US1 batch
+// pagination), Phase 4 (US2 image embedding), Phase 5 (US7 template
+// library). Infrastructure adapters (`makeDrizzleBatchManifestsRepo`,
+// `makeDrizzleImageAllowlistRepo`, `makeDrizzleBroadcastTemplatesRepo`,
+// `makeClamavVirusScanner`) are wired inline via `broadcasts-deps.ts`
+// at those phases — NOT re-exported from this barrel.
+// ---------------------------------------------------------------------------
+
+// US1 (Pagination) — BatchManifest port types + Domain value types
+export type {
+  BatchManifest,
+  BatchManifestsPort,
+  BatchStatus,
+  BatchInsertError,
+  BatchUpdateError,
+  BatchStatusUpdate,
+  NewBatchManifestInput,
+} from './application/ports/batch-manifests-port';
+
+// US2 (Image embedding) — VirusScanner + ImageAllowlist port types
+export type {
+  VirusScannerPort,
+  VirusScanVerdict,
+} from './application/ports/virus-scanner-port';
+export type {
+  AllowlistEntry,
+  AllowlistAddError,
+  AllowlistRemoveError,
+  Hostname,
+  ImageAllowlistPort,
+} from './application/ports/image-allowlist-port';
+
+// US7 (Template library) — BroadcastTemplate port types + Domain value types
+export type {
+  BroadcastTemplate,
+  BroadcastTemplatesPort,
+  BroadcastTemplatesTx,
+  CreateTemplateInput,
+  ListTemplatesOpts,
+  TemplateCreateError,
+  TemplateDeleteError,
+  TemplateLocale,
+  TemplateUpdateError,
+  UpdateTemplateInput,
+} from './application/ports/broadcast-templates-port';
+export type { TenantDisplayNamePort } from './application/ports/tenant-display-name-port';
+
+// US7 Domain VO (T097)
+export {
+  escapeHtml,
+  substituteChamberName,
+} from './domain/value-objects/template-snapshot';
+
+// US7 Phase 5 Round 1 R2.2 A3+A4 — template field limits (shared
+// between Application use-cases + Presentation Zod schemas in the
+// API route handlers). Constants only — no validation logic.
+export {
+  TEMPLATE_MAX_BODY_BYTES,
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
+} from './application/use-cases/_template-field-limits';
+
+// US7 Application use-cases (Phase 5D T099-T103)
+export {
+  createBroadcastTemplate,
+  type CreateBroadcastTemplateDeps,
+  type CreateBroadcastTemplateError,
+  type CreateBroadcastTemplateInput,
+  type CreateBroadcastTemplateOutput,
+} from './application/use-cases/create-broadcast-template';
+export {
+  updateBroadcastTemplate,
+  type UpdateBroadcastTemplateDeps,
+  type UpdateBroadcastTemplateError,
+  type UpdateBroadcastTemplateInput,
+  type UpdateBroadcastTemplateOutput,
+} from './application/use-cases/update-broadcast-template';
+export {
+  deleteBroadcastTemplate,
+  type DeleteBroadcastTemplateDeps,
+  type DeleteBroadcastTemplateError,
+  type DeleteBroadcastTemplateInput,
+} from './application/use-cases/delete-broadcast-template';
+export {
+  snapshotTemplateToDraft,
+  type SnapshotTemplateToDraftDeps,
+  type SnapshotTemplateToDraftError,
+  type SnapshotTemplateToDraftInput,
+  type SnapshotTemplateToDraftOutput,
+} from './application/use-cases/snapshot-template-to-draft';
+export {
+  listBroadcastTemplates,
+  type ListBroadcastTemplatesDeps,
+  type ListBroadcastTemplatesInput,
+  type ListBroadcastTemplatesOutput,
+} from './application/use-cases/list-broadcast-templates';
+
+// US7 Composition root factories (Phase 5E)
+export {
+  makeCreateBroadcastTemplateDeps,
+  makeUpdateBroadcastTemplateDeps,
+  makeDeleteBroadcastTemplateDeps,
+  makeSnapshotTemplateToDraftDeps,
+  makeListBroadcastTemplatesDeps,
+} from './infrastructure/broadcasts-deps';
+export { envTenantDisplayName } from './infrastructure/env-tenant-display-name';
+
+// R6.6 M-4 — dead `__resetEnvTenantDisplayNameForTestsOnly` barrel
+// re-export removed (R4.3 M-14 added it speculatively for test
+// fixtures that never materialised). The underlying
+// `__resetForTestsOnly` was also dropped from
+// `infrastructure/env-tenant-display-name.ts`. If a future test needs
+// to reset the module-scoped `warnedAboutFallback` flag, prefer
+// `vi.resetModules()` which is the standard vitest seam — adding a
+// custom reset hook again would re-introduce the same dead-export
+// surface.

@@ -153,7 +153,8 @@ per `saas-architecture.md`. Every row has `tenant_id` defaulting to `'swecham'`.
 | F4 | **Membership Invoicing + Thai-tax PDF** (pro-rate, registration fee, VAT per tenant) | F1, F3 | ⚠ Finance |
 | F5 | **Online Payment** (Stripe + PromptPay, member self-service renewal) | F1, F4 | 🔒 PCI |
 | F6 | **🔄 EventCreate Integration** (was Event Management — rescoped: Zapier webhook → attendee import → benefit quota tracking) | F1, F3, F2 | ⚠ PII |
-| F7 | **🆕 Email Broadcast / E-Blast** (paid benefit delivery via Resend Broadcasts, quota tracking) | F1, F3, F2 | ⚠ PII |
+| F7 | **🆕 Email Broadcast / E-Blast** ✅ SHIPPED (MVP — PR #23 merged 2026-05-03) (paid benefit delivery via Resend Broadcasts, quota tracking) | F1, F3, F2 | ⚠ PII |
+| F7.1a | **Email Broadcast Advanced** ⏳ Phase 6 in progress on `014-email-broadcast-advance` (US1 pagination 5k→50k + US2 image embedding with allowlist + ClamAV; US7 templates deferred to Phase 2 branch). Phase 1-5 closed; Phase 6 polish T122-T128b + T130-T133 + T137-T138 + T147-T162 closing 2026-05-21 in this iteration. Ship-day operator gates (T135 manual SR / T139 Fly.io ClamAV deploy / T140 Vercel env / T141 cron coordinator / T143-T146 flag flip) remain. | F7 MVP, F4 (Blob) | ⚠ PII + new sub-processor (ClamAV on Fly.io) |
 | F8 | **Renewal Tracking + Smart Reminders** ⏳ REVIEW-READY (Phase 10 closed 2026-05-10; PR pending) (tier-aware, at-risk detection, auto-upgrade suggestions) | F1, F3, F4 | ⚠ PII |
 | F9 | **Admin Dashboard + Directory + Timeline + Audit Viewer** (benefit usage, engagement score, smart insights, GDPR export) | F1, all | ⚠ All PII |
 

@@ -36,11 +36,23 @@ const TRANSITIONS: Readonly<Record<BroadcastStatus, ReadonlyArray<BroadcastStatu
   draft: ['submitted'],
   submitted: ['approved', 'rejected', 'cancelled'],
   approved: ['sending', 'cancelled'],
-  sending: ['sent', 'failed_to_dispatch'],
+  // F7.1a US1 — `sending` can also progress to `partially_sent`
+  // (FR-008a: ≥1 batch reached failed after per-batch retry budget
+  // exhausted). The legacy `sent`/`failed_to_dispatch` edges stay
+  // for the all-success / all-fail paths.
+  sending: ['sent', 'failed_to_dispatch', 'partially_sent'],
   sent: [],
   rejected: [],
   cancelled: [],
   failed_to_dispatch: [],
+  // F7.1a US1 — `partially_sent` is NON-terminal. Two outbound edges:
+  //   - back to `sending` on admin "Retry failed batches" action
+  //     (bumps manual_retry_count to ≤3 first; Application checks the
+  //     CHECK before attempting transition)
+  //   - to `partial_delivery_accepted` (TERMINAL) on admin
+  //     "Accept partial delivery" action
+  partially_sent: ['sending', 'partial_delivery_accepted'],
+  partial_delivery_accepted: [],
 };
 
 export type BroadcastTransitionError =

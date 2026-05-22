@@ -180,7 +180,7 @@ describe('T091 — F4 tenant invoice settings lifecycle', () => {
           planId,
           planYear: 2026,
           planName: { en: 'Alpha Plan' },
-          description: { en: '' },
+          description: { en: 'Test description' },
           sortOrder: 10,
           planCategory: 'corporate',
           memberTypeScope: 'company',

@@ -76,6 +76,10 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     resendAudienceId: 'aud-1',
     resendBroadcastId: 'rsb-1',
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
     ...overrides,
@@ -99,6 +103,9 @@ function makeBroadcastsRepo(args: {
     },
     async updateDraft() {
       throw new Error('not used');
+    },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in process-webhook-event fixture');
     },
     async findById() {
       return current;
@@ -260,6 +267,9 @@ function makeAudit(): { port: AuditPort; emits: Array<AuditEmitInput> } {
     port: {
       async emit(_tx, e) {
         emits.push(e);
+      },
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
       },
     },
   };

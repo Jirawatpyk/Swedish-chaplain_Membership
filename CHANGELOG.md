@@ -13,6 +13,150 @@ spec / plan / tasks / review / retrospective for each release lives under
 
 ---
 
+## [F7.1a] Email Broadcast Advanced — 2026-05-21
+
+Pre-merge release notes for branch `014-email-broadcast-advance` → main.
+Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` (+ 3 sub-flags
+`FEATURE_F71A_US1_PAGINATION` + `FEATURE_F71A_US2_IMAGES` +
+`FEATURE_F71A_US7_TEMPLATES`). Production flag-flip is an operator
+workflow per `specs/014-email-broadcast-advance/qa/ship-day-checklist.md`.
+
+### Added
+
+**US1 — Recipient pagination (5,000 → 50,000 recipients)**
+- Per-batch dispatch state machine: split into 5 × 10,000 batches when
+  recipient count exceeds Resend per-audience cap (FR-001 + FR-002)
+- 3-attempt admin manual-retry budget with `broadcast_retry_initiated`
+  / `_completed` audit events (FR-008a)
+- 5-attempt auto-retry on transient gateway failures (FR-005)
+- Accept-partial-delivery terminal state (FR-008c) for unrecoverable
+  partial sends — admin marks broadcast complete with optional reason
+- Per-(tenant, broadcast) `pg_advisory_xact_lock` serializes concurrent
+  admin retries (`broadcasts-retry:` namespace, disjoint from F4/F5/F7)
+- 4-layer dispatch race-window defence (cron tick + FOR UPDATE SKIP
+  LOCKED + idempotency unique + row-state guard) — row-state guard is
+  LOAD-BEARING (`updateStatus WHERE status=fromStatus + .returning()`)
+- Admin batch-breakdown collapsible UI on broadcast detail page
+
+**US2 — Image embedding + allowlist + ClamAV virus scan**
+- Inline `<img>` upload with per-tenant hostname allowlist (FR-010,
+  FR-011) — admin-managed via `/admin/settings/broadcasts`
+- ClamAV virus scan with pipeline-order invariant (FR-013): bytes
+  never reach storage before clean verdict, fail-closed on timeout
+- Submit-time allowlist enforcement on hostnames extracted from body
+  HTML (single + double-quoted `src` attrs)
+- 5 MB upload size cap (FR-012) + content-hash dedup via Vercel Blob
+- ClamAV daemon on Fly.io `sin` region (~$2/mo or free tier)
+- ClamAV-unreachable banner on member compose surface (degraded mode)
+- Signature-age SLO alert at 48h (`clamav_signature_age_hours_critical`)
+
+**US7 — Multi-template library**
+- Admin authoring CRUD: `/admin/broadcasts/templates` + `/new` + `/[id]/edit`
+- Sanitiser + allowlist gating at save time (FR-017) — prevents bad
+  templates from reaching members
+- Member-side picker on compose surface with locale cascade (member
+  locale > tenant default > EN fallback) + MRU ordering (FR-018)
+- Snapshot-to-draft semantics (FR-019): pick a template → server pre-
+  populates draft subject + body with `{{chamber_name}}` substitution
+- `ChamberSubstitutedBody` Domain brand prevents un-substituted body
+  from reaching the repo writer (XSS-prevented at compile boundary)
+- `escapeHtml` applied to chamber name before substitution (XSS defence
+  in depth)
+- 5 starter templates × 3 locales seeded per tenant (FR-020 / SC-007b)
+- Snapshot decoupling (FR-023 / SC-007a): template edits do NOT mutate
+  drafts created from prior versions; `started_from_template_id` +
+  `template_name_snapshot` columns capture the point-in-time provenance
+
+**Cross-cutting**
+- 4 new DB tables (`broadcast_batch_manifests`, `broadcast_templates`,
+  `tenant_image_source_allowlist`, `tenant_broadcast_settings`)
+- 22 migrations 0161-0179 (incl. 0179 XOR CHECK constraint on
+  template-provenance for DB-level integrity)
+- 17 new audit event types (`broadcast_batch_*`, `broadcast_image_*`,
+  `broadcast_template_*`) with 5y retention
+- 5 OTel metrics (`broadcasts_batch_dispatch_duration_ms`,
+  `broadcasts_partial_send_count`, `broadcasts_manual_retry_count`,
+  `broadcasts_image_scan_duration_ms`,
+  `broadcasts_clamav_signature_age_hours`)
+- 4 SRE alerts + 3 runbooks (clamav-signature-stale,
+  clamav-daemon-down, broadcast-partial-send-recovery)
+- 3 cron-job.org coordinators (dispatch-batches + split-large-broadcasts
+  + stale-pending-count gauge — every 5 min)
+- DPIA addendum (image bytes = new PII class; Vercel Blob URL = capability
+  token residual; 17-event ROPA addition)
+- 5 new client-side helpers + 11 new UI surfaces
+- 3 new E2E specs (`template-library-flow` + `image-upload-allowlist` +
+  `pagination-batch-breakdown`) — 11 tests total
+
+### Changed
+
+- **F7 MVP carryover (verify non-regression at T164)**: F7.1a does NOT
+  alter the F7 MVP dispatch path when `FEATURE_F71A_BROADCAST_ADVANCED=false`.
+  All F7 MVP behaviour preserved (single-audience dispatch for recipient
+  counts ≤ 10,000; no batch-manifest rows created).
+- **Shared `Table` primitive** (`src/components/ui/table.tsx`): added
+  `tabindex=0` + `role="region"` + `aria-label="Data table"` fallback
+  for WCAG 2.1 SC 2.1.1 (Keyboard) compliance on scrollable regions.
+  Operators SHOULD override `aria-label` per Table instance via prop.
+- **`compose-form.tsx` `Save as draft` flow**: captures `broadcastId`
+  from POST response + updates local `currentDraftId` state so inline-
+  image uploader becomes available after first save (was: hidden
+  indefinitely until manual refresh — caught by E2E).
+
+### Fixed
+
+- **Production bug**: `compose-form.tsx` Save Draft API returned
+  `{broadcastId}` but form dropped it — inline-image uploader stayed
+  hidden indefinitely for first-time members (caught by E2E `runAxeScan`
+  + `pageerror` fixture).
+- **Production bug**: `Table` primitive missing tabindex/role/aria-label
+  → axe-core `scrollable-region-focusable` violation on every Table
+  surface in the app (admin members directory, invoices, plans, broadcasts).
+- **Production bug**: ComposeForm `useState(initialSubject)` did not
+  re-init on prop change; template selection via `router.push(?template=)`
+  preserved stale form state. Fixed with `key={selectedTemplateId}`
+  remount.
+- **Architecture debt**: `Hostname` brand extracted to Domain layer
+  (closes Plan.md Complexity Tracking #5).
+- **Architecture debt**: 14 deep imports moved through `@/modules/broadcasts`
+  barrel across 2 cron routes (`broadcasts-barrel.test.ts` KNOWN_BACKLOG
+  shrunk 40 → 26).
+- **Code quality**: `f7AuditAdapter:` string-prefix error matching
+  replaced with tagged `AuditPortInvariantError` class (back-compat
+  fallback preserved).
+
+### Technical Notes
+
+- **Constitution v1.4.0 compliance**: All 10 principles PASS. 5 Complexity
+  Tracking entries justified in `plan.md`; CT #5 closed by F7.1b B1.
+- **Bounded context**: `src/modules/broadcasts/` extends F7 MVP — same
+  Resend Broadcasts API surface, same dispatch/webhook/audit machinery.
+- **Solo-maintainer review substitute** (Principle IX): 7 review rounds
+  (R1 narrow → R2 7-agent → R3 Phase 6 polish → R4 "ไม่ defer" simplifier
+  → R5 Round-2 findings → R5+ LOW polish → R6 staff-review 3-agent
+  APPROVED WITH CONDITIONS → R7 F7.1b backlog closure). ~87 task
+  closures across 7 rounds.
+- **Test discipline**: 938/938 broadcasts contract+unit + 172/182
+  integration (10 staging-gated operator skips) + 20/20 cross-tenant
+  probe on live Neon Singapore + 11/11 F7.1a broadcasts E2E on chromium.
+  Coverage: Domain 100% line · Application 80% line+branch · 100% branch
+  on security-critical paths.
+- **Ship-day operator gates** (DO NOT MERGE UNTIL ALL DONE): T135/T136
+  manual SR + quickstart · T139 Fly.io ClamAV deploy · T140 Vercel env
+  vars · T141 cron-job.org coordinators · T142 16-flag-matrix · T143-T146
+  production flag-flip sequence · T149 final commit tag · T164 F7 MVP
+  non-regression. Full procedures in
+  `specs/014-email-broadcast-advance/qa/ship-day-checklist.md`.
+- **F7.1b deferred** (out of MVP scope): B4 live-Blob erasure cascade
+  test (staging Vercel Blob token) · B10 disposable Neon branch (CI
+  infra, ~4h) · B7 remaining 17+ E2E specs (F7.2 a11y-hardening sweep).
+- **Zero new npm dependencies** in Round 5-7 (Constitution X). Reuses
+  existing primitives: Vercel Blob (F4), advisory locks (F4+F5), Tiptap
+  + DOMPurify (F7 MVP), `runInTenant()` (F2+), `next-intl` (F1+),
+  shadcn primitives.
+
+---
+
 ## [F6] EventCreate Integration — 2026-05-19
 
 **Spec**: [`specs/012-eventcreate-integration/spec.md`](specs/012-eventcreate-integration/spec.md)

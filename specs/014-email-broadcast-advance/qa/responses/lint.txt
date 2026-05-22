@@ -1,0 +1,5 @@
+
+> swecham-membership@0.1.0 lint C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> eslint
+
+exit=0

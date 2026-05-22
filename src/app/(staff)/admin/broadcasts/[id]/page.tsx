@@ -9,7 +9,18 @@ import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
-import { makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
+import {
+  BatchBreakdown,
+  type BatchBreakdownRow,
+  type BatchStatusForUi,
+} from '@/components/broadcast/admin/batch-breakdown';
+import {
+  isF71aUs1Enabled,
+  makeGetBroadcastDeps,
+  MANUAL_RETRY_BUDGET,
+  parseBroadcastId,
+} from '@/modules/broadcasts';
+import { makeDrizzleBatchManifestsRepo } from '@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo';
 import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -75,6 +86,36 @@ export default async function AdminBroadcastDetailPage({
   // sees an explicit warning panel + Approve is blocked, not an empty
   // body indistinguishable from a whitespace-only draft.
   const sanitisedBody = renderTimeSanitise(broadcast.bodyHtml);
+
+  // F7.1a Phase 3 T049 + T061 — load per-batch manifests when US1
+  // pagination feature is enabled. When OFF: skip the DB query
+  // entirely (avoids surfacing legacy batch rows from a prior on/off
+  // toggle) and hide the BatchBreakdown surface. F7 MVP single-
+  // audience broadcasts dispatched while US1 is off would have NO
+  // manifests anyway — the gate is defence-in-depth.
+  //
+  // Phase 3F.8 (F-14 fix) — loadBatchBreakdownRows returns null on
+  // load failure (was empty array). Null is rendered as an inline
+  // error banner below + skips the BatchBreakdown component (avoids
+  // hiding the Retry/Accept-Partial actions for partially_sent state
+  // behind a silent "not split" placeholder).
+  const f71aUs1On = isF71aUs1Enabled();
+  const batchManifests = f71aUs1On
+    ? await loadBatchBreakdownRows(tenant.slug, broadcast.broadcastId)
+    : [];
+  const batchLoadFailed = batchManifests === null;
+  // Phase 3F.11.10 (Round 3 type-design LOW) — narrow once via const so
+  // the JSX below doesn't need the `as ReadonlyArray<BatchBreakdownRow>`
+  // cast. Under `!batchLoadFailed`, batchManifests is either the
+  // ReadonlyArray returned by loadBatchBreakdownRows (flag ON +
+  // load success) or `[]` from the ternary above (flag OFF).
+  const batches: ReadonlyArray<BatchBreakdownRow> = batchLoadFailed
+    ? []
+    : (batchManifests ?? []);
+  const manualRetryRemaining = Math.max(
+    0,
+    MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
+  );
 
   return (
     <DetailContainer>
@@ -161,6 +202,43 @@ export default async function AdminBroadcastDetailPage({
 
       <AuditTimeline tenantId={tenant.slug} broadcastId={broadcast.broadcastId as string} />
 
+      {/* F7.1a Phase 3 T049 — per-batch breakdown surface. Only renders
+          when the broadcast was split into multiple Resend audiences
+          (batches.length > 0) OR the broadcast is in a F7.1a-relevant
+          status (partially_sent / sending — admin needs visibility
+          into in-flight batches). Component shows "not split" fallback
+          for F7 MVP single-audience broadcasts. T061: entire surface
+          hidden when US1 flag is off. */}
+      {f71aUs1On && batchLoadFailed ? (
+        // Phase 3F.8 (F-14 fix) — explicit error panel instead of
+        // silent "not split" placeholder. Caller sees the failure +
+        // a refresh hint; ops sees the underlying error in the
+        // `admin.broadcasts.detail.batch_load_failed` log line.
+        // Phase 3F.11.1 (C3 — Round 2 fix): strings localised via
+        // `admin.broadcasts.review.batchLoadFailedTitle/Hint`. Previous
+        // hard-coded EN copy violated Constitution Principle V (i18n)
+        // for TH/SV admins.
+        <section
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+        >
+          <p className="font-semibold">{t('batchLoadFailedTitle')}</p>
+          <p className="mt-1 text-destructive/80">{t('batchLoadFailedHint')}</p>
+        </section>
+      ) : null}
+      {f71aUs1On && !batchLoadFailed ? (
+        <BatchBreakdown
+          broadcastId={broadcast.broadcastId as unknown as string}
+          broadcastStatus={broadcast.status}
+          manualRetryRemaining={manualRetryRemaining}
+          batches={batches}
+          defaultOpen={
+            broadcast.status === 'partially_sent' ||
+            broadcast.status === 'partial_delivery_accepted'
+          }
+        />
+      ) : null}
+
       {broadcast.status === 'submitted' && !isReadOnlyManager && !sanitisedBody.error ? (
         <div className="flex justify-end">
           <ReviewActions broadcastId={broadcast.broadcastId as string} />
@@ -190,6 +268,55 @@ function renderTimeSanitise(html: string): {
       'admin.broadcasts.detail.render_sanitise_failed',
     );
     return { html: '', error: true };
+  }
+}
+
+/**
+ * F7.1a Phase 3 T049 — load batch_manifests + map to the
+ * BatchBreakdown UI row shape. Empty array means this broadcast was
+ * not split into batches (F7 MVP single-audience path).
+ *
+ * Returns plain JSON-serialisable rows so the Server Component → Client
+ * Component prop pipe doesn't carry branded types (BroadcastId etc.)
+ * across the boundary.
+ */
+async function loadBatchBreakdownRows(
+  tenantSlug: string,
+  broadcastId: import('@/modules/broadcasts').BroadcastId,
+): Promise<ReadonlyArray<BatchBreakdownRow> | null> {
+  try {
+    const repo = makeDrizzleBatchManifestsRepo(tenantSlug);
+    const manifests = await repo.findByBroadcast(
+      tenantSlug as never,
+      broadcastId,
+    );
+    return manifests.map((m) => ({
+      batchManifestId: m.id,
+      batchIndex: m.batchIndex,
+      recipientRangeStart: m.recipientRangeStart,
+      recipientRangeEnd: m.recipientRangeEnd,
+      recipientCount: m.recipientCount,
+      status: m.status as BatchStatusForUi,
+      dispatchedAt: m.dispatchedAt !== null ? m.dispatchedAt.toISOString() : null,
+      retryCount: m.retryCount,
+      deliveredCount: m.deliveredCount,
+      bouncedCount: m.bouncedCount,
+      complainedCount: m.complainedCount,
+      unsubscribedCount: m.unsubscribedCount,
+    }));
+  } catch (e) {
+    logger.error(
+      { err: e instanceof Error ? e.message : String(e), tenantSlug },
+      'admin.broadcasts.detail.batch_load_failed',
+    );
+    // Phase 3F.8 (F-14 fix) — surface load failure to the caller via
+    // a sentinel `null` instead of silent "not split" fallback empty
+    // array. Previously fail-open hid the BatchBreakdown entirely
+    // for `partially_sent` broadcasts → admin lost access to Retry +
+    // Accept-Partial without any visible signal. Caller renders an
+    // inline error panel when null + broadcast is in a state where
+    // batches matter.
+    return null;
   }
 }
 

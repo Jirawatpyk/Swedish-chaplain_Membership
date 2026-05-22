@@ -90,7 +90,7 @@ describe('clearTestData script', () => {
         planId: 'clear-test-plan',
         planYear: 2026,
         planName: { en: 'Test Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

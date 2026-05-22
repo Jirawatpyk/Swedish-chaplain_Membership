@@ -24,7 +24,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { auditPayloadSchema } from '@/modules/plans/domain/audit-event';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
-import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
+import { drizzleMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/drizzle-member-attachment-checker';
 import { activatePlan } from '@/modules/plans/application/activate-plan';
 import { deactivatePlan } from '@/modules/plans/application/deactivate-plan';
 import { softDeletePlan } from '@/modules/plans/application/soft-delete-plan';
@@ -62,7 +62,7 @@ function seed(userId: string, isActive: boolean): PlanDraftInput {
     plan_id: 'premium',
     plan_year: 2027,
     plan_name: { en: 'Premium' },
-    description: { en: '' },
+    description: { en: 'Test description' },
     sort_order: 10,
     plan_category: 'corporate',
     member_type_scope: 'company',
@@ -85,7 +85,7 @@ function buildCtx(tenant: TestTenant) {
     planRepo,
     audit: planAuditAdapter,
     clock,
-    members: stubMemberAttachmentChecker,
+    members: drizzleMemberAttachmentChecker,
   };
 }
 

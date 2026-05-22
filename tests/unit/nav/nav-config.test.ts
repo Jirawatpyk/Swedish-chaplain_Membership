@@ -31,17 +31,19 @@ describe('staffNavConfig', () => {
     expect(mainSection.items[7]!.titleKey).toBe('nav.staff.users');
   });
 
-  it('second section is Settings with InvoiceSettings + RenewalSchedules + EventCreate integration (F6 entry added)', () => {
+  it('second section is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate (F7.1a US2 entry added)', () => {
     // R7 consolidation removed the Fee Configuration page. VAT +
     // currency + registration fee all live in Invoice Settings now
-    // (tenant_invoice_settings is the authoritative source). F8 then
-    // re-introduced a 2nd setting entry — Reminder schedules at
-    // /admin/settings/renewals/schedules — under the same Settings
-    // section header. F6 Phase 5 then added EventCreate integration
-    // setup wizard at /admin/settings/integrations/eventcreate.
+    // (tenant_invoice_settings is the authoritative source). F8 added
+    // Reminder schedules at /admin/settings/renewals/schedules. F6
+    // Phase 5 added EventCreate integration setup wizard. F7.1a US2
+    // added Broadcast settings (image-source allowlist) at
+    // /admin/settings/broadcasts (relocated from /admin/broadcasts/
+    // settings to align with centralised-settings IA + auto-derived
+    // breadcrumb).
     const settingsSection = staffNavConfig.sections[1]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
-    expect(settingsSection.items).toHaveLength(3);
+    expect(settingsSection.items).toHaveLength(4);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
     const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
@@ -52,11 +54,29 @@ describe('staffNavConfig', () => {
     expect(renewalSchedulesItem.href).toBe(
       '/admin/settings/renewals/schedules',
     );
-    // F6 Phase 5 — integration setup wizard entry.
+    // F7.1a US2 — broadcast settings (image-source allowlist).
     expect(settingsSection.items[2]!.titleKey).toBe(
+      'nav.staff.settingsBroadcasts',
+    );
+    const broadcastSettingsItem = settingsSection.items[2]! as NavItem;
+    expect(broadcastSettingsItem.href).toBe('/admin/settings/broadcasts');
+
+    // Structural sibling — survives nav reordering. If a future commit
+    // inserts a new Settings entry above broadcasts, the positional
+    // asserts above fail loudly while this one keeps verifying the
+    // entry itself still exists with the right href + titleKey contract.
+    const broadcastsByHref = settingsSection.items.find(
+      (item): item is NavItem =>
+        !isNavGroup(item) &&
+        (item as NavItem).href === '/admin/settings/broadcasts',
+    );
+    expect(broadcastsByHref?.titleKey).toBe('nav.staff.settingsBroadcasts');
+
+    // F6 Phase 5 — integration setup wizard entry.
+    expect(settingsSection.items[3]!.titleKey).toBe(
       'nav.staff.settingsIntegrationEventcreate',
     );
-    const integrationItem = settingsSection.items[2]! as NavItem;
+    const integrationItem = settingsSection.items[3]! as NavItem;
     expect(integrationItem.href).toBe(
       '/admin/settings/integrations/eventcreate',
     );

@@ -98,7 +98,7 @@ describe('F7 webhook idempotency integration (T152)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'T152 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

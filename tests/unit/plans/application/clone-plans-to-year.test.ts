@@ -79,7 +79,6 @@ function makeDeps(overrides: Partial<ClonePlansToYearDeps> = {}): ClonePlansToYe
     softDelete: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(async () => ok(CLONE_SUMMARY)),
-    countActiveForTenant: vi.fn(),
   };
 
   const audit = makeAuditStub();
@@ -126,7 +125,6 @@ describe('clonePlansToYear', () => {
         softDelete: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () => { throw new Error('Postgres connection lost'); }),
-        countActiveForTenant: vi.fn(),
       };
       const deps = makeDeps({ planRepo });
 
@@ -150,7 +148,6 @@ describe('clonePlansToYear', () => {
         softDelete: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () => { throw 'raw string error'; }),
-        countActiveForTenant: vi.fn(),
       };
       const deps = makeDeps({ planRepo });
 
@@ -177,7 +174,6 @@ describe('clonePlansToYear', () => {
         cloneYear: vi.fn(async () =>
           err({ type: 'target_year_populated' as const, existingCount: 7 }),
         ),
-        countActiveForTenant: vi.fn(),
       };
       const deps = makeDeps({ planRepo });
 
@@ -204,7 +200,6 @@ describe('clonePlansToYear', () => {
         softDelete: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () => err({ type: 'source_year_empty' as const })),
-        countActiveForTenant: vi.fn(),
       };
       const deps = makeDeps({ planRepo });
 
@@ -231,7 +226,6 @@ describe('clonePlansToYear', () => {
         cloneYear: vi.fn(async () =>
           err({ type: 'unexpected_future_error' as unknown as 'source_year_empty' }),
         ),
-        countActiveForTenant: vi.fn(),
       };
       const deps = makeDeps({ planRepo });
 
@@ -350,7 +344,6 @@ describe('clonePlansToYear', () => {
         cloneYear: vi.fn(async () =>
           ok({ sourceYear: SOURCE_YEAR, targetYear: TARGET_YEAR, clonedPlanIds: ordered, count: 3 }),
         ),
-        countActiveForTenant: vi.fn(),
       };
       const deps = makeDeps({ planRepo });
 

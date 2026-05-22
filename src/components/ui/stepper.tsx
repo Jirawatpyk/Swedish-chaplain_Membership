@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Check } from "lucide-react"
+import { AlertCircle, Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -14,14 +14,28 @@ import { cn } from "@/lib/utils"
  *   - status "complete"  → filled primary circle + check icon
  *   - status "current"   → outlined primary circle + index number
  *   - status "upcoming"  → muted circle + index number
+ *   - status "error"     → destructive circle + AlertCircle icon
+ *                          (F2 polish round 2: marks a step the user
+ *                          must revisit after a final-submit validation
+ *                          failure)
+ *
+ * Compact mode (`compact={true}`):
+ *   - At viewport <sm (640px), step labels are hidden so 3-4 long
+ *     non-Latin labels (e.g. Thai "ข้อมูลพื้นฐาน" / "สิทธิประโยชน์")
+ *     don't overflow. Consumers should render a compact summary
+ *     ("Step 2/4 — {label}") below the stepper in mobile breakpoints.
+ *   - Defaults to false so existing consumers (F6 webhook-config-
+ *     wizard) keep labels at all breakpoints.
  *
  * Accessibility:
  *   - The container exposes role=list and `aria-label` required.
  *   - The current step carries `aria-current="step"` so SR users can
  *     jump directly to it.
  *   - Connectors are `aria-hidden` decorative elements.
+ *   - Error steps add `aria-invalid="true"` so SRs announce the
+ *     validation state independently of the visual cue.
  */
-export type StepperStatus = "complete" | "current" | "upcoming"
+export type StepperStatus = "complete" | "current" | "upcoming" | "error"
 
 export interface StepperStep {
   /** Unique per stepper instance; used as React key. */
@@ -39,12 +53,19 @@ export interface StepperProps
   /** Localized `aria-label` describing the flow, e.g. t('payment.steps.label'). */
   "aria-label": string
   orientation?: "horizontal" | "vertical"
+  /**
+   * Hide step labels at viewport <sm (640px). Defaults to false.
+   * Consumers using `compact` typically render their own compact
+   * summary text below the stepper for mobile users.
+   */
+  compact?: boolean
 }
 
 function Stepper({
   steps,
   className,
   orientation = "horizontal",
+  compact = false,
   ...props
 }: StepperProps) {
   return (
@@ -76,6 +97,7 @@ function Stepper({
             data-slot="stepper-step"
             data-status={step.status}
             aria-current={step.status === "current" ? "step" : undefined}
+            aria-invalid={step.status === "error" ? "true" : undefined}
             className={cn(
               "flex min-w-0 flex-1",
               orientation === "horizontal"
@@ -127,10 +149,14 @@ function Stepper({
                     "border-primary bg-background text-primary",
                   step.status === "upcoming" &&
                     "border-border bg-muted text-muted-foreground",
+                  step.status === "error" &&
+                    "border-destructive bg-destructive text-destructive-foreground",
                 )}
               >
                 {step.status === "complete" ? (
                   <Check aria-hidden="true" className="size-4" />
+                ) : step.status === "error" ? (
+                  <AlertCircle aria-hidden="true" className="size-4" />
                 ) : (
                   <span aria-hidden="true">{index + 1}</span>
                 )}
@@ -155,6 +181,11 @@ function Stepper({
               className={cn(
                 "min-w-0",
                 orientation === "horizontal" ? "mt-2" : "flex-1",
+                // F2 polish round 2 — compact mode hides labels under
+                // sm:640px so long non-Latin labels (Thai/Swedish) don't
+                // overflow on mobile. Consumers render a compact summary
+                // ("Step 2/4 — {label}") below the stepper for mobile.
+                compact && orientation === "horizontal" && "hidden sm:block",
               )}
             >
               <div
@@ -162,6 +193,7 @@ function Stepper({
                 className={cn(
                   "text-sm font-medium",
                   step.status === "upcoming" && "text-muted-foreground",
+                  step.status === "error" && "text-destructive",
                 )}
               >
                 {step.label}

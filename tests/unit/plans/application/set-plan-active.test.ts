@@ -82,7 +82,6 @@ function makeDeps(overrides: DepsOverrides = {}): ActivatePlanDeps {
     softDelete: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),
-    countActiveForTenant: vi.fn(),
   };
 
   const audit = {

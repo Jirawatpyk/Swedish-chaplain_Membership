@@ -70,6 +70,9 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
       async emit(_tx, e) {
         emits.push(e);
       },
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
+      },
     },
   };
 }
@@ -153,6 +156,9 @@ function makeRepo(opts: FixtureOpts): {
       async updateDraft() {
         throw new Error('not used');
       },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in proxy-submit-broadcast fixture');
+      },
       async findById() {
         return null;
       },
@@ -235,6 +241,10 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -526,6 +536,12 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
           auditWasInsideTx = txOpened && !txClosed;
         }
         audit.emits.push(e);
+      },
+      async emitTyped(_tx, e) {
+        if (e.eventType === 'broadcast_submitted') {
+          auditWasInsideTx = txOpened && !txClosed;
+        }
+        audit.emits.push(e as AuditEmitInput);
       },
     };
     await proxySubmitBroadcast(

@@ -11,6 +11,10 @@
  * spread + override:
  *   const partnershipMatrix = { ...DEFAULT_TEST_BENEFIT_MATRIX, partnership: 'gold' };
  */
+// `BenefitMatrix` is structural; integration tests can construct via
+// object literal. Test code that wants partnership↔corporate
+// integrity validation can opt into `asBenefitMatrix()` from
+// `@/modules/plans`.
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 
 export const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrix = {

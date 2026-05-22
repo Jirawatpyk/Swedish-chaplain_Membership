@@ -67,6 +67,16 @@ export const broadcastStatusEnum = pgEnum('broadcast_status', [
   'rejected',
   'cancelled',
   'failed_to_dispatch',
+  // F7.1a US1 (FR-008a/b) — added 2026-05-19 via migration 0169.
+  // `partially_sent` is non-terminal (admin can retry up to 3 times,
+  // see broadcasts.manual_retry_count CHECK 0..3); reachable from
+  // `sending` when ≥1 batch reached terminal failed state after
+  // exhausting per-batch retry budget.
+  // `partial_delivery_accepted` is TERMINAL — entered when admin
+  // clicks "Accept partial delivery" on a `partially_sent` broadcast;
+  // sets broadcasts.partial_delivery_accepted_at + _by_user_id.
+  'partially_sent',
+  'partial_delivery_accepted',
 ]);
 
 /**
@@ -202,6 +212,29 @@ export const broadcasts = pgTable(
     // Audit retention (Constitution v1.4.0 retention column)
     retentionYears: smallint('retention_years').notNull().default(5),
 
+    // F7.1a US1 (FR-008a) — admin manual-retry budget per broadcast
+    // (max 3 retries; CHECK enforced below). Default 0 for existing
+    // and new F7 MVP rows alike.
+    manualRetryCount: integer('manual_retry_count').notNull().default(0),
+
+    // F7.1a US1 (FR-008c) — admin "Accept partial delivery" action
+    // transitions a `partially_sent` broadcast to terminal without
+    // further retry. NULL until accepted.
+    partialDeliveryAcceptedAt: timestamp('partial_delivery_accepted_at', {
+      withTimezone: true,
+    }),
+    partialDeliveryAcceptedByUserId: uuid('partial_delivery_accepted_by_user_id'),
+
+    // F7.1a US7 (FR-022) — denormalised template provenance. The FK
+    // SET NULL behaviour preserves the broadcast row when the source
+    // template is deleted; the snapshot column retains the template
+    // name for forensic audit (FR-023 / critique P9).
+    startedFromTemplateId: uuid('started_from_template_id').references(
+      () => broadcastTemplates.id,
+      { onDelete: 'set null' },
+    ),
+    templateNameSnapshot: text('template_name_snapshot'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -234,10 +267,14 @@ export const broadcasts = pgTable(
        OR (segment_type = 'custom' AND array_length(custom_recipient_emails, 1) BETWEEN 1 AND 100)`,
     ),
 
-    // FR-016a: estimated_recipient_count ≤ 5000
+    // FR-007 (F71A US1 amendment 2026-05-19): estimated_recipient_count
+    // ≤ 50,000. F7 MVP 5k cap raised to 50k via migration 0171.
+    // Application-layer T061 flag gate enforces tenant-effective cap:
+    // when F71A US1 OFF, submit-broadcast use-case rejects >5k via
+    // broadcast_audience_too_large; when ON, 50k applies.
     check(
       'broadcasts_estimated_recipient_cap',
-      sql`${table.estimatedRecipientCount} BETWEEN 0 AND 5000`,
+      sql`${table.estimatedRecipientCount} BETWEEN 0 AND 50000`,
     ),
 
     // FR-007: quota_year_consumed only set on `sent`
@@ -251,6 +288,31 @@ export const broadcasts = pgTable(
     check(
       'broadcasts_retention_years',
       sql`${table.retentionYears} IN (5, 10)`,
+    ),
+
+    // F7.1a US1 (FR-008a) — admin manual-retry budget capped at 3 per broadcast
+    check(
+      'broadcasts_manual_retry_count_check',
+      sql`${table.manualRetryCount} BETWEEN 0 AND 3`,
+    ),
+
+    // R8.4 (R7 silent-failure-LOW-2 defense-in-depth) — template-
+    // provenance XOR invariant enforced at the DB layer. Pre-R8.4 the
+    // invariant was application-layer only (Drizzle mapper at
+    // `deriveTemplateProvenance` returned null + logger.error for
+    // half-populated rows). Out-of-band SQL writes / failed migrations
+    // / future bulk-update scripts could leave the row with exactly
+    // one of the two columns populated. R8.4 converts mapper-level
+    // silent null-degradation into a Postgres 23514 check_violation
+    // at WRITE time, eliminating the corruption-on-read class entirely.
+    //
+    // Migration 0179 backfills any existing corrupt rows (NULL-out the
+    // half-populated half) before applying the constraint so the
+    // ALTER doesn't fail on legacy data.
+    check(
+      'broadcasts_template_provenance_xor',
+      sql`(started_from_template_id IS NULL AND template_name_snapshot IS NULL)
+       OR (started_from_template_id IS NOT NULL AND template_name_snapshot IS NOT NULL)`,
     ),
 
     // Indexes
@@ -453,3 +515,277 @@ export type BroadcastSegmentDefinitionRow =
   typeof broadcastSegmentDefinitions.$inferSelect;
 export type NewBroadcastSegmentDefinitionRow =
   typeof broadcastSegmentDefinitions.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// F7.1a (014-email-broadcast-advance) — 4 new tables + broadcasts extensions.
+// Migrations: 0127–0134. See specs/014-email-broadcast-advance/data-model.md.
+//
+// IMPORTANT DEVIATIONS from data-model.md (documented in plan.md
+// § Discoveries from exploration):
+//   1. tenant_id is TEXT (matches F7 MVP convention above, F4, F3).
+//      data-model.md § 2.2-2.4 incorrectly typed as uuid; we override.
+//   2. broadcasts.broadcast_id is the surrogate (composite PK
+//      `(tenant_id, broadcast_id)`), NOT `broadcasts.id`. data-model.md
+//      § 2.2 mentioned `broadcasts.id` — that column does not exist.
+//      The startedFromTemplateId FK references broadcastTemplates.id
+//      directly (single-column PK on the templates table); RLS enforces
+//      tenant isolation between broadcast and template rows.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 5. broadcast_templates (NEW — F7.1a US7, FR-020 / data-model § 2.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Admin-authored template library, seeded with 5 starter templates ×
+ * 3 locales = 15 rows per tenant at F7.1a ship (`0134_default_template_seed`).
+ *
+ * Locale semantics (data-model § 2.4): represents CONTENT locale (the
+ * language the body is written in), NOT send locale. Cross-locale
+ * authoring is permitted (Clarifications round 3 Q3).
+ *
+ * Soft-delete (`deletedAt`): preserves the audit trail FR-023 expects
+ * the count of drafts that started-from a deleted template, so the row
+ * must remain queryable after admin deletion.
+ *
+ * Single-column PK (`id`) — tenant isolation enforced by RLS+FORCE
+ * (migration 0132) and the tenant+name+locale unique index.
+ */
+export const broadcastTemplates = pgTable(
+  'broadcast_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: text('tenant_id').notNull(),
+    name: text('name').notNull(),
+    subject: text('subject').notNull(),
+    bodyHtml: text('body_html').notNull(),
+    locale: text('locale', { enum: ['en', 'th', 'sv'] })
+      .notNull()
+      .default('en'),
+    startedFromCount: integer('started_from_count').notNull().default(0),
+    isSeeded: boolean('is_seeded').notNull().default(false),
+    createdByUserId: uuid('created_by_user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('broadcast_templates_tenant_name_locale_uniq').on(
+      table.tenantId,
+      table.name,
+      table.locale,
+    ),
+    check(
+      'broadcast_templates_name_length_check',
+      sql`length(${table.name}) > 0 AND length(${table.name}) <= 100`,
+    ),
+    check(
+      'broadcast_templates_subject_length_check',
+      sql`length(${table.subject}) > 0 AND length(${table.subject}) <= 200`,
+    ),
+    check(
+      'broadcast_templates_body_length_check',
+      sql`length(${table.bodyHtml}) <= 204800`,
+    ),
+    // Picker MRU + locale-cascade filter (Phase 5 T103)
+    index('broadcast_templates_tenant_locale_updated_idx')
+      .on(table.tenantId, table.locale, table.updatedAt.desc())
+      .where(sql`deleted_at IS NULL`),
+  ],
+);
+
+export type BroadcastTemplateRow = typeof broadcastTemplates.$inferSelect;
+export type NewBroadcastTemplateRow = typeof broadcastTemplates.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// 6. broadcast_batch_manifests (NEW — F7.1a US1, FR-002 / data-model § 2.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per dispatch batch under a broadcast row. F7.1a US1 splits
+ * broadcasts of >10k recipients (Resend per-audience cap) into N
+ * parallel batches with concurrency cap 4. Each batch carries its own
+ * provider audience id + idempotency key + per-batch delivery counters.
+ *
+ * Composite FK `(tenant_id, broadcast_id) → broadcasts(tenant_id, broadcast_id)`
+ * matches F7 MVP composite-PK pattern (deviation from data-model.md §
+ * 2.2 which wrote `broadcasts.id`). ON DELETE CASCADE so deleting a
+ * broadcast also removes its manifests (no orphans).
+ *
+ * `status='cancelled'` (per data-model § 2.2 N1) is set by
+ * cancelBroadcast (Phase 3 T163) when an admin halts mid-dispatch per
+ * FR-004 — distinct from `'failed'` (provider rejection after retries).
+ */
+export const broadcastBatchManifests = pgTable(
+  'broadcast_batch_manifests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: text('tenant_id').notNull(),
+    broadcastId: uuid('broadcast_id').notNull(),
+
+    batchIndex: integer('batch_index').notNull(),
+    recipientCount: integer('recipient_count').notNull(),
+    recipientRangeStart: integer('recipient_range_start').notNull(),
+    recipientRangeEnd: integer('recipient_range_end').notNull(),
+
+    status: text('status', {
+      enum: ['pending', 'sending', 'sent', 'failed', 'cancelled'],
+    })
+      .notNull()
+      .default('pending'),
+
+    providerAudienceId: text('provider_audience_id'),
+    providerBroadcastId: text('provider_broadcast_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+
+    deliveredCount: integer('delivered_count').notNull().default(0),
+    bouncedCount: integer('bounced_count').notNull().default(0),
+    complainedCount: integer('complained_count').notNull().default(0),
+    unsubscribedCount: integer('unsubscribed_count').notNull().default(0),
+
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    failedAt: timestamp('failed_at', { withTimezone: true }),
+    failureReason: text('failure_reason'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('broadcast_batch_manifests_tenant_broadcast_batch_uniq').on(
+      table.tenantId,
+      table.broadcastId,
+      table.batchIndex,
+    ),
+    uniqueIndex('broadcast_batch_manifests_idempotency_key_uniq').on(
+      table.tenantId,
+      table.idempotencyKey,
+    ),
+    check(
+      'broadcast_batch_manifests_recipient_range_check',
+      sql`${table.recipientRangeEnd} >= ${table.recipientRangeStart}`,
+    ),
+    check(
+      'broadcast_batch_manifests_retry_count_check',
+      sql`${table.retryCount} >= 0 AND ${table.retryCount} <= 5`,
+    ),
+    check(
+      'broadcast_batch_manifests_recipient_count_check',
+      sql`${table.recipientCount} <= 10000`,
+    ),
+    // Status scan for cron dispatch + reconcile
+    index('broadcast_batch_manifests_tenant_status_idx').on(
+      table.tenantId,
+      table.status,
+    ),
+    // T057 webhook lookup — partial index (only non-null after dispatch)
+    index('broadcast_batch_manifests_provider_broadcast_id_idx').on(
+      table.providerBroadcastId,
+    ),
+  ],
+);
+
+export type BroadcastBatchManifestRow =
+  typeof broadcastBatchManifests.$inferSelect;
+export type NewBroadcastBatchManifestRow =
+  typeof broadcastBatchManifests.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// 7. tenant_image_source_allowlist (NEW — F7.1a US2, FR-010 / data-model § 2.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-tenant `<img src>` hostname allowlist. Body-HTML sanitiser
+ * (Phase 4 T070) checks every `<img>` source hostname against this
+ * table; non-matching submissions are rejected with
+ * `broadcast_body_image_source_unsafe` (audit).
+ *
+ * Defaults (chamber asset domain + Resend CDN) are seeded per tenant by
+ * migration 0130 with `is_default=TRUE`. The ImageAllowlistPort.remove
+ * (Phase 2 T022 interface, Phase 4 T072 impl) rejects removal when
+ * `is_default=TRUE` to preserve the platform invariant.
+ *
+ * Hostname format CHECK enforces RFC-1035 lowercase ASCII with no
+ * wildcards (FR-010) — explicit hosts only.
+ */
+export const tenantImageSourceAllowlist = pgTable(
+  'tenant_image_source_allowlist',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: text('tenant_id').notNull(),
+    hostname: text('hostname').notNull(),
+    isDefault: boolean('is_default').notNull().default(false),
+    createdByUserId: uuid('created_by_user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('tenant_image_source_allowlist_tenant_hostname_uniq').on(
+      table.tenantId,
+      table.hostname,
+    ),
+    check(
+      'tenant_image_source_allowlist_hostname_format_check',
+      sql`${table.hostname} ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'`,
+    ),
+  ],
+);
+
+export type TenantImageSourceAllowlistRow =
+  typeof tenantImageSourceAllowlist.$inferSelect;
+export type NewTenantImageSourceAllowlistRow =
+  typeof tenantImageSourceAllowlist.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// 8. tenant_broadcast_settings (NEW per discovery — F7.1a US1 / data-model § 2.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-tenant dispatch settings. Currently houses only the
+ * `dispatch_concurrency_cap` (FR-002 — tenant-configurable in 1-8
+ * range; default 4) that the BatchDispatcher (Phase 3 T046) reads.
+ *
+ * NOTE: data-model.md § 2.5 phrases this as "EXTEND F7 MVP" but the
+ * table did NOT exist in F7 MVP (grep across src/modules/broadcasts/**
+ * + drizzle/migrations/** confirms zero occurrences). F7.1a CREATES
+ * the table in migration 0131 — documented in plan.md Risk R2. Future
+ * F7.1b enhancements (per-tenant complaint thresholds, throttle
+ * overrides, etc.) would add columns here.
+ *
+ * One row per tenant — `tenant_id` is the primary key.
+ */
+export const tenantBroadcastSettings = pgTable(
+  'tenant_broadcast_settings',
+  {
+    tenantId: text('tenant_id').primaryKey(),
+    dispatchConcurrencyCap: integer('dispatch_concurrency_cap')
+      .notNull()
+      .default(4),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      'tenant_broadcast_settings_dispatch_concurrency_cap_check',
+      sql`${table.dispatchConcurrencyCap} BETWEEN 1 AND 8`,
+    ),
+  ],
+);
+
+export type TenantBroadcastSettingsRow =
+  typeof tenantBroadcastSettings.$inferSelect;
+export type NewTenantBroadcastSettingsRow =
+  typeof tenantBroadcastSettings.$inferInsert;

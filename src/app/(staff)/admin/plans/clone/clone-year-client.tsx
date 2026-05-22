@@ -76,7 +76,11 @@ export function CloneYearClient({
       } else {
         toast.error(t('errors.generic'));
       }
-    } catch {
+    } catch (err) {
+      // Surface client-side throws (network, AbortError, TypeError) to
+      // browser DevTools so they aren't swallowed under a generic
+      // "network" toast.
+      console.error('[plans/clone] submit threw', err);
       toast.error(t('errors.network'));
     } finally {
       setSubmitting(false);

@@ -65,7 +65,6 @@ function makeDeps(overrides: {
       softDelete: vi.fn(),
       undelete: vi.fn(),
       cloneYear: vi.fn(),
-      countActiveForTenant: vi.fn(),
     },
     audit: {
       record: vi.fn(async () => {

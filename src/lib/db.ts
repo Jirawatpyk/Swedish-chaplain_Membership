@@ -2,7 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { env } from './env';
-import type { TenantContext } from '@/modules/tenants';
+import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import * as schema from '@/modules/auth/infrastructure/db/schema';
 
 /**
@@ -107,6 +107,25 @@ export class TenantContextAssertionError extends Error {
 }
 
 export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Phase 3F.11.14 (TxToken Step 4) — centralised unbrand helper. Used
+ * by infrastructure adapters that receive a `TxToken`-typed parameter
+ * (per the F71A port contracts at `@/modules/broadcasts/application/
+ * ports/advisory-lock-port.ts`) and need the raw Drizzle `TenantTx`
+ * to call `tx.execute(...)`. The unbrand is structural (TxToken is a
+ * compile-time brand wrapped over the runtime Drizzle tx shape), so
+ * the double cast `as unknown as TenantTx` is the unavoidable TS
+ * mechanism — this helper centralises it in ONE file so future audits
+ * see exactly one place where the brand barrier is crossed.
+ *
+ * Generic-typed input so any adapter-internal `TxToken | unknown`
+ * shape can satisfy it without callers needing to know the brand
+ * mechanism.
+ */
+export function unbrandTx(token: unknown): TenantTx {
+  return token as unknown as TenantTx;
+}
 
 /**
  * Tx parameter type for bare `db.transaction(...)` callbacks (i.e.
@@ -242,6 +261,58 @@ export async function runInTenant<T>(
 
     return result;
   });
+}
+
+/**
+ * Convenience: run `fn` inside the caller's tx if provided, OR open a
+ * fresh `runInTenant` scope when tx is null/undefined. Centralises the
+ * conditional that repo adapters use when the same method serves both
+ * "caller controls the tx" (use-case threading per Constitution
+ * Principle I sub-clause 3 — atomic mutation+audit) and "open my own
+ * tx" (standalone read or external-caller) call shapes.
+ *
+ * Lifted to `@/lib/db` 2026-05-21 closing review finding simplifier H4:
+ * was byte-identical between
+ * `drizzle-image-allowlist-repo.ts:52-64` + `drizzle-broadcast-templates-repo.ts:57-69`.
+ * Two further F4/F5 patterns benefit from this same centralisation but
+ * are not in F7.1a scope to refactor.
+ *
+ * `tenantSlug` is `TenantSlug` (not `string`) so callers cannot pass a
+ * raw unbranded string — they MUST go through `asTenantContext` first.
+ * M5 Round 2 closure 2026-05-21 — closes the `as unknown as string`
+ * smell at the 2 adapter call sites.
+ *
+ * `tx` remains `unknown` because the codebase has heterogeneous brand
+ * shapes (`BroadcastTemplatesTx` is a unique-symbol-tagged object,
+ * `ImageAllowlistTx = unknown` is a pre-Phase-4 placeholder, future
+ * F4/F5/F8 tx brands may use different shapes). Tightening to a union
+ * would couple this lib to broadcasts brands (Constitution III barrel
+ * violation); generic `<TBrand extends object>` excludes the legacy
+ * `unknown`-typed ImageAllowlistTx. The brand discipline lives at the
+ * thin local aliases in each adapter (e.g.
+ * `drizzle-broadcast-templates-repo.ts:55-61`) where the wrapper
+ * narrows the parameter to the port-specific brand BEFORE delegating
+ * here. Net: `tx: unknown` at the lib boundary is acceptable because
+ * the type discipline is enforced one layer up. Promoting ImageAllowlistTx
+ * to a proper brand is F7.1b scope (post the Phase 4 ordering fix).
+ *
+ * The runtime check (`tx === null/undefined`) is the load-bearing
+ * discriminator; the cast inside the truthy branch crosses the brand
+ * barrier once inside this helper, NOT N times at every caller.
+ */
+import type { TenantSlug } from '@/modules/tenants';
+
+export async function withTenantTxOrOpen<T>(
+  tenantSlug: TenantSlug,
+  tx: unknown,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  if (tx !== null && tx !== undefined) {
+    return fn(tx as TenantTx);
+  }
+  return runInTenant(asTenantContext(tenantSlug), async (innerTx) =>
+    fn(innerTx),
+  );
 }
 
 /**

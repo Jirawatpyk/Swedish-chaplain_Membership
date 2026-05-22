@@ -43,8 +43,8 @@ import {
   type PlanSlug,
   type PlanYear,
 } from '../../domain/plan';
-import type { BenefitMatrix } from '../../domain/benefit-matrix';
-import type { LocaleText } from '../../domain/locale-text';
+import { asBenefitMatrix, type BenefitMatrix } from '../../domain/benefit-matrix';
+import { asLocaleText, type LocaleText } from '../../domain/locale-text';
 import { detectLockedFieldChanges } from '../../domain/locked-field-rule';
 
 // --- Row → Domain translation -----------------------------------------------
@@ -58,6 +58,10 @@ type MembershipPlanRow = typeof membershipPlans.$inferSelect;
  * JSONB columns.
  */
 function cloneBenefitMatrix(m: BenefitMatrix): BenefitMatrix {
+  // Deep-clone for safety in the Drizzle insert path (JSONB columns
+  // require a writable object). Partnership integrity is validated
+  // upstream by `asBenefitMatrix` in `rowToPlan` + at API boundary
+  // by zod.
   return {
     ...m,
     partnership: m.partnership ? { ...m.partnership } : null,
@@ -76,12 +80,20 @@ function cloneLocaleText(t: {
 }
 
 function rowToPlan(row: MembershipPlanRow): Plan {
+  // Use smart-constructor calls (asLocaleText / asBenefitMatrix)
+  // instead of bare `as` casts. DB CHECK constraints (migration
+  // 0006/0007) already enforce these invariants; the smart
+  // constructors are defence-in-depth that catch (a) hand-crafted
+  // hydration paths bypassing `rowToPlan`, (b) DB CHECK drift during
+  // schema migrations, (c) manual SQL fixes that bypass the CHECK.
+  // `asBenefitMatrix` is the ONE site where `planCategory` is
+  // statically known for the partnership↔category integrity check.
   return {
     tenant_id: asTenantSlug(row.tenantId),
     plan_id: asPlanSlug(row.planId),
     plan_year: asPlanYear(row.planYear),
-    plan_name: row.planName as LocaleText,
-    description: row.description as LocaleText,
+    plan_name: asLocaleText(row.planName as { en: string; th?: string; sv?: string }),
+    description: asLocaleText(row.description as { en: string; th?: string; sv?: string }),
     sort_order: row.sortOrder,
     plan_category: row.planCategory,
     member_type_scope: row.memberTypeScope,
@@ -93,7 +105,7 @@ function rowToPlan(row: MembershipPlanRow): Plan {
     max_turnover_minor_units: row.maxTurnoverMinorUnits,
     max_duration_years: row.maxDurationYears,
     max_member_age: row.maxMemberAge,
-    benefit_matrix: row.benefitMatrix as BenefitMatrix,
+    benefit_matrix: asBenefitMatrix(row.benefitMatrix as BenefitMatrix, row.planCategory),
     is_active: row.isActive,
     deleted_at: row.deletedAt,
     created_at: row.createdAt,
@@ -124,8 +136,8 @@ export const planRepo: PlanRepo = {
         conditions.push(sql`${membershipPlans.deletedAt} IS NULL`);
       }
       if (filter.q && filter.q.trim().length > 0) {
-        // Free-text search over the EN plan name (primary locale).
-        // F3+ will extend to the active locale via a Postgres JSONB path.
+        // Free-text search across all 3 locale variants of plan_name
+        // (en/th/sv) + the plan_id slug.
         conditions.push(
           or(
             ilike(sql`${membershipPlans.planName}->>'en'`, `%${filter.q}%`),
@@ -350,8 +362,25 @@ export const planRepo: PlanRepo = {
   },
 
   // -- cloneYear (US2) -------------------------------------------------------
+  //
+  // Concurrency guard (post-ship R6 I3, 2026-05-19): per-(tenant,
+  // targetYear) advisory lock at the start of the transaction. Two
+  // concurrent clones into the same (tenant, year) would otherwise race
+  // past the `count > 0` check below — the second caller's bulk INSERT
+  // would then trip the membership_plans_pkey unique constraint and
+  // roll back, but the lock guarantees the second caller blocks until
+  // the first commits and re-reads the populated count → returns
+  // `target_year_populated` cleanly. Namespace `plans:clone:` is
+  // disjoint from F4 `invoicing:` / F5 `payments:` / F7 `broadcasts:`
+  // / F8 `renewals:`. Released automatically when the tx commits or
+  // rolls back (`pg_advisory_xact_lock`).
   async cloneYear(tenant, sourceYear, targetYear, activateCloned, createdBy) {
     return runInTenant(tenant, async (tx): Promise<Result<CloneYearSummary, CloneYearError>> => {
+      const lockKey = `plans:clone:${tenant.slug}:${targetYear as number}`;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+
       // 1. Refuse if target year already populated
       const targetRows = await tx
         .select({ count: count() })
@@ -412,17 +441,6 @@ export const planRepo: PlanRepo = {
         clonedPlanIds: inserted.map((r) => asPlanSlug(r.planId)),
         count: inserted.length,
       });
-    });
-  },
-
-  // -- countActiveForTenant (T145 fee-config currency immutability guard) ----
-  async countActiveForTenant(tenant) {
-    return runInTenant(tenant, async (tx) => {
-      const rows = await tx
-        .select({ count: count() })
-        .from(membershipPlans)
-        .where(sql`${membershipPlans.deletedAt} IS NULL`);
-      return Number(rows[0]?.count ?? 0);
     });
   },
 };

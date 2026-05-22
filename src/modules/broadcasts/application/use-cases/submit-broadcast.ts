@@ -47,6 +47,7 @@ import {
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
+import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailValidatorPort } from '../ports/email-validator-port';
@@ -54,6 +55,7 @@ import type { EventAttendeesRepository } from '../ports/event-attendees-reposito
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '../ports/rate-limiter-port';
 import { sanitizeHtml } from './sanitize-html';
+import { validateImageSourceAllowlist } from './validate-image-source-allowlist';
 import { validateCustomRecipients } from './validate-custom-recipients';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
 import { computeQuotaCounter } from './compute-quota-counter';
@@ -87,6 +89,15 @@ export type SubmitBroadcastError =
   | { readonly kind: 'broadcast_subject_empty' }
   | { readonly kind: 'broadcast_body_too_large'; readonly bytes: number }
   | { readonly kind: 'broadcast_body_unsafe_html'; readonly reason: string }
+  // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 + AS2 closure.
+  // `validateImageSourceAllowlist` is invoked AFTER sanitizeHtml +
+  // BEFORE persistence; non-allowlisted <img src> hosts surface here
+  // with the full accumulated list so the compose UI can highlight
+  // every offender at once (spec FR-011 UX requirement).
+  | {
+      readonly kind: 'broadcast_body_image_source_unsafe';
+      readonly unsafeImageSources: ReadonlyArray<string>;
+    }
   | {
       readonly kind: 'broadcast_custom_recipient_unknown';
       readonly unresolved: ReadonlyArray<string>;
@@ -114,6 +125,24 @@ export interface SubmitBroadcastDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: BroadcastsRepo;
   readonly sanitizer: HtmlSanitizerPort;
+  /**
+   * PR-review fix 2026-05-20 UX-C1 — F7.1a US2 source-allowlist
+   * validation runs after sanitiser, before persistence. Production
+   * composition root (`makeSubmitBroadcastDeps`) always wires it.
+   *
+   * Kept optional (`?`) for back-compat with existing fixtures (10+
+   * fixture sites in `tests/integration/broadcasts/halt-flag-
+   * precondition.test.ts` + `tests/unit/broadcasts/application/proxy-
+   * submit-broadcast.test.ts`). Round-4 R4-L2 originally proposed
+   * tightening to required; reverted on 2026-05-21 because the
+   * change cascades to those 10+ fixture sites for marginal safety
+   * gain (the existing route handlers + `makeSubmitBroadcastDeps`
+   * always wire the port; the type-level optionality only matters
+   * inside test fixtures that override the use-case directly).
+   * When omitted the validation step is SKIPPED (legacy F7 MVP
+   * behaviour: <img> stripped entirely by sanitiser anyway).
+   */
+  readonly imageAllowlistPort?: ImageAllowlistPort;
   readonly membersBridge: MembersBridgePort;
   readonly plansBridge: PlansBridgePort;
   readonly emailValidator: EmailValidatorPort;
@@ -169,6 +198,10 @@ type SubmitPrecondition =
   | 'subject_too_long'
   | 'body_too_large'
   | 'body_unsafe_html'
+  // PR-review fix 2026-05-21 R4-H4 — F7.1a US2 image-source rejection
+  // surfaces on the submit-funnel SLO-F7-002 dashboard. Was missed by
+  // Phase A wiring; on-call could not see image-allowlist probe spikes.
+  | 'body_image_source_unsafe'
   | 'audience_too_large'
   | 'custom_recipient_unknown'
   | 'member_missing_primary_contact_email'
@@ -183,6 +216,8 @@ const PRECONDITION_BY_EVENT = {
   broadcast_subject_empty: 'subject_too_long', // R6 W-R3 — both length-violations share the same precondition bucket
   broadcast_body_too_large: 'body_too_large',
   broadcast_body_unsafe_html: 'body_unsafe_html',
+  // R4-H4 — image-source allowlist rejection (Phase A FR-011 wiring)
+  broadcast_body_image_source_unsafe: 'body_image_source_unsafe',
   broadcast_audience_too_large: 'audience_too_large',
   broadcast_custom_recipient_unknown: 'custom_recipient_unknown',
   broadcast_member_missing_primary_contact_email:
@@ -392,6 +427,46 @@ export async function submitBroadcast(
     return err(sanitised.error);
   }
 
+  // ---- Precondition (e2): image-source allowlist (F7.1a US2) -------
+  // PR-review fix 2026-05-20 UX-C1 — runs on the SANITISED body so
+  // any <img src=non-http(s)> already had its src stripped by the
+  // DOMPurify hook. Surviving <img src> hosts must match the tenant's
+  // allowlist (FR-011). Rejection accumulates ALL unsafe srcs so the
+  // editor can highlight every offender at once (FR-011 UX).
+  // emit-site logs `broadcast_body_image_source_unsafe` via
+  // safeAuditEmit (fail-soft).
+  if (deps.imageAllowlistPort) {
+    const imageCheck = await validateImageSourceAllowlist(
+      {
+        allowlistPort: deps.imageAllowlistPort,
+        audit: deps.audit,
+      },
+      {
+        bodyHtml: sanitised.value.sanitisedHtml,
+        tenantId: deps.tenant.slug as never,
+        actorUserId: input.submittedByUserId,
+        requestId: input.requestId ?? 'submit-broadcast',
+      },
+    );
+    if (!imageCheck.ok) {
+      // No emitReject() here — validateImageSourceAllowlist already
+      // emitted `broadcast_body_image_source_unsafe` via its own
+      // safeAuditEmit (fail-soft). emitReject would double-audit.
+      //
+      // PR-review fix 2026-05-21 R4-H4 — wire submit-funnel counter so
+      // image-source rejections appear on the SLO-F7-002 dashboard.
+      // Direct call (not via emitReject which would double-audit).
+      broadcastsMetrics.submitPreconditionBlocked(
+        deps.tenant.slug,
+        'body_image_source_unsafe',
+      );
+      return err({
+        kind: 'broadcast_body_image_source_unsafe',
+        unsafeImageSources: imageCheck.error.unsafeImageSources,
+      });
+    }
+  }
+
   // ---- Precondition (h): custom-list validation --------------------
   let customRecipients: ReadonlyArray<EmailLower> | null = null;
   if (input.segment.kind === 'custom') {
@@ -571,7 +646,10 @@ export async function submitBroadcast(
         'draft', // R4 Types-#5 — race-guard
       );
 
-      // Atomic audit emit (same tx)
+      // Atomic audit emit (same tx). FR-022 (F7.1a US7): payload
+      // carries `startedFromTemplateId` so analytics can identify
+      // which templates drive the most sends. Null for drafts that
+      // began Blank or pre-F7.1a drafts that never had a template.
       await deps.audit.emit(tx, {
         tenantId: deps.tenant.slug,
         eventType: 'broadcast_submitted',
@@ -584,6 +662,11 @@ export async function submitBroadcast(
           segmentType: input.segment.kind,
           estimatedRecipientCount: resolved.value.estimatedCount,
           submittedAt: now.toISOString(),
+          // R4.2 H-3 — read via canonical `templateProvenance` discriminated
+          // union (was `broadcast.startedFromTemplateId` direct read,
+          // deprecated post-R4.2; raw column kept for Drizzle mapper only).
+          startedFromTemplateId:
+            broadcast.templateProvenance?.templateId ?? null,
         },
         requestId: input.requestId,
       });

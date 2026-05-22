@@ -84,6 +84,10 @@ function makeBroadcast(
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -192,6 +196,9 @@ function makeStubAudit(): {
     port: {
       async emit(_tx, event): Promise<void> {
         events.push(event);
+      },
+      async emitTyped(_tx, event): Promise<void> {
+        events.push(event as AuditEmitInput);
       },
     },
   };

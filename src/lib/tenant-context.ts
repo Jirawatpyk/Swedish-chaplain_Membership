@@ -34,7 +34,6 @@
 
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { env } from './env';
-import { logger } from './logger';
 
 const X_TENANT_HEADER = 'x-tenant';
 
@@ -57,31 +56,20 @@ export function resolveTenantFromHeaders(
   headers: ReadonlyHeaders,
 ): TenantContext {
   // Resolver reads `x-tenant` only; all headers forwarded for
-  // forward-compat (future signed-claim parsing). Defence-in-depth
-  // try/catch around the flatten — forEach() on Next.js's
-  // ReadonlyHeaders is not documented to throw today, but a future
-  // Proxy wrapper could; we'd rather fall through to env.tenant.slug
-  // than explode the server component.
-  let flat: Record<string, string>;
-  try {
-    flat = {};
-    headers.forEach((value, key) => {
-      flat[key] = value;
-    });
-  } catch (e) {
-    // Empty headers → resolver defaults to env.tenant.slug — safe.
-    // Log loudly: a sustained pattern of `resolve_tenant_headers_flatten_throw`
-    // signals a Next.js refactor we need to track. Without this log
-    // the fallback would be invisible to ops.
-    logger.warn(
-      {
-        event: 'resolve_tenant_headers_flatten_throw',
-        err: e instanceof Error ? e.message : String(e),
-      },
-      '[tenant-context] headers.forEach threw — falling back to env.tenant.slug',
-    );
-    flat = {};
-  }
+  // forward-compat (future signed-claim parsing). The flatten
+  // throws ONLY when a future Next.js wrapper exposes a broken
+  // ReadonlyHeaders Proxy — we deliberately let that exception
+  // propagate (post-ship R6 C2, 2026-05-19). The prior try/catch
+  // silently fell back to `env.tenant.slug` which violates
+  // Constitution v1.4.0 Principle I (no silent tenant-isolation
+  // fallbacks); in a future F10 multi-tenant rollout the fallback
+  // would route requests to the deployed tenant by default, masking
+  // cross-tenant routing bugs. Fail loud — Next.js error boundaries
+  // catch the throw and render a 500 page; ops dashboards alert.
+  const flat: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    flat[key] = value;
+  });
   // TODO(F10 multi-tenant): replace the synthetic `new Request(...)`
   // construction below with a proper headers-only overload on
   // `resolveTenantFromRequest`. The hardcoded `http://localhost:3100`

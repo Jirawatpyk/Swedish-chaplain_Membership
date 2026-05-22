@@ -30,6 +30,7 @@ import { db } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
+import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import {
   tenantRenewalSettings,
   tenantRenewalSchedulePolicies,
@@ -149,15 +150,22 @@ export async function createTestTenant(
     await db.delete(tenantDocumentSequences).where(eq(tenantDocumentSequences.tenantId, slug));
     await db.delete(tenantInvoiceSettings).where(eq(tenantInvoiceSettings.tenantId, slug));
     await db.delete(contacts).where(eq(contacts.tenantId, slug));
-    await db.delete(members).where(eq(members.tenantId, slug));
-    await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));
-    // F8 Wave C T017 — cross-module table delivered by F8 PR per
-    // research.md R13. Cleanup ordered AFTER members because
-    // scheduled_plan_changes has a member_id column referencing
-    // members (no FK constraint at DB level — Domain invariant only).
+    // R2 Batch 3b-bis — migration 0125 added composite FKs:
+    //   scheduled_plan_changes → renewal_cycles → members.
+    // Cleanup order MUST be: scheduledPlanChanges → renewal_cycles →
+    // members (and renewal_cycles BEFORE members because of
+    // `renewal_cycles_member_fk` ON DELETE RESTRICT). Pre-Batch-3b
+    // the F8 tests handled this via per-test `clearTenant` helpers;
+    // now centralised here so any test that opts into the
+    // `seed-renewal-cycle.ts` helper gets correct cleanup for free.
     await db
       .delete(scheduledPlanChanges)
       .where(eq(scheduledPlanChanges.tenantId, slug));
+    await db
+      .delete(renewalCycles)
+      .where(eq(renewalCycles.tenantId, slug));
+    await db.delete(members).where(eq(members.tenantId, slug));
+    await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));
     // F8 Wave C T020 + verify-run B1 — per-test-tenant renewal config
     // rows seeded by `helpers/seed-renewal-policies.ts`. tenant_renewal_
     // schedule_policies cleanup ordered first because

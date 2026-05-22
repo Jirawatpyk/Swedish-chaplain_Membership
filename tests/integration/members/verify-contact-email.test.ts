@@ -81,7 +81,7 @@ beforeAll(async () => {
       planId: 'test-plan',
       planYear: 2026,
       planName: { en: 'Test Plan' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

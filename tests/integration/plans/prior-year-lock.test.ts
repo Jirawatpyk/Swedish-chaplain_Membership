@@ -17,7 +17,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
-import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
+import { drizzleMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/drizzle-member-attachment-checker';
 import { updatePlan } from '@/modules/plans/application/update-plan';
 import { asPlanSlug, asPlanYear } from '@/modules/plans/domain/plan';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -76,7 +76,7 @@ async function buildCtx(tenant: TestTenant) {
     planRepo,
     audit: planAuditAdapter,
     clock: makeFixedClock(2027),
-    members: stubMemberAttachmentChecker,
+    members: drizzleMemberAttachmentChecker,
   };
 }
 

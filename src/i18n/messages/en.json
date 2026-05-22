@@ -162,8 +162,10 @@
     "pagination": {
       "prev": "Go to previous page",
       "next": "Go to next page",
-      "morePages": "More pages"
+      "morePages": "More pages",
+      "navAriaLabel": "Pagination"
     },
+    "editorLoading": "Loading editor",
     "breadcrumbUI": {
       "label": "Breadcrumb",
       "more": "More"
@@ -202,6 +204,10 @@
     "close": "Close",
     "back": "Back",
     "retry": "Try again"
+  },
+  "common": {
+    "yes": "Yes",
+    "no": "No"
   },
   "admin": {
     "home": {
@@ -325,7 +331,8 @@
         "memberType": "Member type",
         "year": "Year",
         "status": "Status",
-        "actions": "Actions"
+        "actions": "Actions",
+        "actionsFor": "Actions for {planName}"
       },
       "filters": {
         "all": "All",
@@ -369,10 +376,12 @@
       "create": {
         "title": "New plan",
         "steps": {
+          "wizardAriaLabel": "Plan creation wizard steps",
           "basics": "Basics",
           "fees": "Fees",
           "benefits": "Benefits",
-          "review": "Review"
+          "review": "Review",
+          "mobileSummary": "Step {current}/{total} — {label}"
         },
         "matrix": {
           "section": {
@@ -485,6 +494,9 @@
           "save": "Save plan",
           "saving": "Saving…",
           "cancel": "Cancel"
+        },
+        "errors": {
+          "stepValidation": "Review the previous steps — some required fields are missing or invalid."
         }
       },
       "edit": {
@@ -547,6 +559,9 @@
         "forbidden": "You don’t have permission to do that.",
         "validation": "Please fix the highlighted fields.",
         "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
+        "feeConfigMissing": "Tenant fee configuration not yet initialised. Run the seed script.",
+        "loadFailed": "Failed to load plans.",
+        "backToList": "Back to plans",
         "duplicateKey": "A plan with this ID already exists for {year}.",
         "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
         "idempotencyConflict": "This request was already handled with different data. Refresh and try again.",
@@ -1494,6 +1509,7 @@
       "queue": {
         "title": "E-Blast review queue",
         "subtitle": "Review and approve broadcasts submitted by members.",
+        "templatesEntryButton": "Templates",
         "empty": "When members submit broadcasts, they appear here for your review.",
         "emptyTitle": "Queue is clear",
         "totalPending": "{count} pending",
@@ -1539,7 +1555,9 @@
           "sent": "Sent",
           "rejected": "Rejected",
           "cancelled": "Cancelled",
-          "failed_to_dispatch": "Failed"
+          "failed_to_dispatch": "Failed",
+          "partially_sent": "Partially sent",
+          "partial_delivery_accepted": "Partial delivery accepted"
         },
         "actorRole": {
           "member_self_service": "Member",
@@ -1564,6 +1582,8 @@
         "subtitle": "Inspect content + approve, reject, or cancel.",
         "bodyRenderFailedTitle": "Body could not be rendered safely",
         "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
+        "batchLoadFailedTitle": "Per-batch breakdown temporarily unavailable",
+        "batchLoadFailedHint": "We couldn't load the batch list. Refresh the page in a moment. Operators have been alerted via the structured log.",
         "fields": {
           "subject": "Subject",
           "body": "Message",
@@ -1693,6 +1713,189 @@
         "viewBroadcast": "View broadcast",
         "viewHaltedMembers": "View halted members",
         "ackHelp": "Clearing the halt is a deliberate admin action. Investigate the broadcast content + bounces before clearing."
+      },
+      "batches": {
+        "title": "Per-batch dispatch breakdown",
+        "description": "This broadcast was split into {count} batches because the recipient list exceeded Resend's 10,000-per-audience cap. Each batch is dispatched independently.",
+        "expandLabel": "Show per-batch breakdown",
+        "collapseLabel": "Hide per-batch breakdown",
+        "summary": "{succeeded} sent · {failed} failed · {pending} pending of {total} batches",
+        "tableCaption": "Per-batch dispatch breakdown, {count} batches",
+        "columns": {
+          "batchIndex": "Batch",
+          "recipientRange": "Range",
+          "recipientCount": "Recipients",
+          "status": "Status",
+          "dispatchedAt": "Dispatched",
+          "delivered": "Delivered",
+          "bounced": "Bounced",
+          "complained": "Complained",
+          "unsubscribed": "Unsubscribed",
+          "retryCount": "Retries"
+        },
+        "batchLabel": "Batch {index} of {total}",
+        "rangeLabel": "{start}–{end}",
+        "retryCountLabel": "{count} / 5",
+        "manualRetryRemaining": "Manual retries remaining: {remaining} / 3",
+        "manualRetryExhausted": "All 3 manual retries have been used",
+        "batchStatus": {
+          "pending": "Pending",
+          "sending": "Sending",
+          "sent": "Sent",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "notSplit": "This broadcast was small enough to dispatch as a single audience and was not split."
+      },
+      "retryDialog": {
+        "trigger": "Retry failed batches",
+        "triggerAria": "Retry {count} failed batches",
+        "triggerDisabledAria": "Retry unavailable — budget exhausted",
+        "title": "Retry failed batches?",
+        "description": "{count} failed batches will be re-queued for another dispatch attempt. This counts as one of your 3 manual retry attempts.",
+        "budgetLine": "You have {remaining} of 3 manual retries remaining.",
+        "warning": "Re-dispatching consumes Resend API quota and may trigger duplicate emails if the original recipients have already received the message.",
+        "confirm": "Retry now",
+        "cancel": "Cancel",
+        "submitting": "Retrying…"
+      },
+      "acceptPartialDialog": {
+        "trigger": "Accept partial delivery",
+        "triggerAria": "Accept partial delivery and finalize broadcast",
+        "title": "Accept partial delivery?",
+        "description": "This broadcast will be marked as completed in its current state. Failed batches will not be retried, and the broadcast status cannot be changed afterward.",
+        "summary": "{sent} of {total} batches delivered successfully.",
+        "reasonLabel": "Reason (optional)",
+        "reasonPlaceholder": "Optional — e.g., Resend rate-limit not clearing, member already notified separately…",
+        "reasonHelp": "Optional context for the audit trail. Maximum 500 characters.",
+        "reasonCounter": "{count} / 500",
+        "confirm": "Accept partial",
+        "cancel": "Cancel",
+        "submitting": "Accepting…"
+      },
+      "toast": {
+        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
+        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
+        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
+        "retryInvalidState": "This broadcast is not in a state that allows retry.",
+        "retryServerError": "Retry failed. Please try again or contact support.",
+        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
+        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
+        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
+        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
+      },
+      "templates": {
+        "pageTitle": "Broadcast templates",
+        "pageDescription": "Reusable starting points for your members' E-Blasts. Starter templates ship pre-seeded; admin-authored ones live alongside them.",
+        "newTemplateButton": "New template",
+        "newPageTitle": "New broadcast template",
+        "newPageDescription": "Add a reusable template members can pick when composing an E-Blast.",
+        "editPageTitle": "Edit broadcast template",
+        "editPageDescription": "Update name, subject, or body. Drafts already started from this template are NOT affected (snapshot semantics).",
+        "starterBadge": "Starter",
+        "starterBadgeAria": "Seeded by the platform",
+        "starterEditBannerTitle": "This is a starter template",
+        "starterEditBannerBody": "Editing creates a tenant-specific version. The platform will not auto-update this template if starter content is refined.",
+        "starterEditBannerDismiss": "Dismiss starter warning for {name}",
+        "filterLegend": "Filter templates by source",
+        "filterPill": {
+          "all": "All",
+          "starter": "Starter only",
+          "authored": "Admin-authored"
+        },
+        "filterCount": "{count, plural, =0 {No templates match} one {# template} other {# templates}}",
+        "filterEmpty": "No templates match this filter.",
+        "emptyState": {
+          "title": "No templates yet",
+          "body": "Once added, templates appear here. Starter templates seeded at chamber setup also show with a Starter badge.",
+          "cta": "Create your first template"
+        },
+        "columns": {
+          "name": "Name",
+          "subjectPreview": "Subject",
+          "locale": "Locale",
+          "startedFrom": "Started",
+          "startedFromAria": "Number of drafts started from this template",
+          "updatedAt": "Last modified",
+          "actions": "Actions"
+        },
+        "locale": {
+          "en": "English",
+          "th": "ไทย",
+          "sv": "Svenska"
+        },
+        "rowAction": {
+          "edit": "Edit",
+          "editAria": "Edit {name}",
+          "delete": "Delete",
+          "deleteAria": "Delete {name}"
+        },
+        "fields": {
+          "name": "Name",
+          "nameHelp": "Up to 100 characters. Unique within tenant + locale.",
+          "subject": "Subject",
+          "subjectHelp": "Up to 200 characters. May include '{{chamber_name}}' placeholder.",
+          "bodyHtml": "Body (HTML)",
+          "bodyHtmlHelp": "Up to 200 KB. Use [bracketed text] for member-editable placeholders; '{{chamber_name}}' is substituted at draft-start.",
+          "localeLabel": "Locale"
+        },
+        "saveButton": "Save template",
+        "cancelButton": "Cancel",
+        "savingButton": "Saving…",
+        "savedToast": "Template saved.",
+        "errors": {
+          "invalid_input": "Some fields are invalid. Please review and try again.",
+          "field_required": "This field is required.",
+          "template_body_unsafe": "The body contains image sources that are not on the tenant allowlist.",
+          "template_name_duplicate": "A template with this name + locale already exists.",
+          "template_not_found": "Template not found.",
+          "template_soft_deleted": "This template has been deleted. Please choose another or start blank.",
+          "storage_error": "A storage error occurred. Please try again.",
+          "unknown": "An unexpected error occurred."
+        }
+      },
+      "settings": {
+        "pageTitle": "Broadcast settings",
+        "pageDescription": "Configure how your chamber's E-Blasts behave, including which image sources are allowed in message bodies.",
+        "allowlist": {
+          "heading": "Image source allowlist",
+          "description": "Only images hosted on these domains may appear inside broadcast bodies. Default entries cannot be removed.",
+          "hostnameLabel": "Hostname",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "Lowercase ASCII, at least one dot, no wildcards.",
+          "addButton": "Add hostname",
+          "removeButton": "Remove",
+          "removeAria": "Remove {hostname}",
+          "tableCaption": "Image source allowlist entries",
+          "colHostname": "Hostname",
+          "colSource": "Source",
+          "colActions": "Actions",
+          "defaultBadge": "Default (locked)",
+          "defaultBadgeInline": "(default)",
+          "customBadge": "Custom",
+          "propagationFootnote": "Takes effect within 60 seconds for active compose sessions.",
+          "addedToast": "Hostname added.",
+          "removedToast": "Hostname removed.",
+          "addedAnnouncement": "{hostname} added to allowlist.",
+          "removedAnnouncement": "{hostname} removed from allowlist.",
+          "removeConfirm": {
+            "title": "Remove {hostname}?",
+            "body": "Members composing E-Blasts will no longer be able to embed images from this domain. This change takes effect within 60 seconds.",
+            "cancel": "Cancel",
+            "confirm": "Remove"
+          },
+          "errors": {
+            "invalid_hostname": "Invalid hostname format.",
+            "cannot_remove_default": "Default entries cannot be removed.",
+            "duplicate": "Hostname is already in the allowlist.",
+            "not_found": "Hostname not found.",
+            "storage_error": "Could not save changes. Please try again.",
+            "feature_disabled": "Image embedding is not enabled.",
+            "invalid_body": "Invalid request.",
+            "internal_error": "An unexpected error occurred. Please try again.",
+            "unknown": "Unknown error."
+          }
+        }
       }
     },
     "renewals": {
@@ -3064,7 +3267,8 @@
       "newInvoice": "Create new invoice",
       "issueRefund": "Issue refund — find paid invoice",
       "reviewBroadcasts": "Review broadcasts queue",
-      "broadcastsHalted": "Halted members — broadcast review"
+      "broadcastsHalted": "Halted members — broadcast review",
+      "newBroadcastTemplate": "Create new E-Blast template"
     },
     "navigate": {
       "plansList": "Plans list",
@@ -3076,6 +3280,8 @@
       "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
       "creditNotesList": "Credit notes list",
       "broadcastsQueue": "E-Blast review queue",
+      "broadcastTemplates": "E-Blast templates library",
+      "broadcastImageSettings": "E-Blast image source settings",
       "renewalsList": "Renewal pipeline",
       "renewalSchedules": "Renewal schedule policies",
       "escalationTasks": "Escalation tasks queue",
@@ -3095,6 +3301,7 @@
       "events": "Events",
       "settingsInvoices": "Invoice Settings",
       "settingsRenewalSchedules": "Reminder schedules",
+      "settingsBroadcasts": "Broadcast settings",
       "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
@@ -3143,7 +3350,11 @@
     "schedules": "Reminder schedules",
     "invoicing": "Invoice Settings",
     "integrations": "Integrations",
-    "eventcreate": "EventCreate"
+    "eventcreate": "EventCreate",
+    "broadcasts": "Broadcasts",
+    "templates": "Templates",
+    "newTemplate": "New Template",
+    "editTemplate": "Edit Template"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -3308,6 +3519,22 @@
       "compose": {
         "title": "Compose E-Blast",
         "subtitle": "Send a message to your chamber's members.",
+        "templatePicker": {
+          "triggerLabel": "Start from a template",
+          "blankOption": "Blank — start from scratch",
+          "starterSuffix": "Starter",
+          "starterBadgeAria": "Seeded by the platform",
+          "searchPlaceholder": "Search templates by name",
+          "emptyMessage": "No templates match your search",
+          "helpText": "Picking a template fills the subject + message. You can still edit before sending."
+        },
+        "staleDraftBanner": {
+          "title": "Template has been updated",
+          "body": "The \"{templateName}\" template was edited since you started this draft. Refresh to load the current version (your edits to subject + body will be overwritten).",
+          "refreshButton": "Refresh from current",
+          "refreshingButton": "Refreshing…",
+          "dismissAria": "Dismiss stale-draft notice for {templateName}"
+        },
         "fields": {
           "subject": "Subject",
           "subjectPlaceholder": "Subject line (max 200 characters)",
@@ -3339,6 +3566,7 @@
         "comingSoon": "(coming soon)",
         "tierLabel": "Tier code",
         "editor": {
+          "bracketHint": "Click any [bracketed text] to replace with your content.",
           "aria": {
             "toolbar": "Formatting toolbar",
             "bold": "Bold (Ctrl+B)",
@@ -3394,6 +3622,7 @@
           "broadcast_subject_empty": "Subject is required.",
           "broadcast_body_too_large": "Message body exceeds the 200 KB size limit.",
           "broadcast_body_unsafe_html": "Message body contains formatting we can't accept — please simplify.",
+          "broadcast_body_image_source_unsafe": "Your message contains image sources not in your chamber's allowlist. See the list below the editor to fix or remove them.",
           "broadcast_empty_segment_blocked": "No eligible recipients matched.",
           "broadcast_audience_too_large": "Audience exceeds the 5,000 recipient limit.",
           "broadcast_custom_recipient_unknown": "Some custom recipients are not in your directory.",
@@ -3410,6 +3639,32 @@
           "body": "This will permanently remove your draft. This action cannot be undone.",
           "confirm": "Discard",
           "cancel": "Keep editing"
+        },
+        "imageUpload": {
+          "pickerLabel": "Choose an image to upload",
+          "uploadButton": "Upload image",
+          "uploadingLabel": "Uploading…",
+          "progressAria": "Image upload progress",
+          "uploadingAria": "Uploading image — please wait",
+          "uploadedToast": "Image uploaded.",
+          "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
+          "draftRequiredHint": "Save this draft first to enable image uploads.",
+          "disallowedSourcesHeading": "These image sources aren't allowed:",
+          "disallowedSourceItem": "{host} — replace with an image from your chamber's allowlist.",
+          "errors": {
+            "broadcast_image_too_large": "Image is larger than 5 MB.",
+            "broadcast_image_unsafe": "Image was flagged by the virus scanner. The upload was rejected.",
+            "broadcast_image_invalid_mime": "Only PNG, JPG, WebP or GIF images are allowed.",
+            "storage_unavailable": "Image storage is temporarily unavailable. Please try again in a moment.",
+            "feature_disabled": "Image embedding is not currently available.",
+            "invalid_body": "Upload request was malformed.",
+            "internal_error": "An unexpected error occurred during upload.",
+            "unknown": "Upload failed. Please try again."
+          }
+        },
+        "clamavBanner": {
+          "title": "Virus scanner temporarily unavailable",
+          "description": "Image uploads are paused while we reconnect to the scanner. Drafts without images can still be saved and submitted."
         }
       },
       "quota": {
@@ -3461,7 +3716,9 @@
           "sent": "Sent",
           "rejected": "Rejected",
           "cancelled": "Cancelled",
-          "failed_to_dispatch": "Failed"
+          "failed_to_dispatch": "Failed",
+          "partially_sent": "Partially sent",
+          "partial_delivery_accepted": "Partial delivery accepted"
         },
         "pagination": {
           "previous": "Previous",

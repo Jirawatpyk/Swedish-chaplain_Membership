@@ -11,18 +11,20 @@
  *   - throws on conflicts (`BroadcastNotFoundError`,
  *     `BroadcastConcurrentMutationError`); use-cases adapt to Result
  *     at boundaries
- *   - tenant context threaded as `tenantId: string` parameter (NOT
+ *   - tenant context threaded as `tenantId: TenantSlug` parameter (NOT
  *     constructor injection — explicit per-call binding is mandatory
  *     for cross-tenant safety)
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { MemberId } from '@/modules/members';
+import type { TenantSlug } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
 export interface NewBroadcastDraftInput {
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
   readonly broadcastId: BroadcastId;
   readonly requestedByMemberId: string;
   readonly requestedByMemberPlanIdSnapshot: string;
@@ -55,7 +57,7 @@ export interface ListByTenantStatusResult {
 
 export class BroadcastNotFoundError extends Error {
   constructor(
-    public readonly tenantId: string,
+    public readonly tenantId: TenantSlug,
     public readonly broadcastId: BroadcastId,
   ) {
     super(`Broadcast not found: ${broadcastId} in tenant ${tenantId}`);
@@ -65,7 +67,7 @@ export class BroadcastNotFoundError extends Error {
 
 export class BroadcastConcurrentMutationError extends Error {
   constructor(
-    public readonly tenantId: string,
+    public readonly tenantId: TenantSlug,
     public readonly broadcastId: BroadcastId,
     public readonly observedStatus: BroadcastStatus,
   ) {
@@ -97,9 +99,50 @@ export interface BroadcastsRepo {
    */
   updateDraft(
     tx: unknown,
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
     patch: Partial<NewBroadcastDraftInput>,
+  ): Promise<Broadcast>;
+
+  /**
+   * F7.1a US7 (T102 snapshotTemplateToDraft) — narrow patch that
+   * records the template snapshot onto a draft.
+   *
+   * Writes subject + bodyHtml + bodySource + started_from_template_id
+   * + template_name_snapshot atomically within the caller's tx.
+   * Refuses unless status='draft' (immutable-after-submit invariant
+   * Q3) — throws `BroadcastConcurrentMutationError` if the row
+   * drifted out of draft state.
+   *
+   * Separate from `updateDraft` because the template-snapshot fields
+   * are NOT in NewBroadcastDraftInput (they were added to the
+   * broadcasts table by Phase 2 migration 0162 ADD COLUMN but are
+   * conceptually a one-shot snapshot, not part of the draft form
+   * patch shape).
+   *
+   * R3-S4 (Phase 5 Round 1) — promoted from optional to REQUIRED.
+   * The runtime presence check in the snapshot use-case now becomes a
+   * compile-time guarantee; every BroadcastsRepo mock must provide a
+   * stub. The 13 existing mocks that didn't need US7 behaviour use
+   * a `throw new Error('not used in <fixture>')` stub.
+   */
+  updateDraftFromTemplate(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    snapshot: {
+      // R3-F1: subject + bodyHtml MUST be branded as
+      // ChamberSubstitutedBody — the only producer is the Domain VO
+      // `substituteChamberName`. Repo writers that accept this brand
+      // cannot accidentally store raw template content with
+      // un-substituted `{{chamber_name}}` literals or with an
+      // XSS-leaking chamber-name suffix.
+      readonly subject: ChamberSubstitutedBody;
+      readonly bodyHtml: ChamberSubstitutedBody;
+      readonly bodySource: ChamberSubstitutedBody;
+      readonly startedFromTemplateId: string;
+      readonly templateNameSnapshot: string;
+    },
   ): Promise<Broadcast>;
 
   /**
@@ -107,13 +150,13 @@ export interface BroadcastsRepo {
    * decides whether to throw or return 404 + cross-tenant probe audit).
    */
   findById(
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
   ): Promise<Broadcast | null>;
 
   findByIdInTx(
     tx: unknown,
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
   ): Promise<Broadcast | null>;
 
@@ -124,7 +167,7 @@ export interface BroadcastsRepo {
    */
   lockForUpdate(
     tx: unknown,
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
   ): Promise<BroadcastStatus | null>;
 
@@ -151,7 +194,7 @@ export interface BroadcastsRepo {
    */
   applyTransition(
     tx: unknown,
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
     target: BroadcastStatus,
     fields: Partial<Broadcast>,
@@ -165,7 +208,7 @@ export interface BroadcastsRepo {
    */
   attachResendIds(
     tx: unknown,
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendAudienceId: string,
     resendBroadcastId: string,
@@ -185,7 +228,7 @@ export interface BroadcastsRepo {
    */
   attachAudienceId(
     tx: unknown,
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendAudienceId: string,
   ): Promise<void>;
@@ -194,7 +237,7 @@ export interface BroadcastsRepo {
    * List broadcasts for the admin queue / member history surfaces.
    */
   listByTenantStatus(
-    tenantId: string,
+    tenantId: TenantSlug,
     opts: ListByTenantStatusOpts,
   ): Promise<ListByTenantStatusResult>;
 
@@ -204,7 +247,7 @@ export interface BroadcastsRepo {
    * quota year. Tenant-scoped.
    */
   countForMemberQuota(
-    tenantId: string,
+    tenantId: TenantSlug,
     memberId: MemberId,
     quotaYear: number,
   ): Promise<{
@@ -221,7 +264,7 @@ export interface BroadcastsRepo {
    */
   findByResendBroadcastIdBypassRls(
     resendBroadcastId: string,
-  ): Promise<{ readonly tenantId: string; readonly broadcast: Broadcast } | null>;
+  ): Promise<{ readonly tenantId: TenantSlug; readonly broadcast: Broadcast } | null>;
 
   /**
    * F7 US3 read path — paginated history of a single member's own
@@ -230,7 +273,7 @@ export interface BroadcastsRepo {
    * FR-016a 5,000/year tenant cap. Cursor migration is F7.1 polish.
    */
   listForMemberPaginated(
-    tenantId: string,
+    tenantId: TenantSlug,
     memberId: MemberId,
     opts: { readonly page: number; readonly perPage: number },
   ): Promise<{
@@ -267,7 +310,7 @@ export interface BroadcastsRepo {
    * and not part of this port's contract.
    */
   findOwnedByMember(
-    tenantId: string,
+    tenantId: TenantSlug,
     memberId: MemberId,
     broadcastId: BroadcastId,
   ): Promise<
@@ -285,7 +328,7 @@ export interface BroadcastsRepo {
    * does the SQL→object snake_case→camelCase rename at its boundary.
    */
   aggregateDeliveryCountsForBroadcast(
-    tenantId: string,
+    tenantId: TenantSlug,
     broadcastId: BroadcastId,
   ): Promise<{
     readonly delivered: number;
@@ -311,7 +354,7 @@ export interface BroadcastsRepo {
    * another tenant's drafts (Constitution Principle I clause 1+2).
    */
   pruneExpiredDrafts(
-    tenantId: string,
+    tenantId: TenantSlug,
     olderThan: Date,
   ): Promise<{ readonly prunedCount: number }>;
 
@@ -329,7 +372,7 @@ export interface BroadcastsRepo {
    * `replyToEmail` snapshots without a second roundtrip.
    */
   listInFlightOwnedByMember(
-    tenantId: string,
+    tenantId: TenantSlug,
     memberId: MemberId,
   ): Promise<ReadonlyArray<Broadcast>>;
 }

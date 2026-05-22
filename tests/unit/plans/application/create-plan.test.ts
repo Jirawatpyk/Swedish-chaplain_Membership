@@ -35,7 +35,7 @@ const validInput: PlanSchemaInput = {
   plan_id: 'corporate-standard',
   plan_year: 2026,
   plan_name: { en: 'Corporate Standard' },
-  description: { en: '' },
+  description: { en: 'Test description' },
   sort_order: 1,
   plan_category: 'corporate',
   member_type_scope: 'company',
@@ -106,7 +106,6 @@ function makeDeps(overrides: DepsOverrides = {}): CreatePlanDeps {
     softDelete: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),
-    countActiveForTenant: vi.fn(),
   };
 
   const audit = {

@@ -70,6 +70,10 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -117,6 +121,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
         scheduledFor: null,
       };
       return makeBroadcast(synthetic);
+    },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in save-draft fixture');
     },
     async findById() {
       return null;
@@ -220,6 +227,9 @@ function makeAudit(): {
     port: {
       async emit(_tx, event) {
         emits.push(event);
+      },
+      async emitTyped(_tx, event) {
+        emits.push(event as AuditEmitInput);
       },
     },
   };

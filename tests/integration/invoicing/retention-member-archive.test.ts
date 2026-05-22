@@ -95,7 +95,7 @@ describe('T112 — FR-029/FR-030 retention + member-archive invariant (live Neon
         planId,
         planYear: 2026,
         planName: { en: 'T112 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

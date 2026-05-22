@@ -62,7 +62,10 @@ describe('acknowledgeBroadcastsTerms', () => {
   const requestId = 'req-1';
 
   it('member_not_found — maps to ack.member_not_found, no audit emit', async () => {
-    const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
+    const audit: AuditPort = {
+      emit: vi.fn<AuditPort['emit']>(async () => undefined),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
+    };
     const membersBridge = partialBridge(async () =>
       err({ kind: 'mark_ack.member_not_found' as const, memberId }),
     );
@@ -87,7 +90,10 @@ describe('acknowledgeBroadcastsTerms', () => {
     // `previouslyNull` from F3 so the use-case can choose 'idempotent'
     // vs 'fresh'. A regression that returned `ok({ previouslyNull: true })`
     // for a re-ack would write a duplicate audit row.
-    const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
+    const audit: AuditPort = {
+      emit: vi.fn<AuditPort['emit']>(async () => undefined),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
+    };
     const membersBridge = partialBridge(async () =>
       ok({ previouslyNull: false }),
     );
@@ -109,7 +115,10 @@ describe('acknowledgeBroadcastsTerms', () => {
 
   it('happy path — emits audit with full payload (Q15 demonstrable consent)', async () => {
     const emit = vi.fn<AuditPort['emit']>(async () => undefined);
-    const audit: AuditPort = { emit };
+    const audit: AuditPort = {
+      emit,
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
+    };
     const membersBridge = partialBridge(async () =>
       ok({ previouslyNull: true }),
     );
@@ -146,7 +155,10 @@ describe('acknowledgeBroadcastsTerms', () => {
     // Regression guard: a refactor that re-collapsed `mark_ack.repo_error`
     // into `mark_ack.already_acknowledged` would silently 200-OK a DB
     // outage during consent write — GDPR Art. 7 risk.
-    const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
+    const audit: AuditPort = {
+      emit: vi.fn<AuditPort['emit']>(async () => undefined),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
+    };
     const membersBridge = partialBridge(async () =>
       err({
         kind: 'mark_ack.repo_error' as const,
@@ -184,7 +196,10 @@ describe('acknowledgeBroadcastsTerms', () => {
     const tenantA = asTenantContext('swecham');
     const tenantB = asTenantContext('jcc');
     const bridgeCalls: Array<{ tenantSlug: string }> = [];
-    const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
+    const audit: AuditPort = {
+      emit: vi.fn<AuditPort['emit']>(async () => undefined),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
+    };
     const membersBridge = partialBridge(async (ctx) => {
       bridgeCalls.push({ tenantSlug: ctx.slug });
       return ok({ previouslyNull: true });
@@ -208,6 +223,9 @@ describe('acknowledgeBroadcastsTerms', () => {
   it('happy path with audit failure — returns ok (consent column is source of truth)', async () => {
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => {
+        throw new Error('audit transport down');
+      }),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => {
         throw new Error('audit transport down');
       }),
     };

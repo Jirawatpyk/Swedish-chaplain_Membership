@@ -34,6 +34,11 @@ const domainForbiddenImports = [
   "@tiptap/starter-kit",
   "isomorphic-dompurify",
   "email-validator",
+  // F7.1a — Tiptap image extension is a browser editor plugin; the
+  // ClamAV `clamscan` binding is a Node lib that talks to a TCP
+  // daemon. Both belong in Infrastructure (Phase 2 T025 + T073).
+  "@tiptap/extension-image",
+  "clamscan",
 ];
 
 const applicationForbiddenImports = [
@@ -62,6 +67,13 @@ const applicationForbiddenImports = [
   "@tiptap/starter-kit",
   "isomorphic-dompurify",
   "email-validator",
+  // F7.1a — Application layer reaches ClamAV via VirusScannerPort
+  // (Phase 2 T021) and the Tiptap image extension via the editor
+  // composition root only. Direct imports break the F7.1a US2
+  // scan-before-persist invariant (FR-013 + T152) and the testable-
+  // sanitiser boundary.
+  "@tiptap/extension-image",
+  "clamscan",
 ];
 
 /**
@@ -618,6 +630,15 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // R6.1 H2 sweep — the R4.2 H-3/H-4 `no-restricted-syntax` block that
+  // blocked `MemberExpression[property.name='startedFromTemplateId']`
+  // and `.templateNameSnapshot` reads outside the Drizzle mapper has
+  // been REMOVED. The Domain `Broadcast` interface no longer exposes
+  // those raw fields; TypeScript enforces "no read of raw fields
+  // outside the Infrastructure mapper" at type level. The Drizzle
+  // mapper reads from `BroadcastRow` (Infrastructure schema type)
+  // which still carries the columns. See
+  // `src/modules/broadcasts/domain/broadcast.ts` R6.1 H2 commit.
   {
     // H3.3 — `*Unchecked` branded-type constructors skip the UUID v4
     // regex. They are INFRASTRUCTURE-ONLY: only Drizzle row-read
@@ -626,6 +647,30 @@ const eslintConfig = defineConfig([
     // caller MUST use the validated default (`asEventId` /
     // `asRegistrationId`) which enforces the regex at the HTTP / CSV
     // boundary.
+    //
+    // Phase 5 Round 1 R1.3 H-code-2 finding: this block's
+    // `files: ["src/**/*.{ts,tsx}"]` + flat-config last-wins semantics
+    // shadow the cross-module barrel-guard + Application-layer rules
+    // defined above, silently masking ~89 Constitution Principle III
+    // violations across F1+F4+F5+F6+F8 modules. The shadow CANNOT be
+    // removed in Phase 5 Round 1 scope — a clean fix requires
+    // refactoring 42 callers to route through public barrels (out of
+    // scope for the broadcasts US7 review).
+    //
+    // Mitigation:
+    //   1. KEEP the shadow block (status quo preserves CI for F1-F8).
+    //   2. CLOSE H-code-2 via a SOURCE-SCAN architecture test
+    //      (`tests/unit/architecture/broadcasts-barrel.test.ts`) that
+    //      is independent of ESLint flat-config quirks and catches the
+    //      3 broadcasts deep imports from Phase 5 (template page /
+    //      template edit page / tiptap-editor).
+    //   3. Track the 89 surfaced violations as a SEPARATE backlog item
+    //      in F1.1/F4.1/F5.1/F6.1/F8.1 cycles. The architecture-test
+    //      pattern is reusable across modules.
+    //
+    // Reference: specs/014-email-broadcast-advance/retrospective.md
+    // § "Phase 5 Round 1 R1.3 — ESLint shadow bug + architecture test
+    // defence-in-depth".
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
       "src/modules/events/infrastructure/**",
@@ -648,10 +693,6 @@ const eslintConfig = defineConfig([
                 "Unchecked brand constructors are infrastructure-only (DB row reads). " +
                 "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.",
             },
-            // R3.4.1 / IMP-2 — defense-in-depth against relative-import
-            // bypass. The alias rule above catches `@/modules/events` +
-            // `@/modules/events/domain/branded-types`; this path-name
-            // catches direct deep-import via the full module path.
             {
               name: "@/modules/events/domain/branded-types",
               importNames: [
@@ -665,11 +706,6 @@ const eslintConfig = defineConfig([
                 "Defense-in-depth: this rule mirrors the @/modules/events alias rule for direct path imports.",
             },
           ],
-          // R3.4.1 / IMP-2 — relative-import bypass coverage. A caller
-          // using `import { asEventIdUnchecked } from '../../../modules/events/domain/branded-types'`
-          // would route around the `paths` alias rule above. The
-          // `patterns` array catches arbitrary relative paths ending
-          // at `branded-types(.ts)`.
           patterns: [
             {
               group: [
@@ -687,6 +723,171 @@ const eslintConfig = defineConfig([
                 "Relative-import bypass blocked — use asEventId / asRegistrationId at HTTP/CSV boundaries.",
             },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // Ban inline `BenefitMatrix` literal construction in production
+    // code. See `src/modules/plans/domain/benefit-matrix.ts` (Option C
+    // enforcement section) for the rationale + the partnership↔category
+    // invariant + the test-fixture exemption (~92 inline literals
+    // across F4/F6/F7/F8/auth/e2e seeds).
+    //
+    // Selectors cover: `const x: BenefitMatrix = {...}`,
+    // `{...} as BenefitMatrix`, `{...} satisfies BenefitMatrix`,
+    // ternary, function-return (declaration + arrow), and class
+    // property declaration. Bypass NOT covered by lint: intermediate-
+    // variable assignment (`const draft = {...}; const x:
+    // BenefitMatrix = draft;`) requires dataflow analysis that ESLint
+    // does not perform — code review catches it.
+    files: [
+      "src/modules/**/*.ts",
+      "src/modules/**/*.tsx",
+      "src/components/**/*.ts",
+      "src/components/**/*.tsx",
+      "src/app/**/*.ts",
+      "src/app/**/*.tsx",
+    ],
+    ignores: [
+      // The smart constructor itself + its tests construct literals
+      // via the loose `BenefitMatrixInput` shape; that's the canonical
+      // entry point.
+      "src/modules/plans/domain/benefit-matrix.ts",
+      // `rowToPlan` hydration boundary needs the documented
+      // `as BenefitMatrix` cast on `cloneBenefitMatrix`.
+      "src/modules/plans/infrastructure/db/plan-repo.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // Pattern (a) — `const x: BenefitMatrix = { ... }`
+          selector:
+            "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R4-S4 — do not construct `BenefitMatrix` via inline object literal in production code. " +
+            "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans` so the partnership↔category " +
+            "integrity invariant is enforced at construction time.",
+        },
+        {
+          // Pattern (b) — `... as BenefitMatrix` cast on ObjectExpression
+          selector:
+            "TSAsExpression[typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R4-S4 — do not cast `{...} as BenefitMatrix` in production code. " +
+            "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans` so the partnership↔category " +
+            "integrity invariant is enforced at construction time.",
+        },
+        {
+          // R5-I9 Pattern (c) — `{...} satisfies BenefitMatrix`
+          selector:
+            "TSSatisfiesExpression[typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R5-I9 — do not use `{...} satisfies BenefitMatrix` in production code. " +
+            "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans`.",
+        },
+        {
+          // R5-I9 Pattern (d) — `const x: BenefitMatrix = cond ? a : { ... }`
+          // Targets the ObjectExpression inside the ConditionalExpression
+          // initializer of a BenefitMatrix-typed VariableDeclarator.
+          selector:
+            "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.name='BenefitMatrix'] ConditionalExpression > ObjectExpression",
+          message:
+            "R5-I9 — do not construct `BenefitMatrix` via conditional expression with inline object literals. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)` first, then assign.",
+        },
+        {
+          // R5-I9 Pattern (e) — `function f(): BenefitMatrix { return { ... }; }`
+          // R6-I1 — tightened to `> BlockStatement > ReturnStatement >
+          // ObjectExpression` (direct child chain) so that a nested
+          // function inside a BenefitMatrix-returning function with
+          // its own `return {...}` does NOT false-positive. Mirrors
+          // the Pattern (g) direct-child structure.
+          selector:
+            "FunctionDeclaration[returnType.typeAnnotation.typeName.name='BenefitMatrix'] > BlockStatement > ReturnStatement > ObjectExpression",
+          message:
+            "R5-I9 — function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+        {
+          // R5-I9 Pattern (f) — `const f = (): BenefitMatrix => ({...})`
+          // Concise-body arrow function returning an annotated BenefitMatrix.
+          selector:
+            "ArrowFunctionExpression[returnType.typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R5-I9 — arrow function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+        {
+          // R5-I9 Pattern (g) — `const f = (): BenefitMatrix => { return {...}; }`
+          // Block-body arrow function.
+          selector:
+            "ArrowFunctionExpression[returnType.typeAnnotation.typeName.name='BenefitMatrix'] BlockStatement > ReturnStatement > ObjectExpression",
+          message:
+            "R5-I9 — arrow function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+        {
+          // R5-S2 Pattern (h) — class/object property declaration
+          // `class X { matrix: BenefitMatrix = {...}; }`
+          selector:
+            "PropertyDefinition[typeAnnotation.typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R5-S2 — class property typed as `BenefitMatrix` cannot be initialized with an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+      ],
+    },
+  },
+  {
+    // R5-S13 — symmetric to R4-S4 Option C: ban
+    // `MutableScheduledPlanChange` as a public Application-layer
+    // function-parameter or return-type annotation. The loose hydration
+    // shape is exported from `@/modules/plans` ONLY because the Drizzle
+    // adapter's `rowToDomain` (Infrastructure) needs it before
+    // narrowing via `assertValidScheduledPlanChange`. Application-layer
+    // code MUST accept/return the discriminated `ScheduledPlanChange`
+    // union instead.
+    //
+    // Known limitation: the rule fires on ANY type-annotation use of
+    // the identifier inside Application files. This catches function
+    // parameters, return types, and local declarations alike. If a
+    // future Application-layer test fixture needs to construct an
+    // explicitly-malformed `MutableScheduledPlanChange` for `assertValid`
+    // testing, that test file should be moved to `tests/unit/plans/domain/`
+    // (which is not in this rule's `files` scope).
+    files: [
+      "src/modules/plans/application/**/*.ts",
+      "src/modules/plans/application/**/*.tsx",
+      "src/modules/members/application/**/*.ts",
+      "src/modules/members/application/**/*.tsx",
+      "src/modules/renewals/application/**/*.ts",
+      "src/modules/renewals/application/**/*.tsx",
+      "src/modules/invoicing/application/**/*.ts",
+      "src/modules/invoicing/application/**/*.tsx",
+      "src/modules/payments/application/**/*.ts",
+      "src/modules/payments/application/**/*.tsx",
+      "src/modules/events/application/**/*.ts",
+      "src/modules/events/application/**/*.tsx",
+      "src/modules/broadcasts/application/**/*.ts",
+      "src/modules/broadcasts/application/**/*.tsx",
+      "src/modules/auth/application/**/*.ts",
+      "src/modules/auth/application/**/*.tsx",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // Type-annotation reference to MutableScheduledPlanChange
+          // (function parameters, variable declarations, return types).
+          selector:
+            "TSTypeReference[typeName.name='MutableScheduledPlanChange']",
+          message:
+            "R5-S13 / R4-S6 — Application-layer code must never accept or expose " +
+            "`MutableScheduledPlanChange`; use the discriminated `ScheduledPlanChange` " +
+            "union instead. The loose type is for Infrastructure hydration only " +
+            "(`drizzle-scheduled-plan-change-repo.ts:rowToDomain`).",
         },
       ],
     },

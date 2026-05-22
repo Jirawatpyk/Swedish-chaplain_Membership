@@ -81,7 +81,7 @@ describe('F8 migration 0114 tier_bucket repair (B2 SQL contract)', () => {
         planId: p.planId,
         planYear: 2026,
         planName: { en: `${p.planId} test` },
-        description: { en: '' },
+        description: { en: 'Test description' },
         planCategory: 'corporate',
         memberTypeScope: 'company',
         annualFeeMinorUnits: 5_000_000,
@@ -163,7 +163,7 @@ describe('F8 migration 0114 tier_bucket repair (B2 SQL contract)', () => {
         planId: 'premium', // same plan_id, different tenant
         planYear: 2026,
         planName: { en: 'premium other' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         planCategory: 'corporate',
         memberTypeScope: 'company',
         annualFeeMinorUnits: 5_000_000,

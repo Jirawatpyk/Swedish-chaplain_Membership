@@ -77,10 +77,18 @@ export async function getPlan(
         },
       },
     );
-    // Audit failure on a read-path 404 is non-fatal — the audit adapter
-    // logs internally on persist_failed. We check the result to prevent
-    // unhandled rejections but don't escalate here; the route handler's
-    // structured logger will surface it if needed.
+    // Audit failure on a read-path 404 is non-fatal but is forensically
+    // load-bearing: F13's correlation scanner consumes `plan_not_found`
+    // rows to escalate cross-tenant probes to `plan_cross_tenant_probe`.
+    // A sustained `persist_failed` (audit_log RLS drift, immutable
+    // trigger regression, DB flap) silently disables the F13 pipeline.
+    // The audit adapter logs the failure at the Infrastructure boundary
+    // (`plan-audit-adapter.ts` catch block emits a structured pino
+    // error) so on-call dashboards alert before the security event is
+    // lost. Importing pino here would chain `worker_threads` into the
+    // client bundle via the F2 barrel re-export — post-ship R6 C4 fix
+    // 2026-05-19 relocated the log emission downward to keep the
+    // Application barrel client-safe.
     void auditResult;
     return err({ type: 'not_found' });
   }

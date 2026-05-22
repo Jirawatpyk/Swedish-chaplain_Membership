@@ -171,20 +171,35 @@ export async function acceptTierUpgrade(
   }
   const suggestionId = idParse.value;
 
-  const suggestion = await deps.tierUpgradeRepo.findById(
-    input.tenantId,
-    suggestionId,
-  );
-  if (suggestion === null) return err({ kind: 'suggestion_not_found' });
-  if (suggestion.status !== 'open') {
-    return err({ kind: 'suggestion_not_open' });
-  }
+  // Pre-tx repo lookups MUST be wrapped so a DB drop / RLS error /
+  // drizzle parse error doesn't escape the Result contract. Without
+  // this, the throw bubbles past the use-case to the route's outer
+  // try/catch where it lands as `accept_unexpected_error` with NO
+  // `errorId` in the canonical `F8.ACCEPT_TIER.*` taxonomy.
+  // Constitution Principle VIII.
+  let suggestion;
+  let activeCycle;
+  try {
+    suggestion = await deps.tierUpgradeRepo.findById(
+      input.tenantId,
+      suggestionId,
+    );
+    if (suggestion === null) return err({ kind: 'suggestion_not_found' });
+    if (suggestion.status !== 'open') {
+      return err({ kind: 'suggestion_not_open' });
+    }
 
-  const activeCycle = await deps.cyclesRepo.findActiveForMember(
-    input.tenantId,
-    suggestion.memberId,
-  );
-  if (activeCycle === null) return err({ kind: 'no_active_cycle' });
+    activeCycle = await deps.cyclesRepo.findActiveForMember(
+      input.tenantId,
+      suggestion.memberId,
+    );
+    if (activeCycle === null) return err({ kind: 'no_active_cycle' });
+  } catch (e) {
+    return err({
+      kind: 'server_error',
+      message: `pre-tx-repo-lookup: ${(e as Error)?.message ?? 'unknown'}`,
+    });
+  }
 
   const now = deps.clock.now();
   const acceptedAt = now.toISOString();
@@ -200,6 +215,7 @@ export async function acceptTierUpgrade(
     const txResult = await runInTenant(deps.tenant, async (tx) => {
       // ----- (a) F2 schedule plan change — mechanism for FR-039 step 1.
       let scheduledChangeId: string;
+      let supersededScheduledChangeId: string | null = null;
       try {
         const scheduled =
           await deps.scheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
@@ -214,6 +230,12 @@ export async function acceptTierUpgrade(
             },
           );
         scheduledChangeId = scheduled.inserted.scheduledChangeId;
+        // Capture the superseded prior-pending row id (if any) so the
+        // post-tx emit branch fires the F2-domain
+        // `plan_change_superseded` audit. `null` when this was a fresh
+        // schedule with no prior pending row on the same (member, cycle).
+        supersededScheduledChangeId =
+          scheduled.superseded?.scheduledChangeId ?? null;
       } catch (e) {
         return err({
           kind: 'plan_change_failed' as const,
@@ -324,10 +346,122 @@ export async function acceptTierUpgrade(
         targetApplyAtCycleId: activeCycle.cycleId,
         verificationTaskId,
         scheduledChangeId,
+        supersededScheduledChangeId,
       });
     });
 
     if (!txResult.ok) return txResult;
+
+    // ----- (a.5) Post-tx F2-domain audit emit (post-ship R6 I2 / D2,
+    // 2026-05-19). F8's tier_upgrade_accepted (emitted in-tx above) is
+    // the F8-domain audit trail; F2's plan_change_scheduled is the
+    // F2-domain audit trail for the same atomic state change. Each
+    // module owns its own audit taxonomy per Constitution Principle III.
+    //
+    // Runs OUTSIDE the renewal tx — F2's planAuditAdapter opens its
+    // own runInTenant tx. A failure here leaves the F8 state intact
+    // (suggestion accepted, scheduled-plan-change row in place) but
+    // emits a critical log so on-call can backfill the F2 audit row.
+    // Pattern mirrors the post-tx member-notification email below.
+    // The requestId default is a sentinel that preserves cross-request
+    // correlation when not supplied. Empty
+    // strings pass `audit_log.request_id NOT NULL` but defeat the
+    // column's purpose. The sentinel `system:accept-tier-upgrade:<id>`
+    // gives SRE a deterministic key + matches the F4 onPaid pattern
+    // (`f8-onPaid:<invoiceId>`).
+    const f2AuditCtx = {
+      tenant: deps.tenant,
+      actorUserId: input.actorUserId,
+      requestId:
+        input.requestId ?? `system:accept-tier-upgrade:${suggestion.suggestionId}`,
+      sourceIp: null,
+    };
+    try {
+      const scheduledAuditResult = await deps.f2AuditEmitter.record(
+        f2AuditCtx,
+        {
+          event_type: 'plan_change_scheduled',
+          payload: {
+            member_id: suggestion.memberId,
+            scheduled_change_id: txResult.value.scheduledChangeId,
+            effective_at_cycle_id: activeCycle.cycleId,
+            from_plan_id: suggestion.fromPlanId,
+            to_plan_id: suggestion.toPlanId,
+            reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
+          },
+        },
+      );
+      if (!scheduledAuditResult.ok) {
+        // `errorId` field aligns with the `F2.PLAN_CHANGE.*`
+        // convention used at the F8
+        // onPaid finaliser. Sentry / Grafana alert rules built
+        // against `errorId: 'F2.PLAN_CHANGE.*'` now catch BOTH the
+        // schedule-side (this site) and the apply-side
+        // (apply-tier-upgrade-on-paid-callback.ts).
+        logger.error(
+          {
+            errorId: 'F2.PLAN_CHANGE.SCHEDULED_AUDIT_EMIT_FAILED',
+            event: 'accept_tier_upgrade.f2_audit_emit_failed',
+            audit_event: 'plan_change_scheduled',
+            err: scheduledAuditResult.error,
+            suggestionId: suggestion.suggestionId,
+            scheduledChangeId: txResult.value.scheduledChangeId,
+          },
+          '[accept-tier-upgrade] F2 plan_change_scheduled audit emit failed — F8 state committed; operator backfill needed',
+        );
+      }
+
+      // Emit plan_change_superseded only when the in-tx repo call
+      // actually bumped a prior pending row.
+      if (txResult.value.supersededScheduledChangeId !== null) {
+        const supersededAuditResult = await deps.f2AuditEmitter.record(
+          f2AuditCtx,
+          {
+            event_type: 'plan_change_superseded',
+            payload: {
+              member_id: suggestion.memberId,
+              scheduled_change_id:
+                txResult.value.supersededScheduledChangeId,
+              effective_at_cycle_id: activeCycle.cycleId,
+              superseded_by_scheduled_change_id:
+                txResult.value.scheduledChangeId,
+            },
+          },
+        );
+        if (!supersededAuditResult.ok) {
+          // errorId for alert-routing parity.
+          logger.error(
+            {
+              errorId: 'F2.PLAN_CHANGE.SUPERSEDED_AUDIT_EMIT_FAILED',
+              event: 'accept_tier_upgrade.f2_audit_emit_failed',
+              audit_event: 'plan_change_superseded',
+              err: supersededAuditResult.error,
+              suggestionId: suggestion.suggestionId,
+              supersededScheduledChangeId:
+                txResult.value.supersededScheduledChangeId,
+            },
+            '[accept-tier-upgrade] F2 plan_change_superseded audit emit failed — F8 state committed; operator backfill needed',
+          );
+        }
+      }
+    } catch (auditErr) {
+      // Defence-in-depth: the F2 emitter itself shouldn't throw (it
+      // wraps in try/catch + returns Result.err), but if it does we
+      // still want F8's main flow to continue. Bumping a dedicated
+      // counter via the F8 emitter is appropriate but the F8 emitter
+      // is typed to F8 events; just log critically.
+      // errorId for alert-routing parity with the `F2.PLAN_CHANGE.*`
+      // convention.
+      logger.error(
+        {
+          errorId: 'F2.PLAN_CHANGE.AUDIT_EMIT_THREW',
+          event: 'accept_tier_upgrade.f2_audit_emit_threw',
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          suggestionId: suggestion.suggestionId,
+        },
+        '[accept-tier-upgrade] F2 audit emitter threw — F8 state committed; operator backfill needed',
+      );
+    }
 
     // ----- (e) Post-tx member notification email — FR-039 step 2.
     // Email send + audit emit run AFTER the runInTenant tx commits so
@@ -651,10 +785,16 @@ export async function acceptTierUpgrade(
           '[accept-tier-upgrade] unhandled-arm audit emit failed — counter bumped',
         );
       }
+      // Return typed server_error instead of throwing into the outer
+      // catch. Preserves the compile-time
+      // exhaustiveness pin (`_exhaustive: never`) AND surfaces the
+      // unhandled-arm kind operationally so alert routing can match
+      // on `message: 'deploy-skew:unhandled-gateway-arm:*'`.
       const _exhaustive: never = gatewayResult;
-      throw new Error(
-        `[accept-tier-upgrade] unhandled GatewayResult kind '${(_exhaustive as { kind?: string }).kind ?? 'undefined'}' — possible new arm without audit emit wiring`,
-      );
+      return err({
+        kind: 'server_error',
+        message: `deploy-skew:unhandled-gateway-arm:${(_exhaustive as { kind?: string }).kind ?? 'undefined'}`,
+      });
     }
 
     return ok({
@@ -665,6 +805,26 @@ export async function acceptTierUpgrade(
       memberNotifiedDeliveryId,
     });
   } catch (e) {
+    // R5-S9 caller-responsibility contract:
+    //
+    // This use-case wraps internal throws as a typed `server_error`
+    // Result so callers can route them via the Application-layer
+    // error union (Constitution III — Application MUST NOT import
+    // `@/lib/logger`).
+    //
+    // The HTTP route caller at
+    // `src/app/api/admin/renewals/tier-upgrades/[suggestionId]/accept/route.ts`
+    // logs both `kind:'server_error'` (R4-C2 `errorId:
+    // 'F8.ACCEPT_TIER.SERVER_ERROR'`) AND any uncaught throw
+    // (R4-I4 outer catch `errorId: 'F8.ACCEPT_TIER.UNEXPECTED'`)
+    // — so the HTTP path is fully covered.
+    //
+    // If a future non-HTTP caller (cron, queue worker, internal
+    // service) invokes `acceptTierUpgrade(...)`, THAT caller MUST
+    // wrap the call with equivalent log emission. The Result.err
+    // `message` field carries the original throw's message verbatim
+    // for diagnostic purposes; callers should log with errorId
+    // matching their context (e.g., `F8.ACCEPT_TIER.CRON_INVOKED_THREW`).
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',

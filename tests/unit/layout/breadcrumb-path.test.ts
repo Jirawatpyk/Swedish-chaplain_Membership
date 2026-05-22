@@ -93,6 +93,25 @@ describe('parseBreadcrumbPath', () => {
     ]);
   });
 
+  it('resolves /admin/settings/broadcasts via STATIC_LABEL_KEYS', () => {
+    // F7.1a US2 — broadcast settings entered STATIC_LABEL_KEYS in
+    // breadcrumb-nav.tsx; this asserts the slug resolves correctly via
+    // the auto-derivation pipeline (label + cumulative href + isCurrent
+    // on the leaf segment). Future rename of the slug would break this
+    // test loudly instead of silently shipping a raw "broadcasts" label.
+    const result = parseBreadcrumbPath({
+      pathname: '/admin/settings/broadcasts',
+      staticLabels: { ...staticLabels, broadcasts: 'Broadcasts' },
+      dynamicLabels: new Map(),
+    });
+    expect(result.map((s) => s.label)).toEqual(['Settings', 'Broadcasts']);
+    expect(result.map((s) => s.href)).toEqual([
+      '/admin/settings',
+      '/admin/settings/broadcasts',
+    ]);
+    expect(result.at(-1)?.isCurrent).toBe(true);
+  });
+
   it('preserves percent-encoded href while decoding label', () => {
     const dynamicLabels = new Map([['กรุงเทพ', 'Bangkok Chapter']]);
     // %E0%B8%81%E0%B8%A3%E0%B8%B8%E0%B8%87%E0%B9%80%E0%B8%97%E0%B8%9E = "กรุงเทพ"

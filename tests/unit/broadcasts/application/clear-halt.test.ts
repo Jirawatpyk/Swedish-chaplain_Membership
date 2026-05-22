@@ -42,6 +42,9 @@ function makeAudit(): {
       async emit(_tx, e) {
         emits.push(e);
       },
+      async emitTyped(_tx, e) {
+        emits.push(e as AuditEmitInput);
+      },
     },
   };
 }
@@ -236,6 +239,9 @@ describe('clear-halt — Wave 6 GREEN (T114)', () => {
     const bridge = makeMembersBridge({});
     const auditPort: AuditPort = {
       async emit() {
+        throw new Error('audit table down');
+      },
+      async emitTyped() {
         throw new Error('audit table down');
       },
     };

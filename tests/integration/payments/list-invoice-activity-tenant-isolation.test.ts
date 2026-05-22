@@ -95,7 +95,7 @@ describe('F5 Phase 5 — Cross-tenant isolation on read use-cases (verify-fix C3
           planId: `${prefix}-plan`,
           planYear: 2026,
           planName: { en: `${prefix} Plan` },
-          description: { en: '' },
+          description: { en: 'Test description' },
           sortOrder: 10,
           planCategory: 'corporate',
           memberTypeScope: 'company',

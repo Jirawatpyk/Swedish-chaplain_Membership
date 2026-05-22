@@ -479,6 +479,68 @@ const schema = z.object({
   // Default false — production deployments where F6 is dark are
   // unaffected.
   ZAPIER_DPA_EXECUTED: booleanFromString.default(false),
+
+  // --- F7.1a Email Broadcast Advanced --------------------------------------
+  // Master kill-switch for F7.1a (pagination + image embedding + multi-
+  // template library). When FALSE every F7.1a-only surface short-circuits
+  // and the F7 MVP 5k cap path remains active. Default FALSE — F7.1a
+  // ships dark; flip TRUE only after ClamAV Fly.io deploy (T139) +
+  // staging flag-matrix smoke test (T142) per quickstart.md § 9.
+  FEATURE_F71A_BROADCAST_ADVANCED: booleanFromString.default(false),
+
+  // Per-US flags — only have effect when the master flag is also TRUE.
+  // Staged flip order (lowest risk → highest): US7 templates → US2 images
+  // → US1 pagination. See tasks.md T143–T146.
+  FEATURE_F71A_US1_PAGINATION: booleanFromString.default(false),
+  FEATURE_F71A_US2_IMAGES: booleanFromString.default(false),
+  FEATURE_F71A_US7_TEMPLATES: booleanFromString.default(false),
+
+  // --- ClamAV virus scanner (US2 dependency) -------------------------------
+  // Network address of the clamd daemon. Empty string in dev = US2 disabled.
+  // In prod, points at the Fly.io private 6PN address (e.g.
+  // "clamav-swecham.internal"). The clamav-virus-scanner adapter (Phase 2
+  // T025) treats empty CLAMAV_HOST as `error` verdict and surfaces the
+  // ClamAV-unreachable banner (T081). See infra/clamav/README.md.
+  CLAMAV_HOST: z.string().default(''),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  // Scan timeout per file. FR-013 mandates conservative `error` verdict
+  // on timeout — the use-case (T071 upload-inline-image) refuses to
+  // persist the file.
+  //
+  // PR-review fix 2026-05-20 SF-H5 — default lowered from 300_000ms
+  // (5 min) to 50_000ms (50 s) to fit inside the inline-image-upload
+  // route's `maxDuration = 60`. The previous 300s ceiling created a
+  // TOCTOU window: function timeout (60s) fires while ClamAV scan is
+  // still running → orphaned scan eventually completes against bytes
+  // that already passed the size cap → audit `broadcast_image_unsafe`
+  // never fires for that path because the use-case awaited a verdict
+  // the route had already abandoned. The 50s default leaves a 10s
+  // headroom for Blob put + audit emit inside the function budget.
+  // Deferred-F7.1b attachments may opt UP via env override (max 600_000ms).
+  CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600000).default(50000),
+  // Note: CLAMAV_SHARED_SECRET removed 2026-05-19 per /speckit.superb.critique
+  // Important #1 — env var was documented as auth but never reached the
+  // daemon (clamscan@2.4 doesn't support auth headers, Dockerfile has no
+  // proxy). Fly.io 6PN private network is the security boundary in
+  // production; dev mode runs in Docker localhost. No replacement env
+  // var needed.
+
+  // --- ClamAV HTTP scan-wrapper (Option D, 2026-05-22) ---------------------
+  // Vercel functions cannot join Fly's IPv6-only 6PN private network, so
+  // clamd is no longer reached over raw TCP. Instead the app POSTs bytes
+  // to a public HTTPS scan-wrapper in front of clamd (bearer-authed).
+  // See specs/014-email-broadcast-advance/clamav-vercel-connectivity.md.
+  //
+  // Full endpoint URL, e.g. https://clamav-swecham.fly.dev/scan . Empty
+  // (default) ⇒ the adapter returns `error: unconfigured` (US2 disabled),
+  // mirroring the old empty-CLAMAV_HOST contract. The legacy CLAMAV_HOST/
+  // CLAMAV_PORT vars above are retained for the endpoint-resolver + dev
+  // notes but are NOT used by the production adapter anymore.
+  CLAMAV_SCAN_URL: z.string().default(''),
+  // Bearer token presented to the scan-wrapper; MUST equal the Fly app's
+  // CLAMAV_SCAN_SECRET secret (≥32 bytes). Empty when US2 is dark.
+  // SECRET — do not log.
+  CLAMAV_SCAN_SECRET: z.string().default('').describe('SECRET — do not log'),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -674,7 +736,7 @@ export const env = {
     xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
-  // F3 + F4 + F5 + F7 + F8 feature flags
+  // F3 + F4 + F5 + F7 + F7.1a + F8 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
@@ -682,6 +744,12 @@ export const env = {
     f5OnlinePayment: raw.FEATURE_F5_ONLINE_PAYMENT,
     f5AsyncReceiptPdf: raw.FEATURE_F5_ASYNC_RECEIPT_PDF,
     f7Broadcasts: raw.FEATURE_F7_BROADCASTS,
+    // F7.1a master + per-US flags. Adapters MUST check the master flag
+    // before per-US flags (per-US flags only have effect when master ON).
+    f71aBroadcastAdvanced: raw.FEATURE_F71A_BROADCAST_ADVANCED,
+    f71aUs1Pagination: raw.FEATURE_F71A_US1_PAGINATION,
+    f71aUs2Images: raw.FEATURE_F71A_US2_IMAGES,
+    f71aUs7Templates: raw.FEATURE_F71A_US7_TEMPLATES,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
@@ -748,6 +816,26 @@ export const env = {
     // `/api/admin/health` style endpoint or a CLI helper can read the
     // executed-DPA status without reaching back into env.ts.
     zapierDpaExecuted: raw.ZAPIER_DPA_EXECUTED,
+  },
+
+  // F7.1a US2 — ClamAV virus scanner connection settings. The clamav-
+  // virus-scanner adapter (Phase 2 T025) consumes this block. Empty
+  // `host` ⇒ adapter returns `error` verdict.
+  //
+  // PR-review fix 2026-05-21 R4-L1 — auth boundary is Fly.io 6PN
+  // private network, not an env-var shared secret. `CLAMAV_SHARED_SECRET`
+  // was removed 2026-05-19 per the `clamav-virus-scanner` superb
+  // critique (see env.ts:511-516 comment for the rationale: clamscan@2.4
+  // doesn't support auth headers, Dockerfile has no proxy, so the env
+  // var was documented as auth but never reached the daemon). See
+  // infra/clamav/README.md for deploy procedure + 6PN topology.
+  clamav: {
+    host: raw.CLAMAV_HOST,
+    port: raw.CLAMAV_PORT,
+    timeoutMs: raw.CLAMAV_TIMEOUT_MS,
+    // Option D HTTP scan-wrapper (2026-05-22).
+    scanUrl: raw.CLAMAV_SCAN_URL,
+    scanSecret: raw.CLAMAV_SCAN_SECRET,
   },
 } as const;
 

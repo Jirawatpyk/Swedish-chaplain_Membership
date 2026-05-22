@@ -103,7 +103,7 @@ describe('concurrent cross-method cancel — partial unique index safety', () =>
         planId: 'concurrent-plan',
         planYear: 2026,
         planName: { en: 'Concurrent' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

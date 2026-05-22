@@ -218,6 +218,12 @@ function mapSubmitError(
     case 'broadcast_body_unsafe_html':
       details['reason'] = error.reason;
       break;
+    case 'broadcast_body_image_source_unsafe':
+      // PR-review fix 2026-05-20 UX-C1 — surface accumulated list so
+      // compose UI can highlight every offending <img src> at once
+      // (FR-011 + AS2 UX requirement).
+      details['disallowedSources'] = error.unsafeImageSources;
+      break;
     case 'broadcast_custom_recipient_unknown':
       details['unresolvedEntries'] = error.unresolved;
       break;

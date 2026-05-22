@@ -51,7 +51,7 @@ describe('seed-demo-members.seedRow smoke (Phase 6 review-round 2 C1-test)', () 
       planId: PLAN_ID,
       planYear: PLAN_YEAR,
       planName: { en: 'Regular Test' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       planCategory: 'corporate',
       memberTypeScope: 'company',
       annualFeeMinorUnits: 5_000_000,

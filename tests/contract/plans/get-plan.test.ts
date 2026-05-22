@@ -59,7 +59,7 @@ describe('contract: GET /api/plans/[year]/[planId] (T063)', () => {
         plan_id: 'premium',
         plan_year: 2026,
         plan_name: { en: 'Premium' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sort_order: 10,
         plan_category: 'corporate',
         member_type_scope: 'company',
