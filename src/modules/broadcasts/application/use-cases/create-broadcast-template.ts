@@ -22,6 +22,8 @@ import type {
   TemplateLocale,
 } from '../ports/broadcast-templates-port';
 import type { AuditPort } from '../ports/audit-port';
+import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
+import { sanitizeHtml } from './sanitize-html';
 import {
   validateImageSourceAllowlist,
   type ValidateImageSourceAllowlistDeps,
@@ -42,6 +44,7 @@ const MAX_BODY = TEMPLATE_MAX_BODY_BYTES;
 export interface CreateBroadcastTemplateDeps {
   readonly port: BroadcastTemplatesPort;
   readonly audit: AuditPort;
+  readonly sanitizer: HtmlSanitizerPort;
   readonly validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
 }
 
@@ -93,12 +96,44 @@ export async function createBroadcastTemplate(
     });
   }
 
-  // 2. Image-source allowlist check (FR-017) — emits its own audit on
+  // 1b. HTML sanitisation (defense-in-depth — security review 2026-05-22).
+  //     Templates previously persisted RAW bodyHtml; only the submit +
+  //     render paths re-sanitised. Sanitising at persist makes "every
+  //     stored broadcast/template body is DOMPurify-filtered" a true
+  //     invariant, and lets the allowlist check (step 2) run on canonical
+  //     markup — eliminating the regex/DOMPurify parser differential.
+  //     Mirrors submit-broadcast.ts order (sanitise → allowlist → persist).
+  const sanitised = sanitizeHtml(
+    { sanitizer: deps.sanitizer },
+    { rawHtml: input.bodyHtml },
+  );
+  if (!sanitised.ok) {
+    if (sanitised.error.kind === 'sanitizer_unavailable') {
+      // Infra fault, not user-content fault → 500 via storage_error.
+      return err({
+        kind: 'storage_error',
+        detail: `sanitizer_unavailable: ${sanitised.error.reason}`,
+      });
+    }
+    // empty-after-strip or too-large → user-content fault → 400.
+    return err({
+      kind: 'invalid_input',
+      detail:
+        sanitised.error.kind === 'broadcast_body_too_large'
+          ? `body length must be ≤${MAX_BODY}`
+          : 'body is empty or unsafe after HTML sanitisation',
+    });
+  }
+  const sanitisedBody = sanitised.value.sanitisedHtml;
+
+  // 2. Image-source allowlist check (FR-017) — runs on the SANITISED body
+  //    so any <img src=non-http(s)> already had its src stripped by the
+  //    DOMPurify hook + the markup is canonical. Emits its own audit on
   //    rejection (broadcast_body_image_source_unsafe).
   const allowlistCheck = await validateImageSourceAllowlist(
     deps.validateImageSourceAllowlist,
     {
-      bodyHtml: input.bodyHtml,
+      bodyHtml: sanitisedBody,
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
       requestId: input.requestId,
@@ -118,7 +153,7 @@ export async function createBroadcastTemplate(
       {
         name: input.name,
         subject: input.subject,
-        bodyHtml: input.bodyHtml,
+        bodyHtml: sanitisedBody,
         locale: input.locale,
         createdByUserId: input.actorUserId,
       },

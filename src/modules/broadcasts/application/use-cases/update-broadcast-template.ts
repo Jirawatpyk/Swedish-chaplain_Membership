@@ -37,6 +37,8 @@ import type {
   TemplateUpdateError,
 } from '../ports/broadcast-templates-port';
 import type { AuditPort } from '../ports/audit-port';
+import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
+import { sanitizeHtml } from './sanitize-html';
 import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import {
   validateImageSourceAllowlist,
@@ -56,6 +58,7 @@ const MAX_BODY = TEMPLATE_MAX_BODY_BYTES;
 export interface UpdateBroadcastTemplateDeps {
   readonly port: BroadcastTemplatesPort;
   readonly audit: AuditPort;
+  readonly sanitizer: HtmlSanitizerPort;
   readonly validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
 }
 
@@ -113,14 +116,39 @@ export async function updateBroadcastTemplate(
     });
   }
 
-  // 2. Image-source allowlist check on new bodyHtml (if changed).
-  //    Runs OUTSIDE the mutation tx — early-fail validation has no
-  //    side effects to roll back.
+  // 2. Sanitise + image-source allowlist check on new bodyHtml (if
+  //    changed). Runs OUTSIDE the mutation tx — early-fail validation has
+  //    no side effects to roll back. `sanitisedBody` carries the
+  //    DOMPurify-filtered body to the persist site so the stored template
+  //    is sanitised (defense-in-depth, security review 2026-05-22 — was
+  //    persisting raw bodyHtml); allowlist runs on the sanitised markup.
+  let sanitisedBody: string | undefined;
   if (input.bodyHtml !== undefined) {
+    const sanitised = sanitizeHtml(
+      { sanitizer: deps.sanitizer },
+      { rawHtml: input.bodyHtml },
+    );
+    if (!sanitised.ok) {
+      if (sanitised.error.kind === 'sanitizer_unavailable') {
+        return err({
+          kind: 'storage_error',
+          detail: `sanitizer_unavailable: ${sanitised.error.reason}`,
+        });
+      }
+      return err({
+        kind: 'invalid_input',
+        detail:
+          sanitised.error.kind === 'broadcast_body_too_large'
+            ? `body length must be ≤${MAX_BODY}`
+            : 'body is empty or unsafe after HTML sanitisation',
+      });
+    }
+    sanitisedBody = sanitised.value.sanitisedHtml;
+
     const allowlistCheck = await validateImageSourceAllowlist(
       deps.validateImageSourceAllowlist,
       {
-        bodyHtml: input.bodyHtml,
+        bodyHtml: sanitisedBody,
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
         requestId: input.requestId,
@@ -188,7 +216,7 @@ export async function updateBroadcastTemplate(
     const patch: Parameters<typeof deps.port.update>[2] = omitUndefined({
       name: input.name,
       subject: input.subject,
-      bodyHtml: input.bodyHtml,
+      bodyHtml: sanitisedBody,
     });
     const updateRes = await deps.port.update(
       input.tenantId,

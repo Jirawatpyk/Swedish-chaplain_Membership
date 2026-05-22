@@ -689,6 +689,7 @@ export function makeCreateBroadcastTemplateDeps(
   return {
     port: makeDrizzleBroadcastTemplatesRepo(),
     audit: f7AuditAdapter,
+    sanitizer: dompurifySanitizer,
     validateImageSourceAllowlist:
       makeValidateImageSourceAllowlistDeps(tenantId),
   };
@@ -704,6 +705,7 @@ export function makeUpdateBroadcastTemplateDeps(
   return {
     port: makeDrizzleBroadcastTemplatesRepo(),
     audit: f7AuditAdapter,
+    sanitizer: dompurifySanitizer,
     validateImageSourceAllowlist:
       makeValidateImageSourceAllowlistDeps(tenantId),
   };

@@ -32,6 +32,7 @@ const ALLOWLIST: AllowlistEntry[] = [
 const makeDeps = (allowlist: readonly AllowlistEntry[] = ALLOWLIST): {
   port: BroadcastTemplatesPort;
   audit: AuditPort;
+  sanitizer: { sanitize: (html: string) => string };
   validateImageSourceAllowlist: {
     allowlistPort: ImageAllowlistPort;
     audit: AuditPort;
@@ -65,6 +66,7 @@ const makeDeps = (allowlist: readonly AllowlistEntry[] = ALLOWLIST): {
     ),
   } as BroadcastTemplatesPort,
   audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
+  sanitizer: { sanitize: (html: string) => html },
   validateImageSourceAllowlist: {
     allowlistPort: {
       findByTenantId: vi.fn().mockResolvedValue(allowlist),

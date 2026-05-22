@@ -49,6 +49,7 @@ const makeDeps = (overrides?: {
 }): {
   port: BroadcastTemplatesPort;
   audit: AuditPort;
+  sanitizer: { sanitize: (html: string) => string };
   validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
 } => {
   // Explicit undefined check — `??` would treat null as "use default" and
@@ -75,6 +76,7 @@ const makeDeps = (overrides?: {
   return {
     port,
     audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
+    sanitizer: { sanitize: (html: string) => html },
     validateImageSourceAllowlist: {
       allowlistPort: {
         findByTenantId: vi.fn().mockResolvedValue([

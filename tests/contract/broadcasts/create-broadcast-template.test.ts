@@ -59,6 +59,7 @@ const makeDeps = (
 ): {
   port: BroadcastTemplatesPort;
   audit: AuditPort;
+  sanitizer: { sanitize: (html: string) => string };
   validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
 } => {
   const port: BroadcastTemplatesPort = {
@@ -101,7 +102,9 @@ const makeDeps = (
   // returns the rejection.
   void o?.imageAllowlistOk;
   void o?.imageUnsafeSources;
-  return { port, audit, validateImageSourceAllowlist };
+  // Passthrough sanitizer (DOMPurify wired in production via deps factory).
+  const sanitizer = { sanitize: (html: string) => html };
+  return { port, audit, sanitizer, validateImageSourceAllowlist };
 };
 
 describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
