@@ -1,50 +1,56 @@
-# F7.1a US2 — ClamAV virus scanner container.
+# F7.1a US2 — ClamAV virus scanner + HTTP scan-wrapper container.
 #
-# Deployed to Fly.io `sin` region as the `clamav-swecham` app. The
-# clamav-virus-scanner adapter (src/modules/broadcasts/infrastructure/
-# clamav-virus-scanner.ts, Phase 2 T025) talks to this container over
-# the Fly 6PN private network on TCP/3310. See infra/clamav/README.md
-# for deploy + monitor procedures and docs/runbooks/clamav-*.md for
-# incident response.
+# Deployed to Fly.io `sin` region as the `clamav-swecham` app. Two
+# processes run in the container:
+#   1. clamd — the ClamAV daemon, bound to LOCALHOST only (127.0.0.1:3310).
+#   2. scan-server.mjs — a tiny pure-Node HTTP wrapper on :8080 that the
+#      Fly edge exposes publicly over HTTPS. It bearer-authenticates
+#      callers and forwards bytes to clamd via the INSTREAM protocol.
 #
-# Why we extend the upstream image instead of authoring from scratch:
-# the official `clamav/clamav:stable` ships with freshclam configured
-# and clamd ready to launch — we only need to flip the TCP listener
-# (off by default) and expose the port. Build is reproducible because
-# we pin to `:stable` (Cisco-maintained rolling tag); freshclam pulls
-# fresh signatures at container start regardless of image age.
+# Why the wrapper (Option D, 2026-05-22): Fly's 6PN private network is
+# IPv6-only and a Vercel serverless function cannot join it, so the
+# Chamber-OS app cannot reach clamd directly. The public HTTPS wrapper
+# is the bridge; clamd stays localhost-only (never publicly exposed).
+# See specs/014-email-broadcast-advance/clamav-vercel-connectivity.md
+# and infra/clamav/README.md.
+#
+# We extend `clamav/clamav:stable` (Debian-based, Cisco-maintained) so
+# freshclam + clamd are preconfigured; we only flip the TCP listener to
+# localhost, add a Node runtime, and layer the wrapper on top.
 
 FROM clamav/clamav:stable
 
-# Enable clamd TCP listener (default config listens on the Unix socket
-# only — Fly.io VMs talk over TCP, not shared volumes). Replace the
-# commented `#TCPSocket` / `#TCPAddr` directives shipped in the base
-# image's `/etc/clamav/clamd.conf` with active values.
-#
-# clamd MUST listen on BOTH IPv6 and IPv4 — two `TCPAddr` directives
-# (clamd binds a listener for each). Why both:
-#   - IPv6 (`::`): Fly.io's 6PN private network is IPv6-only —
-#     `clamav-swecham.internal` resolves to an `fdaa:…` address, so
-#     `fly proxy` + Vercel-function clients arrive over IPv6.
-#   - IPv4 (`0.0.0.0`): Fly's deploy port-scan + `[[services]] tcp_checks`
-#     health probe + the in-container `clamdscan --ping` HEALTHCHECK all
-#     connect over IPv4 localhost. Fly explicitly warns "configure your
-#     app to listen on 0.0.0.0:3310" if IPv4 is missing.
-# The clamav/clamav:stable base image has `net.ipv6.bindv6only=1`, so a
-# lone `TCPAddr ::` binds IPv6-ONLY — that passed the IPv6 proxy probe
-# but tripped Fly's IPv4 health warning. An earlier `TCPAddr 0.0.0.0`
-# (IPv4-only) had the mirror bug: Fly health green but every 6PN/IPv6
-# client got ECONNRESET. Binding both is the only config that satisfies
-# Fly health (IPv4) AND real 6PN clients (IPv6). (Root-caused 2026-05-22.)
+# Node runtime for the scan-wrapper (http + net + crypto only — no npm
+# install needed). Debian bookworm ships Node 18, which satisfies the
+# wrapper's requirements (timingSafeEqual, Buffer.subarray, etc.).
+RUN apt-get update \
+      && apt-get install -y --no-install-recommends nodejs \
+      && rm -rf /var/lib/apt/lists/*
+
+# clamd listens on LOCALHOST ONLY now — the in-container wrapper is the
+# sole client. No 6PN / public exposure (Option D moved the public
+# surface to the HTTPS wrapper). This also sidesteps the IPv4/IPv6
+# dual-bind dance that the 6PN-exposed config required (2026-05-22):
+# 127.0.0.1 is unambiguous for a same-container client.
 RUN sed -i \
       -e 's/^#TCPSocket .*/TCPSocket 3310/' \
-      -e 's/^#TCPAddr .*/TCPAddr ::\nTCPAddr 0.0.0.0/' \
+      -e 's/^#TCPAddr .*/TCPAddr 127.0.0.1/' \
       /etc/clamav/clamd.conf
 
-EXPOSE 3310
+# The HTTP wrapper + its launcher.
+COPY scan-server.mjs /opt/scan-server.mjs
+COPY start.sh /opt/start.sh
+RUN chmod +x /opt/start.sh
 
-# Liveness probe used by Fly.io tcp_checks (15s interval, 5s timeout
-# per fly.toml). `clamdscan --ping 1` sends a PING command to clamd
-# and exits 0 on PONG; non-zero exit triggers Fly.io machine restart.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+# Public-facing port is the wrapper, not clamd.
+EXPOSE 8080
+
+# In-container liveness = clamd PONG (the wrapper is useless without it).
+# Fly's service-level health check hits the wrapper's GET /healthz over
+# HTTP (see fly.toml [[services.http_checks]]).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD clamdscan --ping 1 || exit 1
+
+# Launch the wrapper (background) + hand off to the upstream clamav
+# entrypoint (freshclam + clamd) in the foreground. See start.sh.
+ENTRYPOINT ["/opt/start.sh"]

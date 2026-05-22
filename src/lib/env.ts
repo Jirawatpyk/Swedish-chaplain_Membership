@@ -524,6 +524,23 @@ const schema = z.object({
   // proxy). Fly.io 6PN private network is the security boundary in
   // production; dev mode runs in Docker localhost. No replacement env
   // var needed.
+
+  // --- ClamAV HTTP scan-wrapper (Option D, 2026-05-22) ---------------------
+  // Vercel functions cannot join Fly's IPv6-only 6PN private network, so
+  // clamd is no longer reached over raw TCP. Instead the app POSTs bytes
+  // to a public HTTPS scan-wrapper in front of clamd (bearer-authed).
+  // See specs/014-email-broadcast-advance/clamav-vercel-connectivity.md.
+  //
+  // Full endpoint URL, e.g. https://clamav-swecham.fly.dev/scan . Empty
+  // (default) ⇒ the adapter returns `error: unconfigured` (US2 disabled),
+  // mirroring the old empty-CLAMAV_HOST contract. The legacy CLAMAV_HOST/
+  // CLAMAV_PORT vars above are retained for the endpoint-resolver + dev
+  // notes but are NOT used by the production adapter anymore.
+  CLAMAV_SCAN_URL: z.string().default(''),
+  // Bearer token presented to the scan-wrapper; MUST equal the Fly app's
+  // CLAMAV_SCAN_SECRET secret (≥32 bytes). Empty when US2 is dark.
+  // SECRET — do not log.
+  CLAMAV_SCAN_SECRET: z.string().default('').describe('SECRET — do not log'),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -816,6 +833,9 @@ export const env = {
     host: raw.CLAMAV_HOST,
     port: raw.CLAMAV_PORT,
     timeoutMs: raw.CLAMAV_TIMEOUT_MS,
+    // Option D HTTP scan-wrapper (2026-05-22).
+    scanUrl: raw.CLAMAV_SCAN_URL,
+    scanSecret: raw.CLAMAV_SCAN_SECRET,
   },
 } as const;
 

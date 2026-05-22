@@ -18,23 +18,43 @@ primary_region = "sin"
 [build]
   dockerfile = "Dockerfile"
 
-# clamd is reachable only from the Fly 6PN private network — no
-# public IP, no HTTPS termination. Chamber-OS Vercel functions
-# resolve `clamav-swecham.internal` via Fly DNS and connect over TCP.
+# Option D (2026-05-22): the PUBLIC surface is the HTTP scan-wrapper on
+# :8080, exposed over HTTPS by the Fly edge (TLS termination via the
+# `tls` handler + force_https). clamd itself listens on localhost only
+# (Dockerfile `TCPAddr 127.0.0.1`) and is NOT in this service block —
+# the wrapper is its sole client. Chamber-OS Vercel functions reach the
+# wrapper at `https://clamav-swecham.fly.dev/scan` with a bearer token
+# (CLAMAV_SCAN_SECRET). Allocate a public address before first deploy:
+#   fly ips allocate-v6 -a clamav-swecham
+#   fly ips allocate-v4 --shared -a clamav-swecham   # free shared v4
 [[services]]
-  internal_port = 3310
+  internal_port = 8080
   protocol = "tcp"
   auto_stop_machines = false
   auto_start_machines = false
   min_machines_running = 1
 
-  # TCP-level health check — sends a SYN to 3310 every 15s and treats
-  # a successful handshake as healthy. Application-level PING is
-  # handled by the container HEALTHCHECK directive in Dockerfile.
-  [[services.tcp_checks]]
+  # Plain HTTP on :80 → force-redirect to HTTPS.
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  # HTTPS on :443 — Fly edge terminates TLS, forwards plain HTTP to the
+  # wrapper on internal_port 8080.
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  # Application-level health check — GET /healthz pings clamd and
+  # returns 200 "ok" only when the daemon answers PONG (503 otherwise).
+  # grace_period covers the ~40-60s clamd signature-DB load on boot.
+  [[services.http_checks]]
     interval = "15s"
     timeout = "5s"
-    grace_period = "60s"
+    grace_period = "90s"
+    method = "get"
+    path = "/healthz"
 
 # VM memory floor — bumped 256mb → 2048mb on 2026-05-22 after the
 # first deploy OOM-looped (boot → freshclam/clamd → SIGKILL exit 137 →

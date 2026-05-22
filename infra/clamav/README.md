@@ -1,5 +1,20 @@
 # ClamAV virus scanner — Fly.io deployment
 
+> **⚠️ ARCHITECTURE UPDATED 2026-05-22 (Option D).** Vercel functions
+> cannot join Fly's IPv6-only 6PN private network, so clamd is no longer
+> reached over raw TCP `*.internal:3310`. It now sits behind a public
+> **HTTPS scan-wrapper** (`scan-server.mjs`, bearer-authed) and listens
+> on **localhost only**. The authoritative design is
+> [`specs/014-email-broadcast-advance/clamav-vercel-connectivity.md`](../../specs/014-email-broadcast-advance/clamav-vercel-connectivity.md).
+> Sections below that still describe the direct 6PN/TCP topology +
+> `CLAMAV_HOST`/`CLAMAV_PORT` are superseded — production config is now
+> `CLAMAV_SCAN_URL` (`https://clamav-swecham.fly.dev/scan`) +
+> `CLAMAV_SCAN_SECRET`. Verify with `pnpm verify:clamav` (hits the
+> public HTTPS endpoint — no `fly proxy` tunnel needed). Deploy needs a
+> public address: `fly ips allocate-v6 -a clamav-swecham` +
+> `fly ips allocate-v4 --shared -a clamav-swecham`, plus
+> `fly secrets set CLAMAV_SCAN_SECRET=$(openssl rand -base64 48) -a clamav-swecham`.
+
 F7.1a US2 (`<img>` upload + sanitiser allowlist) depends on a clamd
 daemon reachable from Chamber-OS Vercel functions. The daemon scans
 inline-image bytes (FR-013) before they touch Vercel Blob storage and
