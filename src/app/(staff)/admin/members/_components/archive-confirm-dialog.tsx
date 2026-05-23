@@ -8,22 +8,30 @@
  * ux-standards § 4 destructive-action rules.
  *
  * Lists up to 5 company names; truncates the rest with "…and N more".
+ *
+ * B1 a11y fix: converted from Dialog → AlertDialog so the destructive
+ * confirmation is announced with the correct ARIA role and focus is
+ * correctly managed. autoFocus on Cancel per ux-standards § 6.2.
+ * H7 a11y fix: Loader2 spinner + disabled state while action is pending.
  */
 
 import { useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { ARCHIVE_TYPED_PHRASE_THRESHOLD } from '@/lib/members-bulk-constants';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 
 const TYPED_PHRASE_THRESHOLD = ARCHIVE_TYPED_PHRASE_THRESHOLD;
 
@@ -33,6 +41,8 @@ type Props = {
   readonly companyNames: string[];
   readonly count: number;
   readonly onConfirm: () => void;
+  /** H7: whether the archive action is in-flight (shows loader, disables action). */
+  readonly pending?: boolean;
 };
 
 export function ArchiveConfirmDialog({
@@ -41,6 +51,7 @@ export function ArchiveConfirmDialog({
   companyNames,
   count,
   onConfirm,
+  pending = false,
 }: Props) {
   const t = useTranslations('admin.members.bulk');
   const [typedPhrase, setTypedPhrase] = useState('');
@@ -50,12 +61,15 @@ export function ArchiveConfirmDialog({
   // Round-2 review I-1: reset phrase in BOTH directions (open AND close).
   // Prior impl only reset on open, which left a stale phrase after Cancel
   // that auto-confirmed the next open if admin re-used the dialog.
+  // H7: guard against dismissal while action is in-flight (pending=true) —
+  // the Escape key or backdrop click must not close the dialog mid-archive.
   const handleOpenChange = useCallback(
     (next: boolean) => {
+      if (!next && pending) return; // block close while pending
       setTypedPhrase('');
       onOpenChange(next);
     },
-    [onOpenChange],
+    [onOpenChange, pending],
   );
 
   const canConfirm = requiresPhrase
@@ -66,14 +80,14 @@ export function ArchiveConfirmDialog({
   const remainingCount = count - displayedNames.length;
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('archiveTitle', { count })}</DialogTitle>
-          <DialogDescription>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('archiveTitle', { count })}</AlertDialogTitle>
+          <AlertDialogDescription>
             {t('archiveDescription')}
-          </DialogDescription>
-        </DialogHeader>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
         <div className="flex flex-col gap-3">
           {/* Company name list */}
@@ -101,29 +115,34 @@ export function ArchiveConfirmDialog({
                 onChange={(e) => setTypedPhrase(e.target.value)}
                 placeholder={expectedPhrase}
                 autoComplete="off"
-                autoFocus
               />
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
-          >
+        <AlertDialogFooter>
+          {/* B1: autoFocus on Cancel per ux-standards § 6.2 — destructive
+              action defaults focus to the safe choice. */}
+          <AlertDialogCancel autoFocus disabled={pending} onClick={() => handleOpenChange(false)}>
             {t('cancel')}
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={!canConfirm}
-            onClick={onConfirm}
-            className="min-h-[36px]"
+          </AlertDialogCancel>
+          {/* H7: spinner + disabled while action is in-flight. */}
+          <AlertDialogAction
+            className={buttonVariants({ variant: 'destructive' })}
+            disabled={!canConfirm || pending}
+            aria-busy={pending}
+            onClick={(e) => {
+              e.preventDefault();
+              onConfirm();
+            }}
           >
+            {pending && (
+              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+            )}
             {t('confirmArchive', { count })}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

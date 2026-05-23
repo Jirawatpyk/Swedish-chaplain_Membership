@@ -8,9 +8,10 @@ import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Member, MemberId, PlanId } from '../../domain/member';
-import type { Contact } from '../../domain/contact';
+import type { Contact, ContactId } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
+import type { Email } from '../../domain/value-objects/email';
 
 // --- Directory search types (US2) -------------------------------------------
 
@@ -123,7 +124,11 @@ export interface MemberRepo {
    * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant` statements
    * issued by `runInTenant` — RLS filters rows automatically. This contrasts
    * with `audit.recordInTx(tx, ctx, event)` where `ctx` is required because
-   * `audit_log` has an explicit `tenant_id` column (not RLS-scoped).
+   * `audit_log` carries an explicit `tenant_id` column under a *permissive*
+   * RLS policy (migration 0007: `tenant_id IS NULL OR tenant_id =
+   * current_setting('app.current_tenant')`). The policy allows NULL + own-tenant
+   * rows but does NOT auto-stamp `tenant_id`, so the caller must supply `ctx` to
+   * write the correct value into the row.
    */
   findByIdInTx(
     tx: TenantTx,
@@ -152,12 +157,8 @@ export interface MemberRepo {
   ): Promise<Result<Member | null, RepoError>>;
 
   /**
-   * Transactional create: inserts the Member, its first primary Contact,
-   * and the matching `member_created` audit row in one DB transaction.
-   * Returns the persisted Member + Contact (with DB-generated timestamps).
-   */
-  /**
    * Insert member + primary contact rows inside the caller's transaction.
+   * Returns the persisted Member + Contact (with DB-generated timestamps).
    * Does NOT emit audit events — caller emits `member_created` +
    * `contact_created` via `AuditPort.recordInTx` so Application-layer
    * ownership of audit emission is preserved (Principle III, S1).
@@ -216,6 +217,12 @@ export interface MemberRepo {
    * Returns the member whose contact has `linked_user_id = userId`
    * and `removed_at IS NULL`. Returns `repo.not_found` if no such
    * link exists within the tenant.
+   *
+   * `userId` is intentionally a plain `string` (not a branded `UserId`):
+   * it is the F1 auth session user id, which crosses the auth↔members
+   * module boundary as a raw string. Branding it here would force an
+   * unvalidated `asUserId(session.user.id)` cast at all ~10 portal call
+   * sites without adding any validation — a worse trade than the bare type.
    */
   findByLinkedUserId(
     ctx: TenantContext,
@@ -252,10 +259,10 @@ export interface MemberRepo {
   ): Promise<
     Result<
       ReadonlyArray<{
-        readonly contactId: string;
+        readonly contactId: ContactId;
         readonly contactFirstName: string;
         readonly contactLastName: string;
-        readonly contactEmail: string;
+        readonly contactEmail: Email;
         readonly expiresAt: Date;
       }>,
       RepoError
@@ -322,10 +329,15 @@ export interface MemberRepo {
   ): Promise<Result<{ affected: number }, RepoError>>;
 
   /**
-   * F7 — set `members.broadcasts_acknowledged_at = now()` (Q15 GDPR
-   * Art. 7 banner ack). Idempotent on already-acknowledged members
-   * (returns `repo.conflict` with reason `already_acknowledged` so
-   * caller can short-circuit audit emit).
+   * F7 — set `members.broadcasts_acknowledged_at = timestamp` ONLY when the
+   * column is currently NULL (Q15 GDPR Art. 7 banner ack), via a single
+   * atomic guarded UPDATE. Returns `{ affected, previouslyNull }`:
+   *   - `affected === 0` → member not found.
+   *   - `previouslyNull === true` → this call performed the first
+   *     acknowledgement; the caller emits the audit on that branch only.
+   * Re-acks are idempotent and preserve the original consent timestamp
+   * (never returns `repo.conflict`; the caller short-circuits on
+   * `previouslyNull === false`).
    */
   updateBroadcastsAcknowledgedAtInTx(
     tx: TenantTx,
@@ -357,11 +369,16 @@ export interface MemberRepo {
 
   /**
    * F7 R4 — set/clear `members.preferred_locale`. Pass `null` to
-   * clear preference (member falls back to tenant default). Returns
-   * `previousValue` so the caller can short-circuit audit emit when
-   * the value didn't actually change (idempotent admin clicks).
-   * Atomic; caller emits `member_preferred_locale_changed` audit in
-   * same tx.
+   * clear preference (member falls back to tenant default).
+   * `affected === 0` ⇒ member not found.
+   *
+   * WARNING: the returned `previousValue` is NOT reliable — Postgres
+   * `RETURNING` yields the POST-update value, so it echoes `nextLocale`.
+   * Callers MUST load the prior value separately via
+   * `findPreferredLocaleInTx` before deciding whether to emit the audit
+   * (see `set-member-preferred-locale.ts`). The field is retained only
+   * for signature stability and is intentionally unused.
+   * Atomic; caller emits `member_preferred_locale_changed` audit in same tx.
    */
   updatePreferredLocaleInTx(
     tx: TenantTx,
@@ -443,7 +460,7 @@ export interface MemberRepo {
  * updates accordingly.
  */
 export type F7MemberRecipient = {
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly displayName: string;
   readonly primaryContactEmail: string | null;
   readonly tierCode: string | null;
@@ -455,7 +472,7 @@ export type F7MemberRecipient = {
  * metadata so the banner can show "halted since X days ago".
  */
 export type F7MemberHaltSummary = {
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly displayName: string;
   /** Timestamp from `members.updated_at` at the time of halt. */
   readonly haltedSinceAt: Date;

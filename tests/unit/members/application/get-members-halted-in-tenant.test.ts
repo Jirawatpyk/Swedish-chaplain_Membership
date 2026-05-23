@@ -14,7 +14,7 @@ describe('getMembersHaltedInTenant', () => {
   it('returns the halted-members summary list from repo', async () => {
     const summaries: F7MemberHaltSummary[] = [
       {
-        memberId: 'm1',
+        memberId: 'm1' as F7MemberHaltSummary['memberId'],
         displayName: 'Acme Corp',
         haltedSinceAt: new Date('2026-04-29T10:00:00Z'),
       },

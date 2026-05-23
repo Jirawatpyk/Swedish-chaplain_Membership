@@ -661,7 +661,8 @@
         "selectAll": "Select all rows",
         "selectRow": "Select {company}",
         "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}",
-        "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection."
+        "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection.",
+        "tableCaption": "Members directory"
       },
       "emptyStates": {
         "zero": {
@@ -696,6 +697,20 @@
           "expiresInDays": "{days, plural, =0 {Expires today} one {Expires in # day} other {Expires in # days}}",
           "empty": "No pending invitations.",
           "loadError": "Could not load pending invitations."
+        },
+        "inviteBounced": {
+          "badge": "Invite bounced",
+          "badgeAria": "Invitation email bounced",
+          "resendLabel": "Re-send invite",
+          "resendSubmitting": "Sending…",
+          "resendSuccess": "Invitation re-sent.",
+          "errors": {
+            "notFound": "Contact not found.",
+            "notBounced": "This invitation has not bounced.",
+            "alreadyActive": "This user has already accepted their invitation.",
+            "noLinkedUser": "No portal account is linked to this contact.",
+            "serverError": "Something went wrong. Please try again."
+          }
         },
         "sections": {
           "company": "Company",
@@ -762,6 +777,7 @@
         "empty": "No activity recorded yet.",
         "loadMore": "Load older events",
         "loading": "Loading timeline…",
+        "loadError": "Failed to load more events. Please try again.",
         "actor": "by {actor}",
         "actorSystem": "System",
         "eventAt": "{date}",

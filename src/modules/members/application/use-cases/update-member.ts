@@ -17,12 +17,16 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
+import {
+  asIsoCountryCode,
+  type IsoCountryCode,
+} from '../../domain/value-objects/iso-country-code';
 import { asTaxId } from '../../domain/value-objects/tax-id';
 import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
+import { UseCaseAbort } from '../tx-abort';
 
 // --- Input schema ------------------------------------------------------------
 
@@ -107,65 +111,83 @@ export async function updateMember(
   }
   const data = parsed.data;
 
-  // 2. Fetch current (for diff base + country gate on tax_id)
-  const currentResult = await deps.memberRepo.findById(deps.tenant, memberId);
-  if (!currentResult.ok) {
-    if (currentResult.error.code === 'repo.not_found')
-      return err({ type: 'not_found' });
-    return err({
-      type: 'server_error',
-      message: `lookup: ${currentResult.error.code}`,
-    });
-  }
-  const current = currentResult.value;
-
-  // 3. Domain value-object re-validation for fields that carry brands.
-  //    Build patch in a writable intermediate then cast to Partial<Member>;
-  //    the Member type is deeply readonly so we can't assign into it directly.
-  type MutablePatch = { -readonly [K in keyof MemberPatch]?: MemberPatch[K] };
-  const draft: MutablePatch = {};
-  if (data.company_name !== undefined) draft.companyName = data.company_name.trim();
-  if (data.legal_entity_type !== undefined)
-    draft.legalEntityType = data.legal_entity_type;
+  // 2. Validate the new country up-front (independent of current state) so a
+  //    bad country fast-fails before we open a transaction.
+  let validatedCountry: IsoCountryCode | undefined;
   if (data.country !== undefined) {
     const r = asIsoCountryCode(data.country);
     if (!r.ok) return err({ type: 'invalid_country' });
-    draft.country = r.value;
-  }
-  if (data.tax_id !== undefined) {
-    if (data.tax_id === null) {
-      draft.taxId = null;
-    } else {
-      const countryForTaxId = draft.country ?? current.country;
-      const r = asTaxId(data.tax_id, countryForTaxId);
-      if (!r.ok) return err({ type: 'invalid_tax_id', code: r.error.code });
-      draft.taxId = r.value;
-    }
-  }
-  if (data.website !== undefined) draft.website = data.website || null;
-  if (data.description !== undefined) draft.description = data.description;
-  if (data.founded_year !== undefined) draft.foundedYear = data.founded_year;
-  if (data.turnover_thb !== undefined) draft.turnoverThb = data.turnover_thb;
-  if (data.notes !== undefined) draft.notes = data.notes;
-  const patch = draft as MemberPatch;
-
-  // 4. Diff vs current
-  const { fieldsChanged, diff } = buildDiff(current, patch);
-  if (fieldsChanged.length === 0) {
-    // No-op — return current unchanged without an audit row
-    return ok(current);
+    validatedCountry = r.value;
   }
 
-  // 5. Persist + Audit in one transaction (COR-8: atomic persist+audit)
+  // 3. M1 — read+lock current, build patch, persist, and audit in ONE tx.
+  //    The diff base is read via findByIdInTx (SELECT ... FOR UPDATE) INSIDE
+  //    the transaction so a concurrent archive / plan-change between read and
+  //    write can no longer produce a stale audit diff or apply an edit to a
+  //    just-mutated row (matches the inline-edit pattern). VO-validation and
+  //    not-found failures abort via UseCaseAbort (throw-to-rollback) and
+  //    surface as typed errors through the outer catch.
+  //    Build patch in a writable intermediate then cast — the Member type is
+  //    deeply readonly so we can't assign into it directly.
+  type MutablePatch = { -readonly [K in keyof MemberPatch]?: MemberPatch[K] };
   try {
-    const updated = await runInTenant(deps.tenant, async (tx) => {
+    const outcome = await runInTenant(deps.tenant, async (tx) => {
+      const currentResult = await deps.memberRepo.findByIdInTx(tx, memberId);
+      if (!currentResult.ok) {
+        throw new UseCaseAbort<UpdateMemberError>(
+          currentResult.error.code === 'repo.not_found'
+            ? { type: 'not_found' }
+            : {
+                type: 'server_error',
+                message: `lookup: ${currentResult.error.code}`,
+              },
+        );
+      }
+      const current = currentResult.value;
+
+      const draft: MutablePatch = {};
+      if (data.company_name !== undefined)
+        draft.companyName = data.company_name.trim();
+      if (data.legal_entity_type !== undefined)
+        draft.legalEntityType = data.legal_entity_type;
+      if (validatedCountry !== undefined) draft.country = validatedCountry;
+      if (data.tax_id !== undefined) {
+        if (data.tax_id === null) {
+          draft.taxId = null;
+        } else {
+          const countryForTaxId = validatedCountry ?? current.country;
+          const r = asTaxId(data.tax_id, countryForTaxId);
+          if (!r.ok)
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'invalid_tax_id',
+              code: r.error.code,
+            });
+          draft.taxId = r.value;
+        }
+      }
+      if (data.website !== undefined) draft.website = data.website || null;
+      if (data.description !== undefined) draft.description = data.description;
+      if (data.founded_year !== undefined) draft.foundedYear = data.founded_year;
+      if (data.turnover_thb !== undefined) draft.turnoverThb = data.turnover_thb;
+      if (data.notes !== undefined) draft.notes = data.notes;
+      const patch = draft as MemberPatch;
+
+      const { fieldsChanged, diff } = buildDiff(current, patch);
+      if (fieldsChanged.length === 0) {
+        // No-op — return current unchanged without an audit row.
+        return current;
+      }
+
       const persistResult = await deps.memberRepo.updateFieldsInTx(
         tx,
         memberId,
         patch,
       );
       if (!persistResult.ok) {
-        throw new Error(`update:${persistResult.error.code}`);
+        throw new UseCaseAbort<UpdateMemberError>({
+          type: 'server_error',
+          message: `update:${persistResult.error.code}`,
+        });
       }
 
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
@@ -180,15 +202,23 @@ export async function updateMember(
         },
       });
       if (!auditResult.ok) {
-        throw new Error('audit_failed');
+        throw new UseCaseAbort<UpdateMemberError>({
+          type: 'server_error',
+          message: 'audit_failed',
+        });
       }
 
       return persistResult.value;
     });
 
-    return ok(updated);
+    return ok(outcome);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return err({ type: 'server_error', message: msg });
+    if (e instanceof UseCaseAbort) {
+      return err(e.error as UpdateMemberError);
+    }
+    return err({
+      type: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 }

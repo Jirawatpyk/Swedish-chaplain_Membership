@@ -74,6 +74,7 @@ import type { ForgotPasswordDeps } from '@/modules/auth/application/forgot-passw
 import type { ResetPasswordDeps } from '@/modules/auth/application/reset-password';
 import type { ChangePasswordDeps } from '@/modules/auth/application/change-password';
 import type { CreateUserDeps } from '@/modules/auth/application/create-user';
+import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
 import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
@@ -203,6 +204,21 @@ export const defaultCreateUserDeps: CreateUserDeps = {
   users: userRepo,
   tokens: tokenRepo,
   audit: auditRepo,
+  enqueueInvitationInTx,
+  now: wallClock,
+};
+
+/**
+ * F1 `reissueInvitation` deps — re-sends a fresh invitation for an
+ * EXISTING pending user (backs F3 `resend-bounced-invite`). Reuses the
+ * same owner-role `enqueueInvitationInTx` primitive as `createUser`, so
+ * the invitation insert + outbox enqueue commit together in one
+ * `db.transaction`. No `audit` dep: the chamber-facing trail
+ * (`member_portal_invite_queued`) is emitted by the F3 caller.
+ */
+export const defaultReissueInvitationDeps: ReissueInvitationDeps = {
+  users: userRepo,
+  tokens: tokenRepo,
   enqueueInvitationInTx,
   now: wallClock,
 };

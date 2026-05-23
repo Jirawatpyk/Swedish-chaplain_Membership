@@ -19,8 +19,19 @@ import {
   isPortalSelfUpdateMemberField,
 } from '@/modules/members/domain/portal-self-update-fields';
 
-function contactFixture(overrides: Partial<Contact> = {}): Contact {
+// M5: Contact is a discriminated union (isPrimary ⟹ not removed). This
+// fixture deliberately supports constructing the now-unrepresentable
+// "primary + removed" combination via an `as Contact` cast, because the
+// policy under test (assertPrimaryContactInvariant) is a runtime defensive
+// guard against exactly such type-violating input (e.g. corrupt rows).
+function contactFixture(
+  overrides: Partial<Omit<Contact, 'isPrimary' | 'removedAt'>> & {
+    isPrimary?: boolean;
+    removedAt?: Date | null;
+  } = {},
+): Contact {
   const now = new Date('2026-04-15T00:00:00Z');
+  const { isPrimary = false, removedAt = null, ...rest } = overrides;
   return {
     tenantId: 't' as Contact['tenantId'],
     contactId: 'c' as Contact['contactId'],
@@ -31,14 +42,14 @@ function contactFixture(overrides: Partial<Contact> = {}): Contact {
     phone: null,
     roleTitle: null,
     preferredLanguage: 'en',
-    isPrimary: false,
     dateOfBirth: null,
     linkedUserId: null,
-    removedAt: null,
     createdAt: now,
     updatedAt: now,
-    ...overrides,
-  };
+    isPrimary,
+    removedAt,
+    ...rest,
+  } as Contact;
 }
 
 // --- primary-contact-invariant -------------------------------------------

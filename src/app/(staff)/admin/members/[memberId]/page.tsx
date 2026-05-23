@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getFormatter } from 'next-intl/server';
 import {
   ArrowLeftIcon,
   HelpCircleIcon,
@@ -43,6 +43,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { CountryDisplay } from '@/components/members/country-display';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
+import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { Suspense } from 'react';
@@ -171,7 +172,23 @@ function Field({
   );
 }
 
-function StatusBadge({ status }: { status: 'active' | 'inactive' | 'archived' }) {
+/**
+ * H1: StatusBadge now resolves the localised label via the existing
+ * `admin.members.directory.filters.status.*` i18n keys rather than
+ * rendering the raw enum value ("active" / "inactive" / "archived").
+ *
+ * This is a Server Component (no 'use client' on the parent page), so
+ * `useTranslations` is replaced with the `t` function passed from the
+ * page-level `getTranslations` call via prop. We accept a `tStatus`
+ * parameter so we don't need a second `getTranslations` call.
+ */
+function StatusBadge({
+  status,
+  label,
+}: {
+  status: 'active' | 'inactive' | 'archived';
+  label: string;
+}) {
   return (
     <Badge
       variant={
@@ -182,7 +199,7 @@ function StatusBadge({ status }: { status: 'active' | 'inactive' | 'archived' })
             : 'outline'
       }
     >
-      {status}
+      {label}
     </Badge>
   );
 }
@@ -278,10 +295,35 @@ function ContactBlock({
                 </span>
               </Badge>
             )}
+            {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
+                Shown when invite_bounced_at is set (the invitation email
+                bounced and was never delivered). Sits alongside the
+                pending-invitation badge or alone when the pending row
+                has since expired. */}
+            {contact.inviteBouncedAt && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
+                aria-label={t('inviteBounced.badgeAria')}
+              >
+                <MailWarningIcon
+                  aria-hidden="true"
+                  className="size-3"
+                />
+                <span>{t('inviteBounced.badge')}</span>
+              </Badge>
+            )}
           </div>
         </div>
         {canInvite && (
           <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
+        )}
+        {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
+            invitation bounced AND the contact still has a linked (pending)
+            user. The button calls the resend-invite route, which re-issues
+            the invitation email (owner role) then clears the bounce flag. */}
+        {contact.inviteBouncedAt && contact.linkedUserId && (
+          <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
         )}
       </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
@@ -348,6 +390,11 @@ export default async function MemberDetailPage({
     deps,
   );
   const t = await getTranslations('admin.members.detail');
+  // H1: status label for StatusBadge — reuse existing directory filter keys
+  // rather than duplicating active/inactive/archived strings in a new namespace.
+  const tDir = await getTranslations('admin.members.directory');
+  // H2: locale-aware number formatter (respects active locale for digit grouping).
+  const format = await getFormatter();
 
   if (!result.ok) {
     if (result.error.type === 'not_found') {
@@ -546,7 +593,12 @@ export default async function MemberDetailPage({
               <Field
                 label={t('fields.status')}
                 value={null}
-                extra={<StatusBadge status={member.status} />}
+                extra={
+                  <StatusBadge
+                    status={member.status}
+                    label={tDir(`filters.status.${member.status}`)}
+                  />
+                }
               />
               <Field
                 label={t('fields.country')}
@@ -585,7 +637,7 @@ export default async function MemberDetailPage({
                 label={t('fields.turnoverThb')}
                 value={
                   member.turnoverThb !== null
-                    ? member.turnoverThb.toLocaleString()
+                    ? format.number(member.turnoverThb)
                     : null
                 }
               />

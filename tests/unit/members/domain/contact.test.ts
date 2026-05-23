@@ -1,5 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { asContactId, isPreferredLanguage, tryContactId } from '@/modules/members/domain/contact';
+import {
+  asContactId,
+  contactPrimacy,
+  isPreferredLanguage,
+  tryContactId,
+} from '@/modules/members/domain/contact';
+
+describe('contactPrimacy — discriminated-union narrowing (M5)', () => {
+  const at = new Date('2026-04-15T00:00:00Z');
+
+  it('primary → { isPrimary: true, removedAt: null }', () => {
+    expect(contactPrimacy(true, null)).toEqual({
+      isPrimary: true,
+      removedAt: null,
+    });
+  });
+
+  it('non-primary active → { isPrimary: false, removedAt: null }', () => {
+    expect(contactPrimacy(false, null)).toEqual({
+      isPrimary: false,
+      removedAt: null,
+    });
+  });
+
+  it('non-primary removed → { isPrimary: false, removedAt }', () => {
+    expect(contactPrimacy(false, at)).toEqual({
+      isPrimary: false,
+      removedAt: at,
+    });
+  });
+
+  it('throws on the DB-invariant violation primary + removed', () => {
+    expect(() => contactPrimacy(true, at)).toThrow(
+      /primary contact cannot be removed/,
+    );
+  });
+});
 
 describe('isPreferredLanguage', () => {
   it('accepts en / th / sv', () => {

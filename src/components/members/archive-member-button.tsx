@@ -132,7 +132,7 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
             className={buttonVariants({ variant: 'destructive' })}
           >
             {loading && (
-              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
             )}
             {loading ? t('archivingInProgress') : t('confirmCta')}
           </AlertDialogAction>

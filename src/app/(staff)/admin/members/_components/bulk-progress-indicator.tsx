@@ -15,10 +15,18 @@
  *   real feedback that the request is still alive without requiring a
  *   streaming backend. Cross-page SSE progress is tracked as a
  *   follow-up once per-member checkpoints exist (beyond MVP).
+ *
+ * B2 a11y fix:
+ *   - Replaced undocumented `indeterminate` keyframe (was not defined in
+ *     globals.css) with the shadcn <Progress> component which has the
+ *     correct shimmer + reduced-motion support built in.
+ *   - Added role="progressbar" + aria-busy + aria-valuenow/min/max for
+ *     indeterminate state per ARIA 1.2 spec.
  */
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { Progress } from '@/components/ui/progress';
 
 type Props = {
   readonly action: string;
@@ -41,22 +49,12 @@ export function BulkProgressIndicator({ action, total }: Props) {
 
   return (
     <div
-      className="fixed bottom-16 left-1/2 z-50 -translate-x-1/2 rounded-lg border bg-background/95 px-6 py-3 shadow-lg backdrop-blur-sm"
+      className="fixed bottom-16 left-1/2 z-50 -translate-x-1/2 rounded-lg border bg-background/95 px-6 py-4 shadow-lg backdrop-blur-sm"
       role="status"
       aria-live="polite"
       aria-label={t('progressLabel')}
     >
-      <div className="flex items-center gap-3">
-        {/* Indeterminate progress bar (FR-019 is all-or-nothing; no
-            partial progress to report — see SW-3 note above). */}
-        <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full w-1/3 animate-[indeterminate_1.5s_ease-in-out_infinite] rounded-full bg-primary"
-            style={{
-              animationName: 'indeterminate',
-            }}
-          />
-        </div>
+      <div className="flex flex-col gap-3">
         <div className="flex flex-col text-sm">
           <span className="text-muted-foreground">
             {t('progressMessage', { action: t(`actions.${action}`), count: total })}
@@ -67,6 +65,16 @@ export function BulkProgressIndicator({ action, total }: Props) {
             </span>
           )}
         </div>
+        {/* Indeterminate progress — FR-019 is all-or-nothing; no partial
+            progress to report (see SW-3 note above). Using shadcn Progress
+            component (has shimmer + motion-reduce support built in). The
+            value prop is omitted so the native <progress> element is
+            indeterminate, honouring ARIA 1.2 progressbar semantics. */}
+        <Progress
+          aria-label={t('progressLabel')}
+          aria-busy="true"
+          className="h-1.5 w-48"
+        />
       </div>
     </div>
   );

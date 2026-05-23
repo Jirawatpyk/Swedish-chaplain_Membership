@@ -15,7 +15,7 @@ const tenant = asTenantContext('test-tenant');
 
 function makeRecipient(memberId: string): F7MemberRecipient {
   return {
-    memberId,
+    memberId: memberId as F7MemberRecipient['memberId'],
     displayName: `Member ${memberId}`,
     primaryContactEmail: `${memberId}@example.com`,
     tierCode: 'corporate',

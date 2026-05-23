@@ -349,3 +349,160 @@ describe('InlineNotesCell interaction (round-3 T1)', () => {
     expect(screen.queryByRole('button', { name: /Edit notes/ })).toBeNull();
   });
 });
+
+/**
+ * P2.1 — Save-path + race-guard net for the `useInlineEditField` hook.
+ *
+ * The tests above deliberately avoid asserting the async SAVE path (the
+ * round-6 S-4 note: jsdom+React-19 makes asserting POST-save DOM state
+ * flaky). These tests instead assert the SYNCHRONOUS `onSave` call (args
+ * + count), which is deterministic — `handleSave` invokes `onSave`
+ * before its first `await`. This is the regression net that protects the
+ * hook extraction: it pins the normalised value passed to `onSave`, the
+ * savingRef double-fire guard, and the cancellingRef Escape+blur guard.
+ */
+describe('inline-edit save path + race guards (P2.1 net)', () => {
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it('country: Enter saves with the trimmed + UPPER-cased value', async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true });
+    await renderTable({
+      rows: [testRow], // country: 'SE'
+      nextCursor: null,
+      enableSelection: true,
+      onInlineEdit: onSave,
+    });
+
+    const button = screen.getByRole('button', { name: /Edit country/ });
+    await act(async () => {
+      fireEvent.doubleClick(button);
+    });
+    const input = screen.getByLabelText('Country code') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: ' th ' } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+
+    expect(onSave).toHaveBeenCalledWith('aaaa-1111-bbbb-2222', 'country', 'TH');
+  });
+
+  it('country: double-fire guard — Enter then blur calls onSave ONCE (savingRef)', async () => {
+    const d = deferred<{ ok: true }>();
+    const onSave = vi.fn().mockReturnValue(d.promise);
+    await renderTable({
+      rows: [testRow],
+      nextCursor: null,
+      enableSelection: true,
+      onInlineEdit: onSave,
+    });
+
+    const button = screen.getByRole('button', { name: /Edit country/ });
+    await act(async () => {
+      fireEvent.doubleClick(button);
+    });
+    const input = screen.getByLabelText('Country code') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'TH' } });
+    });
+    // First submit (Enter) starts the save; savingRef is now set.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+    // A blur firing before the save resolves must short-circuit.
+    await act(async () => {
+      fireEvent.blur(input);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      d.resolve({ ok: true });
+    });
+  });
+
+  it('country: Escape then blur does NOT save (cancellingRef guard)', async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true });
+    await renderTable({
+      rows: [testRow],
+      nextCursor: null,
+      enableSelection: true,
+      onInlineEdit: onSave,
+    });
+
+    const button = screen.getByRole('button', { name: /Edit country/ });
+    await act(async () => {
+      fireEvent.doubleClick(button);
+    });
+    const input = screen.getByLabelText('Country code') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'TH' } });
+    });
+    // Escape sets the cancelling flag synchronously; a queued blur from
+    // the unmounting input must not trigger a save.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      fireEvent.blur(input);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('notes: Enter saves with the trimmed value', async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true });
+    await renderTable({
+      rows: [testRow], // notes: null
+      nextCursor: null,
+      enableSelection: true,
+      onInlineEdit: onSave,
+    });
+
+    const button = screen.getByRole('button', { name: /Edit notes/ });
+    await act(async () => {
+      fireEvent.doubleClick(button);
+    });
+    const textarea = screen.getByLabelText('Edit notes') as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: '  hello note  ' } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+
+    expect(onSave).toHaveBeenCalledWith('aaaa-1111-bbbb-2222', 'notes', 'hello note');
+  });
+
+  it('notes: double-fire guard — Enter then blur calls onSave ONCE', async () => {
+    const d = deferred<{ ok: true }>();
+    const onSave = vi.fn().mockReturnValue(d.promise);
+    await renderTable({
+      rows: [testRow],
+      nextCursor: null,
+      enableSelection: true,
+      onInlineEdit: onSave,
+    });
+
+    const button = screen.getByRole('button', { name: /Edit notes/ });
+    await act(async () => {
+      fireEvent.doubleClick(button);
+    });
+    const textarea = screen.getByLabelText('Edit notes') as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: 'note' } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+    await act(async () => {
+      fireEvent.blur(textarea);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      d.resolve({ ok: true });
+    });
+  });
+});

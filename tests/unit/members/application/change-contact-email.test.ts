@@ -36,7 +36,12 @@ const contactId = 'c-001' as Contact['contactId'];
 const userId = 'u-001';
 const memberId = 'm-001' as Contact['memberId'];
 
-function makeContact(overrides: Partial<Contact> = {}): Contact {
+// M5: Contact is now a discriminated union (isPrimary ⟹ not removed). This
+// fixture only builds valid primary contacts; overrides exclude the primacy
+// discriminant fields.
+function makeContact(
+  overrides: Partial<Omit<Contact, 'isPrimary' | 'removedAt'>> = {},
+): Contact {
   return {
     tenantId: 'test-tenant' as Contact['tenantId'],
     contactId,
@@ -47,12 +52,13 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
     phone: null,
     roleTitle: null,
     preferredLanguage: 'en',
-    isPrimary: true,
     dateOfBirth: null,
     linkedUserId: userId as Contact['linkedUserId'],
-    removedAt: null,
+    inviteBouncedAt: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
+    isPrimary: true,
+    removedAt: null,
     ...overrides,
   };
 }

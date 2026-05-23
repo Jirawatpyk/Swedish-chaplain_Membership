@@ -15,7 +15,7 @@ import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
-import { asTenantId, type MemberId } from '../../domain/member';
+import { type MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
 import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
@@ -137,7 +137,7 @@ export async function inviteColleague(
   const newContactId = deps.idFactory.contactId();
   const contactDraft = {
     // W-3: Use branded constructor instead of raw `as` cast
-    tenantId: asTenantId(deps.tenant.slug),
+    tenantId: deps.tenant.slug,
     contactId: newContactId,
     memberId: input.memberId,
     firstName: input.body.first_name,
@@ -149,6 +149,7 @@ export async function inviteColleague(
     isPrimary: false,
     dateOfBirth: null,
     linkedUserId: null,
+    inviteBouncedAt: null,
     removedAt: null,
   };
 

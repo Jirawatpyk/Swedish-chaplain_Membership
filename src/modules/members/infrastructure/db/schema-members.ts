@@ -7,7 +7,7 @@
  * **RLS policies, pg_trgm extension, CONCURRENTLY indexes, and the
  * `last_activity_at` denorm trigger are NOT expressed here** — drizzle-kit
  * cannot emit them. They are hand-appended to the generated SQL migration
- * `drizzle/migrations/0008_members_contacts.sql` as raw SQL blocks, mirroring
+ * `drizzle/migrations/0009_members_contacts.sql` as raw SQL blocks, mirroring
  * the F2 pattern. See plan.md § Storage + data-model.md § 2 / § 3.
  */
 
@@ -71,7 +71,12 @@ export const members = pgTable(
     registrationFeePaid: boolean('registration_fee_paid').notNull().default(false),
 
     // Activity denorm — updated by an AFTER INSERT ON audit_log trigger
-    // (see migration 0008). NULL until the first audit event touches this member.
+    // (see migration 0009). NULL until the first audit event touches this member.
+    // INVARIANT: the trigger fires ONLY when the audit payload carries the
+    // snake_case key `member_id` (NEW.payload ? 'member_id'). Audit events that
+    // use camelCase `memberId` will NOT bump this column — keep every new
+    // member-scoped audit payload on `member_id` or the member silently stops
+    // rising in the directory's last-activity sort.
     lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
 
     // Admin-only free text — redacted from member-self GET responses in Application.

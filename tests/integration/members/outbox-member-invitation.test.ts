@@ -25,6 +25,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { sha256Hex } from '@/lib/crypto';
 import {
   invitations,
   notificationsOutbox,
@@ -105,7 +106,11 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
     expect(row.tenantId).toBe('swecham');
 
     const ctx = row.contextData as Record<string, unknown>;
-    expect(ctx.token).toBe(invitationId);
+    // Token-hashing contract (create-user.ts §3): the outbox carries the
+    // PLAINTEXT token (emailed in the URL) while the persisted invitation id
+    // is its sha256 hash. So the plaintext must hash to invitationId — they
+    // are intentionally NOT equal (a DB leak must not expose usable tokens).
+    expect(sha256Hex(ctx.token as string)).toBe(invitationId);
     expect(ctx.role).toBe('manager');
 
     // Belt-and-braces: confirm the invitation row the token points at

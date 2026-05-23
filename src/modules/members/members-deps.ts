@@ -21,6 +21,7 @@ import { authSessionRevocationPort } from './infrastructure/adapters/auth-sessio
 import { userEmailAdapter } from './infrastructure/adapters/user-email-adapter';
 import { emailChangeTokenAdapter } from './infrastructure/adapters/email-change-token-adapter';
 import { drizzleInvitationCascadePort } from './infrastructure/adapters/invitation-cascade-adapter';
+import { reissueInvitationAdapter } from './infrastructure/adapters/reissue-invitation-adapter';
 import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
 import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
@@ -33,6 +34,7 @@ import type { SessionRevocationPort } from './application/ports/session-revocati
 import type { UserEmailPort } from './application/ports/user-email-port';
 import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
 import type { InvitationCascadePort } from './application/ports/invitation-cascade-port';
+import type { ReissueInvitationPort } from './application/ports/reissue-invitation-port';
 import type { BroadcastsCascadePort } from './application/ports/broadcasts-cascade-port';
 import type { RenewalsCascadePort } from './application/ports/renewals-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
@@ -50,6 +52,12 @@ export type MembersDeps = {
   userEmails: UserEmailPort;
   tokens: EmailChangeTokenPort;
   invitations: InvitationCascadePort;
+  /**
+   * F3 spec § Edge Cases — re-issue a fresh invitation (mint + outbox
+   * enqueue) for an existing pending user whose invite email bounced.
+   * Self-contained owner-role op; mints + enqueues in F1's own tx.
+   */
+  reissueInvitation: ReissueInvitationPort;
   /** F7 in-flight broadcasts cascade (T178a / Coverage Gap C2). */
   broadcastsCascade: BroadcastsCascadePort;
   /**
@@ -108,6 +116,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     userEmails: userEmailAdapter,
     tokens: emailChangeTokenAdapter,
     invitations: drizzleInvitationCascadePort,
+    reissueInvitation: reissueInvitationAdapter,
     broadcastsCascade: f7BroadcastsCascadeAdapter,
     renewalsCascade: f8RenewalsCascadeAdapter,
     timeline: drizzleTimelineRepo,

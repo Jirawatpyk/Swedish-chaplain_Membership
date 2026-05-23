@@ -661,7 +661,8 @@
         "selectAll": "เลือกทุกแถว",
         "selectRow": "เลือก {company}",
         "selectedCount": "เลือกแล้ว {count} แถว",
-        "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม"
+        "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม",
+        "tableCaption": "รายชื่อสมาชิก"
       },
       "emptyStates": {
         "zero": {
@@ -696,6 +697,20 @@
           "expiresInDays": "{days, plural, =0 {หมดอายุวันนี้} other {หมดอายุใน # วัน}}",
           "empty": "ไม่มีคำเชิญที่รอดำเนินการ",
           "loadError": "ไม่สามารถโหลดคำเชิญที่รอดำเนินการได้"
+        },
+        "inviteBounced": {
+          "badge": "อีเมลคำเชิญไม่ถึง",
+          "badgeAria": "อีเมลคำเชิญถูกตีกลับ",
+          "resendLabel": "ส่งคำเชิญอีกครั้ง",
+          "resendSubmitting": "กำลังส่ง…",
+          "resendSuccess": "ส่งคำเชิญใหม่แล้ว",
+          "errors": {
+            "notFound": "ไม่พบผู้ติดต่อ",
+            "notBounced": "คำเชิญนี้ไม่ได้ถูกตีกลับ",
+            "alreadyActive": "ผู้ใช้นี้ตอบรับคำเชิญแล้ว",
+            "noLinkedUser": "ไม่มีบัญชีพอร์ทัลที่เชื่อมโยงกับผู้ติดต่อนี้",
+            "serverError": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
+          }
         },
         "sections": {
           "company": "ข้อมูลบริษัท",
@@ -762,6 +777,7 @@
         "empty": "ยังไม่มีกิจกรรมที่บันทึกไว้",
         "loadMore": "โหลดเหตุการณ์เก่ากว่า",
         "loading": "กำลังโหลดไทม์ไลน์…",
+        "loadError": "โหลดรายการเพิ่มเติมไม่สำเร็จ กรุณาลองอีกครั้ง",
         "actor": "โดย {actor}",
         "actorSystem": "ระบบ",
         "eventAt": "{date}",

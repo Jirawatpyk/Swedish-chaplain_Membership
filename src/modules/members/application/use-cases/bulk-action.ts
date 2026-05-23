@@ -349,6 +349,18 @@ export async function bulkAction(
     if (e instanceof BulkStateError) {
       return err({ type: 'state_error', memberId: e.memberId, code: e.stateCode });
     }
+    // M2: log the rich cause server-side BEFORE sanitizing the wire response.
+    // The route only sees the sanitized message, so without this an FK
+    // violation / `audit_failed` / deadlock during the all-or-nothing tx
+    // would collapse to "bulk operation failed" with zero forensic trace.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        requestId: meta.requestId,
+        action: data.action,
+      },
+      'bulk-action: transaction rolled back',
+    );
     // Round-2 review S-2: sanitize internal detail — don't leak
     // `persist:fk_violation_plan_id` etc. to callers.
     return err({

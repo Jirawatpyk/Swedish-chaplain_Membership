@@ -4,6 +4,7 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
 
@@ -34,10 +35,24 @@ export default async function PortalEditPage() {
     user.id,
   );
   if (!memberResult.ok) {
+    // Distinguish a legitimate "no member linked" (repo.not_found → notLinked)
+    // from a real DB/RLS failure (repo.unexpected). Without this split a
+    // transient Neon error would tell the member they have no account AND
+    // leave ops with no trace. Mirrors account/page.tsx.
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { err: memberResult.error, tenantId: tenant.slug, userId: user.id },
+        'portal.edit.member_lookup_failed',
+      );
+    }
+    const message =
+      memberResult.error.code === 'repo.not_found'
+        ? t('notLinked')
+        : t('loadError');
     return (
       <FormContainer>
         <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
+          <p className="text-body text-muted-foreground">{message}</p>
         </div>
       </FormContainer>
     );
@@ -51,6 +66,12 @@ export default async function PortalEditPage() {
     member.memberId,
   );
   if (!contactsResult.ok) {
+    if (contactsResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { err: contactsResult.error, tenantId: tenant.slug, userId: user.id },
+        'portal.edit.contacts_lookup_failed',
+      );
+    }
     return (
       <FormContainer>
         <div className="py-12 text-center">

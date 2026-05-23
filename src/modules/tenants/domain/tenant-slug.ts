@@ -70,6 +70,12 @@ export function asTenantSlug(slug: string): TenantSlug {
  *        the payload before this brand is applied)
  *      - `src/lib/tenant-context.ts` (peekTokenTenantId — structural
  *        check before return)
+ *      - `src/modules/members/domain/member.ts` (`asTenantId` / `tryTenantId`
+ *        — the F3/F6/F8 persisted-tenant-id branders, post-H4 unification of
+ *        `TenantId` with `TenantSlug`. `asTenantId` brands a slug already
+ *        validated upstream; `tryTenantId` adds a non-empty guard. NOTE:
+ *        `tryTenantId` does NOT re-check the [a-z0-9-]{1,63} pattern — callers
+ *        on truly untrusted input should prefer `asTenantSlug`.)
  *
  * Any other production call site MUST go through `asTenantSlug`
  * (validates the [a-z0-9-]{1,63} pattern). Importing this function

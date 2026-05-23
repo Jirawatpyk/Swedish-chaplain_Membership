@@ -4,8 +4,12 @@
  * T065 + T108 + T112 — Members directory table.
  *
  * TanStack Table v8 headless + shadcn Table visual primitives. Rows link
- * to the detail page. Reserves the `member_risk_flag` column for F8 —
- * rendered as a placeholder em-dash per FR-001 note + US2 AS5.
+ * to the detail page. The risk column (accessor id `member_risk_flag`, kept
+ * stable since the F8 pre-wiring) renders the F8-derived risk band/score from
+ * the row's `member_risk_flag` object (`{ score, band } | null`, sourced from
+ * F3 `members.risk_score_band` populated by F8's batched recompute); when not
+ * yet computed (FR-035 min-tenure) it shows a labelled tooltip explaining why
+ * — see the cell renderer below, not a bare em-dash.
  *
  * T108 (US4): Row-selection state via TanStack Table enableRowSelection +
  * Shift+Click range + Space toggle + Ctrl+A page-select + "Select all N
@@ -58,6 +62,10 @@ import { toast } from 'sonner';
 import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 import { CountryDisplay } from './country-display';
+import {
+  useInlineEditField,
+  type InlineSaveOutcome,
+} from './use-inline-edit-field';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -144,12 +152,13 @@ function EditableColumnHeader({
   return (
     <span className="inline-flex items-center gap-1">
       <span>{label}</span>
+      {/* WCAG 2.2 SC 2.5.8: tap target ≥ 24×24 px — raised from size-4 (16px) to min size-6 (24px). */}
       <Tooltip>
         <TooltipTrigger
           render={
             <button
               type="button"
-              className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               aria-label={t('columnHeaderHintTooltip')}
             />
           }
@@ -272,79 +281,56 @@ function InlineCountryCell({
   onSave?: Props['onInlineEdit'];
 }) {
   const t = useTranslations('admin.members.inlineEdit');
-  // `editing` is `null` when not editing; holds the draft value while editing.
-  const [editing, setEditing] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  // P8 round-10 — pair the saving announcement with a saved flash.
-  const [savedFlash, setSavedFlash] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  // Round-4 review R4-I1: `saving` state update is async — if user presses
-  // Enter then blur fires immediately, both handlers read `saving=false`
-  // and submit twice. A ref is synchronous so a second concurrent call
-  // short-circuits before the DB roundtrip.
-  const savingRef = useRef(false);
-  // Staff-review SW-6: Escape+blur race — when user presses Escape, the
-  // input unmounts and some browsers fire a blur event before unmount,
-  // triggering handleSave with the stale closure. A sync cancelling flag
-  // lets the Escape branch short-circuit the queued blur's handleSave.
-  const cancellingRef = useRef(false);
 
-  useEffect(() => {
-    if (!savedFlash) return;
-    const id = setTimeout(() => setSavedFlash(false), 2000);
-    return () => clearTimeout(id);
-  }, [savedFlash]);
-
-  const handleSave = useCallback(async () => {
-    if (cancellingRef.current || !onSave || editing === null || savingRef.current) return;
-    savingRef.current = true;
-    try {
-      const normalised = editing.trim().toUpperCase();
-      if (normalised === country) {
-        setEditing(null);
-        return;
-      }
+  // Value-specific save logic (validate → onSave → toast); the shared
+  // hook owns the edit/saving/flash state + the double-fire + Escape+blur
+  // race guards (see use-inline-edit-field.ts).
+  const commit = useCallback(
+    async (draft: string, current: string): Promise<InlineSaveOutcome> => {
+      const normalised = draft.trim().toUpperCase();
+      if (normalised === current) return 'closed';
       if (normalised.length !== 2) {
         toast.error(t('countryInvalid'));
-        setEditing(null);
-        return;
+        return 'closed';
       }
-      setSaving(true);
-      const result = await onSave(memberId, 'country', normalised);
-      setSaving(false);
+      const result = await onSave!(memberId, 'country', normalised);
       if (result.ok) {
-        setSavedFlash(true);
         toast.success(t('countryUpdated'));
-        setEditing(null);
-      } else {
-        // Round-3 review N-I1: keep input open on error so user can retry
-        // without retyping. Toast announces the failure; they can Escape to
-        // cancel or fix + retry.
-        toast.error(result.error);
+        return 'saved';
       }
-    } finally {
-      savingRef.current = false;
-    }
-  }, [memberId, country, editing, onSave, t]);
+      // Round-3 N-I1: keep input open on error so user can retry without retyping.
+      toast.error(result.error);
+      return 'kept-open';
+    },
+    [memberId, onSave, t],
+  );
 
-  // Round-3 N-I6: focus via useEffect on editing state change — more
-  // reliable than requestAnimationFrame under React 19 concurrent rendering.
-  useEffect(() => {
-    if (editing !== null) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
+  const {
+    editing,
+    isEditing,
+    saving,
+    savedFlash,
+    fieldRef,
+    startEdit,
+    setDraft,
+    handleSave,
+    handleKeyDown,
+  } = useInlineEditField<string, HTMLInputElement>({
+    current: country,
+    toDraft: (c) => c,
+    commit,
+    selectOnFocus: true,
+  });
 
   if (!onSave) {
     return <span>{country}</span>;
   }
 
-  if (editing === null) {
+  if (!isEditing) {
     return (
       <button
         type="button"
-        onDoubleClick={() => setEditing(country)}
+        onDoubleClick={startEdit}
         title={t('editCountryHint')}
         className="group inline-flex min-h-[28px] min-w-[40px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editCountry')}
@@ -363,30 +349,14 @@ function InlineCountryCell({
   return (
     <div className="flex flex-col gap-1">
       <input
-        ref={inputRef}
+        ref={fieldRef}
         type="text"
-        value={editing}
+        value={editing ?? ''}
         maxLength={2}
         pattern="[A-Za-z]{2}"
-        onChange={(e) => setEditing(e.target.value.toUpperCase())}
+        onChange={(e) => setDraft(e.target.value.toUpperCase())}
         onBlur={handleSave}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            handleSave();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            // Staff-review SW-6: set sync flag BEFORE clearing state so
-            // any queued blur-triggered handleSave short-circuits.
-            cancellingRef.current = true;
-            setEditing(null);
-            // Reset the flag on next tick — by then the blur has flushed
-            // and any subsequent enter-edit-mode cycle starts clean.
-            queueMicrotask(() => {
-              cancellingRef.current = false;
-            });
-          }
-        }}
+        onKeyDown={handleKeyDown}
         disabled={saving}
         className="h-7 w-14 rounded-sm border border-input bg-background px-2 text-sm uppercase focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('countryInput')}
@@ -416,57 +386,43 @@ function InlineNotesCell({
   onSave?: Props['onInlineEdit'];
 }) {
   const t = useTranslations('admin.members.inlineEdit');
-  // `editing` is `null` when not editing; holds the draft value while editing.
-  // Storing the draft separately from the prop avoids the prop/state sync
-  // problem — when the admin enters edit mode we snapshot `notes` into the
-  // draft. On cancel/save we go back to reading `notes` directly.
-  const [editing, setEditing] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  // P8 round-10 — pair the saving announcement with a saved flash.
-  const [savedFlash, setSavedFlash] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Round-4 R4-I1: sync guard against onBlur + Enter double-fire race.
-  const savingRef = useRef(false);
-  // Staff-review SW-6: sync guard against Escape+blur draft loss.
-  const cancellingRef = useRef(false);
 
-  useEffect(() => {
-    if (!savedFlash) return;
-    const id = setTimeout(() => setSavedFlash(false), 2000);
-    return () => clearTimeout(id);
-  }, [savedFlash]);
-
-  const handleSave = useCallback(async () => {
-    if (cancellingRef.current || !onSave || editing === null || savingRef.current) return;
-    savingRef.current = true;
-    try {
-      const next = editing.trim() || null;
-      if (next === notes) {
-        setEditing(null);
-        return;
-      }
-      setSaving(true);
-      const result = await onSave(memberId, 'notes', next);
-      setSaving(false);
+  const commit = useCallback(
+    async (
+      draft: string,
+      current: string | null,
+    ): Promise<InlineSaveOutcome> => {
+      const next = draft.trim() || null;
+      if (next === current) return 'closed';
+      const result = await onSave!(memberId, 'notes', next);
       if (result.ok) {
-        setSavedFlash(true);
         toast.success(t('notesUpdated'));
-        setEditing(null);
-      } else {
-        // Round-3 N-I1: keep textarea open so user doesn't lose their draft.
-        toast.error(result.error);
+        return 'saved';
       }
-    } finally {
-      savingRef.current = false;
-    }
-  }, [memberId, notes, editing, onSave, t]);
+      // Round-3 N-I1: keep textarea open so user doesn't lose their draft.
+      toast.error(result.error);
+      return 'kept-open';
+    },
+    [memberId, onSave, t],
+  );
 
-  // Round-3 N-I6: focus via useEffect on editing state change.
-  useEffect(() => {
-    if (editing !== null) {
-      textareaRef.current?.focus();
-    }
-  }, [editing]);
+  const {
+    editing,
+    isEditing,
+    saving,
+    savedFlash,
+    fieldRef,
+    startEdit,
+    setDraft,
+    handleSave,
+    handleKeyDown,
+  } = useInlineEditField<string | null, HTMLTextAreaElement>({
+    current: notes,
+    toDraft: (n) => n ?? '',
+    commit,
+    // Shift+Enter inserts a newline; plain Enter submits.
+    submitOnEnter: (e) => !e.shiftKey,
+  });
 
   if (!onSave) {
     return (
@@ -479,7 +435,7 @@ function InlineNotesCell({
     );
   }
 
-  if (editing === null) {
+  if (!isEditing) {
     // I5 round-10 — preview was clipped at 24 chars (notes accepts
     // 4000). Bumped to 60 so multi-sentence notes are readable
     // without entering edit mode. Full text remains available via
@@ -488,7 +444,7 @@ function InlineNotesCell({
     return (
       <button
         type="button"
-        onDoubleClick={() => setEditing(notes ?? '')}
+        onDoubleClick={startEdit}
         title={notes ?? t('editNotesHint')}
         className="group inline-flex min-h-[28px] max-w-[260px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editNotes')}
@@ -505,27 +461,13 @@ function InlineNotesCell({
   return (
     <div className="flex flex-col gap-1">
       <textarea
-        ref={textareaRef}
-        value={editing}
+        ref={fieldRef}
+        value={editing ?? ''}
         maxLength={4000}
         rows={2}
-        onChange={(e) => setEditing(e.target.value)}
+        onChange={(e) => setDraft(e.target.value)}
         onBlur={handleSave}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSave();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            // Staff-review SW-6: block queued-blur handleSave from the
-            // stale closure before clearing state.
-            cancellingRef.current = true;
-            setEditing(null);
-            queueMicrotask(() => {
-              cancellingRef.current = false;
-            });
-          }
-        }}
+        onKeyDown={handleKeyDown}
         disabled={saving}
         className="min-h-[28px] w-48 resize-y rounded-sm border border-input bg-background px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('notesInput')}
@@ -883,7 +825,10 @@ export function MembersTable({
           })}
         </div>
       )}
-      <Table>
+      {/* WCAG 1.3.1 — visually-hidden caption identifies the table for
+          screen reader users who navigate table landmarks. */}
+      <Table aria-label={t('tableCaption')}>
+        <caption className="sr-only">{t('tableCaption')}</caption>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>

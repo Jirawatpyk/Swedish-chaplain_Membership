@@ -25,9 +25,9 @@ import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asEmail } from '../../domain/value-objects/email';
-import { asPhone } from '../../domain/value-objects/phone';
+import { asPhone, type Phone } from '../../domain/value-objects/phone';
 import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
-import { asTaxId } from '../../domain/value-objects/tax-id';
+import { asTaxId, type TaxId } from '../../domain/value-objects/tax-id';
 import {
   asOverrideReason,
   OVERRIDE_REASON_CODES,
@@ -35,10 +35,9 @@ import {
 import { checkTurnoverBand } from '../../domain/policies/turnover-policy';
 import { checkAgeEligibility } from '../../domain/policies/age-eligibility-policy';
 import { checkStartupDuration } from '../../domain/policies/startup-duration-policy';
-import { asPlanId, asTenantId } from '../../domain/member';
+import { asPlanId } from '../../domain/member';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
-import type { UserId } from '../../domain/value-objects/user-id';
 import type { MemberRepo, RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
@@ -156,18 +155,14 @@ export async function createMember(
   const email = asEmail(data.primary_contact.email);
   if (!email.ok) return err({ type: 'invalid_email' });
 
-  let phone: ReturnType<typeof asPhone> extends Result<infer P, unknown>
-    ? P | null
-    : never = null;
+  let phone: Phone | null = null;
   if (data.primary_contact.phone) {
     const r = asPhone(data.primary_contact.phone);
     if (!r.ok) return err({ type: 'invalid_phone' });
     phone = r.value;
   }
 
-  let taxId: ReturnType<typeof asTaxId> extends Result<infer T, unknown>
-    ? T | null
-    : never = null;
+  let taxId: TaxId | null = null;
   if (data.tax_id) {
     const r = asTaxId(data.tax_id, country.value);
     if (!r.ok) return err({ type: 'invalid_tax_id', code: r.error.code });
@@ -268,7 +263,7 @@ export async function createMember(
   const memberId = deps.idFactory.memberId();
   const contactId = deps.idFactory.contactId();
   const memberDraft: Omit<Member, 'createdAt' | 'updatedAt'> = {
-    tenantId: asTenantId(deps.tenant.slug),
+    tenantId: deps.tenant.slug,
     memberId,
     companyName: data.company_name.trim(),
     legalEntityType: data.legal_entity_type ?? null,
@@ -288,7 +283,7 @@ export async function createMember(
     archivedAt: null,
   };
   const contactDraft: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'> = {
-    tenantId: asTenantId(deps.tenant.slug),
+    tenantId: deps.tenant.slug,
     contactId,
     firstName: data.primary_contact.first_name.trim(),
     lastName: data.primary_contact.last_name.trim(),
@@ -301,6 +296,7 @@ export async function createMember(
       ? new Date(data.primary_contact.date_of_birth)
       : null,
     linkedUserId: null,
+    inviteBouncedAt: null,
     removedAt: null,
   };
 
@@ -358,6 +354,3 @@ export async function createMember(
     return err({ type: 'server_error', message: 'create: unexpected' });
   }
 }
-
-// Silence unused-type warnings from the phantom Result<infer> helpers above.
-void ({} as UserId);

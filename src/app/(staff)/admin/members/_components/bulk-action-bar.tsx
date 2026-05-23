@@ -105,9 +105,12 @@ export function BulkActionBar({
     [selectedIds, count, overCap, onClear, router, t],
   );
 
-  const handleArchiveConfirm = useCallback(() => {
+  // H7: keep dialog open (with pending spinner) while archive is in-flight
+  // so the admin gets visual feedback that the action was accepted and is
+  // running. The dialog closes on completion (success or error).
+  const handleArchiveConfirm = useCallback(async () => {
+    await executeBulk('archive');
     setArchiveDialogOpen(false);
-    executeBulk('archive');
   }, [executeBulk]);
 
   if (count === 0) return null;
@@ -193,6 +196,7 @@ export function BulkActionBar({
         companyNames={selectedCompanyNames}
         count={count}
         onConfirm={handleArchiveConfirm}
+        pending={executing}
       />
 
       {progress && (

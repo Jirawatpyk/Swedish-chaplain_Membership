@@ -74,6 +74,13 @@ export const contacts = pgTable(
     // FALSE when `removed_at IS NOT NULL` (Domain invariant).
     removedAt: timestamp('removed_at', { withTimezone: true }),
 
+    // F3 spec § Edge Cases — set when the F1 invitation email to this contact
+    // bounces (Resend `email.bounced`). Marks the pending invitation as failed
+    // (the invitations table has no failure state of its own), anchors the
+    // directory "invite bounced" warning badge, and is cleared on re-send.
+    // NULL = no bounce recorded.
+    inviteBouncedAt: timestamp('invite_bounced_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

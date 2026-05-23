@@ -14,6 +14,7 @@
  * Pure TypeScript — no framework imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { unsafeBrandTenantSlug, type TenantSlug } from '@/modules/tenants';
 import type { IsoCountryCode } from './value-objects/iso-country-code';
 import type { TaxId } from './value-objects/tax-id';
 import { isUuid } from './value-objects/uuid';
@@ -24,20 +25,29 @@ export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 declare const MemberIdBrand: unique symbol;
 export type MemberId = string & { readonly [MemberIdBrand]: true };
 
-declare const TenantIdBrand: unique symbol;
-export type TenantId = string & { readonly [TenantIdBrand]: true };
+/**
+ * `TenantId` is the persisted-tenant-identifier brand shared across F3
+ * (members), F6 (events), and F8 (renewals). It is UNIFIED with the canonical
+ * `TenantSlug` from `@/modules/tenants` — i.e. they are the same type. The
+ * alias is retained because many call sites refer to the persisted tenant id
+ * by this name; new code may use either name interchangeably. Unifying the
+ * brand eliminates the previous `asTenantId(tenant.slug)` re-brand laundering
+ * at every F3 write site (`tenant.slug` is already a `TenantSlug`).
+ */
+export type TenantId = TenantSlug;
 
 declare const PlanIdBrand: unique symbol;
 export type PlanId = string & { readonly [PlanIdBrand]: true };
 
 /**
- * Brand a raw string as a TenantId. Used at trust boundaries (adapters,
- * route handlers, tests) where the value has been validated externally.
- * For untrusted boundaries (user input, URL params) prefer
- * `tryTenantId` which runs a non-empty check and returns a Result.
+ * Brand a raw string as a TenantId (= TenantSlug). Used at trust boundaries
+ * (adapters, route handlers, tests, webhook params) where the value has been
+ * validated externally. For untrusted boundaries prefer `tryTenantId` which
+ * runs a non-empty check and returns a Result. A value that is ALREADY a
+ * `TenantSlug` (e.g. `tenant.slug`) needs no conversion — assign it directly.
  */
 export function asTenantId(raw: string): TenantId {
-  return raw as TenantId;
+  return unsafeBrandTenantSlug(raw);
 }
 
 /** Validated TenantId brander for untrusted input. Rejects empty / whitespace. */
@@ -45,7 +55,7 @@ export function tryTenantId(raw: unknown): Result<TenantId, { code: 'invalid_ten
   if (typeof raw !== 'string' || raw.trim().length === 0) {
     return err({ code: 'invalid_tenant_id' });
   }
-  return ok(raw as TenantId);
+  return ok(unsafeBrandTenantSlug(raw));
 }
 
 /**
@@ -84,6 +94,45 @@ export function tryMemberId(raw: unknown): Result<MemberId, { code: 'invalid_mem
 }
 
 /**
+ * Lifecycle sub-shape (M5 review hardening) — encodes the `status` ⟺
+ * `archivedAt` coupling so an illegal `{status:'archived', archivedAt:null}`
+ * or `{status:'active', archivedAt:<date>}` is unrepresentable in any FULL
+ * `Member` value (the read/consumer surface). Mirrors the DB CHECK
+ * `members_archived_at_iff_archived` (migration 0009): archived rows always
+ * carry an `archivedAt`; non-archived rows never do.
+ *
+ * NOTE: `Omit<Member, K>` collapses this discriminated union (TS keyof over a
+ * union keeps only common keys), so create-DRAFT types derived via `Omit`
+ * (e.g. `Omit<Member,'createdAt'|'updatedAt'>`) do NOT enforce the correlation.
+ * The runtime `memberLifecycle()` helper + the DB CHECK are the backstops at
+ * the construct surface.
+ */
+export type MemberLifecycle =
+  | { readonly status: 'archived'; readonly archivedAt: Date }
+  | { readonly status: 'active' | 'inactive'; readonly archivedAt: null };
+
+/**
+ * Build the correlated lifecycle sub-shape from a raw status + archivedAt
+ * (e.g. a DB row). The throw is a defensive assertion of the DB CHECK
+ * invariant and is unreachable for well-formed rows.
+ */
+export function memberLifecycle(
+  status: MemberStatus,
+  archivedAt: Date | null,
+): MemberLifecycle {
+  if (status === 'archived') {
+    if (archivedAt === null) {
+      throw new Error(
+        'member invariant violated: archived status requires archivedAt ' +
+          '(DB CHECK members_archived_at_iff_archived)',
+      );
+    }
+    return { status, archivedAt };
+  }
+  return { status, archivedAt: null };
+}
+
+/**
  * Immutable Member aggregate. Mutations return a new Member instance via
  * the state-transition functions below — the Application layer persists
  * via the repo port.
@@ -105,11 +154,9 @@ export type Member = {
   readonly registrationFeePaid: boolean;
   readonly lastActivityAt: Date | null;
   readonly notes: string | null;
-  readonly status: MemberStatus;
-  readonly archivedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
-};
+} & MemberLifecycle;
 
 // --- State transitions --------------------------------------------------------
 

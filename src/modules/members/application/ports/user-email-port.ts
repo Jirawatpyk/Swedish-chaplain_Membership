@@ -64,4 +64,16 @@ export interface UserEmailPort {
   isEmailVerified(
     userId: string,
   ): Promise<Result<boolean, RepoError>>;
+
+  /**
+   * Read-only check: is the user still in `pending` status?
+   * Used by `resendBouncedInvite` to guard against re-issuing an
+   * invitation for a user who has already redeemed their invite
+   * (status transitioned from `pending` → `active`). Re-issuing for
+   * a non-pending user would give them a second "portal invitation"
+   * email for an account they already control.
+   */
+  isUserPending(
+    userId: string,
+  ): Promise<Result<boolean, RepoError>>;
 }

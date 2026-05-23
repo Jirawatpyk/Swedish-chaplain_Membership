@@ -121,10 +121,14 @@ function RequiredMark() {
   );
 }
 
-function FieldError({ message }: { message: string | undefined }) {
+/**
+ * B3: FieldError now requires an `id` so each input can reference it via
+ * `aria-describedby`. Pattern matches portal-edit-form.tsx exactly.
+ */
+function FieldError({ id, message }: { id: string; message: string | undefined }) {
   if (!message) return null;
   return (
-    <p className="mt-1 text-xs text-destructive" role="alert">
+    <p id={id} className="mt-1 text-xs text-destructive" role="alert">
       {message}
     </p>
   );
@@ -212,11 +216,15 @@ export function MemberForm({
             required
             aria-required="true"
             aria-invalid={Boolean(errors.company_name)}
-            aria-describedby="required-fields-note"
+            aria-describedby={
+              errors.company_name
+                ? 'company_name-error required-fields-note'
+                : 'required-fields-note'
+            }
             autoComplete="organization"
             maxLength={200}
           />
-          <FieldError message={errors.company_name?.message} />
+          <FieldError id="company_name-error" message={errors.company_name?.message} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -241,22 +249,31 @@ export function MemberForm({
               required
               aria-required="true"
               aria-invalid={Boolean(errors.country)}
+              aria-describedby={
+                errors.country ? 'country-error required-fields-note' : 'required-fields-note'
+              }
               maxLength={2}
               autoComplete="country"
               placeholder={tf('countryPlaceholder')}
               className="uppercase"
             />
-            <FieldError message={errors.country?.message} />
+            <FieldError id="country-error" message={errors.country?.message} />
           </div>
           <div>
             <Label htmlFor="tax_id">{tf('taxId')}</Label>
-            <Input id="tax_id" {...register('tax_id')} maxLength={50} />
+            <Input
+              id="tax_id"
+              {...register('tax_id')}
+              maxLength={50}
+              aria-invalid={Boolean(errors.tax_id)}
+              aria-describedby={errors.tax_id ? 'tax_id-error' : undefined}
+            />
             {countryIsTH && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {tf('taxIdHintTH')}
               </p>
             )}
-            <FieldError message={errors.tax_id?.message} />
+            <FieldError id="tax_id-error" message={errors.tax_id?.message} />
           </div>
         </div>
 
@@ -270,8 +287,10 @@ export function MemberForm({
               autoComplete="url"
               maxLength={200}
               placeholder={tf('websitePlaceholder')}
+              aria-invalid={Boolean(errors.website)}
+              aria-describedby={errors.website ? 'website-error' : undefined}
             />
-            <FieldError message={errors.website?.message} />
+            <FieldError id="website-error" message={errors.website?.message} />
           </div>
           <div>
             <Label htmlFor="founded_year">{tf('foundedYear')}</Label>
@@ -338,6 +357,9 @@ export function MemberForm({
                     id="plan_id"
                     aria-required="true"
                     aria-invalid={Boolean(errors.plan_id)}
+                    aria-describedby={
+                      errors.plan_id ? 'plan_id-error required-fields-note' : 'required-fields-note'
+                    }
                     className="w-full"
                   >
                     {/* base-ui Select.Value doesn't auto-resolve
@@ -364,7 +386,7 @@ export function MemberForm({
                 </Select>
               )}
             />
-            <FieldError message={errors.plan_id?.message} />
+            <FieldError id="plan_id-error" message={errors.plan_id?.message} />
           </div>
           <div>
             <Label htmlFor="plan_year">
@@ -380,9 +402,12 @@ export function MemberForm({
               required
               aria-required="true"
               aria-invalid={Boolean(errors.plan_year)}
+              aria-describedby={
+                errors.plan_year ? 'plan_year-error required-fields-note' : 'required-fields-note'
+              }
               {...register('plan_year')}
             />
-            <FieldError message={errors.plan_year?.message} />
+            <FieldError id="plan_year-error" message={errors.plan_year?.message} />
           </div>
         </div>
 
@@ -414,10 +439,16 @@ export function MemberForm({
               required
               aria-required="true"
               aria-invalid={Boolean(errors.primary_contact?.first_name)}
+              aria-describedby={
+                errors.primary_contact?.first_name
+                  ? 'first_name-error required-fields-note'
+                  : 'required-fields-note'
+              }
               autoComplete="given-name"
               maxLength={100}
             />
             <FieldError
+              id="first_name-error"
               message={errors.primary_contact?.first_name?.message}
             />
           </div>
@@ -432,10 +463,16 @@ export function MemberForm({
               required
               aria-required="true"
               aria-invalid={Boolean(errors.primary_contact?.last_name)}
+              aria-describedby={
+                errors.primary_contact?.last_name
+                  ? 'last_name-error required-fields-note'
+                  : 'required-fields-note'
+              }
               autoComplete="family-name"
               maxLength={100}
             />
             <FieldError
+              id="last_name-error"
               message={errors.primary_contact?.last_name?.message}
             />
           </div>
@@ -454,10 +491,18 @@ export function MemberForm({
               required
               aria-required="true"
               aria-invalid={Boolean(errors.primary_contact?.email)}
+              aria-describedby={
+                errors.primary_contact?.email
+                  ? 'contact_email-error required-fields-note'
+                  : 'required-fields-note'
+              }
               autoComplete="email"
               maxLength={254}
             />
-            <FieldError message={errors.primary_contact?.email?.message} />
+            <FieldError
+              id="contact_email-error"
+              message={errors.primary_contact?.email?.message}
+            />
           </div>
           <div>
             <Label htmlFor="contact_phone">{tf('phone')}</Label>
@@ -468,8 +513,15 @@ export function MemberForm({
               autoComplete="tel"
               maxLength={20}
               placeholder="+66812345678"
+              aria-invalid={Boolean(errors.primary_contact?.phone)}
+              aria-describedby={
+                errors.primary_contact?.phone ? 'contact_phone-error' : undefined
+              }
             />
-            <FieldError message={errors.primary_contact?.phone?.message} />
+            <FieldError
+              id="contact_phone-error"
+              message={errors.primary_contact?.phone?.message}
+            />
           </div>
         </div>
 

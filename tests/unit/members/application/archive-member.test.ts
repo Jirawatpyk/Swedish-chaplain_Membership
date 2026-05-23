@@ -186,6 +186,8 @@ function makeDeps(overrides: Partial<{
         (uid): uid is string => uid !== null,
       ),
     ),
+    markInviteBouncedInTx: vi.fn(),
+    clearInviteBouncedInTx: vi.fn(),
   };
   const invitations = {
     softConsumePendingForUsersInTx: vi.fn(async () => ({

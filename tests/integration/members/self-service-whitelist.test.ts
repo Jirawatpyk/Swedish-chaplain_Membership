@@ -66,6 +66,7 @@ const baseContact: Contact = {
   isPrimary: true,
   dateOfBirth: null,
   linkedUserId: 'user-1' as Contact['linkedUserId'],
+  inviteBouncedAt: null,
   removedAt: null,
   createdAt: now,
   updatedAt: now,
@@ -84,7 +85,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     updateStatus: async () => ok(baseMember),
     updateStatusInTx: async () => ok(baseMember),
     updateFields: async (_ctx, _id, patch) => ok({ ...baseMember, ...patch } as Member),
-    updateFieldsInTx: async () => ok(baseMember),
+    updateFieldsInTx: async (_tx, _id, patch) =>
+      ok({ ...baseMember, ...patch } as Member),
     searchDirectory: async () => ok({ items: [], nextCursor: null }),
     searchDirectoryWithCount: async () => ok({ items: [], total: 0 }),
     // F7 Batch C extensions (T029) — interface compliance stubs.
@@ -115,6 +117,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     linkUserInTx: async () => ok(baseContact),
     updateEmailInTx: async () => ok({ oldEmail: baseContact.email }),
     listLinkedUserIdsForMemberInTx: async () => [],
+    markInviteBouncedInTx: async () => ok({ affected: 0 }),
+    clearInviteBouncedInTx: async () => ok({ affected: 0 }),
   };
 
   const audit: AuditPort = {

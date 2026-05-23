@@ -32,6 +32,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -143,13 +144,17 @@ export async function TimelinePreviewSection({
 /**
  * Skeleton matching the 3-row timeline shape — used as the Suspense
  * fallback at the call site for CLS-stable layout.
+ *
+ * H4: replaced raw `animate-pulse` divs with the canonical <Skeleton>
+ * component which has shimmer + reduced-motion support built in via
+ * `skeleton-shimmer` CSS class (defined in globals.css).
  */
 export function TimelinePreviewSkeleton() {
   return (
     <Card aria-busy="true" aria-hidden="true">
       <CardHeader className="flex flex-row items-center justify-between">
-        <div className="h-5 w-32 animate-pulse rounded bg-muted" />
-        <div className="h-9 w-28 animate-pulse rounded bg-muted" />
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-9 w-28" />
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col gap-3">
@@ -160,8 +165,8 @@ export function TimelinePreviewSkeleton() {
             >
               <span className="absolute -left-[5px] top-5 h-2 w-2 rounded-full bg-muted" />
               <div className="flex flex-col gap-1.5">
-                <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
               </div>
             </li>
           ))}

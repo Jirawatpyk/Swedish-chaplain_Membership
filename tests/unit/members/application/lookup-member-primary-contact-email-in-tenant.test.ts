@@ -20,7 +20,7 @@ import type { F7MemberRecipient } from '@/modules/members/application/ports/memb
 const tenant = asTenantContext('test-tenant');
 
 const recipient: F7MemberRecipient = {
-  memberId: 'm1',
+  memberId: 'm1' as F7MemberRecipient['memberId'],
   displayName: 'Acme Corp',
   primaryContactEmail: 'alice@example.com',
   tierCode: 'corporate',

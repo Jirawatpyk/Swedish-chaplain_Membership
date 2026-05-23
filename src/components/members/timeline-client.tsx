@@ -52,7 +52,8 @@ export function TimelineClient({
         });
 
         if (!response.ok) {
-          toast.error(t('loading'));
+          // Medium: use error key, not the "Loading…" progress label
+          toast.error(t('loadError'));
           return;
         }
 
@@ -80,7 +81,8 @@ export function TimelineClient({
         setEvents((prev) => [...prev, ...newEvents]);
         setCursor(data.next_cursor);
       } catch {
-        toast.error(t('loading'));
+        // Medium: use error key, not the "Loading…" progress label
+        toast.error(t('loadError'));
       }
     });
   };

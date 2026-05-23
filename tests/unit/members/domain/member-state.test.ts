@@ -10,13 +10,25 @@ import {
   ARCHIVE_UNDELETE_WINDOW_DAYS,
   isMemberStatus,
   MEMBER_STATUSES,
+  memberLifecycle,
   setStatus,
   undelete,
   type Member,
+  type MemberStatus,
 } from '@/modules/members/domain/member';
 
-function fixture(overrides: Partial<Member> = {}): Member {
+// M5: the Member lifecycle is now a discriminated union (status ⟺ archivedAt),
+// so the fixture takes status + archivedAt separately and builds the correlated
+// variant via `memberLifecycle`. The illegal `archived + null archivedAt`
+// combination is unrepresentable and cannot be constructed here.
+function fixture(
+  overrides: Partial<Omit<Member, 'status' | 'archivedAt'>> & {
+    status?: MemberStatus;
+    archivedAt?: Date | null;
+  } = {},
+): Member {
   const now = new Date('2026-04-15T00:00:00Z');
+  const { status = 'active', archivedAt = null, ...rest } = overrides;
   return {
     tenantId: 't' as Member['tenantId'],
     memberId: 'm' as Member['memberId'],
@@ -34,11 +46,10 @@ function fixture(overrides: Partial<Member> = {}): Member {
     registrationFeePaid: false,
     lastActivityAt: null,
     notes: null,
-    status: 'active',
-    archivedAt: null,
     createdAt: now,
     updatedAt: now,
-    ...overrides,
+    ...rest,
+    ...memberLifecycle(status, archivedAt),
   };
 }
 
@@ -137,10 +148,10 @@ describe('Member state machine — undelete (90-day window)', () => {
     if (!r.ok) expect(r.error.code).toBe('state.undelete_only_from_archived');
   });
 
-  it('rejects undelete when archivedAt is null even if status archived (defensive)', () => {
-    const r = undelete(fixture({ status: 'archived', archivedAt: null }), NOW);
-    expect(r.ok).toBe(false);
-  });
+  // M5: the "archived status with null archivedAt" case the previous defensive
+  // test exercised is now UNREPRESENTABLE (discriminated union + memberLifecycle
+  // throw + DB CHECK members_archived_at_iff_archived), so that test was removed
+  // as it could only be constructed by bypassing the type system.
 });
 
 describe('isMemberStatus type-guard', () => {
@@ -234,6 +245,37 @@ describe('tryMemberId', () => {
     expect(tryMemberId(null).ok).toBe(false);
     expect(tryMemberId(42).ok).toBe(false);
     expect(tryMemberId(undefined).ok).toBe(false);
+  });
+});
+
+describe('memberLifecycle — discriminated-union narrowing (M5)', () => {
+  const at = new Date('2026-04-15T00:00:00Z');
+
+  it('archived → { status: archived, archivedAt }', () => {
+    expect(memberLifecycle('archived', at)).toEqual({
+      status: 'archived',
+      archivedAt: at,
+    });
+  });
+
+  it('active → { status: active, archivedAt: null }', () => {
+    expect(memberLifecycle('active', null)).toEqual({
+      status: 'active',
+      archivedAt: null,
+    });
+  });
+
+  it('inactive → { status: inactive, archivedAt: null }', () => {
+    expect(memberLifecycle('inactive', null)).toEqual({
+      status: 'inactive',
+      archivedAt: null,
+    });
+  });
+
+  it('throws on the DB-invariant violation archived + null archivedAt', () => {
+    expect(() => memberLifecycle('archived', null)).toThrow(
+      /archived status requires archivedAt/,
+    );
   });
 });
 

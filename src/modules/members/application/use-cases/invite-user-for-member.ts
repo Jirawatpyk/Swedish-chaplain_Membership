@@ -31,7 +31,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
-import { asTenantId, type MemberId } from '../../domain/member';
+import { type MemberId } from '../../domain/member';
 import type { ContactId, PreferredLanguage } from '../../domain/contact';
 import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
@@ -170,7 +170,7 @@ export async function inviteUserForMember(
     // layer; this explicit check is the app-layer belt-and-suspenders
     // required for the Review-Gate blocker. Removing it breaks the
     // two-layer requirement. Mirror the F3 `get-member` pattern.
-    if (existing.value.tenantId !== asTenantId(deps.tenant.slug)) {
+    if (existing.value.tenantId !== deps.tenant.slug) {
       logger.error(
         {
           contactId: existing.value.contactId,
@@ -249,7 +249,7 @@ export async function inviteUserForMember(
     const contact = await runInTenant(deps.tenant, async (tx) => {
       if (decision.mode === 'create_new') {
         const contactDraft = {
-          tenantId: asTenantId(deps.tenant.slug),
+          tenantId: deps.tenant.slug,
           contactId: newContactId,
           memberId: input.memberId,
           firstName,
@@ -261,6 +261,7 @@ export async function inviteUserForMember(
           isPrimary: false,
           dateOfBirth: null,
           linkedUserId: null,
+          inviteBouncedAt: null,
           removedAt: null,
         };
         const added = await deps.contactRepo.addInTx(tx, contactDraft);

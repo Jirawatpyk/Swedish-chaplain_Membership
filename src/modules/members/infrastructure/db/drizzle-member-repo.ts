@@ -10,11 +10,11 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, gt, ilike, inArray, isNull, or, sql, asc } from 'drizzle-orm';
+import { and, eq, gt, ilike, inArray, isNull, or, sql, asc, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
-import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
+import { mapDbError, unexpected } from './_repo-error';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 // MIGRATION 0017 SECURITY CONTRACT — chamber_app can SELECT only:
@@ -38,18 +38,17 @@ import type {
   MemberRepo,
   RepoError,
 } from '../../application/ports/member-repo';
-import type {
-  Member,
-  MemberId,
-  TenantId,
-  PlanId,
+import {
+  memberLifecycle,
+  type Member,
+  type MemberId,
+  type TenantId,
+  type PlanId,
 } from '../../domain/member';
-import type { Contact, ContactId } from '../../domain/contact';
+import type { ContactId } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
-import type { Phone } from '../../domain/value-objects/phone';
-import type { UserId } from '../../domain/value-objects/user-id';
 
 // --- Row → Domain ------------------------------------------------------------
 
@@ -71,15 +70,11 @@ function rowToMember(row: MemberRow): Member {
     registrationFeePaid: row.registrationFeePaid,
     lastActivityAt: row.lastActivityAt,
     notes: row.notes,
-    status: row.status,
-    archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    // M5: narrow into the correlated lifecycle union (status ⟺ archivedAt).
+    ...memberLifecycle(row.status, row.archivedAt),
   };
-}
-
-function unexpected(cause: unknown): RepoError {
-  return { code: 'repo.unexpected', cause };
 }
 
 // --- Shared helpers ---------------------------------------------------------
@@ -111,6 +106,97 @@ function applyMemberPatch(
     .set(set)
     .where(eq(members.memberId, memberId))
     .returning();
+}
+
+// --- Directory-search shared builders (P1.2) --------------------------------
+// `searchDirectory` (cursor) and `searchDirectoryWithCount` (offset+count)
+// previously duplicated these SQL fragments verbatim. Extracted so the
+// q-filter EXISTS subquery and the `alias()` plan-name subquery (whose gotcha
+// is documented below) live in ONE place. The status OR-set + the `and(...)`
+// assembly stay inline in each caller (they differ — cursor vs offset — and
+// keeping them inline guarantees byte-identical WHERE composition).
+
+type RepoTx = Parameters<Parameters<typeof runInTenant>[1]>[0];
+
+/**
+ * Scalar directory filters (planYear / country / planId / riskBand). Returns
+ * `SQL[]` (not `ReturnType<typeof eq>[]`) because the cursor caller also pushes
+ * raw `sql\`...\`` predicates onto the returned array.
+ */
+function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
+  const conds: SQL[] = [];
+  if (filter.planYear !== undefined)
+    conds.push(eq(members.planYear, filter.planYear));
+  if (filter.country !== undefined)
+    conds.push(eq(members.country, filter.country));
+  if (filter.planId !== undefined)
+    conds.push(eq(members.planId, filter.planId));
+  // I1 round-10 ui-design-specialist — filter by F8-derived risk_score_band.
+  // Members with `null` band (not yet scored) are excluded when active
+  // (eq() over the nullable column matches only rows with the exact value).
+  if (filter.riskBand !== undefined)
+    conds.push(eq(members.riskScoreBand, filter.riskBand));
+  return conds;
+}
+
+/** Substring `q` across company_name + non-removed primary-contact name/email. */
+function directoryQFilter(q: string) {
+  // Escape LIKE metacharacters (% _ \) so a literal `_`/`%` in the term matches
+  // literally instead of acting as a wildcard (e.g. searching `john_doe` must
+  // not match `johnXdoe`). Postgres ILIKE's default escape char is backslash.
+  const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+  return or(
+    ilike(members.companyName, like),
+    sql`EXISTS (SELECT 1 FROM contacts c
+               WHERE c.tenant_id = ${members.tenantId}
+                 AND c.member_id = ${members.memberId}
+                 AND c.removed_at IS NULL
+                 AND (c.first_name ILIKE ${like}
+                      OR c.last_name ILIKE ${like}
+                      OR c.email ILIKE ${like}))`,
+  )!;
+}
+
+/**
+ * Correlated plan-display-name subquery. The `alias()` over `membershipPlans`
+ * forces table-qualified column refs on BOTH sides of the WHERE, which avoids
+ * the subquery name-resolution trap (unqualified `tenant_id` resolving against
+ * the inner FROM, collapsing the WHERE to always-true). Built via the query
+ * builder — NOT a `sql` template — because Drizzle only auto-qualifies columns
+ * emitted by the builder. See git 8e71812 for the full trace.
+ */
+function directoryPlanNameSubquery(tx: RepoTx) {
+  const mp = alias(membershipPlans, 'mp');
+  return tx
+    .select({ name: sql<string>`${mp.planName}->>'en'` })
+    .from(mp)
+    .where(
+      and(
+        eq(mp.tenantId, members.tenantId),
+        eq(mp.planId, members.planId),
+        eq(mp.planYear, members.planYear),
+      ),
+    )
+    .limit(1);
+}
+
+/** Map a `{ row, planDisplayName }` page row → DirectoryRow. */
+function mapDirectoryRow(
+  r: { row: typeof members.$inferSelect; planDisplayName: string | null },
+  byMember: Map<string, typeof contacts.$inferSelect>,
+): DirectoryRow {
+  const c = byMember.get(r.row.memberId) ?? null;
+  return {
+    member: rowToMember(r.row),
+    planDisplayName: r.planDisplayName,
+    primaryContact: c === null ? null : rowToContact(c),
+    // F8 Phase 6 Wave H — risk_score + band from F3 members schema (populated
+    // by F8's batched recompute cron). Null when recompute hasn't run yet
+    // (FR-035 min-tenure skips fresh members).
+    riskScore: r.row.riskScore ?? null,
+    riskScoreBand:
+      (r.row.riskScoreBand as DirectoryRow['riskScoreBand']) ?? null,
+  };
 }
 
 // --- Implementation ---------------------------------------------------------
@@ -286,36 +372,13 @@ export const drizzleMemberRepo: MemberRepo = {
       const result = { memberRow, contactRow };
 
       const persistedMember = rowToMember(result.memberRow);
-      const persistedContact: Contact = {
-        tenantId: result.contactRow.tenantId as TenantId,
-        contactId: result.contactRow.contactId as ContactId,
-        memberId: result.contactRow.memberId as MemberId,
-        firstName: result.contactRow.firstName,
-        lastName: result.contactRow.lastName,
-        email: result.contactRow.email as Email,
-        phone: result.contactRow.phone as Phone | null,
-        roleTitle: result.contactRow.roleTitle,
-        preferredLanguage: result.contactRow.preferredLanguage as
-          | 'en'
-          | 'th'
-          | 'sv',
-        isPrimary: result.contactRow.isPrimary,
-        dateOfBirth: result.contactRow.dateOfBirth
-          ? new Date(result.contactRow.dateOfBirth)
-          : null,
-        linkedUserId: result.contactRow.linkedUserId as UserId | null,
-        removedAt: result.contactRow.removedAt,
-        createdAt: result.contactRow.createdAt,
-        updatedAt: result.contactRow.updatedAt,
-      };
+      // Reuse the canonical row→Contact mapper (handles the M5 primacy union
+      // narrowing) instead of duplicating the field-by-field literal.
+      const persistedContact = rowToContact(result.contactRow);
 
       return ok({ member: persistedMember, contact: persistedContact });
     } catch (e) {
-      const msg = errorChainMessage(e);
-      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
-        return err({ code: 'repo.conflict', reason: 'duplicate' });
-      }
-      return err(unexpected(e));
+      return err(mapDbError(e, 'duplicate'));
     }
   },
 
@@ -395,18 +458,8 @@ export const drizzleMemberRepo: MemberRepo = {
   try {
     const statuses = filter.status ?? ['active', 'inactive'];
     const rows = await runInTenant(ctx, async (tx) => {
-      // Build conditions — RLS handles tenant scoping
-      const conds = [] as ReturnType<typeof eq>[];
-      if (filter.planYear !== undefined)
-        conds.push(eq(members.planYear, filter.planYear));
-      if (filter.country !== undefined)
-        conds.push(eq(members.country, filter.country));
-      if (filter.planId !== undefined)
-        conds.push(eq(members.planId, filter.planId));
-      // I1 round-10 ui-design-specialist — same filter on the cursor
-      // path. See searchDirectoryWithCount for rationale.
-      if (filter.riskBand !== undefined)
-        conds.push(eq(members.riskScoreBand, filter.riskBand));
+      // Scalar filters (RLS handles tenant scoping); cursor predicate appended below.
+      const conds = buildDirectoryConds(filter);
 
       // Cursor: decode base64 → "<iso>|<memberId>" or "NULL|<memberId>"
       if (filter.cursor) {
@@ -421,11 +474,16 @@ export const drizzleMemberRepo: MemberRepo = {
                 sql`(${members.lastActivityAt} IS NULL AND ${members.memberId} > ${memberIdPart})`,
               );
             } else if (iso) {
-              // (last_activity_at, member_id) < (cursorTs, cursorId) — DESC ordering.
-              // Cast the ISO string inside SQL so postgres-js doesn't try to
-              // serialize a JS Date (driver rejects Date in row-value literals).
+              // Keyset for the MIXED-direction ORDER BY (last_activity_at DESC,
+              // member_id ASC): continue with rows whose last_activity_at is
+              // strictly older, OR — for rows tied on last_activity_at — whose
+              // member_id is GREATER (ASC tie-break). A plain row-value
+              // `(a,b) < (x,y)` would compare member_id with `<`, which
+              // contradicts the ASC tie-break and silently drops tied rows with
+              // member_id > cursorId across the page boundary. Cast the ISO
+              // string inside SQL so postgres-js doesn't serialize a JS Date.
               conds.push(
-                sql`(${members.lastActivityAt}, ${members.memberId}) < (${iso}::timestamptz, ${memberIdPart})`,
+                sql`(${members.lastActivityAt} < ${iso}::timestamptz OR (${members.lastActivityAt} = ${iso}::timestamptz AND ${members.memberId} > ${memberIdPart}))`,
               );
             }
           }
@@ -436,69 +494,11 @@ export const drizzleMemberRepo: MemberRepo = {
 
       const whereClause = and(
         or(...statuses.map((s) => eq(members.status, s)))!,
-        ...(filter.q
-          ? [
-              or(
-                ilike(members.companyName, `%${filter.q}%`),
-                sql`EXISTS (SELECT 1 FROM contacts c
-                           WHERE c.tenant_id = ${members.tenantId}
-                             AND c.member_id = ${members.memberId}
-                             AND c.removed_at IS NULL
-                             AND (c.first_name ILIKE ${'%' + filter.q + '%'}
-                                  OR c.last_name ILIKE ${'%' + filter.q + '%'}
-                                  OR c.email ILIKE ${'%' + filter.q + '%'}))`,
-              )!,
-            ]
-          : []),
+        ...(filter.q ? [directoryQFilter(filter.q)] : []),
         ...conds,
       );
 
-      // Correlated subquery for plan display name — resolved at the DB
-      // layer so the directory endpoint serves human-readable plan
-      // names without a follow-up listPlans call. Uses the composite
-      // PK (tenant_id, plan_id, plan_year) for an index-only lookup.
-      // `plan_name` is a JSONB column with shape `{ en: string, th?, sv? }`;
-      // we project the English key because it's the canonical display.
-      // A tenant-localised lookup can be added later via i18n keys.
-      //
-      // `mp` is an alias over F2's `membershipPlans` table, imported
-      // from `@/modules/plans` (barrel — exposed as a read-only schema
-      // reference for sibling-module joins). Drizzle's `alias()` forces
-      // both sides of the WHERE to emit table-qualified column
-      // references, which avoids the subquery name-resolution trap
-      // that plagued the initial raw-SQL version:
-      //
-      //   without alias (BAD):
-      //     interpolation → `mp.tenant_id = "tenant_id"`
-      //     → Postgres resolves unqualified "tenant_id" against the
-      //       INNER FROM since both tables define it, collapsing the
-      //       WHERE to always-true, subquery returns any row.
-      //
-      //   with alias (GOOD):
-      //     `"mp"."tenant_id" = "members"."tenant_id"` on both sides
-      //     → unambiguous correlation.
-      //
-      // Verified by dumping `.toSQL()`. See git log commits 8e71812
-      // (root-cause analysis) and the follow-up that introduces this
-      // alias pattern + exposes `membershipPlans` from the F2 barrel.
-      const mp = alias(membershipPlans, 'mp');
-      // Build the subquery via the Drizzle QUERY BUILDER — `.select()
-      // .from().where(eq(...))` — because Drizzle only auto-qualifies
-      // column references emitted by the builder. Inside a `sql`
-      // template the same column objects emit UNQUALIFIED names,
-      // collapsing the WHERE to trivially-true when both tables share
-      // a column name (see 8e71812 for the full trace).
-      const planNameSubquery = tx
-        .select({ name: sql<string>`${mp.planName}->>'en'` })
-        .from(mp)
-        .where(
-          and(
-            eq(mp.tenantId, members.tenantId),
-            eq(mp.planId, members.planId),
-            eq(mp.planYear, members.planYear),
-          ),
-        )
-        .limit(1);
+      const planNameSubquery = directoryPlanNameSubquery(tx);
 
       const memberRows = await tx
         .select({
@@ -544,21 +544,7 @@ export const drizzleMemberRepo: MemberRepo = {
       if (c.removedAt === null) byMember.set(c.memberId, c);
     }
 
-    const items: DirectoryRow[] = page.map((r) => {
-      const m = rowToMember(r.row);
-      const c = byMember.get(r.row.memberId) ?? null;
-      return {
-        member: m,
-        planDisplayName: r.planDisplayName,
-        primaryContact: c === null ? null : rowToContact(c),
-        // F8 Phase 6 Wave H — surface risk_score + band from F3 members
-        // schema (populated by F8's batched recompute cron). Null when
-        // recompute hasn't run yet (FR-035 min-tenure skips fresh members).
-        riskScore: r.row.riskScore ?? null,
-        riskScoreBand:
-          (r.row.riskScoreBand as DirectoryRow['riskScoreBand']) ?? null,
-      };
-    });
+    const items: DirectoryRow[] = page.map((r) => mapDirectoryRow(r, byMember));
 
     const nextCursor = hasMore
       ? Buffer.from(
@@ -581,36 +567,11 @@ export const drizzleMemberRepo: MemberRepo = {
     try {
       const statuses = filter.status ?? ['active', 'inactive'];
       const result = await runInTenant(ctx, async (tx) => {
-        const conds = [] as ReturnType<typeof eq>[];
-        if (filter.planYear !== undefined)
-          conds.push(eq(members.planYear, filter.planYear));
-        if (filter.country !== undefined)
-          conds.push(eq(members.country, filter.country));
-        if (filter.planId !== undefined)
-          conds.push(eq(members.planId, filter.planId));
-        // I1 round-10 ui-design-specialist — filter by F8-derived
-        // risk_score_band. Members with `null` band (not yet scored)
-        // are excluded when this filter is active (eq() over the
-        // nullable column matches only rows with the exact value).
-        if (filter.riskBand !== undefined)
-          conds.push(eq(members.riskScoreBand, filter.riskBand));
+        const conds = buildDirectoryConds(filter);
 
         const whereClause = and(
           or(...statuses.map((s) => eq(members.status, s)))!,
-          ...(filter.q
-            ? [
-                or(
-                  ilike(members.companyName, `%${filter.q}%`),
-                  sql`EXISTS (SELECT 1 FROM contacts c
-                             WHERE c.tenant_id = ${members.tenantId}
-                               AND c.member_id = ${members.memberId}
-                               AND c.removed_at IS NULL
-                               AND (c.first_name ILIKE ${'%' + filter.q + '%'}
-                                    OR c.last_name ILIKE ${'%' + filter.q + '%'}
-                                    OR c.email ILIKE ${'%' + filter.q + '%'}))`,
-                )!,
-              ]
-            : []),
+          ...(filter.q ? [directoryQFilter(filter.q)] : []),
           ...conds,
         );
 
@@ -621,21 +582,7 @@ export const drizzleMemberRepo: MemberRepo = {
           .where(whereClause);
         const total = countRows[0]?.n ?? 0;
 
-        // Page query with correlated plan-name subquery (same pattern
-        // as cursor searchDirectory above — see comments there for why
-        // the `alias()` is required).
-        const mp = alias(membershipPlans, 'mp');
-        const planNameSubquery = tx
-          .select({ name: sql<string>`${mp.planName}->>'en'` })
-          .from(mp)
-          .where(
-            and(
-              eq(mp.tenantId, members.tenantId),
-              eq(mp.planId, members.planId),
-              eq(mp.planYear, members.planYear),
-            ),
-          )
-          .limit(1);
+        const planNameSubquery = directoryPlanNameSubquery(tx);
 
         const memberRows = await tx
           .select({
@@ -677,19 +624,9 @@ export const drizzleMemberRepo: MemberRepo = {
         if (c.removedAt === null) byMember.set(c.memberId, c);
       }
 
-      const items: DirectoryRow[] = result.memberRows.map((r) => {
-        const m = rowToMember(r.row);
-        const c = byMember.get(r.row.memberId) ?? null;
-        return {
-          member: m,
-          planDisplayName: r.planDisplayName,
-          primaryContact: c === null ? null : rowToContact(c),
-          // F8 Phase 6 Wave H — see searchDirectory comment above.
-          riskScore: r.row.riskScore ?? null,
-          riskScoreBand:
-            (r.row.riskScoreBand as DirectoryRow['riskScoreBand']) ?? null,
-        };
-      });
+      const items: DirectoryRow[] = result.memberRows.map((r) =>
+        mapDirectoryRow(r, byMember),
+      );
 
       return ok({ items, total: result.total });
     } catch (e) {
@@ -757,7 +694,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
       return ok(
         rows.map((r) => ({
-          memberId: r.memberId,
+          memberId: r.memberId as MemberId,
           displayName: r.companyName,
           primaryContactEmail: r.primaryEmail,
           tierCode: r.planCategory,
@@ -783,7 +720,7 @@ export const drizzleMemberRepo: MemberRepo = {
       );
       return ok(
         rows.map((r) => ({
-          memberId: r.memberId,
+          memberId: r.memberId as MemberId,
           displayName: r.companyName,
           haltedSinceAt: r.updatedAt,
         })),
@@ -903,20 +840,13 @@ export const drizzleMemberRepo: MemberRepo = {
         .set({ preferredLocale: nextLocale, updatedAt: new Date() })
         .where(eq(members.memberId, memberId))
         .returning({ previousValue: members.preferredLocale });
-      // Drizzle returning() yields the NEW value, not OLD. Workaround:
-      // SELECT before update — but for this single-field change we
-      // accept a 2-query roundtrip via separate findPreferredLocaleInTx
-      // call at the use-case site. Returning row count only here.
       const affected = rows.length;
       if (affected === 0) {
         return ok({ affected: 0, previousValue: null });
       }
-      // For the audit-payload `previousValue` we re-query; cheap because
-      // the row is hot in PG cache. Caller can decide whether to compare.
-      // Keeping simple — return the new value as `previousValue` is
-      // misleading; instead the caller passes `previousValue` it
-      // already loaded via `findPreferredLocaleInTx`. Adjust signature:
-      // affected only.
+      // `previousValue` echoes `nextLocale` (RETURNING yields the POST-update
+      // value) and is intentionally unused by callers — see port doc. The
+      // use-case loads the prior value via `findPreferredLocaleInTx`.
       return ok({ affected, previousValue: nextLocale });
     } catch (e) {
       return err(unexpected(e));
@@ -956,7 +886,7 @@ export const drizzleMemberRepo: MemberRepo = {
       const row = rows[0];
       if (!row) return ok(null);
       return ok({
-        memberId: row.memberId,
+        memberId: row.memberId as MemberId,
         displayName: row.companyName,
         primaryContactEmail: row.email,
         tierCode: row.planCategory,
@@ -978,7 +908,7 @@ export const drizzleMemberRepo: MemberRepo = {
             FROM audit_log
            WHERE tenant_id = ${ctx.slug}
              AND event_type = 'member_plan_changed'
-             AND payload ->> 'memberId' = ${memberId as string}
+             AND payload ->> 'member_id' = ${memberId as string}
            ORDER BY "timestamp" DESC, id DESC
            LIMIT 1
         `),
@@ -1045,10 +975,10 @@ export const drizzleMemberRepo: MemberRepo = {
       );
       return ok(
         rows.map((r) => ({
-          contactId: r.contactId as string,
+          contactId: r.contactId as ContactId,
           contactFirstName: r.firstName,
           contactLastName: r.lastName,
-          contactEmail: r.email,
+          contactEmail: r.email as Email,
           expiresAt: r.expiresAt,
         })),
       );

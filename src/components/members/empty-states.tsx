@@ -89,9 +89,9 @@ export function MembersErrorState() {
   const router = useRouter();
   return (
     <div
+      // role="alert" implies aria-live="assertive" — explicit aria-live="polite" removed (contradictory).
       className="flex flex-col items-center justify-center gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-10 text-center"
       role="alert"
-      aria-live="polite"
     >
       <div
         className="flex size-14 items-center justify-center rounded-full bg-destructive/15"

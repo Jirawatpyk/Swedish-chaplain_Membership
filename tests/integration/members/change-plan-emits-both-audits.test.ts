@@ -180,6 +180,17 @@ describe('Integration — changeMemberPlan emits both member_plan_changed events
       expect((manual[0]?.payload as { new_plan_id?: string }).new_plan_id).toBe(
         newPlanId,
       );
+
+      // A1 regression: findLastPlanChangedAt must resolve the timestamp from
+      // the member_plan_changed audit. The audit payload key is `member_id`;
+      // the query previously read `payload->>'memberId'` (camelCase) and so
+      // ALWAYS returned null. Assert it now returns the real change time.
+      const lastChanged = await deps.memberRepo.findLastPlanChangedAt(
+        tenant.ctx,
+        memberId,
+      );
+      expect(lastChanged.ok).toBe(true);
+      if (lastChanged.ok) expect(lastChanged.value).toBeInstanceOf(Date);
     },
     60_000,
   );

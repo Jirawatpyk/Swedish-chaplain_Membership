@@ -135,6 +135,12 @@ function detectForbiddenFields(
   return forbidden;
 }
 
+/** Map a repo load error to the use-case error union (P3.2 — drops the cast). */
+function mapRepoLoadError(error: RepoError): MemberSelfUpdateError {
+  if (error.code === 'repo.not_found') return { type: 'not_found' };
+  return { type: 'server_error', message: error.code };
+}
+
 // ---------------------------------------------------------------------------
 // Use case
 // ---------------------------------------------------------------------------
@@ -148,7 +154,11 @@ export async function memberSelfUpdate(
   // 1. Detect forbidden fields BEFORE parsing — reject forged payloads
   const forbidden = detectForbiddenFields(input.rawBody);
   if (forbidden.length > 0) {
-    // W-4: Audit the forgery attempt (FR-014) — fail-closed if audit fails
+    // W-4: Audit the forgery attempt (FR-014). The forged payload is rejected
+    // (403) REGARDLESS of audit success — an audit-write failure here is logged
+    // (so SREs can detect an un-audited forgery attempt) but never opens the
+    // request. The security outcome is fail-closed on the mutation; only the
+    // audit row is best-effort.
     const auditResult = await deps.audit.record(deps.tenant, {
       type: 'member_self_update_forbidden',
       actorUserId: input.actorUserId,
@@ -180,33 +190,19 @@ export async function memberSelfUpdate(
     });
   }
 
-  // 3. Load existing member to verify ownership
+  // 3. Load existing member + own contact to verify ownership (reads, pre-tx)
   const memberResult = await deps.memberRepo.findById(
     deps.tenant,
     input.memberId,
   );
-  if (!memberResult.ok) {
-    return err({
-      type: memberResult.error.code === 'repo.not_found' ? 'not_found' : 'server_error',
-      ...(memberResult.error.code !== 'repo.not_found' && {
-        message: memberResult.error.code,
-      }),
-    } as MemberSelfUpdateError);
-  }
+  if (!memberResult.ok) return err(mapRepoLoadError(memberResult.error));
 
   // B-1: Verify contactId belongs to this member — prevents IDOR
   const contactCheck = await deps.contactRepo.findById(
     deps.tenant,
     input.contactId,
   );
-  if (!contactCheck.ok) {
-    return err({
-      type: contactCheck.error.code === 'repo.not_found' ? 'not_found' : 'server_error',
-      ...(contactCheck.error.code !== 'repo.not_found' && {
-        message: contactCheck.error.code,
-      }),
-    } as MemberSelfUpdateError);
-  }
+  if (!contactCheck.ok) return err(mapRepoLoadError(contactCheck.error));
   if (contactCheck.value.memberId !== input.memberId) {
     return err({
       type: 'forbidden',
@@ -217,7 +213,7 @@ export async function memberSelfUpdate(
   const data = parsed.data;
   const fieldsChanged: string[] = [];
 
-  // 4. Update member fields if any changed
+  // 4. Build the member patch (website/description).
   // B-3: Pass null directly — do NOT coerce to undefined (Drizzle skips undefined)
   const mutableMemberPatch: Record<string, unknown> = {};
   if (data.website !== undefined) {
@@ -229,25 +225,11 @@ export async function memberSelfUpdate(
     fieldsChanged.push('description');
   }
   const memberPatch = mutableMemberPatch as MemberPatch;
+  const hasMemberPatch = Object.keys(mutableMemberPatch).length > 0;
 
-  let updatedMember = memberResult.value;
-  if (Object.keys(mutableMemberPatch).length > 0) {
-    const updateResult = await deps.memberRepo.updateFields(
-      deps.tenant,
-      input.memberId,
-      memberPatch,
-    );
-    if (!updateResult.ok) {
-      return err({
-        type: 'server_error',
-        message: `member update: ${updateResult.error.code}`,
-      });
-    }
-    updatedMember = updateResult.value;
-  }
-
-  // 5. Update contact fields if any changed
-  let updatedContact: Contact | null = null;
+  // 5. Build the contact patch. Phone is re-validated HERE (pre-tx) so a bad
+  //    phone fails fast with validation_error before a transaction is opened.
+  let contactPatch: ContactPatch | null = null;
   if (data.primary_contact) {
     const mutableContactPatch: Record<string, unknown> = {};
     const pc = data.primary_contact;
@@ -285,80 +267,87 @@ export async function memberSelfUpdate(
       mutableContactPatch.preferredLanguage = pc.preferredLanguage as PreferredLanguage;
       fieldsChanged.push('preferredLanguage');
     }
-    const contactPatch = mutableContactPatch as ContactPatch;
-
     if (Object.keys(mutableContactPatch).length > 0) {
-      // S1 + W1 — contact update + per-contact audit atomic via throw-
-      // to-rollback. `return err(...)` inside the tx would commit the
-      // update without the audit; only `throw` triggers Drizzle rollback.
-      try {
-        const updatedRow = await runInTenant(deps.tenant, async (tx) => {
-          const updated = await deps.contactRepo.updateInTx(
-            tx,
-            input.contactId,
-            contactPatch,
-          );
-          if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
+      contactPatch = mutableContactPatch as ContactPatch;
+    }
+  }
 
-          const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-            type: 'contact_updated',
-            actorUserId: input.actorUserId,
-            requestId: input.requestId,
-            summary: `contact_updated ${input.contactId}`,
-            payload: {
-              member_id: updated.value.memberId,
-              contact_id: input.contactId,
-              fields_changed: Object.keys(contactPatch),
-            },
-          });
-          if (!auditResult.ok)
-            throw new UseCaseAbort<RepoError>(auditResult.error);
+  // 6. No-op short-circuit — nothing to persist, nothing to audit.
+  if (fieldsChanged.length === 0) {
+    return ok({ member: memberResult.value, contact: contactCheck.value });
+  }
 
-          return updated.value;
-        });
-        updatedContact = updatedRow;
-      } catch (e) {
-        if (e instanceof UseCaseAbort) {
-          const re = e.error as RepoError;
-          return err({
-            type: 'server_error',
-            message: `contact update: ${re.code}`,
-          });
-        }
-        return err({
-          type: 'server_error',
-          message: 'contact update: unexpected',
-        });
+  // 7. H2 — persist member + contact + BOTH audit events in ONE transaction
+  //    (throw-to-rollback). Previously the member-field write, the contact
+  //    write, and the `member_self_updated` audit were three separate,
+  //    non-atomic phases: a contact failure left a committed member change,
+  //    and an audit failure left the change with NO audit row (Principle VIII
+  //    gap, surfaced only as a warn). Now it is all-or-nothing.
+  try {
+    const persisted = await runInTenant(deps.tenant, async (tx) => {
+      let member = memberResult.value;
+      let contact = contactCheck.value;
+
+      if (hasMemberPatch) {
+        const r = await deps.memberRepo.updateFieldsInTx(
+          tx,
+          input.memberId,
+          memberPatch,
+        );
+        if (!r.ok) throw new UseCaseAbort<RepoError>(r.error);
+        member = r.value;
       }
-    }
-  }
 
-  // 6. Audit the self-update — W-4: check result and log on failure
-  if (fieldsChanged.length > 0) {
-    const auditResult = await deps.audit.record(deps.tenant, {
-      type: 'member_self_updated',
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      summary: `self-updated: ${fieldsChanged.join(', ')}`,
-      payload: {
-        member_id: input.memberId,
-        contact_id: input.contactId,
-        fields_changed: fieldsChanged,
-      },
+      if (contactPatch) {
+        const r = await deps.contactRepo.updateInTx(
+          tx,
+          input.contactId,
+          contactPatch,
+        );
+        if (!r.ok) throw new UseCaseAbort<RepoError>(r.error);
+        contact = r.value;
+
+        const a = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'contact_updated',
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          summary: `contact_updated ${input.contactId}`,
+          payload: {
+            member_id: r.value.memberId,
+            contact_id: input.contactId,
+            fields_changed: Object.keys(contactPatch),
+          },
+        });
+        if (!a.ok) throw new UseCaseAbort<RepoError>(a.error);
+      }
+
+      // Overarching self-update audit — now transactional; a failure rolls
+      // back the whole self-update rather than committing it audit-less.
+      const selfAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_self_updated',
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        summary: `self-updated: ${fieldsChanged.join(', ')}`,
+        payload: {
+          member_id: input.memberId,
+          contact_id: input.contactId,
+          fields_changed: fieldsChanged,
+        },
+      });
+      if (!selfAudit.ok) throw new UseCaseAbort<RepoError>(selfAudit.error);
+
+      return { member, contact };
     });
-    if (!auditResult.ok) {
-      logger.warn(
-        { requestId: input.requestId, memberId: input.memberId },
-        'member-self-update: audit write failed on success path',
-      );
+
+    return ok({ member: persisted.member, contact: persisted.contact });
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      return err({ type: 'server_error', message: `self update: ${re.code}` });
     }
+    return err({
+      type: 'server_error',
+      message: `self update: ${e instanceof Error ? e.message : String(e)}`,
+    });
   }
-
-  // R2-W3: Reuse the contact loaded by the B-1 ownership check
-  // instead of a redundant DB round-trip.
-  if (!updatedContact) {
-    updatedContact = contactCheck.value;
-  }
-
-  return ok({ member: updatedMember, contact: updatedContact });
 }

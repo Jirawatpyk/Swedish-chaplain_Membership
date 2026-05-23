@@ -30,6 +30,21 @@ const DEBOUNCE_MS = 300;
 const STATUS_VALUES = ['active', 'inactive', 'archived'] as const;
 const RISK_BANDS = ['healthy', 'warning', 'at-risk', 'critical'] as const;
 
+// i18n key maps hoisted to module scope so they are not rebuilt on every render.
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  all: 'filters.status.all',
+  active: 'filters.status.active',
+  inactive: 'filters.status.inactive',
+  archived: 'filters.status.archived',
+};
+const RISK_LABEL_KEYS: Record<string, string> = {
+  all: 'filters.risk.all',
+  healthy: 'filters.risk.healthy',
+  warning: 'filters.risk.warning',
+  'at-risk': 'filters.risk.at-risk',
+  critical: 'filters.risk.critical',
+};
+
 export type PlanOption = {
   readonly id: string;
   readonly label: string;
@@ -119,13 +134,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
           <TranslatedSelectValue
             placeholder={t('filters.status.label')}
             translate={(v) => {
-              const keys: Record<string, string> = {
-                all: 'filters.status.all',
-                active: 'filters.status.active',
-                inactive: 'filters.status.inactive',
-                archived: 'filters.status.archived',
-              };
-              const key = keys[v || 'all'];
+              const key = STATUS_LABEL_KEYS[v || 'all'];
               return key ? t(key) : v;
             }}
           />
@@ -182,14 +191,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
           <TranslatedSelectValue
             placeholder={t('filters.risk.label')}
             translate={(v) => {
-              const keys: Record<string, string> = {
-                all: 'filters.risk.all',
-                healthy: 'filters.risk.healthy',
-                warning: 'filters.risk.warning',
-                'at-risk': 'filters.risk.at-risk',
-                critical: 'filters.risk.critical',
-              };
-              const key = keys[v || 'all'];
+              const key = RISK_LABEL_KEYS[v || 'all'];
               return key ? t(key) : v;
             }}
           />

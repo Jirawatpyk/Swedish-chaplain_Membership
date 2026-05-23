@@ -82,6 +82,20 @@ export const userEmailAdapter: UserEmailPort = {
     }
   },
 
+  async isUserPending(userId) {
+    try {
+      const [row] = await db
+        .select({ status: users.status })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!row) return err({ code: 'repo.not_found' });
+      return ok(row.status === 'pending');
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
   async setFlagsInTx(tx, userId, flags) {
     try {
       const set: { emailVerified?: boolean; requiresPasswordReset?: boolean } = {};

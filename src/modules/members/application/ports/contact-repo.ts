@@ -141,4 +141,31 @@ export interface ContactRepo {
     tx: TenantTx,
     memberId: MemberId,
   ): Promise<string[]>;
+
+  /**
+   * Mark a contact's pending invitation as bounced (spec § Edge Cases) by
+   * stamping `invite_bounced_at = now()`. Idempotent: returns `affected: 0`
+   * if the contact does not exist, is removed, or is already marked.
+   * Caller (markInvitationBounced use-case) emits the `invitation_bounced`
+   * audit event in the same tx. Does NOT emit audit itself.
+   */
+  markInviteBouncedInTx(
+    tx: TenantTx,
+    contactId: ContactId,
+    bouncedAt: Date,
+  ): Promise<Result<{ affected: number }, RepoError>>;
+
+  /**
+   * Clear the `invite_bounced_at` flag after an admin re-sends the
+   * invitation email (spec § Edge Cases — "Re-send invite" action).
+   * Sets `invite_bounced_at = NULL` on the contact row identified by
+   * `contactId`. Returns `affected: 1` on success, `affected: 0` if
+   * the contact does not exist or is already NULL (idempotent).
+   * Does NOT emit audit — caller (resendBouncedInvite use-case) emits
+   * `member_portal_invite_queued` in the same chamber_app tx.
+   */
+  clearInviteBouncedInTx(
+    tx: TenantTx,
+    contactId: ContactId,
+  ): Promise<Result<{ affected: number }, RepoError>>;
 }

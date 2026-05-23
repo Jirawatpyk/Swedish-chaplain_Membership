@@ -395,3 +395,27 @@ export { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
 export { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
 export type { MemberRepo, RepoError } from './application/ports/member-repo';
 export type { ContactRepo } from './application/ports/contact-repo';
+
+// F3 spec § Edge Cases — invitation-email bounce handling. The Resend webhook
+// (tenant-agnostic) calls `handleInvitationBounce`; it resolves the owner
+// tenant(s) + marks each pending invitation failed + emits `invitation_bounced`.
+export {
+  handleInvitationBounce,
+  resolveBouncedInviteContacts,
+} from './infrastructure/handle-invitation-bounce';
+export {
+  markInvitationBounced,
+  SYSTEM_ACTOR_RESEND_WEBHOOK,
+  type MarkInvitationBouncedDeps,
+  type MarkInvitationBouncedInput,
+  type MarkInvitationBouncedError,
+} from './application/use-cases/mark-invitation-bounced';
+
+// F3 spec § Edge Cases — admin "Re-send invite" action for bounced invitations.
+export {
+  resendBouncedInvite,
+  type ResendBouncedInviteDeps,
+  type ResendBouncedInviteInput,
+  type ResendBouncedInviteOutput,
+  type ResendBouncedInviteError,
+} from './application/use-cases/resend-bounced-invite';

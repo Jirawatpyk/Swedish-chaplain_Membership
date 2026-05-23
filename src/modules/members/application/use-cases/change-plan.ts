@@ -211,6 +211,22 @@ export async function changePlan(
   // AuditFailed sentinels caught below and mapped to server_error.
   try {
     const updatedMember = await runInTenant(deps.tenant, async (tx) => {
+      // M1: re-read + LOCK the row inside the tx (FOR UPDATE) so the audit's
+      // old_plan_* values reflect the row actually being overwritten, closing
+      // the TOCTOU window between the pre-tx validation read and this write.
+      // Pre-tx validation (bundle/turnover/startup) stays on the snapshot —
+      // those are policy gates; only the recorded old-plan provenance must be
+      // exact.
+      const lockedResult = await deps.memberRepo.findByIdInTx(tx, memberId);
+      if (!lockedResult.ok) {
+        throw new TxAbort(
+          lockedResult.error.code === 'repo.not_found'
+            ? { type: 'not_found' }
+            : { type: 'update_failed', code: lockedResult.error.code },
+        );
+      }
+      const locked = lockedResult.value;
+
       const updated = await deps.memberRepo.updateFieldsInTx(tx, memberId, {
         planId: newPlan.value.planId,
         planYear: data.new_plan_year,
@@ -226,8 +242,8 @@ export async function changePlan(
         summary: `member_plan_changed ${memberId}`,
         payload: {
           member_id: memberId,
-          old_plan_id: current.planId,
-          old_plan_year: current.planYear,
+          old_plan_id: locked.planId,
+          old_plan_year: locked.planYear,
           new_plan_id: data.new_plan_id,
           new_plan_year: data.new_plan_year,
           ...(data.override_reason_code && {
@@ -255,8 +271,8 @@ export async function changePlan(
         summary: `member_plan_manually_changed ${memberId}`,
         payload: {
           member_id: memberId,
-          old_plan_id: current.planId,
-          old_plan_year: current.planYear,
+          old_plan_id: locked.planId,
+          old_plan_year: locked.planYear,
           new_plan_id: data.new_plan_id,
           new_plan_year: data.new_plan_year,
           ...(data.override_reason_code && {
@@ -311,7 +327,7 @@ export async function changePlan(
         const evt: ManualPlanChangeListenerEvent = {
           tenantId: deps.tenant.slug,
           memberId,
-          oldPlanId: current.planId,
+          oldPlanId: locked.planId,
           newPlanId: data.new_plan_id,
           actorUserId: meta.actorUserId,
           correlationId: meta.requestId,
@@ -340,6 +356,9 @@ export async function changePlan(
     return ok(updatedMember);
   } catch (e) {
     if (e instanceof TxAbort) {
+      if (e.detail.type === 'not_found') {
+        return err({ type: 'not_found' });
+      }
       if (e.detail.type === 'update_failed') {
         return err({
           type: 'server_error',
@@ -348,7 +367,14 @@ export async function changePlan(
       }
       return err({ type: 'server_error', message: 'audit_failed' });
     }
-    throw e;
+    // Map any non-TxAbort throw (infra/connection error, or a custom
+    // manualPlanChangeListener that bypasses wrapListener and propagates)
+    // to a typed server_error — consistent with update-member /
+    // member-self-update, rather than an unhandled 500 at the route layer.
+    return err({
+      type: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 }
 
@@ -357,7 +383,8 @@ class TxAbort extends Error {
   constructor(
     public readonly detail:
       | { type: 'update_failed'; code: string }
-      | { type: 'audit_failed' },
+      | { type: 'audit_failed' }
+      | { type: 'not_found' },
   ) {
     super(`tx-abort: ${detail.type}`);
   }

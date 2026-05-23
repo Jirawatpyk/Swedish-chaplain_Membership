@@ -11,14 +11,13 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
-import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
+import { mapDbError, unexpected } from './_repo-error';
 import { logger } from '@/lib/logger';
 import { contacts } from './schema-contacts';
 import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
-import type { RepoError } from '../../application/ports/member-repo';
-import type { Contact, ContactId } from '../../domain/contact';
+import { contactPrimacy, type Contact, type ContactId } from '../../domain/contact';
 import type { MemberId, TenantId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
@@ -35,39 +34,24 @@ export function rowToContact(c: typeof contacts.$inferSelect): Contact {
     phone: c.phone as Phone | null,
     roleTitle: c.roleTitle,
     preferredLanguage: c.preferredLanguage as 'en' | 'th' | 'sv',
-    isPrimary: c.isPrimary,
     dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth) : null,
     linkedUserId: c.linkedUserId as UserId | null,
-    removedAt: c.removedAt,
+    inviteBouncedAt: c.inviteBouncedAt ?? null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
+    // M5: narrow into the correlated primacy union (isPrimary ⟹ not removed).
+    ...contactPrimacy(c.isPrimary, c.removedAt),
   };
-}
-
-function unexpected(cause: unknown): RepoError {
-  return { code: 'repo.unexpected', cause };
 }
 
 export const drizzleContactRepo: ContactRepo = {
   async listByMember(ctx, memberId, options) {
     try {
-      const rows = await runInTenant(ctx, (tx) => {
-        const base = tx
-          .select()
-          .from(contacts)
-          .where(eq(contacts.memberId, memberId));
-        return options?.includeRemoved
-          ? base
-          : tx
-              .select()
-              .from(contacts)
-              .where(
-                and(
-                  eq(contacts.memberId, memberId),
-                  sql`${contacts.removedAt} IS NULL`,
-                ),
-              );
-      });
+      const conds = [eq(contacts.memberId, memberId)];
+      if (!options?.includeRemoved) conds.push(isNull(contacts.removedAt));
+      const rows = await runInTenant(ctx, (tx) =>
+        tx.select().from(contacts).where(and(...conds)),
+      );
       return ok(rows.map(rowToContact));
     } catch (e) {
       return err(unexpected(e));
@@ -134,15 +118,7 @@ export const drizzleContactRepo: ContactRepo = {
         .returning();
       return ok(rowToContact(rows[0]!));
     } catch (e) {
-      // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
-      const msg = errorChainMessage(e);
-      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
-        return err({
-          code: 'repo.conflict',
-          reason: 'duplicate primary or unique email',
-        });
-      }
-      return err(unexpected(e));
+      return err(mapDbError(e, 'duplicate primary or unique email'));
     }
   },
 
@@ -259,6 +235,46 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async markInviteBouncedInTx(tx, contactId, bouncedAt) {
+    try {
+      // Tenant-scoped via the caller's runInTenant tx (RLS scopes the row to
+      // the owner tenant). Idempotent guard: only stamp a live, not-yet-marked
+      // contact — re-deliveries of the same bounce no-op (affected: 0).
+      const updated = await tx
+        .update(contacts)
+        .set({ inviteBouncedAt: bouncedAt, updatedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.contactId, contactId),
+            isNull(contacts.removedAt),
+            isNull(contacts.inviteBouncedAt),
+          ),
+        )
+        .returning({ contactId: contacts.contactId });
+      return ok({ affected: updated.length });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async clearInviteBouncedInTx(tx, contactId) {
+    try {
+      // Clears invite_bounced_at = NULL. Tenant-scoped via the caller's
+      // runInTenant tx. Idempotent: if already NULL the update affects 0 rows.
+      // No WHERE guard on removedAt — we allow clearing on a removed contact
+      // to avoid a confusing stuck-in-bounced state if archiving races with
+      // a resend. The use-case guards `not_bounced` before this is called.
+      const updated = await tx
+        .update(contacts)
+        .set({ inviteBouncedAt: null, updatedAt: new Date() })
+        .where(eq(contacts.contactId, contactId))
+        .returning({ contactId: contacts.contactId });
+      return ok({ affected: updated.length });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async updateEmailInTx(tx, _ctx, contactId, newEmail) {
     try {
       // SELECT the current email first — Postgres RETURNING on UPDATE
@@ -280,15 +296,7 @@ export const drizzleContactRepo: ContactRepo = {
 
       return ok({ oldEmail: before.email as typeof newEmail });
     } catch (e) {
-      // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
-      const msg = errorChainMessage(e);
-      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
-        return err({
-          code: 'repo.conflict',
-          reason: 'contact email already used in this tenant',
-        });
-      }
-      return err({ code: 'repo.unexpected', cause: e });
+      return err(mapDbError(e, 'contact email already used in this tenant'));
     }
   },
 
@@ -313,9 +321,20 @@ export const drizzleContactRepo: ContactRepo = {
           and(
             eq(contacts.contactId, newPrimaryContactId),
             eq(contacts.memberId, memberId),
+            // A removed contact cannot become primary (DB CHECK
+            // contacts_primary_not_removed). Excluding it here makes a
+            // removed/missing target match 0 rows → clean repo.not_found,
+            // instead of a CHECK violation surfacing as repo.unexpected (500).
+            isNull(contacts.removedAt),
           ),
         )
         .returning();
+      // Order is intentional: check the promotion TARGET first. If the target
+      // contact does not exist / is not in this member, `not_found` is the most
+      // specific, actionable error — preferred over `no current primary` even
+      // when BOTH the demote and promote matched zero rows. Both error branches
+      // return `err`, so the caller's throw-to-rollback undoes the demote either
+      // way; the only thing the ordering decides is WHICH error the caller sees.
       if (promoted.length === 0) {
         return err({
           code: 'repo.not_found',
@@ -330,15 +349,7 @@ export const drizzleContactRepo: ContactRepo = {
         promoted: rowToContact(promoted[0]!),
       });
     } catch (e) {
-      // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
-      const msg = errorChainMessage(e);
-      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
-        return err({
-          code: 'repo.conflict',
-          reason: 'primary partial-index race',
-        });
-      }
-      return err(unexpected(e));
+      return err(mapDbError(e, 'primary partial-index race'));
     }
   },
 };

@@ -661,7 +661,8 @@
         "selectAll": "Markera alla rader",
         "selectRow": "Markera {company}",
         "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
-        "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen."
+        "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen.",
+        "tableCaption": "Medlemsregister"
       },
       "emptyStates": {
         "zero": {
@@ -696,6 +697,20 @@
           "expiresInDays": "{days, plural, =0 {Går ut idag} one {Går ut om # dag} other {Går ut om # dagar}}",
           "empty": "Inga väntande inbjudningar.",
           "loadError": "Kunde inte läsa in väntande inbjudningar."
+        },
+        "inviteBounced": {
+          "badge": "Inbjudan studsade",
+          "badgeAria": "Inbjudningsmejl studsade",
+          "resendLabel": "Skicka inbjudan igen",
+          "resendSubmitting": "Skickar…",
+          "resendSuccess": "Inbjudan skickad på nytt.",
+          "errors": {
+            "notFound": "Kontakten hittades inte.",
+            "notBounced": "Denna inbjudan har inte studsat.",
+            "alreadyActive": "Den här användaren har redan accepterat sin inbjudan.",
+            "noLinkedUser": "Inget portalkonto är kopplat till denna kontakt.",
+            "serverError": "Något gick fel. Försök igen."
+          }
         },
         "sections": {
           "company": "Företag",
@@ -762,6 +777,7 @@
         "empty": "Ingen aktivitet har registrerats än.",
         "loadMore": "Läs in äldre händelser",
         "loading": "Läser in tidslinje…",
+        "loadError": "Det gick inte att läsa in fler händelser. Försök igen.",
         "actor": "av {actor}",
         "actorSystem": "System",
         "eventAt": "{date}",

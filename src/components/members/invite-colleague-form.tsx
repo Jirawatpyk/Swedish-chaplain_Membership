@@ -193,16 +193,17 @@ export function InviteColleagueForm() {
         </CardContent>
       </Card>
 
-      <div className="mt-6 flex items-center gap-3">
-        <Button type="submit" disabled={submitting}>
-          {submitting ? t('sending') : t('sendButton')}
-        </Button>
+      {/* H6: justify-end + Cancel before Submit (ux-standards § 11.1). */}
+      <div className="mt-6 flex items-center justify-end gap-3">
         <Button
           type="button"
           variant="outline"
           onClick={() => router.push('/portal/profile')}
         >
           {t('cancelButton')}
+        </Button>
+        <Button type="submit" disabled={submitting}>
+          {submitting ? t('sending') : t('sendButton')}
         </Button>
       </div>
     </form>

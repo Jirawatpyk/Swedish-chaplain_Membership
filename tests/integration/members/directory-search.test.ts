@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { directorySearch, createMember } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -165,5 +166,38 @@ describe('directory-search integration (T059, US2)', () => {
     if (!r.ok) return;
     expect(r.value.items[0]!.primaryContact).not.toBeNull();
     expect(r.value.items[0]!.primaryContact!.isPrimary).toBe(true);
+  });
+
+  // A2 regression — keep LAST (mutates last_activity_at for the whole tenant).
+  it('cursor pagination handles tied last_activity_at without dropping rows', async () => {
+    // Force every member in this tenant to share the SAME last_activity_at so
+    // the ORDER BY tie-break (member_id ASC) is exercised across page
+    // boundaries. The old keyset predicate `(last_activity_at, member_id) <
+    // (ts, id)` used member_id `<` for ties — the WRONG direction vs the ASC
+    // tie-break — and silently dropped tied rows with member_id > cursorId.
+    const tieTs = new Date('2026-05-01T00:00:00Z');
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.update(members).set({ lastActivityAt: tieTs });
+    });
+
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      const page = await directorySearch(
+        { tenant: tenant.ctx, memberRepo: deps.memberRepo },
+        { limit: 1, ...(cursor ? { cursor } : {}) },
+      );
+      expect(page.ok).toBe(true);
+      if (!page.ok) break;
+      for (const row of page.value.items) {
+        // No duplicate across pages.
+        expect(seen.has(row.member.memberId)).toBe(false);
+        seen.add(row.member.memberId);
+      }
+      if (!page.value.nextCursor || page.value.items.length === 0) break;
+      cursor = page.value.nextCursor;
+    }
+    // All 3 tied-timestamp members must paginate exactly once — no drop, no dup.
+    expect(seen.size).toBe(3);
   });
 });

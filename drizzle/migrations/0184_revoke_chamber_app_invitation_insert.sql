@@ -1,0 +1,37 @@
+-- ---------------------------------------------------------------------------
+-- 0184: REVOKE INSERT on `invitations` from chamber_app — reverses 0183.
+--
+-- Migration 0183 granted chamber_app INSERT on `invitations` so an early
+-- draft of the F3 `resend-bounced-invite` use-case could mint a new
+-- invitation row inside a `runInTenant` (chamber_app-role) transaction.
+--
+-- SECURITY CORRECTION (Review finding, 2026-05-22):
+-- 0183's rationale ("post-0159 the id is a sha256 hash, so INSERT is safe")
+-- only addressed token *enumeration*. It missed token *forgery*: with
+-- INSERT on `invitations`, a chamber_app-scoped SQL injection can write
+--   INSERT INTO invitations (id, user_id, intended_role, expires_at, ...)
+--   VALUES (sha256(<attacker-chosen plaintext>), <a pending admin user_id>,
+--           'admin', now() + interval '7 days', NULL);
+-- then redeem with the attacker-chosen plaintext to SET that account's
+-- password. `redeem-invite.ts` blocks this for *active* users (the in-tx
+-- guard requires status='pending'), but a freshly-invited admin/manager
+-- still in the invitation window is exposed. This reverses migration
+-- 0017's deliberate least-privilege intent on an auth-critical table.
+--
+-- The correct design (shipped alongside this migration) mirrors the
+-- existing `create-user` / `invite-portal` precedent: invitations are
+-- minted in the OWNER role via `db.transaction(...)` (BYPASSRLS), never
+-- by chamber_app. F3 `resend-bounced-invite` calls the F1
+-- `reissueInvitation` use-case (owner role) for the mint + outbox enqueue,
+-- then does a separate short chamber_app `runInTenant` tx ONLY for the
+-- `contacts.invite_bounced_at` flag-clear + F3 audit. No grant on
+-- `invitations` is needed.
+--
+-- chamber_app retains its 0016/0017 grants (narrow SELECT + UPDATE of
+-- consumed_at) for the F3 archive-cascade soft-consume path. Only the
+-- 0183 INSERT grant is removed here.
+--
+-- Snapshot-less migration (no schema shape change).
+-- ---------------------------------------------------------------------------
+
+REVOKE INSERT ON TABLE invitations FROM chamber_app;

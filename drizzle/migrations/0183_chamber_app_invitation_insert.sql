@@ -1,0 +1,42 @@
+-- ---------------------------------------------------------------------------
+-- 0183: Grant INSERT on `invitations` to chamber_app.
+--
+-- WHY:
+-- Migration 0016 granted chamber_app SELECT (narrow columns) + UPDATE
+-- (consumed_at) on `invitations` for the F3 archive-cascade soft-consume.
+-- Migration 0017 further narrowed SELECT to 3 columns (user_id,
+-- consumed_at, expires_at) after the observation that `invitations.id`
+-- was the raw plaintext token — a chamber_app SQLi could enumerate live
+-- invitation tokens.
+--
+-- Post-migration 0159 (hash-at-rest for F1 tokens), `invitations.id`
+-- now stores sha256(plaintext). The plaintext NEVER touches the database.
+-- A chamber_app SQL injection or DB-read privilege can only enumerate
+-- sha256 hashes — not usable as invitation tokens. The 0017 security
+-- rationale is therefore fully mitigated.
+--
+-- F3 `resend-bounced-invite` use-case needs INSERT on `invitations` to
+-- mint a new invitation row for an existing pending user inside a
+-- runInTenant (chamber_app-role) transaction. Without this grant, the
+-- INSERT fails with SQLSTATE 42501 (insufficient_privilege).
+--
+-- Security assessment: chamber_app gaining INSERT on `invitations` is
+-- acceptable post-0159 because:
+--   1. The id column stores sha256(plaintext) — inserting a row does not
+--      yield the plaintext token to the inserter.
+--   2. The plaintext is derived by the application layer from
+--      crypto.randomBytes(32), held in memory only for the lifetime of
+--      the email dispatch call, then discarded.
+--   3. chamber_app can already INSERT into notifications_outbox (migration
+--      0011) which carries the plaintext token in contextData — this is
+--      the same trust level. The invitation hash itself adds no new
+--      capability beyond what outbox INSERT already exposes.
+--   4. The grant is INSERT-only. chamber_app cannot UPDATE or DELETE
+--      invitation rows (consumed_at updates remain owner-role only in
+--      the archive-cascade path — per 0016, that UPDATE is
+--      chamber_app-scoped, so we retain it as-is).
+--
+-- Snapshot-less migration (no schema shape change).
+-- ---------------------------------------------------------------------------
+
+GRANT INSERT ON TABLE invitations TO chamber_app;

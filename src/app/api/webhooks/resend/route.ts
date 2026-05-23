@@ -51,6 +51,7 @@ import {
   makeRenewalsDeps,
   lookupMemberByEmail,
 } from '@/modules/renewals';
+import { handleInvitationBounce } from '@/modules/members';
 
 // Subset of the Resend webhook event type enum — only the ones our
 // `email_delivery_events` enum column supports. Unknown event types
@@ -273,6 +274,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'resend_webhook.negative_signal',
     );
+  }
+
+  // F3 spec § Edge Cases — invitation-email bounce. Mark any pending member
+  // invitation to this address as failed + emit `invitation_bounced` in the
+  // owner tenant(s). Best-effort: wrapped so a failure NEVER 5xx's the webhook
+  // (which would trigger a Resend retry storm). No-op when the bounced address
+  // has no pending invitation anywhere.
+  if (mapped === 'bounced' && toEmail !== 'unknown') {
+    // Prefer the Resend bounce-event timestamp over server-receipt time so
+    // invite_bounced_at reflects when the bounce actually occurred (webhook
+    // delivery/retry can lag). Fall back to now() if absent/unparseable.
+    const eventTs = parsed.data.created_at ? new Date(parsed.data.created_at) : null;
+    const bouncedAt =
+      eventTs && !Number.isNaN(eventTs.getTime()) ? eventTs : new Date();
+    try {
+      const { marked } = await handleInvitationBounce(toEmail, requestId, bouncedAt);
+      if (marked > 0) {
+        logger.info(
+          { requestId, toEmail, marked },
+          'resend_webhook.invitation_bounced_marked',
+        );
+      }
+    } catch (e) {
+      logger.error(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          requestId,
+          toEmail,
+        },
+        'resend_webhook.invitation_bounce_handler_failed',
+      );
+    }
   }
 
   // F8 Phase 4 Wave I4 / T101 — synchronous-call hook into F8's

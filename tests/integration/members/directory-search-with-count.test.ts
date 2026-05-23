@@ -237,4 +237,63 @@ describe('directorySearchWithCount integration (offset pagination)', () => {
       expect(row.primaryContact?.firstName).toBe('Anna');
     }
   });
+
+  it('plan_display_name is correlated PER ROW (catches alias() always-true regression)', async () => {
+    // MED-1: every other directory test seeds exactly ONE plan, so the
+    // documented `alias()` correlation trap (subquery WHERE collapsing to
+    // always-true) would still return that one plan's name and stay green.
+    // Here two DISTINCTLY-NAMED plans live in the same tenant with a member on
+    // each — asserting each row carries ITS OWN plan name is the only check
+    // that catches a correlation regression.
+    const { a: t } = await createTwoTestTenants();
+    try {
+      await seedTenantFiscal({ tenant: t, registrationFeeSatang: 100000n });
+      const planX = `corr-x-${randomUUID().slice(0, 6)}`;
+      const planY = `corr-y-${randomUUID().slice(0, 6)}`;
+      const planRow = (planId: string, nameEn: string) => ({
+        tenantId: t.ctx.slug,
+        planId,
+        planYear: 2026,
+        planName: { en: nameEn },
+        description: { en: 'corr test' },
+        sortOrder: 10,
+        planCategory: 'corporate' as const,
+        memberTypeScope: 'company' as const,
+        annualFeeMinorUnits: 500_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await runInTenant(t.ctx, async (tx) => {
+        await tx.insert(membershipPlans).values([
+          planRow(planX, 'Corr Plan X'),
+          planRow(planY, 'Corr Plan Y'),
+        ]);
+      });
+      await seedMember(t, user, planX, 'Corr Member X');
+      await seedMember(t, user, planY, 'Corr Member Y');
+
+      const deps = buildMembersDeps(t.ctx);
+      const r = await directorySearchWithCount(
+        { tenant: t.ctx, memberRepo: deps.memberRepo },
+        { limit: 100, offset: 0 },
+      );
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const byName = new Map(
+        r.value.items.map((i) => [i.member.companyName, i.planDisplayName]),
+      );
+      // Each row resolves ITS OWN plan name — proves per-row correlation.
+      expect(byName.get('Corr Member X')).toBe('Corr Plan X');
+      expect(byName.get('Corr Member Y')).toBe('Corr Plan Y');
+    } finally {
+      await t.cleanup().catch(() => {});
+    }
+  }, 60_000);
 });

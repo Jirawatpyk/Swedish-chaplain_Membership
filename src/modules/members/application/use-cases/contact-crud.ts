@@ -27,7 +27,6 @@ import { asPhone } from '../../domain/value-objects/phone';
 import { asEmail } from '../../domain/value-objects/email';
 import type { TenantContext } from '@/modules/tenants';
 import type { Contact, ContactId } from '../../domain/contact';
-import { asTenantId } from '../../domain/member';
 import type { MemberId } from '../../domain/member';
 import type { Phone } from '../../domain/value-objects/phone';
 import type { AuditPort } from '../ports/audit-port';
@@ -119,7 +118,7 @@ export async function addContact(
   try {
     const contact = await runInTenant(deps.tenant, async (tx) => {
       const added = await deps.contactRepo.addInTx(tx, {
-        tenantId: asTenantId(deps.tenant.slug),
+        tenantId: deps.tenant.slug,
         contactId,
         memberId,
         firstName: data.first_name.trim(),
@@ -131,6 +130,7 @@ export async function addContact(
         isPrimary: false,
         dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
         linkedUserId: null,
+        inviteBouncedAt: null,
         removedAt: null,
       });
       // W1: throw-to-rollback — a `return err(...)` here would commit

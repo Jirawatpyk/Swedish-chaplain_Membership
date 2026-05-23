@@ -245,17 +245,17 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
           </CardContent>
         </Card>
 
-        {/* Actions */}
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={submitting}>
-            {submitting ? t('saving') : t('saveButton')}
-          </Button>
+        {/* Actions — H5: justify-end + Cancel before Submit (ux-standards § 11.1). */}
+        <div className="flex items-center justify-end gap-3">
           <Button
             type="button"
             variant="outline"
             onClick={() => router.push('/portal/profile')}
           >
             {t('cancelButton')}
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? t('saving') : t('saveButton')}
           </Button>
         </div>
       </div>
