@@ -228,8 +228,10 @@ smart_insight_dismissals (F9) ──suppresses──▶ insights in dashboard_me
    the 14 new F9 audit event types (§7). **REQUIRED before any code emits F9 events**
    (analyze H1) — mirrors F8's enum extension; `check:audit-events` validates enum ↔
    taxonomy. Postgres requires `ADD VALUE` in its own migration (not the same tx as first
-   use), so this is a standalone migration and the stale-trigger (0190/0191) references
-   only values that exist post-`ADD VALUE`.
+   use), so this is a standalone migration. **No ordering dependency with 0190**: the 0190
+   stale-trigger keys off **pre-existing** F3/F4/F5/F7 event types (member status change,
+   payment recorded, broadcast approved) — not the new F9 types — so it is valid whether
+   or not 0191 has run (critique R2-L1).
 
 > **Index verification (Critique E6)**: an `EXPLAIN`-backed perf test MUST confirm both
 > the timeline view query and the audit query use index scans (no full-table sort) at

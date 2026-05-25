@@ -50,6 +50,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T015 Drizzle schema for the 4 tables in `src/modules/insights/infrastructure/db/schema-insights.ts`
 - [ ] T016 [P] Source-reader ports (`MemberSource`, `PlanSource`, `BroadcastConsumptionSource`, `EventConsumptionSource`, `InvoiceSource`) in `src/modules/insights/application/ports/source-ports.ts`
 - [ ] T017 [P] Source-reader adapters that call each module's **public barrel** (no foreign-table imports) in `src/modules/insights/infrastructure/sources/*`
+- [ ] T017a [P] Contract tests for the inter-module boundaries (5 source-reader ports + `InsightsAuditPort`) — assert each adapter conforms to its port shape against the real barrel — in `tests/contract/insights/source-ports.contract.test.ts` [analyze R2-M1, Constitution II]
 - [ ] T018 `check-f9-schema` CI guard (asserts RLS+FORCE on 4 tables + `member_timeline_v` is `security_invoker`) in `scripts/check-f9-schema.ts` + `package.json` script
 - [ ] T019 [P] Cross-tenant isolation integration harness (2 tenants seeded, read+write both directions) in `tests/integration/insights/cross-tenant-isolation.test.ts` — **RED, Principle I Review-Gate blocker**
 
@@ -77,7 +78,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T027 [US1] `listDashboard` use-case (role projection + **cold-start lazy compute**, R1/E3) in `src/modules/insights/application/use-cases/list-dashboard.ts`
 - [ ] T028 [US1] `listSmartInsights` + `dismissInsight` use-cases in `src/modules/insights/application/use-cases/`
 - [ ] T029 [US1] `activityFeedQuery` — **live** last-N audit query, separate from snapshot (R2-E2/P2) in `src/modules/insights/application/use-cases/activity-feed-query.ts`
-- [ ] T030 [US1] `SnapshotRepo` + `InsightDismissalRepo` drizzle impls (thread `tx` via `runInTenant`) in `src/modules/insights/infrastructure/repos/`
+- [ ] T030 [US1] `SnapshotRepo` + `InsightDismissalRepo` drizzle impls (thread `tx` via `runInTenant`); the snapshot upsert MUST use the `refresh_started_at` **claim marker** so cold-start lazy compute (T027) and the cron (T035) never double-compute concurrently [analyze R2-L2] in `src/modules/insights/infrastructure/repos/`
 - [ ] T031 [US1] Wire `insights-deps.ts` (snapshot/insight/source/audit ports)
 - [ ] T032 [US1] Dashboard page replacing placeholder (feature-flagged) in `src/app/(staff)/admin/page.tsx`
 - [ ] T033 [P] [US1] Dashboard components `KpiCard` / `NeedsAttentionList` / `ActivityFeed` (polite live region) / `InsightsPanel` in `src/components/dashboard/`
@@ -85,7 +86,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T035 [US1] Cron `snapshot-refresh-coordinator` + `snapshot-refresh/[tenantId]` routes in `src/app/api/cron/insights/`
 - [ ] T036 [P] [US1] i18n keys EN/TH/SV for dashboard + insights + under-delivery; BE display for `th-TH`
 - [ ] T037 [US1] Metrics `snapshot_refresh_duration_ms` + `snapshot_age_seconds` in `src/lib/metrics.ts`; emit `dashboard_viewed` + `smart_insight_dismissed`; **insight action/dismiss counter** (SC-012 measurement, analyze M2)
-- [ ] T038 [US1] Nav item Dashboard (role-gated) in `src/config/nav.ts`
+- [ ] T038 [US1] Nav item Dashboard (staff nav — admin + manager; member exclusion is via portal separation, not a nav role-gate) in `src/config/nav.ts`
 
 **Checkpoint**: US1 fully functional + independently testable (MVP).
 
@@ -112,7 +113,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T047 [US2] Audit viewer page in `src/app/(staff)/admin/audit/page.tsx`
 - [ ] T048 [P] [US2] `AuditTable` + `AuditFilters` components in `src/components/audit/`
 - [ ] T049 [P] [US2] i18n keys audit + dual timestamp (UTC + locale-local) rendering
-- [ ] T050 [US2] Emit `audit_log_queried` + `audit_log_exported`; metric `audit_query_duration_ms`; Nav item Audit (role-gated) in `src/config/nav.ts`
+- [ ] T050 [US2] Emit `audit_log_queried` + `audit_log_exported`; metric `audit_query_duration_ms`; Nav item Audit (staff nav — admin + manager) in `src/config/nav.ts`
 
 **Checkpoint**: US1 + US2 work independently.
 
@@ -178,6 +179,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T071 [US5] `processExportJob` worker use-case + per-(tenant,job) advisory lock in `src/modules/insights/application/use-cases/process-export-job.ts`
 - [ ] T072 [US5] Cron `process-export-jobs` route (claim + TTL sweep + stuck reclaim) in `src/app/api/cron/insights/process-export-jobs/route.ts`
 - [ ] T073 [US5] Authenticated download proxy (session + RBAC + single-use token + expiry; Blob URL never exposed) in `src/app/api/internal/exports/[jobId]/download/route.ts`
+- [ ] T073a [P] [US5] Contract test for the download-proxy authorization matrix — 401 no-session · 403 wrong subject/tenant · 404 unknown · 409 not-ready · 410 expired/swept · single-use token invalidation — in `tests/contract/insights/export-download.contract.test.ts` [analyze R2-M2, security-critical]
 
 ### Tests (write first, ensure FAIL)
 
@@ -194,7 +196,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T081 [US5] `exportDirectoryJson` use-case (opt-in only, chosen fields, nested JSON)
 - [ ] T082 [US5] Directory admin page in `src/app/(staff)/admin/directory/page.tsx` + visibility settings under `src/app/(member)/portal/profile/`
 - [ ] T083 [P] [US5] `DirectoryTable` + `VisibilityToggles` + logo upload control components in `src/components/directory/`
-- [ ] T084 [US5] i18n keys directory + E-Book labels; Nav item Directory (role-gated) in `src/config/nav.ts`
+- [ ] T084 [US5] i18n keys directory + E-Book labels; Nav item Directory (staff nav — admin + manager) in `src/config/nav.ts`
 - [ ] T085 [US5] Emit `directory_listing_updated` / `directory_ebook_generated` / `directory_json_exported` / logo set-remove; export-job metrics
 
 **Checkpoint**: US5 functional; shared export infra ready for US6.
@@ -208,7 +210,7 @@ separately to bound the all-PII review blast radius.
 
 ### Tests (write first, ensure FAIL)
 
-- [ ] T086 [P] [US6] Integration test archive contents + **audit-subset redaction** (100% branch on scoping) in `tests/integration/insights/gdpr-export.test.ts`
+- [ ] T086 [P] [US6] Integration test archive contents + **audit-subset redaction** (100% branch on scoping) + **manifest checksum validates** (SC-008, analyze R2-L4) in `tests/integration/insights/gdpr-export.test.ts`
 - [ ] T087 [P] [US6] Integration test member-cannot-export-others + admin-on-behalf attribution in `tests/integration/insights/gdpr-authz.test.ts`
 - [ ] T088 [P] [US6] E2E `@f9` portal export request → notification → single-use download in `tests/e2e/f9-gdpr-export.spec.ts`
 
@@ -300,4 +302,4 @@ Task: T025 DashboardSnapshot VO + SmartInsight catalogue
 - Every repo method threads `tx` from `runInTenant` — never the global `db` (CLAUDE.md gotcha).
 - Apply each migration + run integration before committing schema-referencing code (CLAUDE.md R8).
 - `--workers=1` mandatory on `pnpm test:e2e`.
-- Total: **107 tasks** across 9 phases (Slice A: T001–T068 incl. foundation + T011a; Slice B: T069–T095; Polish: T096–T105 + T103a). Two tasks added post-`/speckit.analyze` (T011a audit-enum migration H1, T103a vitest coverage config M1).
+- Total: **109 tasks** across 9 phases. Added post-`/speckit.analyze`: R1 — T011a (audit-enum migration H1), T103a (vitest coverage config M1); R2 — T017a (inter-module contract tests M1), T073a (download-proxy authz contract test M2).
