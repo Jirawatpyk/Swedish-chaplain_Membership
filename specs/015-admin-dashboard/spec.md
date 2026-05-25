@@ -50,6 +50,9 @@ It delivers four staff-facing pillars plus their member-facing counterparts:
 - Q: (critique R2-P1) What does "membership year" mean for benefit-quota counting? → A: **Calendar year in the tenant timezone** for F9 (anniversary-based deferred).
 - Q: (critique R2-P2) How is the aggregate "consumed %" for the under-use warning computed? → A: **Mean of the used ÷ entitlement ratio of each quantifiable benefit**, excluding unlimited/active-only benefits; no quantifiable benefits → no warning.
 - Q: (critique R2-P3) Is directory logo upload in F9 scope? → A: **Kept in scope** (user decision 2026-05-25) — with an explicit safe image pipeline (MIME/size/dimension limits, server re-encode + EXIF strip via F4's `sharp`, audit-logged). See FR-025a.
+- Q: (checklist i18n) What locale is the Directory E-Book rendered in? → A: **Tenant's default display locale** (EN for SweCham); field labels localised, member-entered content as authored; Sarabun embed handles TH-locale tenants. (FR-026)
+- Q: (checklist i18n) What locale for the GDPR export README / notifications? → A: README in the **requester's locale** (EN fallback); `manifest.json` locale-neutral (English keys); "export ready" notification in the **recipient's locale**. (FR-029/030)
+- Q: (checklist i18n) How is the multi-source timeline localised? → A: stable i18n key namespace `timeline.<source>.<eventKind>` resolved in presentation from the view's `source`+`payload`; legacy `audit_log.summary` is fallback only. (FR-014)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -342,7 +345,9 @@ audit-logged.
   and a relative timestamp, sourced from recent audit events for the tenant. The
   activity feed MUST reflect near-real-time activity (served from a live query of the
   most recent events, **not** from the periodically-refreshed KPI snapshot, so a
-  just-occurred event is visible without waiting for the next snapshot refresh).
+  just-occurred event is visible without waiting for the next snapshot refresh). Feed
+  updates MUST be announced via a **polite** live region and MUST NOT steal keyboard
+  focus or re-order items the user is interacting with.
 - **FR-004**: The dashboard MUST present a short list of **smart insights** —
   rule-derived suggestions surfaced from existing data — each dismissible. F9 ships a
   **fixed starter catalogue of at least 3 insight types**: (1) members with unused
@@ -368,17 +373,23 @@ audit-logged.
 #### Audit Log Viewer (US2)
 
 - **FR-008**: The system MUST provide a staff-facing audit-log viewer that lists
-  audit events for the current tenant, newest first, with pagination for large
-  volumes.
+  audit events for the current tenant, newest first, with keyset pagination for large
+  volumes. A filtered audit-query page MUST return at **p95 < 1 second for a tenant with
+  at least 50,000 audit events** (the quantified target behind US2's "under 30 seconds"
+  human task time).
 - **FR-009**: The viewer MUST support filtering by event type, acting user, target
   record/entity, and date range, individually and in combination.
 - **FR-010**: The viewer MUST be strictly read-only; it MUST NOT permit editing or
   deleting any audit entry (the log is append-only).
 - **FR-011**: The viewer MUST redact sensitive **payload** fields according to the
-  viewing user's role (e.g. managers/members never see payload fields outside their
-  projection). **Actor identity** (the staff member who performed an audited action) is
-  internal operational information visible to admins **and** managers; it is NOT subject
-  to the payload-redaction projection.
+  viewing user's role via a **defined redaction map** (per audit-event-type field
+  allow/deny list), so redaction is objectively testable rather than judgement-based.
+  "Sensitive payload fields" are: (a) **internal-only annotations** — override reason
+  codes/notes, staff notes; and (b) **third-party personal data** — PII of members /
+  contacts other than the viewer's own (for the member role). Managers/members never see
+  payload fields outside their projection. **Actor identity** (the staff member who
+  performed an audited action) is internal operational information visible to admins
+  **and** managers; it is NOT subject to the payload-redaction projection.
 - **FR-012**: The viewer MUST allow exporting the currently filtered result set to a
   downloadable file, preserving UTC timestamps plus a human-readable local-time
   rendering, and the export action itself MUST be audit-logged.
@@ -390,11 +401,18 @@ audit-logged.
 
 - **FR-014**: The system MUST enrich the existing member timeline so it merges
   entries from member profile/audit changes, invoices, payments, event
-  registrations, broadcasts, and renewal activity into one chronological stream.
+  registrations, broadcasts, and renewal activity into one chronological stream. Each
+  source/event-kind MUST map to a **stable localised i18n key** (namespace
+  `timeline.<source>.<eventKind>`) with defined interpolation parameters; the timeline
+  data source supplies `source` + structured `payload` and the presentation layer
+  resolves the key so all six sources render consistently in EN/TH/SV (legacy
+  `audit_log.summary` is a fallback display value only).
 - **FR-015**: The timeline MUST support filtering by source type, date range, and
   actor (staff vs member vs system).
 - **FR-016**: The timeline MUST remain responsive for members with very large
-  histories via incremental loading.
+  histories (1,000+ entries) via keyset-paginated incremental loading, with each
+  additional page returning at **p95 < 500 ms**; no full-history load is required to
+  render the first page.
 - **FR-017**: The timeline MUST be available to staff for any member and to members
   for their own history only, with role-appropriate redaction of internal
   annotations.
@@ -443,7 +461,10 @@ audit-logged.
   appears in published outputs only when the member toggles its visibility on.
 - **FR-026**: The system MUST generate a downloadable, deterministically formatted
   Directory E-Book (PDF) containing only opted-in members with only their chosen
-  fields and the chamber branding.
+  fields and the chamber branding. The E-Book MUST be rendered in the **tenant's
+  default display locale** (EN for SweCham), with field **labels** localised to that
+  locale; member-entered content (name, description) is rendered as authored. (Thai-
+  font rendering reuses the F4 Sarabun embed so a TH-locale tenant renders correctly.)
 - **FR-027**: The system MUST produce a structured **JSON** data export of opt-in
   listings (chosen fields only), with nested/optional fields preserved, suitable for
   programmatic consumption by the tenant's own website.
@@ -458,9 +479,14 @@ audit-logged.
   subset MUST include **both events the member performed and events targeting the
   member's records**, with third-party PII and internal-only annotations (e.g.
   override reasons, staff notes) **redacted** via the standard role projection so no
-  other data subject's information leaks into the archive.
+  other data subject's information leaks into the archive. The README MUST be rendered
+  in the **requester's locale** (the member's, or the admin's for an on-behalf request)
+  with EN fallback; the `manifest.json` is machine-readable and **locale-neutral**
+  (English keys + checksums).
 - **FR-030**: Export delivery MUST be via a time-limited signed link or in-portal
   download, and both the request and the delivery MUST be recorded in the audit log.
+  The "export ready" notification (and any async-job notifications) MUST be localised
+  to the recipient's locale.
 - **FR-031**: Admins MUST be able to produce the same export on a member's behalf for
   a data-subject request, attributed to the admin in the audit log.
 - **FR-032**: A member MUST NOT be able to export any data other than their own.
@@ -476,11 +502,18 @@ audit-logged.
   layers; no query may return another tenant's data.
 - **FR-034**: All F9 surfaces MUST present localised content in EN, TH, and SV, with
   dates/numbers/currency formatted per locale; Thai surfaces MUST display
-  Buddhist-Era years while persisted timestamps remain Gregorian UTC.
+  Buddhist-Era years while persisted timestamps remain Gregorian UTC. F9 MUST reuse the
+  **established platform glossary terms** (e.g. member, tier, E-Blast, invoice, receipt)
+  consistently across all three locales, matching the existing F1–F8 translations rather
+  than introducing divergent synonyms.
 - **FR-035**: All F9 surfaces MUST meet the platform accessibility standard
   (keyboard operable, screen-reader labelled, sufficient contrast, reduced-motion
   respected) and the platform UX standard (loading skeletons, empty/error states,
-  toasts for actions).
+  toasts for actions). Status that conveys meaning — Engagement Score bands and
+  benefit-usage levels — MUST NOT rely on **colour alone**: a text label and/or
+  icon/shape MUST also encode it (WCAG 1.4.1). All form controls (audit filters,
+  directory-visibility toggles, logo upload) MUST have programmatic labels and
+  screen-reader-announced validation/error messaging.
 - **FR-036**: Reads of PII-bearing surfaces (member views, exports) and all export
   actions MUST be audit-logged to a degree sufficient to demonstrate who accessed
   whose data.
@@ -627,6 +660,12 @@ audit-logged.
   `/portal/benefits`, own timeline at `/portal/timeline`, **directory-visibility settings
   under `/portal/profile`**, and **GDPR data export under `/portal/account`**. Staff
   surfaces add Dashboard / Audit / Directory nav items (role-gated).
+- **Scale headroom & revisit trigger** (checklist perf CHK017): F9 is designed and
+  measured to the SC-002 target of **5,000 members/tenant** (current SweCham ≈131). The
+  caching/index strategy is expected to hold to roughly that order of magnitude; if any
+  tenant approaches **~20,000 members**, the snapshot/partition/index strategy MUST be
+  revisited (e.g. incremental snapshot, source-side aggregates) before it becomes the
+  bottleneck. This is the explicit 10x-growth revisit trigger.
 
 ## Dependencies
 

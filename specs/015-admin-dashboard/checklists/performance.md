@@ -14,7 +14,7 @@ Tests the requirements, not the measured latency.
 - [ ] CHK001 Is the dashboard target quantified as **p95 < 1.5 s @ 5,000 members** (not "fast"/"interactive")? [Measurability, Spec §SC-002]
 - [ ] CHK002 Are interactive API budgets (p95 < 400 ms) stated for the new F9 endpoints/actions? [Completeness, Constitution VII]
 - [ ] CHK003 Are web-vitals budgets (LCP < 2.5s, INP < 200ms, CLS < 0.1) required for the new pages? [Coverage, Constitution VII]
-- [ ] CHK004 Is the audit viewer's interactivity target at "tens of thousands of events" quantified, not just described? [Ambiguity, Spec §SC-003, US2]
+- [x] CHK004 Is the audit viewer's interactivity target at "tens of thousands of events" quantified, not just described? [Spec §FR-008, §SC-003] → RESOLVED 2026-05-25: FR-008 sets p95 < 1 s for a filtered query at ≥50,000 events.
 - [ ] CHK005 Is the SC-003 "under 30 seconds" framed as a **human task time** (not a system-latency budget), and is the underlying query budget separately stated? [Clarity, Spec §SC-003]
 
 ## Freshness / Caching
@@ -36,7 +36,7 @@ Tests the requirements, not the measured latency.
 
 - [ ] CHK015 Are export-job throughput/duration expectations and the sync-vs-async threshold (audit ≤10k rows) specified? [Completeness, research R5/R2-E2]
 - [ ] CHK016 Is the snapshot coordinator's behaviour at scale (per-tenant fan-out, prioritising `stale`) defined so it stays within the cron window? [Coverage, research R1, contracts]
-- [ ] CHK017 Is 10x-growth headroom (≥50k members) acknowledged with a stated revisit trigger? [Coverage, Gap]
+- [x] CHK017 Is 10x-growth headroom (≥50k members) acknowledged with a stated revisit trigger? [Coverage, Spec §Assumptions] → RESOLVED 2026-05-25: Assumptions add a ~20k-member revisit trigger for the snapshot/index strategy.
 
 ## Observability (Principle VII)
 
@@ -49,7 +49,7 @@ Tests the requirements, not the measured latency.
 
 - [ ] CHK022 Is the rollback trigger quantified (error rate >2% / snapshot age p95 >15 min / any cross-tenant leak) and tied to the `FEATURE_F9_DASHBOARD` kill-switch? [Measurability, Spec §SC-013]
 - [ ] CHK023 Is the adoption KPI (SC-012) measurable with a defined tracking source? [Measurability, Spec §SC-012]
-- [ ] CHK024 Are all performance success criteria free of unquantified adjectives ("smooth", "quickly", "responsive")? [Ambiguity, Spec §SC-002, US3]
+- [x] CHK024 Are all performance success criteria free of unquantified adjectives ("smooth", "quickly", "responsive")? [Spec §SC-002, §FR-016] → RESOLVED 2026-05-25: FR-016 now quantifies incremental timeline load (p95 < 500 ms/page); SC-002 quantified earlier (p95 < 1.5 s).
 
 ## Notes
 

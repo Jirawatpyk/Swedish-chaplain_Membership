@@ -24,7 +24,7 @@ solo-maintainer-substitute co-sign applies).
 ## RBAC & Role Redaction
 
 - [ ] CHK008 Are the three role projections (admin full / manager finance-redacted / member own-only) defined for the dashboard, audit viewer, and timeline individually? [Completeness, Spec §FR-007, §FR-011, §FR-017]
-- [ ] CHK009 Is "sensitive payload fields" defined/enumerated precisely enough that payload redaction is objectively testable? [Ambiguity, Spec §FR-011]
+- [x] CHK009 Is "sensitive payload fields" defined/enumerated precisely enough that payload redaction is objectively testable? [Spec §FR-011] → RESOLVED 2026-05-25: FR-011 now defines a per-event-type redaction map + the two sensitive categories (internal annotations; third-party PII).
 - [ ] CHK010 Is the decision that **actor identity is visible to managers** (while payload PII is redacted) stated unambiguously and consistently between FR-011 and the clarifications log? [Consistency, Spec §FR-011, §Clarifications]
 - [ ] CHK011 Is the rule that members can access only their **own** timeline/benefits/export specified, with a defined refusal behaviour for others' data? [Completeness, Spec §FR-017, §FR-022, §FR-032]
 - [ ] CHK012 Is the staff-only scope of the Engagement Score (not shown to members) explicit? [Clarity, Spec §FR-007a]
