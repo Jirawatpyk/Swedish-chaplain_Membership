@@ -81,6 +81,8 @@ export async function listDashboard(
   const metrics: ProjectedDashboard = {
     ...snapshot,
     ytdPaidRevenueSatang: financeRedacted ? null : snapshot.ytdPaidRevenueSatang,
+    // Revenue trend is finance-bearing (FR-001a / FR-007) → omit for managers.
+    revenueTrend: financeRedacted ? [] : snapshot.revenueTrend,
   };
 
   // PII-read audit (FR-036) — best-effort; a write failure must not block the

@@ -25,7 +25,12 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { cycleKeyFor } from '../../domain/insight-cycle-key';
-import type { DashboardSnapshot } from '../../domain/dashboard-snapshot';
+import { lastNMonthKeys } from '../../domain/trend-window';
+import type {
+  DashboardSnapshot,
+  MemberGrowthPoint,
+  RevenueTrendPoint,
+} from '../../domain/dashboard-snapshot';
 import type { SmartInsight } from '../../domain/smart-insight';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
 import type {
@@ -63,16 +68,39 @@ export async function computeDashboardSnapshot(
       }).format(now),
     );
 
+    // 12-month trend window in the tenant timezone (FR-001a), oldest→newest.
+    const monthKeys = lastNMonthKeys(now, deps.tenantTimezone, 12);
+
     // Source reads self-scope (each call runs in its own tenant tx).
-    const [statusCounts, atRisk, ytdPaidRevenueSatang, overdueInvoices, broadcastsAwaitingApproval] =
-      await Promise.all([
-        deps.memberSource.countByStatus(ctx),
-        deps.memberSource.countAtRisk(ctx),
-        deps.invoiceSource.getYtdPaidRevenueSatang(ctx, year),
-        deps.invoiceSource.countOverdue(ctx),
-        deps.broadcastSource.countAwaitingApproval(ctx),
-      ]);
+    const [
+      statusCounts,
+      atRisk,
+      ytdPaidRevenueSatang,
+      overdueInvoices,
+      broadcastsAwaitingApproval,
+      monthlyRevenue,
+      joinDist,
+    ] = await Promise.all([
+      deps.memberSource.countByStatus(ctx),
+      deps.memberSource.countAtRisk(ctx),
+      deps.invoiceSource.getYtdPaidRevenueSatang(ctx, year),
+      deps.invoiceSource.countOverdue(ctx),
+      deps.broadcastSource.countAwaitingApproval(ctx),
+      deps.invoiceSource.getMonthlyPaidRevenueSatang(ctx, monthKeys, deps.tenantTimezone),
+      deps.memberSource.joinDistribution(ctx, monthKeys, deps.tenantTimezone),
+    ]);
     const total = statusCounts.active + statusCounts.inactive + statusCounts.archived;
+
+    // Build the trend series aligned to the 12 month keys (FR-001a).
+    const revenueTrend: RevenueTrendPoint[] = monthKeys.map((month) => ({
+      month,
+      satang: (monthlyRevenue[month] ?? 0n).toString(),
+    }));
+    let cumulative = joinDist.baseline;
+    const memberGrowth: MemberGrowthPoint[] = monthKeys.map((month) => {
+      cumulative += joinDist.byMonth[month] ?? 0;
+      return { month, cumulative };
+    });
 
     // Candidate insights (Increment 1: at-risk follow-up only; quota insights → US4).
     const candidates: SmartInsight[] = atRisk > 0 ? [{ key: 'at_risk_followup', count: atRisk }] : [];
@@ -101,6 +129,8 @@ export async function computeDashboardSnapshot(
           overdueInvoices,
           atRiskMembers: atRisk,
         },
+        revenueTrend,
+        memberGrowth,
         topInsights,
         computedAt: now.toISOString(),
       };

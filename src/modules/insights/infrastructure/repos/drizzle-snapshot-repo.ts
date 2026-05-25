@@ -46,6 +46,10 @@ const snapshotSchema = z.object({
     overdueInvoices: count,
     atRiskMembers: count,
   }),
+  revenueTrend: z.array(
+    z.object({ month: z.string(), satang: z.string().regex(/^\d+$/) }),
+  ),
+  memberGrowth: z.array(z.object({ month: z.string(), cumulative: count })),
   topInsights: z.array(
     z.object({
       key: z.enum(INSIGHT_KEYS),

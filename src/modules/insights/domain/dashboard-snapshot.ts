@@ -27,6 +27,18 @@ export interface NeedsAttention {
   readonly atRiskMembers: number;
 }
 
+/** One month of the 12-month revenue trend (FR-001a). `satang` is a decimal string. */
+export interface RevenueTrendPoint {
+  readonly month: string; // 'YYYY-MM' (tenant tz)
+  readonly satang: string;
+}
+
+/** One month of the member-growth trend (FR-001a) — cumulative members joined. */
+export interface MemberGrowthPoint {
+  readonly month: string; // 'YYYY-MM' (tenant tz)
+  readonly cumulative: number;
+}
+
 export interface DashboardSnapshot {
   readonly counts: MembershipCounts;
   /** Year-to-date PAID revenue in satang, serialized as a decimal string. */
@@ -34,6 +46,10 @@ export interface DashboardSnapshot {
   /** Count of members with ≥1 quantifiable benefit under-delivered (FR-001). */
   readonly underDeliveredBenefitCount: number;
   readonly needsAttention: NeedsAttention;
+  /** 12-month monthly paid-revenue trend, oldest→newest (FR-001a). */
+  readonly revenueTrend: readonly RevenueTrendPoint[];
+  /** 12-month cumulative member-growth trend, oldest→newest (FR-001a). */
+  readonly memberGrowth: readonly MemberGrowthPoint[];
   /** Starter insight set, already filtered of dismissals (FR-004). */
   readonly topInsights: readonly SmartInsight[];
   /** "As of" time (FR-005) — ISO 8601 UTC; presentation renders per-locale. */
@@ -47,6 +63,8 @@ export function emptySnapshot(computedAt: string): DashboardSnapshot {
     ytdPaidRevenueSatang: '0',
     underDeliveredBenefitCount: 0,
     needsAttention: { broadcastsAwaitingApproval: 0, overdueInvoices: 0, atRiskMembers: 0 },
+    revenueTrend: [],
+    memberGrowth: [],
     topInsights: [],
     computedAt,
   };

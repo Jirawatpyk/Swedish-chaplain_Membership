@@ -236,6 +236,18 @@
         "atRisk": "Medlemmar i riskzonen",
         "broadcasts": "Utskick som väntar på godkännande"
       },
+      "revenueTrend": {
+        "title": "Intäktstrend (12 månader)",
+        "empty": "Inga betalda intäkter registrerade ännu.",
+        "month": "Månad",
+        "amount": "Betalda intäkter"
+      },
+      "memberGrowth": {
+        "title": "Medlemstillväxt (12 månader)",
+        "empty": "Ingen medlemsdata ännu.",
+        "month": "Månad",
+        "count": "Medlemmar"
+      },
       "insights": {
         "title": "Smarta insikter",
         "empty": "Inga insikter just nu – allt är i ordning.",

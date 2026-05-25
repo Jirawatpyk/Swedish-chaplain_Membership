@@ -71,6 +71,12 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     // Smart insights + live activity feed sections.
     await expect(page.getByText('Smart insights')).toBeVisible();
     await expect(page.getByText('Recent activity')).toBeVisible();
+
+    // FR-001a trend charts + accessible table equivalents.
+    await expect(page.getByText('Revenue trend (12 months)').first()).toBeVisible();
+    await expect(page.getByText('Member growth (12 months)').first()).toBeVisible();
+    // Visually-hidden <table> equivalents are present in the a11y tree.
+    expect(await page.getByRole('table').count()).toBeGreaterThan(0);
   });
 
   test('manager sees a finance-redacted dashboard (no revenue figure)', async ({

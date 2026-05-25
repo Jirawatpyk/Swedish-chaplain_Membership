@@ -236,6 +236,18 @@
         "atRisk": "At-risk members",
         "broadcasts": "Broadcasts awaiting approval"
       },
+      "revenueTrend": {
+        "title": "Revenue trend (12 months)",
+        "empty": "No paid revenue recorded yet.",
+        "month": "Month",
+        "amount": "Paid revenue"
+      },
+      "memberGrowth": {
+        "title": "Member growth (12 months)",
+        "empty": "No member data yet.",
+        "month": "Month",
+        "count": "Members"
+      },
       "insights": {
         "title": "Smart insights",
         "empty": "No insights right now — all clear.",

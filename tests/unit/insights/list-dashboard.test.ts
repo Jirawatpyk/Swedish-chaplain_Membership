@@ -26,6 +26,8 @@ const SNAP: DashboardSnapshot = {
   ytdPaidRevenueSatang: '240000000',
   underDeliveredBenefitCount: 0,
   needsAttention: { broadcastsAwaitingApproval: 0, overdueInvoices: 0, atRiskMembers: 2 },
+  revenueTrend: [{ month: '2026-06', satang: '240000000' }],
+  memberGrowth: [{ month: '2026-06', cumulative: 10 }],
   topInsights: [{ key: 'at_risk_followup', count: 2 }],
   computedAt: '2026-06-15T05:00:00.000Z',
 };

@@ -18,6 +18,7 @@ import {
 } from '@/modules/invoicing';
 import type { TenantContext } from '@/modules/tenants';
 import type { InvoiceSource } from '../../application/ports/source-ports';
+import { monthKeyOf } from '../../domain/trend-window';
 
 const PAGE = 100;
 
@@ -64,5 +65,35 @@ export const invoiceSourceAdapter: InvoiceSource = {
       cursor = result.value.nextCursor;
     } while (cursor !== null);
     return count;
+  },
+
+  async getMonthlyPaidRevenueSatang(
+    ctx: TenantContext,
+    monthKeys: readonly string[],
+    timeZone: string,
+  ): Promise<Readonly<Record<string, bigint>>> {
+    const window = new Set(monthKeys);
+    const buckets: Record<string, bigint> = {};
+    const deps = makeListInvoicesDeps(ctx.slug);
+    let cursor: string | null = null;
+    do {
+      const result = await listInvoices(deps, {
+        tenantId: ctx.slug,
+        status: 'paid',
+        pageSize: PAGE,
+        cursor,
+        includeDrafts: false,
+      });
+      if (!result.ok) throw new Error('InvoiceSource: monthly-revenue list failed');
+      for (const inv of result.value.rows) {
+        const settled = inv.paidAt ?? inv.issueDate;
+        if (!settled) continue;
+        const key = monthKeyOf(new Date(settled), timeZone);
+        if (!window.has(key)) continue; // outside the 12-month window
+        buckets[key] = (buckets[key] ?? 0n) + (inv.total?.satang ?? 0n);
+      }
+      cursor = result.value.nextCursor;
+    } while (cursor !== null);
+    return buckets;
   },
 };

@@ -21,6 +21,8 @@ import {
   type ActivityFeedEntry,
 } from '@/components/dashboard/activity-feed';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
+import { RevenueTrendChart } from '@/components/dashboard/revenue-trend-chart';
+import { MemberGrowthChart } from '@/components/dashboard/member-growth-chart';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -235,6 +237,29 @@ export default async function StaffHomePage() {
     timeLabel: timeFmt.format(new Date(item.occurredAt)),
   }));
 
+  // FR-001a trend charts — display-ready points (manager: revenueTrend already
+  // redacted to [] upstream → renders the empty state).
+  const monthFmt = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' });
+  const thbFmt = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    maximumFractionDigits: 0,
+  });
+  const monthLabel = (key: string): string =>
+    monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
+  const revenueTrendPoints = metrics.revenueTrend.map((p) => ({
+    key: p.month,
+    label: monthLabel(p.month),
+    value: Number(p.satang),
+    valueLabel: thbFmt.format(Number(p.satang) / 100),
+  }));
+  const memberGrowthPoints = metrics.memberGrowth.map((p) => ({
+    key: p.month,
+    label: monthLabel(p.month),
+    value: p.cumulative,
+    valueLabel: numberFmt.format(p.cumulative),
+  }));
+
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('asOf', { time: asOf })} />
@@ -266,6 +291,23 @@ export default async function StaffHomePage() {
           dismissedLabel={t('insights.dismissed')}
           dismissErrorLabel={t('insights.dismissError')}
           lines={insightLines}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RevenueTrendChart
+          title={t('revenueTrend.title')}
+          emptyLabel={t('revenueTrend.empty')}
+          monthHeader={t('revenueTrend.month')}
+          amountHeader={t('revenueTrend.amount')}
+          points={revenueTrendPoints}
+        />
+        <MemberGrowthChart
+          title={t('memberGrowth.title')}
+          emptyLabel={t('memberGrowth.empty')}
+          monthHeader={t('memberGrowth.month')}
+          countHeader={t('memberGrowth.count')}
+          points={memberGrowthPoints}
         />
       </div>
 

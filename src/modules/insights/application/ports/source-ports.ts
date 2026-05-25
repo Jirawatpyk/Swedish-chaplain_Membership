@@ -47,6 +47,17 @@ export interface AtRiskMemberRef {
   readonly riskScoreBand: Exclude<RiskBand, 'healthy'>;
 }
 
+/**
+ * Member-join distribution for the growth trend (FR-001a). `baseline` = members
+ * who joined BEFORE the first window month; `byMonth` = join counts keyed by
+ * `YYYY-MM` for months inside the window. The caller builds the cumulative
+ * series as `baseline + Σ byMonth[≤ month]`.
+ */
+export interface MemberJoinDistribution {
+  readonly baseline: number;
+  readonly byMonth: Readonly<Record<string, number>>;
+}
+
 export interface MemberSource {
   /** Counts by status for the current tenant (FR-001 headline counts). */
   countByStatus(ctx: TenantContext): Promise<MemberStatusCounts>;
@@ -54,6 +65,12 @@ export interface MemberSource {
   countAtRisk(ctx: TenantContext): Promise<number>;
   /** Bounded list of at-risk members for the `at_risk_followup` insight (FR-004). */
   listAtRisk(ctx: TenantContext, limit: number): Promise<readonly AtRiskMemberRef[]>;
+  /** Member-join distribution for the growth trend (FR-001a), tenant-tz months. */
+  joinDistribution(
+    ctx: TenantContext,
+    monthKeys: readonly string[],
+    timeZone: string,
+  ): Promise<MemberJoinDistribution>;
 }
 
 /** Quantifiable benefit entitlements read from a plan's benefit matrix (FR-019). */
@@ -99,4 +116,15 @@ export interface InvoiceSource {
   getYtdPaidRevenueSatang(ctx: TenantContext, year: number): Promise<bigint>;
   /** Count of overdue invoices for the tenant (FR-002 needs-attention). */
   countOverdue(ctx: TenantContext): Promise<number>;
+  /**
+   * Monthly PAID revenue (satang) bucketed by the tenant-tz month a paid
+   * invoice was settled, for the 12-month revenue trend (FR-001a). Returns a
+   * map keyed by `YYYY-MM`; months with no paid invoices are simply absent
+   * (the caller fills 0).
+   */
+  getMonthlyPaidRevenueSatang(
+    ctx: TenantContext,
+    monthKeys: readonly string[],
+    timeZone: string,
+  ): Promise<Readonly<Record<string, bigint>>>;
 }

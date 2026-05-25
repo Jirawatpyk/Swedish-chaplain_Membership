@@ -101,6 +101,8 @@ describe('F9 computeDashboardSnapshot — integration (T022)', () => {
       ytdPaidRevenueSatang: string;
       underDeliveredBenefitCount: number;
       topInsights: Array<{ key: string; count: number }>;
+      revenueTrend: Array<{ month: string; satang: string }>;
+      memberGrowth: Array<{ month: string; cumulative: number }>;
     };
 
     expect(snap.counts.total).toBe(8);
@@ -112,6 +114,13 @@ describe('F9 computeDashboardSnapshot — integration (T022)', () => {
     expect(snap.underDeliveredBenefitCount).toBe(0);
     expect(snap.topInsights).toEqual([{ key: 'at_risk_followup', count: 3 }]);
     expect(rows[0]!.stale).toBe(false);
+    // FR-001a trend arrays — 12 month buckets; all 8 members joined "now"
+    // (within the window) so the cumulative series ends at 8; no paid invoices
+    // → revenue trend sums to 0.
+    expect(snap.revenueTrend).toHaveLength(12);
+    expect(snap.memberGrowth).toHaveLength(12);
+    expect(snap.memberGrowth.at(-1)?.cumulative).toBe(8);
+    expect(snap.revenueTrend.reduce((s, p) => s + BigInt(p.satang), 0n)).toBe(0n);
   });
 
   it('suppresses the at_risk_followup insight after it is dismissed for the cycle', async () => {
@@ -281,6 +290,14 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
       expect(result.value.counts.overdue).toBe(1);
       expect(result.value.needsAttention.overdueInvoices).toBe(1);
       expect(result.value.needsAttention.broadcastsAwaitingApproval).toBe(1);
+      // FR-001a trends: 12 buckets; the 2 paid invoices (150_000 satang) land in
+      // a single month → trend sums to 150_000; 1 member → growth ends at 1.
+      expect(result.value.revenueTrend).toHaveLength(12);
+      expect(
+        result.value.revenueTrend.reduce((s, p) => s + BigInt(p.satang), 0n),
+      ).toBe(150_000n);
+      expect(result.value.memberGrowth).toHaveLength(12);
+      expect(result.value.memberGrowth.at(-1)?.cumulative).toBe(1);
     }
   });
 });

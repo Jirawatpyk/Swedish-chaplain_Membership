@@ -30,6 +30,8 @@ function snapshotWith(
     ytdPaidRevenueSatang: '0',
     underDeliveredBenefitCount: 0,
     needsAttention: { broadcastsAwaitingApproval: 0, overdueInvoices: 0, atRiskMembers: 0 },
+    revenueTrend: [],
+    memberGrowth: [],
     topInsights,
     computedAt: '2026-06-15T05:00:00.000Z',
   };

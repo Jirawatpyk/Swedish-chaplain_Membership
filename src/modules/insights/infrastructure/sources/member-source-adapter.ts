@@ -18,9 +18,11 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   AtRiskMemberRef,
+  MemberJoinDistribution,
   MemberSource,
   MemberStatusCounts,
 } from '../../application/ports/source-ports';
+import { monthKeyOf } from '../../domain/trend-window';
 
 /** Risk bands that count as "at-risk needing follow-up" (FR-002/004). */
 const AT_RISK_BANDS = ['critical', 'at-risk', 'warning'] as const;
@@ -81,5 +83,39 @@ export const memberSourceAdapter: MemberSource = {
       }
     }
     return out.slice(0, limit);
+  },
+
+  async joinDistribution(
+    ctx: TenantContext,
+    monthKeys: readonly string[],
+    timeZone: string,
+  ): Promise<MemberJoinDistribution> {
+    const firstKey = monthKeys[0] ?? '';
+    const windowSet = new Set(monthKeys);
+    const byMonth: Record<string, number> = {};
+    let baseline = 0;
+    const deps = buildMembersDeps(ctx);
+    const pageSize = 200;
+    let offset = 0;
+    // Paginate ALL members (every status) so the cumulative series counts
+    // every member ever joined. Off the hot path (~5-min cron); promote a
+    // GROUP-BY-month aggregate if a tenant nears the ~20k revisit trigger.
+    for (;;) {
+      const result = await directorySearchWithCount(
+        { tenant: deps.tenant, memberRepo: deps.memberRepo },
+        { status: ['active', 'inactive', 'archived'], limit: pageSize, offset },
+      );
+      if (!result.ok) {
+        throw new Error(`MemberSource: join distribution failed (${result.error.type})`);
+      }
+      for (const row of result.value.items) {
+        const key = monthKeyOf(row.member.createdAt, timeZone);
+        if (key < firstKey) baseline += 1; // joined before the window → baseline
+        else if (windowSet.has(key)) byMonth[key] = (byMonth[key] ?? 0) + 1;
+      }
+      offset += result.value.items.length;
+      if (result.value.items.length < pageSize || offset >= result.value.total) break;
+    }
+    return { baseline, byMonth };
   },
 };
