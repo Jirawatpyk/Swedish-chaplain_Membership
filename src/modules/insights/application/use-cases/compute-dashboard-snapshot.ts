@@ -28,13 +28,19 @@ import { cycleKeyFor } from '../../domain/insight-cycle-key';
 import type { DashboardSnapshot } from '../../domain/dashboard-snapshot';
 import type { SmartInsight } from '../../domain/smart-insight';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
-import type { InvoiceSource, MemberSource } from '../ports/source-ports';
+import type {
+  BroadcastConsumptionSource,
+  InvoiceSource,
+  MemberSource,
+} from '../ports/source-ports';
 import type { SnapshotRepo } from '../ports/snapshot-repo';
 import type { ClockPort } from '../ports/clock-port';
 
 export interface ComputeDashboardSnapshotDeps {
   readonly memberSource: MemberSource;
   readonly invoiceSource: InvoiceSource;
+  /** Broadcasts awaiting approval (FR-002 / AS-2); only the count is needed at US1. */
+  readonly broadcastSource: Pick<BroadcastConsumptionSource, 'countAwaitingApproval'>;
   readonly snapshotRepo: SnapshotRepo;
   readonly dismissalRepo: InsightDismissalRepo;
   readonly clock: ClockPort;
@@ -58,12 +64,13 @@ export async function computeDashboardSnapshot(
     );
 
     // Source reads self-scope (each call runs in its own tenant tx).
-    const [statusCounts, atRisk, ytdPaidRevenueSatang, overdueInvoices] =
+    const [statusCounts, atRisk, ytdPaidRevenueSatang, overdueInvoices, broadcastsAwaitingApproval] =
       await Promise.all([
         deps.memberSource.countByStatus(ctx),
         deps.memberSource.countAtRisk(ctx),
         deps.invoiceSource.getYtdPaidRevenueSatang(ctx, year),
         deps.invoiceSource.countOverdue(ctx),
+        deps.broadcastSource.countAwaitingApproval(ctx),
       ]);
     const total = statusCounts.active + statusCounts.inactive + statusCounts.archived;
 
@@ -88,9 +95,9 @@ export async function computeDashboardSnapshot(
       const snap: DashboardSnapshot = {
         counts: { total, active: statusCounts.active, atRisk, overdue: overdueInvoices },
         ytdPaidRevenueSatang: ytdPaidRevenueSatang.toString(),
-        underDeliveredBenefitCount: 0, // TODO(US4): benefit aggregate
+        underDeliveredBenefitCount: 0, // benefit aggregate lands with US4
         needsAttention: {
-          broadcastsAwaitingApproval: 0, // TODO: needs a broadcasts barrel count export
+          broadcastsAwaitingApproval,
           overdueInvoices,
           atRiskMembers: atRisk,
         },

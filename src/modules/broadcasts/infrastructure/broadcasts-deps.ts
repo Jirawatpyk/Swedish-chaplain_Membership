@@ -23,6 +23,8 @@ import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
+import { makeDrizzleBroadcastApprovalCounter } from './db/drizzle-broadcast-approval-counter';
+import type { BroadcastApprovalCounter } from '../application/ports/broadcast-approval-counter';
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
@@ -62,6 +64,16 @@ import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/
 export const systemClock: ClockPort = {
   now: () => new Date(),
 };
+
+/**
+ * F9 dashboard cross-module read — counts broadcasts awaiting approval for the
+ * tenant. Consumed by the insights module's snapshot compute (FR-002 / AS-2).
+ */
+export function makeBroadcastApprovalCounter(
+  tenantId: string,
+): BroadcastApprovalCounter {
+  return makeDrizzleBroadcastApprovalCounter(tenantId);
+}
 
 export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
   const tenant = asTenantContext(tenantId);

@@ -17,7 +17,7 @@ One row per tenant; the cached operations-dashboard snapshot.
 | Column | Type | Notes |
 |--------|------|-------|
 | `tenant_id` | `text` PK | one row per tenant; RLS key |
-| `metrics` | `jsonb NOT NULL` | typed `DashboardSnapshot` (counts, YTD revenue, needs-attention, under-delivered-benefit count, top insights) |
+| `metrics` | `jsonb NOT NULL` | typed `DashboardSnapshot` (counts, YTD revenue, needs-attention, under-delivered-benefit count, top insights, **`revenueTrend[12]`** {month, satang} + **`memberGrowth[]`** {month, cumulative} + current status breakdown — FR-001a charts; computed in the snapshot job, no per-load aggregation) |
 | `computed_at` | `timestamptz NOT NULL` | the "as of" time shown in UI (FR-005) |
 | `stale` | `boolean NOT NULL DEFAULT false` | set true by event-triggers; coordinator prioritises stale rows |
 | `refresh_started_at` | `timestamptz` | claim marker to avoid concurrent refresh |

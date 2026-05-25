@@ -250,7 +250,37 @@
         "title": "กิจกรรมล่าสุด",
         "empty": "ยังไม่มีกิจกรรมล่าสุด",
         "refresh": "รีเฟรช",
-        "refreshed": "รีเฟรชกิจกรรมแล้ว"
+        "refreshed": "รีเฟรชกิจกรรมแล้ว",
+        "events": {
+          "member_created": "สร้างสมาชิก",
+          "member_updated": "อัปเดตสมาชิก",
+          "member_archived": "เก็บสมาชิกเข้าคลัง",
+          "member_undeleted": "กู้คืนสมาชิก",
+          "member_status_changed": "เปลี่ยนสถานะสมาชิก",
+          "member_plan_changed": "เปลี่ยนแพ็กเกจสมาชิก",
+          "plan_created": "สร้างแพ็กเกจ",
+          "plan_updated": "อัปเดตแพ็กเกจ",
+          "plan_activated": "เปิดใช้งานแพ็กเกจ",
+          "plan_deactivated": "ปิดใช้งานแพ็กเกจ",
+          "invoice_issued": "ออกใบแจ้งหนี้",
+          "invoice_paid": "ชำระใบแจ้งหนี้แล้ว",
+          "invoice_voided": "ยกเลิกใบแจ้งหนี้",
+          "invoice_credited": "ออกใบลดหนี้ให้ใบแจ้งหนี้",
+          "credit_note_issued": "ออกใบลดหนี้",
+          "payment_succeeded": "ชำระเงินสำเร็จ",
+          "payment_failed": "ชำระเงินไม่สำเร็จ",
+          "refund_succeeded": "คืนเงินสำเร็จ",
+          "broadcast_approved": "อนุมัติอีเมล",
+          "broadcast_sent": "ส่งอีเมลแล้ว",
+          "broadcast_rejected": "ปฏิเสธอีเมล",
+          "sign_in_success": "เข้าสู่ระบบ",
+          "password_changed": "เปลี่ยนรหัสผ่าน",
+          "account_created": "สร้างบัญชี",
+          "directory_listing_updated": "อัปเดตข้อมูลไดเรกทอรี",
+          "data_export_generated": "สร้างไฟล์ส่งออกข้อมูล",
+          "smart_insight_dismissed": "ปิดข้อมูลเชิงลึก",
+          "dashboard_viewed": "เปิดดูแดชบอร์ด"
+        }
       }
     },
     "home": {
@@ -683,6 +713,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
+        "sortByEngagement": "เรียงตามการมีส่วนร่วม",
         "columns": {
           "company": "บริษัท",
           "country": "ประเทศ",

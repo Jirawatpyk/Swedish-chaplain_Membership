@@ -21,6 +21,7 @@ import {
 import { dashboardMetricsCache, smartInsightDismissals } from '@/modules/insights/infrastructure/db/schema-insights';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
@@ -237,6 +238,26 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
         invoiceRow({ seq: 3, status: 'issued', dueDate: '2026-02-14', totalSatang: 70_000n }),
         invoiceRow({ seq: 4, status: 'issued', dueDate: '2099-12-31', totalSatang: 70_000n }),
       ]);
+      // 1 submitted broadcast → broadcastsAwaitingApproval = 1 (AS-2).
+      await tx.insert(broadcasts).values({
+        tenantId: tenant.ctx.slug,
+        broadcastId: randomUUID(),
+        requestedByMemberId: memberId,
+        requestedByMemberPlanIdSnapshot: planId,
+        submittedByUserId: admin.userId,
+        actorRole: 'member_self_service',
+        subject: 'F9 awaiting-approval seed',
+        bodyHtml: '<p>body</p>',
+        bodySource: 'body',
+        fromName: 'Chamber',
+        replyToEmail: 'reply@example.com',
+        segmentType: 'all_members',
+        segmentParams: null,
+        customRecipientEmails: null,
+        estimatedRecipientCount: 100,
+        status: 'submitted',
+        submittedAt: new Date(),
+      });
     });
   }, 180_000);
 
@@ -244,11 +265,12 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
     const slug = tenant.ctx.slug;
     await db.delete(dashboardMetricsCache).where(eq(dashboardMetricsCache.tenantId, slug)).catch(() => {});
     await db.delete(invoices).where(eq(invoices.tenantId, slug)).catch(() => {});
+    await db.delete(broadcasts).where(eq(broadcasts.tenantId, slug)).catch(() => {});
     await db.delete(members).where(eq(members.tenantId, slug)).catch(() => {});
     await tenant.cleanup().catch(() => {});
   }, 120_000);
 
-  it('reports non-zero YTD paid revenue (AS-1) and overdue count (AS-2)', async () => {
+  it('reports non-zero YTD revenue (AS-1), overdue + broadcasts-awaiting counts (AS-2)', async () => {
     const result = await computeDashboardSnapshot(
       tenant.ctx,
       makeComputeDashboardSnapshotDeps(tenant.ctx.slug),
@@ -258,6 +280,7 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
       expect(result.value.ytdPaidRevenueSatang).toBe('150000');
       expect(result.value.counts.overdue).toBe(1);
       expect(result.value.needsAttention.overdueInvoices).toBe(1);
+      expect(result.value.needsAttention.broadcastsAwaitingApproval).toBe(1);
     }
   });
 });

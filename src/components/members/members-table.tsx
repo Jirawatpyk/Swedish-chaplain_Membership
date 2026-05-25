@@ -54,7 +54,14 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from '@/components/ui/tooltip';
-import { ArchiveIcon, PencilIcon, PencilLineIcon } from 'lucide-react';
+import {
+  ArchiveIcon,
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  PencilIcon,
+  PencilLineIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 // F8 Phase 6 Wave H — risk-score badge for the directory column. F8
 // shared primitive lives at src/components/renewals/risk-score-badge.tsx
@@ -134,6 +141,44 @@ type Props = {
 };
 
 const columnHelper = createColumnHelper<MembersTableRow>();
+
+/**
+ * F9 (FR-007a) — server-side sort control for the engagement column. Toggles
+ * the `?sort=engagement&order=desc|asc` URL params (resetting to page 1); the
+ * server re-orders by the inverted F8 risk score. Own client hooks so the
+ * columns `useMemo` stays keyed only on `enableSelection`.
+ */
+function EngagementSortHeader() {
+  const t = useTranslations('admin.members.directory');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const active = searchParams.get('sort') === 'engagement';
+  const order = searchParams.get('order');
+  const nextOrder = active && order === 'desc' ? 'asc' : 'desc';
+
+  function onSort() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('sort', 'engagement');
+    params.set('order', nextOrder);
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  return (
+    <button
+      type="button"
+      onClick={onSort}
+      className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={t('sortByEngagement')}
+      {...(active ? { 'aria-sort': order === 'asc' ? 'ascending' : 'descending' } : {})}
+    >
+      {t('columns.engagement')}
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
+  );
+}
 
 /**
  * C7 round-10 ui-design-specialist — column-header affordance for the
@@ -697,10 +742,10 @@ export function MembersTable({
     }),
     // F9 (T034) — Engagement Score column: positive-framed inverse of the F8
     // risk score, projected on read. Non-colour encoding (numeric score + text
-    // band label, FR-035). Sort/filter reuses the server-side `?risk_band=`
-    // param (data-model § 6); nulls render "—" (and sort last server-side).
+    // band label, FR-035). Server-side sortable via `?sort=engagement&order=`
+    // (FR-007a); nulls render "—" (and sort last server-side).
     columnHelper.accessor('engagement', {
-      header: () => t('columns.engagement'),
+      header: () => <EngagementSortHeader />,
       cell: (info) => {
         // G1: engagement is PROJECTED SERVER-SIDE in the page row-mapping via
         // the canonical `projectEngagementScore` (@/modules/insights) — this

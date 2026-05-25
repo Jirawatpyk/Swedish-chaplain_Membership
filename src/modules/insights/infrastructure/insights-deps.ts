@@ -18,11 +18,13 @@ import { makeDrizzleInsightDismissalRepo } from './repos/drizzle-insight-dismiss
 import { makeDrizzleSnapshotRepo } from './repos/drizzle-snapshot-repo';
 import { memberSourceAdapter } from './sources/member-source-adapter';
 import { invoiceSourceAdapter } from './sources/invoice-source-adapter';
+import { broadcastSourceAdapter } from './sources/broadcast-source-adapter';
 import { activityFeedSourceAdapter } from './sources/activity-feed-adapter';
 import { computeDashboardSnapshot } from '../application/use-cases/compute-dashboard-snapshot';
 import type { DismissInsightDeps } from '../application/use-cases/dismiss-insight';
 import type { ComputeDashboardSnapshotDeps } from '../application/use-cases/compute-dashboard-snapshot';
 import type { ListDashboardDeps } from '../application/use-cases/list-dashboard';
+import type { ListSmartInsightsDeps } from '../application/use-cases/list-smart-insights';
 import type { ActivityFeedDeps } from '../application/use-cases/activity-feed-query';
 
 /** Shared wall-clock port impl (injected so use-cases stay deterministic in tests). */
@@ -47,6 +49,7 @@ export function makeComputeDashboardSnapshotDeps(
   return {
     memberSource: memberSourceAdapter,
     invoiceSource: invoiceSourceAdapter,
+    broadcastSource: broadcastSourceAdapter,
     snapshotRepo: makeDrizzleSnapshotRepo(tenantId),
     dismissalRepo: makeDrizzleInsightDismissalRepo(tenantId),
     clock: systemClock,
@@ -61,6 +64,16 @@ export function makeListDashboardDeps(tenantId: string): ListDashboardDeps {
     recompute: (ctx) =>
       computeDashboardSnapshot(ctx, makeComputeDashboardSnapshotDeps(tenantId)),
     audit: insightsAuditAdapter,
+  };
+}
+
+/** US1 (T028/T031) — `listSmartInsights` (live dismissal-filtered) deps. */
+export function makeListSmartInsightsDeps(tenantId: string): ListSmartInsightsDeps {
+  return {
+    snapshotRepo: makeDrizzleSnapshotRepo(tenantId),
+    dismissalRepo: makeDrizzleInsightDismissalRepo(tenantId),
+    clock: systemClock,
+    tenantTimezone: env.tenant.timezone,
   };
 }
 

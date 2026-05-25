@@ -57,7 +57,9 @@ export function InsightDismissButton({
       type="button"
       variant="ghost"
       size="icon"
-      className="size-7 shrink-0"
+      // 28px visual, but a `::before` overlay extends the tap target to ~44px
+      // (WCAG 2.5.5 mobile) without affecting the row layout (absolute pseudo).
+      className="relative size-7 shrink-0 before:absolute before:-inset-2 before:content-['']"
       aria-label={label}
       disabled={isPending}
       onClick={onDismiss}

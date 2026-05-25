@@ -337,6 +337,13 @@ audit-logged.
   dashboard that presents, for the current tenant, headline membership counts
   (total, active, at-risk, overdue), year-to-date paid revenue, and an indication
   of unused/under-delivered benefits.
+- **FR-001a**: The dashboard MUST present two trend charts — a **12-month revenue
+  trend** (monthly paid revenue, tenant-timezone calendar months) and a **member
+  growth / status** chart (cumulative members by join month + current active/at-risk/
+  overdue breakdown) — derived from the cached snapshot. Each chart MUST ship an
+  **accessible data-table equivalent** (visually-hidden `<table>`) and MUST NOT rely on
+  colour alone (WCAG 1.4.1). Charts are finance-bearing → redacted/omitted for the
+  manager role per FR-007 where they expose revenue.
 - **FR-002**: The dashboard MUST present a "needs attention" area aggregating the
   following actionable item types at launch — **broadcasts awaiting approval, overdue
   invoices, and at-risk members** — each with a count and a link to the corresponding

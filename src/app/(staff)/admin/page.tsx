@@ -29,8 +29,10 @@ import { errKind } from '@/lib/log-id';
 import {
   listDashboard,
   activityFeedQuery,
+  listSmartInsights,
   makeListDashboardDeps,
   makeActivityFeedDeps,
+  makeListSmartInsightsDeps,
 } from '@/modules/insights';
 
 /**
@@ -47,6 +49,12 @@ export const metadata: Metadata = {
 };
 
 const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const;
+
+/** Neutral fallback for audit event types not yet in the i18n catalogue. */
+function humanizeEventType(eventType: string): string {
+  const words = eventType.replace(/_/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 export default async function StaffHomePage() {
   const { user } = await requireSession('staff');
@@ -203,16 +211,26 @@ export default async function StaffHomePage() {
       count: numberFmt.format(item.n),
     }));
 
-  const insightLines: readonly InsightLine[] = metrics.topInsights.map((insight) => ({
+  // Live-filter insights against current dismissals (T028) so a just-dismissed
+  // insight disappears on refresh without waiting for the ~5-min cron recompute.
+  const liveInsights = await listSmartInsights(tenant, makeListSmartInsightsDeps(tenant.slug));
+  const topInsights = liveInsights.ok ? liveInsights.value : metrics.topInsights;
+  const insightLines: readonly InsightLine[] = topInsights.map((insight) => ({
     key: insight.key,
     text: t(`insights.${insight.key}`, { count: insight.count }),
     ...(insight.scopeRef !== undefined ? { scopeRef: insight.scopeRef } : {}),
   }));
 
   const timeFmt = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
+  const tEvents = await getTranslations('admin.dashboard.activity.events');
   const activityItems: readonly ActivityFeedEntry[] = feed.map((item) => ({
     id: item.id,
-    summary: item.summary,
+    // Localised action label (FR-034) — resolved per-locale from the audit
+    // event type, NOT the raw English summary (which would leak to TH/SV).
+    // Uncatalogued types fall back to a humanised token (no English sentence).
+    label: tEvents.has(item.eventType)
+      ? tEvents(item.eventType)
+      : humanizeEventType(item.eventType),
     occurredAt: item.occurredAt,
     timeLabel: timeFmt.format(new Date(item.occurredAt)),
   }));

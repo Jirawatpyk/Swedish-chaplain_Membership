@@ -58,6 +58,9 @@ interface SearchParams {
   readonly page?: string;
   /** I1 round-10 — quick filter on F8-derived risk score band. */
   readonly risk_band?: string;
+  /** F9 FR-007a — engagement column sort. */
+  readonly sort?: string;
+  readonly order?: string;
 }
 
 const VALID_STATUSES = new Set(['active', 'inactive', 'archived']);
@@ -144,6 +147,11 @@ async function MembersDirectoryBody({
     query.show_archived === '1' ||
     riskBand !== undefined;
 
+  // F9 FR-007a — engagement sort (only valid sort column today).
+  const sort = query.sort === 'engagement' ? ('engagement' as const) : undefined;
+  const order =
+    query.order === 'asc' ? ('asc' as const) : query.order === 'desc' ? ('desc' as const) : undefined;
+
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page =
     Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -162,6 +170,7 @@ async function MembersDirectoryBody({
           ? { planId: query.plan_id }
           : {}),
         ...(riskBand ? { riskBand } : {}),
+        ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
         status: [...statuses],
         limit: PAGE_SIZE,
         offset,

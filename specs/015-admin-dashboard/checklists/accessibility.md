@@ -17,7 +17,7 @@ GDPR export) — *before* implementation. Tests the requirements, not the UI.
 
 ## Data Visualisation Accessibility
 
-- [x] CHK004 Is the requirement that dashboard charts render as **accessible SVG/CSS with a text/`<table>` equivalent** (no canvas-only data) stated and testable? [Clarity, research R8, Spec §FR-035] → VERIFIED 2026-05-25: research R8 + plan VI (accessible SVG + table equivalent, no canvas-only).
+- [x] CHK004 Is the requirement that dashboard charts render as **accessible SVG/CSS with a text/`<table>` equivalent** (no canvas-only data) stated and testable? [Clarity, research R8, Spec §FR-001a/FR-035] → VERIFIED 2026-05-26: FR-001a (revenue-trend + member-growth charts) MUST ship a visually-hidden `<table>` equivalent + non-colour encoding; research R8 keeps self-built SVG (no charting lib) with the `<table>` **inside** each reusable chart component (swappable internal). Tasks T038d/T038e.
 - [x] CHK005 Are non-color-dependent encodings required for the Engagement Score bands and benefit-usage bars (color is not the only signal)? [Coverage, Spec §FR-035] → RESOLVED 2026-05-25: FR-035 requires text label and/or icon/shape (WCAG 1.4.1), not colour alone.
 - [x] CHK006 Is a contrast requirement (≥4.5:1 text) stated for the new KPI cards, bands, and warning states? [Measurability, Constitution VI] → VERIFIED 2026-05-25: WCAG 2.1 AA conformance (FR-035/SC-010) mandates ≥4.5:1 text contrast.
 

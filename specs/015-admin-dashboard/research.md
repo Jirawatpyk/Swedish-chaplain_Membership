@@ -171,14 +171,34 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
 
 ## R8 — Dashboard visualisation without a charting dependency
 
-- **Decision**: Render KPIs as shadcn cards; trends/bars as **accessible inline SVG**
-  (or CSS bars) with a visually-hidden `<table>` data equivalent. No charting library.
-- **Rationale**: Constitution X (no speculative deps) + Principle VI (charts must be
-  screen-reader accessible — canvas libraries often aren't). The MVP dashboard needs
-  counts, small bars, and a sparkline at most.
-- **Alternatives rejected**: `recharts`/`visx`/`chart.js` — new dependency + a11y +
-  bundle cost not justified for the MVP metric set; revisit only if a real multi-series
-  charting need emerges.
+- **Decision**: Render KPIs as shadcn cards; the two FR-001a trend charts (**12-month
+  revenue trend** line + **member growth/status** bar) and all usage bars as
+  **self-built accessible inline SVG/CSS**, each with a visually-hidden `<table>` data
+  equivalent and non-colour encoding (WCAG 1.4.1). **No charting library.**
+- **Trend data source**: the monthly aggregates are computed in the snapshot job
+  (`computeDashboardSnapshot`) from `InvoiceSource` (monthly paid revenue, tenant-tz
+  calendar months) + `MemberSource` (members by join month + current status breakdown)
+  and **stored in the `dashboard_metrics_cache.metrics` JSONB** — so the dashboard read
+  stays a single cached row (no per-load aggregation; p95 < 1.5 s preserved). No new
+  table, no historical-snapshot store.
+- **Encapsulation (stable API, swappable internal)**: `<RevenueTrendChart>` and
+  `<MemberGrowthChart>` live in `src/components/dashboard/` with a **stable prop
+  contract** (display-ready data in — e.g. `points: {month,value}[]`, labels,
+  `redacted?` — no data fetching inside) and the visually-hidden `<table>` equivalent
+  **inside** the component. The SVG renderer is an *internal* implementation detail
+  behind that API, so a future swap to `recharts` (only if real interactivity is needed)
+  changes the component internals **without touching `/admin/page.tsx` or any caller**.
+  This is the Strategy pattern at the component seam — YAGNI-clean (SVG now) with a
+  pre-planned upgrade path.
+- **Rationale**: Constitution X (no new deps) + Principle VI (canvas/SVG chart libraries
+  are often not screen-reader accessible). Two simple charts don't justify a library; a
+  self-built SVG keeps the bundle clean (`check:bundle-budgets`) and the a11y story
+  fully in our control.
+- **Alternatives rejected (re-confirmed 2026-05-26)**: `recharts` (+`visx`/`chart.js`) —
+  considered for richer/interactive charts but rejected: ~100 KB+ dependency, bundle-
+  budget + lazy-load burden, and a default-inaccessible SVG needing the same hand-built
+  `<table>` equivalent anyway. Revisit only if true interactivity (tooltip/zoom/drill) is
+  required post-MVP.
 
 ## R9 — Smart-insight catalogue
 

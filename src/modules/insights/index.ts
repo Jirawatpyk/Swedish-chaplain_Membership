@@ -83,6 +83,10 @@ export {
   type ActivityFeedError,
   type ActivityFeedMeta,
 } from './application/use-cases/activity-feed-query';
+export {
+  listSmartInsights,
+  type ListSmartInsightsDeps,
+} from './application/use-cases/list-smart-insights';
 export type { ActivityFeedItem } from './application/ports/activity-feed-source';
 
 // --- Composition root factories (US1) -------------------------------------
@@ -90,6 +94,7 @@ export {
   makeDismissInsightDeps,
   makeComputeDashboardSnapshotDeps,
   makeListDashboardDeps,
+  makeListSmartInsightsDeps,
   makeActivityFeedDeps,
   systemClock,
 } from './infrastructure/insights-deps';

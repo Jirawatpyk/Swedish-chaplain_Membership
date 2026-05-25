@@ -10,7 +10,9 @@ import { ActivityFeedRefresh } from './activity-feed-refresh';
 
 export interface ActivityFeedEntry {
   readonly id: string;
-  readonly summary: string;
+  /** Localised event-type label (resolved per-locale in the page, FR-034) —
+   *  not the raw English audit summary, so TH/SV users see translated text. */
+  readonly label: string;
   /** ISO 8601 for the `<time dateTime>` attribute. */
   readonly occurredAt: string;
   /** Locale-formatted display label. */
@@ -43,7 +45,7 @@ export function ActivityFeed({
           <ul className="grid gap-2 text-body">
             {items.map((item) => (
               <li key={item.id} className="flex items-baseline justify-between gap-3">
-                <span>{item.summary}</span>
+                <span>{item.label}</span>
                 <time
                   dateTime={item.occurredAt}
                   className="shrink-0 text-caption text-muted-foreground tabular-nums"

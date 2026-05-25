@@ -250,7 +250,37 @@
         "title": "Recent activity",
         "empty": "No recent activity yet.",
         "refresh": "Refresh",
-        "refreshed": "Activity refreshed"
+        "refreshed": "Activity refreshed",
+        "events": {
+          "member_created": "Member created",
+          "member_updated": "Member updated",
+          "member_archived": "Member archived",
+          "member_undeleted": "Member restored",
+          "member_status_changed": "Member status changed",
+          "member_plan_changed": "Member plan changed",
+          "plan_created": "Plan created",
+          "plan_updated": "Plan updated",
+          "plan_activated": "Plan activated",
+          "plan_deactivated": "Plan deactivated",
+          "invoice_issued": "Invoice issued",
+          "invoice_paid": "Invoice paid",
+          "invoice_voided": "Invoice voided",
+          "invoice_credited": "Invoice credited",
+          "credit_note_issued": "Credit note issued",
+          "payment_succeeded": "Payment succeeded",
+          "payment_failed": "Payment failed",
+          "refund_succeeded": "Refund completed",
+          "broadcast_approved": "Broadcast approved",
+          "broadcast_sent": "Broadcast sent",
+          "broadcast_rejected": "Broadcast rejected",
+          "sign_in_success": "Signed in",
+          "password_changed": "Password changed",
+          "account_created": "Account created",
+          "directory_listing_updated": "Directory listing updated",
+          "data_export_generated": "Data export generated",
+          "smart_insight_dismissed": "Insight dismissed",
+          "dashboard_viewed": "Dashboard viewed"
+        }
       }
     },
     "home": {
@@ -683,6 +713,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "sortByEngagement": "Sort by engagement",
         "columns": {
           "company": "Company",
           "country": "Country",

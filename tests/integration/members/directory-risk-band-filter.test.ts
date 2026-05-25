@@ -269,6 +269,32 @@ describe('directorySearchWithCount riskBand filter (I1 round-10)', () => {
     expect(r2.value.total).toBe(0);
   });
 
+  it('sort=engagement desc — healthiest (lowest risk) first, null-band last (FR-007a)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const r = await directorySearchWithCount(
+      { tenant: tenant.ctx, memberRepo: deps.memberRepo },
+      { limit: 100, offset: 0, sort: 'engagement', order: 'desc' },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ids = r.value.items.map((it) => it.member.memberId as string);
+    // eng desc = risk asc: 10,35,60,65,90 then null last.
+    expect(ids).toEqual([healthy1, warning1, atRisk1, atRisk2, critical1, nullBand1]);
+  });
+
+  it('sort=engagement asc — least-engaged (highest risk) first, null-band still last', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const r = await directorySearchWithCount(
+      { tenant: tenant.ctx, memberRepo: deps.memberRepo },
+      { limit: 100, offset: 0, sort: 'engagement', order: 'asc' },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ids = r.value.items.map((it) => it.member.memberId as string);
+    // eng asc = risk desc: 90,65,60,35,10 then null last.
+    expect(ids).toEqual([critical1, atRisk2, atRisk1, warning1, healthy1, nullBand1]);
+  });
+
   // Silence the unused-import warning for `inArray` — kept available
   // for follow-up assertions that may need a bulk-id IN list.
   void inArray;

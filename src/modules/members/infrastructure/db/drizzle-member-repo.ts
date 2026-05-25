@@ -584,6 +584,19 @@ export const drizzleMemberRepo: MemberRepo = {
 
         const planNameSubquery = directoryPlanNameSubquery(tx);
 
+        // FR-007a engagement sort: engagement = 100 − risk, so engagement DESC
+        // (healthiest first, default) = risk ASC; engagement ASC = risk DESC.
+        // Unscored (null risk) always sorts last; member_id breaks ties.
+        const orderBy =
+          filter.sort === 'engagement'
+            ? [
+                filter.order === 'asc'
+                  ? sql`${members.riskScore} DESC NULLS LAST`
+                  : sql`${members.riskScore} ASC NULLS LAST`,
+                asc(members.memberId),
+              ]
+            : [sql`${members.lastActivityAt} DESC NULLS LAST`, asc(members.memberId)];
+
         const memberRows = await tx
           .select({
             row: members,
@@ -592,10 +605,7 @@ export const drizzleMemberRepo: MemberRepo = {
           })
           .from(members)
           .where(whereClause)
-          .orderBy(
-            sql`${members.lastActivityAt} DESC NULLS LAST`,
-            asc(members.memberId),
-          )
+          .orderBy(...orderBy)
           .limit(filter.limit)
           .offset(Math.max(0, filter.offset));
 

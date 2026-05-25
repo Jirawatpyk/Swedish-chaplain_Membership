@@ -250,7 +250,37 @@
         "title": "Senaste aktivitet",
         "empty": "Ingen aktivitet ännu.",
         "refresh": "Uppdatera",
-        "refreshed": "Aktiviteten uppdaterad"
+        "refreshed": "Aktiviteten uppdaterad",
+        "events": {
+          "member_created": "Medlem skapad",
+          "member_updated": "Medlem uppdaterad",
+          "member_archived": "Medlem arkiverad",
+          "member_undeleted": "Medlem återställd",
+          "member_status_changed": "Medlemsstatus ändrad",
+          "member_plan_changed": "Medlemsplan ändrad",
+          "plan_created": "Plan skapad",
+          "plan_updated": "Plan uppdaterad",
+          "plan_activated": "Plan aktiverad",
+          "plan_deactivated": "Plan inaktiverad",
+          "invoice_issued": "Faktura utfärdad",
+          "invoice_paid": "Faktura betald",
+          "invoice_voided": "Faktura makulerad",
+          "invoice_credited": "Faktura krediterad",
+          "credit_note_issued": "Kreditnota utfärdad",
+          "payment_succeeded": "Betalning genomförd",
+          "payment_failed": "Betalning misslyckades",
+          "refund_succeeded": "Återbetalning genomförd",
+          "broadcast_approved": "Utskick godkänt",
+          "broadcast_sent": "Utskick skickat",
+          "broadcast_rejected": "Utskick avvisat",
+          "sign_in_success": "Inloggad",
+          "password_changed": "Lösenord ändrat",
+          "account_created": "Konto skapat",
+          "directory_listing_updated": "Kataloguppgift uppdaterad",
+          "data_export_generated": "Dataexport genererad",
+          "smart_insight_dismissed": "Insikt avfärdad",
+          "dashboard_viewed": "Instrumentpanel visad"
+        }
       }
     },
     "home": {
@@ -683,6 +713,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+        "sortByEngagement": "Sortera efter engagemang",
         "columns": {
           "company": "Företag",
           "country": "Land",
