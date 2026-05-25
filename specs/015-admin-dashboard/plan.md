@@ -47,7 +47,10 @@ RLS+FORCE; every SQL view is `security_invoker = on` so base-table RLS applies.
 (F3, reused) · `@react-pdf/renderer` + Sarabun fonts (F4, reused for E-Book) ·
 `@vercel/blob` (F4, reused — **private mode** for F9 artefacts) · `pino` + `@vercel/otel`.
 **No new runtime npm dependencies** (Constitution X) — dashboard visualisations use
-CSS/SVG + shadcn primitives, not a charting library.
+CSS/SVG + shadcn primitives, not a charting library. *(Critique E9 — resolved
+2026-05-25)*: `@vercel/blob` supports `access:'private'` (confirmed via Vercel docs),
+so the private-delivery model needs no new dependency — at most a within-`^2` version
+bump if the installed 2.3.3 types predate the `'private'` literal (see research.md R6).
 **Storage**: Neon Postgres `ap-southeast-1` + Drizzle. **4 new tables**
 (`dashboard_metrics_cache`, `smart_insight_dismissals`, `directory_listings`,
 `export_jobs`) + **1 SQL view** (`member_timeline_v`, `security_invoker`). Vercel Blob
@@ -122,7 +125,8 @@ tens of thousands of audit events/tenant; 6 user stories across staff + member p
 - [x] **IX. Code Quality** — TS strict, ESLint clean, Conventional Commits, `[Spec Kit]`
   prefix. F9 is **security-sensitive (all PII)** → default ≥2 reviewers. **Solo-maintainer
   substitute applies** (5-check stack) — see Complexity Tracking #1.
-- [x] **X. Simplicity (YAGNI)** — no new npm deps; cache table not materialized view;
+- [x] **X. Simplicity (YAGNI)** — no new npm deps (Blob private-mode confirmed; at most a
+  within-`^2` `@vercel/blob` bump); cache table not materialized view;
   Engagement Score = inverse of F8 risk (no new pipeline); fixed insight catalogue (no
   rule engine); public-directory + compliance-tracker + auto-upgrade deferred. Justified
   complexity in Complexity Tracking #2–#4.
@@ -227,6 +231,12 @@ already there) and `auth` (owns `audit_log`). This keeps each change where the d
 owned and avoids a god-module. Presentation lives in `(staff)/admin/**` +
 `(member)/portal/**`; async work in `api/cron/insights/**`; private downloads behind an
 authenticated proxy route.
+
+**Delivery slicing (Critique P1/X1)**: F9 is a large, all-PII surface. `/speckit.tasks`
+MUST sequence delivery as two mergeable slices — **Slice A** = US1 (dashboard) + US2
+(audit) + US3 (timeline) + US4 (benefits); **Slice B** = US5 (directory + E-Book) + US6
+(GDPR export). This shortens the review blast radius per merge and lets the
+highest-value surfaces ship first; the branch MAY be split if velocity slips.
 
 ## Complexity Tracking
 

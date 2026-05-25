@@ -21,6 +21,11 @@ listDashboard(
 ): Promise<Result<DashboardView, DashboardError>>
 ```
 - Reads the cached `dashboard_metrics_cache` row; returns `{ metrics, computedAt }`.
+  The **activity feed is fetched live** (last N audit events), not from the cached row.
+- **Cold-start** (Critique E3): if no cache row exists yet (new tenant, pre-first-cron),
+  the use-case lazily computes the snapshot on this read (then caches) or returns an
+  `empty` view — it MUST NOT surface a raw error (FR-006). `snapshot_unavailable` is
+  reserved for genuine compute failure and renders the empty state + a retryable signal.
 - Role projection: `admin` → full; `manager` → finance fields redacted; `member` →
   `forbidden`. Emits `dashboard_viewed`.
 - `DashboardError`: `forbidden | snapshot_unavailable`.

@@ -42,9 +42,13 @@ session checks per existing middleware.
 
 ### `POST /api/cron/insights/process-export-jobs`
 - Claims `requested` export jobs (per-(tenant,job) advisory lock), runs
-  `processExportJob`, advances state machine. Also performs the TTL sweep
-  (`ready|delivered → expired`, deletes private Blob object). Cadence: every ~2–5 min.
-- Emits `export_job_queue_depth` (gauge) + `export_job_duration_ms` (histogram by kind).
+  `processExportJob`, advances state machine. Also performs: (a) the TTL sweep
+  (`ready|delivered → expired`, deletes private Blob object); and (b) the
+  **stuck-`processing` reclaim** (Critique E2) — jobs claimed longer ago than a timeout
+  are routed `processing → failed` (or `→ requested` within a bounded retry count).
+  Cadence: every ~2–5 min.
+- Emits `export_job_queue_depth` (gauge) + `export_job_duration_ms` (histogram by kind)
+  + `export_job_reclaimed` (counter).
 
 All cron routes: Node runtime; reject non-Bearer with rate-limited 401 + audit.
 
@@ -56,11 +60,13 @@ All cron routes: Node runtime; reject non-Bearer with rate-limited 401 + audit.
 - **Auth (defence in depth)**:
   1. Valid session required.
   2. Caller MUST be the subject member **or** an admin of the same tenant (RBAC).
-  3. `token` is a short-lived HMAC (`EXPORT_DOWNLOAD_TOKEN_SECRET`) bound to `jobId`;
-     verified constant-time against `export_jobs.download_token_hash`; rejected if past
-     `expires_at`.
+  3. `token` is a short-lived (≤ 1 h) HMAC (`EXPORT_DOWNLOAD_TOKEN_SECRET`) bound to
+     `jobId`; verified constant-time against `export_jobs.download_token_hash`; rejected
+     if past `expires_at`. The token is **single-use** (Critique E4) — invalidated on
+     first successful download; a re-download requires a fresh authenticated request
+     that mints a new token.
 - On success: streams the **private** Blob (URL never exposed to client); transitions
-  `ready → delivered`; emits `data_export_downloaded`.
+  `ready → delivered`, invalidates the token; emits `data_export_downloaded`.
 - Failure modes (each explicit, no silent fallback):
   - `401` no session · `403` wrong subject/tenant · `410` expired/swept ·
     `404` unknown job · `409` job not `ready`.

@@ -24,6 +24,16 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
   no partial event refresh, `REFRESH CONCURRENTLY` needs a unique index + still heavy;
   (b) **Fully live query per load** — violates SC-002 at scale; (c) **Nightly batch** —
   too stale for an operations dashboard.
+- **Activity feed (live, not cached)** — the recent-activity feed (FR-003) is served by
+  a **lightweight live query** of the last N audit events for the tenant, separate from
+  the cached KPI snapshot. Only the *counts/KPIs* live in `dashboard_metrics_cache`; the
+  feed stays near-real-time (a just-occurred event appears immediately) and the snapshot
+  job stays small/fast (no activity-feed churn). (Critique X2/P2.)
+- **Cold-start** — before the first snapshot refresh (new tenant), there is no cache
+  row. The dashboard MUST **lazily compute the snapshot on first read** (then cache it),
+  or render a friendly "computing…" empty state — never a raw `snapshot_unavailable`
+  error (FR-006). `snapshot_unavailable` is reserved for genuine compute failures, which
+  fall back to the empty state + a retryable signal. (Critique E3.)
 
 ## R2 — Benefit usage computation (per member, per year)
 
@@ -89,8 +99,14 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
 - **Rationale**: Matches the resolved hybrid delivery model; reuses the F8/F6
   coordinator→worker cron pattern + `verifyCronBearer`. State machine + idempotency
   satisfy Principle VIII.
+- **Stuck-`processing` reclaim (Critique E2)**: a worker crash can leave a job in
+  `processing` forever. The worker sweep MUST reclaim jobs whose `refresh_started_at` /
+  claim is older than a timeout — transitioning `processing → failed` (or back to
+  `requested` for a bounded number of retries) and emitting a metric. This mirrors F7's
+  `reconcile-stuck-sending`.
 - **Alternatives rejected**: synchronous generation in the request (timeout risk for
-  multi-file archives); a third-party queue (no new infra — Constitution X).
+  multi-file archives); a third-party queue (no new infra — Constitution X);
+  no reclaim (jobs wedge in `processing` on crash — rejected, Principle VIII).
 
 ## R6 — Private artefact delivery
 
@@ -104,8 +120,22 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
 - **Rationale**: GDPR archives + E-Book bundle PII; F4's public content-addressed Blob
   is unacceptable here (leak on URL disclosure). Private storage + authn proxy + signed
   expiring token = defence in depth.
+- **✅ Resolved (Critique E9, verified 2026-05-25 via Vercel Storage docs)**: the
+  `@vercel/blob` v2 API **supports `access: 'public' | 'private'`** on `put()` (private
+  is the current default), and `get(urlOrPathname, { access: 'private', useCache: false })`
+  streams a private object server-side. So R6's private-delivery model is supported by
+  the existing dependency line. **Action at implementation**: confirm the installed
+  `@vercel/blob@2.3.3` TS types expose the `'private'` literal; if a patch predates it,
+  bump **within `^2`** (a version bump, *not* a new dependency — the "no new deps" claim
+  holds). The F9 private adapter uses `put(..., { access:'private', addRandomSuffix:true })`
+  and reads via the authenticated proxy with `get(..., { access:'private', useCache:false })`.
+- **Token reuse (Critique E4)**: the download token is **single-use** — invalidated when
+  the job transitions to `delivered`; a re-download requires a fresh authenticated
+  request that mints a new short-lived token. TTL is short (e.g. ≤ 1 h). This bounds the
+  blast radius of a leaked link to a single fetch within a short window.
 - **Alternatives rejected**: public Blob + obscure key (security-by-obscurity, fails
-  Principle I); emailing the archive as an attachment (size + retention risk).
+  Principle I); emailing the archive as an attachment (size + retention risk);
+  reusable-until-expiry token (replayable on link leak — rejected for a PII archive).
 
 ## R7 — Audit log viewer (read side)
 

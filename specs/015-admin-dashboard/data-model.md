@@ -104,6 +104,10 @@ requested ──claim──▶ processing ──ok──▶ ready ──download
   - `ready→delivered`: first successful authenticated download.
   - `ready|delivered→expired`: TTL sweep; Blob object deleted.
   - `*→failed`: error captured; surfaced to requester (FR-037, no silent failure).
+  - **`processing→failed` reclaim** (Critique E2): the worker sweep reclaims jobs whose
+    claim (`refresh_started_at`/`updated_at`) is older than a timeout — preventing a
+    crashed worker from wedging a job in `processing` forever. Bounded retries may route
+    `processing→requested` instead; exhausted retries → `failed`. Emit a reclaim metric.
 - **Idempotency**: a duplicate request with the same `idempotency_key` returns the
   existing job rather than generating a second archive (Principle VIII).
 
@@ -143,6 +147,10 @@ engagementBand  = invert(members.risk_score_band)
 
 - Member-list sort = order by `members.risk_score` (ASC risk = DESC engagement);
   filter reuses existing `?risk_band=`. Staff-only (FR-007a).
+- **Null handling (Critique E10)**: `risk_score` is null until F8's at-risk cron runs
+  for a tenant → engagement is null. The member-list column displays "—" for null,
+  sorts nulls **last** (regardless of direction), and the engagement-band filter
+  excludes nulls. An un-scored tenant therefore never gets a broken/empty sort.
 
 ## 7. New audit event types (F9) — Principle VIII
 
@@ -192,11 +200,38 @@ smart_insight_dismissals (F9) ──suppresses──▶ insights in dashboard_me
 4. `0188_f9_export_jobs.sql` — enums (`export_kind`, `export_status`) + table + RLS+FORCE
    + unique idempotency + status index.
 5. `0189_f9_member_timeline_view.sql` — `CREATE VIEW member_timeline_v WITH
-   (security_invoker = on)` + supporting indexes on base tables if missing
-   (e.g. `payments(tenant_id, member_id, payment_date)`).
+   (security_invoker = on)` + **the full per-source keyset index set** (Critique E6 —
+   load-bearing for SC-005 and timeline pagination; do NOT leave as "if missing"):
+   - `invoices(tenant_id, member_id, invoice_date DESC)`
+   - `payments(tenant_id, member_id, payment_date DESC)`
+   - `event_registrations(tenant_id, matched_member_id, …)` joined to `events(start_date)`
+     — add `events(tenant_id, start_date DESC)` if absent
+   - `broadcasts(tenant_id, requested_by_member_id, sent_at DESC)`
+   - renewal events source index `(tenant_id, member_id, occurred_at DESC)`
+   - audit member-timeline index `audit_log((payload->>'member_id'), timestamp DESC)`
+     (extend the existing `audit_log_member_id_idx` to include `timestamp` if needed)
 6. `0190_f9_audit_query_indexes.sql` — composite indexes on `audit_log`
    `(tenant_id, event_type, timestamp DESC)` and `(tenant_id, actor_user_id, timestamp DESC)`
    to keep the audit viewer interactive at tens of thousands of rows.
+
+> **Index verification (Critique E6)**: an `EXPLAIN`-backed perf test MUST confirm both
+> the timeline view query and the audit query use index scans (no full-table sort) at
+> the SC-002 5,000-member scale before the Verify gate.
+>
+> **Cursor-correctness test (Critique E7)**: a named integration test MUST seed two
+> events with an **identical `occurred_at` from different sources** and assert the
+> keyset `(occurred_at DESC, ref_id DESC)` cursor paginates them with no loss or
+> duplication across the page boundary.
+>
+> **Rollback SQL (Critique E8)**: drizzle-kit is forward-only, so each raw-SQL artefact
+> (view, RLS policies, enums) MUST ship a documented inverse (`DROP VIEW member_timeline_v;`
+> `DROP POLICY … ; ALTER TABLE … DISABLE ROW LEVEL SECURITY;` `DROP TYPE export_kind/export_status;`)
+> in the migration's companion notes for a clean rollback during a bad deploy.
+>
+> **Cross-module SQL coupling (Critique E1)**: `member_timeline_v` references columns in
+> six module-owned tables, bypassing the TS barrels. A `check-f9-schema` CI guard MUST
+> assert the view exists + is `security_invoker`, and a per-source integration test MUST
+> fail loudly if any source column the view depends on is renamed/dropped.
 
 > **Process**: apply each migration to live Neon (`pnpm drizzle-kit migrate`) **and run
 > `pnpm test:integration` before committing** code that references new enums/columns

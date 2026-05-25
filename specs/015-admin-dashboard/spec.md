@@ -45,6 +45,8 @@ It delivers four staff-facing pillars plus their member-facing counterparts:
 - Q: Which audit events go into a member's GDPR export archive? → A: Both member-performed and member-targeted events, with third-party PII and internal-only annotations redacted via the standard role projection.
 - Q: What is the member-controllable directory listing field set? → A: A fixed, individually toggle-able set — name, tier, industry/category, short description, website, logo, location (city/country), public contact (name + email or contact-form); default private with email default-hidden. (Not per-tenant configurable in F9.)
 - Q: How large is the starter Smart-Insight catalogue at launch? → A: A fixed starter set of ≥3 insight types (unused E-Blast quota; under-used event/cultural tickets; at-risk members needing follow-up), each dismissible — no general rule engine in F9.
+- Q: (critique X3) GDPR member self-service export at launch, or admin-on-behalf only? → A: **Keep member self-service** (US6 as specced); the leaked-link risk is mitigated by the single-use, short-TTL download token (critique E4).
+- Q: (critique E5) Does a manager see staff actor identities in the audit viewer/export? → A: **Yes** — actor identity (the staff member who acted) is internal operational information visible to admins and managers; role-based redaction applies to sensitive *payload* PII fields, not to actor identity.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -313,7 +315,9 @@ audit-logged.
   the current opt-out.
 - **Deleted/archived member**: timeline, audit, and directory must handle archived
   members gracefully (history still viewable to staff where lawful; not listed in
-  published directory).
+  published directory). GDPR export of an archived member still succeeds (on-behalf);
+  an erased member's export reflects only lawfully-retained (pseudonymised) records and
+  never resurrects erased PII (FR-032a).
 - **Concurrent activity during dashboard view**: the activity feed should reflect
   reasonably recent events without requiring a full page reload to be useful.
 
@@ -332,7 +336,10 @@ audit-logged.
   members), each with a count and a link to the corresponding filtered list.
 - **FR-003**: The dashboard MUST present a recent-activity feed, in
   reverse-chronological order, showing actor, action summary, related record link,
-  and a relative timestamp, sourced from recent audit events for the tenant.
+  and a relative timestamp, sourced from recent audit events for the tenant. The
+  activity feed MUST reflect near-real-time activity (served from a live query of the
+  most recent events, **not** from the periodically-refreshed KPI snapshot, so a
+  just-occurred event is visible without waiting for the next snapshot refresh).
 - **FR-004**: The dashboard MUST present a short list of **smart insights** —
   rule-derived suggestions surfaced from existing data — each dismissible. F9 ships a
   **fixed starter catalogue of at least 3 insight types**: (1) members with unused
@@ -364,9 +371,11 @@ audit-logged.
   record/entity, and date range, individually and in combination.
 - **FR-010**: The viewer MUST be strictly read-only; it MUST NOT permit editing or
   deleting any audit entry (the log is append-only).
-- **FR-011**: The viewer MUST redact sensitive payload fields according to the
-  viewing user's role (e.g. managers/members never see fields outside their
-  projection).
+- **FR-011**: The viewer MUST redact sensitive **payload** fields according to the
+  viewing user's role (e.g. managers/members never see payload fields outside their
+  projection). **Actor identity** (the staff member who performed an audited action) is
+  internal operational information visible to admins **and** managers; it is NOT subject
+  to the payload-redaction projection.
 - **FR-012**: The viewer MUST allow exporting the currently filtered result set to a
   downloadable file, preserving UTC timestamps plus a human-readable local-time
   rendering, and the export action itself MUST be audit-logged.
@@ -439,6 +448,11 @@ audit-logged.
 - **FR-031**: Admins MUST be able to produce the same export on a member's behalf for
   a data-subject request, attributed to the admin in the audit log.
 - **FR-032**: A member MUST NOT be able to export any data other than their own.
+- **FR-032a**: An **archived** (but not erased) member MUST still be exportable — data-
+  subject portability rights persist after archival; staff produce the export
+  on-behalf. Where a member has exercised **erasure**, the export reflects only data
+  lawfully retained (e.g. pseudonymised audit/financial records kept for the statutory
+  retention period), and the system MUST NOT resurrect erased PII to satisfy an export.
 
 #### Cross-cutting (all stories)
 
@@ -545,6 +559,15 @@ audit-logged.
 - **SC-011**: Role redaction holds: a manager and a member each see **no
   finance/PII field outside their role's projection** on the dashboard, audit
   viewer, and timeline (verified by per-role assertions).
+- **SC-012** *(adoption / value KPI, tracked post-launch)*: within the first
+  membership year after launch, **≥ 50% of active members** have viewed their own
+  benefit-usage dashboard at least once, and staff act on (or dismiss) **≥ 70%** of
+  surfaced smart insights — evidence the feature changes behaviour, not just exists.
+- **SC-013** *(rollback trigger)*: the feature is rolled back by flipping
+  `FEATURE_F9_DASHBOARD` off if, in production, the dashboard error rate exceeds **2%**
+  of loads over a 15-minute window, **or** snapshot age p95 exceeds **15 minutes** (3×
+  the refresh cadence), **or** any cross-tenant leak is detected — reversible in
+  seconds without a code deploy.
 
 ## Assumptions
 
