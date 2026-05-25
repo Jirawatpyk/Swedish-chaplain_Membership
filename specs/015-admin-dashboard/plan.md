@@ -45,7 +45,8 @@ RLS+FORCE; every SQL view is `security_invoker = on` so base-table RLS applies.
 **Primary Dependencies**: Next.js 16 App Router · React 19 · Drizzle ORM · next-intl
 (EN/TH/SV) · shadcn/ui + Tailwind v4 · `@tanstack/react-table` + `@tanstack/react-virtual`
 (F3, reused) · `@react-pdf/renderer` + Sarabun fonts (F4, reused for E-Book) ·
-`@vercel/blob` (F4, reused — **private mode** for F9 artefacts) · `pino` + `@vercel/otel`.
+`@vercel/blob` (F4, reused — **private mode** for F9 artefacts) · `sharp` (F4, reused —
+directory logo re-encode/EXIF-strip, FR-025a) · `pino` + `@vercel/otel`.
 **No new runtime npm dependencies** (Constitution X) — dashboard visualisations use
 CSS/SVG + shadcn primitives, not a charting library. *(Critique E9 — resolved
 2026-05-25)*: `@vercel/blob` supports `access:'private'` (confirmed via Vercel docs),

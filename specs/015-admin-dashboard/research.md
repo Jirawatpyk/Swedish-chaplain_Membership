@@ -34,6 +34,14 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
   or render a friendly "computing…" empty state — never a raw `snapshot_unavailable`
   error (FR-006). `snapshot_unavailable` is reserved for genuine compute failures, which
   fall back to the empty state + a retryable signal. (Critique E3.)
+- **Event-triggered refresh mechanism (Critique R2-E1)** — staleness is flipped by a
+  **DB trigger on `audit_log`**: an `AFTER INSERT` trigger for the relevant event types
+  (payment recorded, broadcast approved, member status change, etc.) sets
+  `dashboard_metrics_cache.stale = true` for the row's `tenant_id`. This avoids
+  cross-module **app-layer** coupling (no payments/broadcasts/members use-case calls into
+  `insights` — Principle III), reuses the fact that all those actions already write an
+  audit row, and the coordinator (R12/cron) prioritises `stale` rows. One trigger, no new
+  inter-module dependency.
 
 ## R2 — Benefit usage computation (per member, per year)
 
@@ -83,6 +91,15 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
   cursor correctness across 6 streams is fragile; (b) a denormalised `timeline_events`
   table fed by triggers — write amplification + backfill risk for data already in source
   tables (Constitution X).
+- **i18n shape (Critique R2-E3)**: the view emits **`source` + a structured `payload`
+  only** — it does NOT synthesise localized summary strings in SQL (impossible to do
+  well across six heterogeneous sources). The **application/presentation layer maps
+  `(source, payload)` → an i18n key + interpolation values** (FR-034), so all six sources
+  render consistently in EN/TH/SV. Legacy `audit_log.summary` (a pre-stored, likely-English
+  string) is treated as a fallback display value for `source = 'audit'` rows where no
+  structured key mapping exists; new audit emissions SHOULD carry enough payload to map a
+  key. (`summary_key` in data-model §5 is therefore an *application-derived* field, not a
+  SQL column.)
 - **Risk note**: `security_invoker` requires PG15+. Neon `ap-southeast-1` is PG15/16 →
   supported. A CI guard (`check-f9-schema`) asserts the view is `security_invoker`.
 
@@ -94,8 +111,10 @@ All Technical-Context unknowns are resolved below. No `NEEDS CLARIFICATION` rema
   produces a duplicate artefact. A cron worker (`process-export-jobs`) claims queued
   jobs (per-tenant advisory lock), generates the artefact, uploads to **private** Blob,
   sets `ready` + signed-token + expiry, and notifies the requester. Audit exports (US2)
-  are **synchronous** streams (small); E-Book + GDPR archive are **async** (spec FR-037
-  hybrid).
+  stream **synchronously only up to a row cap** (e.g. ≤ 10,000); **above the cap they
+  route to the async `export_jobs` path** (kind `audit_export`) so a wide-range export
+  cannot time out or exhaust memory (critique R2-E2). E-Book + GDPR archive are always
+  **async** (spec FR-037 hybrid).
 - **Rationale**: Matches the resolved hybrid delivery model; reuses the F8/F6
   coordinator→worker cron pattern + `verifyCronBearer`. State machine + idempotency
   satisfy Principle VIII.

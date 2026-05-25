@@ -70,6 +70,12 @@ pnpm test:e2e --grep "@i18n" --workers=1      # EN/TH/SV coverage
 - **Private download proxy**: session + RBAC + signed-token + expiry all enforced; Blob
   URL never sent to client.
 - **No global `db`**: every F9 repo method threads `tx` from `runInTenant`.
+- **Benefit-usage determinism** (critique R2-E5): tests for the membership-year boundary
+  (a broadcast sent Dec-31 vs Jan-1 counts in the correct **tenant-timezone calendar
+  year**); the aggregate consumed-% = **mean of quantifiable-benefit ratios, excluding
+  unlimited**; and the 25-pt under-use warning firing exactly at the threshold.
+- **Directory logo pipeline** (FR-025a): tests that a logo upload is re-encoded +
+  EXIF-stripped, rejects oversize/non-image input, and never serves the original bytes.
 - **i18n**: EN canonical; TH + SV present (`pnpm check:i18n`); BE display for `th-TH`.
 
 ## 7. Full CI before push

@@ -77,7 +77,7 @@ the private Blob key.
 |--------|------|-------|
 | `id` | `uuid` PK | |
 | `tenant_id` | `text NOT NULL` | RLS key |
-| `kind` | `export_kind` enum | `gdpr_member_archive` \| `directory_ebook` \| `directory_json` |
+| `kind` | `export_kind` enum | `gdpr_member_archive` \| `directory_ebook` \| `directory_json` \| `audit_export` (large audit exports over the sync cap, critique R2-E2) |
 | `subject_member_id` | `uuid` | the data subject (GDPR); null for directory-wide |
 | `requested_by` | `uuid NOT NULL` | actor (member self, or admin) |
 | `requested_for_period` | `text` | e.g. membership year (idempotency component) |
@@ -123,9 +123,13 @@ sources normalised to:
 | `occurred_at` | `timestamptz` | event timestamp / invoice_date / payment_date / event start / sent_at / risk computed_at |
 | `source` | `text` | `audit` \| `invoice` \| `payment` \| `event` \| `broadcast` \| `renewal` |
 | `ref_id` | `uuid` | the source row id (cursor tiebreaker) |
-| `summary_key` | `text` | i18n key + interpolation hints (rendered in presentation) |
 | `actor_kind` | `text` | `staff` \| `member` \| `system` (for the actor filter) |
 | `payload` | `jsonb` | minimal source-specific detail (redactable) |
+
+> **`summary_key` is NOT a SQL column (critique R2-E3)**: the view emits `source` +
+> `payload` only; the **application layer** maps `(source, payload)` → an i18n key +
+> interpolation values for localized rendering (FR-034). Legacy `audit_log.summary`
+> strings are a fallback display value for `source='audit'` rows lacking a key mapping.
 
 - **`security_invoker = on`** → base-table RLS applies to the querying `chamber_app`
   role (tenant isolation holds inside the view). CI guard asserts this.
@@ -212,7 +216,9 @@ smart_insight_dismissals (F9) ──suppresses──▶ insights in dashboard_me
      (extend the existing `audit_log_member_id_idx` to include `timestamp` if needed)
 6. `0190_f9_audit_query_indexes.sql` — composite indexes on `audit_log`
    `(tenant_id, event_type, timestamp DESC)` and `(tenant_id, actor_user_id, timestamp DESC)`
-   to keep the audit viewer interactive at tens of thousands of rows.
+   to keep the audit viewer interactive at tens of thousands of rows, **plus
+   `(tenant_id, timestamp DESC)`** for the live dashboard activity-feed scan (critique
+   R2-E4).
 
 > **Index verification (Critique E6)**: an `EXPLAIN`-backed perf test MUST confirm both
 > the timeline view query and the audit query use index scans (no full-table sort) at

@@ -47,6 +47,9 @@ It delivers four staff-facing pillars plus their member-facing counterparts:
 - Q: How large is the starter Smart-Insight catalogue at launch? → A: A fixed starter set of ≥3 insight types (unused E-Blast quota; under-used event/cultural tickets; at-risk members needing follow-up), each dismissible — no general rule engine in F9.
 - Q: (critique X3) GDPR member self-service export at launch, or admin-on-behalf only? → A: **Keep member self-service** (US6 as specced); the leaked-link risk is mitigated by the single-use, short-TTL download token (critique E4).
 - Q: (critique E5) Does a manager see staff actor identities in the audit viewer/export? → A: **Yes** — actor identity (the staff member who acted) is internal operational information visible to admins and managers; role-based redaction applies to sensitive *payload* PII fields, not to actor identity.
+- Q: (critique R2-P1) What does "membership year" mean for benefit-quota counting? → A: **Calendar year in the tenant timezone** for F9 (anniversary-based deferred).
+- Q: (critique R2-P2) How is the aggregate "consumed %" for the under-use warning computed? → A: **Mean of the used ÷ entitlement ratio of each quantifiable benefit**, excluding unlimited/active-only benefits; no quantifiable benefits → no warning.
+- Q: (critique R2-P3) Is directory logo upload in F9 scope? → A: **Kept in scope** (user decision 2026-05-25) — with an explicit safe image pipeline (MIME/size/dimension limits, server re-encode + EXIF strip via F4's `sharp`, audit-logged). See FR-025a.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -406,13 +409,20 @@ audit-logged.
 - **FR-020**: The benefit view MUST represent unlimited/non-quantified benefits as
   available/active rather than as a numeric quota.
 - **FR-021**: The benefit view MUST surface an under-use warning when, for the
-  current membership year, the elapsed-year percentage minus the consumed-benefit
-  percentage is **≥ 25 percentage points** (e.g. 62% of the year elapsed with only
-  33% of benefits used → 29-pt gap → warn), with suggested actions / deep links.
+  current membership year, the elapsed-year percentage minus the **aggregate consumed
+  percentage** is **≥ 25 percentage points** (e.g. 62% of the year elapsed with only
+  33% of benefits used → 29-pt gap → warn), with suggested actions / deep links. The
+  aggregate consumed percentage is the **mean of the consumption ratio (used ÷
+  entitlement) of each *quantifiable* benefit** (e.g. E-Blasts, cultural tickets);
+  unlimited / active-only benefits are **excluded** from the aggregate (they have no
+  ratio). A member with no quantifiable benefits never triggers the warning.
 - **FR-022**: The benefit view MUST be visible to the member (own benefits) and to
   staff (any member), with staff-only actions available in the staff variant.
-- **FR-023**: The benefit view MUST scope consumption to the correct membership year
-  and not count prior-year usage against the current year.
+- **FR-023**: The benefit view MUST scope consumption to the **current membership year**,
+  defined for F9 as the **calendar year in the tenant's timezone** (consistent with the
+  benefit-usage model in `docs/smart-chamber-features.md`), and MUST NOT count prior-year
+  usage against the current year. (If plans later become anniversary-based, the year
+  definition is revisited — out of scope for F9.)
 
 #### Directory + E-Book (US5)
 
@@ -425,6 +435,12 @@ audit-logged.
   and a public contact (name + email *or* contact-form). Default MUST be private
   (opt-in to be listed) with the contact email default-hidden. The field set is fixed
   for F9 (not per-tenant configurable).
+- **FR-025a**: Logo upload (in scope for F9, critique R2-P3) MUST go through a safe
+  image pipeline: accept only image MIME types (PNG/JPEG/WebP) within a size cap (e.g.
+  ≤2 MB) and bounded dimensions; the server MUST **re-encode and strip EXIF/metadata**
+  (reusing the F4 `sharp` approach) before storing the result in Blob; the original
+  upload MUST NOT be served. Logo set/remove actions MUST be audit-logged. The logo
+  appears in published outputs only when the member toggles its visibility on.
 - **FR-026**: The system MUST generate a downloadable, deterministically formatted
   Directory E-Book (PDF) containing only opted-in members with only their chosen
   fields and the chamber branding.
@@ -606,6 +622,11 @@ audit-logged.
 - **Member-portal counterparts are in scope** (resolved 2026-05-25): member's own
   timeline, own benefit dashboard, and own GDPR export ship in F9; the org KPI
   dashboard and audit viewer stay staff-only.
+- **Member portal information architecture** (critique R2-P4): the member surfaces have
+  defined homes + nav entries so they are discoverable, not orphaned — own benefits at
+  `/portal/benefits`, own timeline at `/portal/timeline`, **directory-visibility settings
+  under `/portal/profile`**, and **GDPR data export under `/portal/account`**. Staff
+  surfaces add Dashboard / Audit / Directory nav items (role-gated).
 
 ## Dependencies
 
