@@ -41,6 +41,11 @@ One row per tenant; the cached operations-dashboard snapshot.
 - **RLS + FORCE**; unique `(tenant_id, insight_key, scope_ref, cycle_key)` to make
   dismissal idempotent.
 - **Validation**: `insight_key` ∈ fixed catalogue (Domain enum).
+- **`cycle_key` semantics are per-insight** (critique L3): quota-based insights
+  (`unused_eblast_quota`, `underused_event_tickets`) use the **membership year**
+  (calendar year, tenant TZ); the recurring `at_risk_followup` insight uses the
+  **ISO week** so a dismissal suppresses it for that week only. The Domain catalogue
+  declares each insight's cycle granularity.
 
 ## 3. `directory_listings` (new) — US5 / R-spec FR-025
 
@@ -219,6 +224,12 @@ smart_insight_dismissals (F9) ──suppresses──▶ insights in dashboard_me
    to keep the audit viewer interactive at tens of thousands of rows, **plus
    `(tenant_id, timestamp DESC)`** for the live dashboard activity-feed scan (critique
    R2-E4).
+7. `0191_f9_audit_event_types.sql` — **`ALTER TYPE <audit_event_type> ADD VALUE …`** for
+   the 14 new F9 audit event types (§7). **REQUIRED before any code emits F9 events**
+   (analyze H1) — mirrors F8's enum extension; `check:audit-events` validates enum ↔
+   taxonomy. Postgres requires `ADD VALUE` in its own migration (not the same tx as first
+   use), so this is a standalone migration and the stale-trigger (0190/0191) references
+   only values that exist post-`ADD VALUE`.
 
 > **Index verification (Critique E6)**: an `EXPLAIN`-backed perf test MUST confirm both
 > the timeline view query and the audit query use index scans (no full-table sort) at

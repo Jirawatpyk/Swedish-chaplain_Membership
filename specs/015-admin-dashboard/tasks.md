@@ -43,7 +43,8 @@ separately to bound the all-PII review blast radius.
 - [ ] T009 [P] Migration `0188_f9_export_jobs.sql` — enums `export_kind`(incl `audit_export`)/`export_status` + table + RLS+FORCE + unique idempotency + `(tenant_id,status)` index
 - [ ] T010 Migration `0189_f9_member_timeline_view.sql` — `CREATE VIEW member_timeline_v WITH (security_invoker = on)` + per-source keyset indexes (invoices/payments/events/broadcasts/renewals/audit) [data-model §9]
 - [ ] T011 Migration `0190_f9_audit_indexes_and_stale_trigger.sql` — `audit_log` indexes `(tenant_id,event_type,timestamp DESC)`, `(tenant_id,actor_user_id,timestamp DESC)`, `(tenant_id,timestamp DESC)` + `AFTER INSERT` trigger flipping `dashboard_metrics_cache.stale` for relevant event types [R2-E1/E4]
-- [ ] T012 Apply migrations (`pnpm drizzle-kit migrate`) + run `pnpm test:integration` baseline GREEN before committing schema-referencing code
+- [ ] T011a Migration `0191_f9_audit_event_types.sql` — `ALTER TYPE <audit_event_type> ADD VALUE …` for the 14 F9 audit event types (data-model §7) **before any code emits them** [analyze H1; mirrors F8 enum extension]
+- [ ] T012 Apply migrations 0185–0191 (`pnpm drizzle-kit migrate`) + run `pnpm test:integration` baseline GREEN before committing schema-referencing code
 - [ ] T013 [P] Define 14 F9 audit event types + `InsightsAuditPort` (record/recordInTx) in `src/modules/insights/application/ports/audit-port.ts` [data-model §7]
 - [ ] T014 [P] Extend `pnpm check:audit-events` to include the F9 event-type set (`scripts/`)
 - [ ] T015 Drizzle schema for the 4 tables in `src/modules/insights/infrastructure/db/schema-insights.ts`
@@ -83,7 +84,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T034 [US1] Engagement Score column on admin members list (sortable/filterable, null-last, non-colour band) in `src/app/(staff)/admin/members/page.tsx` + component
 - [ ] T035 [US1] Cron `snapshot-refresh-coordinator` + `snapshot-refresh/[tenantId]` routes in `src/app/api/cron/insights/`
 - [ ] T036 [P] [US1] i18n keys EN/TH/SV for dashboard + insights + under-delivery; BE display for `th-TH`
-- [ ] T037 [US1] Metrics `snapshot_refresh_duration_ms` + `snapshot_age_seconds` in `src/lib/metrics.ts`; emit `dashboard_viewed` + `smart_insight_dismissed`
+- [ ] T037 [US1] Metrics `snapshot_refresh_duration_ms` + `snapshot_age_seconds` in `src/lib/metrics.ts`; emit `dashboard_viewed` + `smart_insight_dismissed`; **insight action/dismiss counter** (SC-012 measurement, analyze M2)
 - [ ] T038 [US1] Nav item Dashboard (role-gated) in `src/config/nav.ts`
 
 **Checkpoint**: US1 fully functional + independently testable (MVP).
@@ -159,7 +160,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T065 [US4] Member benefit page (extend) in `src/app/(member)/portal/benefits/page.tsx`
 - [ ] T066 [US4] Staff member benefit page in `src/app/(staff)/admin/members/[memberId]/benefits/page.tsx`
 - [ ] T067 [P] [US4] `BenefitUsageCard` + `UnderUseWarning` components (non-colour bars) in `src/components/benefits/`
-- [ ] T068 [US4] Emit `member_benefit_viewed` (staff reads); i18n keys EN/TH/SV
+- [ ] T068 [US4] Emit `member_benefit_viewed` (staff reads) + **member self-view counter** (SC-012 adoption measurement, analyze M2); i18n keys EN/TH/SV
 
 **Checkpoint**: **Slice A complete** (US1–US4) — review/ship as the first increment.
 
@@ -235,6 +236,7 @@ separately to bound the all-PII review blast radius.
 - [ ] T101 cron-job.org coordinator config documented (snapshot-refresh */5 + process-export-jobs */5, Bearer CRON_SECRET) — ship-day gate
 - [ ] T102 **Cross-tenant isolation suite GREEN** across dashboard/audit/timeline/directory/export (Principle I Review-Gate blocker; T019 closure)
 - [ ] T103 [P] Update CLAUDE.md Recent Changes + add `src/modules/insights/**` to module list
+- [ ] T103a Extend `vitest.config.ts` 100%-branch coverage include with the F9 security-critical use-cases (audit-query redaction, GDPR export scoping, tenant-isolation guards, engagement projection) [analyze M1, Constitution II/IX]
 - [ ] T104 Full CI: `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:f9-schema && pnpm check:audit-events && pnpm test:integration && pnpm test:e2e`
 - [ ] T105 Co-sign `checklists/security.md` (solo-maintainer substitute footer, v1.4.2) at Review gate
 
@@ -298,4 +300,4 @@ Task: T025 DashboardSnapshot VO + SmartInsight catalogue
 - Every repo method threads `tx` from `runInTenant` — never the global `db` (CLAUDE.md gotcha).
 - Apply each migration + run integration before committing schema-referencing code (CLAUDE.md R8).
 - `--workers=1` mandatory on `pnpm test:e2e`.
-- Total: **105 tasks** across 9 phases (Slice A: T001–T068 incl. foundation; Slice B: T069–T095; Polish: T096–T105).
+- Total: **107 tasks** across 9 phases (Slice A: T001–T068 incl. foundation + T011a; Slice B: T069–T095; Polish: T096–T105 + T103a). Two tasks added post-`/speckit.analyze` (T011a audit-enum migration H1, T103a vitest coverage config M1).

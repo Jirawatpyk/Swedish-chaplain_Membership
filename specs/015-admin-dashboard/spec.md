@@ -337,9 +337,10 @@ audit-logged.
   dashboard that presents, for the current tenant, headline membership counts
   (total, active, at-risk, overdue), year-to-date paid revenue, and an indication
   of unused/under-delivered benefits.
-- **FR-002**: The dashboard MUST present a "needs attention" area aggregating
-  actionable items (e.g. broadcasts awaiting approval, overdue invoices, at-risk
-  members), each with a count and a link to the corresponding filtered list.
+- **FR-002**: The dashboard MUST present a "needs attention" area aggregating the
+  following actionable item types at launch — **broadcasts awaiting approval, overdue
+  invoices, and at-risk members** — each with a count and a link to the corresponding
+  filtered list. (The set is fixed for F9; new types are additive in later iterations.)
 - **FR-003**: The dashboard MUST present a recent-activity feed, in
   reverse-chronological order, showing actor, action summary, related record link,
   and a relative timestamp, sourced from recent audit events for the tenant. The
@@ -395,7 +396,7 @@ audit-logged.
   rendering, and the export action itself MUST be audit-logged.
 - **FR-013**: All audit queries MUST be tenant-scoped at both the application and
   database layers; cross-tenant access MUST be impossible and any probe MUST be
-  auditable.
+  auditable. (Story-local reinforcement of the cross-cutting FR-033 for the audit surface.)
 
 #### Multi-Source Member Timeline (US3)
 
@@ -445,8 +446,10 @@ audit-logged.
 #### Directory + E-Book (US5)
 
 - **FR-024**: The system MUST provide a staff-searchable internal directory of
-  members filterable by at least name, tier, industry, location, and free-text
-  keyword.
+  members. Free-text keyword search MUST match across **member name, industry/category,
+  and short description**; tier and location (city/country) are exposed as structured
+  filters. (Defines the searchable field set so the query + acceptance test are
+  deterministic.)
 - **FR-025**: Members MUST be able to control their directory visibility (listed or
   not) and toggle exposure of each field in a **fixed listing field set**: name,
   tier, industry/category, short description, website, logo, location (city/country),
@@ -576,9 +579,11 @@ audit-logged.
 
 ### Measurable Outcomes
 
-- **SC-001**: A chamber administrator can answer "how healthy is the chamber right
-  now?" (active vs at-risk vs overdue members, YTD revenue, items needing
-  attention) within **10 seconds of opening `/admin`**, without navigating away.
+- **SC-001** *(usability target, moderated test — distinct from the SC-002 latency
+  budget)*: A chamber administrator can answer "how healthy is the chamber right now?"
+  (active vs at-risk vs overdue members, YTD revenue, items needing attention) from the
+  `/admin` dashboard **without navigating away**, and ≥80% of moderated test
+  participants locate all four within ~10 seconds.
 - **SC-002**: The dashboard's primary view renders at **p95 < 1.5 seconds** (full
   interactive render) for a tenant of at least **5,000 members**, and clearly shows
   the "as of" freshness of derived numbers.
@@ -612,6 +617,8 @@ audit-logged.
   membership year after launch, **≥ 50% of active members** have viewed their own
   benefit-usage dashboard at least once, and staff act on (or dismiss) **≥ 70%** of
   surfaced smart insights — evidence the feature changes behaviour, not just exists.
+  Measurement source: a member-side benefit-view counter + insight action/dismiss
+  counters (instrumented in F9; see tasks T037/T068), supplemented by manual analytics.
 - **SC-013** *(rollback trigger)*: the feature is rolled back by flipping
   `FEATURE_F9_DASHBOARD` off if, in production, the dashboard error rate exceeds **2%**
   of loads over a 15-minute window, **or** snapshot age p95 exceeds **15 minutes** (3×
