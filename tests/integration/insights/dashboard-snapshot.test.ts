@@ -20,6 +20,7 @@ import {
 } from '@/modules/insights';
 import { dashboardMetricsCache, smartInsightDismissals } from '@/modules/insights/infrastructure/db/schema-insights';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
@@ -130,6 +131,133 @@ describe('F9 computeDashboardSnapshot — integration (T022)', () => {
       // Counts unchanged; the dismissed insight is suppressed for the cycle.
       expect(result.value.counts.atRisk).toBe(3);
       expect(result.value.topInsights).toEqual([]);
+    }
+  });
+});
+
+/**
+ * I-5 (review remediation) — proves AS-1 (YTD paid revenue) + AS-2 (overdue
+ * count) with NON-ZERO seeded invoices, not just the zero-stub assertions
+ * above. Separate tenant so the revenue/overdue figures are deterministic.
+ */
+describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
+  let tenant: TestTenant;
+  let admin: TestUser;
+  const planId = `f9-rev-${randomUUID().slice(0, 8)}`;
+  const memberId = randomUUID();
+
+  const SNAP_TENANT = {
+    legal_name_th: 'ทดสอบ',
+    legal_name_en: 'Test',
+    tax_id: '0000000000000',
+    address_th: 'Bangkok',
+    address_en: 'Bangkok',
+    logo_blob_key: null,
+  };
+  const SNAP_MEMBER = {
+    legal_name: 'Rev Co',
+    tax_id: '1234567890123',
+    address: 'Bangkok',
+    primary_contact_name: 'n',
+    primary_contact_email: 'test@example.com',
+  };
+
+  function invoiceRow(over: {
+    seq: number;
+    status: 'issued' | 'paid';
+    dueDate: string;
+    totalSatang: bigint;
+  }) {
+    const base = {
+      tenantId: tenant.ctx.slug,
+      invoiceId: randomUUID(),
+      memberId,
+      planYear: 2026,
+      planId,
+      draftByUserId: admin.userId,
+      status: over.status,
+      fiscalYear: 2026,
+      sequenceNumber: over.seq,
+      documentNumber: `F9R-2026-${String(over.seq).padStart(6, '0')}`,
+      issueDate: '2026-01-15',
+      dueDate: over.dueDate,
+      subtotalSatang: over.totalSatang,
+      vatRateSnapshot: '0.0000',
+      vatSatang: 0n,
+      totalSatang: over.totalSatang,
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: 'monthly' as const,
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: SNAP_MEMBER,
+      pdfBlobKey: `invoicing/f9rev/2026/${over.seq}.pdf`,
+      pdfSha256: 'a'.repeat(64),
+      pdfTemplateVersion: 1,
+    };
+    if (over.status === 'paid') {
+      // CHECK invoices_paid_has_payment + invoices_paid_has_receipt_status.
+      return {
+        ...base,
+        paidAt: new Date('2026-03-01T00:00:00.000Z'),
+        paymentMethod: 'manual',
+        receiptPdfStatus: 'rendered' as const,
+      };
+    }
+    return base;
+  }
+
+  beforeAll(async () => {
+    admin = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Revenue Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: admin.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'Rev Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        status: 'active',
+        riskScore: null,
+        riskScoreBand: null,
+      });
+      await tx.insert(invoices).values([
+        // 2 paid 2026 invoices → YTD revenue = 100_000 + 50_000 = 150_000 satang.
+        invoiceRow({ seq: 1, status: 'paid', dueDate: '2026-02-14', totalSatang: 100_000n }),
+        invoiceRow({ seq: 2, status: 'paid', dueDate: '2026-02-14', totalSatang: 50_000n }),
+        // 1 issued + past due → overdue. 1 issued + future due → not overdue.
+        invoiceRow({ seq: 3, status: 'issued', dueDate: '2026-02-14', totalSatang: 70_000n }),
+        invoiceRow({ seq: 4, status: 'issued', dueDate: '2099-12-31', totalSatang: 70_000n }),
+      ]);
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    const slug = tenant.ctx.slug;
+    await db.delete(dashboardMetricsCache).where(eq(dashboardMetricsCache.tenantId, slug)).catch(() => {});
+    await db.delete(invoices).where(eq(invoices.tenantId, slug)).catch(() => {});
+    await db.delete(members).where(eq(members.tenantId, slug)).catch(() => {});
+    await tenant.cleanup().catch(() => {});
+  }, 120_000);
+
+  it('reports non-zero YTD paid revenue (AS-1) and overdue count (AS-2)', async () => {
+    const result = await computeDashboardSnapshot(
+      tenant.ctx,
+      makeComputeDashboardSnapshotDeps(tenant.ctx.slug),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.ytdPaidRevenueSatang).toBe('150000');
+      expect(result.value.counts.overdue).toBe(1);
+      expect(result.value.needsAttention.overdueInvoices).toBe(1);
     }
   });
 });

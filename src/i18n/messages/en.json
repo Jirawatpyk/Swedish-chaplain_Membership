@@ -215,16 +215,23 @@
       "subtitle": "Chamber operations at a glance",
       "asOf": "As of {time}",
       "empty": "The dashboard is being prepared. Refresh in a moment.",
+      "forbidden": "You don't have access to this dashboard.",
+      "error": {
+        "title": "Couldn't load the dashboard",
+        "body": "We couldn't load your dashboard metrics. Please try again."
+      },
       "kpi": {
         "sectionLabel": "Key metrics",
         "total": "Total members",
         "active": "Active members",
         "atRisk": "At-risk members",
         "revenue": "Paid revenue (YTD)",
-        "revenueRedacted": "—"
+        "revenueRedacted": "—",
+        "revenueRedactedReason": "Not available for your role"
       },
       "needsAttention": {
         "title": "Needs attention",
+        "empty": "All clear — nothing needs attention right now.",
         "overdueInvoices": "Overdue invoices",
         "atRisk": "At-risk members",
         "broadcasts": "Broadcasts awaiting approval"
@@ -234,11 +241,16 @@
         "empty": "No insights right now — all clear.",
         "unused_eblast_quota": "{count} members have unused E-Blast quota",
         "underused_event_tickets": "{count} members have under-used event tickets",
-        "at_risk_followup": "{count} at-risk members need follow-up"
+        "at_risk_followup": "{count} at-risk members need follow-up",
+        "dismiss": "Dismiss insight",
+        "dismissed": "Insight dismissed",
+        "dismissError": "Couldn't dismiss the insight. Please try again."
       },
       "activity": {
         "title": "Recent activity",
-        "empty": "No recent activity yet."
+        "empty": "No recent activity yet.",
+        "refresh": "Refresh",
+        "refreshed": "Activity refreshed"
       }
     },
     "home": {
@@ -1004,6 +1016,9 @@
         "archivePhrase": "Archive {count, plural, one {# member} other {# members}}",
         "cancel": "Cancel",
         "confirmArchive": "Archive {count, plural, one {# member} other {# members}}",
+        "confirmInviteTitle": "Send {count, plural, one {# invitation} other {# invitations}}",
+        "confirmInviteDescription": "Portal invitation emails will be sent to the selected members so they can access the member portal.",
+        "confirmInviteAction": "Send invitations",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "unknownError": "Something went wrong.",

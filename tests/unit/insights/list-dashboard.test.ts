@@ -100,4 +100,35 @@ describe('listDashboard', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe('snapshot_unavailable');
   });
+
+  it('does NOT block the read when the audit write throws (FR-036, best-effort)', async () => {
+    // A misbehaving audit port impl that throws must never fail the dashboard
+    // read — the use-case wraps the best-effort emit in try/catch.
+    const deps = depsWith({
+      audit: {
+        record: vi.fn().mockRejectedValue(new Error('audit_log unavailable')),
+        recordInTx: vi.fn(),
+      },
+    });
+    const result = await listDashboard(meta('admin'), ctx, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.metrics.counts.total).toBe(10);
+      expect(result.value.metrics.ytdPaidRevenueSatang).toBe('240000000');
+    }
+    expect(deps.audit.record).toHaveBeenCalledOnce();
+  });
+
+  it('survives a non-Error audit rejection (errKind → "unknown")', async () => {
+    // Covers the `e instanceof Error ? … : 'unknown'` false branch — a port
+    // that rejects with a non-Error value must still not block the read.
+    const deps = depsWith({
+      audit: {
+        record: vi.fn().mockRejectedValue('string failure'),
+        recordInTx: vi.fn(),
+      },
+    });
+    const result = await listDashboard(meta('admin'), ctx, deps);
+    expect(result.ok).toBe(true);
+  });
 });

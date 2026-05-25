@@ -12,14 +12,69 @@ import {
   PageSkeletonShell,
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
+import { env } from '@/lib/env';
 
 /**
- * Staff dashboard loading state. Everything static renders real;
- * session-dependent subtitle and the list body are skeletons.
+ * Staff dashboard loading state. The skeleton MUST mirror the real page's
+ * F9-flag fork (see `page.tsx`) — rendering the F1 roadmap skeleton while the
+ * live F9 dashboard resolves would cause a layout shift / CLS spike (D6).
  */
 export default async function Loading() {
-  const tShell = await getTranslations('shell');
   const tLayout = await getTranslations('layout');
+
+  if (env.features.f9Dashboard) {
+    const t = await getTranslations('admin.dashboard');
+    return (
+      <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
+        <DetailContainer>
+          <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-56" />} />
+
+          {/* KPI grid — matches `grid gap-4 sm:grid-cols-2 lg:grid-cols-4`. */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <SkeletonBlock className="h-4 w-28" />
+                  <SkeletonBlock className="mt-2 h-9 w-20" />
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
+
+          {/* Needs-attention + insights — two equal cards. */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <SkeletonBlock className="h-5 w-40" />
+                </CardHeader>
+                <CardContent className="grid gap-2">
+                  {Array.from({ length: 3 }).map((_, j) => (
+                    <SkeletonBlock key={j} className="h-5 w-full" />
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Activity feed — full-width card. */}
+          <Card>
+            <CardHeader>
+              <SkeletonBlock className="h-5 w-40" />
+            </CardHeader>
+            <CardContent className="grid gap-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <SkeletonBlock key={i} className="h-5 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </DetailContainer>
+      </PageSkeletonShell>
+    );
+  }
+
+  // F9 off — the F1 placeholder roadmap skeleton.
+  const tShell = await getTranslations('shell');
   const t = await getTranslations('admin.home');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>

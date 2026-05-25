@@ -54,13 +54,19 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     // Admin sees the real THB revenue figure (not redacted).
     await expect(metrics.getByText(/THB|฿/)).toBeVisible();
 
-    // Needs-attention items link to the corresponding filtered lists (FR-002).
-    await expect(
-      page.getByRole('link', { name: /overdue invoices/i }),
-    ).toHaveAttribute('href', '/admin/invoices?status=issued');
-    await expect(
-      page.getByRole('link', { name: /at-risk members/i }),
-    ).toHaveAttribute('href', '/admin/members?risk_band=at-risk');
+    // Needs-attention section (FR-002). Items with a zero count are filtered
+    // out (D5) — when the tenant has none, an "all clear" state shows instead.
+    // So assert the section heading always renders, and verify each item's href
+    // only when that item is present (count > 0).
+    await expect(page.getByText('Needs attention')).toBeVisible();
+    const overdueLink = page.getByRole('link', { name: /overdue invoices/i });
+    if ((await overdueLink.count()) > 0) {
+      await expect(overdueLink).toHaveAttribute('href', '/admin/invoices?status=issued');
+    }
+    const atRiskLink = page.getByRole('link', { name: /at-risk members/i });
+    if ((await atRiskLink.count()) > 0) {
+      await expect(atRiskLink).toHaveAttribute('href', '/admin/members?risk_band=at-risk');
+    }
 
     // Smart insights + live activity feed sections.
     await expect(page.getByText('Smart insights')).toBeVisible();

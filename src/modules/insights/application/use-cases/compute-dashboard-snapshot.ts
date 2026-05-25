@@ -21,6 +21,7 @@
  */
 import { runInTenant } from '@/lib/db';
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import { cycleKeyFor } from '../../domain/insight-cycle-key';
 import type { DashboardSnapshot } from '../../domain/dashboard-snapshot';
@@ -28,10 +29,7 @@ import type { SmartInsight } from '../../domain/smart-insight';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
 import type { InvoiceSource, MemberSource } from '../ports/source-ports';
 import type { SnapshotRepo } from '../ports/snapshot-repo';
-
-export interface ClockPort {
-  now(): Date;
-}
+import type { ClockPort } from '../ports/clock-port';
 
 export interface ComputeDashboardSnapshotDeps {
   readonly memberSource: MemberSource;
@@ -103,7 +101,19 @@ export async function computeDashboardSnapshot(
     });
 
     return ok(snapshot);
-  } catch {
+  } catch (e) {
+    // Bind + log at the point of failure so a context-free `compute_failed`
+    // string isn't all an operator has during a Neon outage / source error.
+    // Log only `errKind` (constructor name) — a raw Postgres `e.message` can
+    // carry SQL params / table names (forbidden-fields hygiene). Programmer
+    // errors (TypeError/ReferenceError) surface distinctly via errKind.
+    logger.error(
+      {
+        tenantId: ctx.slug,
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+      },
+      'insights.compute_snapshot.failed',
+    );
     return err('compute_failed');
   }
 }

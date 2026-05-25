@@ -74,7 +74,9 @@ export const memberSourceAdapter: MemberSource = {
         out.push({
           memberId: row.member.memberId,
           companyName: row.member.companyName,
-          riskScoreBand: row.riskScoreBand ?? band,
+          // Rows matched the `riskBand: band` filter, so the band is `band`
+          // (an at-risk band, never 'healthy') — matches AtRiskMemberRef.
+          riskScoreBand: band,
         });
       }
     }

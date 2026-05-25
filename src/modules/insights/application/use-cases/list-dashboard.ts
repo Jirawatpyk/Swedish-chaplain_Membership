@@ -15,8 +15,10 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { insightsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { DashboardSnapshot } from '../../domain/dashboard-snapshot';
+import { f9RetentionFor } from '../ports/audit-port';
 import type { InsightsAuditPort } from '../ports/audit-port';
 import type { SnapshotRepo } from '../ports/snapshot-repo';
 import type { SnapshotError } from './compute-dashboard-snapshot';
@@ -80,16 +82,28 @@ export async function listDashboard(
     ytdPaidRevenueSatang: financeRedacted ? null : snapshot.ytdPaidRevenueSatang,
   };
 
-  // PII-read audit (FR-036) — best-effort; a write failure must not block the read.
-  await deps.audit.record({
-    tenantId: ctx.slug,
-    requestId: meta.requestId,
-    eventType: 'dashboard_viewed',
-    actorUserId: meta.actorUserId,
-    retentionYears: 5,
-    summary: `dashboard viewed by ${meta.actorRole}`,
-    payload: { actor_role: meta.actorRole },
-  });
+  // PII-read audit (FR-036) — best-effort; a write failure must not block the
+  // read. The adapter's `record` already logs+meters+swallows, but wrap here as
+  // defence-in-depth so any port impl that throws can never fail the dashboard.
+  try {
+    await deps.audit.record({
+      tenantId: ctx.slug,
+      requestId: meta.requestId,
+      eventType: 'dashboard_viewed',
+      actorUserId: meta.actorUserId,
+      retentionYears: f9RetentionFor('dashboard_viewed'),
+      summary: `dashboard viewed by ${meta.actorRole}`,
+      payload: { actor_role: meta.actorRole },
+    });
+  } catch (e) {
+    logger.error(
+      {
+        tenantId: ctx.slug,
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+      },
+      'insights.list_dashboard.audit_emit_threw',
+    );
+  }
   insightsMetrics.dashboardViewed(meta.actorRole, ctx.slug);
 
   return ok({ metrics, computedAt, financeRedacted });

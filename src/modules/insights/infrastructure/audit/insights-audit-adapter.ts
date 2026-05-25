@@ -17,6 +17,7 @@
 import { sql } from 'drizzle-orm';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { insightsMetrics } from '@/lib/metrics';
 import type {
   F9AuditEvent,
   InsightsAuditPort,
@@ -44,7 +45,18 @@ async function insertAuditRow(
 export const insightsAuditAdapter: InsightsAuditPort = {
   async recordInTx(txUnknown: unknown, event: F9AuditEvent): Promise<void> {
     // Atomic path — narrow the ORM-free `unknown` handle to a Drizzle tx and
-    // let any failure bubble so the caller's transaction rolls back.
+    // let any failure bubble so the caller's transaction rolls back. Guard the
+    // handle so an accidental null/undefined (or a non-executor object) fails
+    // loudly here rather than mid-INSERT; callers MUST pass the `tx` from
+    // `runInTenant` (never the global `db`) or the row escapes RLS context.
+    if (
+      txUnknown == null ||
+      typeof (txUnknown as { execute?: unknown }).execute !== 'function'
+    ) {
+      throw new TypeError(
+        'insightsAuditAdapter.recordInTx: expected a tenant-scoped tx executor',
+      );
+    }
     const tx = txUnknown as TenantTx;
     await insertAuditRow(tx, event);
   },
@@ -53,7 +65,9 @@ export const insightsAuditAdapter: InsightsAuditPort = {
     // Best-effort / read-side / probe path — log-and-swallow; never mask the
     // primary operation's Result with an audit-write failure. Use
     // `e.constructor.name` (not `e.message`) so Postgres errors carrying SQL
-    // params / table names never reach the log (forbidden-fields hygiene).
+    // params / table names never reach the log (forbidden-fields hygiene). The
+    // metric is the durable alert signal — pino logs roll off long before the
+    // 5-year audit retention, so a swallowed write would otherwise be invisible.
     try {
       await insertAuditRow(db, event);
     } catch (e) {
@@ -65,6 +79,7 @@ export const insightsAuditAdapter: InsightsAuditPort = {
         },
         'insights-audit-adapter: best-effort audit write failed (suppressed)',
       );
+      insightsMetrics.auditEmitFailed(event.eventType, event.tenantId);
     }
   },
 };

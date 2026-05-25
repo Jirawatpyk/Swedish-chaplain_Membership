@@ -72,6 +72,11 @@ describe('F9 activityFeedQuery — integration (T029)', () => {
       expect(summaries).not.toContain('B event');
       // Our 3 seeds are the newest (future-dated) → top 3, newest-first.
       expect(summaries.slice(0, 3)).toEqual(['A event 2', 'A event 1', 'A event 0']);
+      // AS-3 — each item carries actor + event type (not just a summary), so a
+      // regression dropping the actor projection is caught.
+      const top = result.value[0]!;
+      expect(top.actorUserId).toBeTruthy();
+      expect(top.eventType).toBe('member_created');
     }
   });
 

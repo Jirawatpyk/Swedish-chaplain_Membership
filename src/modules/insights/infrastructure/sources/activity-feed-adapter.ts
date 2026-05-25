@@ -14,10 +14,13 @@ import type {
 
 export const activityFeedSourceAdapter: ActivityFeedSource = {
   async recent(ctx: TenantContext, limit: number): Promise<readonly ActivityFeedItem[]> {
-    // listRecentAuditEvents returns Result<…, never> → always ok.
     const result = await listRecentAuditEvents({ limit }, ctx, {
       auditRead: auditReadAdapter,
     });
+    // On a DB read failure the use-case has already logged the cause; the
+    // activity feed is the least-critical dashboard widget, so degrade to an
+    // empty feed rather than propagating a throw that would 500 the whole
+    // dashboard. Intentional graceful degradation (not a dead branch).
     if (!result.ok) return [];
     return result.value.map((e) => ({
       id: e.id,

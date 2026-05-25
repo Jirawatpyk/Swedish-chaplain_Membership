@@ -16,8 +16,10 @@ import { insightsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import { cycleKeyFor } from '../../domain/insight-cycle-key';
 import { isInsightKey, type InsightKey } from '../../domain/smart-insight';
+import { f9RetentionFor } from '../ports/audit-port';
 import type { InsightsAuditPort } from '../ports/audit-port';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
+import type { ClockPort } from '../ports/clock-port';
 
 export type InsightsActorRole = 'admin' | 'manager' | 'member';
 
@@ -31,10 +33,6 @@ export interface DismissInsightMeta {
   readonly actorUserId: string;
   readonly actorRole: InsightsActorRole;
   readonly requestId: string;
-}
-
-export interface ClockPort {
-  now(): Date;
 }
 
 export interface DismissInsightDeps {
@@ -73,7 +71,7 @@ export async function dismissInsight(
       requestId: meta.requestId,
       eventType: 'smart_insight_dismissed',
       actorUserId: meta.actorUserId,
-      retentionYears: 5,
+      retentionYears: f9RetentionFor('smart_insight_dismissed'),
       summary: `insight ${insightKey} dismissed for cycle ${cycleKey}${inserted ? '' : ' (idempotent replay)'}`,
       payload: { insight_key: insightKey, scope_ref: scopeRef, cycle_key: cycleKey },
     });

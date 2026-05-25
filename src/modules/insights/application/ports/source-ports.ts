@@ -30,6 +30,7 @@
  * pin their exact needs; that is the intended evolution point for these ports.
  */
 import type { TenantContext } from '@/modules/tenants';
+import type { RiskBand } from '../../domain/engagement-score';
 
 /** Membership counts by lifecycle status for the dashboard headline (FR-001). */
 export interface MemberStatusCounts {
@@ -42,8 +43,8 @@ export interface MemberStatusCounts {
 export interface AtRiskMemberRef {
   readonly memberId: string;
   readonly companyName: string;
-  /** 'warning' | 'at-risk' | 'critical' (band; never the raw score in the ref). */
-  readonly riskScoreBand: string;
+  /** The at-risk band (a healthy member is never surfaced here). */
+  readonly riskScoreBand: Exclude<RiskBand, 'healthy'>;
 }
 
 export interface MemberSource {

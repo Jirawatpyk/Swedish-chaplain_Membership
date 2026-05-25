@@ -15,9 +15,12 @@ export interface NeedsAttentionItem {
 
 export function NeedsAttentionList({
   title,
+  emptyLabel,
   items,
 }: {
   readonly title: string;
+  /** Shown when no item needs attention (all counts zero) — FR-006 "all clear". */
+  readonly emptyLabel: string;
   readonly items: readonly NeedsAttentionItem[];
 }) {
   return (
@@ -26,16 +29,20 @@ export function NeedsAttentionList({
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <ul className="grid gap-2 text-body">
-          {items.map((item) => (
-            <li key={item.id} className="flex items-center justify-between gap-3">
-              <Link href={item.href} className="hover:underline">
-                {item.label}
-              </Link>
-              <span className="tabular-nums font-medium">{item.count}</span>
-            </li>
-          ))}
-        </ul>
+        {items.length === 0 ? (
+          <p className="text-body text-muted-foreground">{emptyLabel}</p>
+        ) : (
+          <ul className="grid gap-2 text-body">
+            {items.map((item) => (
+              <li key={item.id} className="flex items-center justify-between gap-3">
+                <Link href={item.href} className="hover:underline">
+                  {item.label}
+                </Link>
+                <span className="tabular-nums font-medium">{item.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

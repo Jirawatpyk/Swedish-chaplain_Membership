@@ -36,10 +36,20 @@ async function expectNoAxeViolations(page: Page, surface: string): Promise<void>
 }
 
 test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
-  test.skip(
-    !ADMIN_EMAIL || !ADMIN_PASSWORD || !F9_ENABLED,
-    'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD + FEATURE_F9_DASHBOARD=true to run F9 axe scans',
-  );
+  // Fail-hard gating (not test.skip) — a missing flag/creds must not let an
+  // a11y run masquerade as green ("skip is not pass"). Matches f9-dashboard.spec.
+  test.beforeAll(() => {
+    if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+      throw new Error(
+        'E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD missing — set them in .env.local before running this suite.',
+      );
+    }
+    if (!F9_ENABLED) {
+      throw new Error(
+        'FEATURE_F9_DASHBOARD=false — set FEATURE_F9_DASHBOARD=true in .env.local before running this suite.',
+      );
+    }
+  });
 
   test('operations dashboard (/admin)', async ({ page }) => {
     await signInAsAdmin(page);

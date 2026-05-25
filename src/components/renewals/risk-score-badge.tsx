@@ -15,7 +15,11 @@
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
-export type RiskBand = 'healthy' | 'warning' | 'at-risk' | 'critical';
+// Single source of truth — the F8 at-risk band lives in the insights domain
+// (re-exported here for existing consumers). Type-only, so this client
+// component pulls no server graph from the @/modules/insights barrel.
+import type { RiskBand } from '@/modules/insights';
+export type { RiskBand };
 
 const VARIANT_CLASSES: Record<RiskBand, string> = {
   healthy:

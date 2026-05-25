@@ -3611,4 +3611,20 @@ export const insightsMetrics = {
       ).add(1, { insight_key: insightKey, tenant: tenantId });
     });
   },
+  /**
+   * Mirrors `authMetrics.auditMissing` / `broadcastsMetrics.auditEmitFailed` —
+   * incremented when a best-effort F9 audit write (e.g. the `dashboard_viewed`
+   * PII-read trail, FR-036) is swallowed by the adapter. The audit_log is a
+   * Principle I append-only compliance surface with 5-year retention; a pino
+   * log rolls off in ~30 days, so this counter is the only durable alert signal
+   * for sustained forensic-trail loss. Any non-zero sustained rate pages on-call.
+   */
+  auditEmitFailed(eventType: string, tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'insights_audit_emit_failed_total',
+        'Expected F9 audit events that failed to commit (best-effort path)',
+      ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    });
+  },
 } as const;

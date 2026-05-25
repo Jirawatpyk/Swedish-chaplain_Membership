@@ -18,7 +18,7 @@ import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { insightsMetrics } from '@/lib/metrics';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,9 +29,14 @@ export async function POST(
 ): Promise<NextResponse> {
   const startedAt = Date.now();
 
-  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
-    return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
-  }
+  // Shared cron-auth gate: Bearer verify + IP rate-limit + probe audit on a
+  // rejected 401 (Principle I § 4 — no silent 401s). Matches the F8 coordinators.
+  const gate = await gateCronBearerOrRespond(request, {
+    route: 'insights:snapshot-refresh',
+    metricsCounter: () =>
+      insightsMetrics.auditEmitFailed('cron_bearer_auth_rejected', env.tenant.slug),
+  });
+  if (gate) return gate;
 
   if (!env.features.f9Dashboard) {
     return NextResponse.json({ skipped: true, reason: 'feature_disabled' }, { status: 200 });
@@ -45,26 +50,42 @@ export async function POST(
     return NextResponse.json({ error: { code: 'invalid_tenant' } }, { status: 400 });
   }
 
-  const result = await computeDashboardSnapshot(
-    tenant,
-    makeComputeDashboardSnapshotDeps(tenant.slug),
-  );
-  const durationMs = Date.now() - startedAt;
+  try {
+    const result = await computeDashboardSnapshot(
+      tenant,
+      makeComputeDashboardSnapshotDeps(tenant.slug),
+    );
+    const durationMs = Date.now() - startedAt;
 
-  if (!result.ok) {
+    if (!result.ok) {
+      insightsMetrics.snapshotRefresh('failed', tenant.slug);
+      logger.error(
+        { tenantId: tenant.slug, error: result.error, durationMs },
+        'cron.insights.snapshot_refresh.compute_failed',
+      );
+      return NextResponse.json({ refreshed: false, durationMs }, { status: 200 });
+    }
+
+    insightsMetrics.snapshotRefreshDurationMs(durationMs);
+    insightsMetrics.snapshotRefresh('ok', tenant.slug);
+    logger.info(
+      { tenantId: tenant.slug, durationMs },
+      'cron.insights.snapshot_refresh.tick_complete',
+    );
+    return NextResponse.json({ refreshed: true, durationMs }, { status: 200 });
+  } catch (e) {
+    // Defence-in-depth: deps construction / compute throwing must return the
+    // same 200 failure shape (uniform cron retry semantics) + a metric signal.
+    const durationMs = Date.now() - startedAt;
     insightsMetrics.snapshotRefresh('failed', tenant.slug);
     logger.error(
-      { tenantId: tenant.slug, error: result.error, durationMs },
-      'cron.insights.snapshot_refresh.compute_failed',
+      {
+        tenantId: tenant.slug,
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        durationMs,
+      },
+      'cron.insights.snapshot_refresh.threw',
     );
     return NextResponse.json({ refreshed: false, durationMs }, { status: 200 });
   }
-
-  insightsMetrics.snapshotRefreshDurationMs(durationMs);
-  insightsMetrics.snapshotRefresh('ok', tenant.slug);
-  logger.info(
-    { tenantId: tenant.slug, durationMs },
-    'cron.insights.snapshot_refresh.tick_complete',
-  );
-  return NextResponse.json({ refreshed: true, durationMs }, { status: 200 });
 }

@@ -30,6 +30,8 @@
  * never member PII (names, emails, raw bodies).
  */
 
+import type { InsightKey } from '../../domain/smart-insight';
+
 export const F9_AUDIT_EVENT_TYPES = [
   // PII-read context — staff opens the operations dashboard (US1).
   'dashboard_viewed',
@@ -82,7 +84,8 @@ export interface F9AuditPayloadByType {
     readonly membership_year: number;
   };
   smart_insight_dismissed: {
-    readonly insight_key: string;
+    /** Post-validation insight key (narrowed by `isInsightKey` at the emit site). */
+    readonly insight_key: InsightKey;
     readonly scope_ref: string;
     readonly cycle_key: string;
   };

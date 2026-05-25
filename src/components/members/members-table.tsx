@@ -62,7 +62,7 @@ import { toast } from 'sonner';
 import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
 // to the insights server graph). The engagement value is projected server-side.
-import type { EngagementBand } from '@/modules/insights';
+import type { EngagementBand, RiskBand } from '@/modules/insights';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 import { CountryDisplay } from './country-display';
 import {
@@ -91,9 +91,7 @@ export type MembersTableRow = {
    * Kept under the legacy `member_risk_flag` accessor name for column
    * id stability across F3 → F8 transition.
    */
-  readonly member_risk_flag:
-    | { score: number; band: 'healthy' | 'warning' | 'at-risk' | 'critical' }
-    | null;
+  readonly member_risk_flag: { score: number; band: RiskBand } | null;
   /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the

@@ -215,16 +215,23 @@
       "subtitle": "Handelskammarens verksamhet i överblick",
       "asOf": "Per {time}",
       "empty": "Instrumentpanelen förbereds. Uppdatera om en stund.",
+      "forbidden": "Du har inte åtkomst till den här instrumentpanelen.",
+      "error": {
+        "title": "Kunde inte ladda instrumentpanelen",
+        "body": "Vi kunde inte ladda dina instrumentpanelsdata. Försök igen."
+      },
       "kpi": {
         "sectionLabel": "Nyckeltal",
         "total": "Totalt antal medlemmar",
         "active": "Aktiva medlemmar",
         "atRisk": "Medlemmar i riskzonen",
         "revenue": "Betalda intäkter (i år)",
-        "revenueRedacted": "—"
+        "revenueRedacted": "—",
+        "revenueRedactedReason": "Inte tillgängligt för din roll"
       },
       "needsAttention": {
         "title": "Kräver åtgärd",
+        "empty": "Allt klart – inget behöver åtgärdas just nu.",
         "overdueInvoices": "Förfallna fakturor",
         "atRisk": "Medlemmar i riskzonen",
         "broadcasts": "Utskick som väntar på godkännande"
@@ -234,11 +241,16 @@
         "empty": "Inga insikter just nu – allt är i ordning.",
         "unused_eblast_quota": "{count} medlemmar har oanvänd E-Blast-kvot",
         "underused_event_tickets": "{count} medlemmar har underutnyttjade evenemangsbiljetter",
-        "at_risk_followup": "{count} medlemmar i riskzonen behöver följas upp"
+        "at_risk_followup": "{count} medlemmar i riskzonen behöver följas upp",
+        "dismiss": "Avfärda insikt",
+        "dismissed": "Insikt avfärdad",
+        "dismissError": "Kunde inte avfärda insikten. Försök igen."
       },
       "activity": {
         "title": "Senaste aktivitet",
-        "empty": "Ingen aktivitet ännu."
+        "empty": "Ingen aktivitet ännu.",
+        "refresh": "Uppdatera",
+        "refreshed": "Aktiviteten uppdaterad"
       }
     },
     "home": {
@@ -1004,6 +1016,9 @@
         "archivePhrase": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
         "cancel": "Avbryt",
         "confirmArchive": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "confirmInviteTitle": "Skicka {count, plural, one {# inbjudan} other {# inbjudningar}}",
+        "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
+        "confirmInviteAction": "Skicka inbjudningar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "unknownError": "Något gick fel.",

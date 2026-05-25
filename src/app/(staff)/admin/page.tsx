@@ -20,6 +20,7 @@ import {
   ActivityFeed,
   type ActivityFeedEntry,
 } from '@/components/dashboard/activity-feed';
+import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -95,21 +96,31 @@ export default async function StaffHomePage() {
     requestId: randomUUID(),
   };
 
-  const [dashResult, feedResult] = await Promise.all([
+  // allSettled (not all) so a thrown activity-feed read can never take down the
+  // whole dashboard — the feed is the least-critical widget (FR-003 vs FR-005).
+  const [dashSettled, feedSettled] = await Promise.allSettled([
     listDashboard(meta, tenant, makeListDashboardDeps(tenant.slug)),
     activityFeedQuery({ limit: 15 }, meta, tenant, makeActivityFeedDeps()),
   ]);
+  const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
 
-  // snapshot_unavailable / forbidden → friendly empty state (FR-006).
-  if (!dashResult.ok) {
+  // Distinguish a genuine compute failure (snapshot_unavailable / thrown) from
+  // the staff-only `forbidden` guard so the user gets the right copy + a retry
+  // affordance on failure (FR-006), not a dead-end "empty" message.
+  if (!dashResult || !dashResult.ok) {
+    const forbidden = dashResult?.ok === false && dashResult.error === 'forbidden';
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            {t('empty')}
-          </CardContent>
-        </Card>
+        {forbidden ? (
+          <Card>
+            <CardContent className="py-10 text-center text-muted-foreground">
+              {t('forbidden')}
+            </CardContent>
+          </Card>
+        ) : (
+          <DashboardErrorState title={t('error.title')} description={t('error.body')} />
+        )}
       </DetailContainer>
     );
   }
@@ -129,9 +140,15 @@ export default async function StaffHomePage() {
           maximumFractionDigits: 0,
         }).format(Number(metrics.ytdPaidRevenueSatang) / 100);
 
-  const feed = feedResult.ok ? feedResult.value : [];
+  const feed =
+    feedSettled.status === 'fulfilled' && feedSettled.value.ok ? feedSettled.value.value : [];
 
-  const kpis: ReadonlyArray<{ key: string; label: string; value: string }> = [
+  const kpis: ReadonlyArray<{
+    key: string;
+    label: string;
+    value: string;
+    redactedReason?: string;
+  }> = [
     { key: 'total', label: t('kpi.total'), value: numberFmt.format(metrics.counts.total) },
     { key: 'active', label: t('kpi.active'), value: numberFmt.format(metrics.counts.active) },
     { key: 'atRisk', label: t('kpi.atRisk'), value: numberFmt.format(metrics.counts.atRisk) },
@@ -139,33 +156,46 @@ export default async function StaffHomePage() {
       key: 'revenue',
       label: t('kpi.revenue'),
       value: revenueDisplay ?? t('kpi.revenueRedacted'),
+      ...(revenueDisplay === null ? { redactedReason: t('kpi.revenueRedactedReason') } : {}),
     },
   ];
 
-  const needsAttentionItems: readonly NeedsAttentionItem[] = [
-    {
-      id: 'overdueInvoices',
-      label: t('needsAttention.overdueInvoices'),
-      href: '/admin/invoices?status=issued',
-      count: numberFmt.format(metrics.needsAttention.overdueInvoices),
-    },
-    {
-      id: 'atRisk',
-      label: t('needsAttention.atRisk'),
-      href: '/admin/members?risk_band=at-risk',
-      count: numberFmt.format(metrics.needsAttention.atRiskMembers),
-    },
-    {
-      id: 'broadcasts',
-      label: t('needsAttention.broadcasts'),
-      href: '/admin/broadcasts',
-      count: numberFmt.format(metrics.needsAttention.broadcastsAwaitingApproval),
-    },
-  ];
+  // Only surface items that actually need attention (FR-006) — a "0" with a
+  // dead-end link is noise; when all are zero the list shows an "all clear" state.
+  const needsAttentionItems: readonly NeedsAttentionItem[] = (
+    [
+      {
+        id: 'overdueInvoices',
+        n: metrics.needsAttention.overdueInvoices,
+        label: t('needsAttention.overdueInvoices'),
+        href: '/admin/invoices?status=issued',
+      },
+      {
+        id: 'atRisk',
+        n: metrics.needsAttention.atRiskMembers,
+        label: t('needsAttention.atRisk'),
+        href: '/admin/members?risk_band=at-risk',
+      },
+      {
+        id: 'broadcasts',
+        n: metrics.needsAttention.broadcastsAwaitingApproval,
+        label: t('needsAttention.broadcasts'),
+        href: '/admin/broadcasts',
+      },
+    ] as const
+  )
+    .filter((item) => item.n > 0)
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      href: item.href,
+      count: numberFmt.format(item.n),
+    }));
 
   const insightLines: readonly InsightLine[] = metrics.topInsights.map((insight) => ({
     key: insight.key,
     text: t(`insights.${insight.key}`, { count: insight.count }),
+    ...(insight.scopeRef !== undefined ? { scopeRef: insight.scopeRef } : {}),
   }));
 
   const timeFmt = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
@@ -185,15 +215,27 @@ export default async function StaffHomePage() {
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
         {kpis.map((kpi) => (
-          <KpiCard key={kpi.key} label={kpi.label} value={kpi.value} />
+          <KpiCard
+            key={kpi.key}
+            label={kpi.label}
+            value={kpi.value}
+            {...(kpi.redactedReason ? { redactedReason: kpi.redactedReason } : {})}
+          />
         ))}
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <NeedsAttentionList title={t('needsAttention.title')} items={needsAttentionItems} />
+        <NeedsAttentionList
+          title={t('needsAttention.title')}
+          emptyLabel={t('needsAttention.empty')}
+          items={needsAttentionItems}
+        />
         <InsightsPanel
           title={t('insights.title')}
           emptyLabel={t('insights.empty')}
+          dismissLabel={t('insights.dismiss')}
+          dismissedLabel={t('insights.dismissed')}
+          dismissErrorLabel={t('insights.dismissError')}
           lines={insightLines}
         />
       </div>
@@ -201,6 +243,8 @@ export default async function StaffHomePage() {
       <ActivityFeed
         title={t('activity.title')}
         emptyLabel={t('activity.empty')}
+        refreshLabel={t('activity.refresh')}
+        refreshedLabel={t('activity.refreshed')}
         items={activityItems}
       />
     </DetailContainer>
