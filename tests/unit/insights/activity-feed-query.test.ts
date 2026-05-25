@@ -94,4 +94,27 @@ describe('activityFeedQuery', () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toHaveLength(3);
   });
+
+  it('manager over-fetch is capped at 100 (limit*3 would exceed)', async () => {
+    const { deps, recent } = depsReturning([]);
+    await activityFeedQuery({ limit: 40 }, meta('manager'), ctx, deps);
+    // 40*3 = 120 → clamped to 100.
+    expect(recent).toHaveBeenCalledWith(ctx, 100);
+  });
+
+  it('manager feed redacts refund-anomaly events (substring, not just refund_*)', async () => {
+    const events = [
+      item('a', 'member_created'),
+      item('b', 'out_of_band_refund_detected'),
+      item('c', 'stale_pending_refund_detected'),
+      item('d', 'member_updated'),
+    ];
+    const { deps } = depsReturning(events);
+    const result = await activityFeedQuery({ limit: 10 }, meta('manager'), ctx, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.map((e) => e.id)).toEqual(['a', 'd']);
+      expect(result.value.some((e) => e.eventType.includes('refund'))).toBe(false);
+    }
+  });
 });

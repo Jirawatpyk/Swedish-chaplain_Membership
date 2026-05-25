@@ -24,6 +24,8 @@ import { DashboardErrorState } from '@/components/dashboard/dashboard-error-stat
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import {
   listDashboard,
   activityFeedQuery,
@@ -140,6 +142,15 @@ export default async function StaffHomePage() {
           maximumFractionDigits: 0,
         }).format(Number(metrics.ytdPaidRevenueSatang) / 100);
 
+  if (feedSettled.status === 'rejected') {
+    // The adapter swallows source read errors to [] (logged upstream), so a
+    // rejection here is an UNEXPECTED throw outside it — log so it isn't fully
+    // invisible. The dashboard still renders with an empty feed.
+    logger.warn(
+      { tenantId: tenant.slug, errKind: errKind(feedSettled.reason) },
+      'insights.dashboard.activity_feed_rejected',
+    );
+  }
   const feed =
     feedSettled.status === 'fulfilled' && feedSettled.value.ok ? feedSettled.value.value : [];
 

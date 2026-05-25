@@ -17,6 +17,7 @@
 import { sql } from 'drizzle-orm';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
 import type {
   F9AuditEvent,
@@ -75,7 +76,7 @@ export const insightsAuditAdapter: InsightsAuditPort = {
         {
           eventType: event.eventType,
           tenantId: event.tenantId,
-          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+          errKind: errKind(e),
         },
         'insights-audit-adapter: best-effort audit write failed (suppressed)',
       );

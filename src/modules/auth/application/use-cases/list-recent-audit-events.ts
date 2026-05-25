@@ -9,6 +9,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditEventType } from '../../domain/audit-event';
 
@@ -47,10 +48,7 @@ export async function listRecentAuditEvents(
     // of an unhandled rejection propagating up. Log `errKind` only (no
     // `e.message` — Postgres errors carry SQL/table context).
     logger.error(
-      {
-        tenantId: ctx.slug,
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
-      },
+      { tenantId: ctx.slug, errKind: errKind(e) },
       'auth.list_recent_audit_events.read_failed',
     );
     return err('read_failed');

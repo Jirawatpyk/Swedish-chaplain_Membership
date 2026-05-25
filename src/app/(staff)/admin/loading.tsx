@@ -57,10 +57,12 @@ export default async function Loading() {
             ))}
           </div>
 
-          {/* Activity feed — full-width card. */}
+          {/* Activity feed — full-width card. Header mirrors the real
+              ActivityFeed (title + right-aligned Refresh button) to avoid CLS. */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
               <SkeletonBlock className="h-5 w-40" />
+              <SkeletonBlock className="h-8 w-20 rounded-md" />
             </CardHeader>
             <CardContent className="grid gap-2">
               {Array.from({ length: 5 }).map((_, i) => (

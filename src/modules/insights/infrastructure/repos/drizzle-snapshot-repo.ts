@@ -25,25 +25,31 @@ import type {
  * edit, partial write) is treated as a cache miss → the caller cold-start
  * recomputes rather than trusting a malformed `DashboardSnapshot` the compiler
  * can't see into (the JSONB read is `unknown`).
+ *
+ * Validators are tightened (non-negative ints for counts, digits-only satang
+ * string) so a partial/corrupt write is actually caught, not waved through.
+ * NOTE: the shape is HAND-MIRRORED to `DashboardSnapshot` — a new field added
+ * to the VO won't fail-compile here; keep them in sync when the VO changes.
  */
+const count = z.number().int().nonnegative();
 const snapshotSchema = z.object({
   counts: z.object({
-    total: z.number(),
-    active: z.number(),
-    atRisk: z.number(),
-    overdue: z.number(),
+    total: count,
+    active: count,
+    atRisk: count,
+    overdue: count,
   }),
-  ytdPaidRevenueSatang: z.string(),
-  underDeliveredBenefitCount: z.number(),
+  ytdPaidRevenueSatang: z.string().regex(/^\d+$/),
+  underDeliveredBenefitCount: count,
   needsAttention: z.object({
-    broadcastsAwaitingApproval: z.number(),
-    overdueInvoices: z.number(),
-    atRiskMembers: z.number(),
+    broadcastsAwaitingApproval: count,
+    overdueInvoices: count,
+    atRiskMembers: count,
   }),
   topInsights: z.array(
     z.object({
       key: z.enum(INSIGHT_KEYS),
-      count: z.number(),
+      count,
       scopeRef: z.string().optional(),
     }),
   ),

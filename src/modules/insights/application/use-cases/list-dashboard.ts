@@ -16,6 +16,7 @@
 import { ok, err, type Result } from '@/lib/result';
 import { insightsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { DashboardSnapshot } from '../../domain/dashboard-snapshot';
 import { f9RetentionFor } from '../ports/audit-port';
@@ -97,10 +98,7 @@ export async function listDashboard(
     });
   } catch (e) {
     logger.error(
-      {
-        tenantId: ctx.slug,
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
-      },
+      { tenantId: ctx.slug, errKind: errKind(e) },
       'insights.list_dashboard.audit_emit_threw',
     );
   }

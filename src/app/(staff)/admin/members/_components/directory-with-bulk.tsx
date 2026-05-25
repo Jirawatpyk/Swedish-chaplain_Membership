@@ -129,7 +129,7 @@ export function DirectoryWithBulk({
 function ManagerReadOnlyBanner() {
   const t = useTranslations('admin.members.directory');
   // No `aria-label` on the note: it would equal the visible `<p>` text and a
-  // screen reader would announce the region name AND its content (D9 double-
+  // screen reader would announce the region name AND its content (double-
   // announce). The visible `<p>` is the region's accessible content.
   return (
     <div

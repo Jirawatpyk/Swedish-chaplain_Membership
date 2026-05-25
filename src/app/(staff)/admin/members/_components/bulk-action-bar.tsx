@@ -208,6 +208,7 @@ export function BulkActionBar({
         description={t('confirmInviteDescription')}
         confirmLabel={t('confirmInviteAction')}
         cancelLabel={t('cancel')}
+        confirmDisabled={executing}
         onConfirm={() => executeBulk('send_portal_invite')}
       />
 

@@ -23,18 +23,21 @@ export function ActivityFeedRefresh({
   const [isPending, startTransition] = useTransition();
   const [announced, setAnnounced] = useState('');
 
+  function onRefresh() {
+    startTransition(() => router.refresh());
+    // Clear then re-set so a SECOND refresh re-triggers the polite live region —
+    // setting the identical string produces no mutation and would stay silent.
+    setAnnounced('');
+    setTimeout(() => setAnnounced(refreshedLabel), 50);
+  }
+
   return (
     <>
       <Button
         variant="ghost"
         size="sm"
         disabled={isPending}
-        onClick={() =>
-          startTransition(() => {
-            router.refresh();
-            setAnnounced(refreshedLabel);
-          })
-        }
+        onClick={onRefresh}
       >
         <RotateCwIcon
           className={isPending ? 'motion-safe:animate-spin' : undefined}

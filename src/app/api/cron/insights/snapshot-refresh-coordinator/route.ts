@@ -18,6 +18,7 @@ import {
 } from '@/modules/insights';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -32,8 +33,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // rejected 401 (Principle I § 4 — no silent 401s). Matches the F8 coordinators.
   const gate = await gateCronBearerOrRespond(request, {
     route: 'insights:snapshot-refresh-coordinator',
+    // Fires only if the rejection-audit emit itself throws (double-fault) — the
+    // 401 + probe audit still land. Labelled distinctly so it isn't misread as
+    // a count of rejected cron bearers.
     metricsCounter: () =>
-      insightsMetrics.auditEmitFailed('cron_bearer_auth_rejected', env.tenant.slug),
+      insightsMetrics.auditEmitFailed('cron_auth_audit_emit_failed', env.tenant.slug),
   });
   if (gate) return gate;
 
@@ -76,11 +80,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const durationMs = Date.now() - startedAt;
     insightsMetrics.snapshotRefresh('failed', env.tenant.slug);
     logger.error(
-      {
-        tenantId: env.tenant.slug,
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
-        durationMs,
-      },
+      { tenantId: env.tenant.slug, errKind: errKind(e), durationMs },
       'cron.insights.snapshot_coordinator.threw',
     );
     return NextResponse.json({ refreshed: 0, failed: 1, skipped: 0, durationMs }, { status: 200 });

@@ -22,6 +22,7 @@
 import { runInTenant } from '@/lib/db';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { cycleKeyFor } from '../../domain/insight-cycle-key';
 import type { DashboardSnapshot } from '../../domain/dashboard-snapshot';
@@ -108,10 +109,7 @@ export async function computeDashboardSnapshot(
     // carry SQL params / table names (forbidden-fields hygiene). Programmer
     // errors (TypeError/ReferenceError) surface distinctly via errKind.
     logger.error(
-      {
-        tenantId: ctx.slug,
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
-      },
+      { tenantId: ctx.slug, errKind: errKind(e) },
       'insights.compute_snapshot.failed',
     );
     return err('compute_failed');

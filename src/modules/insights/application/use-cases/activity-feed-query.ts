@@ -40,7 +40,6 @@ export type ActivityFeedError = 'forbidden';
  */
 const FINANCE_EVENT_PREFIXES = [
   'payment_',
-  'refund_',
   'invoice_',
   'credit_note_',
   'receipt_',
@@ -50,7 +49,13 @@ const FINANCE_EVENT_PREFIXES = [
 ] as const;
 
 function isFinanceEvent(eventType: string): boolean {
-  return FINANCE_EVENT_PREFIXES.some((p) => eventType.startsWith(p));
+  // Substring `refund` (not just the `refund_` prefix) so out-of-band /
+  // stale-pending refund-anomaly events (`out_of_band_refund_detected`,
+  // `stale_pending_refund_detected`) are also redacted, not just `refund_*`.
+  return (
+    eventType.includes('refund') ||
+    FINANCE_EVENT_PREFIXES.some((p) => eventType.startsWith(p))
+  );
 }
 
 export async function activityFeedQuery(

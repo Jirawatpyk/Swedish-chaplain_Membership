@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { dismissInsight, makeDismissInsightDeps } from '@/modules/insights';
@@ -77,11 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, correlationId }, { status: 200 });
   } catch (e) {
     logger.error(
-      {
-        correlationId,
-        tenantId: tenantCtx.slug,
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
-      },
+      { correlationId, tenantId: tenantCtx.slug, errKind: errKind(e) },
       'admin.insights.dismiss.unexpected_error',
     );
     return NextResponse.json({ error: { code: 'server_error' }, correlationId }, { status: 500 });

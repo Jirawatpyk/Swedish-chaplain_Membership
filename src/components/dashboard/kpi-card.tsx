@@ -14,9 +14,9 @@ export function KpiCard({
   readonly value: string;
   /**
    * When set, the value is a redaction placeholder (e.g. "—" for a manager's
-   * finance KPI, FR-007). A bare "—" is ambiguous to a screen reader, so we add
-   * an sr-only explanation + a `title` tooltip so the reason is conveyed to
-   * both assistive-tech and pointer users (D6).
+   * finance KPI, FR-007). A bare "—" is ambiguous to a screen reader, so the
+   * title carries an `aria-label` ("<metric>: <reason>") + a `title` tooltip so
+   * the reason is conveyed to both assistive-tech and pointer users.
    */
   readonly redactedReason?: string;
 }) {
@@ -26,10 +26,11 @@ export function KpiCard({
         <CardDescription>{label}</CardDescription>
         <CardTitle
           className="text-3xl tabular-nums"
-          {...(redactedReason ? { title: redactedReason } : {})}
+          {...(redactedReason
+            ? { title: redactedReason, 'aria-label': `${label}: ${redactedReason}` }
+            : {})}
         >
-          <span aria-hidden={redactedReason ? true : undefined}>{value}</span>
-          {redactedReason ? <span className="sr-only">{redactedReason}</span> : null}
+          {value}
         </CardTitle>
       </CardHeader>
     </Card>
