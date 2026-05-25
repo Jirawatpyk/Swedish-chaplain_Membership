@@ -271,6 +271,8 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - TypeScript 5.7+ strict (unchanged from F1–F8) — `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true` + Next.js 16 App Router · React 19 · Drizzle ORM · `@vercel/blob` (already used by F4 invoice PDF) · existing F6 Phase 7 streaming parser (`src/modules/events/infrastructure/streaming-csv-importer.ts`) · `i18n-iso-countries` (F3) · `react-hook-form` + `zod` for the event-picker form. **Zero new npm dependencies** (Constitution X). (012-eventcreate-integration)
 - Neon Postgres `ap-southeast-1` (Singapore) — 1 new table `csv_import_records` + extension columns on existing `event_registrations` (per row attendee_pdpa_consent_text). Vercel Blob private bucket for error-rows CSV (TTL-swept). No payment data touched (Principle IV n/a). (012-eventcreate-integration)
 - TypeScript 5.7+ strict (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) — unchanged from F1–F8. (014-email-broadcast-advance)
+- TypeScript 5.7+ strict (`strict`, `noUncheckedIndexedAccess`, + Next.js 16 App Router · React 19 · Drizzle ORM · next-intl (015-admin-dashboard)
+- Neon Postgres `ap-southeast-1` + Drizzle. **4 new tables** (015-admin-dashboard)
 
 ## Recent Changes
 
@@ -280,4 +282,4 @@ Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived i
 - 012-eventcreate-integration: F6 EventCreate Integration SHIPPED (PR #26) + flag-flipped to production 2026-05-19 — CSV attendee import + webhook ingest + benefit-quota tracking; F8 at-risk bridge port live-wired.
 - 011-renewal-reminders: F8 Renewal Tracking + Smart Reminders SHIPPED (PR #24) — pipeline dashboard, tier-aware reminder schedule, 8-factor at-risk scoring, auto tier-upgrade, manual escalation queue.
 
-Last updated: 2026-05-22 (CLAUDE.md trimmed under 40k-char threshold; full history → docs/changelog.md)
+Last updated: 2026-05-25 (CLAUDE.md trimmed under 40k-char threshold; full history → docs/changelog.md)
