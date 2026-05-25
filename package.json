@@ -38,6 +38,7 @@
     "check:multi-tenant": "node --env-file=.env.local --import tsx scripts/check-multi-tenant-ready.ts",
     "check:template-seed": "tsx scripts/generate-template-seed-migration.ts --check",
     "check:f71a-schema": "node --env-file=.env.local --import tsx scripts/verify-broadcasts-f71a-schema.ts",
+    "check:f9-schema": "node --env-file=.env.local --import tsx scripts/check-f9-schema.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --import tsx scripts/run-migrations.ts",
     "db:migrate:prod": "node --env-file=.env.production --import tsx scripts/run-migrations.ts",

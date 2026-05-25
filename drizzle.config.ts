@@ -45,6 +45,11 @@ export default defineConfig({
     // F7: broadcasts + deliveries + suppressions + segment defs (010-email-broadcast).
     // Same R022 discipline — keep drizzle-kit aware of every F-stack module.
     './src/modules/broadcasts/infrastructure/schema.ts',
+    // F9: dashboard cache + insight dismissals + directory listings + export jobs
+    // (015-admin-dashboard). Migrations 0185–0188 are hand-authored (RLS/FORCE/
+    // CHECK/FK/GRANT cannot be drizzle-emitted); this entry keeps drizzle-kit
+    // generate aware of the 4 tables so it never emits spurious DROP for them.
+    './src/modules/insights/infrastructure/db/schema-insights.ts',
   ],
   out: './drizzle/migrations',
   dialect: 'postgresql',

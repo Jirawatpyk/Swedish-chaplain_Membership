@@ -59,7 +59,12 @@ export async function seedF8MembershipPlan(
     planId: spec.planId,
     planYear: spec.planYear ?? 2026,
     planName: spec.planName,
-    description: spec.description ?? { en: '' },
+    // Non-empty EN default to satisfy the `membership_plans_description_en_non_empty`
+    // CHECK constraint (migration 0174, F7.1a/PR #27). The original `{ en: '' }`
+    // default predated that constraint and silently produced constraint-violating
+    // rows once the dev DB reached head — surfaced by the F9 (015) integration
+    // baseline 2026-05-25. Callers needing a specific description still override it.
+    description: spec.description ?? { en: 'F8 Test Plan' },
     sortOrder: spec.sortOrder ?? 10,
     planCategory: spec.planCategory ?? 'corporate',
     memberTypeScope: spec.memberTypeScope ?? 'company',

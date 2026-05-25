@@ -187,6 +187,14 @@ export type { EmailLocale } from './infrastructure/email/reset-password-email';
 export type { AuditEventType, AuditEvent, ActorRef } from './domain/audit-event';
 export { AUDIT_EVENT_TYPES, AUDIT_SUMMARY_MAX_LENGTH } from './domain/audit-event';
 
+// F9 activity feed (FR-003) — read-only recent-audit-events reader.
+export {
+  listRecentAuditEvents,
+  type AuditReadPort,
+  type RecentAuditEvent,
+} from './application/use-cases/list-recent-audit-events';
+export { auditReadAdapter } from './infrastructure/db/audit-read-repo';
+
 // --- Domain: branded-type constructors at trust boundaries --------------------
 
 export {

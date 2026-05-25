@@ -3565,3 +3565,50 @@ export const eventcreateMetrics = {
     });
   },
 } as const;
+
+/**
+ * F9 (T037) — Admin Dashboard insights metrics (research R12).
+ *
+ * Cardinality-safe: only bounded labels (tenant slug, role, insight_key) — no
+ * PII (forbidden-fields hygiene). SLOs + alerts → docs/observability.md (T099).
+ * Slice B adds export-job + audit-query instruments.
+ */
+export const insightsMetrics = {
+  /** Snapshot recompute latency (computeDashboardSnapshot) — backs the SC-002 freshness SLO. */
+  snapshotRefreshDurationMs(ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'insights_snapshot_refresh_duration_ms',
+        'F9 dashboard snapshot recompute latency',
+        'ms',
+      ).record(ms);
+    });
+  },
+  /** Snapshot refresh tick outcome (ok|failed) per tenant. */
+  snapshotRefresh(outcome: 'ok' | 'failed', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_snapshot_refresh_total',
+        'F9 dashboard snapshot refresh ticks by outcome',
+      ).add(1, { outcome, tenant: tenantId });
+    });
+  },
+  /** Staff dashboard view (PII-read volume + SC-012 adoption signal). */
+  dashboardViewed(role: string, tenantId: string): void {
+    safeMetric(() => {
+      counter('insights_dashboard_viewed_total', 'F9 staff dashboard views by role').add(1, {
+        role,
+        tenant: tenantId,
+      });
+    });
+  },
+  /** Smart-insight dismissal (SC-012: staff act on / dismiss insights — analyze M2). */
+  insightDismissed(insightKey: string, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_insight_dismissed_total',
+        'F9 smart-insight dismissals (SC-012 engagement signal)',
+      ).add(1, { insight_key: insightKey, tenant: tenantId });
+    });
+  },
+} as const;

@@ -210,6 +210,37 @@
     "no": "No"
   },
   "admin": {
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "Chamber operations at a glance",
+      "asOf": "As of {time}",
+      "empty": "The dashboard is being prepared. Refresh in a moment.",
+      "kpi": {
+        "sectionLabel": "Key metrics",
+        "total": "Total members",
+        "active": "Active members",
+        "atRisk": "At-risk members",
+        "revenue": "Paid revenue (YTD)",
+        "revenueRedacted": "—"
+      },
+      "needsAttention": {
+        "title": "Needs attention",
+        "overdueInvoices": "Overdue invoices",
+        "atRisk": "At-risk members",
+        "broadcasts": "Broadcasts awaiting approval"
+      },
+      "insights": {
+        "title": "Smart insights",
+        "empty": "No insights right now — all clear.",
+        "unused_eblast_quota": "{count} members have unused E-Blast quota",
+        "underused_event_tickets": "{count} members have under-used event tickets",
+        "at_risk_followup": "{count} at-risk members need follow-up"
+      },
+      "activity": {
+        "title": "Recent activity",
+        "empty": "No recent activity yet."
+      }
+    },
     "home": {
       "welcomeWithName": "Welcome, {name}",
       "subtitle": "You are signed in as {role}.",
@@ -648,8 +679,15 @@
           "primaryContact": "Primary contact",
           "status": "Status",
           "risk": "Risk",
+          "engagement": "Engagement",
           "lastActivity": "Last activity",
           "notes": "Notes"
+        },
+        "engagementBand": {
+          "healthy": "Healthy",
+          "moderate": "Moderate",
+          "warning": "Watch",
+          "critical": "Critical"
         },
         "riskPlaceholder": "—",
         "riskNotComputed": "Not yet scored",

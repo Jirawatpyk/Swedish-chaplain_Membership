@@ -210,6 +210,37 @@
     "no": "Nej"
   },
   "admin": {
+    "dashboard": {
+      "title": "Instrumentpanel",
+      "subtitle": "Handelskammarens verksamhet i överblick",
+      "asOf": "Per {time}",
+      "empty": "Instrumentpanelen förbereds. Uppdatera om en stund.",
+      "kpi": {
+        "sectionLabel": "Nyckeltal",
+        "total": "Totalt antal medlemmar",
+        "active": "Aktiva medlemmar",
+        "atRisk": "Medlemmar i riskzonen",
+        "revenue": "Betalda intäkter (i år)",
+        "revenueRedacted": "—"
+      },
+      "needsAttention": {
+        "title": "Kräver åtgärd",
+        "overdueInvoices": "Förfallna fakturor",
+        "atRisk": "Medlemmar i riskzonen",
+        "broadcasts": "Utskick som väntar på godkännande"
+      },
+      "insights": {
+        "title": "Smarta insikter",
+        "empty": "Inga insikter just nu – allt är i ordning.",
+        "unused_eblast_quota": "{count} medlemmar har oanvänd E-Blast-kvot",
+        "underused_event_tickets": "{count} medlemmar har underutnyttjade evenemangsbiljetter",
+        "at_risk_followup": "{count} medlemmar i riskzonen behöver följas upp"
+      },
+      "activity": {
+        "title": "Senaste aktivitet",
+        "empty": "Ingen aktivitet ännu."
+      }
+    },
     "home": {
       "welcomeWithName": "Välkommen, {name}",
       "subtitle": "Du är inloggad som {role}.",
@@ -648,8 +679,15 @@
           "primaryContact": "Primär kontakt",
           "status": "Status",
           "risk": "Risk",
+          "engagement": "Engagemang",
           "lastActivity": "Senaste aktivitet",
           "notes": "Anteckningar"
+        },
+        "engagementBand": {
+          "healthy": "Frisk",
+          "moderate": "Måttlig",
+          "warning": "Bevaka",
+          "critical": "Kritisk"
         },
         "riskPlaceholder": "—",
         "riskNotComputed": "Ingen poäng än",

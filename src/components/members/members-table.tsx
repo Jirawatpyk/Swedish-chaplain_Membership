@@ -60,6 +60,9 @@ import { toast } from 'sonner';
 // shared primitive lives at src/components/renewals/risk-score-badge.tsx
 // and is barrel-safe (Domain types only; no Drizzle/server imports).
 import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
+// Type-only import (erased at compile time → no runtime/client-bundle coupling
+// to the insights server graph). The engagement value is projected server-side.
+import type { EngagementBand } from '@/modules/insights';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 import { CountryDisplay } from './country-display';
 import {
@@ -91,6 +94,13 @@ export type MembersTableRow = {
   readonly member_risk_flag:
     | { score: number; band: 'healthy' | 'warning' | 'at-risk' | 'critical' }
     | null;
+  /**
+   * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
+   * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
+   * canonical `projectEngagementScore`; null when unscored (mirrors
+   * member_risk_flag). The cell only renders this value (no projection logic).
+   */
+  readonly engagement: { readonly score: number; readonly band: EngagementBand } | null;
   readonly last_activity_at: string | null;
   /** Admin-only inline-edit target (FR-040). Visible in the Notes cell. */
   readonly notes: string | null;
@@ -650,12 +660,18 @@ export function MembersTable({
           // tooltip races + Tab order noise at scale.
           return (
             <Tooltip>
+              {/* T097 (F9 a11y) — no `aria-label` on this roleless <span>:
+                  ARIA prohibits aria-label on a generic span (axe
+                  `aria-prohibited-attr`, WCAG 4.1.2). The visible text
+                  ("Not yet scored") is the accessible name and the tooltip
+                  content is wired via aria-describedby, so SR users still get
+                  the full "computed after 30 days" explanation. Satisfies
+                  WCAG 2.5.3 Label in Name (visible text == accessible name). */}
               <TooltipTrigger
                 render={
                   <span
                     tabIndex={0}
                     className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                    aria-label={t('riskNotComputedAria')}
                   />
                 }
               >
@@ -678,6 +694,29 @@ export function MembersTable({
             band={flag.band}
             activeMax={100}
           />
+        );
+      },
+    }),
+    // F9 (T034) — Engagement Score column: positive-framed inverse of the F8
+    // risk score, projected on read. Non-colour encoding (numeric score + text
+    // band label, FR-035). Sort/filter reuses the server-side `?risk_band=`
+    // param (data-model § 6); nulls render "—" (and sort last server-side).
+    columnHelper.accessor('engagement', {
+      header: () => t('columns.engagement'),
+      cell: (info) => {
+        // G1: engagement is PROJECTED SERVER-SIDE in the page row-mapping via
+        // the canonical `projectEngagementScore` (@/modules/insights) — this
+        // client cell just renders the result (numeric score + non-colour text
+        // band, FR-035). null = unscored → "—" (sorts last server-side).
+        const eng = info.getValue();
+        if (eng === null) return <span className="text-muted-foreground">—</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="tabular-nums font-medium">{eng.score}</span>
+            <span className="text-caption text-muted-foreground">
+              {t(`engagementBand.${eng.band}`)}
+            </span>
+          </span>
         );
       },
     }),

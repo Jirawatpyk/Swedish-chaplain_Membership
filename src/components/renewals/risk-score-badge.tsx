@@ -52,6 +52,12 @@ export function RiskScoreBadge({
   const srText = t('srLabel', { score, max: activeMax, band: bandLabel });
   return (
     <span
+      // T097 (F9 a11y) — role="img" makes aria-label valid on this badge
+      // (ARIA prohibits aria-label on a roleless span; axe
+      // `aria-prohibited-attr` / WCAG 4.1.2). The inner spans are aria-hidden,
+      // so the badge reads as a single labelled element ("Risk score N of M,
+      // band X") to screen readers — preserving the exact SR experience.
+      role="img"
       className={cn(
         'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
         VARIANT_CLASSES[band],

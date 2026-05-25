@@ -541,6 +541,29 @@ const schema = z.object({
   // CLAMAV_SCAN_SECRET secret (≥32 bytes). Empty when US2 is dark.
   // SECRET — do not log.
   CLAMAV_SCAN_SECRET: z.string().default('').describe('SECRET — do not log'),
+
+  // --- F9 Admin Dashboard + Directory + Timeline + Audit --------------------
+  // Kill-switch for F9. When FALSE the `/admin` page keeps the F1 placeholder,
+  // F9 staff/member surfaces short-circuit, and the snapshot/export crons
+  // return `{ skipped: true }`. Tables + cron ship dark first; flip to TRUE in
+  // Vercel env after the Slice-A review gate (research R11). Default FALSE.
+  FEATURE_F9_DASHBOARD: booleanFromString.default(false),
+
+  // HMAC secret used to sign single-use, short-TTL (≤1 h) download tokens for
+  // the private-artefact proxy (`/api/internal/exports/[jobId]/download`).
+  // GDPR archives + Directory E-Books are stored in PRIVATE Vercel Blob and
+  // streamed only after session + RBAC + constant-time token verification
+  // (research R6, contracts/http-endpoints). ≥32 bytes of entropy; MUST be
+  // distinct from AUTH_COOKIE_SIGNING_SECRET / UNSUBSCRIBE_TOKEN_SECRET /
+  // RENEWAL_LINK_TOKEN_SECRET_* so independent rotation never invalidates a
+  // different surface's tokens. Generate with: openssl rand -base64 48.
+  //
+  // OPTIONAL at the schema layer so deployments where F9 is dark (and local
+  // Slice-A dev/tests, which never touch the export proxy) boot cleanly. The
+  // cross-field validator below ENFORCES it (≥32 bytes) the moment
+  // FEATURE_F9_DASHBOARD flips on — mirrors the F6 pseudonym-salt idiom.
+  // SECRET — redacted in logs.
+  EXPORT_DOWNLOAD_TOKEN_SECRET: z.string().min(32).optional().describe('SECRET — do not log'),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -673,6 +696,21 @@ if (raw.NODE_ENV === 'production' && raw.E2E_X_TENANT_HEADER_ENABLED) {
   );
 }
 
+// F9: when FEATURE_F9_DASHBOARD=true the export-download-token signing secret
+// MUST be set so the private-artefact proxy can mint + verify single-use
+// download tokens (research R6). optional() at the schema layer keeps F9-dark
+// deployments + local Slice-A dev/tests boot-clean; this cross-field gate
+// fails loud the moment a tenant flag-flips F9 on without the secret — surfaces
+// the misconfiguration at boot, not at the first export download attempt.
+if (raw.FEATURE_F9_DASHBOARD && !raw.EXPORT_DOWNLOAD_TOKEN_SECRET) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - EXPORT_DOWNLOAD_TOKEN_SECRET must be set (≥32 bytes) when ' +
+      'FEATURE_F9_DASHBOARD=true. It signs single-use private-artefact ' +
+      'download tokens. Generate with: openssl rand -base64 48.',
+  );
+}
+
 // --- Public, typed env object -------------------------------------------------
 
 export const env = {
@@ -754,6 +792,7 @@ export const env = {
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
     f6EventCreateAdapter: raw.FEATURE_F6_EVENTCREATE_ADAPTER,
+    f9Dashboard: raw.FEATURE_F9_DASHBOARD,
   },
 
   // F4 Invoicing
@@ -836,6 +875,16 @@ export const env = {
     // Option D HTTP scan-wrapper (2026-05-22).
     scanUrl: raw.CLAMAV_SCAN_URL,
     scanSecret: raw.CLAMAV_SCAN_SECRET,
+  },
+
+  // F9 Admin Dashboard — kill-switch + private-artefact download-token secret.
+  // The `insights` bounded context reads `exportDownloadTokenSecret` to sign /
+  // verify single-use download tokens for the private Blob proxy (research R6).
+  insights: {
+    // `null` when F9 is dark (boot-clean per the cross-field gate above); a
+    // ≥32-byte string once FEATURE_F9_DASHBOARD flips on. The download-proxy
+    // route (Slice B) MUST narrow before signing/verifying.
+    exportDownloadTokenSecret: raw.EXPORT_DOWNLOAD_TOKEN_SECRET ?? null,
   },
 } as const;
 

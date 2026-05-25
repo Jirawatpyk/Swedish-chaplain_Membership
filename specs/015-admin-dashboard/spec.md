@@ -508,7 +508,10 @@ audit-logged.
   Buddhist-Era years while persisted timestamps remain Gregorian UTC. F9 MUST reuse the
   **established platform glossary terms** (e.g. member, tier, E-Blast, invoice, receipt)
   consistently across all three locales, matching the existing F1–F8 translations rather
-  than introducing divergent synonyms.
+  than introducing divergent synonyms. F9 layouts MUST accommodate **content-length
+  variance** across locales (TH/SV strings may be longer than EN) on the data-dense
+  surfaces (dashboard KPI cards, audit columns, directory listings) without truncation or
+  broken wrapping.
 - **FR-035**: All F9 surfaces MUST meet the platform accessibility standard
   (keyboard operable, screen-reader labelled, sufficient contrast, reduced-motion
   respected) and the platform UX standard (loading skeletons, empty/error states,
@@ -516,7 +519,11 @@ audit-logged.
   benefit-usage levels — MUST NOT rely on **colour alone**: a text label and/or
   icon/shape MUST also encode it (WCAG 1.4.1). All form controls (audit filters,
   directory-visibility toggles, logo upload) MUST have programmatic labels and
-  screen-reader-announced validation/error messaging.
+  screen-reader-announced validation/error messaging. F9 surfaces MUST honour
+  `prefers-color-scheme` (light/dark), consistent with the existing platform theming (no
+  new surface hard-codes a single scheme), and SHOULD opportunistically adopt the F3 WCAG
+  2.2 targets (SC 2.5.8 target size ≥24×24px, SC 2.4.11 focus not obscured) on dense table
+  controls.
 - **FR-036**: Reads of PII-bearing surfaces (member views, exports) and all export
   actions MUST be audit-logged to a degree sufficient to demonstrate who accessed
   whose data.

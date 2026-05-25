@@ -210,6 +210,37 @@
     "no": "ไม่ใช่"
   },
   "admin": {
+    "dashboard": {
+      "title": "แดชบอร์ด",
+      "subtitle": "ภาพรวมการดำเนินงานของหอการค้า",
+      "asOf": "ข้อมูล ณ {time}",
+      "empty": "กำลังเตรียมแดชบอร์ด กรุณารีเฟรชอีกครั้งในอีกสักครู่",
+      "kpi": {
+        "sectionLabel": "ตัวชี้วัดหลัก",
+        "total": "สมาชิกทั้งหมด",
+        "active": "สมาชิกที่ใช้งาน",
+        "atRisk": "สมาชิกกลุ่มเสี่ยง",
+        "revenue": "รายได้ที่ชำระแล้ว (ปีนี้)",
+        "revenueRedacted": "—"
+      },
+      "needsAttention": {
+        "title": "ต้องดำเนินการ",
+        "overdueInvoices": "ใบแจ้งหนี้เกินกำหนด",
+        "atRisk": "สมาชิกกลุ่มเสี่ยง",
+        "broadcasts": "อีเมลรอการอนุมัติ"
+      },
+      "insights": {
+        "title": "ข้อมูลเชิงลึกอัจฉริยะ",
+        "empty": "ยังไม่มีข้อมูลเชิงลึกในขณะนี้",
+        "unused_eblast_quota": "สมาชิก {count} รายยังไม่ได้ใช้โควต้า E-Blast",
+        "underused_event_tickets": "สมาชิก {count} รายใช้บัตรงานอีเวนต์น้อยกว่าที่ควร",
+        "at_risk_followup": "สมาชิกกลุ่มเสี่ยง {count} รายต้องติดตาม"
+      },
+      "activity": {
+        "title": "กิจกรรมล่าสุด",
+        "empty": "ยังไม่มีกิจกรรมล่าสุด"
+      }
+    },
     "home": {
       "welcomeWithName": "ยินดีต้อนรับ {name}",
       "subtitle": "คุณเข้าสู่ระบบในฐานะ {role}",
@@ -648,8 +679,15 @@
           "primaryContact": "ผู้ติดต่อหลัก",
           "status": "สถานะ",
           "risk": "ความเสี่ยง",
+          "engagement": "การมีส่วนร่วม",
           "lastActivity": "กิจกรรมล่าสุด",
           "notes": "บันทึก"
+        },
+        "engagementBand": {
+          "healthy": "ดีมาก",
+          "moderate": "ปานกลาง",
+          "warning": "เฝ้าระวัง",
+          "critical": "วิกฤต"
         },
         "riskPlaceholder": "—",
         "riskNotComputed": "ยังไม่มีคะแนน",

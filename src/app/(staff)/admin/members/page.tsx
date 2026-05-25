@@ -23,6 +23,10 @@ import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+// F9 (G1) — Engagement Score is projected SERVER-SIDE here (canonical, unit-
+// tested) and passed to the client table as a ready value (no client-side
+// projection / no insights-barrel import in the client component).
+import { projectEngagementScore } from '@/modules/insights';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
@@ -203,7 +207,13 @@ async function MembersDirectoryBody({
     );
   }
 
-  const rows: MembersTableRow[] = result.value.items.map((row) => ({
+  const rows: MembersTableRow[] = result.value.items.map((row) => {
+    // F9 (G1) — server-side engagement projection (inverse of F8 risk).
+    const eng = projectEngagementScore({
+      riskScore: row.riskScore,
+      riskScoreBand: row.riskScoreBand,
+    });
+    return {
     member_id: row.member.memberId,
     company_name: row.member.companyName,
     country: row.member.country,
@@ -218,6 +228,10 @@ async function MembersDirectoryBody({
       row.riskScore !== null && row.riskScoreBand !== null
         ? { score: row.riskScore, band: row.riskScoreBand }
         : null,
+    engagement:
+      eng.score !== null && eng.band !== null
+        ? { score: eng.score, band: eng.band }
+        : null,
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,
     notes: row.member.notes,
     primary_contact: row.primaryContact
@@ -228,7 +242,8 @@ async function MembersDirectoryBody({
           email: row.primaryContact.email,
         }
       : null,
-  }));
+    };
+  });
 
   // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
   // client component that calls useSearchParams — prevents the whole route

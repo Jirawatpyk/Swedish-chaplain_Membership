@@ -1427,3 +1427,46 @@ admin_events_detail (route span)
 
 Tracer name: `swecham.events` (matches the rest of the codebase pattern `swecham.<module>`).
 
+---
+
+## 25. F9 Admin Dashboard — observability (T037 / T099)
+
+Metrics live in `src/lib/metrics.ts` (`insightsMetrics`). Cardinality-safe:
+**only bounded labels** (`tenant` slug, `role`, `insight_key`, `outcome`) — no PII
+(forbidden-fields hygiene, research R12). US1 (Slice A) catalogue below; Slice B
+adds export-job (`export_job_queue_depth`/`duration`/`reclaimed`) + audit-query
+(`audit_query_duration_ms`) instruments.
+
+### 25.1 Metrics catalogue
+
+| Metric | Type | Labels | Emitted from | Purpose |
+|--------|------|--------|--------------|---------|
+| `insights_snapshot_refresh_duration_ms` | histogram | — | snapshot crons | Snapshot recompute latency (backs SC-002 freshness) |
+| `insights_snapshot_refresh_total` | counter | `outcome` (ok\|failed), `tenant` | snapshot crons | Refresh ticks by outcome |
+| `insights_dashboard_viewed_total` | counter | `role`, `tenant` | `listDashboard` | PII-read volume + SC-012 adoption signal |
+| `insights_insight_dismissed_total` | counter | `insight_key`, `tenant` | `dismissInsight` | SC-012 — staff act on / dismiss insights (analyze M2) |
+
+**Deferred (follow-up):** `insights_snapshot_age_seconds` (gauge) — needs a
+scrape-time per-tenant cache read; staleness is bounded in the interim by the
+~5-min refresh cadence (FR-005) + the SC-013 rollback trigger (snapshot age p95
+> 15 min). The live activity feed is NOT snapshot-bound (FR-003), so a just-
+occurred event is visible regardless of snapshot age.
+
+### 25.2 SLOs — F9 (US1)
+
+| SLO | Target | Window | Source |
+|-----|--------|--------|--------|
+| Dashboard primary view render | p95 < 1.5 s @ 5,000 members | 30 d | Vercel Speed Insights (SC-002) — reads the cached snapshot row + last-N audit feed |
+| Snapshot freshness (age) | p95 ≤ ~5 min (cadence); hard ceiling 15 min | 1 d | `snapshot_refresh_duration_ms` + refresh cadence; SC-013 ceiling |
+| Snapshot refresh success | ≥ 99 % of cron ticks `outcome=ok` | 7 d | `insights_snapshot_refresh_total` |
+
+### 25.3 Alerts — F9
+
+| Alert | Condition | Severity | Runbook |
+|-------|-----------|----------|---------|
+| Dashboard error rate | `dashboard` route 5xx > **2 %** of loads over 15 min | P2 | Flip `FEATURE_F9_DASHBOARD=false` (SC-013 rollback — reversible in seconds, no deploy) |
+| Snapshot staleness | snapshot age p95 > **15 min** (3× cadence) over 15 min | P3 | Check `snapshot-refresh-coordinator` cron-job.org health + `insights_snapshot_refresh_total{outcome=failed}` |
+| Cross-tenant probe | any `insights_cross_tenant_probe` audit event | P1 | Principle I §4 — investigate immediately (should be impossible by RLS) |
+
+Tracer name (when traces are added): `swecham.insights`.
+
