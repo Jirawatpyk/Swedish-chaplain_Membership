@@ -15,7 +15,7 @@ const getAttendeesMock = vi.fn();
 vi.mock('@/lib/env', () => ({ env: { tenant: { timezone: 'Asia/Bangkok' } } }));
 vi.mock('@/modules/events', () => ({
   getEventAttendeesByMember: (...a: unknown[]) => getAttendeesMock(...a),
-  drizzleEventAttendeesQuery: {},
+  drizzleEventAttendeesQueryStrict: {},
 }));
 vi.mock('@/modules/members', () => ({
   asTenantId: (s: string) => s,
@@ -49,5 +49,14 @@ describe('eventSourceAdapter.getCulturalConsumption (2026, Asia/Bangkok)', () =>
     const r = await eventSourceAdapter.getCulturalConsumption(CTX, 'm1', 2026);
     expect(r.used).toBe(0);
     expect(r.lastUsedAt).toBeNull();
+  });
+
+  it('R3-1: a query fault propagates (fail-loud) — never masked as used:0', async () => {
+    // The strict query rethrows on a DB/RLS fault; the adapter must NOT swallow
+    // it into a misleading zero (which would fire a false under-use warning).
+    getAttendeesMock.mockRejectedValueOnce(new Error('events query failed: connection refused'));
+    await expect(
+      eventSourceAdapter.getCulturalConsumption(CTX, 'm1', 2026),
+    ).rejects.toThrow(/events query failed/i);
   });
 });

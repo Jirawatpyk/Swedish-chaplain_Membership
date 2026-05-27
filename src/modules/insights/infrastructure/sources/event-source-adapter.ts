@@ -6,16 +6,22 @@
  *
  * Membership year = calendar year in the tenant timezone (FR-023). The year's
  * UTC bounds are derived here (Infrastructure owns the tz-aware DB filter) so a
- * registration at 23:00 ICT on 31-Dec counts in the correct year. "Cultural"
+ * cultural-event *attendance* (keyed on `events.start_date`, not registration
+ * time) at 23:00 ICT on 31-Dec counts in that year, not the next. "Cultural"
  * spans the F6 event-category taxonomy values that include cultural
  * (`cultural`, `partnership_and_cultural`).
+ *
+ * Uses the fail-LOUD `drizzleEventAttendeesQueryStrict` (NOT the F8 fail-open
+ * `drizzleEventAttendeesQuery`): a masked `[]` on a DB/RLS fault would
+ * understate consumption → false under-use warning (review-run R3-1). A real
+ * fault therefore throws → the use-case returns `compute_failed`.
  */
 import { Instant } from '@js-joda/core';
 import '@js-joda/timezone';
 import { env } from '@/lib/env';
 import {
   getEventAttendeesByMember,
-  drizzleEventAttendeesQuery,
+  drizzleEventAttendeesQueryStrict,
 } from '@/modules/events';
 import { asTenantId, asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
@@ -40,7 +46,7 @@ export const eventSourceAdapter: EventConsumptionSource = {
       asTenantId(ctx.slug),
       asMemberId(memberId),
       { sinceIso: new Date(startMs).toISOString(), limit: ATTENDANCE_FETCH_LIMIT },
-      { query: drizzleEventAttendeesQuery },
+      { query: drizzleEventAttendeesQueryStrict },
     );
 
     let used = 0;

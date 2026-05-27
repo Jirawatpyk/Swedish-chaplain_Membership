@@ -409,6 +409,7 @@ export {
 
 export {
   drizzleEventAttendeesQuery,
+  drizzleEventAttendeesQueryStrict,
   drizzleEventAttendeesAdapter,
 } from './infrastructure/drizzle-event-attendees-by-member';
 
