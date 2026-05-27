@@ -28,6 +28,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
+import { resolveEventLabel } from '@/lib/audit-event-label';
 import {
   listDashboard,
   activityFeedQuery,
@@ -52,12 +53,6 @@ export const metadata: Metadata = {
 };
 
 const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const;
-
-/** Neutral fallback for audit event types not yet in the i18n catalogue. */
-function humanizeEventType(eventType: string): string {
-  const words = eventType.replace(/_/g, ' ').trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 export default async function StaffHomePage() {
   const { user } = await requireSession('staff');
@@ -235,9 +230,7 @@ export default async function StaffHomePage() {
     // Localised action label (FR-034) — resolved per-locale from the audit
     // event type, NOT the raw English summary (which would leak to TH/SV).
     // Uncatalogued types fall back to a humanised token (no English sentence).
-    label: tEvents.has(item.eventType)
-      ? tEvents(item.eventType)
-      : humanizeEventType(item.eventType),
+    label: resolveEventLabel(tEvents, item.eventType),
     occurredAt: item.occurredAt,
     timeLabel: timeFmt.format(new Date(item.occurredAt)),
   }));

@@ -20,12 +20,15 @@ import { memberSourceAdapter } from './sources/member-source-adapter';
 import { invoiceSourceAdapter } from './sources/invoice-source-adapter';
 import { broadcastSourceAdapter } from './sources/broadcast-source-adapter';
 import { activityFeedSourceAdapter } from './sources/activity-feed-adapter';
+import { auditEventSourceAdapter } from './sources/audit-source-adapter';
+import { actorDirectoryAdapter } from './sources/actor-directory-adapter';
 import { computeDashboardSnapshot } from '../application/use-cases/compute-dashboard-snapshot';
 import type { DismissInsightDeps } from '../application/use-cases/dismiss-insight';
 import type { ComputeDashboardSnapshotDeps } from '../application/use-cases/compute-dashboard-snapshot';
 import type { ListDashboardDeps } from '../application/use-cases/list-dashboard';
 import type { ListSmartInsightsDeps } from '../application/use-cases/list-smart-insights';
 import type { ActivityFeedDeps } from '../application/use-cases/activity-feed-query';
+import type { AuditQueryDeps } from '../application/use-cases/audit-query';
 
 /** Shared wall-clock port impl (injected so use-cases stay deterministic in tests). */
 export const systemClock = {
@@ -80,4 +83,17 @@ export function makeListSmartInsightsDeps(tenantId: string): ListSmartInsightsDe
 /** US1 (T029/T031) — `activityFeedQuery` (live recent-audit feed) deps. */
 export function makeActivityFeedDeps(): ActivityFeedDeps {
   return { activitySource: activityFeedSourceAdapter };
+}
+
+/**
+ * US2 (T042/T046) — `auditQuery` / `auditExport` deps. The reader self-scopes
+ * per call (`ctx`), so no tenant binding is needed here; the audit emitter is
+ * the shared best-effort F9 adapter.
+ */
+export function makeAuditQueryDeps(): AuditQueryDeps {
+  return {
+    source: auditEventSourceAdapter,
+    audit: insightsAuditAdapter,
+    actorDirectory: actorDirectoryAdapter,
+  };
 }

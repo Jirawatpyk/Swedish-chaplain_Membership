@@ -14,6 +14,7 @@ import {
   CalendarDaysIcon,
   PlugZapIcon,
   Settings2Icon,
+  ScrollTextIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -150,6 +151,16 @@ export const staffNavConfig: NavConfig = {
           icon: UsersIcon,
           href: '/admin/users',
           activePattern: '/admin/users',
+        },
+        // F9 US2 — staff audit-log viewer. Admin + manager (member never
+        // reaches /admin/*). Surface gated server-side by FEATURE_F9_DASHBOARD
+        // (notFound when dark); the nav entry stays visible (mirrors the F6
+        // EventCreate pattern below).
+        {
+          titleKey: 'nav.staff.audit',
+          icon: ScrollTextIcon,
+          href: '/admin/audit',
+          activePattern: '/admin/audit',
         },
       ],
     },

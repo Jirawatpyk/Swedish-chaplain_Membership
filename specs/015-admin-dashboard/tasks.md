@@ -108,25 +108,37 @@ separately to bound the all-PII review blast radius.
 **Goal**: Read-only, filterable, exportable viewer over the append-only `audit_log`.
 **Independent Test**: Seeded audit events filter correctly by type/actor/target/date, newest-first, role-redacted payload (actor identity visible to managers), export reproduces the filtered set, no mutation path, tenant-scoped.
 
+> **Module-placement deviation (2026-05-27)**: tasks.md placed the `auditQuery`
+> use-case + redaction map + barrel exports in the `auth` module (T042/T043/T045).
+> They were instead implemented in the **`insights`** module because the F9 audit
+> taxonomy (`audit_log_queried` / `audit_log_exported`, 5-y retention) is owned by
+> the insights `InsightsAuditPort` (Foundational T013), and `insights → auth` is
+> the correct dependency direction (auth is the lower-level module). Placing the
+> use-case in auth would invert it (`auth → insights`) and split the F9 taxonomy
+> across two modules — a Principle III violation. The `auth` module keeps only the
+> audit_log **reader** (`auditQueryReadAdapter` + `resolveActorIdentities`), exactly
+> as `src/modules/insights/index.ts` already documents ("the audit-query reader
+> lives in auth"). This mirrors the existing `activityFeedQuery` split.
+
 ### Tests (write first, ensure FAIL)
 
-- [ ] T039 [P] [US2] Contract test `auditQuery` filters + keyset + redaction map in `tests/contract/auth/audit-query.contract.test.ts`
-- [ ] T040 [P] [US2] Integration test tenant scope + per-event redaction map + actor-visible-to-manager in `tests/integration/auth/audit-query.test.ts`
-- [ ] T041 [P] [US2] E2E `@f9` audit viewer: filter, export, read-only, manager redaction in `tests/e2e/f9-audit.spec.ts`
+- [X] T039 [P] [US2] Contract test `auditQuery` + `auditExport` (filters, keyset, redaction, emit, sync cap, actor resolution) — **`tests/contract/insights/audit-query.contract.test.ts`** (11 tests GREEN). Redaction map unit: `tests/unit/insights/audit-redaction.test.ts` (7 GREEN).
+- [X] T040 [P] [US2] Integration test (live Neon) tenant scope (RLS) + per-event redaction + actor-visible-to-manager + eventType filter + invalid_range — **`tests/integration/insights/audit-query.test.ts`** (5 GREEN).
+- [X] T041 [P] [US2] E2E `@f9` audit viewer: table, filter round-trip, export link, manager read-only, member-denied in `tests/e2e/f9-audit.spec.ts`.
 
 ### Implementation
 
-- [ ] T042 [US2] `auditQuery` use-case (filters, keyset `(timestamp,id)`, p95<1s@50k) in `src/modules/auth/application/use-cases/audit-query.ts`
-- [ ] T043 [US2] Per-event-type **redaction map** (FR-011 sensitive categories) in `src/modules/auth/application/audit-redaction.ts`
-- [ ] T044 [US2] Audit reader repo (keyset over `audit_log`, tenant-scoped) in `src/modules/auth/infrastructure/`
-- [ ] T045 [US2] Export `auditQuery` + `auditExport` via `src/modules/auth/index.ts` barrel
-- [ ] T046 [US2] `auditExport` — sync stream with ≤10k row cap → async `audit_export` fallback (R2-E2)
-- [ ] T047 [US2] Audit viewer page in `src/app/(staff)/admin/audit/page.tsx`
-- [ ] T048 [P] [US2] `AuditTable` + `AuditFilters` components in `src/components/audit/`
-- [ ] T049 [P] [US2] i18n keys audit + dual timestamp (UTC + locale-local) rendering
-- [ ] T050 [US2] Emit `audit_log_queried` + `audit_log_exported`; metric `audit_query_duration_ms`; Nav item Audit (staff nav — admin + manager) in `src/config/nav.ts`
+- [X] T042 [US2] `auditQuery` use-case (filters, keyset `(timestamp,id)`, opaque cursor, p95 metric) — **`src/modules/insights/application/use-cases/audit-query.ts`** (see deviation note above).
+- [X] T043 [US2] Per-event-type **redaction map** (FR-011 — global annotation deny-list + per-type extension; admin full, manager projected; actor identity never redacted) — **`src/modules/insights/application/audit-redaction.ts`**.
+- [X] T044 [US2] Audit reader (keyset over `audit_log`, tenant-scoped, full payload) in `src/modules/auth/infrastructure/db/audit-query-repo.ts` + contract types `src/modules/auth/application/audit-query-read.ts`; actor resolver `actor-identity-repo.ts`. Indexes already shipped by migration 0190.
+- [X] T045 [US2] Export `auditQuery` + `auditExport` + redaction + actor-directory types via `src/modules/insights/index.ts`; reader + `resolveActorIdentities` via `src/modules/auth/index.ts`.
+- [X] T046 [US2] `auditExport` — sync stream with ≤10k row cap (`AUDIT_EXPORT_SYNC_CAP`) → `export_too_large` boundary; CSV route `src/app/api/admin/audit/export.csv/route.ts` (UTF-8+BOM). Async `audit_export` job fallback deferred to US6.
+- [X] T047 [US2] Audit viewer page (TableContainer, role-gated, flag-gated, keyset pagination link) in `src/app/(staff)/admin/audit/page.tsx` + shimmer `loading.tsx`.
+- [X] T048 [P] [US2] `AuditTable` (read-only, dual timestamp, localized event label, readable payload, actor name+id) + `AuditFilters` (client, shadcn `Select` + URL-state, `TranslatedSelectValue`) in `src/components/audit/`.
+- [X] T049 [P] [US2] i18n keys `admin.audit.*` (EN/TH/SV parity) + dual timestamp (UTC + locale-local) rendering; reuses `admin.dashboard.activity.events.*` via shared `src/lib/audit-event-label.ts`.
+- [X] T050 [US2] Emit `audit_log_queried` + `audit_log_exported` (InsightsAuditPort); metric `insights_audit_query_duration_ms`; Nav item Audit (staff nav, ScrollText icon) in `src/config/nav.ts`.
 
-**Checkpoint**: US1 + US2 work independently.
+**Checkpoint**: US1 + US2 work independently. ✅ (US2 implemented 2026-05-27)
 
 ---
 

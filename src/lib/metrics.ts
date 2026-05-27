@@ -3627,4 +3627,17 @@ export const insightsMetrics = {
       ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
     });
   },
+  /**
+   * Audit-viewer query latency (US2 / FR-008) — backs the p95 < 1 s @ 50k
+   * events SLO. Measures the keyset-paginated `auditQuery` reader round-trip.
+   */
+  auditQueryDurationMs(ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'insights_audit_query_duration_ms',
+        'F9 audit-viewer keyset query latency',
+        'ms',
+      ).record(ms);
+    });
+  },
 } as const;

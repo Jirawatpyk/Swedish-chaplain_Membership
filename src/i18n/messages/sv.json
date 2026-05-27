@@ -210,6 +210,41 @@
     "no": "Nej"
   },
   "admin": {
+    "audit": {
+      "title": "Granskningslogg",
+      "subtitle": "Sök och exportera revisionshändelser för organisationen",
+      "forbidden": "Du har inte behörighet till granskningsloggen.",
+      "export": "Exportera CSV",
+      "invalidRange": {
+        "title": "Ogiltigt filter",
+        "body": "Kontrollera datumintervallet och filtren och försök igen."
+      },
+      "filters": {
+        "legend": "Filtrera revisionshändelser",
+        "eventType": "Händelsetyp",
+        "eventTypeAll": "Alla händelsetyper",
+        "actor": "Utförande användare",
+        "target": "Målpost",
+        "from": "Från",
+        "to": "Till",
+        "apply": "Använd filter",
+        "reset": "Återställ"
+      },
+      "table": {
+        "caption": "Revisionshändelser, nyaste först",
+        "time": "Tid",
+        "event": "Händelse",
+        "actor": "Aktör",
+        "target": "Mål",
+        "summary": "Sammanfattning",
+        "payload": "Detaljer",
+        "empty": "Inga revisionshändelser matchar dessa filter.",
+        "none": "Ingen"
+      },
+      "pagination": {
+        "next": "Ladda äldre händelser"
+      }
+    },
     "dashboard": {
       "title": "Instrumentpanel",
       "subtitle": "Handelskammarens verksamhet i överblick",
@@ -914,7 +949,6 @@
           "year": {
             "all": "Alla år"
           },
-          "apply": "Tillämpa",
           "clear": "Rensa filter"
         },
         "draftPlaceholder": "(utkast)",
@@ -3433,7 +3467,8 @@
       "members": "Medlemmar",
       "invoices": "Fakturor",
       "broadcasts": "Utskick",
-      "renewals": "Förnyelser"
+      "renewals": "Förnyelser",
+      "audit": "Granskningslogg"
     },
     "member": {
       "dashboard": "Instrumentpanel",

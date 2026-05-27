@@ -210,6 +210,41 @@
     "no": "No"
   },
   "admin": {
+    "audit": {
+      "title": "Audit log",
+      "subtitle": "Search and export tenant audit events",
+      "forbidden": "You do not have access to the audit log.",
+      "export": "Export CSV",
+      "invalidRange": {
+        "title": "Invalid filter",
+        "body": "Check the date range and filters, then try again."
+      },
+      "filters": {
+        "legend": "Filter audit events",
+        "eventType": "Event type",
+        "eventTypeAll": "All event types",
+        "actor": "Acting user",
+        "target": "Target record",
+        "from": "From",
+        "to": "To",
+        "apply": "Apply filters",
+        "reset": "Reset"
+      },
+      "table": {
+        "caption": "Audit events, newest first",
+        "time": "Time",
+        "event": "Event",
+        "actor": "Actor",
+        "target": "Target",
+        "summary": "Summary",
+        "payload": "Details",
+        "empty": "No audit events match these filters.",
+        "none": "None"
+      },
+      "pagination": {
+        "next": "Load older events"
+      }
+    },
     "dashboard": {
       "title": "Dashboard",
       "subtitle": "Chamber operations at a glance",
@@ -914,7 +949,6 @@
           "year": {
             "all": "All years"
           },
-          "apply": "Apply",
           "clear": "Clear filters"
         },
         "draftPlaceholder": "(draft)",
@@ -3433,7 +3467,8 @@
       "members": "Members",
       "invoices": "Invoices",
       "broadcasts": "Broadcasts",
-      "renewals": "Renewals"
+      "renewals": "Renewals",
+      "audit": "Audit log"
     },
     "member": {
       "dashboard": "Dashboard",

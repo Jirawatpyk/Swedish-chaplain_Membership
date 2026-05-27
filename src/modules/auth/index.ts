@@ -195,6 +195,22 @@ export {
 } from './application/use-cases/list-recent-audit-events';
 export { auditReadAdapter } from './infrastructure/db/audit-read-repo';
 
+// F9 audit viewer (US2 / FR-008) — keyset-paginated, filterable audit-log
+// reader. `audit_log` is auth-owned, so the reader lives here; the insights
+// `auditQuery` use-case applies role redaction (FR-011) + emits the audit
+// trail on top of it (mirrors the activity-feed split above).
+export {
+  type AuditQueryCursor,
+  type AuditQueryReadFilters,
+  type AuditQueryReadPort,
+  type AuditQueryReadRow,
+} from './application/audit-query-read';
+export { auditQueryReadAdapter } from './infrastructure/db/audit-query-repo';
+export {
+  resolveActorIdentities,
+  type ActorIdentity,
+} from './infrastructure/db/actor-identity-repo';
+
 // --- Domain: branded-type constructors at trust boundaries --------------------
 
 export {

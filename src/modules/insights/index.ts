@@ -88,6 +88,32 @@ export {
 } from './application/use-cases/list-smart-insights';
 export type { ActivityFeedItem } from './application/ports/activity-feed-source';
 
+// --- Application use-cases (US2 — audit viewer) ---------------------------
+export {
+  auditQuery,
+  auditExport,
+  AUDIT_EXPORT_SYNC_CAP,
+  type AuditQueryActorRole,
+  type AuditQueryDeps,
+  type AuditQueryError,
+  type AuditQueryInput,
+  type AuditQueryMeta,
+  type AuditQueryResult,
+  type AuditQueryRow,
+  type AuditExportError,
+  type AuditExportResult,
+} from './application/use-cases/audit-query';
+export {
+  redactPayloadForRole,
+  GLOBAL_SENSITIVE_PAYLOAD_FIELDS,
+  SENSITIVE_PAYLOAD_FIELDS,
+  type AuditViewerRole,
+} from './application/audit-redaction';
+export type {
+  ActorDirectory,
+  ActorIdentityView,
+} from './application/ports/actor-directory';
+
 // --- Composition root factories (US1) -------------------------------------
 export {
   makeDismissInsightDeps,
@@ -95,5 +121,6 @@ export {
   makeListDashboardDeps,
   makeListSmartInsightsDeps,
   makeActivityFeedDeps,
+  makeAuditQueryDeps,
   systemClock,
 } from './infrastructure/insights-deps';
