@@ -100,7 +100,10 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
 
   const result = await computeBenefitUsage(
     tenant,
-    { memberId },
+    // Use the resolved member.memberId (same value getMember validated + the
+    // audit subject below) — not the raw URL param — so the figures and the
+    // member_benefit_viewed audit can never reference different members (R#10).
+    { memberId: member.memberId },
     makeComputeBenefitUsageDeps(tenant.slug),
   );
   if (!result.ok) {

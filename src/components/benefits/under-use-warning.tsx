@@ -39,9 +39,12 @@ export function UnderUseWarning({
       <InlineAlertTitle>{t('title')}</InlineAlertTitle>
       <InlineAlertDescription>
         <p>
+          {/* Round elapsed up + consumed down so the DISPLAYED gap is never
+              smaller than the real ≥25-pt gap that fired this banner — avoids
+              showing e.g. "62% / 38%" (24) under a warning (R#8). */}
           {t('body', {
-            elapsed: Math.round(elapsedYearPct),
-            consumed: Math.round(consumedPct),
+            elapsed: Math.ceil(elapsedYearPct),
+            consumed: Math.floor(consumedPct),
           })}
         </p>
         {actionHref !== undefined && (

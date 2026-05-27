@@ -4499,7 +4499,8 @@
       "eblast": "E-Blasts",
       "cultural_tickets": "Cultural event tickets",
       "action": {
-        "eblast": "Compose"
+        "eblast": "Compose",
+        "cultural_tickets": "View events"
       }
     },
     "active": {

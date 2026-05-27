@@ -28,7 +28,7 @@
  *
  * Pure Infrastructure — Drizzle types are CONFINED to this file.
  */
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -88,6 +88,10 @@ async function runAttendeesQuery(
           // runInTenant. The matched_member_id is the F3 member uuid.
           eq(eventRegistrations.matchedMemberId, String(input.memberId)),
           gte(events.startDate, input.since),
+          // Optional upper bound (F9 benefit-usage year/now boundary) so
+          // future-dated + out-of-window rows don't consume the row cap or get
+          // counted as attended. F8 omits it (wants everything up to now).
+          ...(input.until !== undefined ? [lte(events.startDate, input.until)] : []),
           // Skip pseudonymised rows (FR-032 retention-purged).
           sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
           // Skip archived events (FR-019a quota-neutral state).

@@ -4499,7 +4499,8 @@
       "eblast": "อีเมลประชาสัมพันธ์ (E-Blast)",
       "cultural_tickets": "บัตรงานวัฒนธรรม",
       "action": {
-        "eblast": "เขียนข้อความ"
+        "eblast": "เขียนข้อความ",
+        "cultural_tickets": "ดูกิจกรรม"
       }
     },
     "active": {

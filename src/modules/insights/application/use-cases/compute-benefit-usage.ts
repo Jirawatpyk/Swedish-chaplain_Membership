@@ -86,36 +86,53 @@ export async function computeBenefitUsage(
     const { startMs, endMs } = tenantYearBoundsUtcMs(membershipYear, deps.tenantTimezone);
     const elapsedYearPct = yearElapsedPct(now.getTime(), startMs, endMs);
 
-    const [entitlements, eblast, cultural] = await Promise.all([
-      deps.planSource.getEntitlements(ctx, identity.planId, identity.planYear),
-      deps.broadcastSource.getEblastConsumption(ctx, input.memberId, membershipYear),
-      deps.eventSource.getCulturalConsumption(ctx, input.memberId, membershipYear),
-    ]);
-
-    // Only benefits the plan actually grants (entitlement > 0) are quantifiable;
-    // a 0-entitlement benefit is not a benefit of this plan and is omitted.
-    const quantifiable: QuantifiableBenefit[] = [];
-    if (entitlements !== null) {
-      if (entitlements.eblastPerYear > 0) {
-        quantifiable.push({
-          key: 'eblast',
-          used: eblast.used,
-          entitlement: entitlements.eblastPerYear,
-          lastUsedAt: eblast.lastUsedAt,
-        });
-      }
-      if (entitlements.culturalTicketsPerYear > 0) {
-        quantifiable.push({
-          key: 'cultural_tickets',
-          used: cultural.used,
-          entitlement: entitlements.culturalTicketsPerYear,
-          lastUsedAt: cultural.lastUsedAt,
-        });
-      }
-    }
+    const entitlements = await deps.planSource.getEntitlements(
+      ctx,
+      identity.planId,
+      identity.planYear,
+    );
     const active: ActiveBenefit[] = (entitlements?.activeBenefits ?? []).map(
       (key) => ({ key }),
     );
+
+    // Missing plan/year → empty benefit view. Return BEFORE the consumption
+    // reads: a transient fault on a read whose result would be discarded must
+    // not turn the documented empty-view path into a 500 (review-run R#6).
+    if (entitlements === null) {
+      return ok(
+        buildBenefitUsage({ membershipYear, elapsedYearPct, quantifiable: [], active }),
+      );
+    }
+
+    // Fetch consumption only for benefits the plan actually grants
+    // (entitlement > 0) — a 0-grant benefit is omitted, and its source is not
+    // read at all (no wasted query, no spurious fail-loud surface).
+    const [eblast, cultural] = await Promise.all([
+      entitlements.eblastPerYear > 0
+        ? deps.broadcastSource.getEblastConsumption(ctx, input.memberId, membershipYear)
+        : Promise.resolve(null),
+      entitlements.culturalTicketsPerYear > 0
+        ? deps.eventSource.getCulturalConsumption(ctx, input.memberId, membershipYear)
+        : Promise.resolve(null),
+    ]);
+
+    const quantifiable: QuantifiableBenefit[] = [];
+    if (eblast !== null) {
+      quantifiable.push({
+        key: 'eblast',
+        used: eblast.used,
+        entitlement: entitlements.eblastPerYear,
+        lastUsedAt: eblast.lastUsedAt,
+      });
+    }
+    if (cultural !== null) {
+      quantifiable.push({
+        key: 'cultural_tickets',
+        used: cultural.used,
+        entitlement: entitlements.culturalTicketsPerYear,
+        lastUsedAt: cultural.lastUsedAt,
+      });
+    }
 
     return ok(
       buildBenefitUsage({ membershipYear, elapsedYearPct, quantifiable, active }),

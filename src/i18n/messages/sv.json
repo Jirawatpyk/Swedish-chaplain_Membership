@@ -4499,7 +4499,8 @@
       "eblast": "E-utskick",
       "cultural_tickets": "Biljetter till kulturevenemang",
       "action": {
-        "eblast": "Skriv"
+        "eblast": "Skriv",
+        "cultural_tickets": "Visa evenemang"
       }
     },
     "active": {

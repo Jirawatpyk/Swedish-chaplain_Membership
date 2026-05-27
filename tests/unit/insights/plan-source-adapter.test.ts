@@ -11,9 +11,17 @@ import type { TenantContext } from '@/modules/tenants';
 
 const findOneMock = vi.fn();
 
+// Mirror the real brand validators (they THROW on bad input) so the R#1
+// catch path is genuinely exercised.
 vi.mock('@/modules/plans', () => ({
-  asPlanSlug: (s: string) => s,
-  asPlanYear: (n: number) => n,
+  asPlanSlug: (s: string) => {
+    if (!/^[a-z0-9-]{1,63}$/.test(s)) throw new Error(`Invalid plan slug: ${s}`);
+    return s;
+  },
+  asPlanYear: (n: number) => {
+    if (!Number.isInteger(n) || n < 2000 || n > 2100) throw new Error(`Invalid plan year: ${n}`);
+    return n;
+  },
 }));
 vi.mock('@/modules/plans/infrastructure/db/plan-repo', () => ({
   planRepo: { findOne: (...a: unknown[]) => findOneMock(...a) },
@@ -28,7 +36,9 @@ function planWith(matrix: Record<string, unknown>) {
 }
 
 describe('planSourceAdapter.getEntitlements — active-benefit derivation', () => {
-  it('partnership tier surfaces tailor_made_services + partnership_package (R3-3)', async () => {
+  it('partnership tier surfaces partnership_package but NOT the corporate-only flags (R#5)', async () => {
+    // A partnership plan stores m2m/referrals/tailor booleans but does not grant
+    // them — they must NOT surface as active badges; the umbrella does instead.
     findOneMock.mockResolvedValueOnce(
       planWith({
         eblast_per_year: 6,
@@ -45,6 +55,29 @@ describe('planSourceAdapter.getEntitlements — active-benefit derivation', () =
     expect(r).not.toBeNull();
     expect(r!.eblastPerYear).toBe(6);
     expect(r!.culturalTicketsPerYear).toBe(4);
+    expect(r!.activeBenefits).toEqual([
+      'all_employee_event_discount',
+      'directory_listing',
+      'partnership_package',
+    ]);
+    expect(r!.activeBenefits).not.toContain('m2m_benefits');
+    expect(r!.activeBenefits).not.toContain('tailor_made_services');
+  });
+
+  it('corporate tier surfaces m2m / referrals / tailor_made_services (R3-3)', async () => {
+    findOneMock.mockResolvedValueOnce(
+      planWith({
+        eblast_per_year: 6,
+        cultural_tickets_per_year: 4,
+        event_discount_scope: 'all_employees',
+        directory_listing_size: 'full_page',
+        m2m_benefits_access: true,
+        business_referrals: true,
+        tailor_made_services: true,
+        partnership: null,
+      }),
+    );
+    const r = await planSourceAdapter.getEntitlements(CTX, 'premium', 2026);
     expect(r!.activeBenefits).toEqual(
       expect.arrayContaining([
         'all_employee_event_discount',
@@ -52,12 +85,12 @@ describe('planSourceAdapter.getEntitlements — active-benefit derivation', () =
         'm2m_benefits',
         'business_referrals',
         'tailor_made_services',
-        'partnership_package',
       ]),
     );
+    expect(r!.activeBenefits).not.toContain('partnership_package');
   });
 
-  it('corporate tier (partnership null, tailor false) omits those keys', async () => {
+  it('corporate tier (no flags) → empty active list', async () => {
     findOneMock.mockResolvedValueOnce(
       planWith({
         eblast_per_year: 1,
@@ -77,5 +110,13 @@ describe('planSourceAdapter.getEntitlements — active-benefit derivation', () =
   it('missing plan → null (empty benefit view)', async () => {
     findOneMock.mockResolvedValueOnce(undefined);
     expect(await planSourceAdapter.getEntitlements(CTX, 'ghost', 2026)).toBeNull();
+  });
+
+  it('R#1: a malformed planId (illegal slug) → null, not a thrown 500', async () => {
+    // asPlanSlug throws on non-/^[a-z0-9-]{1,63}$/; the adapter must catch →
+    // null (empty view), not let it become compute_failed.
+    const r = await planSourceAdapter.getEntitlements(CTX, 'NOT_A_SLUG', 2026);
+    expect(r).toBeNull();
+    expect(findOneMock).not.toHaveBeenCalled();
   });
 });

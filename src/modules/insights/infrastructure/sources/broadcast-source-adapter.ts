@@ -31,7 +31,9 @@ import {
   makeListMemberBroadcastsDeps,
 } from '@/modules/broadcasts';
 import { asMemberId } from '@/modules/members';
+import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
+import { tenantYearBoundsUtcMs } from '../../application/tenant-year';
 import type {
   BenefitConsumption,
   BroadcastConsumptionSource,
@@ -48,7 +50,7 @@ export const broadcastSourceAdapter: BroadcastConsumptionSource = {
   async getEblastConsumption(
     ctx: TenantContext,
     memberId: string,
-    _membershipYear: number,
+    membershipYear: number,
   ): Promise<BenefitConsumption> {
     const mid = asMemberId(memberId);
     const quota = await computeQuotaCounter(makeComputeQuotaDeps(ctx.slug), {
@@ -57,16 +59,25 @@ export const broadcastSourceAdapter: BroadcastConsumptionSource = {
     if (!quota.ok) {
       // Fail loud — do NOT mask as `used: 0` (would fire a false under-use
       // warning). The member was already resolved upstream, so this is a real
-      // source error, not "member sent 0". `_membershipYear` is the current
-      // tenant-tz year; computeQuotaCounter derives the same year internally,
-      // so its `used` is correctly scoped (this only ever views the current
-      // year — the quota counter cannot scope to a past year).
+      // source error, not "member sent 0".
       throw new Error(`eblast consumption lookup failed: ${quota.error.kind}`);
     }
+    // `used` is the count for computeQuotaCounter's internally-derived quota
+    // year. That equals `membershipYear` because both this module and F7 use
+    // the same shared `systemClock` (insights-deps wires clock: systemClock),
+    // so the only divergence is a sub-millisecond read gap at the tenant-tz
+    // New-Year boundary — accepted (self-corrects on refresh). F9 only views
+    // the current year (the quota counter cannot scope to a past year).
     const used = quota.value.counter.used;
 
     let lastUsedAt: string | null = null;
     if (used > 0) {
+      // Year-bound the last-sent scan so a PRIOR-year send can never surface as
+      // "last used" against a current-year count (R#7). Page 1 is ordered by
+      // createdAt desc, so a member with >20 broadcasts whose current-year send
+      // is outside the window yields null ("not used yet") — a lesser, honest
+      // degradation, never a wrong-year date.
+      const { startMs, endMs } = tenantYearBoundsUtcMs(membershipYear, env.tenant.timezone);
       const list = await listMemberBroadcasts(
         makeListMemberBroadcastsDeps(ctx.slug),
         { memberId: mid, page: 1, perPage: LAST_SENT_SCAN_PER_PAGE },
@@ -74,6 +85,8 @@ export const broadcastSourceAdapter: BroadcastConsumptionSource = {
       let newest: Date | null = null;
       for (const b of list.rows) {
         if (b.status !== 'sent' || b.sentAt === null) continue;
+        const ms = b.sentAt.getTime();
+        if (ms < startMs || ms >= endMs) continue; // current membership year only
         if (newest === null || b.sentAt > newest) newest = b.sentAt;
       }
       lastUsedAt = newest === null ? null : newest.toISOString();

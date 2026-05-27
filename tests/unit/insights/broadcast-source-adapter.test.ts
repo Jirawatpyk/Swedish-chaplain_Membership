@@ -24,6 +24,7 @@ vi.mock('@/modules/broadcasts', () => ({
   makeListMemberBroadcastsDeps: () => ({}),
 }));
 vi.mock('@/modules/members', () => ({ asMemberId: (s: string) => s }));
+vi.mock('@/lib/env', () => ({ env: { tenant: { timezone: 'Asia/Bangkok' } } }));
 
 import { broadcastSourceAdapter } from '@/modules/insights/infrastructure/sources/broadcast-source-adapter';
 

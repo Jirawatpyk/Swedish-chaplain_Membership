@@ -42,10 +42,19 @@ export const eventSourceAdapter: EventConsumptionSource = {
   ): Promise<BenefitConsumption> {
     // Shared with the benefit-usage use-case so the year window cannot drift.
     const { startMs, endMs } = tenantYearBoundsUtcMs(membershipYear, env.tenant.timezone);
+    // Upper bound = min(year-end, now): exclude not-yet-occurred events (a
+    // future registration isn't a "used" ticket, R#3) AND stop future/out-of-
+    // window rows from consuming the row cap before the year's earliest
+    // cultural rows are read (mitigates the DESC+limit truncation, R#2).
+    const untilMs = Math.min(endMs, Date.now());
     const records = await getEventAttendeesByMember(
       asTenantId(ctx.slug),
       asMemberId(memberId),
-      { sinceIso: new Date(startMs).toISOString(), limit: ATTENDANCE_FETCH_LIMIT },
+      {
+        sinceIso: new Date(startMs).toISOString(),
+        untilIso: new Date(untilMs).toISOString(),
+        limit: ATTENDANCE_FETCH_LIMIT,
+      },
       { query: drizzleEventAttendeesQueryStrict },
     );
 
@@ -54,7 +63,10 @@ export const eventSourceAdapter: EventConsumptionSource = {
     for (const r of records) {
       if (!r.eventType.includes('cultural')) continue;
       const atMs = Instant.parse(r.attendedAt).toEpochMilli();
-      if (atMs < startMs || atMs >= endMs) continue; // strictly within the year
+      // Defence-in-depth: the DB now bounds [since, until], but keep the
+      // explicit year-window check (atMs >= endMs guards a future untilMs when
+      // viewing a non-current year).
+      if (atMs < startMs || atMs >= endMs) continue;
       used += 1;
       if (lastUsedMs === null || atMs > lastUsedMs) lastUsedMs = atMs;
     }

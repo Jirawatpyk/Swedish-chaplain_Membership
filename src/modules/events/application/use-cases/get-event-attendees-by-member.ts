@@ -52,6 +52,14 @@ export interface ListAttendancesOpts {
    */
   readonly sinceIso?: string;
   /**
+   * Upper bound on `start_date` (exclusive-ish; the adapter applies
+   * `start_date <= until`). Omitted by F8 (it wants all attendances up to
+   * now). F9 benefit-usage passes the year-end / now boundary so future-dated
+   * and out-of-window rows don't consume the row cap before the relevant rows
+   * are read, and a not-yet-occurred registration isn't counted as used.
+   */
+  readonly untilIso?: string;
+  /**
    * Max rows. When omitted, defaults to 100 — tight enough to avoid
    * row-cap blast radius on a member with many attendances, generous
    * enough that the at-risk-scorer's 1-year window almost always fits.
@@ -64,6 +72,8 @@ export interface EventAttendeesQueryPort {
     readonly tenantId: TenantId;
     readonly memberId: MemberId;
     readonly since: Date;
+    /** When set, the adapter filters `start_date <= until`. */
+    readonly until?: Date;
     readonly limit: number;
   }): Promise<ReadonlyArray<EventAttendanceRecord>>;
 }
@@ -92,5 +102,13 @@ export async function getEventAttendeesByMember(
       ? new Date(sinceIso)
       : new Date(Date.now() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   const limit = opts?.limit ?? DEFAULT_LIMIT;
-  return deps.query.list({ tenantId, memberId, since, limit });
+  const until = opts?.untilIso !== undefined ? new Date(opts.untilIso) : undefined;
+  // exactOptionalPropertyTypes: omit `until` entirely when absent.
+  return deps.query.list({
+    tenantId,
+    memberId,
+    since,
+    limit,
+    ...(until !== undefined ? { until } : {}),
+  });
 }
