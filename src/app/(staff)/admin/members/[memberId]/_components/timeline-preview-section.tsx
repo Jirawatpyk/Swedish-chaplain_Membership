@@ -38,6 +38,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { TimelineEventItem } from '@/components/members/timeline-event-item';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
 
@@ -74,14 +75,7 @@ export async function TimelinePreviewSection({
       { memberRepo: deps.memberRepo, timeline: deps.timeline },
     );
     if (result.ok) {
-      events = result.value.events.map((e) => ({
-        id: e.id,
-        timestamp: e.timestamp.toISOString(),
-        eventType: e.eventType,
-        actorUserId: e.actorUserId,
-        actorDisplayName: e.actorDisplayName,
-        payload: e.payload,
-      }));
+      events = result.value.events.map(toTimelineItemProps);
     } else {
       logger.error(
         { event: 'timeline_preview_use_case_err', err: result.error, memberId },
@@ -124,15 +118,9 @@ export async function TimelinePreviewSection({
             aria-label={tTimeline('subtitle')}
           >
             {events.map((ev) => (
-              <TimelineEventItem
-                key={ev.id}
-                id={ev.id}
-                timestamp={ev.timestamp}
-                eventType={ev.eventType}
-                actorUserId={ev.actorUserId}
-                actorDisplayName={ev.actorDisplayName}
-                payload={ev.payload}
-              />
+              <li key={ev.id}>
+                <TimelineEventItem {...ev} />
+              </li>
             ))}
           </ul>
         )}
@@ -163,7 +151,9 @@ export function TimelinePreviewSkeleton() {
               key={i}
               className="relative border-l-2 border-muted pl-6 py-3"
             >
-              <span className="absolute -left-[5px] top-5 h-2 w-2 rounded-full bg-muted" />
+              {/* Matches the real TimelineEventItem marker (24px circle at
+                  -left-[13px]) so the skeleton→content swap is CLS-free. */}
+              <span className="absolute -left-[13px] top-4 size-6 rounded-full border bg-background" />
               <div className="flex flex-col gap-1.5">
                 <Skeleton className="h-4 w-2/3" />
                 <Skeleton className="h-3 w-1/3" />

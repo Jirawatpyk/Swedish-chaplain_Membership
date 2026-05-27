@@ -3486,7 +3486,8 @@
       "profile": "Profil",
       "invoices": "Fakturor",
       "broadcasts": "Utskick",
-      "account": "Mitt konto",
+      "timeline": "Tidslinje",
+          "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
   },
@@ -4409,5 +4410,72 @@
         "contact": "Om problemet kvarstår, kontakta <email></email> så tar vi bort din e-post manuellt."
       }
     }
+  },
+  "timeline": {
+    "page": {
+      "title": "Aktivitetstidslinje",
+      "subtitleStaff": "Fullständig relationshistorik för denna medlem",
+      "subtitleMember": "Din aktivitetshistorik",
+      "empty": "Ingen aktivitet registrerad ännu.",
+      "emptyFiltered": "Ingen aktivitet matchar de aktuella filtren.",
+      "loadMore": "Ladda äldre aktivitet",
+      "loading": "Laddar…",
+      "loadError": "Det gick inte att ladda mer aktivitet. Försök igen.",
+      "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}"
+    },
+    "filters": {
+      "title": "Filter",
+      "source": "Källa",
+      "actor": "Aktör",
+      "from": "Från datum",
+      "to": "Till datum",
+      "all": "Alla",
+      "clear": "Rensa filter"
+    },
+    "source": {
+      "audit": "Profil / Granskning",
+      "invoice": "Faktura",
+      "payment": "Betalning",
+      "event": "Evenemang",
+      "broadcast": "E-utskick",
+      "renewal": "Förnyelse"
+    },
+    "actorKind": {
+      "staff": "Personal",
+      "member": "Medlem",
+      "system": "System"
+    },
+    "actorBy": "av {actor}",
+    "invoice": {
+      "draft": "Fakturautkast skapat",
+      "issued": "Faktura utfärdad",
+      "paid": "Faktura betald",
+      "void": "Faktura makulerad",
+      "credited": "Faktura krediterad",
+      "partially_credited": "Faktura delvis krediterad"
+    },
+    "payment": {
+      "succeeded": "Betalning mottagen",
+      "failed": "Betalning misslyckades",
+      "refunded": "Betalning återbetald",
+      "canceled": "Betalning avbruten"
+    },
+    "event": {
+      "attended": "Deltog i ett evenemang"
+    },
+    "broadcast": {
+      "sent": "E-utskick skickat"
+    },
+    "renewal": {
+      "upcoming": "Förnyelse kommande",
+      "reminded": "Förnyelsepåminnelse skickad",
+      "awaiting_payment": "Förnyelse inväntar betalning",
+      "completed": "Förnyelse slutförd",
+      "lapsed": "Medlemskap upphört",
+      "cancelled": "Förnyelse avbruten",
+      "pending_admin_reactivation": "Väntar på återaktivering",
+      "updated": "Förnyelse uppdaterad"
+    },
+    "unknownEvent": "Aktivitet"
   }
 }

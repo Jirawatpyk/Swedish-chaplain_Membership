@@ -29,6 +29,26 @@ session checks per existing middleware.
 
 ---
 
+## Timeline JSON (keyset load-more) endpoints — US3
+
+The timeline pages SSR the first page; the virtualized client stream fetches
+subsequent pages from these JSON endpoints. Both accept the same query params
+and return `{ items[], next_cursor, total }` (items carry `source`, `event_type`,
+`actor_kind`, `actor_user_id`, `actor_display_name`, `payload`).
+
+| Endpoint | Access | Notes |
+|----------|--------|-------|
+| `GET /api/members/[memberId]/timeline` | staff (admin/manager) | pre-existing F3 route, **extended** with the US3 filters |
+| `GET /api/portal/timeline` | member (own) | **new** — member derived from session (`findByLinkedUserId`), never from the URL (FR-017 own-history-only) |
+
+Query params (all optional): `cursor` (opaque keyset), `limit` (1–100, default 50),
+`source` (audit/invoice/payment/event/broadcast/renewal), `actorKind`
+(staff/member/system), `from` & `to` (`YYYY-MM-DD`, tenant-tz calendar days →
+UTC bounds; malformed → 400 `validation_error`). Member-role responses are
+payload-redacted (FR-017).
+
+---
+
 ## Cron endpoints (Bearer `CRON_SECRET`, retry-OFF, cron-job.org)
 
 ### `POST /api/cron/insights/snapshot-refresh-coordinator`

@@ -54,6 +54,20 @@ const messages = {
       string
     >,
   },
+  // F9 US3 — the consumer now reads the unified `timeline.*` namespace for
+  // the source badge + actor attribution line.
+  timeline: {
+    actorBy: 'by {actor}',
+    source: {
+      audit: 'Profile / Audit',
+      invoice: 'Invoice',
+      payment: 'Payment',
+      event: 'Event',
+      broadcast: 'E-Blast',
+      renewal: 'Renewal',
+    },
+    actorKind: { staff: 'Staff', member: 'Member', system: 'System' },
+  },
 };
 
 describe('TimelineEventItem — round-3+4+5 audit event-type i18n (L5)', () => {
@@ -65,7 +79,9 @@ describe('TimelineEventItem — round-3+4+5 audit event-type i18n (L5)', () => {
           <TimelineEventItem
             id={`audit-${eventType}`}
             timestamp="2026-04-10T10:00:00Z"
+            source="audit"
             eventType={eventType}
+            actorKind="staff"
             actorUserId="actor-1"
             actorDisplayName="Test User"
             payload={null}

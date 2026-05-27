@@ -149,18 +149,18 @@ separately to bound the all-PII review blast radius.
 
 ### Tests (write first, ensure FAIL)
 
-- [ ] T051 [P] [US3] Integration test `member_timeline_v` union ordering across 6 sources in `tests/integration/members/timeline-multisource.test.ts`
-- [ ] T052 [P] [US3] Integration test keyset cursor correctness for identical `occurred_at` across sources (`ref_id` tiebreak) (R2-E7)
-- [ ] T053 [P] [US3] E2E `@f9` timeline filters + member-own redaction in `tests/e2e/f9-timeline.spec.ts`
+- [X] T051 [P] [US3] Integration test `member_timeline_v` union ordering across 6 sources — **DONE 2026-05-27**, `tests/integration/members/timeline-multisource.test.ts` (5/5 GREEN live Neon): AS-1 six-source merge + reverse-chron, AS-3 source/actorKind/date-range filters.
+- [X] T052 [P] [US3] Integration test keyset cursor for identical `occurred_at` across sources (`ref_id` text tiebreak, R2-E7) — **DONE 2026-05-27**, same file (invoice `issue_date 2026-07-01` vs audit `timestamp 2026-07-01T00:00:00Z` collide on `occurred_at`; limit=1 pages both with no loss/dup). Cursor carries full `occurred_at::text` µs (US2 keyset lesson).
+- [X] T053 [P] [US3] E2E `@f9` timeline filters + member-own in `tests/e2e/f9-timeline.spec.ts` — admin source-filter round-trip + member `/portal/timeline` own-history. (NOT flag-gated — in-place F3-route enrichment.)
 
 ### Implementation
 
-- [ ] T054 [US3] Swap timeline repo to query `member_timeline_v` (keyset) in `src/modules/members/infrastructure/timeline/drizzle-timeline-repo.ts`
-- [ ] T055 [US3] Extend `timelineList` input with `{source?,from?,to?,actorKind?}` filters, signature preserved, in `src/modules/members/application/use-cases/timeline-list.ts`
-- [ ] T056 [US3] Timeline i18n mapping `(source,payload)→timeline.<source>.<eventKind>` + legacy summary fallback in `src/components/members/timeline-client.tsx`
-- [ ] T057 [US3] Member portal own-timeline page in `src/app/(member)/portal/timeline/page.tsx`
-- [ ] T058 [P] [US3] Filter UI + virtualization (TanStack Virtual) timeline component
-- [ ] T059 [P] [US3] i18n keys `timeline.<source>.<eventKind>` EN/TH/SV (all 6 sources)
+- [X] T054 [US3] Swap timeline repo to query `member_timeline_v` (keyset) in `src/modules/members/infrastructure/timeline/drizzle-timeline-repo.ts` — **DONE**: raw `member_timeline_v` query, `(occurred_at DESC, ref_id DESC)` keyset over TEXT ref_id, source/actorKind/date filters; audit rows keep plan-name enrichment + actor display-name resolution (event_type/summary/actor_user_id lifted from the 0192-enriched payload). **Prereq migration 0192** (`CREATE OR REPLACE VIEW` audit-payload enrich) applied to live Neon.
+- [X] T055 [US3] Extend `timelineList` input with `{source?,actorKind?,from?,to?}` — **DONE**, signature preserved; `from`/`to` are UTC ISO (presentation converts ymd→tenant-tz UTC via `@/lib/tenant-day-range`, keeping env out of the application layer); `TimelineEvent` gains `source`+`actorKind`; redaction unchanged.
+- [X] T056 [US3] Timeline i18n mapping `(source,eventKind)→timeline.<source>.<eventKind>` + `audit.eventType.*` reuse + legacy `summary` fallback in `src/components/members/timeline-event-item.tsx` (source badge + icon + actor-kind label for non-audit).
+- [X] T057 [US3] Member portal own-timeline page `src/app/(member)/portal/timeline/page.tsx` (`requireSession('member')` → `findByLinkedUserId`, own-history-only) + load-more API `src/app/api/portal/timeline/route.ts` + member nav item.
+- [X] T058 [P] [US3] `<TimelineFilters>` (URL-state source/actor/date) + `<TimelineStream>` (window-virtualized via `useWindowVirtualizer`, explicit Load-more, sr-only live region) in `src/components/members/`. Staff timeline page rewired to both.
+- [X] T059 [P] [US3] i18n keys top-level `timeline.*` (source/actorKind/per-source eventKinds/filters/page) EN/TH/SV — `check:i18n` 3300 keys parity GREEN.
 
 **Checkpoint**: US1–US3 work independently.
 

@@ -278,6 +278,8 @@ export {
 export {
   timelineList,
   timelineListSchema,
+  TIMELINE_SOURCES,
+  TIMELINE_ACTOR_KINDS,
   type TimelineListInput,
   type TimelineListOutput,
   type TimelineListError,
@@ -309,6 +311,8 @@ export type {
   TimelineEvent,
   TimelineResult,
   TimelinePort,
+  TimelineSource,
+  TimelineActorKind,
 } from './application/ports/timeline-port';
 
 // --- US4 port ---------------------------------------------------------------

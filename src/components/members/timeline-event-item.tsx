@@ -1,22 +1,39 @@
 /**
- * T132 — Timeline event item (US6).
+ * F9 US3 — unified multi-source timeline event item.
  *
- * Renders a single audit event row with:
- *   - Localised event-type label
- *   - Human-readable actor attribution (resolved display name or "System")
- *   - Localised timestamp
- *   - Meaningful payload diff/summary (not raw UUIDs)
+ * Renders a single `member_timeline_v` row. The label is resolved from
+ * `(source, eventType)` (FR-014):
+ *   - `audit` rows reuse the existing `audit.eventType.*` catalogue, falling
+ *     back to the legacy `payload.summary` string, then the source label.
+ *   - the other five sources resolve `timeline.<source>.<eventKind>`,
+ *     falling back to the localized source label.
+ *
+ * Actor attribution: audit rows show the resolved staff display name; the
+ * other sources have no single acting user, so a localized actor-kind label
+ * (Staff / Member / System) is shown instead.
  *
  * FR-024: keyboard-accessible, aria-labelled, reduced-motion friendly.
  */
 
 import { useTranslations, useLocale } from 'next-intl';
+import {
+  CreditCardIcon,
+  FileTextIcon,
+  CalendarCheckIcon,
+  MegaphoneIcon,
+  RefreshCwIcon,
+  UserCogIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import { RelativeTime } from '@/components/ui/relative-time';
+import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';
 
 export type TimelineItemProps = {
   readonly id: string;
   readonly timestamp: string;
+  readonly source: TimelineSource;
   readonly eventType: string;
+  readonly actorKind: TimelineActorKind;
   readonly actorUserId: string;
   readonly actorDisplayName: string | null;
   readonly payload: Record<string, unknown> | null;
@@ -24,16 +41,19 @@ export type TimelineItemProps = {
 
 const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
 
+const SOURCE_ICON: Record<TimelineSource, LucideIcon> = {
+  audit: UserCogIcon,
+  invoice: FileTextIcon,
+  payment: CreditCardIcon,
+  event: CalendarCheckIcon,
+  broadcast: MegaphoneIcon,
+  renewal: RefreshCwIcon,
+};
+
 /**
- * Locale-aware timestamp formatter (US6 AS1).
- *
- * Constitution § Conventions requires Thai Buddhist Era (BE = CE + 543)
- * for `th-TH` display surfaces. Intl.DateTimeFormat supports it natively
- * via the `-u-ca-buddhist` locale extension.
- *
- * Other locales (`en`, `sv`) use Gregorian — standard for audit logs.
- * We keep the ISO string in `<time dateTime>` for machine-readable
- * access + screen readers; the rendered text is purely visual.
+ * Locale-aware timestamp formatter. Thai uses Buddhist Era (BE = CE + 543)
+ * natively via the `-u-ca-buddhist` extension (Constitution § Conventions);
+ * en/sv use Gregorian. The machine-readable ISO stays in `<time dateTime>`.
  */
 export function formatLocalisedTimestamp(iso: string, locale: string): string {
   const d = new Date(iso);
@@ -49,21 +69,17 @@ export function formatLocalisedTimestamp(iso: string, locale: string): string {
       hour12: false,
     }).format(d);
   } catch {
-    // Fallback — bad locale, degrade to ISO slice
     return iso.replace('T', ' ').slice(0, 16);
   }
 }
 
 /**
- * Format the payload into a compact, human-readable one-liner.
- * Avoids showing raw UUIDs unless they are the actual target of the event.
- * Returns null when nothing useful to show — UI falls back to the
- * localised event-type heading alone.
- *
- * `tPayload` is the localised `admin.members.timeline.payload.*` namespace
- * so secondary labels are i18n'd consistently with the rest of the UI.
+ * Compact, human-readable payload one-liner for AUDIT rows (avoids raw
+ * UUIDs). Returns null when nothing useful to show. The non-audit sources
+ * carry their state in the localised label, so they pass through here only
+ * for the audit catalogue.
  */
-function formatPayload(
+function formatAuditPayload(
   eventType: string,
   payload: Record<string, unknown> | null,
   tPayload: (
@@ -72,7 +88,6 @@ function formatPayload(
   ) => string,
 ): string | null {
   if (!payload) return null;
-
   const get = (k: string): string | null => {
     const v = payload[k];
     return typeof v === 'string' && v.length > 0 ? v : null;
@@ -83,19 +98,20 @@ function formatPayload(
       const company = get('company_name');
       return company ? `“${company}”` : null;
     }
-    case 'member_updated': {
+    case 'member_updated':
+    case 'member_self_updated':
+    case 'contact_created':
+    case 'contact_updated':
+    case 'contact_removed': {
       const fields = payload.fields_changed;
-      if (Array.isArray(fields) && fields.length > 0) {
-        return `${fields.join(', ')}`;
-      }
+      if (Array.isArray(fields) && fields.length > 0) return `${fields.join(', ')}`;
+      if (payload.is_primary === true) return tPayload('primary');
       return null;
     }
     case 'member_plan_changed': {
-      // Prefer resolved plan display names (server-enriched) over raw UUIDs.
       const oldName = get('old_plan_name');
       const newName = get('new_plan_name');
       if (oldName && newName) return `${oldName} → ${newName}`;
-      // Fallback: truncate UUIDs for pre-enrichment rows.
       const oldId = get('old_plan_id');
       const newId = get('new_plan_id');
       if (oldId && newId) {
@@ -115,92 +131,87 @@ function formatPayload(
       const newS = get('new_status');
       return oldS && newS ? `${oldS} → ${newS}` : null;
     }
-    case 'contact_created':
-    case 'contact_updated':
-    case 'contact_removed': {
-      const fields = payload.fields_changed;
-      if (Array.isArray(fields) && fields.length > 0) {
-        return `${fields.join(', ')}`;
-      }
-      const isPrimary = payload.is_primary;
-      if (isPrimary === true) return tPayload('primary');
-      return null;
-    }
-    case 'member_self_updated': {
-      const fields = payload.fields_changed;
-      if (Array.isArray(fields) && fields.length > 0) {
-        return `${fields.join(', ')}`;
-      }
-      return null;
-    }
-    case 'member_primary_contact_changed': {
+    case 'member_primary_contact_changed':
       return tPayload('primaryContactPromoted');
-    }
     case 'member_archived': {
-      // I4 round-10 ui-design-specialist — the archive use-case writes
-      // a free-text `reason` field to the audit payload (see
-      // archive-member-button.tsx); ignoring it on the timeline buried
-      // the only context admins write at archive time. Surface it as
-      // "Reason: {text}" when present; fall back to the bare event
-      // label when the admin skipped the optional field.
       const reason = get('reason');
-      return reason
-        ? tPayload('archiveReason', { reason })
-        : null;
+      return reason ? tPayload('archiveReason', { reason }) : null;
     }
-    case 'member_undeleted':
-      return null; // Event type label is self-explanatory
     default:
       return null;
   }
 }
 
 export function TimelineEventItem({
+  source,
   timestamp,
   eventType,
   actorUserId,
+  actorKind,
   actorDisplayName,
   payload,
 }: TimelineItemProps) {
   const t = useTranslations('admin.members.timeline');
   const tPayload = useTranslations('admin.members.timeline.payload');
-  const tEvent = useTranslations('audit.eventType');
+  const tAuditEvent = useTranslations('audit.eventType');
+  const tTimeline = useTranslations('timeline');
   const locale = useLocale();
 
-  // Defensive: event types not yet in the translation map fall back to
-  // the raw enum key rather than throwing (audit log may ship new types
-  // ahead of i18n keys during rollouts).
+  // --- localised label resolution (FR-014) --------------------------------
   let eventLabel: string;
-  try {
-    eventLabel = tEvent(eventType);
-  } catch {
-    eventLabel = eventType;
+  if (source === 'audit') {
+    try {
+      eventLabel = tAuditEvent(eventType);
+    } catch {
+      // Legacy summary fallback, then the source label.
+      const summary = typeof payload?.summary === 'string' ? payload.summary : '';
+      eventLabel = summary.length > 0 ? summary : tTimeline('source.audit');
+    }
+  } else {
+    try {
+      eventLabel = tTimeline(`${source}.${eventType}` as 'unknownEvent');
+    } catch {
+      eventLabel = tTimeline(`source.${source}` as 'unknownEvent');
+    }
   }
 
-  const actorDisplay = SYSTEM_ACTORS.has(actorUserId)
-    ? t('actorSystem')
-    : (actorDisplayName ?? t('actorSystem'));
+  // --- actor attribution --------------------------------------------------
+  let actorDisplay: string;
+  if (source === 'audit') {
+    actorDisplay = SYSTEM_ACTORS.has(actorUserId)
+      ? t('actorSystem')
+      : (actorDisplayName ?? tTimeline(`actorKind.${actorKind}` as 'actorKind.staff'));
+  } else {
+    actorDisplay = tTimeline(`actorKind.${actorKind}` as 'actorKind.staff');
+  }
 
-  const payloadDetail = formatPayload(eventType, payload, tPayload);
+  const sourceLabel = tTimeline(`source.${source}` as 'source.audit');
+  const SourceIcon = SOURCE_ICON[source];
+  const payloadDetail =
+    source === 'audit' ? formatAuditPayload(eventType, payload, tPayload) : null;
 
   return (
-    <li
+    <div
       className="relative border-l-2 border-muted pl-6 py-3"
       data-event-type={eventType}
+      data-source={source}
     >
-      {/* Dot marker — reduced-motion friendly (static, no pulse) */}
+      {/* Source marker — reduced-motion friendly (static icon, no pulse). */}
       <span
         aria-hidden
-        className="absolute -left-[5px] top-5 h-2 w-2 rounded-full bg-primary"
-      />
+        className="absolute -left-[13px] top-4 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground"
+      >
+        <SourceIcon className="size-3.5" />
+      </span>
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-sm">{eventLabel}</span>
-          {/* Root-cause hydration fix: `<RelativeTime>` renders a
-              stable absolute date during SSR + first paint, then
-              flips to the "X seconds ago" relative-time string after
-              `useEffect` runs (client-only). Replaces the previous
-              `suppressHydrationWarning` pattern. */}
+          {/* bg-secondary/text-secondary-foreground is a designed ≥4.5:1
+              accessible pair (WCAG 1.4.3) — the prior muted-on-muted chip
+              failed contrast (review-run I6). */}
+          <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-secondary-foreground">
+            {sourceLabel}
+          </span>
           <RelativeTime
             iso={timestamp}
             title={formatLocalisedTimestamp(timestamp, locale)}
@@ -212,9 +223,9 @@ export function TimelineEventItem({
           <p className="text-sm text-muted-foreground">{payloadDetail}</p>
         )}
         <p className="text-xs text-muted-foreground">
-          {t('actor', { actor: actorDisplay })}
+          {tTimeline('actorBy', { actor: actorDisplay })}
         </p>
       </div>
-    </li>
+    </div>
   );
 }

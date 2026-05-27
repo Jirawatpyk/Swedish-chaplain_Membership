@@ -3640,4 +3640,18 @@ export const insightsMetrics = {
       ).record(ms);
     });
   },
+  /**
+   * Unified-timeline query latency (US3 / FR-016) — backs the p95 < 500 ms
+   * per-page SLO. Measures the keyset-paginated `member_timeline_v` round-trip
+   * (count + page + actor/plan enrichment) inside the timeline repo.
+   */
+  timelineQueryDurationMs(ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'insights_timeline_query_duration_ms',
+        'F9 unified multi-source timeline keyset query latency',
+        'ms',
+      ).record(ms);
+    });
+  },
 } as const;

@@ -3486,7 +3486,8 @@
       "profile": "Profile",
       "invoices": "Invoices",
       "broadcasts": "E-Blasts",
-      "account": "Account",
+      "timeline": "Timeline",
+          "account": "Account",
       "ariaLabel": "Member navigation"
     }
   },
@@ -4409,5 +4410,72 @@
         "contact": "If the problem persists, please contact <email></email> and we will remove your email manually."
       }
     }
+  },
+  "timeline": {
+    "page": {
+      "title": "Activity timeline",
+      "subtitleStaff": "Full relationship history for this member",
+      "subtitleMember": "Your activity history",
+      "empty": "No activity recorded yet.",
+      "emptyFiltered": "No activity matches the current filters.",
+      "loadMore": "Load older activity",
+      "loading": "Loading…",
+      "loadError": "Failed to load more activity. Please try again.",
+      "results": "{count, plural, =0 {No entries} one {# entry} other {# entries}}"
+    },
+    "filters": {
+      "title": "Filters",
+      "source": "Source",
+      "actor": "Actor",
+      "from": "From date",
+      "to": "To date",
+      "all": "All",
+      "clear": "Clear filters"
+    },
+    "source": {
+      "audit": "Profile / Audit",
+      "invoice": "Invoice",
+      "payment": "Payment",
+      "event": "Event",
+      "broadcast": "E-Blast",
+      "renewal": "Renewal"
+    },
+    "actorKind": {
+      "staff": "Staff",
+      "member": "Member",
+      "system": "System"
+    },
+    "actorBy": "by {actor}",
+    "invoice": {
+      "draft": "Invoice drafted",
+      "issued": "Invoice issued",
+      "paid": "Invoice paid",
+      "void": "Invoice voided",
+      "credited": "Invoice credited",
+      "partially_credited": "Invoice partially credited"
+    },
+    "payment": {
+      "succeeded": "Payment received",
+      "failed": "Payment failed",
+      "refunded": "Payment refunded",
+      "canceled": "Payment canceled"
+    },
+    "event": {
+      "attended": "Attended an event"
+    },
+    "broadcast": {
+      "sent": "E-Blast sent"
+    },
+    "renewal": {
+      "upcoming": "Renewal upcoming",
+      "reminded": "Renewal reminder sent",
+      "awaiting_payment": "Renewal awaiting payment",
+      "completed": "Renewal completed",
+      "lapsed": "Membership lapsed",
+      "cancelled": "Renewal cancelled",
+      "pending_admin_reactivation": "Pending reactivation",
+      "updated": "Renewal updated"
+    },
+    "unknownEvent": "Activity"
   }
 }

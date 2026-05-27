@@ -1,13 +1,12 @@
 /**
- * T131 — GET /api/members/[memberId]/timeline (US6).
+ * GET /api/members/[memberId]/timeline — staff load-more (F9 US3).
  *
- * Returns paginated audit-log events for a single member, newest-first.
- * RBAC: admin + manager (full), member (own + redacted).
- * Query params: cursor (opaque), limit (1..100, default 50).
- *
- * FR-020: per-member timeline, paginated in batches of 50.
- * FR-023: reads from the shared audit_log.
- * FR-024: response shape supports WCAG 2.1 AA timeline rendering.
+ * Returns the keyset-paginated unified multi-source timeline (`member_timeline_v`:
+ * audit · invoice · payment · event · broadcast · renewal) for a single member,
+ * newest-first. RBAC: admin + manager (full), member-role redaction applied by
+ * the use-case. Query params: cursor (opaque keyset), limit (1..100, default 50),
+ * and the FR-015 filters source/actorKind/from/to (`from`/`to` = YYYY-MM-DD
+ * tenant-tz days → UTC bounds; malformed → 400).
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -15,8 +14,15 @@ import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { timelineList } from '@/modules/members';
+import {
+  timelineList,
+  TIMELINE_SOURCES,
+  TIMELINE_ACTOR_KINDS,
+} from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { toTimelineApiItem } from '@/lib/timeline-presenter';
+import { env } from '@/lib/env';
 
 const paramsSchema = z.object({
   memberId: z.string().uuid(),
@@ -25,6 +31,12 @@ const paramsSchema = z.object({
 const querySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  // F9 US3 filters (FR-015). `from`/`to` are YYYY-MM-DD tenant-tz calendar
+  // days, converted to UTC bounds below.
+  source: z.enum(TIMELINE_SOURCES).optional(),
+  actorKind: z.enum(TIMELINE_ACTOR_KINDS).optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
 });
 
 export async function GET(
@@ -50,6 +62,10 @@ export async function GET(
   const queryParsed = querySchema.safeParse({
     cursor: url.searchParams.get('cursor') ?? undefined,
     limit: url.searchParams.get('limit') ?? 50,
+    source: url.searchParams.get('source') ?? undefined,
+    actorKind: url.searchParams.get('actorKind') ?? undefined,
+    from: url.searchParams.get('from') ?? undefined,
+    to: url.searchParams.get('to') ?? undefined,
   });
   if (!queryParsed.success) {
     return NextResponse.json(
@@ -67,6 +83,17 @@ export async function GET(
     );
   }
 
+  // Convert YYYY-MM-DD tenant-tz calendar days into UTC bounds (FR-015).
+  // A malformed date → 400 before the use-case (mirrors the audit viewer).
+  const { from: fromYmd, to: toYmd } = queryParsed.data;
+  if ((fromYmd && !isYmd(fromYmd)) || (toYmd && !isYmd(toYmd))) {
+    return NextResponse.json(
+      { error: { code: 'validation_error', message: 'Invalid date filter.' } },
+      { status: 400 },
+    );
+  }
+  const tz = env.tenant.timezone;
+
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
 
@@ -75,6 +102,10 @@ export async function GET(
       memberId: parsed.data.memberId,
       cursor: queryParsed.data.cursor,
       limit: queryParsed.data.limit,
+      ...(queryParsed.data.source ? { source: queryParsed.data.source } : {}),
+      ...(queryParsed.data.actorKind ? { actorKind: queryParsed.data.actorKind } : {}),
+      ...(fromYmd ? { from: tenantDayStartUtc(fromYmd, tz) } : {}),
+      ...(toYmd ? { to: tenantDayEndUtc(toYmd, tz) } : {}),
     },
     {
       actorUserId: ctx.current.user.id,
@@ -113,14 +144,7 @@ export async function GET(
   }
 
   return NextResponse.json({
-    items: result.value.events.map((e) => ({
-      id: e.id,
-      timestamp: e.timestamp.toISOString(),
-      event_type: e.eventType,
-      actor_user_id: e.actorUserId,
-      actor_display_name: e.actorDisplayName,
-      payload: e.payload,
-    })),
+    items: result.value.events.map(toTimelineApiItem),
     next_cursor: result.value.nextCursor,
     total: result.value.total,
   });

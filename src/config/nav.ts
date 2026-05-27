@@ -15,6 +15,7 @@ import {
   PlugZapIcon,
   Settings2Icon,
   ScrollTextIcon,
+  HistoryIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -261,6 +262,13 @@ export const memberNavConfig: NavConfig = {
           icon: MegaphoneIcon,
           href: '/portal/benefits/e-blasts',
           activePattern: '/portal/benefits/e-blasts',
+        },
+        // F9 US3 — member's own unified activity timeline.
+        {
+          titleKey: 'nav.member.timeline',
+          icon: HistoryIcon,
+          href: '/portal/timeline',
+          activePattern: '/portal/timeline',
         },
         {
           titleKey: 'nav.member.account',

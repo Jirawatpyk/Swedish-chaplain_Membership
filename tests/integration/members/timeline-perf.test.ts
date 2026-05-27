@@ -1,19 +1,24 @@
 /**
- * Timeline perf gate (E3 follow-up to US6).
+ * Timeline perf gate (E3 → F9 US3 / FR-016).
  *
- * Target: p95 < 300ms for a 50-event timeline page on a member with
- * 1,000 total audit events, backed by:
- *   - `audit_log_member_id_idx` index on `((payload->>'member_id'))`
- *     (migration 0009)
- *   - `audit_log_timestamp_idx` DESC index (F1 migration 0001)
+ * Since F9 US3 the timeline repo reads `member_timeline_v` (migrations 0189 +
+ * 0192) — a `security_invoker` UNION of six sources — via keyset pagination on
+ * `(occurred_at DESC, ref_id DESC)`. This gate still seeds 1,000 audit rows for
+ * one member (the audit branch is the heaviest single source + carries the
+ * actor/plan enrichment); the query path now also pays the UNION + the
+ * per-source keyset indexes shipped in 0189. Backed by:
+ *   - `audit_log_member_timeline_idx` `((payload->>'member_id'), timestamp DESC)`
+ *     (migration 0189)
+ *   - the per-source keyset indexes (invoices/payments/events/broadcasts/
+ *     renewals) from migration 0189
  *
- * Rationale: Constitution Principle VII mandates Members API p95 <
- * 400 ms — timeline is a Members read path, so the repo query is
- * subject to the same SLO. The 300ms local target leaves headroom for
- * cold-start / network overhead on Vercel.
+ * Rationale: timeline is a Members read path; F9 FR-016 sets a per-page budget
+ * of p95 < 500 ms. The 300 ms local target (override via PERF_TIMELINE_P95_MS)
+ * leaves headroom for cold-start on Vercel sin1 ↔ Neon ap-southeast-1.
  *
- * Gated by RUN_PERF=1 so the 1,000-event seed + enrichment JOIN
- * doesn't run on every CI tick. Skip is observable in the test report.
+ * Gated by RUN_PERF=1 so the 1,000-row seed + UNION + enrichment doesn't run on
+ * every CI tick. The numeric p95 CP (FR-016) remains a ship-day gate — measure
+ * at seeded scale before flag-flip (mirrors T098's deferred perf verification).
  *
  * Run locally:
  *   RUN_PERF=1 pnpm test:integration tests/integration/members/timeline-perf.test.ts
@@ -38,7 +43,7 @@ const RUN_COUNT = 20;
 // Default 300 ms targets the intended in-region production environment
 // (Vercel sin1 ↔ Neon ap-southeast-1, ~ 1–3 ms RTT). Local dev runs
 // from Bangkok against Neon Singapore — the ~25 ms RTT × multi-op
-// query × 100 samples typically lands around 550-650 ms p95, which is
+// query × RUN_COUNT samples typically lands around 550-650 ms p95, which is
 // not a regression but a network-distance artifact. Override via
 // `PERF_TIMELINE_P95_MS` for cross-region runs.
 const P95_TARGET_MS = Number(
