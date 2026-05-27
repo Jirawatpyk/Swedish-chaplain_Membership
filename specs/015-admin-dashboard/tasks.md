@@ -173,18 +173,18 @@ separately to bound the all-PII review blast radius.
 
 ### Tests (write first, ensure FAIL)
 
-- [ ] T060 [P] [US4] Unit test benefit aggregation = mean of quantifiable ratios excluding unlimited + 25pt warning (fast-check) in `tests/unit/insights/benefit-usage.test.ts`
-- [ ] T061 [P] [US4] Integration test membership-year boundary (Dec-31 vs Jan-1, tenant-tz) in `tests/integration/insights/benefit-year-boundary.test.ts` (R2-E5)
-- [ ] T062 [P] [US4] E2E `@f9` benefit dashboard (member + admin variants) in `tests/e2e/f9-benefits.spec.ts`
+- [X] T060 [P] [US4] Unit test benefit aggregation = mean of quantifiable ratios excluding unlimited + 25pt warning (fast-check) in `tests/unit/insights/benefit-usage.test.ts` — **DONE 2026-05-27**, 10/10 GREEN (assessUnderUse property + spec worked-example + yearElapsedPct clamping + buildBenefitUsage AS-1/AS-3).
+- [X] T061 [P] [US4] Integration test membership-year boundary (Dec-31 vs Jan-1, tenant-tz) in `tests/integration/insights/benefit-year-boundary.test.ts` (R2-E5) — **DONE 2026-05-27**, 2/2 GREEN on live Neon (fake-clock 23:00 ICT 31-Dec→year N / 00:30 ICT 1-Jan→N+1; real-clock prior-year exclusion + entitlements 6 + active benefits).
+- [X] T062 [P] [US4] E2E `@f9` benefit dashboard (member + admin variants) in `tests/e2e/f9-benefits.spec.ts` — **DONE 2026-05-27** (admin member benefit view + back link; member own /portal/benefits; structural assertions, ungated like US3).
 
 ### Implementation
 
-- [ ] T063 [US4] `BenefitUsage` domain VO (ratios, unlimited handling, calendar-tenant-tz year) in `src/modules/insights/domain/benefit-usage.ts`
-- [ ] T064 [US4] `computeBenefitUsage` use-case (plans + broadcast + event consumption) in `src/modules/insights/application/use-cases/compute-benefit-usage.ts`
-- [ ] T065 [US4] Member benefit page (extend) in `src/app/(member)/portal/benefits/page.tsx`
-- [ ] T066 [US4] Staff member benefit page in `src/app/(staff)/admin/members/[memberId]/benefits/page.tsx`
-- [ ] T067 [P] [US4] `BenefitUsageCard` + `UnderUseWarning` components (non-colour bars) in `src/components/benefits/`
-- [ ] T068 [US4] Emit `member_benefit_viewed` (staff reads) + **member self-view counter** (SC-012 adoption measurement, analyze M2); i18n keys EN/TH/SV
+- [X] T063 [US4] `BenefitUsage` domain VO (ratios, unlimited handling, calendar-tenant-tz year) in `src/modules/insights/domain/benefit-usage.ts` — **DONE 2026-05-27**, pure VO: `assessUnderUse` (mean-of-ratios, 25pt gap), `yearElapsedPct` (pure arithmetic over UTC bounds — tz derivation lives in Application), `buildBenefitUsage`.
+- [X] T064 [US4] `computeBenefitUsage` use-case (plans + broadcast + event consumption) in `src/modules/insights/application/use-cases/compute-benefit-usage.ts` — **DONE 2026-05-27**, composes MemberPlanSource + PlanSource + Broadcast/Event consumption; tenant-tz year bounds via js-joda; `member_not_found`/`compute_failed` Result; deps `makeComputeBenefitUsageDeps`.
+- [X] T065 [US4] Member benefit page (extend) in `src/app/(member)/portal/benefits/page.tsx` — **DONE 2026-05-27**, session-resolved member (findByLinkedUserId), compute_failed→error boundary, unlinked→empty, SC-012 self-view metric, nav entry added.
+- [X] T066 [US4] Staff member benefit page in `src/app/(staff)/admin/members/[memberId]/benefits/page.tsx` — **DONE 2026-05-27**, requireSession('staff'), getMember 404/probe, `recordStaffBenefitView` (member_benefit_viewed + metric), mailto reminder to primary contact (AS-4).
+- [X] T067 [P] [US4] `BenefitUsageCard` + `UnderUseWarning` components (non-colour bars) in `src/components/benefits/` — **DONE 2026-05-27**, client-safe (local prop types, no insights-barrel import → no server-graph leak); ProgressBar (used/entitlement), active-benefit badges, icon+text warning (non-colour-alone).
+- [X] T068 [US4] Emit `member_benefit_viewed` (staff reads) + **member self-view counter** (SC-012 adoption measurement, analyze M2); i18n keys EN/TH/SV — **DONE 2026-05-27**, `recordStaffBenefitView` (audit best-effort + `insightsMetrics.benefitViewed`); member page emits `benefitViewed('member')`; benefits.* + admin.members.benefits + nav.member.benefits across en/th/sv (3327-key parity).
 
 **Checkpoint**: **Slice A complete** (US1–US4) — review/ship as the first increment.
 

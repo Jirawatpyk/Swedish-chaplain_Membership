@@ -68,4 +68,21 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     });
     await expectNoAxeViolations(page, '/admin/members (engagement column)');
   });
+
+  // F9 US4 — benefit usage card (progress bars, active badges, under-use
+  // warning contrast). Scans a real member's staff benefit view.
+  test('member benefit view (/admin/members/[id]/benefits)', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/members');
+    const firstRow = page.locator('table tbody tr').first();
+    await firstRow.waitFor({ timeout: 15_000 });
+    const href = await firstRow.locator('a').first().getAttribute('href');
+    const memberId = href?.match(/\/admin\/members\/([0-9a-f-]+)/)?.[1];
+    if (!memberId) throw new Error('No member rows — seed required for a11y scan');
+    await page.goto(`/admin/members/${memberId}/benefits`);
+    await expect(
+      page.getByRole('heading', { name: 'Member benefits', level: 1 }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page, '/admin/members/[id]/benefits');
+  });
 });

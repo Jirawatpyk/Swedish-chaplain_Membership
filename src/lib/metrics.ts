@@ -3612,6 +3612,19 @@ export const insightsMetrics = {
     });
   },
   /**
+   * Benefit-usage view (US4 / SC-012 adoption KPI — analyze M2). `role`
+   * distinguishes a member's own self-view (the ≥50%-of-active-members
+   * adoption signal) from a staff PII read of a member's benefits.
+   */
+  benefitViewed(role: string, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_benefit_viewed_total',
+        'F9 member benefit-usage views by viewer role (SC-012 adoption)',
+      ).add(1, { role, tenant: tenantId });
+    });
+  },
+  /**
    * Mirrors `authMetrics.auditMissing` / `broadcastsMetrics.auditEmitFailed` —
    * incremented when a best-effort F9 audit write (e.g. the `dashboard_viewed`
    * PII-read trail, FR-036) is swallowed by the adapter. The audit_log is a

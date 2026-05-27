@@ -11,23 +11,17 @@
  * Domain-only branded tenant type) scopes every read; the adapter threads it
  * into the source barrel's call convention. All reads are tenant-bound.
  *
- * Barrel-backing + gaps (per the 2026-05-25 barrel survey — drives T017):
- *   - MemberSource       → members barrel `directorySearchWithCount`
- *     (riskBand/status filters + riskScore/riskScoreBand). countByStatus has
- *     NO direct export → adapter composes (or promote `countMembersByStatus`).
- *   - PlanSource         → plans barrel `getPlan` (returns `benefit_matrix`).
- *   - BroadcastConsumptionSource → broadcasts barrel `computeQuotaCounter`
- *     (returns used/cap). "awaiting approval" count has NO export →
- *     promote `countBroadcastsAwaitingApproval` at US1.
+ * Barrel-backing (how each port is implemented in infrastructure/sources/*):
+ *   - MemberSource / MemberPlanSource → members barrel
+ *     (`directorySearchWithCount`, `drizzleMemberRepo.findById`).
+ *   - PlanSource         → F2 `planRepo.findOne` (returns `benefit_matrix`).
+ *   - BroadcastConsumptionSource → broadcasts barrel `makeBroadcastApprovalCounter`
+ *     (awaiting count) + `computeQuotaCounter` (E-Blast used/cap).
  *   - EventConsumptionSource → events barrel `getEventAttendeesByMember`
- *     (filter cultural locally) or promote a count use-case at US4.
- *   - InvoiceSource      → invoicing barrel `listInvoices` + pure
- *     `deriveOverdue`. YTD-paid-revenue SUM + overdue COUNT have NO export →
- *     promote `getYtdPaidRevenue` / `countOverdueInvoices` at US1.
+ *     (cultural filtered + year-scoped locally).
+ *   - InvoiceSource      → invoicing barrel (YTD/overdue/monthly revenue reads).
  *
- * NOTE: method set is grounded in spec FR-001/002/019/021 + data-model R1/R2.
- * US1/US4 may add reads here as `computeDashboardSnapshot` / `computeBenefitUsage`
- * pin their exact needs; that is the intended evolution point for these ports.
+ * Method set is grounded in spec FR-001/002/019/021 + data-model R1/R2.
  */
 import type { TenantContext } from '@/modules/tenants';
 import type { RiskBand } from '../../domain/engagement-score';
@@ -73,10 +67,17 @@ export interface MemberSource {
   ): Promise<MemberJoinDistribution>;
 }
 
-/** Quantifiable benefit entitlements read from a plan's benefit matrix (FR-019). */
+/**
+ * Quantifiable benefit entitlements + the non-quantified active benefits read
+ * from a plan's benefit matrix (FR-019/FR-020). `activeBenefits` are stable
+ * i18n suffixes (`benefits.active.<key>`) for unlimited/active-only benefits
+ * (e.g. `all_employee_event_discount`, `directory_listing`) — they carry no
+ * numeric ratio and are excluded from the under-use aggregate.
+ */
 export interface BenefitEntitlements {
   readonly eblastPerYear: number;
   readonly culturalTicketsPerYear: number;
+  readonly activeBenefits: readonly string[];
 }
 
 export interface PlanSource {
@@ -91,24 +92,51 @@ export interface PlanSource {
   ): Promise<BenefitEntitlements | null>;
 }
 
+/**
+ * A member's plan identity for the current membership year — the (planId,
+ * planYear) pair needed to resolve entitlements (FR-019/FR-023). Null when the
+ * member does not exist or belongs to another tenant (RLS miss).
+ */
+export interface MemberPlanIdentity {
+  readonly planId: string;
+  readonly planYear: number;
+}
+
+export interface MemberPlanSource {
+  findPlanIdentity(
+    ctx: TenantContext,
+    memberId: string,
+  ): Promise<MemberPlanIdentity | null>;
+}
+
+/**
+ * A member's consumption of one quantifiable benefit within a membership year:
+ * the count used + the most-recent use timestamp (ISO 8601 UTC, or null when
+ * unused this year) for the "last used" microcopy (FR-019 / AS-1).
+ */
+export interface BenefitConsumption {
+  readonly used: number;
+  readonly lastUsedAt: string | null;
+}
+
 export interface BroadcastConsumptionSource {
-  /** Count of E-Blasts a member has consumed (sent) in the membership year (FR-019). */
-  countEblastConsumed(
+  /** E-Blasts a member has sent in the membership year + last-sent date (FR-019/AS-1). */
+  getEblastConsumption(
     ctx: TenantContext,
     memberId: string,
     membershipYear: number,
-  ): Promise<number>;
+  ): Promise<BenefitConsumption>;
   /** Count of broadcasts awaiting admin approval for the tenant (FR-002 needs-attention). */
   countAwaitingApproval(ctx: TenantContext): Promise<number>;
 }
 
 export interface EventConsumptionSource {
-  /** Count of cultural/event tickets a member consumed in the membership year (FR-019). */
-  countCulturalTicketsConsumed(
+  /** Cultural/event tickets a member consumed in the membership year + last-used date (FR-019). */
+  getCulturalConsumption(
     ctx: TenantContext,
     memberId: string,
     membershipYear: number,
-  ): Promise<number>;
+  ): Promise<BenefitConsumption>;
 }
 
 export interface InvoiceSource {

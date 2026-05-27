@@ -13,9 +13,9 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 8 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users (F6 Events nav entry added)', () => {
+  it('first section has 9 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users, Audit (F9 US2 Audit entry added)', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(8);
+    expect(mainSection.items).toHaveLength(9);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
     expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
@@ -29,6 +29,8 @@ describe('staffNavConfig', () => {
     expect(eventsItem.href).toBe('/admin/events');
     expect(mainSection.items[6]!.titleKey).toBe('nav.staff.renewals');
     expect(mainSection.items[7]!.titleKey).toBe('nav.staff.users');
+    // F9 US2 — audit log viewer entry appended after Users.
+    expect(mainSection.items[8]!.titleKey).toBe('nav.staff.audit');
   });
 
   it('second section is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate (F7.1a US2 entry added)', () => {
@@ -105,19 +107,23 @@ describe('staffNavConfig', () => {
 });
 
 describe('memberNavConfig', () => {
-  it('has exactly 1 section with 5 items: Dashboard, Profile, Invoices, Broadcasts, Account (F7 e-blasts added)', () => {
+  it('has exactly 1 section with 7 items: Dashboard, Profile, Invoices, Benefits, Broadcasts, Timeline, Account (F9 US4 Benefits + US3 Timeline added)', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(5);
+    expect(section.items).toHaveLength(7);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
     expect(section.items[1]!.titleKey).toBe('nav.member.profile');
     // R7-B3 — US3 member invoice self-service inserted between
     // Profile and Account to group "company information" (Profile +
     // Invoices) before "personal settings" (Account).
     expect(section.items[2]!.titleKey).toBe('nav.member.invoices');
+    // F9 US4 — benefit usage dashboard, above the E-Blast entry point.
+    expect(section.items[3]!.titleKey).toBe('nav.member.benefits');
     // F7 — E-Blast benefit dashboard entry point.
-    expect(section.items[3]!.titleKey).toBe('nav.member.broadcasts');
-    expect(section.items[4]!.titleKey).toBe('nav.member.account');
+    expect(section.items[4]!.titleKey).toBe('nav.member.broadcasts');
+    // F9 US3 — member's own unified activity timeline.
+    expect(section.items[5]!.titleKey).toBe('nav.member.timeline');
+    expect(section.items[6]!.titleKey).toBe('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {

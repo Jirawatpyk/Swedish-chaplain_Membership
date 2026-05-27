@@ -16,6 +16,7 @@ import {
   Settings2Icon,
   ScrollTextIcon,
   HistoryIcon,
+  GiftIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -251,6 +252,15 @@ export const memberNavConfig: NavConfig = {
           icon: ReceiptIcon,
           href: '/portal/invoices',
           activePattern: '/portal/invoices',
+        },
+        // F9 US4 — benefit usage dashboard (consumption vs entitlement +
+        // under-use warning). Shown to every member regardless of tier.
+        {
+          titleKey: 'nav.member.benefits',
+          icon: GiftIcon,
+          href: '/portal/benefits',
+          // Exact-match so the E-Blast sub-route doesn't also light this item.
+          activePattern: 'exact:/portal/benefits',
         },
         // F7 — Email Broadcasts (E-Blast) entry point. Lands on the
         // benefits dashboard which shows quota + history + Compose CTA.

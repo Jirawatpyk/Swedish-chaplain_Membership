@@ -1171,6 +1171,14 @@
         "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
         "success": "Member restored.",
         "error": "Could not restore. Please try again."
+      },
+      "benefits": {
+        "title": "Member benefits",
+        "backToDetail": "Back to member",
+        "staffActions": {
+          "sendReminder": "Send reminder",
+          "reminderSubject": "Make the most of your SweCham benefits — {company}"
+        }
       }
     },
     "outboxHealth": {
@@ -1846,13 +1854,15 @@
         "body": "Manager role: you can view the queue + broadcast details but cannot approve, reject, or cancel."
       },
       "toast": {
-        "approved": "Broadcast approved.",
-        "rejected": "Broadcast rejected. Member notified.",
-        "cancelled": "Broadcast cancelled.",
-        "proxySubmitted": "Submitted for review.",
-        "clearHalted": "Halt cleared. Member can submit new broadcasts.",
-        "concurrentRace": "Another admin acted on this broadcast first. Refreshing…",
-        "error": "Action failed. Please try again."
+        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
+        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
+        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
+        "retryInvalidState": "This broadcast is not in a state that allows retry.",
+        "retryServerError": "Retry failed. Please try again or contact support.",
+        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
+        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
+        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
+        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
       },
       "deliverySummary": {
         "heading": "Delivery summary",
@@ -1937,17 +1947,6 @@
         "confirm": "Accept partial",
         "cancel": "Cancel",
         "submitting": "Accepting…"
-      },
-      "toast": {
-        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
-        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
-        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
-        "retryInvalidState": "This broadcast is not in a state that allows retry.",
-        "retryServerError": "Retry failed. Please try again or contact support.",
-        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
-        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
-        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
-        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
       },
       "templates": {
         "pageTitle": "Broadcast templates",
@@ -3487,8 +3486,9 @@
       "invoices": "Invoices",
       "broadcasts": "E-Blasts",
       "timeline": "Timeline",
-          "account": "Account",
-      "ariaLabel": "Member navigation"
+      "account": "Account",
+      "ariaLabel": "Member navigation",
+      "benefits": "Benefits"
     }
   },
   "breadcrumb": {
@@ -4477,5 +4477,43 @@
       "updated": "Renewal updated"
     },
     "unknownEvent": "Activity"
+  },
+  "benefits": {
+    "page": {
+      "title": "Benefits",
+      "subtitleMember": "Your membership benefits for this year",
+      "empty": "We couldn't find a membership profile for your account yet.",
+      "emptyTitle": "No membership profile yet"
+    },
+    "card": {
+      "title": "Benefit usage · {year}",
+      "empty": "No quantifiable benefits on your current plan.",
+      "usedOf": "{used} of {total} used",
+      "neverUsed": "Not used yet this year",
+      "lastUsed": "Last used {date}",
+      "activeHeading": "Included benefits",
+      "liveNote": "Updated on load · current year",
+      "emptyTitle": "No tracked benefits"
+    },
+    "benefit": {
+      "eblast": "E-Blasts",
+      "cultural_tickets": "Cultural event tickets",
+      "action": {
+        "eblast": "Compose"
+      }
+    },
+    "active": {
+      "all_employee_event_discount": "All-employee event discount",
+      "directory_listing": "Directory listing",
+      "m2m_benefits": "Member-to-member benefits",
+      "business_referrals": "Business referrals",
+      "tailor_made_services": "Tailor-made services",
+      "partnership_package": "Partnership package"
+    },
+    "warning": {
+      "title": "You're not using all your benefits",
+      "body": "At {elapsed}% of the year you've used {consumed}% of your benefits. Make the most of your membership.",
+      "action": "Use a benefit"
+    }
   }
 }

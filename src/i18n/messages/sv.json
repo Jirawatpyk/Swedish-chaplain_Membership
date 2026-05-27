@@ -1171,6 +1171,14 @@
         "confirmDescription": "Återställning återaktiverar medlemsposten. Kopplade portalanvändare måste logga in igen.",
         "success": "Medlemmen har återställts.",
         "error": "Kunde inte återställa. Försök igen."
+      },
+      "benefits": {
+        "title": "Medlemsförmåner",
+        "backToDetail": "Tillbaka till medlem",
+        "staffActions": {
+          "sendReminder": "Skicka påminnelse",
+          "reminderSubject": "Få ut mesta möjliga av dina SweCham-förmåner — {company}"
+        }
       }
     },
     "outboxHealth": {
@@ -1846,13 +1854,15 @@
         "body": "Manager-roll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
       },
       "toast": {
-        "approved": "Utskick godkänt.",
-        "rejected": "Utskick avvisat. Medlem meddelad.",
-        "cancelled": "Utskick avbrutet.",
-        "proxySubmitted": "Inskickad för granskning.",
-        "clearHalted": "Spärr hävd. Medlemmen kan skicka nya utskick.",
-        "concurrentRace": "En annan administratör hann före dig. Uppdaterar…",
-        "error": "Åtgärden misslyckades. Försök igen."
+        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
+        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
+        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
+        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
+        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
+        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
+        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
+        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
+        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
       },
       "deliverySummary": {
         "heading": "Leveranssammanfattning",
@@ -1937,17 +1947,6 @@
         "confirm": "Bekräfta partiell leverans",
         "cancel": "Avbryt",
         "submitting": "Bekräftar…"
-      },
-      "toast": {
-        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
-        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
-        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
-        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
-        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
-        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
-        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
-        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
-        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
       },
       "templates": {
         "pageTitle": "Utskicksmallar",
@@ -3487,8 +3486,9 @@
       "invoices": "Fakturor",
       "broadcasts": "Utskick",
       "timeline": "Tidslinje",
-          "account": "Mitt konto",
-      "ariaLabel": "Medlemsnavigering"
+      "account": "Mitt konto",
+      "ariaLabel": "Medlemsnavigering",
+      "benefits": "Förmåner"
     }
   },
   "breadcrumb": {
@@ -4477,5 +4477,43 @@
       "updated": "Förnyelse uppdaterad"
     },
     "unknownEvent": "Aktivitet"
+  },
+  "benefits": {
+    "page": {
+      "title": "Förmåner",
+      "subtitleMember": "Dina medlemsförmåner för i år",
+      "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
+      "emptyTitle": "Ingen medlemsprofil ännu"
+    },
+    "card": {
+      "title": "Förmånsanvändning · {year}",
+      "empty": "Inga kvantifierbara förmåner i din nuvarande plan.",
+      "usedOf": "{used} av {total} använda",
+      "neverUsed": "Inte använd i år ännu",
+      "lastUsed": "Senast använd {date}",
+      "activeHeading": "Inkluderade förmåner",
+      "liveNote": "Uppdateras vid laddning · innevarande år",
+      "emptyTitle": "Inga spårade förmåner"
+    },
+    "benefit": {
+      "eblast": "E-utskick",
+      "cultural_tickets": "Biljetter till kulturevenemang",
+      "action": {
+        "eblast": "Skriv"
+      }
+    },
+    "active": {
+      "all_employee_event_discount": "Evenemangsrabatt för alla anställda",
+      "directory_listing": "Katalognotering",
+      "m2m_benefits": "Medlem-till-medlem-förmåner",
+      "business_referrals": "Affärsrekommendationer",
+      "tailor_made_services": "Skräddarsydda tjänster",
+      "partnership_package": "Partnerskapspaket"
+    },
+    "warning": {
+      "title": "Du använder inte alla dina förmåner",
+      "body": "Vid {elapsed}% av året har du använt {consumed}% av dina förmåner. Få ut mesta möjliga av ditt medlemskap.",
+      "action": "Använd en förmån"
+    }
   }
 }

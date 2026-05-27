@@ -220,6 +220,14 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F9 US4 — benefit-usage VO: pure ratio/elapsed/under-use math,
+        // exhaustively unit-tested (benefit-usage.test.ts).
+        'src/modules/insights/domain/benefit-usage.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         'src/modules/insights/application/use-cases/list-dashboard.ts': {
           branches: 100,
         },

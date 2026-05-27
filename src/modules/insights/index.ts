@@ -45,6 +45,18 @@ export {
   type NeedsAttention,
 } from './domain/dashboard-snapshot';
 
+// --- Domain (US4 — benefit usage) -----------------------------------------
+export {
+  UNDER_USE_WARNING_THRESHOLD_PCT,
+  assessUnderUse,
+  buildBenefitUsage,
+  yearElapsedPct,
+  type ActiveBenefit,
+  type BenefitUsage,
+  type QuantifiableBenefit,
+  type QuantifiableBenefitKey,
+} from './domain/benefit-usage';
+
 // --- Application audit-event taxonomy (Foundational T013) -----------------
 export {
   F9_AUDIT_EVENT_TYPES,
@@ -69,6 +81,12 @@ export {
   type ComputeDashboardSnapshotDeps,
   type SnapshotError,
 } from './application/use-cases/compute-dashboard-snapshot';
+export {
+  computeBenefitUsage,
+  type ComputeBenefitUsageDeps,
+  type ComputeBenefitUsageError,
+  type ComputeBenefitUsageInput,
+} from './application/use-cases/compute-benefit-usage';
 export {
   listDashboard,
   type DashboardActorRole,
@@ -118,6 +136,8 @@ export type {
 export {
   makeDismissInsightDeps,
   makeComputeDashboardSnapshotDeps,
+  makeComputeBenefitUsageDeps,
+  recordStaffBenefitView,
   makeListDashboardDeps,
   makeListSmartInsightsDeps,
   makeActivityFeedDeps,
