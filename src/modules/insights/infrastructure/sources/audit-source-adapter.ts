@@ -40,6 +40,7 @@ export const auditEventSourceAdapter: AuditEventSource = {
       targetUserId: r.targetUserId,
       summary: r.summary,
       occurredAt: r.occurredAt,
+      occurredAtIso: r.occurredAtIso,
       requestId: r.requestId,
       payload: r.payload,
     }));

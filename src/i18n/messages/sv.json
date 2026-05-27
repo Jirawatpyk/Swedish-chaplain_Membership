@@ -215,6 +215,7 @@
       "subtitle": "Sök och exportera revisionshändelser för organisationen",
       "forbidden": "Du har inte behörighet till granskningsloggen.",
       "export": "Exportera CSV",
+      "resultCount": "{count, plural, =0 {Inga revisionshändelser} one {# revisionshändelse} other {# revisionshändelser}}",
       "invalidRange": {
         "title": "Ogiltigt filter",
         "body": "Kontrollera datumintervallet och filtren och försök igen."
@@ -227,8 +228,15 @@
         "target": "Målpost",
         "from": "Från",
         "to": "Till",
-        "apply": "Använd filter",
-        "reset": "Återställ"
+        "reset": "Återställ",
+        "groups": {
+          "dashboard": "Instrumentpanel & granskning",
+          "authentication": "Autentisering",
+          "members": "Medlemmar",
+          "billing": "Fakturering & betalningar",
+          "broadcasts": "Utskick",
+          "other": "Övrigt"
+        }
       },
       "table": {
         "caption": "Revisionshändelser, nyaste först",
@@ -239,7 +247,9 @@
         "summary": "Sammanfattning",
         "payload": "Detaljer",
         "empty": "Inga revisionshändelser matchar dessa filter.",
-        "none": "Ingen"
+        "none": "Ingen",
+        "emptyTitle": "Inga revisionshändelser",
+        "utcLabel": "UTC"
       },
       "pagination": {
         "next": "Ladda äldre händelser"
@@ -949,6 +959,7 @@
           "year": {
             "all": "Alla år"
           },
+          "apply": "Tillämpa",
           "clear": "Rensa filter"
         },
         "draftPlaceholder": "(utkast)",

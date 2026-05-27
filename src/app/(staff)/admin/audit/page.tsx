@@ -24,6 +24,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
+import { tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth';
 import {
   auditQuery,
@@ -32,9 +33,10 @@ import {
   type AuditQueryInput,
 } from '@/modules/insights';
 
-export const metadata: Metadata = {
-  title: 'Audit log',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('admin.audit');
+  return { title: t('title') };
+}
 
 /** Selectable event-type codes — the F1/F5 enum set plus the F9 read events. */
 const EVENT_TYPE_OPTIONS: readonly string[] = [
@@ -79,13 +81,17 @@ export default async function AuditLogPage({
   const to = str(params.to);
   const cursor = str(params.cursor);
 
-  // Date inputs are `YYYY-MM-DD`; widen to inclusive day boundaries in UTC.
+  // Date inputs are `YYYY-MM-DD` CALENDAR days in the tenant's timezone; convert
+  // to the exact UTC instants that bound that local day (FR-009 — a UTC-literal
+  // boundary would silently drop a partial day for non-UTC tenants like
+  // Asia/Bangkok).
+  const tz = env.tenant.timezone;
   const input: AuditQueryInput = {
     ...(eventType ? { eventType: [eventType] } : {}),
     ...(actorUserId ? { actorUserId } : {}),
     ...(targetRef ? { targetRef } : {}),
-    ...(from ? { from: `${from}T00:00:00.000Z` } : {}),
-    ...(to ? { to: `${to}T23:59:59.999Z` } : {}),
+    ...(from ? { from: tenantDayStartUtc(from, tz) } : {}),
+    ...(to ? { to: tenantDayEndUtc(to, tz) } : {}),
     ...(cursor ? { cursor } : {}),
     limit: 50,
   };
@@ -128,7 +134,7 @@ export default async function AuditLogPage({
       <TableContainer>
         {header}
         {result.error === 'forbidden' ? (
-          <p className="rounded-md border py-10 text-center text-muted-foreground">
+          <p role="alert" className="rounded-md border py-10 text-center text-muted-foreground">
             {t('forbidden')}
           </p>
         ) : (
@@ -180,6 +186,11 @@ export default async function AuditLogPage({
 
       <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
 
+      {/* SR result-count announcement — re-rendered on every filter navigation. */}
+      <p role="status" className="sr-only">
+        {t('resultCount', { count: rows.length })}
+      </p>
+
       <AuditTable
         rows={rows}
         labels={{
@@ -190,8 +201,10 @@ export default async function AuditLogPage({
           target: t('table.target'),
           summary: t('table.summary'),
           payload: t('table.payload'),
+          emptyTitle: t('table.emptyTitle'),
           empty: t('table.empty'),
           none: t('table.none'),
+          utcLabel: t('table.utcLabel'),
         }}
       />
 

@@ -44,6 +44,18 @@ describe('redactPayloadForRole', () => {
     expect(redactPayloadForRole('audit_log_queried', payload, 'manager')).toEqual(payload);
   });
 
+  it('manager has third-party member PII (email/phone) stripped — admin keeps it (PDPA §19)', () => {
+    const payload = { invitee_email: 'x@swecham.test', new_email: 'y@swecham.test', count: 1 };
+    // admin: full
+    expect(redactPayloadForRole('member_invitation_sent', payload, 'admin')).toEqual(payload);
+    // manager: email fields gone, non-PII kept
+    expect(redactPayloadForRole('member_invitation_sent', payload, 'manager')).toEqual({ count: 1 });
+    // generic `email`/`phone` stripped for an unmapped event too (deny-by-default)
+    expect(
+      redactPayloadForRole('some_event', { email: 'a@b.c', phone: '123', n: 2 }, 'manager'),
+    ).toEqual({ n: 2 });
+  });
+
   it('does not mutate the input payload', () => {
     const payload = { reason: 'x', keep: 1 };
     redactPayloadForRole('role_changed', payload, 'manager');

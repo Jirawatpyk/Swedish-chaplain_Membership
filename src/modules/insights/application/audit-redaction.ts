@@ -6,10 +6,12 @@
  *
  * The US2 audit viewer is staff-only (`/admin/audit` → admin / manager; member
  * is forbidden upstream), so the projection here is admin (full) vs manager.
- * "Sensitive payload fields" per FR-011 are **internal-only annotations** —
- * override reason codes/notes, staff notes. (The other FR-011 category,
- * third-party-PII redaction for the member role, applies to the member timeline
- * US3/US6 and reuses F3's existing timeline projection — not this map.)
+ * "Sensitive payload fields" per FR-011 are: (a) **internal-only annotations** —
+ * override reason codes/notes, staff notes; and (b) **third-party member PII
+ * values** carried in operational-event payloads (e.g. a member's email in
+ * `member_invitation_sent` / `member_email_change_*`). Both are stripped from
+ * the manager projection via the global deny-list below. (The member-role
+ * timeline projection — US3/US6 — reuses F3's existing logic, not this map.)
  *
  * **Actor identity is NOT redacted** — `actorUserId` is a top-level audit-row
  * field (the staff member who acted), explicitly visible to admins AND managers
@@ -30,6 +32,7 @@ export type AuditViewerRole = 'admin' | 'manager';
  * deny-by-default backstop so an unmapped event can never leak an annotation.
  */
 export const GLOBAL_SENSITIVE_PAYLOAD_FIELDS: readonly string[] = [
+  // (a) internal-only annotations
   'reason',
   'reason_code',
   'note',
@@ -39,6 +42,19 @@ export const GLOBAL_SENSITIVE_PAYLOAD_FIELDS: readonly string[] = [
   'internal_note',
   'internal_notes',
   'override_reason',
+  // (b) third-party member PII values carried in operational-event payloads
+  //     (PDPA §19 / GDPR Art. 5(1)(c) — a manager need not see another member's
+  //     email; the structured target id already gives accountability). Deny by
+  //     field NAME so any current/future event carrying one is auto-redacted.
+  'email',
+  'invitee_email',
+  'old_email',
+  'new_email',
+  'contact_email',
+  'recipient_email',
+  'to_email',
+  'phone',
+  'phone_number',
 ];
 
 /**
@@ -56,6 +72,11 @@ export const SENSITIVE_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]
   account_reenabled: ['reason'],
   // F2 fiscal-config change annotations.
   fee_config_updated: ['note', 'notes'],
+  // F3 member invitation / email-change events carry a third party's email.
+  member_invitation_sent: ['invitee_email'],
+  member_email_change_requested: ['old_email', 'new_email'],
+  member_email_change_confirmed: ['old_email', 'new_email'],
+  member_email_change_reverted: ['old_email', 'new_email'],
 };
 
 /**

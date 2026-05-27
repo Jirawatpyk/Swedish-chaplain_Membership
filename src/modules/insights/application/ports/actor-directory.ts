@@ -11,7 +11,6 @@
  */
 export interface ActorIdentityView {
   readonly displayName: string | null;
-  readonly email: string;
 }
 
 export interface ActorDirectory {

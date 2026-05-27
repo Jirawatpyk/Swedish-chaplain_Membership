@@ -8,6 +8,7 @@
  * strings are pre-formatted by the page so this stays a dumb, locale-correct
  * presentational component.
  */
+import { ScrollTextIcon } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -16,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export interface AuditPayloadEntry {
   /** Humanised payload field name (e.g. `result_count` → `Result count`). */
@@ -52,8 +54,11 @@ export interface AuditTableLabels {
   readonly target: string;
   readonly summary: string;
   readonly payload: string;
+  readonly emptyTitle: string;
   readonly empty: string;
   readonly none: string;
+  /** sr-only prefix clarifying the second timestamp line is UTC (Gregorian). */
+  readonly utcLabel: string;
 }
 
 export function AuditTable({
@@ -65,9 +70,7 @@ export function AuditTable({
 }): React.JSX.Element {
   if (rows.length === 0) {
     return (
-      <p className="rounded-md border border-dashed py-10 text-center text-muted-foreground">
-        {labels.empty}
-      </p>
+      <EmptyState icon={ScrollTextIcon} title={labels.emptyTitle} description={labels.empty} />
     );
   }
 
@@ -92,20 +95,21 @@ export function AuditTable({
                 <time dateTime={r.occurredAtUtc} className="block font-medium">
                   {r.occurredAtLocal}
                 </time>
-                <span className="block text-caption text-muted-foreground">
+                <span className="block text-caption text-foreground/70">
+                  <span className="sr-only">{labels.utcLabel}: </span>
                   {r.occurredAtUtc}
                 </span>
               </TableCell>
               <TableCell className="align-top">
                 <span className="block font-medium">{r.eventTypeLabel}</span>
-                <span className="block font-mono text-caption text-muted-foreground">
+                <span className="block font-mono text-caption text-foreground/70">
                   {r.eventType}
                 </span>
               </TableCell>
               <TableCell className="align-top">
                 <span className="block">{r.actorLabel}</span>
                 {r.actorLabel !== r.actorUserId ? (
-                  <span className="block break-all font-mono text-caption text-muted-foreground">
+                  <span className="block break-all font-mono text-caption text-foreground/70">
                     {r.actorUserId}
                   </span>
                 ) : null}
@@ -117,7 +121,7 @@ export function AuditTable({
                   <>
                     <span className="block">{r.targetLabel ?? r.targetUserId}</span>
                     {r.targetLabel && r.targetLabel !== r.targetUserId ? (
-                      <span className="block break-all font-mono text-caption text-muted-foreground">
+                      <span className="block break-all font-mono text-caption text-foreground/70">
                         {r.targetUserId}
                       </span>
                     ) : null}
@@ -132,7 +136,7 @@ export function AuditTable({
                   <dl className="grid max-w-xs gap-0.5 text-caption">
                     {r.payloadEntries.map((e) => (
                       <div key={e.label} className="flex gap-1.5">
-                        <dt className="shrink-0 text-muted-foreground">{e.label}:</dt>
+                        <dt className="shrink-0 text-foreground/70">{e.label}:</dt>
                         <dd className="break-words">{e.value}</dd>
                       </div>
                     ))}

@@ -13,9 +13,10 @@
  */
 import type { TenantContext } from '@/modules/tenants';
 
-/** Decoded keyset cursor — `(timestamp epoch-ms, id)` of the prior page's last row. */
+/** Decoded keyset cursor — full-precision `timestamptz` text (µs) + id of the
+ *  prior page's last row (ms-truncation would drop same-ms boundary rows). */
 export interface AuditSourceCursor {
-  readonly ts: number;
+  readonly iso: string;
   readonly id: string;
 }
 
@@ -37,6 +38,8 @@ export interface AuditSourceRow {
   readonly targetUserId: string | null;
   readonly summary: string;
   readonly occurredAt: Date;
+  /** Full-precision `timestamptz` text (µs) — the keyset cursor source. */
+  readonly occurredAtIso: string;
   readonly requestId: string;
   readonly payload: Record<string, unknown> | null;
 }

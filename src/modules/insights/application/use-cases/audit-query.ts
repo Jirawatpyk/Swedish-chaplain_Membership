@@ -109,9 +109,11 @@ function actorLabelOf(
   actorUserId: string,
   identities: ReadonlyMap<string, ActorIdentityView>,
 ): string {
+  // Data minimisation (PDPA §19 / GDPR Art. 5(1)(c)): fall back to the raw id —
+  // NEVER the email — when no display name is resolved. The id is the forensic
+  // anchor; the email is more PII than the audit-viewer purpose requires.
   const found = identities.get(actorUserId);
-  if (found) return found.displayName ?? found.email;
-  return actorUserId;
+  return found?.displayName ?? actorUserId;
 }
 
 export interface AuditExportResult {
@@ -121,22 +123,24 @@ export interface AuditExportResult {
 export type AuditExportError = 'forbidden' | 'invalid_range' | 'export_too_large';
 
 // --- cursor codec ------------------------------------------------------------
-// Opaque `ts:id` base64url token. Keeps the client from depending on the
-// keyset shape; a malformed/tampered cursor surfaces as `invalid_range`.
+// Opaque `iso|id` base64url token (`|` separates — the µs `timestamptz` text
+// contains colons/spaces/`+` but never `|`, and a UUID never contains `|`).
+// Keeps the client from depending on the keyset shape; a malformed/tampered
+// cursor surfaces as `invalid_range`.
 
 function encodeCursor(c: AuditSourceCursor): string {
-  return Buffer.from(`${c.ts}:${c.id}`, 'utf8').toString('base64url');
+  return Buffer.from(`${c.iso}|${c.id}`, 'utf8').toString('base64url');
 }
 
 function decodeCursor(raw: string): AuditSourceCursor | null {
   try {
     const decoded = Buffer.from(raw, 'base64url').toString('utf8');
-    const sep = decoded.indexOf(':');
+    const sep = decoded.indexOf('|');
     if (sep <= 0) return null;
-    const ts = Number(decoded.slice(0, sep));
+    const iso = decoded.slice(0, sep);
     const id = decoded.slice(sep + 1);
-    if (!Number.isFinite(ts) || id.length === 0) return null;
-    return { ts, id };
+    if (iso.length === 0 || id.length === 0) return null;
+    return { iso, id };
   } catch {
     return null;
   }
@@ -235,6 +239,30 @@ async function resolveIdentityLabels(
   return deps.actorDirectory.labelsFor([...ids]);
 }
 
+/**
+ * Identity resolution is COSMETIC enrichment over the already-fetched audit
+ * rows — `toRow` falls back to the raw id when an identity is absent. So a
+ * `users`-lookup failure (Neon blip, pool exhaustion) must degrade to raw ids,
+ * never reject the whole audit read (which would replace a complete compliance
+ * record with a generic error). Mirrors the best-effort `emit()` pattern.
+ */
+async function resolveIdentityLabelsSafe(
+  deps: AuditQueryDeps,
+  ctx: TenantContext,
+  meta: AuditQueryMeta,
+  rows: ReadonlyArray<{ actorUserId: string; targetUserId: string | null }>,
+): Promise<ReadonlyMap<string, ActorIdentityView>> {
+  try {
+    return await resolveIdentityLabels(deps, rows);
+  } catch (e) {
+    logger.warn(
+      { tenantId: ctx.slug, requestId: meta.requestId, errKind: errKind(e) },
+      'insights.audit_query.identity_resolve_threw',
+    );
+    return new Map();
+  }
+}
+
 /** Emit best-effort; an audit-write failure must never fail the read (FR-036). */
 async function emit(
   deps: AuditQueryDeps,
@@ -302,12 +330,12 @@ export async function auditQuery(
 
   const hasMore = raw.length > limit;
   const pageRaw = hasMore ? raw.slice(0, limit) : raw;
-  const identities = await resolveIdentityLabels(deps, pageRaw);
+  const identities = await resolveIdentityLabelsSafe(deps, ctx, meta, pageRaw);
   const rows = pageRaw.map((r) => toRow(r, role, identities));
 
   const last = pageRaw.at(-1);
   const nextCursor =
-    hasMore && last ? encodeCursor({ ts: last.occurredAt.getTime(), id: last.id }) : null;
+    hasMore && last ? encodeCursor({ iso: last.occurredAtIso, id: last.id }) : null;
 
   await emit(deps, ctx, meta, {
     kind: 'queried',
@@ -340,7 +368,7 @@ export async function auditExport(
   });
   if (raw.length > AUDIT_EXPORT_SYNC_CAP) return err('export_too_large');
 
-  const identities = await resolveIdentityLabels(deps, raw);
+  const identities = await resolveIdentityLabelsSafe(deps, ctx, meta, raw);
   const rows = raw.map((r) => toRow(r, role, identities));
   await emit(deps, ctx, meta, {
     kind: 'exported',

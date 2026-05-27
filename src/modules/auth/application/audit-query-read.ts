@@ -19,17 +19,24 @@
  */
 import type { AuditEventType } from '../domain/audit-event';
 
-/** Decoded keyset cursor — the `(timestamp, id)` of the last row of the prior page. */
+/**
+ * Decoded keyset cursor — the `(timestamp, id)` of the prior page's last row.
+ * `iso` is the FULL-PRECISION `timestamptz` text (microseconds), NOT epoch-ms:
+ * `audit_log.timestamp` is written by `defaultNow()` at microsecond precision,
+ * so a millisecond-truncated cursor would silently skip rows that share a
+ * millisecond with the boundary row but differ in their microsecond fraction.
+ */
 export interface AuditQueryCursor {
-  /** `timestamp` as epoch-ms (the column is `timestamptz`). */
-  readonly ts: number;
+  /** Full-precision `timestamptz` text, e.g. `2026-05-20 10:00:00.123456+00`. */
+  readonly iso: string;
   readonly id: string;
 }
 
 /**
- * Reader filters. All optional except `limit`. The caller (use-case) clamps
- * `limit` and passes `limit + 1` is NOT done here — the reader fetches exactly
- * `limit` rows; the use-case asks for `limit + 1` to derive `hasMore`.
+ * Reader filters. All optional except `limit`. The reader fetches exactly
+ * `filters.limit` rows; the `limit + 1` fetch-one-extra trick (to derive
+ * `hasMore`) lives in the use-case, not here — the reader honours `limit`
+ * verbatim.
  */
 export interface AuditQueryReadFilters {
   readonly eventType?: readonly AuditEventType[];
@@ -50,6 +57,8 @@ export interface AuditQueryReadRow {
   readonly targetUserId: string | null;
   readonly summary: string;
   readonly occurredAt: Date;
+  /** Full-precision `timestamptz` text (µs) — the value the keyset cursor is built from. */
+  readonly occurredAtIso: string;
   readonly requestId: string;
   /** Typed JSONB diff/context, or `null` for F1 rows without a payload. */
   readonly payload: Record<string, unknown> | null;

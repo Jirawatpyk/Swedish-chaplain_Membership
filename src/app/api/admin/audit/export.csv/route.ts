@@ -17,11 +17,20 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { toCsvField } from '@/lib/csv';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { rateLimiter } from '@/modules/auth';
 import { auditExport, makeAuditQueryDeps, type AuditQueryInput } from '@/modules/insights';
 
 export const runtime = 'nodejs';
+
+/** Export budget per actor: 10 requests / 60 s sliding window. */
+const EXPORT_RL_MAX = 10;
+const EXPORT_RL_WINDOW_SECONDS = 60;
 
 const CSV_HEADERS = [
   'id',
@@ -33,11 +42,6 @@ const CSV_HEADERS = [
   'summary',
   'payload',
 ] as const;
-
-/** RFC-4180 field escape — always quote, double embedded quotes. */
-function csvField(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
 
 function str(v: string | null): string {
   const raw = (v ?? '').trim();
@@ -57,6 +61,22 @@ export async function GET(request: NextRequest): Promise<Response> {
     return NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 });
   }
 
+  // Rate-limit per actor — the export is an unauthenticated-cost-multiplier
+  // (broad date range × up to 10k rows × Neon credits). Other admin routes
+  // (csv-import, error-csv-download, …) rate-limit; match that for consistency.
+  const rl = await rateLimiter.check(
+    `audit-export:${session.user.id}`,
+    EXPORT_RL_MAX,
+    EXPORT_RL_WINDOW_SECONDS,
+  );
+  if (!rl.success) {
+    const retryAfter = retryAfterSecondsFromRl({ reset: rl.reset });
+    return NextResponse.json(
+      { error: { code: 'rate_limited' } },
+      { status: 429, headers: { 'Retry-After': retryAfter.toString() } },
+    );
+  }
+
   const url = new URL(request.url);
   const eventType = str(url.searchParams.get('eventType'));
   const actorUserId = str(url.searchParams.get('actorUserId'));
@@ -68,19 +88,31 @@ export async function GET(request: NextRequest): Promise<Response> {
     ...(eventType ? { eventType: [eventType] } : {}),
     ...(actorUserId ? { actorUserId } : {}),
     ...(targetRef ? { targetRef } : {}),
-    ...(from ? { from: `${from}T00:00:00.000Z` } : {}),
-    ...(to ? { to: `${to}T23:59:59.999Z` } : {}),
+    ...(from ? { from: tenantDayStartUtc(from, env.tenant.timezone) } : {}),
+    ...(to ? { to: tenantDayEndUtc(to, env.tenant.timezone) } : {}),
   };
 
   const tenant = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  const result = await auditExport(
-    input,
-    { actorUserId: session.user.id as string, actorRole: session.user.role, requestId },
-    tenant,
-    makeAuditQueryDeps(),
-  );
+  let result;
+  try {
+    result = await auditExport(
+      input,
+      { actorUserId: session.user.id as string, actorRole: session.user.role, requestId },
+      tenant,
+      makeAuditQueryDeps(),
+    );
+  } catch (e) {
+    // A thrown export (e.g. Neon read failure) would otherwise become a bodyless
+    // framework 500 with no log line — make the failure observable (errKind only,
+    // no raw message/PII).
+    logger.error(
+      { tenantId: tenant.slug, requestId, errKind: errKind(e) },
+      'insights.audit_export.threw',
+    );
+    return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
+  }
 
   if (!result.ok) {
     if (result.error === 'forbidden') {
@@ -96,7 +128,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     );
   }
 
-  const lines: string[] = [CSV_HEADERS.map(csvField).join(',')];
+  const lines: string[] = [CSV_HEADERS.map(toCsvField).join(',')];
   for (const r of result.value.rows) {
     lines.push(
       [
@@ -109,7 +141,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         r.summary,
         r.payload ? JSON.stringify(r.payload) : '',
       ]
-        .map((c) => csvField(String(c)))
+        .map((c) => toCsvField(String(c)))
         .join(','),
     );
   }

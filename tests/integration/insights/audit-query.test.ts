@@ -8,6 +8,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { auditQuery, makeAuditQueryDeps } from '@/modules/insights';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -145,6 +146,45 @@ describe('F9 auditQuery — integration (T040)', () => {
       expect(res.value.rows.length).toBeGreaterThanOrEqual(1);
       expect(res.value.rows.every((r) => r.targetUserId === targetA)).toBe(true);
       expect(res.value.rows.some((r) => r.summary === 'A disabled a specific account')).toBe(true);
+    }
+  });
+
+  it('paginates without dropping same-millisecond rows (µs-precision keyset)', async () => {
+    // Two rows at the SAME millisecond but different microseconds — a
+    // ms-truncated cursor would skip the second on page 2 (review finding).
+    // Two rows at the SAME millisecond (.500) but different microseconds,
+    // inserted via raw SQL so the µs fraction is preserved (a Drizzle Date bind
+    // would truncate to ms). Future-dated so they sort at the very top.
+    const sameMsActor = randomUUID();
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO audit_log (event_type, actor_user_id, summary, request_id, tenant_id, timestamp)
+        VALUES
+          ('sign_in_success', ${sameMsActor}, 'same-ms newer', ${'ms-' + randomUUID()}, ${tenantA.ctx.slug}, TIMESTAMPTZ '2031-01-01 00:00:00.500456+00'),
+          ('sign_in_success', ${sameMsActor}, 'same-ms older', ${'ms-' + randomUUID()}, ${tenantA.ctx.slug}, TIMESTAMPTZ '2031-01-01 00:00:00.500123+00')
+      `);
+    });
+    const page1 = await auditQuery(
+      { actorUserId: sameMsActor, limit: 1 },
+      meta('admin'),
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(page1.ok).toBe(true);
+    if (!page1.ok) return;
+    expect(page1.value.rows[0]!.summary).toBe('same-ms newer');
+    expect(page1.value.nextCursor).not.toBeNull();
+
+    const page2 = await auditQuery(
+      { actorUserId: sameMsActor, limit: 1, cursor: page1.value.nextCursor! },
+      meta('admin'),
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(page2.ok).toBe(true);
+    if (page2.ok) {
+      // The same-ms older row MUST appear on page 2 (not silently dropped).
+      expect(page2.value.rows.map((r) => r.summary)).toContain('same-ms older');
     }
   });
 

@@ -215,6 +215,7 @@
       "subtitle": "Search and export tenant audit events",
       "forbidden": "You do not have access to the audit log.",
       "export": "Export CSV",
+      "resultCount": "{count, plural, =0 {No audit events} one {# audit event} other {# audit events}}",
       "invalidRange": {
         "title": "Invalid filter",
         "body": "Check the date range and filters, then try again."
@@ -227,8 +228,15 @@
         "target": "Target record",
         "from": "From",
         "to": "To",
-        "apply": "Apply filters",
-        "reset": "Reset"
+        "reset": "Reset",
+        "groups": {
+          "dashboard": "Dashboard & audit",
+          "authentication": "Authentication",
+          "members": "Members",
+          "billing": "Billing & payments",
+          "broadcasts": "Broadcasts",
+          "other": "Other"
+        }
       },
       "table": {
         "caption": "Audit events, newest first",
@@ -239,7 +247,9 @@
         "summary": "Summary",
         "payload": "Details",
         "empty": "No audit events match these filters.",
-        "none": "None"
+        "none": "None",
+        "emptyTitle": "No audit events",
+        "utcLabel": "UTC"
       },
       "pagination": {
         "next": "Load older events"
@@ -949,6 +959,7 @@
           "year": {
             "all": "All years"
           },
+          "apply": "Apply",
           "clear": "Clear filters"
         },
         "draftPlaceholder": "(draft)",

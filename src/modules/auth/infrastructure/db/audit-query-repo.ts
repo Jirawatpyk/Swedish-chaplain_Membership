@@ -15,7 +15,7 @@
  * excludes those null-tenant rows and cannot leak once a 2nd tenant onboards.
  * (Mirrors `audit-read-repo.ts`, the activity-feed reader.)
  */
-import { and, desc, eq, gte, inArray, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { auditLog } from './schema';
@@ -53,8 +53,12 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
       // Keyset on `(timestamp DESC, id DESC)`: rows strictly "older" than the
       // cursor — (ts < c.ts) OR (ts = c.ts AND id < c.id). An offset-free scan
       // that stays O(page) regardless of how deep the operator paginates.
+      // The cursor carries the FULL-PRECISION (µs) timestamp text and is cast
+      // back to `timestamptz` here, so the equality arm matches exactly (a
+      // ms-truncated cursor would never equal a µs-precise column value, and
+      // same-millisecond rows straddling a page boundary would be dropped).
       if (filters.cursor) {
-        const cursorTs = new Date(filters.cursor.ts);
+        const cursorTs = sql`${filters.cursor.iso}::timestamptz`;
         const keyset = or(
           lt(auditLog.timestamp, cursorTs),
           and(eq(auditLog.timestamp, cursorTs), lt(auditLog.id, filters.cursor.id)),
@@ -70,6 +74,7 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
           targetUserId: auditLog.targetUserId,
           summary: auditLog.summary,
           occurredAt: auditLog.timestamp,
+          occurredAtIso: sql<string>`${auditLog.timestamp}::text`,
           requestId: auditLog.requestId,
           payload: auditLog.payload,
         })
@@ -85,6 +90,7 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
         targetUserId: r.targetUserId,
         summary: r.summary,
         occurredAt: r.occurredAt,
+        occurredAtIso: r.occurredAtIso,
         requestId: r.requestId,
         payload: (r.payload as Record<string, unknown> | null) ?? null,
       }));

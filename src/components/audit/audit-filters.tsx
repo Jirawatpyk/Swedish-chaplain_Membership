@@ -20,11 +20,18 @@ import { FilterBar } from '@/components/ui/filter-bar';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
-import { resolveEventLabel } from '@/lib/audit-event-label';
+import {
+  AUDIT_EVENT_CATEGORY_ORDER,
+  auditEventCategory,
+  resolveEventLabel,
+  type AuditEventCategory,
+} from '@/lib/audit-event-label';
 
 const DEBOUNCE_MS = 300;
 const ALL = 'all';
@@ -36,7 +43,19 @@ export function AuditFilters({
 }): React.JSX.Element {
   const t = useTranslations('admin.audit.filters');
   const tEvents = useTranslations('admin.dashboard.activity.events');
+  const tGroups = useTranslations('admin.audit.filters.groups');
   const router = useRouter();
+
+  // Group the ~44 event-type codes by coarse category so the picker is
+  // navigable (sorted within each group by localised label).
+  const grouped = new Map<AuditEventCategory, string[]>();
+  for (const et of eventTypeOptions) {
+    const cat = auditEventCategory(et);
+    (grouped.get(cat) ?? grouped.set(cat, []).get(cat)!).push(et);
+  }
+  for (const list of grouped.values()) {
+    list.sort((a, b) => resolveEventLabel(tEvents, a).localeCompare(resolveEventLabel(tEvents, b)));
+  }
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
@@ -101,10 +120,15 @@ export function AuditFilters({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>{t('eventTypeAll')}</SelectItem>
-          {eventTypeOptions.map((et) => (
-            <SelectItem key={et} value={et}>
-              {resolveEventLabel(tEvents, et)}
-            </SelectItem>
+          {AUDIT_EVENT_CATEGORY_ORDER.filter((cat) => grouped.has(cat)).map((cat) => (
+            <SelectGroup key={cat}>
+              <SelectLabel>{tGroups(cat)}</SelectLabel>
+              {grouped.get(cat)!.map((et) => (
+                <SelectItem key={et} value={et}>
+                  {resolveEventLabel(tEvents, et)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>
@@ -116,7 +140,7 @@ export function AuditFilters({
         placeholder={t('actor')}
         aria-label={t('actor')}
         autoComplete="off"
-        className="sm:w-48"
+        className="sm:w-56"
       />
 
       <Input
@@ -153,7 +177,7 @@ export function AuditFilters({
           onClick={clearAll}
           className="whitespace-nowrap"
         >
-          <XIcon className="size-4" />
+          <XIcon className="size-4" aria-hidden />
           {t('reset')}
         </Button>
       )}
