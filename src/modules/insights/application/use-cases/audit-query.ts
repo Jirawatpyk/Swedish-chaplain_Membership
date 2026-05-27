@@ -140,6 +140,10 @@ function decodeCursor(raw: string): AuditSourceCursor | null {
     const iso = decoded.slice(0, sep);
     const id = decoded.slice(sep + 1);
     if (iso.length === 0 || id.length === 0) return null;
+    // Reject an `iso` that isn't a `YYYY-MM-DD…`-shaped timestamptz BEFORE it
+    // reaches the DB `::timestamptz` cast — otherwise a tampered-but-decodable
+    // cursor hits Postgres (ERROR 22007) → 500 instead of a clean invalid_range.
+    if (!/^\d{4}-\d{2}-\d{2}[ T]/.test(iso)) return null;
     return { iso, id };
   } catch {
     return null;

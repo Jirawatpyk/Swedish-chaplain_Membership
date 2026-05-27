@@ -12,6 +12,15 @@
 import { LocalDate, LocalTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 
+/**
+ * `YYYY-MM-DD` shape guard. Callers MUST validate with this BEFORE passing a
+ * date to `tenantDay*Utc` — those throw `JsJodaException` on a malformed input,
+ * which a caller should map to a 400 / invalid-range rather than a 500.
+ */
+export function isYmd(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 /** UTC instant (ISO 8601) at the START of `ymd` in tenant tz `tz`. */
 export function tenantDayStartUtc(ymd: string, tz: string): string {
   return LocalDate.parse(ymd).atStartOfDay(ZoneId.of(tz)).toInstant().toString();

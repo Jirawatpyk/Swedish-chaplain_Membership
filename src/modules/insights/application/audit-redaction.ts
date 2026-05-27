@@ -73,7 +73,8 @@ export type AuditRedactableEvent =
   | 'member_invitation_sent'
   | 'member_email_change_requested'
   | 'member_email_change_confirmed'
-  | 'member_email_change_reverted';
+  | 'member_email_change_reverted'
+  | 'member_updated';
 
 /**
  * Per-event-type sensitive-field extension. Each entry lists payload field
@@ -96,6 +97,11 @@ export const SENSITIVE_PAYLOAD_FIELDS: Readonly<
   member_email_change_requested: ['old_email', 'new_email'],
   member_email_change_confirmed: ['old_email', 'new_email'],
   member_email_change_reverted: ['old_email', 'new_email'],
+  // `member_updated` carries a free-form `diff` object with old/new VALUES of
+  // arbitrary member fields (taxId, notes, turnoverThb, description, …) — strip
+  // the whole diff for managers (schema-agnostic: cannot drift as MemberPatch
+  // grows). The `fields_changed` list + member id remain for accountability.
+  member_updated: ['diff'],
 };
 
 /**

@@ -24,7 +24,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
-import { tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth';
 import {
   auditQuery,
@@ -81,11 +81,27 @@ export default async function AuditLogPage({
   const to = str(params.to);
   const cursor = str(params.cursor);
 
+  // A malformed `from`/`to` (tampered URL) must surface as the invalid-range
+  // state, NOT throw inside js-joda (`tenantDayParse`) → generic error card. Guard
+  // the format up front and render the same invalid-range UI the use-case uses.
+  const tz = env.tenant.timezone;
+  if ((from !== '' && !isYmd(from)) || (to !== '' && !isYmd(to))) {
+    return (
+      <TableContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
+        <DashboardErrorState
+          title={t('invalidRange.title')}
+          description={t('invalidRange.body')}
+        />
+      </TableContainer>
+    );
+  }
+
   // Date inputs are `YYYY-MM-DD` CALENDAR days in the tenant's timezone; convert
   // to the exact UTC instants that bound that local day (FR-009 — a UTC-literal
   // boundary would silently drop a partial day for non-UTC tenants like
   // Asia/Bangkok).
-  const tz = env.tenant.timezone;
   const input: AuditQueryInput = {
     ...(eventType ? { eventType: [eventType] } : {}),
     ...(actorUserId ? { actorUserId } : {}),
@@ -134,7 +150,7 @@ export default async function AuditLogPage({
       <TableContainer>
         {header}
         {result.error === 'forbidden' ? (
-          <p role="alert" className="rounded-md border py-10 text-center text-muted-foreground">
+          <p className="rounded-md border py-10 text-center text-muted-foreground">
             {t('forbidden')}
           </p>
         ) : (
@@ -150,9 +166,13 @@ export default async function AuditLogPage({
     );
   }
 
+  // `timeZone: tz` is essential — the Vercel runtime is UTC, so without it the
+  // "local" column would render UTC and duplicate the UTC line (FR-012 dual
+  // timestamp). Render the instant in the tenant's timezone.
   const dateFmt = new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: tz,
   });
   const tEvents = await getTranslations('admin.dashboard.activity.events');
   const noneLabel = t('table.none');

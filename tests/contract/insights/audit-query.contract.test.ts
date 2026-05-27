@@ -110,6 +110,11 @@ describe('auditQuery', () => {
       Buffer.from('no-separator', 'utf8').toString('base64url'),
       Buffer.from('|missing-iso', 'utf8').toString('base64url'),
       Buffer.from('2026-05-20 10:00:00+00|', 'utf8').toString('base64url'), // empty id
+      // N-01: decodable + non-empty halves but iso isn't timestamptz-shaped —
+      // must be rejected BEFORE the DB `::timestamptz` cast (else 500, not 400).
+      Buffer.from('not-a-timestamptz|550e8400-e29b-41d4-a716-446655440000', 'utf8').toString(
+        'base64url',
+      ),
     ]) {
       const res = await auditQuery({ cursor: bad }, meta('admin'), ctx, deps([row()]));
       expect(res.ok).toBe(false);

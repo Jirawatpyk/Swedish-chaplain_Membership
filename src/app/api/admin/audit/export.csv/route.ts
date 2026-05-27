@@ -17,7 +17,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
-import { tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
 import { toCsvField } from '@/lib/csv';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -83,6 +83,13 @@ export async function GET(request: NextRequest): Promise<Response> {
   const targetRef = str(url.searchParams.get('targetRef'));
   const from = str(url.searchParams.get('from'));
   const to = str(url.searchParams.get('to'));
+
+  // Guard the date format BEFORE js-joda conversion — a malformed `from`/`to`
+  // (tampered URL) would otherwise throw outside the try/catch below → bodyless
+  // 500 + no log. A bad date is a client error → 400 invalid_range.
+  if ((from !== '' && !isYmd(from)) || (to !== '' && !isYmd(to))) {
+    return NextResponse.json({ error: { code: 'invalid_range' } }, { status: 400 });
+  }
 
   const input: AuditQueryInput = {
     ...(eventType ? { eventType: [eventType] } : {}),

@@ -24,7 +24,7 @@ export default async function Loading(): Promise<React.JSX.Element> {
       {/* Filter bar — event-type select + actor + target + from + to */}
       <FilterBar aria-hidden>
         <Skeleton className="h-9 sm:w-64" />
-        <Skeleton className="h-9 sm:w-48" />
+        <Skeleton className="h-9 sm:w-56" />
         <Skeleton className="h-9 sm:w-48" />
         <Skeleton className="h-9 sm:w-40" />
         <Skeleton className="h-9 sm:w-40" />
