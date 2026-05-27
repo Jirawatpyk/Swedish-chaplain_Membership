@@ -73,8 +73,8 @@ even if no other pillar ships.
 **Independent Test**: Seed a tenant with members, invoices, broadcasts, and
 events in known states; sign in as admin; verify the dashboard renders correct
 counts/metrics, the "needs attention" items link to the right records, and the
-activity feed reflects the most recent events. Verify a manager sees a
-finance-redacted variant and a member cannot reach the page.
+activity feed reflects the most recent events. Verify a manager sees the same
+read-only dashboard (revenue included) and a member cannot reach the page.
 
 **Acceptance Scenarios**:
 
@@ -88,8 +88,9 @@ finance-redacted variant and a member cannot reach the page.
    the admin views the activity feed, **Then** the most recent events appear in
    reverse-chronological order with actor, action, and relative time.
 4. **Given** a manager (read-only on finance) signs in, **When** they open the
-   dashboard, **Then** revenue/financial figures are presented per their role and
-   no finance-restricted drill-down is exposed.
+   dashboard, **Then** the revenue/financial figures ARE shown (read-only) exactly
+   as for an admin, and no finance edit or drill-down action is exposed (the
+   dashboard is a read-only surface for all staff).
 5. **Given** a member signs in, **When** they navigate to `/admin`, **Then** access
    is denied (they are routed to their member portal).
 6. **Given** a tenant with zero data (fresh onboarding), **When** the admin opens
@@ -306,10 +307,12 @@ audit-logged.
 - **Stale derived metrics**: dashboard counts and benefit-usage figures are derived
   from many sources; the spec must define how fresh they are and how a user knows
   the "as of" time so they don't act on stale numbers.
-- **Role-based redaction**: a manager (finance read-only) and a member must see
-  appropriately redacted variants of the dashboard, audit viewer, and timeline; the
-  same engine must not leak finance figures or staff-only annotations to the wrong
-  role.
+- **Role-based redaction**: the audit viewer and member timeline must redact
+  sensitive payload fields (internal annotations, third-party PII) per the viewer's
+  role; the engine must not leak staff-only annotations or other members' PII to the
+  wrong role. (The dashboard itself is NOT finance-redacted — admins and the
+  read-only-on-finance manager role both see revenue; only members are denied the
+  whole surface.)
 - **Tenant isolation under load**: all queries (dashboard, audit, timeline,
   directory, export) must be tenant-scoped; a cross-tenant probe must return nothing
   and be auditable.
@@ -342,8 +345,8 @@ audit-logged.
   growth / status** chart (cumulative members by join month + current active/at-risk/
   overdue breakdown) — derived from the cached snapshot. Each chart MUST ship an
   **accessible data-table equivalent** (visually-hidden `<table>`) and MUST NOT rely on
-  colour alone (WCAG 1.4.1). Charts are finance-bearing → redacted/omitted for the
-  manager role per FR-007 where they expose revenue.
+  colour alone (WCAG 1.4.1). Both charts are visible to all staff (admin + the
+  read-only-on-finance manager role) per FR-007.
 - **FR-002**: The dashboard MUST present a "needs attention" area aggregating the
   following actionable item types at launch — **broadcasts awaiting approval, overdue
   invoices, and at-risk members** — each with a count and a link to the corresponding
@@ -369,9 +372,13 @@ audit-logged.
   staleness MUST NOT exceed the cadence under normal operation.
 - **FR-006**: The dashboard MUST render correct, non-erroring empty states for a
   tenant with no data in any given section.
-- **FR-007**: The dashboard MUST present role-appropriate variants: admins see all
-  metrics; managers see a finance-redacted variant per their role; members MUST NOT
-  be able to access the staff dashboard.
+- **FR-007**: The dashboard MUST present role-appropriate access: admins and
+  managers both see the full read-only dashboard — including the YTD revenue figure
+  and the revenue-trend chart (the manager role is "read-only on finance", i.e. it
+  MAY view financial figures; the dashboard is a read-only surface with no finance
+  edit or drill-down for any staff role). Members MUST NOT be able to access the
+  staff dashboard. (Sensitive **audit payload** field redaction by role is a
+  separate concern — see FR-011 for the audit viewer.)
 - **FR-007a**: The system MUST present an **Engagement Score** (0–100, with health
   bands) per member, **computed as the inverse of the F8 at-risk score** (reusing F8
   signals, not a separate scoring pipeline). The score MUST be **sortable and
@@ -624,9 +631,12 @@ audit-logged.
   auditable probe.
 - **SC-010**: All F9 surfaces pass the platform accessibility bar (WCAG 2.1 AA) and
   render fully in EN, TH (Buddhist-Era display), and SV with no missing strings.
-- **SC-011**: Role redaction holds: a manager and a member each see **no
-  finance/PII field outside their role's projection** on the dashboard, audit
-  viewer, and timeline (verified by per-role assertions).
+- **SC-011**: Role redaction holds on the **audit viewer and member timeline**: a
+  manager and a member each see **no sensitive payload field outside their role's
+  projection** (internal annotations, other members' PII), verified by per-role
+  assertions. The **dashboard** carries no finance redaction — admins and the
+  read-only-on-finance manager role both see revenue; members are denied the surface
+  entirely (verified by the per-role dashboard E2E).
 - **SC-012** *(adoption / value KPI, tracked post-launch)*: within the first
   membership year after launch, **≥ 50% of active members** have viewed their own
   benefit-usage dashboard at least once, and staff act on (or dismiss) **≥ 70%** of

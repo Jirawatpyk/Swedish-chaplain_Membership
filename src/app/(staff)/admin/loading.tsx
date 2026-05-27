@@ -57,6 +57,22 @@ export default async function Loading() {
             ))}
           </div>
 
+          {/* Trend charts — two equal cards (summary stat + sparkline), matches
+              the real chart row so the activity feed below doesn't shift (CLS). */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <SkeletonBlock className="h-5 w-44" />
+                </CardHeader>
+                <CardContent>
+                  <SkeletonBlock className="h-7 w-28" />
+                  <SkeletonBlock className="mt-3 h-24 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
           {/* Activity feed — full-width card. Header mirrors the real
               ActivityFeed (title + right-aligned Refresh button) to avoid CLS. */}
           <Card>

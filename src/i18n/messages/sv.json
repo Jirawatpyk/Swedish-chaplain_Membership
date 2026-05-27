@@ -225,9 +225,7 @@
         "total": "Totalt antal medlemmar",
         "active": "Aktiva medlemmar",
         "atRisk": "Medlemmar i riskzonen",
-        "revenue": "Betalda intäkter (i år)",
-        "revenueRedacted": "—",
-        "revenueRedactedReason": "Inte tillgängligt för din roll"
+        "revenue": "Betalda intäkter (i år)"
       },
       "needsAttention": {
         "title": "Kräver åtgärd",
@@ -236,15 +234,25 @@
         "atRisk": "Medlemmar i riskzonen",
         "broadcasts": "Utskick som väntar på godkännande"
       },
+      "trends": {
+        "sectionLabel": "Trenddiagram"
+      },
       "revenueTrend": {
         "title": "Intäktstrend (12 månader)",
         "empty": "Inga betalda intäkter registrerade ännu.",
+        "sparse": "Begränsad historik — trenden byggs upp när fler månaders intäkter registrerats.",
+        "total": "Totalt 12 månader",
         "month": "Månad",
-        "amount": "Betalda intäkter"
+        "amount": "Betalda intäkter",
+        "perMonth": "Per månad"
       },
       "memberGrowth": {
         "title": "Medlemstillväxt (12 månader)",
         "empty": "Ingen medlemsdata ännu.",
+        "sparse": "Begränsad historik — trenden byggs upp när medlemsantalet växer över fler månader.",
+        "total": "Totalt antal medlemmar",
+        "cumulative": "Kumulativt",
+        "netNew": "+{count} i år",
         "month": "Månad",
         "count": "Medlemmar"
       },

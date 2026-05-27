@@ -6,9 +6,11 @@
  * the caller never sees a raw error. Genuine compute failure → `snapshot_unavailable`
  * (presentation renders the empty state + a retryable signal, FR-006).
  *
- * Role projection (FR-007): admin → full; manager → finance-redacted
- * (YTD revenue hidden); member → forbidden (staff-only dashboard). Emits the
- * `dashboard_viewed` PII-read audit (best-effort; never masks the read, FR-036).
+ * Role projection (FR-007): admin + manager → full read-only view (the manager
+ * role is "read-only on finance" — it MAY view revenue figures; the dashboard
+ * exposes no finance edit/drill-down so read-only holds by construction);
+ * member → forbidden (staff-only dashboard). Emits the `dashboard_viewed`
+ * PII-read audit (best-effort; never masks the read, FR-036).
  *
  * No direct `runInTenant` — `snapshotRepo.read` self-scopes and `recompute`
  * self-runs — so this use-case is unit-testable with mocks.
@@ -32,17 +34,10 @@ export interface ListDashboardMeta {
   readonly requestId: string;
 }
 
-/** Role-projected snapshot — `ytdPaidRevenueSatang` is null when finance-redacted. */
-export type ProjectedDashboard = Omit<DashboardSnapshot, 'ytdPaidRevenueSatang'> & {
-  readonly ytdPaidRevenueSatang: string | null;
-};
-
 export interface DashboardView {
-  readonly metrics: ProjectedDashboard;
+  readonly metrics: DashboardSnapshot;
   /** "As of" time (FR-005), ISO 8601 UTC; presentation renders per-locale. */
   readonly computedAt: string;
-  /** True for managers — the UI hides the revenue figure. */
-  readonly financeRedacted: boolean;
 }
 
 export interface ListDashboardDeps {
@@ -77,14 +72,6 @@ export async function listDashboard(
     computedAt = snapshot.computedAt;
   }
 
-  const financeRedacted = meta.actorRole === 'manager';
-  const metrics: ProjectedDashboard = {
-    ...snapshot,
-    ytdPaidRevenueSatang: financeRedacted ? null : snapshot.ytdPaidRevenueSatang,
-    // Revenue trend is finance-bearing (FR-001a / FR-007) → omit for managers.
-    revenueTrend: financeRedacted ? [] : snapshot.revenueTrend,
-  };
-
   // PII-read audit (FR-036) — best-effort; a write failure must not block the
   // read. The adapter's `record` already logs+meters+swallows, but wrap here as
   // defence-in-depth so any port impl that throws can never fail the dashboard.
@@ -106,5 +93,5 @@ export async function listDashboard(
   }
   insightsMetrics.dashboardViewed(meta.actorRole, ctx.slug);
 
-  return ok({ metrics, computedAt, financeRedacted });
+  return ok({ metrics: snapshot, computedAt });
 }

@@ -5,7 +5,7 @@
  * direct DB tx (the repo self-scopes), so all branches are unit-testable:
  *   - member → forbidden (no read/recompute/audit)
  *   - admin  → full snapshot (revenue visible)
- *   - manager → finance-redacted (revenue null)
+ *   - manager → full snapshot too (FR-007 "read-only on finance" — revenue visible)
  *   - cold-start (no cache) → lazy recompute
  *   - recompute failure → snapshot_unavailable
  */
@@ -63,8 +63,8 @@ describe('listDashboard', () => {
     const result = await listDashboard(meta('admin'), ctx, deps);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.financeRedacted).toBe(false);
       expect(result.value.metrics.ytdPaidRevenueSatang).toBe('240000000');
+      expect(result.value.metrics.revenueTrend).toHaveLength(1);
       expect(result.value.computedAt).toBe('2026-06-15T05:00:00.000Z');
     }
     expect(deps.audit.record).toHaveBeenCalledOnce();
@@ -74,15 +74,27 @@ describe('listDashboard', () => {
     });
   });
 
-  it('manager sees a finance-redacted snapshot (revenue null)', async () => {
+  it('manager sees revenue read-only — same snapshot as admin (FR-007)', async () => {
+    // The "read-only on finance" manager role MAY view revenue figures; the
+    // dashboard exposes no finance edit/drill-down so read-only holds.
     const result = await listDashboard(meta('manager'), ctx, depsWith());
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.financeRedacted).toBe(true);
-      expect(result.value.metrics.ytdPaidRevenueSatang).toBeNull();
-      // non-finance counts remain visible
+      expect(result.value.metrics.ytdPaidRevenueSatang).toBe('240000000');
+      expect(result.value.metrics.revenueTrend).toHaveLength(1);
       expect(result.value.metrics.counts.active).toBe(8);
+      expect(result.value.metrics.memberGrowth).toHaveLength(1);
     }
+    // Audit still records the manager's dashboard view (FR-036).
+  });
+
+  it('emits dashboard_viewed with the manager actor role', async () => {
+    const deps = depsWith();
+    await listDashboard(meta('manager'), ctx, deps);
+    expect(vi.mocked(deps.audit.record).mock.calls[0]![0]).toMatchObject({
+      eventType: 'dashboard_viewed',
+      payload: { actor_role: 'manager' },
+    });
   });
 
   it('cold-start (no cache) lazily recomputes the snapshot', async () => {

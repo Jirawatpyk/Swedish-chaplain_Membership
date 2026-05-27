@@ -137,20 +137,19 @@ export default async function StaffHomePage() {
     );
   }
 
-  const { metrics, computedAt, financeRedacted } = dashResult.value;
+  const { metrics, computedAt } = dashResult.value;
   const numberFmt = new Intl.NumberFormat(locale);
   const asOf = new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(computedAt));
-  const revenueDisplay =
-    financeRedacted || metrics.ytdPaidRevenueSatang === null
-      ? null
-      : new Intl.NumberFormat(locale, {
-          style: 'currency',
-          currency: 'THB',
-          maximumFractionDigits: 0,
-        }).format(Number(metrics.ytdPaidRevenueSatang) / 100);
+  // FR-007: revenue is visible to all staff (admin + the "read-only on finance"
+  // manager role); only members are denied the dashboard (handled upstream).
+  const revenueDisplay = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    maximumFractionDigits: 0,
+  }).format(Number(metrics.ytdPaidRevenueSatang) / 100);
 
   if (feedSettled.status === 'rejected') {
     // The adapter swallows source read errors to [] (logged upstream), so a
@@ -168,17 +167,11 @@ export default async function StaffHomePage() {
     key: string;
     label: string;
     value: string;
-    redactedReason?: string;
   }> = [
     { key: 'total', label: t('kpi.total'), value: numberFmt.format(metrics.counts.total) },
     { key: 'active', label: t('kpi.active'), value: numberFmt.format(metrics.counts.active) },
     { key: 'atRisk', label: t('kpi.atRisk'), value: numberFmt.format(metrics.counts.atRisk) },
-    {
-      key: 'revenue',
-      label: t('kpi.revenue'),
-      value: revenueDisplay ?? t('kpi.revenueRedacted'),
-      ...(revenueDisplay === null ? { redactedReason: t('kpi.revenueRedactedReason') } : {}),
-    },
+    { key: 'revenue', label: t('kpi.revenue'), value: revenueDisplay },
   ];
 
   // Only surface items that actually need attention (FR-006) — a "0" with a
@@ -237,8 +230,8 @@ export default async function StaffHomePage() {
     timeLabel: timeFmt.format(new Date(item.occurredAt)),
   }));
 
-  // FR-001a trend charts — display-ready points (manager: revenueTrend already
-  // redacted to [] upstream → renders the empty state).
+  // FR-001a trend charts — display-ready points (visible to all staff; the
+  // empty state shows only when a tenant genuinely has no paid revenue yet).
   const monthFmt = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' });
   const thbFmt = new Intl.NumberFormat(locale, {
     style: 'currency',
@@ -259,6 +252,25 @@ export default async function StaffHomePage() {
     value: p.cumulative,
     valueLabel: numberFmt.format(p.cumulative),
   }));
+  // At-a-glance summary stats above each sparkline (readability).
+  const revenueTotalSatang = metrics.revenueTrend.reduce((s, p) => s + BigInt(p.satang), 0n);
+  const revenueSummary = {
+    value: thbFmt.format(Number(revenueTotalSatang) / 100),
+    label: t('revenueTrend.total'),
+  };
+  const memberGrowthSummary = {
+    value: numberFmt.format(metrics.memberGrowth.at(-1)?.cumulative ?? 0),
+    label: t('memberGrowth.total'),
+  };
+  const revenueTrendEmpty = t('revenueTrend.empty');
+  // Net-new members over the window (cumulative is monotonic) → an "▲ +N"
+  // growth chip, only when there's actual growth (avoids a flat/▼ noise chip).
+  const memberNetNew =
+    (metrics.memberGrowth.at(-1)?.cumulative ?? 0) - (metrics.memberGrowth[0]?.cumulative ?? 0);
+  const memberDelta =
+    memberNetNew > 0
+      ? { direction: 'up' as const, label: t('memberGrowth.netNew', { count: memberNetNew }) }
+      : undefined;
 
   return (
     <DetailContainer>
@@ -269,12 +281,7 @@ export default async function StaffHomePage() {
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
         {kpis.map((kpi) => (
-          <KpiCard
-            key={kpi.key}
-            label={kpi.label}
-            value={kpi.value}
-            {...(kpi.redactedReason ? { redactedReason: kpi.redactedReason } : {})}
-          />
+          <KpiCard key={kpi.key} label={kpi.label} value={kpi.value} />
         ))}
       </section>
 
@@ -294,22 +301,29 @@ export default async function StaffHomePage() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <section aria-label={t('trends.sectionLabel')} className="grid gap-4 lg:grid-cols-2">
         <RevenueTrendChart
           title={t('revenueTrend.title')}
-          emptyLabel={t('revenueTrend.empty')}
+          caption={t('revenueTrend.perMonth')}
+          emptyLabel={revenueTrendEmpty}
+          sparseLabel={t('revenueTrend.sparse')}
           monthHeader={t('revenueTrend.month')}
           amountHeader={t('revenueTrend.amount')}
+          summary={revenueSummary}
           points={revenueTrendPoints}
         />
         <MemberGrowthChart
           title={t('memberGrowth.title')}
+          caption={t('memberGrowth.cumulative')}
           emptyLabel={t('memberGrowth.empty')}
+          sparseLabel={t('memberGrowth.sparse')}
           monthHeader={t('memberGrowth.month')}
           countHeader={t('memberGrowth.count')}
+          summary={memberGrowthSummary}
+          {...(memberDelta ? { delta: memberDelta } : {})}
           points={memberGrowthPoints}
         />
-      </div>
+      </section>
 
       <ActivityFeed
         title={t('activity.title')}

@@ -26,6 +26,8 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { lastNMonthKeys } from '@/modules/insights/domain/trend-window';
+import { env } from '@/lib/env';
 
 type Band = 'healthy' | 'warning' | 'at-risk' | 'critical';
 
@@ -299,5 +301,131 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
       expect(result.value.memberGrowth).toHaveLength(12);
       expect(result.value.memberGrowth.at(-1)?.cumulative).toBe(1);
     }
+  });
+});
+
+/**
+ * G2/G3 (review remediation) — multi-month trend distribution: makes the
+ * single-bucket I-5 assertions load-bearing by spreading data across distinct
+ * months + before the 12-month window (member baseline + revenue out-of-window
+ * discard). Dates are computed relative to the tenant-tz window so the test is
+ * robust to when it runs.
+ */
+describe('F9 computeDashboardSnapshot — 12-month trend distribution (G2/G3)', () => {
+  let tenant: TestTenant;
+  let admin: TestUser;
+  const planId = `f9-trend-${randomUUID().slice(0, 8)}`;
+  const ownerMemberId = randomUUID(); // FK target for the seeded invoices
+  const TZ = env.tenant.timezone;
+  const keys = lastNMonthKeys(new Date(), TZ, 12);
+  // Mid-month, mid-day UTC → same tenant-tz month regardless of offset.
+  const midMonth = (key: string): Date => new Date(`${key}-15T03:00:00.000Z`);
+  const BEFORE_WINDOW = new Date('2019-01-15T03:00:00.000Z');
+
+  const SNAP_TENANT = { legal_name_th: 'ท', legal_name_en: 'T', tax_id: '0', address_th: 'B', address_en: 'B', logo_blob_key: null };
+  const SNAP_MEMBER = { legal_name: 'C', tax_id: '1', address: 'B', primary_contact_name: 'n', primary_contact_email: 't@e.com' };
+
+  function paidInvoice(seq: number, paidAt: Date, totalSatang: bigint) {
+    return {
+      tenantId: tenant.ctx.slug,
+      invoiceId: randomUUID(),
+      memberId: ownerMemberId,
+      planYear: 2026,
+      planId,
+      draftByUserId: admin.userId,
+      status: 'paid' as const,
+      fiscalYear: paidAt.getUTCFullYear(),
+      sequenceNumber: seq,
+      documentNumber: `F9T-${paidAt.getUTCFullYear()}-${String(seq).padStart(6, '0')}`,
+      issueDate: paidAt.toISOString().slice(0, 10),
+      dueDate: paidAt.toISOString().slice(0, 10),
+      subtotalSatang: totalSatang,
+      vatRateSnapshot: '0.0000',
+      vatSatang: 0n,
+      totalSatang,
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: 'monthly' as const,
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: SNAP_MEMBER,
+      pdfBlobKey: `invoicing/f9trend/${seq}.pdf`,
+      pdfSha256: 'a'.repeat(64),
+      pdfTemplateVersion: 1,
+      paidAt,
+      paymentMethod: 'manual',
+      receiptPdfStatus: 'rendered' as const,
+    };
+  }
+
+  beforeAll(async () => {
+    admin = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await runInTenant(tenant.ctx, async (tx) => {
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Trend Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: admin.userId,
+      });
+      // Members: 1 before the window (baseline) + 1 each in keys[3], keys[7], keys[11].
+      const memberRows = [
+        { memberId: ownerMemberId, createdAt: BEFORE_WINDOW },
+        { memberId: randomUUID(), createdAt: midMonth(keys[3]!) },
+        { memberId: randomUUID(), createdAt: midMonth(keys[7]!) },
+        { memberId: randomUUID(), createdAt: midMonth(keys[11]!) },
+      ].map((m) => ({
+        tenantId: tenant.ctx.slug,
+        memberId: m.memberId,
+        companyName: 'Trend Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        status: 'active' as const,
+        riskScore: null,
+        riskScoreBand: null,
+        createdAt: m.createdAt,
+      }));
+      await tx.insert(members).values(memberRows);
+      // Paid invoices: 2 in distinct in-window months + 1 before the window
+      // (must be EXCLUDED from the trend).
+      await tx.insert(invoices).values([
+        paidInvoice(1, midMonth(keys[2]!), 100_000n),
+        paidInvoice(2, midMonth(keys[8]!), 60_000n),
+        paidInvoice(3, BEFORE_WINDOW, 999_999n),
+      ]);
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    const slug = tenant.ctx.slug;
+    await db.delete(dashboardMetricsCache).where(eq(dashboardMetricsCache.tenantId, slug)).catch(() => {});
+    await db.delete(invoices).where(eq(invoices.tenantId, slug)).catch(() => {});
+    await db.delete(members).where(eq(members.tenantId, slug)).catch(() => {});
+    await tenant.cleanup().catch(() => {});
+  }, 120_000);
+
+  it('distributes revenue across months + discards out-of-window paid invoices', async () => {
+    const result = await computeDashboardSnapshot(tenant.ctx, makeComputeDashboardSnapshotDeps(tenant.ctx.slug));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byMonth = new Map(result.value.revenueTrend.map((p) => [p.month, BigInt(p.satang)]));
+    expect(byMonth.get(keys[2]!)).toBe(100_000n);
+    expect(byMonth.get(keys[8]!)).toBe(60_000n);
+    // The 2019 paid invoice (999_999) is outside the window → excluded entirely.
+    expect(result.value.revenueTrend.reduce((s, p) => s + BigInt(p.satang), 0n)).toBe(160_000n);
+  });
+
+  it('accumulates member growth across months on top of the pre-window baseline', async () => {
+    const result = await computeDashboardSnapshot(tenant.ctx, makeComputeDashboardSnapshotDeps(tenant.ctx.slug));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cum = new Map(result.value.memberGrowth.map((p) => [p.month, p.cumulative]));
+    // baseline (1 pre-window) → rises by 1 at keys[3], keys[7], keys[11].
+    expect(cum.get(keys[0]!)).toBe(1); // just the baseline
+    expect(cum.get(keys[3]!)).toBe(2);
+    expect(cum.get(keys[7]!)).toBe(3);
+    expect(cum.get(keys[11]!)).toBe(4);
+    expect(result.value.counts.total).toBe(4);
   });
 });

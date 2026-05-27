@@ -75,7 +75,6 @@ export {
   type DashboardError,
   type DashboardView,
   type ListDashboardMeta,
-  type ProjectedDashboard,
 } from './application/use-cases/list-dashboard';
 export {
   activityFeedQuery,

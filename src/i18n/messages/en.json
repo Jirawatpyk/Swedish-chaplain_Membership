@@ -225,9 +225,7 @@
         "total": "Total members",
         "active": "Active members",
         "atRisk": "At-risk members",
-        "revenue": "Paid revenue (YTD)",
-        "revenueRedacted": "—",
-        "revenueRedactedReason": "Not available for your role"
+        "revenue": "Paid revenue (YTD)"
       },
       "needsAttention": {
         "title": "Needs attention",
@@ -236,15 +234,25 @@
         "atRisk": "At-risk members",
         "broadcasts": "Broadcasts awaiting approval"
       },
+      "trends": {
+        "sectionLabel": "Trend charts"
+      },
       "revenueTrend": {
         "title": "Revenue trend (12 months)",
         "empty": "No paid revenue recorded yet.",
+        "sparse": "Limited history — the trend builds up as more months of revenue are recorded.",
+        "total": "12-month total",
         "month": "Month",
-        "amount": "Paid revenue"
+        "amount": "Paid revenue",
+        "perMonth": "Per month"
       },
       "memberGrowth": {
         "title": "Member growth (12 months)",
         "empty": "No member data yet.",
+        "sparse": "Limited history — the trend builds up as membership grows over more months.",
+        "total": "Total members",
+        "cumulative": "Cumulative",
+        "netNew": "+{count} this year",
         "month": "Month",
         "count": "Members"
       },

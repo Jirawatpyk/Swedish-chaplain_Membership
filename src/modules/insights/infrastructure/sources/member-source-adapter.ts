@@ -95,7 +95,10 @@ export const memberSourceAdapter: MemberSource = {
     const byMonth: Record<string, number> = {};
     let baseline = 0;
     const deps = buildMembersDeps(ctx);
-    const pageSize = 200;
+    // `directorySearchWithCount` clamps `limit` to 100, so pageSize MUST be 100
+    // — a larger value makes `items.length < pageSize` always true and the loop
+    // would break after the first page (undercounting tenants with >100 members).
+    const pageSize = 100;
     let offset = 0;
     // Paginate ALL members (every status) so the cumulative series counts
     // every member ever joined. Off the hot path (~5-min cron); promote a
@@ -110,7 +113,9 @@ export const memberSourceAdapter: MemberSource = {
       }
       for (const row of result.value.items) {
         const key = monthKeyOf(row.member.createdAt, timeZone);
-        if (key < firstKey) baseline += 1; // joined before the window → baseline
+        // `YYYY-MM` sorts lexicographically == chronologically, so `< firstKey`
+        // correctly means "joined before the window" → baseline.
+        if (key < firstKey) baseline += 1;
         else if (windowSet.has(key)) byMonth[key] = (byMonth[key] ?? 0) + 1;
       }
       offset += result.value.items.length;

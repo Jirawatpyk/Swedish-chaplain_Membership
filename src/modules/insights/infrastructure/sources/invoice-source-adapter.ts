@@ -72,6 +72,10 @@ export const invoiceSourceAdapter: InvoiceSource = {
     monthKeys: readonly string[],
     timeZone: string,
   ): Promise<Readonly<Record<string, bigint>>> {
+    // NOTE: this buckets by the month a paid invoice was SETTLED (`paidAt`),
+    // spanning fiscal years — intentionally a different basis from the YTD KPI
+    // (`getYtdPaidRevenueSatang`, which filters by issue-date fiscal year). The
+    // trend answers "revenue realised per month", the KPI "this fiscal year".
     const window = new Set(monthKeys);
     const buckets: Record<string, bigint> = {};
     const deps = makeListInvoicesDeps(ctx.slug);

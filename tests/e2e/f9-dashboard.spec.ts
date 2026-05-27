@@ -5,7 +5,9 @@
  * STRUCTURE + role projection rather than exact counts (counts drift):
  *   - admin → KPIs (incl. a THB revenue value), needs-attention links,
  *     smart insights, live activity feed, "as of" freshness
- *   - manager → finance-redacted (no THB revenue in the KPI region)
+ *   - manager → same read-only view incl. the THB revenue figure (FR-007:
+ *     the "read-only on finance" role MAY view revenue; the dashboard has no
+ *     finance edit/drill-down)
  *   - member → denied (redirected off /admin)
  *
  * Requires `FEATURE_F9_DASHBOARD=true` + E2E_{ADMIN,MANAGER,MEMBER}_* in
@@ -79,7 +81,7 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     expect(await page.getByRole('table').count()).toBeGreaterThan(0);
   });
 
-  test('manager sees a finance-redacted dashboard (no revenue figure)', async ({
+  test('manager sees the same read-only dashboard incl. the revenue figure (FR-007)', async ({
     page,
   }) => {
     await signInAsManager(page);
@@ -87,12 +89,12 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
 
     const metrics = page.getByRole('region', { name: /key metrics/i });
     await expect(metrics).toBeVisible();
-    // The revenue label is still shown...
     await expect(metrics.getByText('Paid revenue (YTD)')).toBeVisible();
-    // ...but the value is redacted — no THB currency figure in the KPI region.
-    await expect(metrics.getByText(/THB|฿/)).toHaveCount(0);
-    // Non-finance counts remain visible.
+    // "read-only on finance" → the manager DOES see the real THB revenue value.
+    await expect(metrics.getByText(/THB|฿/)).toBeVisible();
     await expect(metrics.getByText('Active members')).toBeVisible();
+    // The revenue-trend chart (finance-bearing) is visible to the manager too.
+    await expect(page.getByText('Revenue trend (12 months)').first()).toBeVisible();
   });
 
   test('member is denied the staff dashboard (redirected off /admin)', async ({
