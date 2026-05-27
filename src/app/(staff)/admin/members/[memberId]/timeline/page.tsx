@@ -20,8 +20,9 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
-import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { isYmd } from '@/lib/tenant-day-range';
 import { asTimelineSource, asTimelineActorKind } from '@/lib/timeline-shared';
+import { buildTimelineFilterInput, timelineFilterKey } from '@/lib/timeline-filter-input';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { getMember, timelineList, type MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -110,21 +111,18 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   // Resolve URL filters → use-case input (UTC bounds via tenant tz).
   const sp = await searchParams;
   const tz = env.tenant.timezone;
-  const source = asTimelineSource(sp.source);
-  const actorKind = asTimelineActorKind(sp.actorKind);
-  const fromYmd = sp.from && isYmd(sp.from) ? sp.from : undefined;
-  const toYmd = sp.to && isYmd(sp.to) ? sp.to : undefined;
-  const hasFilter = Boolean(source || actorKind || fromYmd || toYmd);
+  const filterArgs = {
+    source: asTimelineSource(sp.source),
+    actorKind: asTimelineActorKind(sp.actorKind),
+    fromYmd: sp.from && isYmd(sp.from) ? sp.from : undefined,
+    toYmd: sp.to && isYmd(sp.to) ? sp.to : undefined,
+  };
+  const hasFilter = Boolean(
+    filterArgs.source || filterArgs.actorKind || filterArgs.fromYmd || filterArgs.toYmd,
+  );
 
   const timelineResult = await timelineList(
-    {
-      memberId,
-      limit: 50,
-      ...(source ? { source } : {}),
-      ...(actorKind ? { actorKind } : {}),
-      ...(fromYmd ? { from: tenantDayStartUtc(fromYmd, tz) } : {}),
-      ...(toYmd ? { to: tenantDayEndUtc(toYmd, tz) } : {}),
-    },
+    { memberId, limit: 50, ...buildTimelineFilterInput(filterArgs, tz) },
     {
       actorUserId: session.user.id,
       actorRole: session.user.role as 'admin' | 'manager' | 'member',
@@ -141,7 +139,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   const totalEvents = timelineResult.ok ? timelineResult.value.total : 0;
 
   // Remount the stream on filter change so paginated state resets cleanly.
-  const filterKey = `${source ?? ''}|${actorKind ?? ''}|${fromYmd ?? ''}|${toYmd ?? ''}`;
+  const filterKey = timelineFilterKey(filterArgs);
 
   return (
     <DetailContainer>

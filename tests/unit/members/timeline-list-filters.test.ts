@@ -132,4 +132,31 @@ describe('timelineList — filter resolution (D1)', () => {
     expect(ev.payload).not.toHaveProperty('override_reason_note');
     expect(ev.payload).toMatchObject({ member_id: MEMBER, new_status: 'active' });
   });
+
+  it('member-role redaction applies to NON-AUDIT rows too (R2-5)', async () => {
+    // redactEvents runs across all sources — a non-audit row carrying a
+    // sensitive key (`notes`) must be stripped for members.
+    const { deps } = makeDeps([
+      {
+        id: 'inv-9',
+        timestamp: new Date('2026-05-21T10:00:00Z'),
+        source: 'invoice' as const,
+        eventType: 'issued',
+        actorKind: 'staff' as const,
+        actorDisplayName: null,
+        payload: { status: 'issued', notes: 'internal staff note', invoice_id: 'inv-9' },
+      },
+    ]);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      { ...META, actorRole: 'member' },
+      CTX,
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ev = r.value.events[0]!;
+    expect(ev.payload).not.toHaveProperty('notes');
+    expect(ev.payload).toMatchObject({ status: 'issued', invoice_id: 'inv-9' });
+  });
 });

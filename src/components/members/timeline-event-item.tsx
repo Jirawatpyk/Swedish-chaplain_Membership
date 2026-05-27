@@ -34,7 +34,8 @@ export type TimelineItemProps = {
   readonly source: TimelineSource;
   readonly eventType: string;
   readonly actorKind: TimelineActorKind;
-  readonly actorUserId: string;
+  /** Audit-only (the acting user). Absent for non-audit sources. */
+  readonly actorUserId?: string;
   readonly actorDisplayName: string | null;
   readonly payload: Record<string, unknown> | null;
 };
@@ -178,7 +179,7 @@ export function TimelineEventItem({
   // --- actor attribution --------------------------------------------------
   let actorDisplay: string;
   if (source === 'audit') {
-    actorDisplay = SYSTEM_ACTORS.has(actorUserId)
+    actorDisplay = SYSTEM_ACTORS.has(actorUserId ?? '')
       ? t('actorSystem')
       : (actorDisplayName ?? tTimeline(`actorKind.${actorKind}` as 'actorKind.staff'));
   } else {

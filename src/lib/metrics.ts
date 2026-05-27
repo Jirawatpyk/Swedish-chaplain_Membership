@@ -3643,15 +3643,18 @@ export const insightsMetrics = {
   /**
    * Unified-timeline query latency (US3 / FR-016) — backs the p95 < 500 ms
    * per-page SLO. Measures the keyset-paginated `member_timeline_v` round-trip
-   * (count + page + actor/plan enrichment) inside the timeline repo.
+   * (count + page + actor/plan enrichment) inside the timeline repo. Recorded
+   * on BOTH outcomes (ok/error) so a query that does real work then throws
+   * still contributes a latency sample — otherwise the p95 histogram would
+   * stay green during an outage (review-run R2 I-1).
    */
-  timelineQueryDurationMs(ms: number): void {
+  timelineQueryDurationMs(ms: number, outcome: 'ok' | 'error'): void {
     safeMetric(() => {
       histogram(
         'insights_timeline_query_duration_ms',
         'F9 unified multi-source timeline keyset query latency',
         'ms',
-      ).record(ms);
+      ).record(ms, { outcome });
     });
   },
 } as const;

@@ -125,4 +125,32 @@ describe('GET /api/portal/timeline — route contract', () => {
     expect(body.next_cursor).toBe('cur-1');
     expect(body.total).toBe(1);
   });
+
+  it('audit row → actor_user_id is populated (union audit branch, R2-9)', async () => {
+    timelineListMock.mockResolvedValueOnce(
+      ok({
+        events: [
+          {
+            id: 'aud-1',
+            timestamp: new Date('2026-05-20T10:00:00.000Z'),
+            source: 'audit',
+            eventType: 'member_self_updated',
+            actorKind: 'member',
+            actorUserId: 'member-user-1',
+            actorDisplayName: 'Jane',
+            payload: { member_id: OWN_MEMBER_ID },
+          },
+        ],
+        nextCursor: null,
+        total: 1,
+      }),
+    );
+    const res = await callRoute('');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ source: string; actor_user_id: string | null }>;
+    };
+    expect(body.items[0]!.source).toBe('audit');
+    expect(body.items[0]!.actor_user_id).toBe('member-user-1');
+  });
 });

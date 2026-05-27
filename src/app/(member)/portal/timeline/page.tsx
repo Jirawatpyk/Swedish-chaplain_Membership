@@ -13,9 +13,12 @@ import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
-import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { isYmd } from '@/lib/tenant-day-range';
 import { asTimelineSource, asTimelineActorKind } from '@/lib/timeline-shared';
+import { buildTimelineFilterInput, timelineFilterKey } from '@/lib/timeline-filter-input';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -52,6 +55,17 @@ export default async function PortalTimelinePage({
   const deps = buildMembersDeps(tenant);
   const memberResult = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberResult.ok) {
+    // Mirror the API route (review-run R2-1): only an UNLINKED account is a
+    // benign empty stream. Any other repo error (DB outage, RLS misconfig)
+    // must surface as the error boundary + a log — never be masked as "no
+    // activity" on the first paint.
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { requestId, errKind: errKind(memberResult.error) },
+        'portal.timeline.member_lookup_failed',
+      );
+      throw new Error('Failed to load member for timeline');
+    }
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
@@ -67,21 +81,18 @@ export default async function PortalTimelinePage({
 
   const sp = await searchParams;
   const tz = env.tenant.timezone;
-  const source = asTimelineSource(sp.source);
-  const actorKind = asTimelineActorKind(sp.actorKind);
-  const fromYmd = sp.from && isYmd(sp.from) ? sp.from : undefined;
-  const toYmd = sp.to && isYmd(sp.to) ? sp.to : undefined;
-  const hasFilter = Boolean(source || actorKind || fromYmd || toYmd);
+  const filterArgs = {
+    source: asTimelineSource(sp.source),
+    actorKind: asTimelineActorKind(sp.actorKind),
+    fromYmd: sp.from && isYmd(sp.from) ? sp.from : undefined,
+    toYmd: sp.to && isYmd(sp.to) ? sp.to : undefined,
+  };
+  const hasFilter = Boolean(
+    filterArgs.source || filterArgs.actorKind || filterArgs.fromYmd || filterArgs.toYmd,
+  );
 
   const result = await timelineList(
-    {
-      memberId: member.memberId,
-      limit: 50,
-      ...(source ? { source } : {}),
-      ...(actorKind ? { actorKind } : {}),
-      ...(fromYmd ? { from: tenantDayStartUtc(fromYmd, tz) } : {}),
-      ...(toYmd ? { to: tenantDayEndUtc(toYmd, tz) } : {}),
-    },
+    { memberId: member.memberId, limit: 50, ...buildTimelineFilterInput(filterArgs, tz) },
     { actorUserId: user.id, actorRole: 'member', requestId },
     tenant,
     { memberRepo: deps.memberRepo, timeline: deps.timeline },
@@ -91,7 +102,7 @@ export default async function PortalTimelinePage({
     ? result.value.events.map(toTimelineItemProps)
     : [];
   const initialCursor = result.ok ? result.value.nextCursor : null;
-  const filterKey = `${source ?? ''}|${actorKind ?? ''}|${fromYmd ?? ''}|${toYmd ?? ''}`;
+  const filterKey = timelineFilterKey(filterArgs);
 
   return (
     <DetailContainer>

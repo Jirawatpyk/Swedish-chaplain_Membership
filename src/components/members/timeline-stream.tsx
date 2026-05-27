@@ -11,9 +11,12 @@
  * page scrolls naturally on mobile.
  *
  * Accessibility: an explicit button (not auto-infinite-scroll) keeps keyboard
- * + screen-reader users in control; the container is `role="list"` with an
- * sr-only polite live region announcing newly-loaded entries. The dot markers
- * are static (reduced-motion friendly).
+ * + screen-reader users in control. Small lists render a semantic `<ol>/<li>`;
+ * above the virtualize threshold the windowed container uses `role="list"` +
+ * `role="listitem"` (absolute positioning forbids `<ol><li>`), with
+ * `aria-setsize`/`aria-posinset` for position context. An sr-only polite live
+ * region announces newly-loaded entries (only after a load-more). The source
+ * markers are static (reduced-motion friendly).
  *
  * Filter changes are owned by `<TimelineFilters>` (URL state) → the server
  * re-renders the first page → the page remounts this component via a `key`,
@@ -103,7 +106,8 @@ export function TimelineStream({
           source: i.source,
           eventType: i.event_type,
           actorKind: i.actor_kind,
-          actorUserId: i.actor_user_id ?? '',
+          // audit-only; omit for non-audit (optional prop).
+          ...(i.actor_user_id ? { actorUserId: i.actor_user_id } : {}),
           actorDisplayName: i.actor_display_name,
           payload: i.payload,
         }));

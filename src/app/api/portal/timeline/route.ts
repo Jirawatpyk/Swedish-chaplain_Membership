@@ -18,7 +18,8 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
-import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { isYmd } from '@/lib/tenant-day-range';
+import { buildTimelineFilterInput } from '@/lib/timeline-filter-input';
 import { toTimelineApiItem } from '@/lib/timeline-presenter';
 import {
   timelineList,
@@ -93,10 +94,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       memberId: member.memberId,
       cursor: queryParsed.data.cursor,
       limit: queryParsed.data.limit,
-      ...(queryParsed.data.source ? { source: queryParsed.data.source } : {}),
-      ...(queryParsed.data.actorKind ? { actorKind: queryParsed.data.actorKind } : {}),
-      ...(fromYmd ? { from: tenantDayStartUtc(fromYmd, tz) } : {}),
-      ...(toYmd ? { to: tenantDayEndUtc(toYmd, tz) } : {}),
+      ...buildTimelineFilterInput(
+        {
+          source: queryParsed.data.source,
+          actorKind: queryParsed.data.actorKind,
+          fromYmd,
+          toYmd,
+        },
+        tz,
+      ),
     },
     { actorUserId: user.id, actorRole: 'member', requestId },
     tenant,

@@ -37,7 +37,9 @@ export function toTimelineItemProps(e: TimelineEvent): TimelineItemProps {
     source: e.source,
     eventType: e.eventType,
     actorKind: e.actorKind,
-    actorUserId: e.source === 'audit' ? e.actorUserId : '',
+    // actorUserId is audit-only — omit it for the other sources (optional
+    // prop; `exactOptionalPropertyTypes` forbids assigning undefined).
+    ...(e.source === 'audit' ? { actorUserId: e.actorUserId } : {}),
     actorDisplayName: e.actorDisplayName,
     payload: e.payload,
   };

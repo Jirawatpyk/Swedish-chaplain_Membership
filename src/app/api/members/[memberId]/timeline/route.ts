@@ -20,7 +20,8 @@ import {
   TIMELINE_ACTOR_KINDS,
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { isYmd } from '@/lib/tenant-day-range';
+import { buildTimelineFilterInput } from '@/lib/timeline-filter-input';
 import { toTimelineApiItem } from '@/lib/timeline-presenter';
 import { env } from '@/lib/env';
 
@@ -102,10 +103,15 @@ export async function GET(
       memberId: parsed.data.memberId,
       cursor: queryParsed.data.cursor,
       limit: queryParsed.data.limit,
-      ...(queryParsed.data.source ? { source: queryParsed.data.source } : {}),
-      ...(queryParsed.data.actorKind ? { actorKind: queryParsed.data.actorKind } : {}),
-      ...(fromYmd ? { from: tenantDayStartUtc(fromYmd, tz) } : {}),
-      ...(toYmd ? { to: tenantDayEndUtc(toYmd, tz) } : {}),
+      ...buildTimelineFilterInput(
+        {
+          source: queryParsed.data.source,
+          actorKind: queryParsed.data.actorKind,
+          fromYmd,
+          toYmd,
+        },
+        tz,
+      ),
     },
     {
       actorUserId: ctx.current.user.id,

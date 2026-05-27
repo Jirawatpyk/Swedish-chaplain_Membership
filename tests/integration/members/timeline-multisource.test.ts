@@ -440,6 +440,10 @@ describe('F9 US3 — keyset tiebreak on identical occurred_at (T052, live Neon)'
     expect(page2.value.events[0]!.timestamp.toISOString()).toBe(COLLISION);
     // …and are DISTINCT (no duplication across the page boundary).
     expect(page1.value.events[0]!.id).not.toBe(page2.value.events[0]!.id);
+    // ORDER is `ref_id DESC` on the collision (R2-6): page 1 carries the
+    // lexicographically-larger ref_id, page 2 the smaller — asserting the
+    // tiebreak DIRECTION, not just set membership (which `.sort()` would mask).
+    expect(page1.value.events[0]!.id > page2.value.events[0]!.id).toBe(true);
     // The two sources (audit + invoice) are exactly the seeded pair.
     const sources = [page1.value.events[0]!.source, page2.value.events[0]!.source].sort();
     expect(sources).toEqual(['audit', 'invoice']);

@@ -289,11 +289,13 @@ export const drizzleTimelineRepo: TimelinePort = {
         return { events, nextCursor, total } satisfies TimelineResult;
       });
 
-      // FR-016 p95<500ms/page SLO signal (success path only — failures are
-      // captured by the err() return + caller logging).
-      insightsMetrics.timelineQueryDurationMs(performance.now() - startedAt);
+      // FR-016 p95<500ms/page SLO signal — recorded on BOTH outcomes so a
+      // slow-then-erroring query is visible to the latency histogram, not just
+      // the error log (review-run R2 I-1).
+      insightsMetrics.timelineQueryDurationMs(performance.now() - startedAt, 'ok');
       return ok(result);
     } catch (e) {
+      insightsMetrics.timelineQueryDurationMs(performance.now() - startedAt, 'error');
       return err({ code: 'repo.unexpected' as const, cause: e });
     }
   },
