@@ -79,4 +79,27 @@ describe('<BenefitUsageCard>', () => {
     expect(screen.getByText('No tracked benefits')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
+
+  it('AS-1: an unused benefit (lastUsedAt null) shows "not used yet", not a date', () => {
+    renderCard({
+      quantifiable: [{ key: 'eblast', used: 0, entitlement: 6, lastUsedAt: null }],
+    });
+    expect(screen.getByText(/not used yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/last used/i)).not.toBeInTheDocument();
+  });
+
+  it('AS-2: warningActionHref renders a deep link inside the warning', () => {
+    renderCard({
+      underUseWarning: true,
+      aggregateConsumedPct: 33,
+      warningActionHref: '/portal/benefits/e-blasts',
+    });
+    const action = screen.getByRole('link', { name: /use a benefit/i });
+    expect(action).toHaveAttribute('href', '/portal/benefits/e-blasts');
+  });
+
+  it('AS-5: the card title reflects the supplied membership year (rollover)', () => {
+    renderCard({ membershipYear: 2027, elapsedYearPct: 0 });
+    expect(screen.getByText(/2027/)).toBeInTheDocument();
+  });
 });

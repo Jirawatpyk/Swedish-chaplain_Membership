@@ -124,7 +124,7 @@ export function BenefitUsageCard({
                   {b.actionHref !== undefined && (
                     <Link
                       href={b.actionHref}
-                      className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:no-underline"
+                      className="inline-flex items-center gap-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       {t(`benefit.action.${b.key}`)}
                       {/* SR context: "Compose" alone is ambiguous when tabbing

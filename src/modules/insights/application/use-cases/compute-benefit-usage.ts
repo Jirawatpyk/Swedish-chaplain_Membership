@@ -69,6 +69,11 @@ export async function computeBenefitUsage(
     if (identity === null) {
       return err({ code: 'member_not_found' });
     }
+    // `identity.planYear` is the member's plan-record year (the entitlement
+    // source); `membershipYear` below is the current tenant-tz calendar year
+    // (the consumption window, FR-023). For a current-year plan these coincide;
+    // plan-record/calendar-year divergence (anniversary-based plans) is
+    // explicitly out of scope for F9 (FR-023 note).
 
     // Calendar-year bounds in the tenant timezone (FR-023). The same window is
     // used by the event consumption adapter — shared via tenantYearBoundsUtcMs

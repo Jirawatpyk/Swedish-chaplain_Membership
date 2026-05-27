@@ -5,10 +5,11 @@
  * benefit consumption vs entitlement, plus the aggregate under-use signal.
  *
  * Membership year = **calendar year in the tenant timezone** (FR-023). This
- * module stays tz-agnostic: the Application use-case derives the year's UTC
- * millisecond bounds (it owns the tz) and feeds them to `yearElapsedPct`; the
- * arithmetic here is testable without an Intl/tz dependency (consistent with
- * how `compute-dashboard-snapshot` derives the tenant-tz year in Application).
+ * module stays tz-agnostic: the Application layer derives the year's UTC
+ * millisecond bounds (via `tenant-year.ts`, which owns the tz) and feeds them
+ * to `yearElapsedPct`; the arithmetic here is testable without an Intl/tz
+ * dependency (consistent with how `compute-dashboard-snapshot` handles the
+ * tenant-tz year in Application).
  *
  * Under-use rule (FR-021): warn when `elapsed-year %` − `aggregate consumed %`
  * ≥ 25 percentage points. The aggregate consumed % is the **mean of the

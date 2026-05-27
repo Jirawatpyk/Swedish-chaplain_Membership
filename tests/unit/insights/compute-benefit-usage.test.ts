@@ -27,7 +27,7 @@ function makeDeps(over: {
   entitlements?: BenefitEntitlements | null;
   eblast?: BenefitConsumption;
   cultural?: BenefitConsumption;
-  throwOn?: 'entitlements';
+  throwOn?: 'entitlements' | 'broadcast';
 }): ComputeBenefitUsageDeps {
   return {
     memberPlanSource: {
@@ -43,8 +43,12 @@ function makeDeps(over: {
       },
     },
     broadcastSource: {
-      getEblastConsumption: async () =>
-        over.eblast ?? { used: 2, lastUsedAt: '2026-03-01T00:00:00.000Z' },
+      getEblastConsumption: async () => {
+        // Simulates the adapter's fail-loud throw when computeQuotaCounter
+        // returns !ok (C-1) — must surface as compute_failed, never used:0.
+        if (over.throwOn === 'broadcast') throw new Error('eblast consumption lookup failed: quota.member_not_found');
+        return over.eblast ?? { used: 2, lastUsedAt: '2026-03-01T00:00:00.000Z' };
+      },
     },
     eventSource: {
       getCulturalConsumption: async () => over.cultural ?? { used: 0, lastUsedAt: null },
@@ -109,5 +113,16 @@ describe('computeBenefitUsage', () => {
     if (r.error.code === 'compute_failed') {
       expect(r.error.cause).toBeInstanceOf(Error);
     }
+  });
+
+  it('C-1: a broadcast fail-loud throw surfaces as compute_failed (never a masked used:0)', async () => {
+    const r = await computeBenefitUsage(
+      CTX,
+      { memberId: 'm1' },
+      makeDeps({ throwOn: 'broadcast' }),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('compute_failed');
   });
 });

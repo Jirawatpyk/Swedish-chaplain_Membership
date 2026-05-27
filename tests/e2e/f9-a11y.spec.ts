@@ -11,9 +11,11 @@ import { AxeBuilder } from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsMember } from './helpers/member-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const F9_ENABLED = process.env.FEATURE_F9_DASHBOARD === 'true';
 
 async function expectNoAxeViolations(page: Page, surface: string): Promise<void> {
@@ -84,5 +86,17 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
       page.getByRole('heading', { name: 'Member benefits', level: 1 }),
     ).toBeVisible();
     await expectNoAxeViolations(page, '/admin/members/[id]/benefits');
+  });
+
+  // F9 US4 — the MEMBER-facing counterpart (same BenefitUsageCard). FR-035
+  // requires both surfaces to meet WCAG 2.1 AA.
+  test('member benefit view (/portal/benefits)', async ({ page }) => {
+    if (!MEMBER_EMAIL) {
+      throw new Error('E2E_MEMBER_EMAIL missing — set it in .env.local before running this suite.');
+    }
+    await signInAsMember(page);
+    await page.goto('/portal/benefits');
+    await expect(page.getByRole('heading', { name: 'Benefits', level: 1 })).toBeVisible();
+    await expectNoAxeViolations(page, '/portal/benefits');
   });
 });

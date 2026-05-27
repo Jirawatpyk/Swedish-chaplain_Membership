@@ -120,7 +120,14 @@ export interface BenefitConsumption {
 }
 
 export interface BroadcastConsumptionSource {
-  /** E-Blasts a member has sent in the membership year + last-sent date (FR-019/AS-1). */
+  /**
+   * E-Blasts a member has sent in the membership year + last-sent date
+   * (FR-019/AS-1). NOTE: the only implementation derives the count from the F7
+   * quota counter, which scopes to the **current** tenant-tz year — it cannot
+   * scope to a *past* `membershipYear`. F9 only ever views the current year
+   * (FR-023), so this is correct today; a future historical-year view must add
+   * a year-scoped count path rather than relying on this method.
+   */
   getEblastConsumption(
     ctx: TenantContext,
     memberId: string,

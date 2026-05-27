@@ -112,4 +112,35 @@ describe('buildBenefitUsage', () => {
     expect(usage.aggregateConsumedPct).toBeNull();
     expect(usage.underUseWarning).toBe(false);
   });
+
+  it('ratio guard: a malformed entitlement (0 / negative / NaN) is excluded from the aggregate', () => {
+    // entitlement 0 → Infinity, -1 → negative, NaN → NaN. All must be dropped
+    // so they never poison the mean (review-run I-2 defence-in-depth).
+    for (const bad of [0, -1, Number.NaN]) {
+      const usage = buildBenefitUsage({
+        membershipYear: 2026,
+        elapsedYearPct: 50,
+        quantifiable: [{ ...eblast, used: 3, entitlement: bad }],
+        active: [],
+      });
+      // The only (malformed) benefit is dropped → no quantifiable ratio → null.
+      expect(usage.aggregateConsumedPct).toBeNull();
+      expect(usage.underUseWarning).toBe(false);
+    }
+  });
+
+  it('ratio guard: a malformed benefit is dropped but a valid one still aggregates', () => {
+    const usage = buildBenefitUsage({
+      membershipYear: 2026,
+      elapsedYearPct: 50,
+      quantifiable: [
+        { ...eblast, used: 3, entitlement: 6 }, // valid ratio 0.5 → 50%
+        { key: 'cultural_tickets', used: 1, entitlement: 0, lastUsedAt: null }, // Infinity → dropped
+      ],
+      active: [],
+    });
+    // Mean over the surviving single ratio (0.5) only.
+    expect(usage.aggregateConsumedPct).toBeCloseTo(50, 5);
+    expect(usage.underUseWarning).toBe(false); // gap 0
+  });
 });
