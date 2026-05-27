@@ -59,6 +59,16 @@ export const test = base.extend<{
    * attachment but skips the auto-fail. Use sparingly (e.g. tests
    * that intentionally trigger client errors as part of UX flows
    * — Sentry-style debugging, malformed-input tests).
+   *
+   * Dev-overlay carve-out: Next.js dev internals (e.g. the
+   * `__nextjs_original-stack-frames` source-map endpoint) emit a
+   * WebKit-only "Fetch API cannot load … due to access control
+   * checks" pageerror. Those endpoints exist ONLY under `next dev`
+   * (never in a prod build), so the error is a dev-server/WebKit
+   * artifact, not an application bug — it is still captured +
+   * attached for visibility but excluded from the auto-fail set.
+   * A real app URL never contains `__nextjs`, so the filter can't
+   * mask a genuine client error.
    */
   // The Playwright fixture callback parameter is conventionally named
   // `use` but we use `runTest` here to avoid the `react-hooks/rules-of-hooks`
@@ -81,9 +91,12 @@ export const test = base.extend<{
             .join('\n---\n'),
           contentType: 'text/plain',
         });
-        if (process.env.E2E_PAGEERROR_IGNORE !== 'true') {
+        // Exclude Next.js dev-overlay internals (dev-only, WebKit access-control
+        // noise) from the fail set — see the carve-out note above.
+        const appErrors = errors.filter((e) => !e.message.includes('__nextjs'));
+        if (appErrors.length > 0 && process.env.E2E_PAGEERROR_IGNORE !== 'true') {
           throw new Error(
-            `Captured ${errors.length} client-side pageerror(s); first: ${errors[0]!.message}`,
+            `Captured ${appErrors.length} client-side pageerror(s); first: ${appErrors[0]!.message}`,
           );
         }
       }
