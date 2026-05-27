@@ -44,6 +44,21 @@ describe('redactPayloadForRole', () => {
     expect(redactPayloadForRole('audit_log_queried', payload, 'manager')).toEqual(payload);
   });
 
+  it('strips the whole member_updated `diff` for managers, keeps fields_changed — admin sees diff (PDPA §19)', () => {
+    const payload = {
+      member_id: 'm-1',
+      fields_changed: ['taxId', 'notes'],
+      diff: { taxId: { old: '0105...', new: '0107...' }, notes: { old: 'a', new: 'b' } },
+    };
+    // manager: diff (carrying old/new PII values) gone; accountability fields kept
+    expect(redactPayloadForRole('member_updated', payload, 'manager')).toEqual({
+      member_id: 'm-1',
+      fields_changed: ['taxId', 'notes'],
+    });
+    // admin: full payload incl. diff
+    expect(redactPayloadForRole('member_updated', payload, 'admin')).toEqual(payload);
+  });
+
   it('manager has third-party member PII (email/phone) stripped — admin keeps it (PDPA §19)', () => {
     const payload = { invitee_email: 'x@swecham.test', new_email: 'y@swecham.test', count: 1 };
     // admin: full

@@ -140,10 +140,14 @@ function decodeCursor(raw: string): AuditSourceCursor | null {
     const iso = decoded.slice(0, sep);
     const id = decoded.slice(sep + 1);
     if (iso.length === 0 || id.length === 0) return null;
-    // Reject an `iso` that isn't a `YYYY-MM-DD…`-shaped timestamptz BEFORE it
-    // reaches the DB `::timestamptz` cast — otherwise a tampered-but-decodable
-    // cursor hits Postgres (ERROR 22007) → 500 instead of a clean invalid_range.
-    if (!/^\d{4}-\d{2}-\d{2}[ T]/.test(iso)) return null;
+    // VALUE-validate the iso (not just its shape) BEFORE it reaches the DB
+    // `::timestamptz` cast — a shape-valid-but-impossible time like
+    // `2026-01-01 99:99:99+99` would otherwise hit Postgres (ERROR 22007) → 500
+    // instead of a clean invalid_range. `new Date` parses the `timestamptz::text`
+    // grammar Postgres mints (space separator, `+00` offset, µs fraction) and
+    // returns Invalid Date (NaN) for impossible values — verified to accept
+    // every legitimate server-minted cursor, so no false-negative on real pages.
+    if (Number.isNaN(new Date(iso).getTime())) return null;
     return { iso, id };
   } catch {
     return null;

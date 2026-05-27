@@ -42,11 +42,25 @@ describe('tenantDayStartUtc / tenantDayEndUtc', () => {
 });
 
 describe('isYmd', () => {
-  it('accepts YYYY-MM-DD only', () => {
+  it('accepts a well-shaped, calendar-VALID date', () => {
     expect(isYmd('2026-05-27')).toBe(true);
+    expect(isYmd('2024-02-29')).toBe(true); // real leap day
+  });
+
+  it('rejects shape-malformed input', () => {
     expect(isYmd('2026-5-7')).toBe(false);
     expect(isYmd('garbage')).toBe(false);
     expect(isYmd('2026-05-27T00:00:00Z')).toBe(false);
     expect(isYmd('')).toBe(false);
+  });
+
+  it('rejects shape-valid but CALENDAR-IMPOSSIBLE dates (would throw in tenantDay*Utc)', () => {
+    // These match \d{4}-\d{2}-\d{2} but LocalDate.parse throws — the guard MUST
+    // reject them so callers return invalid_range, not a 500 / error card.
+    expect(isYmd('2026-02-30')).toBe(false);
+    expect(isYmd('2026-04-31')).toBe(false);
+    expect(isYmd('2026-13-01')).toBe(false);
+    expect(isYmd('2026-00-10')).toBe(false);
+    expect(isYmd('2026-02-29')).toBe(false); // 2026 is not a leap year
   });
 });

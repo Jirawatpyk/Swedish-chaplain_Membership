@@ -115,6 +115,11 @@ describe('auditQuery', () => {
       Buffer.from('not-a-timestamptz|550e8400-e29b-41d4-a716-446655440000', 'utf8').toString(
         'base64url',
       ),
+      // N-01 (R3): VALID date prefix but invalid time SUFFIX — the prefix-only
+      // guard let this reach the DB cast; the full-grammar guard must reject it.
+      Buffer.from('2026-01-01 99:99:99+99|550e8400-e29b-41d4-a716-446655440000', 'utf8').toString(
+        'base64url',
+      ),
     ]) {
       const res = await auditQuery({ cursor: bad }, meta('admin'), ctx, deps([row()]));
       expect(res.ok).toBe(false);

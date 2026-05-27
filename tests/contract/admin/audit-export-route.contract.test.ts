@@ -81,6 +81,16 @@ describe('GET /api/admin/audit/export.csv — route contract', () => {
     expect(auditExportMock).not.toHaveBeenCalled();
   });
 
+  it('shape-valid but IMPOSSIBLE date (2026-02-30) → 400 (not a 500 from js-joda throw)', async () => {
+    // isYmd must calendar-validate — else tenantDayStartUtc throws OUTSIDE the
+    // try/catch → bodyless 500. Assert the clean 400 + no dispatch.
+    const res = await callRoute('?from=2026-02-30&to=2026-03-01');
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('invalid_range');
+    expect(auditExportMock).not.toHaveBeenCalled();
+  });
+
   it('use-case forbidden → 403; too_large → 409; invalid_range → 400', async () => {
     auditExportMock.mockResolvedValueOnce({ ok: false, error: 'forbidden' });
     expect((await callRoute('')).status).toBe(403);

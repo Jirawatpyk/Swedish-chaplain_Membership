@@ -13,12 +13,24 @@ import { LocalDate, LocalTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 
 /**
- * `YYYY-MM-DD` shape guard. Callers MUST validate with this BEFORE passing a
- * date to `tenantDay*Utc` — those throw `JsJodaException` on a malformed input,
- * which a caller should map to a 400 / invalid-range rather than a 500.
+ * `YYYY-MM-DD` CALENDAR-VALID guard. Callers MUST validate with this BEFORE
+ * passing a date to `tenantDay*Utc` — those throw `JsJodaException` on any input
+ * `LocalDate.parse` rejects, which a caller should map to a 400 / invalid-range
+ * rather than a 500.
+ *
+ * Shape alone is NOT enough: `2026-02-30`, `2026-13-01`, and a non-leap
+ * `2026-02-29` all match `\d{4}-\d{2}-\d{2}` yet `LocalDate.parse` throws on
+ * them. So this round-trips through `LocalDate.parse` (the exact validator
+ * `tenantDay*Utc` use) — a `true` result GUARANTEES those helpers won't throw.
  */
 export function isYmd(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  try {
+    LocalDate.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** UTC instant (ISO 8601) at the START of `ymd` in tenant tz `tz`. */
