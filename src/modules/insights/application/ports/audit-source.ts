@@ -13,6 +13,15 @@
  */
 import type { TenantContext } from '@/modules/tenants';
 
+/**
+ * An `audit_event_type` code, intentionally `string` (not the auth `AuditEventType`
+ * union) at this boundary: the code arrives untyped from a query string and the
+ * insights module must not couple to auth's domain union (Principle III). It is
+ * an OPAQUE label here — never validated; an unknown value simply matches no
+ * rows in the reader's `inArray` predicate.
+ */
+export type AuditEventCode = string;
+
 /** Decoded keyset cursor — full-precision `timestamptz` text (µs) + id of the
  *  prior page's last row (ms-truncation would drop same-ms boundary rows). */
 export interface AuditSourceCursor {
@@ -21,7 +30,7 @@ export interface AuditSourceCursor {
 }
 
 export interface AuditSourceFilters {
-  readonly eventType?: readonly string[];
+  readonly eventType?: readonly AuditEventCode[];
   readonly actorUserId?: string;
   readonly targetUserId?: string;
   readonly from?: Date;
@@ -33,7 +42,7 @@ export interface AuditSourceFilters {
 
 export interface AuditSourceRow {
   readonly id: string;
-  readonly eventType: string;
+  readonly eventType: AuditEventCode;
   readonly actorUserId: string;
   readonly targetUserId: string | null;
   readonly summary: string;

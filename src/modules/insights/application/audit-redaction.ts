@@ -58,13 +58,32 @@ export const GLOBAL_SENSITIVE_PAYLOAD_FIELDS: readonly string[] = [
 ];
 
 /**
- * Per-event-type sensitive-field extension. Keys are `audit_event_type` values;
- * each lists payload field names that are internal-only for that event beyond
- * the global set. An event type absent here relies on the global deny-list
- * alone. Keep entries conservative — a field listed here is hidden from every
- * manager.
+ * Event types that carry per-event sensitive payload fields beyond the global
+ * deny-list. A closed union (rather than a bare `string` key) so a typo or a
+ * renamed event is a COMPILE error in the map below, not a silently-disabled
+ * redaction. Spans F1 (`role_changed`/`account_*`) + F2 (`fee_config_updated`)
+ * + F3 (`member_*`) taxonomies — no single audit-event-type enum covers all, so
+ * this union is the authoritative key space for the map.
  */
-export const SENSITIVE_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
+export type AuditRedactableEvent =
+  | 'role_changed'
+  | 'account_disabled'
+  | 'account_reenabled'
+  | 'fee_config_updated'
+  | 'member_invitation_sent'
+  | 'member_email_change_requested'
+  | 'member_email_change_confirmed'
+  | 'member_email_change_reverted';
+
+/**
+ * Per-event-type sensitive-field extension. Each entry lists payload field
+ * names that are internal-only / third-party-PII for that event beyond the
+ * global set. An event type absent here relies on the global deny-list alone.
+ * Keep entries conservative — a field listed here is hidden from every manager.
+ */
+export const SENSITIVE_PAYLOAD_FIELDS: Readonly<
+  Partial<Record<AuditRedactableEvent, readonly string[]>>
+> = {
   // Role changes carry an operator justification — internal annotation.
   role_changed: ['reason'],
   // Account disable/enable justifications.
@@ -92,10 +111,14 @@ export function redactPayloadForRole(
   if (payload === null) return null;
   if (role === 'admin') return { ...payload };
 
-  const deny = new Set<string>([
-    ...GLOBAL_SENSITIVE_PAYLOAD_FIELDS,
-    ...(SENSITIVE_PAYLOAD_FIELDS[eventType] ?? []),
-  ]);
+  // `eventType` is an arbitrary code; widen the union-keyed map to a string
+  // index for the lookup (the union only constrains the literal's KEYS above —
+  // its job is to catch a typo at definition time, not at call time).
+  const perEvent =
+    (SENSITIVE_PAYLOAD_FIELDS as Readonly<Record<string, readonly string[] | undefined>>)[
+      eventType
+    ] ?? [];
+  const deny = new Set<string>([...GLOBAL_SENSITIVE_PAYLOAD_FIELDS, ...perEvent]);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
     if (!deny.has(key)) out[key] = value;
