@@ -43,8 +43,9 @@ import {
  * When `FEATURE_F9_DASHBOARD` is off it shows the F1 placeholder roadmap. When
  * on (F9, US1) it renders the live operations dashboard: KPIs + needs-attention
  * + activity feed + smart insights, served from the cached snapshot (cold-start
- * lazily computes). Managers see a finance-redacted variant; members never
- * reach here (`requireSession('staff')` + listDashboard's own RBAC guard).
+ * lazily computes). Admins and the "read-only on finance" manager role both see
+ * the full dashboard incl. revenue (FR-007); members never reach here
+ * (`requireSession('staff')` + listDashboard's own RBAC guard).
  */
 export const metadata: Metadata = {
   title: 'Staff home',
@@ -115,6 +116,17 @@ export default async function StaffHomePage() {
     activityFeedQuery({ limit: 15 }, meta, tenant, makeActivityFeedDeps()),
   ]);
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
+
+  if (dashSettled.status === 'rejected') {
+    // The dashboard's PRIMARY widget threw outside the Result channel (e.g. a
+    // Neon outage in snapshotRepo.read → runInTenant). Log it — otherwise an
+    // operator sees the error state with a log line for the feed (below) but
+    // nothing for the headline failure. Mirrors the activity-feed handling.
+    logger.error(
+      { tenantId: tenant.slug, errKind: errKind(dashSettled.reason) },
+      'insights.dashboard.list_dashboard_rejected',
+    );
+  }
 
   // Distinguish a genuine compute failure (snapshot_unavailable / thrown) from
   // the staff-only `forbidden` guard so the user gets the right copy + a retry

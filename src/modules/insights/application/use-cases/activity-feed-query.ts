@@ -30,51 +30,18 @@ export interface ActivityFeedDeps {
 
 export type ActivityFeedError = 'forbidden';
 
-/**
- * Audit-event-type prefixes whose summaries can embed financial figures
- * (satang amounts, revenue, refund totals). Managers get a finance-redacted
- * dashboard (FR-007 / SC-011) — the YTD-revenue KPI is hidden upstream, so the
- * activity feed must not re-expose the same figures via raw audit summaries.
- * Prefix-matched so future finance events in these families are redacted
- * automatically without re-touching this list.
- */
-const FINANCE_EVENT_PREFIXES = [
-  'payment_',
-  'invoice_',
-  'credit_note_',
-  'receipt_',
-  'fee_config',
-  'online_payment_',
-  'tenant_payment',
-] as const;
-
-function isFinanceEvent(eventType: string): boolean {
-  // Substring `refund` (not just the `refund_` prefix) so out-of-band /
-  // stale-pending refund-anomaly events (`out_of_band_refund_detected`,
-  // `stale_pending_refund_detected`) are also redacted, not just `refund_*`.
-  return (
-    eventType.includes('refund') ||
-    FINANCE_EVENT_PREFIXES.some((p) => eventType.startsWith(p))
-  );
-}
-
 export async function activityFeedQuery(
   input: { readonly limit?: number },
   meta: ActivityFeedMeta,
   ctx: TenantContext,
   deps: ActivityFeedDeps,
 ): Promise<Result<readonly ActivityFeedItem[], ActivityFeedError>> {
+  // Staff-only (the feed is a dashboard widget); members are forbidden. Admin
+  // AND the "read-only on finance" manager role both see the FULL feed —
+  // FR-007 makes financial figures visible to managers across the dashboard,
+  // so the feed no longer drops finance-bearing events (audit-payload PII
+  // redaction is a separate concern handled by the F9 audit viewer, FR-011).
   if (meta.actorRole === 'member') return err('forbidden');
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
-
-  if (meta.actorRole !== 'manager') {
-    return ok(await deps.activitySource.recent(ctx, limit));
-  }
-
-  // Manager (finance-redacted): over-fetch then drop finance-bearing events so
-  // the feed stays close to `limit` non-finance items rather than going sparse.
-  const fetchLimit = Math.min(limit * 3, 100);
-  const items = await deps.activitySource.recent(ctx, fetchLimit);
-  const redacted = items.filter((item) => !isFinanceEvent(item.eventType)).slice(0, limit);
-  return ok(redacted);
+  return ok(await deps.activitySource.recent(ctx, limit));
 }

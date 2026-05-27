@@ -1,7 +1,7 @@
 /**
- * F9 (FR-001a) — 12-month cumulative member-growth trend (line). Not
- * finance-bearing, so shown to admin + manager. Display-ready props only;
- * the SVG renderer is internal.
+ * F9 (FR-001a) — 12-month cumulative member-growth trend (line). Non-finance
+ * membership data, shown to all staff. Display-ready props only; the SVG
+ * renderer is internal.
  */
 import {
   MiniSeriesChart,

@@ -358,7 +358,10 @@ audit-logged.
   most recent events, **not** from the periodically-refreshed KPI snapshot, so a
   just-occurred event is visible without waiting for the next snapshot refresh). Feed
   updates MUST be announced via a **polite** live region and MUST NOT steal keyboard
-  focus or re-order items the user is interacting with.
+  focus or re-order items the user is interacting with. The feed is shown in full to
+  all staff — admins and the read-only-on-finance manager role both see finance-bearing
+  events (consistent with FR-007; no manager finance-redaction on the feed). Members
+  never reach the dashboard.
 - **FR-004**: The dashboard MUST present a short list of **smart insights** —
   rule-derived suggestions surfaced from existing data — each dismissible. F9 ships a
   **fixed starter catalogue of at least 3 insight types**: (1) members with unused

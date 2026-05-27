@@ -1,9 +1,10 @@
 /**
- * `activityFeedQuery` unit test — role-aware finance redaction (C-3 / FR-007).
+ * `activityFeedQuery` unit test — role access (FR-003 / FR-007).
  *
- * Managers get a finance-redacted dashboard, so finance-bearing audit events
- * (payment/refund/invoice/credit-note summaries can embed satang amounts) must
- * not reach the manager activity feed. Admins see the full feed.
+ * The feed is a staff-only dashboard widget. Members are forbidden; admins and
+ * the "read-only on finance" manager role both see the FULL feed (FR-007 makes
+ * finance visible to managers across the dashboard — the feed no longer drops
+ * finance-bearing events).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
@@ -53,7 +54,7 @@ function depsReturning(items: readonly ActivityFeedItem[]): {
 }
 
 describe('activityFeedQuery', () => {
-  it('forbids members', async () => {
+  it('forbids members without reading the source', async () => {
     const { deps, recent } = depsReturning(MIXED);
     const result = await activityFeedQuery({ limit: 10 }, meta('member'), ctx, deps);
     expect(result.ok).toBe(false);
@@ -61,60 +62,41 @@ describe('activityFeedQuery', () => {
     expect(recent).not.toHaveBeenCalled();
   });
 
-  it('admin sees the full feed (no redaction)', async () => {
+  it('admin sees the full feed (incl. finance events), fetching exactly `limit`', async () => {
     const { deps, recent } = depsReturning(MIXED);
     const result = await activityFeedQuery({ limit: 10 }, meta('admin'), ctx, deps);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.map((e) => e.id)).toEqual(['1', '2', '3', '4', '5', '6']);
-    // Admin fetches exactly `limit`.
     expect(recent).toHaveBeenCalledWith(ctx, 10);
   });
 
-  it('manager feed excludes finance-bearing events (FR-007 / SC-011)', async () => {
+  it('manager sees the SAME full feed as admin incl. finance events (FR-007)', async () => {
+    // The "read-only on finance" manager may VIEW finance figures, so the feed
+    // no longer drops payment/invoice/refund events for managers.
     const { deps, recent } = depsReturning(MIXED);
     const result = await activityFeedQuery({ limit: 10 }, meta('manager'), ctx, deps);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const ids = result.value.map((e) => e.id);
-      // payment_succeeded (2), invoice_issued (3), refund_succeeded (5) dropped.
-      expect(ids).toEqual(['1', '4', '6']);
-      expect(result.value.some((e) => e.eventType.startsWith('payment_'))).toBe(false);
-      expect(result.value.some((e) => e.eventType.startsWith('invoice_'))).toBe(false);
-      expect(result.value.some((e) => e.eventType.startsWith('refund_'))).toBe(false);
+      expect(result.value.map((e) => e.id)).toEqual(['1', '2', '3', '4', '5', '6']);
+      // Finance events are present for managers (no redaction).
+      expect(result.value.some((e) => e.eventType.startsWith('payment_'))).toBe(true);
+      expect(result.value.some((e) => e.eventType.includes('refund'))).toBe(true);
     }
-    // Manager over-fetches (limit*3, capped at 100) to stay near `limit` after filtering.
-    expect(recent).toHaveBeenCalledWith(ctx, 30);
+    // No over-fetch any more — fetches exactly `limit`, same as admin.
+    expect(recent).toHaveBeenCalledWith(ctx, 10);
   });
 
-  it('manager result is capped to `limit` after redaction', async () => {
-    // 8 non-finance events; limit 3 → exactly 3 returned.
-    const many = Array.from({ length: 8 }, (_, i) => item(`m${i}`, 'member_updated'));
-    const { deps } = depsReturning(many);
-    const result = await activityFeedQuery({ limit: 3 }, meta('manager'), ctx, deps);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toHaveLength(3);
-  });
-
-  it('manager over-fetch is capped at 100 (limit*3 would exceed)', async () => {
-    const { deps, recent } = depsReturning([]);
-    await activityFeedQuery({ limit: 40 }, meta('manager'), ctx, deps);
-    // 40*3 = 120 → clamped to 100.
+  it('clamps limit to the [1, 100] range', async () => {
+    const { deps, recent } = depsReturning(MIXED);
+    await activityFeedQuery({ limit: 500 }, meta('admin'), ctx, deps);
     expect(recent).toHaveBeenCalledWith(ctx, 100);
+    await activityFeedQuery({ limit: 0 }, meta('manager'), ctx, deps);
+    expect(recent).toHaveBeenCalledWith(ctx, 1);
   });
 
-  it('manager feed redacts refund-anomaly events (substring, not just refund_*)', async () => {
-    const events = [
-      item('a', 'member_created'),
-      item('b', 'out_of_band_refund_detected'),
-      item('c', 'stale_pending_refund_detected'),
-      item('d', 'member_updated'),
-    ];
-    const { deps } = depsReturning(events);
-    const result = await activityFeedQuery({ limit: 10 }, meta('manager'), ctx, deps);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.map((e) => e.id)).toEqual(['a', 'd']);
-      expect(result.value.some((e) => e.eventType.includes('refund'))).toBe(false);
-    }
+  it('defaults to 20 when no limit is given', async () => {
+    const { deps, recent } = depsReturning(MIXED);
+    await activityFeedQuery({}, meta('admin'), ctx, deps);
+    expect(recent).toHaveBeenCalledWith(ctx, 20);
   });
 });

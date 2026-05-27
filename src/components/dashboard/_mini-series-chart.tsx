@@ -7,12 +7,14 @@
  * Readability: a prominent `summary` stat (sized to match `KpiCard`) + a
  * per-chart `caption` (per-month vs cumulative) + first→last month range labels
  * give at-a-glance meaning even when the sparkline is sparse; a baseline axis +
- * per-month slot ticks keep the 12-month frame legible. Each datum carries a
- * native `<title>` for pointer hover.
+ * per-month marks (slot ticks in the bar variant, dots in the line variant)
+ * keep the 12-month frame legible. Each datum carries a native `<title>` for
+ * pointer hover.
  *
  * Accessibility (WCAG 1.4.1 — no colour-only): the `<svg>` is decorative
- * (`aria-hidden`); data is conveyed by the visible summary + the always-present
- * visually-hidden `<table>` (accessible equivalent) + bar height / line
+ * (`aria-hidden`); data is conveyed by the visible summary + the visually-hidden
+ * `<table>` (accessible equivalent, rendered when data is present; the
+ * empty-state paragraph is the SR equivalent otherwise) + bar height / line
  * position — never colour. The optional delta chip pairs a ▲/▼ glyph + text
  * with colour so it is not colour-only.
  */
@@ -36,7 +38,12 @@ export interface MiniSeriesPoint {
   readonly valueLabel: string;
 }
 
-/** The prominent at-a-glance stat shown above the sparkline. */
+/**
+ * The prominent at-a-glance stat shown above the sparkline. Caller-supplied:
+ * `value` MUST be an aggregate of the same `points[]` passed to the chart (e.g.
+ * the 12-month total / latest cumulative), pre-formatted for the locale — the
+ * chart does not recompute it, so keep the two in sync at the call site.
+ */
 export interface MiniSeriesSummary {
   readonly value: string;
   readonly label: string;

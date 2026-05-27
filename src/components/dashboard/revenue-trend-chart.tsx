@@ -1,6 +1,7 @@
 /**
- * F9 (FR-001a) — 12-month paid-revenue trend (bar). Finance-bearing: the page
- * passes `points: []` for managers (redacted) → renders the empty state.
+ * F9 (FR-001a) — 12-month paid-revenue trend (bar). Finance-bearing, but
+ * visible to ALL staff (admins + the read-only-on-finance manager role) per
+ * FR-007; the empty state renders only when a tenant has no paid revenue yet.
  * Display-ready props only (no data fetch); the SVG renderer is internal.
  */
 import {

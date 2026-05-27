@@ -17,6 +17,17 @@ describe('monthKeyOf', () => {
     expect(monthKeyOf(instant, 'UTC')).toBe('2026-03');
     expect(monthKeyOf(instant, 'Asia/Bangkok')).toBe('2026-04');
   });
+
+  it('is stable across a DST transition in a DST-observing tz (Europe/Stockholm, SV locale)', () => {
+    // SV is a first-class locale; Stockholm observes DST. 2026 spring-forward is
+    // 2026-03-29 (CET→CEST). An instant just after the shift must still bucket to
+    // the correct local month regardless of the UTC-offset change.
+    const justAfterSpringForward = new Date('2026-03-29T02:30:00.000Z'); // 04:30 CEST
+    expect(monthKeyOf(justAfterSpringForward, 'Europe/Stockholm')).toBe('2026-03');
+    // Autumn fall-back (2026-10-25, CEST→CET) — late October stays in October.
+    const aroundFallBack = new Date('2026-10-25T01:30:00.000Z');
+    expect(monthKeyOf(aroundFallBack, 'Europe/Stockholm')).toBe('2026-10');
+  });
 });
 
 describe('lastNMonthKeys', () => {
@@ -50,5 +61,17 @@ describe('lastNMonthKeys', () => {
     // Late-UTC instant that is next month in Bangkok.
     const keys = lastNMonthKeys(new Date('2026-03-31T20:00:00.000Z'), 'Asia/Bangkok', 3);
     expect(keys).toEqual(['2026-02', '2026-03', '2026-04']);
+  });
+
+  it('emits keys in lexicographic == chronological order (the member-adapter baseline contract)', () => {
+    // member-source-adapter relies on `YYYY-MM` sorting lexicographically ==
+    // chronologically (`key < firstKey` ⇒ joined before the window → baseline).
+    // Pin that property so a key-format change can't silently break the baseline.
+    const keys = lastNMonthKeys(new Date('2026-01-15T00:00:00.000Z'), 'UTC', 12);
+    const sorted = [...keys].sort(); // default string sort
+    expect(keys).toEqual(sorted);
+    // Spot-check the year-boundary ordering the baseline math depends on.
+    expect('2025-12' < '2026-01').toBe(true);
+    expect(keys[0]! < keys.at(-1)!).toBe(true);
   });
 });
