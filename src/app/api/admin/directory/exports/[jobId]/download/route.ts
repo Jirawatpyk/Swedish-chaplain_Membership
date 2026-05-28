@@ -5,6 +5,13 @@
  * `ready|delivered` directory artefact (RBAC inside `prepareExportDownload`),
  * then 303-redirects to the private proxy with the token. Keeps the recent-
  * exports "Download" a plain link while preserving the single-use token model.
+ *
+ * CSRF convention: like the proxy route, this is a state-mutating GET (it mints a
+ * fresh token) that `middleware.ts` does NOT Origin-check (CSRF allow-list covers
+ * unsafe methods only). The minted token is single-use + short-lived + bound to
+ * the authenticated staff session's tenant — forging one cross-site is infeasible,
+ * and the token grants nothing beyond a one-shot read of an already staff-visible
+ * artefact, so the GET-mutates-state shortcut carries no additional CSRF risk.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';

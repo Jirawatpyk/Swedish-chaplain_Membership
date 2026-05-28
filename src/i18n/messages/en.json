@@ -244,7 +244,12 @@
     "saveFailed": "Could not save. Please check your details and try again.",
     "logoSaved": "Logo updated.",
     "logoFailed": "Could not upload the logo (PNG/JPEG/WebP, max 2 MB).",
-    "logoRemoved": "Logo removed."
+    "logoRemoved": "Logo removed.",
+    "manage": "Manage listing",
+    "invalidWebsite": "Website must start with http:// or https://",
+    "descriptionTooLong": "Description must be 500 characters or fewer.",
+    "logoTooLarge": "Logo exceeds 2 MB — choose a smaller file.",
+    "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP."
   },
   "admin": {
     "directory": {

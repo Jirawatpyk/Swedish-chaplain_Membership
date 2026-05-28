@@ -18,6 +18,11 @@ vi.mock('@/lib/env', () => ({
 vi.mock('@/lib/db', () => ({
   runInTenant: async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({}),
 }));
+// `download-export` imports `logger` (which reads env.log/nodeEnv at init); stub
+// it so this test's minimal env mock doesn't need the full logger config.
+vi.mock('@/lib/logger', () => ({
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 
 const { asTenantContext } = await import('@/modules/tenants');
 const { hashDownloadToken, mintDownloadToken } = await import(
@@ -193,6 +198,30 @@ describe('downloadExport — authz matrix (T073a)', () => {
     );
     const r = await downloadExport({ jobId: JOB_ID, token }, member('m-1'), ctx, downloadDeps(repo, stubBlob()));
     expect(r.ok).toBe(true);
+  });
+
+  it('Q2: the token is single-use — a replay after consumption is rejected', async () => {
+    // Stateful stub: consume nulls the hash (mirrors consumeForDownloadInTx),
+    // so the SAME token replayed after a successful download is `invalid_token`.
+    const token = mintDownloadToken();
+    const hash = hashDownloadToken(JOB_ID, token);
+    let consumed = false;
+    const repo = stubRepo(null);
+    (repo.findById as ReturnType<typeof vi.fn>).mockImplementation(async () =>
+      job({ downloadTokenHash: consumed ? null : hash }),
+    );
+    (repo.consumeForDownloadInTx as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      consumed = true;
+      return true;
+    });
+    const deps = downloadDeps(repo, stubBlob());
+
+    const first = await downloadExport({ jobId: JOB_ID, token }, staff('admin'), ctx, deps);
+    expect(first.ok).toBe(true);
+
+    const replay = await downloadExport({ jobId: JOB_ID, token }, staff('admin'), ctx, deps);
+    expect(replay.ok).toBe(false);
+    if (!replay.ok) expect(replay.error).toBe('invalid_token');
   });
 });
 

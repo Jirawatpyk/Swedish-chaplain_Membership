@@ -5,11 +5,11 @@
  * Posts to the enqueue route, toasts the queued/failed result, then refreshes
  * so the new job appears in the recent-exports list (ux-standards § 5).
  */
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { BookIcon, FileJsonIcon } from 'lucide-react';
+import { BookIcon, FileJsonIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 type ExportKind = 'directory_ebook' | 'directory_json';
@@ -18,8 +18,11 @@ export function GenerateExportActions(): React.JSX.Element {
   const t = useTranslations('admin.directory.generate');
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // Track which artefact is generating so only that button shows the spinner.
+  const [pendingKind, setPendingKind] = useState<ExportKind | null>(null);
 
   function generate(kind: ExportKind) {
+    setPendingKind(kind);
     startTransition(async () => {
       try {
         const res = await fetch('/api/admin/directory/exports', {
@@ -35,6 +38,8 @@ export function GenerateExportActions(): React.JSX.Element {
         router.refresh();
       } catch {
         toast.error(t('failed'));
+      } finally {
+        setPendingKind(null);
       }
     });
   }
@@ -47,7 +52,11 @@ export function GenerateExportActions(): React.JSX.Element {
         disabled={isPending}
         onClick={() => generate('directory_ebook')}
       >
-        <BookIcon className="size-4" aria-hidden />
+        {pendingKind === 'directory_ebook' ? (
+          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+        ) : (
+          <BookIcon className="size-4" aria-hidden />
+        )}
         {t('ebook')}
       </Button>
       <Button
@@ -56,7 +65,11 @@ export function GenerateExportActions(): React.JSX.Element {
         disabled={isPending}
         onClick={() => generate('directory_json')}
       >
-        <FileJsonIcon className="size-4" aria-hidden />
+        {pendingKind === 'directory_json' ? (
+          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+        ) : (
+          <FileJsonIcon className="size-4" aria-hidden />
+        )}
         {t('json')}
       </Button>
     </div>

@@ -23,7 +23,7 @@ import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import type { FieldVisibility } from '../../domain/directory-listing';
 
-/** The insights-owned directory metadata stored per member (logo as a blob key). */
+/** The insights-owned directory metadata stored per member. */
 export interface DirectoryListingRecord {
   readonly memberId: string;
   readonly listed: boolean;
@@ -31,6 +31,14 @@ export interface DirectoryListingRecord {
   readonly industry: string | null;
   readonly description: string | null;
   readonly website: string | null;
+  /**
+   * Public Blob **URL** of the re-encoded logo (NOT a content-addressed key —
+   * `setDirectoryLogo` stores the `put({access:'public', addRandomSuffix:true})`
+   * URL here, which is not derivable from a key). Named `logoBlobKey` only for
+   * parity with the `logo_blob_key` DB column; consumers treat it as a URL
+   * (`logoUrl` in `PublishedListing`). Contrast F4 invoicing's `logoBlobKey`,
+   * which genuinely is a private key.
+   */
   readonly logoBlobKey: string | null;
   readonly locationCity: string | null;
   readonly locationCountry: string | null;

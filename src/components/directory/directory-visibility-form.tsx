@@ -60,11 +60,15 @@ export function DirectoryVisibilityForm({
   const [website, setWebsite] = useState(initial.website ?? '');
   const [city, setCity] = useState(initial.locationCity ?? '');
   const [country, setCountry] = useState(initial.locationCountry ?? '');
+  const [websiteError, setWebsiteError] = useState<string | null>(null);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
       try {
+        setWebsiteError(null);
+        setDescriptionError(null);
         const res = await fetch('/api/portal/directory', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -79,7 +83,13 @@ export function DirectoryVisibilityForm({
           }),
         });
         if (!res.ok) {
-          toast.error(t('saveFailed'));
+          const code = await res
+            .json()
+            .then((b: { error?: { code?: string } }) => b?.error?.code)
+            .catch(() => undefined);
+          if (code === 'invalid_website') setWebsiteError(t('invalidWebsite'));
+          else if (code === 'description_too_long') setDescriptionError(t('descriptionTooLong'));
+          else toast.error(t('saveFailed'));
           return;
         }
         toast.success(t('saved'));
@@ -128,7 +138,27 @@ export function DirectoryVisibilityForm({
             maxLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
+            aria-invalid={descriptionError !== null}
+            aria-describedby={
+              descriptionError !== null ? 'dir-description-error' : 'dir-description-count'
+            }
           />
+          <div className="flex items-center justify-between gap-2">
+            {descriptionError !== null ? (
+              <p id="dir-description-error" role="alert" className="text-sm text-destructive">
+                {descriptionError}
+              </p>
+            ) : (
+              <span />
+            )}
+            <p
+              id="dir-description-count"
+              aria-live="polite"
+              className="text-sm text-muted-foreground"
+            >
+              {description.length}/{MAX_DIRECTORY_DESCRIPTION_LENGTH}
+            </p>
+          </div>
         </div>
         <div className="space-y-1">
           <Label htmlFor="dir-website">{t('website')}</Label>
@@ -138,7 +168,14 @@ export function DirectoryVisibilityForm({
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
             placeholder="https://"
+            aria-invalid={websiteError !== null}
+            aria-describedby={websiteError !== null ? 'dir-website-error' : undefined}
           />
+          {websiteError !== null ? (
+            <p id="dir-website-error" role="alert" className="text-sm text-destructive">
+              {websiteError}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="flex-1 space-y-1">

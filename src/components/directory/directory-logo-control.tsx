@@ -32,7 +32,13 @@ export function DirectoryLogoControl({
         fd.append('file', file);
         const res = await fetch('/api/portal/directory/logo', { method: 'POST', body: fd });
         if (!res.ok) {
-          toast.error(t('logoFailed'));
+          const code = await res
+            .json()
+            .then((b: { error?: { code?: string } }) => b?.error?.code)
+            .catch(() => undefined);
+          if (code === 'too_large') toast.error(t('logoTooLarge'));
+          else if (code === 'unsupported_format') toast.error(t('logoUnsupported'));
+          else toast.error(t('logoFailed'));
           return;
         }
         toast.success(t('logoSaved'));
@@ -71,7 +77,9 @@ export function DirectoryLogoControl({
           className="h-20 w-auto rounded border bg-white object-contain p-1"
         />
       ) : null}
-      <p className="text-sm text-muted-foreground">{t('logoHint')}</p>
+      <p id="dir-logo-hint" className="text-sm text-muted-foreground">
+        {t('logoHint')}
+      </p>
       <input
         ref={inputRef}
         type="file"
@@ -79,6 +87,7 @@ export function DirectoryLogoControl({
         className="hidden"
         onChange={onFile}
         aria-label={t('logoUpload')}
+        aria-describedby="dir-logo-hint"
       />
       <div className="flex gap-2">
         <Button
@@ -86,6 +95,7 @@ export function DirectoryLogoControl({
           variant="outline"
           disabled={pending}
           onClick={() => inputRef.current?.click()}
+          aria-describedby="dir-logo-hint"
         >
           {t('logoUpload')}
         </Button>

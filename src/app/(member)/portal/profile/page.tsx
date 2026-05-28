@@ -290,7 +290,7 @@ export default async function PortalProfilePage() {
               className={buttonVariants({ variant: 'outline' })}
             >
               <BookUserIcon className="size-4" aria-hidden />
-              {tDir('title')}
+              {tDir('manage')}
             </Link>
           </CardContent>
         </Card>

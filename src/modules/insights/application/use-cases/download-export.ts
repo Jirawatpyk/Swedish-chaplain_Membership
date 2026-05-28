@@ -3,8 +3,8 @@
  *
  *   - `prepareExportDownload` — authenticated mint: RBAC-checks the caller,
  *     verifies the job is `ready|delivered` + not expired, then mints a fresh
- *     single-use token (stores its HMAC on the row) and returns the download URL
- *     token. Called by the presentation when the user clicks "Download".
+ *     single-use token (stores its HMAC on the row) and returns `{ jobId, token }`;
+ *     the route assembles the proxy URL. Called when the user clicks "Download".
  *   - `downloadExport` — the proxy core: re-runs RBAC, verifies the presented
  *     token (constant-time, job-bound) + expiry + status, streams the PRIVATE
  *     blob, transitions `ready → delivered`, invalidates the token (single-use),
@@ -21,6 +21,7 @@
 import { runInTenant } from '@/lib/db';
 import { ok, err, type Result } from '@/lib/result';
 import { insightsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 import {
   hashDownloadToken,
   mintDownloadToken,
@@ -152,7 +153,17 @@ export async function downloadExport(
   }
 
   const obj = await deps.blob.download(job.blobKey);
-  if (obj === null) return err('expired'); // artefact swept/absent
+  if (obj === null) {
+    // H1: the job is ready|delivered + not past TTL (guards above passed) yet
+    // the artefact is gone — a genuinely missing/never-uploaded blob, NOT a
+    // routine TTL expiry. Log so operators can distinguish "I generated it 5
+    // min ago and it says expired" from a real expiry (no blob key in the log).
+    logger.error(
+      { jobId: job.id, kind: job.kind, route: 'insights.download-export' },
+      'insights.export_artefact_missing',
+    );
+    return err('expired');
+  }
 
   // Consume (single-use) + transition ready→delivered + audit, atomically.
   await runInTenant(ctx, async (tx) => {

@@ -125,6 +125,7 @@ export default async function DirectoryPage({
     ? exportsResult.value.map((job) => ({
         jobId: job.id,
         kindLabel: tKind(job.kind),
+        status: job.status,
         statusLabel: tStatus(job.status),
         downloadable: job.status === 'ready' || job.status === 'delivered',
         requestedAt: dateFmt.format(job.createdAt),

@@ -224,6 +224,12 @@ separately to bound the all-PII review blast radius.
 
 **Checkpoint**: US5 functional; shared export infra ready for US6. ✅ (implemented 2026-05-28, commits 2ddde00e + e41f1bc3 + this polish; ~108 unit/contract + 31 live-Neon integration GREEN. Residuals: private-Blob store provisioning (T101a), E2E run + browser verify on dev server, discoverability link + admin-edit UI follow-ons.)
 
+**Deferred review findings (Round-1 review 2026-05-28 — `/speckit-review` + 6 agents).** All Critical/Important findings (G1 worker race/failure correctness, G2 doc/type, G3 tests, G4 UX field-validation + counter + a11y, G5 orphan-blob + CSRF cross-ref comments) were fixed and gated GREEN (typecheck · lint · check:i18n 3413 · 250 unit+contract · 16 integration). The following 3 were **intentionally deferred** — none block ship:
+
+- **Gap C (Suggestion · test coverage)** — add a deterministic **result-ordering** assertion for `searchDirectory`/`listPublishedInTx`. Ordering is correct in code; Gap A (company-name match) + Gap B (LIKE-escape) already cover the correctness-critical paths. In-scope for US5 — pick up in a follow-up test pass.
+- **M3 (Medium · cross-feature)** — register directory + export actions in the shared **command palette** (cmdk, since F2). Cross-cutting surface work, not US5-specific; should be done once across all surfaces, not piecemeal here.
+- **S1 (Suggestion · feature-add)** — listing / E-Book **preview affordance** before generate. New capability with no US5 FR; needs `/speckit.clarify` against spec before building.
+
 ---
 
 ## Phase 8: User Story 6 — GDPR Self-Service Export (P4) · Slice B

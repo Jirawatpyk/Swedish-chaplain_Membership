@@ -301,6 +301,30 @@ describe('F9 directory — integration (T074/T078)', () => {
       expect(result.value.items.map((i) => i.memberId)).toEqual([m1]);
     });
 
+    it('keyword matches the member COMPANY NAME, incl. a member with no listing row (AS-1 / Gap A)', async () => {
+      // m2 (Beta Services) has NO directory_listings row — proves the company-name
+      // OR-branch works independently of the LEFT-joined dl.* columns. A regression
+      // dropping `m.company_name ILIKE` would make this return [] and fail.
+      const result = await searchDirectory({ q: 'Beta' }, meta(), tenant.ctx, deps());
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.items.map((i) => i.memberId)).toEqual([m2]);
+
+      const acme = await searchDirectory({ q: 'Acme' }, meta(), tenant.ctx, deps());
+      expect(acme.ok).toBe(true);
+      if (acme.ok) expect(acme.value.items.map((i) => i.memberId)).toEqual([m1]);
+    });
+
+    it('LIKE metacharacters in the keyword are escaped, not treated as wildcards (Gap B)', async () => {
+      // No seeded member contains a literal "%". Without escaping, q='%' becomes
+      // the SQL wildcard `%%` and matches EVERY member; with escaping it matches
+      // only a literal "%" → none. Asserts the escape in `likeTerm`.
+      const result = await searchDirectory({ q: '%' }, meta(), tenant.ctx, deps());
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.items).toHaveLength(0);
+    });
+
     it('tier filter matches plan_category', async () => {
       const result = await searchDirectory({ tier: 'corporate' }, meta(), tenant.ctx, deps());
       expect(result.ok).toBe(true);

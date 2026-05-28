@@ -20,9 +20,24 @@ import {
 export interface RecentExportRow {
   readonly jobId: string;
   readonly kindLabel: string;
+  readonly status: string;
   readonly statusLabel: string;
   readonly downloadable: boolean;
   readonly requestedAt: string;
+}
+
+/**
+ * Status → badge variant (M4). Text already encodes meaning (WCAG 1.4.1); the
+ * variant is a redundant visual cue: ready/delivered = actionable (default),
+ * failed/expired = attention (destructive), in-flight = neutral (secondary).
+ */
+function statusVariant(
+  status: string,
+): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (status === 'ready' || status === 'delivered') return 'default';
+  if (status === 'failed' || status === 'expired') return 'destructive';
+  if (status === 'processing' || status === 'requested') return 'secondary';
+  return 'outline';
 }
 
 export interface RecentExportsLabels {
@@ -67,13 +82,16 @@ export function RecentExports({
               <TableRow key={row.jobId}>
                 <TableCell className="font-medium">{row.kindLabel}</TableCell>
                 <TableCell>
-                  <Badge variant="outline">{row.statusLabel}</Badge>
+                  <Badge variant={statusVariant(row.status)}>{row.statusLabel}</Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{row.requestedAt}</TableCell>
                 <TableCell className="text-right">
                   {row.downloadable ? (
                     <a
                       href={`/api/admin/directory/exports/${row.jobId}/download`}
+                      // H2: contextual label so SR users hear which export each
+                      // "Download" link targets (WCAG 2.4.6), not "Download" ×N.
+                      aria-label={`${labels.download} — ${row.kindLabel}, ${row.requestedAt}`}
                       className={buttonVariants({ variant: 'outline', size: 'sm' })}
                     >
                       {labels.download}

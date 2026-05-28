@@ -244,7 +244,12 @@
     "saveFailed": "Kunde inte spara. Kontrollera uppgifterna och försök igen.",
     "logoSaved": "Logotypen uppdaterades.",
     "logoFailed": "Kunde inte ladda upp logotypen (PNG/JPEG/WebP, max 2 MB).",
-    "logoRemoved": "Logotypen togs bort."
+    "logoRemoved": "Logotypen togs bort.",
+    "manage": "Hantera katalogpost",
+    "invalidWebsite": "Webbplatsen måste börja med http:// eller https://",
+    "descriptionTooLong": "Beskrivningen får vara högst 500 tecken.",
+    "logoTooLarge": "Logotypen överstiger 2 MB — välj en mindre fil.",
+    "logoUnsupported": "Format som inte stöds — använd PNG, JPEG eller WebP."
   },
   "admin": {
     "directory": {

@@ -244,7 +244,12 @@
     "saveFailed": "บันทึกไม่สำเร็จ กรุณาตรวจสอบข้อมูลแล้วลองใหม่",
     "logoSaved": "อัปเดตโลโก้แล้ว",
     "logoFailed": "อัปโหลดโลโก้ไม่สำเร็จ (PNG/JPEG/WebP ไม่เกิน 2 MB)",
-    "logoRemoved": "ลบโลโก้แล้ว"
+    "logoRemoved": "ลบโลโก้แล้ว",
+    "manage": "จัดการการแสดง",
+    "invalidWebsite": "เว็บไซต์ต้องขึ้นต้นด้วย http:// หรือ https://",
+    "descriptionTooLong": "คำอธิบายต้องไม่เกิน 500 ตัวอักษร",
+    "logoTooLarge": "โลโก้เกิน 2 MB — กรุณาเลือกไฟล์ที่เล็กลง",
+    "logoUnsupported": "รูปแบบไม่รองรับ — ใช้ PNG, JPEG หรือ WebP"
   },
   "admin": {
     "directory": {

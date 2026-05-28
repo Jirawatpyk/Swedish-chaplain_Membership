@@ -3,10 +3,14 @@
  *
  * Async artefact generation (Directory E-Book, Directory JSON, GDPR archive,
  * over-cap audit export) is tracked by an `export_jobs` row whose `status`
- * follows a strict state machine. This module is the **single source of truth**
- * for legal transitions; the worker + cron sweep consult it so an illegal
- * transition (e.g. `requested → ready` skipping the claim, or any move out of a
- * terminal state) is impossible by construction.
+ * follows a strict state machine. This module is the **reference model** for the
+ * legal-transition graph + the helper API (`canTransition` / `isClaimable` /
+ * `isTerminal` / `isStuckProcessing`) and backs the unit tests. **Runtime
+ * enforcement lives in the repo**: every transition is a *guarded write*
+ * (`WHERE id = $id AND status = $from`, see `export-job-repo.ts`), so an
+ * illegal/concurrent transition simply updates 0 rows and the caller learns it
+ * lost (the worker treats a 0-row claim/mark-ready as a lost race). The worker
+ * additionally asserts `isClaimable` before claiming (defence-in-depth).
  *
  *   requested ──claim──▶ processing ──ok──▶ ready ──download──▶ delivered ──ttl──▶ expired
  *        │                   │                                       │
@@ -53,7 +57,10 @@ export const DEFAULT_EXPORT_TTL_MS = 60 * 60_000;
 
 const ALLOWED_TRANSITIONS: Record<ExportStatus, readonly ExportStatus[]> = {
   requested: ['processing', 'failed'],
-  // `requested` is the bounded-reclaim target for a stuck claim (critique E2).
+  // `failed` covers both a build error and the current stuck-reclaim path
+  // (`reclaimStuckInTx`). `requested` is RESERVED for a future *bounded-retry*
+  // reclaim (re-queue instead of fail, critique E2) — not yet exercised by any
+  // caller; today's reclaim always goes `processing → failed`.
   processing: ['ready', 'failed', 'requested'],
   ready: ['delivered', 'expired'],
   delivered: ['expired'],
@@ -76,17 +83,22 @@ export function isClaimable(status: ExportStatus): boolean {
 }
 
 /**
- * Every F9 export kind is produced asynchronously (the E-Book + GDPR archive are
- * always async per FR-037; the audit export routes to a job only above the sync
- * cap). Exposed as a function so the worker/route can guard `kind` defensively.
+ * Narrowing guard for an arbitrary string at a route/queue boundary: every F9
+ * export kind is produced asynchronously (E-Book + GDPR archive always async per
+ * FR-037; the audit export routes to a job only above the sync cap), so this
+ * doubles as "is this a known async export kind?". Takes `string` (not
+ * `ExportKind`) so it actually narrows — an `ExportKind` is async by definition.
  */
-export function isAsyncExportKind(kind: ExportKind): boolean {
+export function isAsyncExportKind(kind: string): kind is ExportKind {
   return (EXPORT_KINDS as readonly string[]).includes(kind);
 }
 
 /**
  * Whether a `processing` job's claim is older than the reclaim window. A null
- * claim timestamp (or a non-processing status) is never stuck.
+ * claim timestamp (or a non-processing status) is never stuck. `claimedAtMs` is
+ * the job's `updated_at` (the claim stamps it — there is no dedicated
+ * `claimed_at` column). Pure helper backing the unit tests; the cron's actual
+ * reclaim sweep is the repo's `listStuckProcessing` SQL on `updated_at`.
  */
 export function isStuckProcessing(
   status: ExportStatus,

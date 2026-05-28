@@ -90,7 +90,9 @@ export async function setDirectoryLogo(
   const outcome = await runInTenant(ctx, async (tx) => {
     const existing = await deps.directoryRepo.findByMemberIdInTx(tx, input.memberId);
     const set = await deps.directoryRepo.setLogoInTx(tx, input.memberId, url);
-    if (set.memberNotFound) return 'member_not_found' as const;
+    if (set.memberNotFound) {
+      return { state: 'member_not_found' as const, priorLogoUrl: null };
+    }
     await deps.audit.recordInTx(tx, {
       tenantId: ctx.slug,
       requestId: meta.requestId,
@@ -105,13 +107,18 @@ export async function setDirectoryLogo(
         logo_action: 'set',
       },
     });
-    return 'ok' as const;
+    return { state: 'ok' as const, priorLogoUrl: existing?.logoBlobKey ?? null };
   });
 
-  if (outcome === 'member_not_found') {
+  if (outcome.state === 'member_not_found') {
     // Roll back the just-uploaded orphan blob (best-effort).
     await deps.logoStore.deleteLogo(url).catch(() => {});
     return err('member_not_found');
+  }
+  // Delete the REPLACED logo blob so re-uploads don't leak orphans (each upload
+  // gets a fresh `addRandomSuffix` URL, so the prior URL differs from the new one).
+  if (outcome.priorLogoUrl !== null && outcome.priorLogoUrl !== url) {
+    await deps.logoStore.deleteLogo(outcome.priorLogoUrl).catch(() => {});
   }
   insightsMetrics.directoryListingUpdated(ctx.slug);
   return ok({ logoUrl: url });
