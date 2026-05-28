@@ -140,7 +140,7 @@ export function AuditFilters({
         placeholder={t('actor')}
         aria-label={t('actor')}
         autoComplete="off"
-        className="sm:w-56"
+        className="sm:flex-1"
       />
 
       <Input
@@ -150,7 +150,7 @@ export function AuditFilters({
         placeholder={t('target')}
         aria-label={t('target')}
         autoComplete="off"
-        className="sm:w-48"
+        className="sm:flex-1"
       />
 
       <Input

@@ -12,6 +12,7 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { DirectorySearchFilters } from '@/components/directory/directory-search-filters';
@@ -136,30 +137,34 @@ export default async function DirectoryPage({
     <TableContainer>
       {header}
 
-      <DirectorySearchFilters />
+      <Card>
+        <CardContent className="flex flex-col gap-4">
+          <DirectorySearchFilters />
 
-      <p role="status" className="sr-only">
-        {t('resultCount', { count: result.value.total })}
-      </p>
+          <p role="status" className="sr-only">
+            {t('resultCount', { count: result.value.total })}
+          </p>
 
-      <DirectoryTable
-        rows={rows}
-        labels={{
-          caption: t('table.caption'),
-          company: t('table.company'),
-          tier: t('table.tier'),
-          industry: t('table.industry'),
-          location: t('table.location'),
-          listed: t('table.listed'),
-          logo: t('table.logo'),
-          contact: t('table.contact'),
-          hasLogo: t('table.hasLogo'),
-          yes: t('table.yes'),
-          no: t('table.no'),
-          emptyTitle: t('table.emptyTitle'),
-          empty: t('table.empty'),
-        }}
-      />
+          <DirectoryTable
+            rows={rows}
+            labels={{
+              caption: t('table.caption'),
+              company: t('table.company'),
+              tier: t('table.tier'),
+              industry: t('table.industry'),
+              location: t('table.location'),
+              listed: t('table.listed'),
+              logo: t('table.logo'),
+              contact: t('table.contact'),
+              hasLogo: t('table.hasLogo'),
+              yes: t('table.yes'),
+              no: t('table.no'),
+              emptyTitle: t('table.emptyTitle'),
+              empty: t('table.empty'),
+            }}
+          />
+        </CardContent>
+      </Card>
 
       <RecentExports
         rows={exportRows}

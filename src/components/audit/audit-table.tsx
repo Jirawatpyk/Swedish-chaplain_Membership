@@ -74,81 +74,82 @@ export function AuditTable({
     );
   }
 
+  // No wrapper div: the shared <Table> primitive already provides the
+  // overflow-x-auto scroll region, and the page's <Card> provides the border +
+  // radius — matching the Members/Plans/Invoices house style (no double frame).
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
-        <caption className="sr-only">{labels.caption}</caption>
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">{labels.time}</TableHead>
-            <TableHead scope="col">{labels.event}</TableHead>
-            <TableHead scope="col">{labels.actor}</TableHead>
-            <TableHead scope="col">{labels.target}</TableHead>
-            <TableHead scope="col">{labels.summary}</TableHead>
-            <TableHead scope="col">{labels.payload}</TableHead>
+    <Table>
+      <caption className="sr-only">{labels.caption}</caption>
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">{labels.time}</TableHead>
+          <TableHead scope="col">{labels.event}</TableHead>
+          <TableHead scope="col">{labels.actor}</TableHead>
+          <TableHead scope="col">{labels.target}</TableHead>
+          <TableHead scope="col">{labels.summary}</TableHead>
+          <TableHead scope="col">{labels.payload}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((r) => (
+          <TableRow key={r.id}>
+            <TableCell className="whitespace-nowrap align-top">
+              <time dateTime={r.occurredAtUtc} className="block font-medium">
+                {r.occurredAtLocal}
+              </time>
+              <span className="block text-caption text-foreground/85">
+                <span className="sr-only">{labels.utcLabel}: </span>
+                {r.occurredAtUtc}
+              </span>
+            </TableCell>
+            <TableCell className="align-top">
+              <span className="block font-medium">{r.eventTypeLabel}</span>
+              <span className="block font-mono text-caption text-foreground/85">
+                {r.eventType}
+              </span>
+            </TableCell>
+            <TableCell className="align-top">
+              <span className="block">{r.actorLabel}</span>
+              {r.actorLabel !== r.actorUserId ? (
+                <span className="block break-all font-mono text-caption text-foreground/85">
+                  {r.actorUserId}
+                </span>
+              ) : null}
+            </TableCell>
+            <TableCell className="align-top">
+              {r.targetUserId === null ? (
+                '—'
+              ) : (
+                <>
+                  <span className="block">{r.targetLabel ?? r.targetUserId}</span>
+                  {r.targetLabel && r.targetLabel !== r.targetUserId ? (
+                    <span className="block break-all font-mono text-caption text-foreground/85">
+                      {r.targetUserId}
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </TableCell>
+            <TableCell className="max-w-sm whitespace-normal break-words align-top">
+              {r.summary}
+            </TableCell>
+            <TableCell className="align-top">
+              {r.payloadEntries.length > 0 ? (
+                <dl className="grid max-w-xs gap-0.5 text-caption">
+                  {r.payloadEntries.map((e) => (
+                    <div key={e.label} className="flex gap-1.5">
+                      <dt className="shrink-0 text-foreground/85">{e.label}:</dt>
+                      <dd className="break-words">{e.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <span className="text-muted-foreground">{labels.none}</span>
+              )}
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.id}>
-              <TableCell className="whitespace-nowrap align-top">
-                <time dateTime={r.occurredAtUtc} className="block font-medium">
-                  {r.occurredAtLocal}
-                </time>
-                <span className="block text-caption text-foreground/85">
-                  <span className="sr-only">{labels.utcLabel}: </span>
-                  {r.occurredAtUtc}
-                </span>
-              </TableCell>
-              <TableCell className="align-top">
-                <span className="block font-medium">{r.eventTypeLabel}</span>
-                <span className="block font-mono text-caption text-foreground/85">
-                  {r.eventType}
-                </span>
-              </TableCell>
-              <TableCell className="align-top">
-                <span className="block">{r.actorLabel}</span>
-                {r.actorLabel !== r.actorUserId ? (
-                  <span className="block break-all font-mono text-caption text-foreground/85">
-                    {r.actorUserId}
-                  </span>
-                ) : null}
-              </TableCell>
-              <TableCell className="align-top">
-                {r.targetUserId === null ? (
-                  '—'
-                ) : (
-                  <>
-                    <span className="block">{r.targetLabel ?? r.targetUserId}</span>
-                    {r.targetLabel && r.targetLabel !== r.targetUserId ? (
-                      <span className="block break-all font-mono text-caption text-foreground/85">
-                        {r.targetUserId}
-                      </span>
-                    ) : null}
-                  </>
-                )}
-              </TableCell>
-              <TableCell className="max-w-sm whitespace-normal break-words align-top">
-                {r.summary}
-              </TableCell>
-              <TableCell className="align-top">
-                {r.payloadEntries.length > 0 ? (
-                  <dl className="grid max-w-xs gap-0.5 text-caption">
-                    {r.payloadEntries.map((e) => (
-                      <div key={e.label} className="flex gap-1.5">
-                        <dt className="shrink-0 text-foreground/85">{e.label}:</dt>
-                        <dd className="break-words">{e.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : (
-                  <span className="text-muted-foreground">{labels.none}</span>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

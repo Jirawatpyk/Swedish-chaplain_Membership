@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
+import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
@@ -204,37 +205,41 @@ export default async function AuditLogPage({
     <TableContainer>
       {header}
 
-      <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
+      <Card>
+        <CardContent className="flex flex-col gap-4">
+          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
 
-      {/* SR result-count announcement — re-rendered on every filter navigation. */}
-      <p role="status" className="sr-only">
-        {t('resultCount', { count: rows.length })}
-      </p>
+          {/* SR result-count announcement — re-rendered on every filter navigation. */}
+          <p role="status" className="sr-only">
+            {t('resultCount', { count: rows.length })}
+          </p>
 
-      <AuditTable
-        rows={rows}
-        labels={{
-          caption: t('table.caption'),
-          time: t('table.time'),
-          event: t('table.event'),
-          actor: t('table.actor'),
-          target: t('table.target'),
-          summary: t('table.summary'),
-          payload: t('table.payload'),
-          emptyTitle: t('table.emptyTitle'),
-          empty: t('table.empty'),
-          none: t('table.none'),
-          utcLabel: t('table.utcLabel'),
-        }}
-      />
+          <AuditTable
+            rows={rows}
+            labels={{
+              caption: t('table.caption'),
+              time: t('table.time'),
+              event: t('table.event'),
+              actor: t('table.actor'),
+              target: t('table.target'),
+              summary: t('table.summary'),
+              payload: t('table.payload'),
+              emptyTitle: t('table.emptyTitle'),
+              empty: t('table.empty'),
+              none: t('table.none'),
+              utcLabel: t('table.utcLabel'),
+            }}
+          />
 
-      {nextHref ? (
-        <div className="flex justify-center">
-          <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
-            {t('pagination.next')}
-          </a>
-        </div>
-      ) : null}
+          {nextHref ? (
+            <div className="flex justify-center">
+              <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
+                {t('pagination.next')}
+              </a>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </TableContainer>
   );
 }

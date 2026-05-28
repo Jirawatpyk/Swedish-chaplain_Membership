@@ -61,7 +61,7 @@ export function DirectorySearchFilters(): React.JSX.Element {
         placeholder={t('placeholder')}
         aria-label={t('label')}
         autoComplete="off"
-        className="sm:w-72"
+        className="sm:flex-1"
       />
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
