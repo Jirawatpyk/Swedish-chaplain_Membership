@@ -16,7 +16,7 @@ import {
   STUCK_PROCESSING_TIMEOUT_MS,
   canTransition,
   exportJobIdempotencyInput,
-  isAsyncExportKind,
+  isExportKind,
   isClaimable,
   isStuckProcessing,
   isTerminal,
@@ -100,8 +100,10 @@ describe('predicates', () => {
     }
   });
 
-  it('all four export kinds are async (E-Book/JSON/GDPR/over-cap audit)', () => {
-    for (const k of EXPORT_KINDS) expect(isAsyncExportKind(k)).toBe(true);
+  it('isExportKind accepts every known kind and rejects unknown strings', () => {
+    for (const k of EXPORT_KINDS) expect(isExportKind(k)).toBe(true);
+    expect(isExportKind('not_a_kind')).toBe(false);
+    expect(isExportKind('')).toBe(false);
   });
 });
 

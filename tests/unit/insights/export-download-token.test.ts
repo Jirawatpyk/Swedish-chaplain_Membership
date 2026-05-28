@@ -48,8 +48,11 @@ describe('download-token helper', () => {
     expect(verifyDownloadToken(jobId, mintDownloadToken(), stored)).toBe(false);
     // wrong job (token replay across jobs)
     expect(verifyDownloadToken('33333333-3333-3333-3333-333333333333', token, stored)).toBe(false);
-    // tampered/empty stored hash
+    // tampered/empty stored hash. Flip the last hex char to a guaranteed-different
+    // value (a fixed '0' would be a no-op ~1/16 of runs when the hash already ends
+    // in '0', making the assertion flaky).
     expect(verifyDownloadToken(jobId, token, '')).toBe(false);
-    expect(verifyDownloadToken(jobId, token, stored.slice(0, -1) + '0')).toBe(false);
+    const tampered = stored.slice(0, -1) + (stored.endsWith('0') ? '1' : '0');
+    expect(verifyDownloadToken(jobId, token, tampered)).toBe(false);
   });
 });

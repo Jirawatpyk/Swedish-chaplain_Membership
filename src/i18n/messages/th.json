@@ -249,7 +249,8 @@
     "invalidWebsite": "เว็บไซต์ต้องขึ้นต้นด้วย http:// หรือ https://",
     "descriptionTooLong": "คำอธิบายต้องไม่เกิน 500 ตัวอักษร",
     "logoTooLarge": "โลโก้เกิน 2 MB — กรุณาเลือกไฟล์ที่เล็กลง",
-    "logoUnsupported": "รูปแบบไม่รองรับ — ใช้ PNG, JPEG หรือ WebP"
+    "logoUnsupported": "รูปแบบไม่รองรับ — ใช้ PNG, JPEG หรือ WebP",
+    "logoProfileMissing": "ไม่พบโปรไฟล์สมาชิก — โปรดรีโหลดหน้าแล้วลองใหม่"
   },
   "admin": {
     "directory": {

@@ -111,7 +111,7 @@ export async function searchDirectory(
     industry: r.listing?.industry ?? null,
     locationCity: r.listing?.locationCity ?? null,
     locationCountry: r.listing?.locationCountry ?? null,
-    hasLogo: r.listing?.logoBlobKey != null,
+    hasLogo: r.listing?.logoUrl != null,
     contactName: r.contactName,
   }));
 

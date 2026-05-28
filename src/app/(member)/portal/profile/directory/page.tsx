@@ -80,7 +80,7 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
         <h2 id="dir-logo-heading" className="text-sm font-semibold">
           {t('logoHeading')}
         </h2>
-        <DirectoryLogoControl currentLogoUrl={listing?.logoBlobKey ?? null} />
+        <DirectoryLogoControl currentLogoUrl={listing?.logoUrl ?? null} />
       </section>
 
       <DirectoryVisibilityForm

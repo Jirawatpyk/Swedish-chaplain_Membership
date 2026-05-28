@@ -38,6 +38,8 @@ export function DirectoryLogoControl({
             .catch(() => undefined);
           if (code === 'too_large') toast.error(t('logoTooLarge'));
           else if (code === 'unsupported_format') toast.error(t('logoUnsupported'));
+          else if (code === 'member_not_found' || code === 'no_member_profile')
+            toast.error(t('logoProfileMissing'));
           else toast.error(t('logoFailed'));
           return;
         }
@@ -56,7 +58,13 @@ export function DirectoryLogoControl({
       try {
         const res = await fetch('/api/portal/directory/logo', { method: 'DELETE' });
         if (!res.ok) {
-          toast.error(t('logoFailed'));
+          const code = await res
+            .json()
+            .then((b: { error?: { code?: string } }) => b?.error?.code)
+            .catch(() => undefined);
+          if (code === 'member_not_found' || code === 'no_member_profile')
+            toast.error(t('logoProfileMissing'));
+          else toast.error(t('logoFailed'));
           return;
         }
         toast.success(t('logoRemoved'));

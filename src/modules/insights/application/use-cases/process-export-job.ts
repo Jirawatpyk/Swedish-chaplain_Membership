@@ -66,7 +66,7 @@ function toPublished(row: PublishedSourceRow): PublishedListing | null {
       industry: row.listing.industry,
       description: row.listing.description,
       website: row.listing.website,
-      logoUrl: row.listing.logoBlobKey,
+      logoUrl: row.listing.logoUrl,
       locationCity: row.listing.locationCity,
       locationCountry: row.listing.locationCountry,
     },
@@ -104,14 +104,24 @@ export async function processExportJob(
       { kind, jobId, route: 'insights.process-export-job' },
       'insights.export_job.unsupported_kind',
     );
-    await runInTenant(ctx, (tx) =>
+    const unsupportedMarked = await runInTenant(ctx, (tx) =>
       deps.exportJobRepo.markFailedInTx(tx, jobId, 'unsupported_kind'),
     ).catch((markErr) => {
       logger.error(
         { errKind: errKind(markErr), kind, jobId, route: 'insights.process-export-job' },
         'insights.export_job.mark_failed_failed',
       );
+      return null;
     });
+    if (unsupportedMarked === false) {
+      // Guarded UPDATE matched 0 rows — a concurrent reclaim/expire already moved
+      // the row out of requested|processing. The state is still terminal, but the
+      // lost mark must be observable (parity with the C1 mark_ready_lost path).
+      logger.error(
+        { kind, jobId, route: 'insights.process-export-job' },
+        'insights.export_job.mark_failed_lost',
+      );
+    }
     insightsMetrics.exportJobProcessed(kind, 'failed', ctx.slug);
     return err('unsupported_kind');
   }
@@ -203,14 +213,23 @@ export async function processExportJob(
     // H2: a FAILING failure-mark must be logged+metered, not silently swallowed
     // (otherwise the job wedges in `processing` with no signal). Mirrors the
     // F4 `receiptFailureMarkSuppressed` alert pattern.
-    await runInTenant(ctx, (tx) =>
+    const failMarked = await runInTenant(ctx, (tx) =>
       deps.exportJobRepo.markFailedInTx(tx, jobId, 'build_failed'),
     ).catch((markErr) => {
       logger.error(
         { errKind: errKind(markErr), kind, jobId, route: 'insights.process-export-job' },
         'insights.export_job.mark_failed_failed',
       );
+      return null;
     });
+    if (failMarked === false) {
+      // Guarded UPDATE matched 0 rows (a concurrent reclaim/expire beat us). The
+      // job is still terminal, but log so the lost mark is observable.
+      logger.error(
+        { kind, jobId, route: 'insights.process-export-job' },
+        'insights.export_job.mark_failed_lost',
+      );
+    }
     insightsMetrics.exportJobProcessed(kind, 'failed', ctx.slug);
     return err('build_failed');
   }

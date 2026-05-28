@@ -140,7 +140,7 @@ describe('searchDirectory — row mapping', () => {
       industry: 'Manufacturing',
       description: null,
       website: null,
-      logoBlobKey: 'tenants/x/logo.png',
+      logoUrl: 'tenants/x/logo.png',
       locationCity: 'Bangkok',
       locationCountry: 'TH',
     },

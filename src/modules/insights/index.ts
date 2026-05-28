@@ -83,7 +83,7 @@ export {
   DEFAULT_EXPORT_TTL_MS,
   STUCK_PROCESSING_TIMEOUT_MS,
   canTransition,
-  isAsyncExportKind,
+  isExportKind,
   isClaimable,
   isStuckProcessing,
   isTerminal,

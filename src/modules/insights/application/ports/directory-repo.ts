@@ -34,12 +34,12 @@ export interface DirectoryListingRecord {
   /**
    * Public Blob **URL** of the re-encoded logo (NOT a content-addressed key —
    * `setDirectoryLogo` stores the `put({access:'public', addRandomSuffix:true})`
-   * URL here, which is not derivable from a key). Named `logoBlobKey` only for
-   * parity with the `logo_blob_key` DB column; consumers treat it as a URL
-   * (`logoUrl` in `PublishedListing`). Contrast F4 invoicing's `logoBlobKey`,
-   * which genuinely is a private key.
+   * URL here, which is not derivable from a key). The Drizzle adapter maps it
+   * from the `logo_blob_key` DB column; this application field is named `logoUrl`
+   * to match its true meaning (and `PublishedListing.logoUrl`). Contrast F4
+   * invoicing's `logoBlobKey`, which genuinely is a private key.
    */
-  readonly logoBlobKey: string | null;
+  readonly logoUrl: string | null;
   readonly locationCity: string | null;
   readonly locationCountry: string | null;
 }
@@ -117,14 +117,14 @@ export interface DirectoryRepo {
   ): Promise<{ readonly memberNotFound: boolean }>;
 
   /**
-   * Set or clear the logo URL/key (FR-025a). Upserts the row if absent; returns
+   * Set or clear the logo URL (FR-025a). Upserts the row if absent; returns
    * `memberNotFound` when no such member exists in the tenant (checked before
    * the write so no failing FK statement poisons the caller's tx).
    */
   setLogoInTx(
     tx: TenantTx,
     memberId: string,
-    logoBlobKey: string | null,
+    logoUrl: string | null,
   ): Promise<{ readonly memberNotFound: boolean }>;
 
   /** Staff search across all members + listing status (FR-024). */

@@ -107,7 +107,7 @@ export async function setDirectoryLogo(
         logo_action: 'set',
       },
     });
-    return { state: 'ok' as const, priorLogoUrl: existing?.logoBlobKey ?? null };
+    return { state: 'ok' as const, priorLogoUrl: existing?.logoUrl ?? null };
   });
 
   if (outcome.state === 'member_not_found') {
@@ -158,7 +158,7 @@ export async function removeDirectoryLogo(
         logo_action: 'removed',
       },
     });
-    return { state: 'ok' as const, priorUrl: existing?.logoBlobKey ?? null };
+    return { state: 'ok' as const, priorUrl: existing?.logoUrl ?? null };
   });
 
   if (outcome.state === 'member_not_found') return err('member_not_found');

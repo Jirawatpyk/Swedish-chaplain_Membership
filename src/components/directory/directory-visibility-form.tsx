@@ -24,6 +24,7 @@ import {
   MAX_DIRECTORY_DESCRIPTION_LENGTH,
   type DirectoryField,
   type FieldVisibility,
+  type UpdateDirectoryListingError,
 } from '@/modules/insights';
 
 export interface DirectoryVisibilityFormInitial {
@@ -85,7 +86,7 @@ export function DirectoryVisibilityForm({
         if (!res.ok) {
           const code = await res
             .json()
-            .then((b: { error?: { code?: string } }) => b?.error?.code)
+            .then((b: { error?: { code?: UpdateDirectoryListingError } }) => b?.error?.code)
             .catch(() => undefined);
           if (code === 'invalid_website') setWebsiteError(t('invalidWebsite'));
           else if (code === 'description_too_long') setDescriptionError(t('descriptionTooLong'));

@@ -13,11 +13,29 @@
  * `@/lib/db` is mocked to a runInTenant pass-through so the whole use-case runs
  * without a database.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/db', () => ({
   runInTenant: async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({}),
 }));
+
+// Metrics are a module singleton (not an injected dep) but are the operator's
+// only signal that a job died (FR-037 no-silent-failure), so assert the labels.
+const metricsMock = vi.hoisted(() => ({
+  exportJobProcessed: vi.fn(),
+  exportJobDurationMs: vi.fn(),
+}));
+vi.mock('@/lib/metrics', () => ({
+  insightsMetrics: {
+    exportJobProcessed: metricsMock.exportJobProcessed,
+    exportJobDurationMs: metricsMock.exportJobDurationMs,
+  },
+}));
+
+beforeEach(() => {
+  metricsMock.exportJobProcessed.mockClear();
+  metricsMock.exportJobDurationMs.mockClear();
+});
 
 const { asTenantContext } = await import('@/modules/tenants');
 const { processExportJob } = await import(
@@ -119,6 +137,21 @@ describe('processExportJob — claim guards', () => {
     expect(artefact.buildJson).not.toHaveBeenCalled();
   });
 
+  it('lost_claim when claimInTx matches 0 rows (the real concurrent-worker race)', async () => {
+    // Status IS claimable, so the defence check passes — but the authoritative
+    // SQL claim loses the race: another worker claimed it between findById and
+    // claimInTx. This is the branch the not-claimable test above does NOT cover.
+    const { deps, exportJobRepo, artefact } = makeMocks({
+      jobRecord: job('directory_json'),
+      claimed: false,
+    });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('lost_claim');
+    expect(exportJobRepo.claimInTx).toHaveBeenCalledOnce(); // reached the SQL claim
+    expect(artefact.buildJson).not.toHaveBeenCalled(); // never built on a lost claim
+  });
+
   it('unsupported_kind → failed (Gap F)', async () => {
     const { deps, exportJobRepo } = makeMocks({ jobRecord: job('gdpr_member_archive') });
     const r = await processExportJob(JOB_ID, ctx, deps);
@@ -128,6 +161,28 @@ describe('processExportJob — claim guards', () => {
       expect.anything(),
       JOB_ID,
       'unsupported_kind',
+    );
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'gdpr_member_archive',
+      'failed',
+      'test-tenant',
+    );
+  });
+
+  it('unsupported_kind: a failing markFailed is swallowed (logged), not rethrown', async () => {
+    const { deps } = makeMocks({
+      jobRecord: job('gdpr_member_archive'),
+      markFailedThrows: true,
+    });
+    // Mirrors H2 for the unsupported-kind branch: the guarded mark may throw, but
+    // it must not escape the cron's per-job loop — still resolves to err.
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('unsupported_kind');
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'gdpr_member_archive',
+      'failed',
+      'test-tenant',
     );
   });
 });
@@ -140,6 +195,12 @@ describe('processExportJob — build/ready paths', () => {
     expect(blob.putPrivate).toHaveBeenCalledOnce();
     expect(audit.recordInTx).toHaveBeenCalledOnce(); // directory_json_exported
     expect(blob.delete).not.toHaveBeenCalled();
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'directory_json',
+      'ok',
+      'test-tenant',
+    );
+    expect(metricsMock.exportJobDurationMs).toHaveBeenCalledOnce();
   });
 
   it('C1: markReady matches 0 rows (lost race) → NOT ok, blob deleted, no audit', async () => {
@@ -149,6 +210,13 @@ describe('processExportJob — build/ready paths', () => {
     if (!r.ok) expect(r.error).toBe('lost_claim');
     expect(blob.delete).toHaveBeenCalledOnce(); // orphan artefact cleaned up (C2)
     expect(audit.recordInTx).not.toHaveBeenCalled(); // no success audit on a lost race
+    // Never meter 'ok' / duration on a lost race — only 'failed'.
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'directory_json',
+      'failed',
+      'test-tenant',
+    );
+    expect(metricsMock.exportJobDurationMs).not.toHaveBeenCalled();
   });
 
   it('Gap E: build throws → failed + blob cleanup + build_failed (FR-037 no silent failure)', async () => {
@@ -165,6 +233,11 @@ describe('processExportJob — build/ready paths', () => {
       'build_failed',
     );
     expect(blob.delete).toHaveBeenCalledOnce(); // C2 orphan cleanup (no-op if never uploaded)
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'directory_json',
+      'failed',
+      'test-tenant',
+    );
   });
 
   it('H2: a failing markFailed inside the catch is swallowed (logged), not rethrown', async () => {

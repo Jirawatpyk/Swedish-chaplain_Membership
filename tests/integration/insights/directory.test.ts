@@ -272,6 +272,30 @@ describe('F9 directory — integration (T074/T078)', () => {
     const deps = () => makeSearchDirectoryDeps(tenant.ctx.slug);
     const meta = () => adminMeta('search');
 
+    // Pin m1's listing to a known searchable state so these assertions don't
+    // silently depend on which sibling test last wrote m1. m2 (Beta Services)
+    // is deliberately left WITHOUT a listing row (Gap A). The exact-match Gap A/B
+    // assertions hold only while no member's company/industry/description
+    // contains 'Beta'/'Acme'/'%' except m1's own immutable company name.
+    beforeAll(async () => {
+      const r = await updateDirectoryListing(
+        {
+          memberId: m1,
+          listed: true,
+          fieldVisibility: { name: true, contact_name: true, contact_email: false },
+          industry: 'Manufacturing',
+          description: 'We make widgets.',
+          website: null,
+          locationCity: 'Bangkok',
+          locationCountry: 'TH',
+        },
+        memberMeta(m1, `dir-${randomUUID()}`),
+        tenant.ctx,
+        makeUpdateDirectoryListingDeps(tenant.ctx.slug),
+      );
+      expect(r.ok).toBe(true);
+    });
+
     it('lists non-archived members with listing status (archived excluded)', async () => {
       const result = await searchDirectory({}, meta(), tenant.ctx, deps());
       expect(result.ok).toBe(true);
@@ -408,7 +432,7 @@ describe('F9 directory — integration (T074/T078)', () => {
           industry: acme.listing.industry,
           description: acme.listing.description,
           website: acme.listing.website,
-          logoUrl: acme.listing.logoBlobKey,
+          logoUrl: acme.listing.logoUrl,
           locationCity: acme.listing.locationCity,
           locationCountry: acme.listing.locationCountry,
         },

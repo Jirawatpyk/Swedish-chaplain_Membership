@@ -249,7 +249,8 @@
     "invalidWebsite": "Website must start with http:// or https://",
     "descriptionTooLong": "Description must be 500 characters or fewer.",
     "logoTooLarge": "Logo exceeds 2 MB — choose a smaller file.",
-    "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP."
+    "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP.",
+    "logoProfileMissing": "Member profile not found — reload the page and try again."
   },
   "admin": {
     "directory": {

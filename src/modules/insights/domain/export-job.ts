@@ -83,13 +83,13 @@ export function isClaimable(status: ExportStatus): boolean {
 }
 
 /**
- * Narrowing guard for an arbitrary string at a route/queue boundary: every F9
- * export kind is produced asynchronously (E-Book + GDPR archive always async per
- * FR-037; the audit export routes to a job only above the sync cap), so this
- * doubles as "is this a known async export kind?". Takes `string` (not
- * `ExportKind`) so it actually narrows — an `ExportKind` is async by definition.
+ * Narrowing membership guard for an arbitrary string at a route/queue boundary:
+ * true iff `kind` is one of the known `EXPORT_KINDS`. Takes `string` (not
+ * `ExportKind`) so it actually narrows. (All current kinds are produced
+ * asynchronously per FR-037; if a sync-only kind is ever added, express that
+ * async distinction separately rather than overloading this membership check.)
  */
-export function isAsyncExportKind(kind: string): kind is ExportKind {
+export function isExportKind(kind: string): kind is ExportKind {
   return (EXPORT_KINDS as readonly string[]).includes(kind);
 }
 

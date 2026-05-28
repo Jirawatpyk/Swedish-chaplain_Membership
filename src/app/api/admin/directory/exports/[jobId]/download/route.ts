@@ -6,12 +6,17 @@
  * then 303-redirects to the private proxy with the token. Keeps the recent-
  * exports "Download" a plain link while preserving the single-use token model.
  *
- * CSRF convention: like the proxy route, this is a state-mutating GET (it mints a
- * fresh token) that `middleware.ts` does NOT Origin-check (CSRF allow-list covers
- * unsafe methods only). The minted token is single-use + short-lived + bound to
- * the authenticated staff session's tenant — forging one cross-site is infeasible,
- * and the token grants nothing beyond a one-shot read of an already staff-visible
- * artefact, so the GET-mutates-state shortcut carries no additional CSRF risk.
+ * CSRF note: like the proxy route, this is a state-mutating GET (it mints + stores
+ * a token) that `src/proxy.ts` (via `src/lib/csrf.ts`) does NOT Origin-check — the
+ * CSRF allow-list covers unsafe methods only, and this route has no token gate of
+ * its own (session cookie only). So a low-impact CSRF vector DOES exist: a page the
+ * logged-in admin visits could force this GET and burn a single-use token. We accept
+ * it because (a) `jobId` is an unguessable UUID, so an attacker cannot target a known
+ * job; (b) the cross-origin response is an opaque attachment the attacker cannot read
+ * (no data exfiltration); and (c) the worst outcome is a forced one-shot download /
+ * `ready→delivered` churn on an already staff-visible artefact, recoverable by
+ * re-preparing. If this surface ever returns readable data or gains a non-idempotent
+ * effect, convert it to POST behind the CSRF Origin check.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';

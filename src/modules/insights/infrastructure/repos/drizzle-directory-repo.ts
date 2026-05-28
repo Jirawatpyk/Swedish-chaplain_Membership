@@ -75,7 +75,7 @@ function toListingRecord(
     industry: row.industry,
     description: row.description,
     website: row.website,
-    logoBlobKey: row.logo_blob_key,
+    logoUrl: row.logo_blob_key,
     locationCity: row.location_city,
     locationCountry: row.location_country,
   };
@@ -102,7 +102,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         industry: row.industry,
         description: row.description,
         website: row.website,
-        logoBlobKey: row.logoBlobKey,
+        logoUrl: row.logoBlobKey,
         locationCity: row.locationCity,
         locationCountry: row.locationCountry,
       };
@@ -128,7 +128,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
           industry: row.industry,
           description: row.description,
           website: row.website,
-          logoBlobKey: row.logoBlobKey,
+          logoUrl: row.logoBlobKey,
           locationCity: row.locationCity,
           locationCountry: row.locationCountry,
         };
@@ -182,7 +182,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
     async setLogoInTx(
       tx: TenantTx,
       memberId: string,
-      logoBlobKey: string | null,
+      logoUrl: string | null,
     ): Promise<{ readonly memberNotFound: boolean }> {
       if (!UUID_RE.test(memberId)) return { memberNotFound: true };
       const existing = (await tx.execute(
@@ -198,12 +198,12 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
           memberId,
           listed: false,
           fieldVisibility: {},
-          logoBlobKey,
+          logoBlobKey: logoUrl,
           updatedAt: now,
         })
         .onConflictDoUpdate({
           target: [directoryListings.tenantId, directoryListings.memberId],
-          set: { logoBlobKey, updatedAt: now },
+          set: { logoBlobKey: logoUrl, updatedAt: now },
         });
       return { memberNotFound: false };
     },

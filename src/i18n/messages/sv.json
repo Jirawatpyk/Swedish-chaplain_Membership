@@ -249,7 +249,8 @@
     "invalidWebsite": "Webbplatsen måste börja med http:// eller https://",
     "descriptionTooLong": "Beskrivningen får vara högst 500 tecken.",
     "logoTooLarge": "Logotypen överstiger 2 MB — välj en mindre fil.",
-    "logoUnsupported": "Format som inte stöds — använd PNG, JPEG eller WebP."
+    "logoUnsupported": "Format som inte stöds — använd PNG, JPEG eller WebP.",
+    "logoProfileMissing": "Medlemsprofilen hittades inte — ladda om sidan och försök igen."
   },
   "admin": {
     "directory": {

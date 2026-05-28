@@ -201,14 +201,15 @@ describe('downloadExport — authz matrix (T073a)', () => {
   });
 
   it('Q2: the token is single-use — a replay after consumption is rejected', async () => {
-    // Stateful stub: consume nulls the hash (mirrors consumeForDownloadInTx),
-    // so the SAME token replayed after a successful download is `invalid_token`.
+    // Stateful stub: consume nulls the hash AND advances ready→delivered (mirrors
+    // the real consumeForDownloadInTx), so the SAME token replayed after a
+    // successful download is `invalid_token` via the genuine hash-null guard.
     const token = mintDownloadToken();
     const hash = hashDownloadToken(JOB_ID, token);
     let consumed = false;
     const repo = stubRepo(null);
     (repo.findById as ReturnType<typeof vi.fn>).mockImplementation(async () =>
-      job({ downloadTokenHash: consumed ? null : hash }),
+      job(consumed ? { status: 'delivered', downloadTokenHash: null } : { downloadTokenHash: hash }),
     );
     (repo.consumeForDownloadInTx as ReturnType<typeof vi.fn>).mockImplementation(async () => {
       consumed = true;
@@ -252,5 +253,13 @@ describe('prepareExportDownload — mint authz (T073a)', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.token.length).toBeGreaterThanOrEqual(24);
     expect(repo.setDownloadTokenInTx).toHaveBeenCalledOnce();
+  });
+
+  it('not_ready when the guarded token-write matches 0 rows (a concurrent expire/reclaim beat the mint)', async () => {
+    const repo = stubRepo(job());
+    (repo.setDownloadTokenInTx as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const r = await prepareExportDownload({ jobId: JOB_ID }, staff('admin'), ctx, { exportJobRepo: repo, clock });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('not_ready');
   });
 });

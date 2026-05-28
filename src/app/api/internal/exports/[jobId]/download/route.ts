@@ -12,9 +12,9 @@
  * the job transitions `ready → delivered`, the token is invalidated (single-use),
  * and `data_export_downloaded` is audited. `Cache-Control: private, no-store`.
  *
- * CSRF convention: `middleware.ts` applies the CSRF Origin allow-list only to
- * UNSAFE methods (POST/PUT/PATCH/DELETE) on `/api/**`; safe-method GETs are not
- * Origin-checked. This GET deliberately mutates state (ready→delivered + token
+ * CSRF convention: `src/proxy.ts` (via `src/lib/csrf.ts` `checkCsrf`) Origin-checks
+ * only state-changing methods (POST/PUT/PATCH/DELETE) on `/api/**`; GETs pass as
+ * `method-safe`. This GET deliberately mutates state (ready→delivered + token
  * consume), so the single-use HMAC token IS the CSRF defence here — it cannot be
  * forged cross-site, and replay fails because the first use invalidates it. The
  * link is only ever handed to the authenticated subject (member or same-tenant
