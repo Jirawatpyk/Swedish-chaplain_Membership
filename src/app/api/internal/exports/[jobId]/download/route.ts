@@ -4,8 +4,8 @@
  *
  * Defence-in-depth (research R6):
  *   1. valid session (else 401),
- *   2. RBAC: subject member OR same-tenant admin (directory artefacts are
- *      staff-only) — enforced inside `downloadExport`,
+ *   2. RBAC: subject member (their own GDPR archive) OR same-tenant staff —
+ *      admin AND manager for directory artefacts — enforced inside `downloadExport`,
  *   3. short-lived, single-use, job-bound token verified against the stored
  *      HMAC + expiry.
  * On success the PRIVATE Blob is streamed through this route (URL never exposed),

@@ -7,11 +7,13 @@
  * encodes + strips EXIF). Shows the current (re-encoded, public) logo + a remove
  * action. Toasts the result; refreshes so the preview updates.
  */
-import { useRef, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { readErrorCode } from './read-error-code';
 
 export function DirectoryLogoControl({
   currentLogoUrl,
@@ -22,22 +24,23 @@ export function DirectoryLogoControl({
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  // Track which action is running so only that button shows the spinner.
+  const [pendingAction, setPendingAction] = useState<'upload' | 'remove' | null>(null);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     startTransition(async () => {
+      setPendingAction('upload');
       try {
         const fd = new FormData();
         fd.append('file', file);
         const res = await fetch('/api/portal/directory/logo', { method: 'POST', body: fd });
         if (!res.ok) {
-          const code = await res
-            .json()
-            .then((b: { error?: { code?: string } }) => b?.error?.code)
-            .catch(() => undefined);
+          const code = await readErrorCode(res);
           if (code === 'too_large') toast.error(t('logoTooLarge'));
           else if (code === 'unsupported_format') toast.error(t('logoUnsupported'));
+          else if (code === 'invalid_image') toast.error(t('logoInvalidImage'));
           else if (code === 'member_not_found' || code === 'no_member_profile')
             toast.error(t('logoProfileMissing'));
           else toast.error(t('logoFailed'));
@@ -49,19 +52,18 @@ export function DirectoryLogoControl({
         toast.error(t('logoFailed'));
       } finally {
         if (inputRef.current) inputRef.current.value = '';
+        setPendingAction(null);
       }
     });
   }
 
   function onRemove() {
     startTransition(async () => {
+      setPendingAction('remove');
       try {
         const res = await fetch('/api/portal/directory/logo', { method: 'DELETE' });
         if (!res.ok) {
-          const code = await res
-            .json()
-            .then((b: { error?: { code?: string } }) => b?.error?.code)
-            .catch(() => undefined);
+          const code = await readErrorCode(res);
           if (code === 'member_not_found' || code === 'no_member_profile')
             toast.error(t('logoProfileMissing'));
           else toast.error(t('logoFailed'));
@@ -71,6 +73,8 @@ export function DirectoryLogoControl({
         router.refresh();
       } catch {
         toast.error(t('logoFailed'));
+      } finally {
+        setPendingAction(null);
       }
     });
   }
@@ -102,13 +106,26 @@ export function DirectoryLogoControl({
           type="button"
           variant="outline"
           disabled={pending}
+          aria-busy={pendingAction === 'upload'}
           onClick={() => inputRef.current?.click()}
           aria-describedby="dir-logo-hint"
         >
+          {pendingAction === 'upload' ? (
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+          ) : null}
           {t('logoUpload')}
         </Button>
         {currentLogoUrl !== null ? (
-          <Button type="button" variant="ghost" disabled={pending} onClick={onRemove}>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            aria-busy={pendingAction === 'remove'}
+            onClick={onRemove}
+          >
+            {pendingAction === 'remove' ? (
+              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+            ) : null}
             {t('logoRemove')}
           </Button>
         ) : null}

@@ -204,7 +204,7 @@ export async function processExportJob(
     return ok({ status: 'ready' });
   } catch (e) {
     logger.error(
-      { errKind: errKind(e), kind, route: 'insights.process-export-job' },
+      { errKind: errKind(e), kind, jobId, route: 'insights.process-export-job' },
       'insights.export_job.build_failed',
     );
     // C2: delete any partially-uploaded artefact (no-op + swallowed if the build

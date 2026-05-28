@@ -32,9 +32,20 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 
+// Mock the logger so the failure-path assertions can verify the structured log
+// lines (mark_failed_lost vs mark_failed_failed) and to keep the suite quiet.
+const loggerMock = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock('@/lib/logger', () => ({ logger: loggerMock }));
+
 beforeEach(() => {
   metricsMock.exportJobProcessed.mockClear();
   metricsMock.exportJobDurationMs.mockClear();
+  loggerMock.error.mockClear();
 });
 
 const { asTenantContext } = await import('@/modules/tenants');
@@ -81,6 +92,7 @@ function makeMocks(opts: {
   markReady?: boolean;
   buildThrows?: boolean;
   markFailedThrows?: boolean;
+  markFailedReturnsFalse?: boolean;
 }): Mocks {
   const exportJobRepo = {
     acquireJobLockInTx: vi.fn().mockResolvedValue(undefined),
@@ -89,7 +101,7 @@ function makeMocks(opts: {
     markReadyInTx: vi.fn().mockResolvedValue(opts.markReady ?? true),
     markFailedInTx: opts.markFailedThrows
       ? vi.fn().mockRejectedValue(new Error('neon down'))
-      : vi.fn().mockResolvedValue(true),
+      : vi.fn().mockResolvedValue(!opts.markFailedReturnsFalse),
   };
   const blob = {
     putPrivate: vi.fn().mockResolvedValue({ key: 'k' }),
@@ -237,6 +249,27 @@ describe('processExportJob — build/ready paths', () => {
       'directory_json',
       'failed',
       'test-tenant',
+    );
+  });
+
+  it('build_failed + markFailed matches 0 rows (lost mark) → logs mark_failed_lost, not mark_failed_failed', async () => {
+    // A concurrent reclaim/expire moved the row out of processing between the
+    // build throw and the failure-mark, so the guarded UPDATE matches 0 rows.
+    const { deps } = makeMocks({
+      jobRecord: job('directory_json'),
+      buildThrows: true,
+      markFailedReturnsFalse: true,
+    });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('build_failed'); // original error still returned
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: JOB_ID }),
+      'insights.export_job.mark_failed_lost',
+    );
+    expect(loggerMock.error).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'insights.export_job.mark_failed_failed', // a 0-row guard is NOT a throw
     );
   });
 

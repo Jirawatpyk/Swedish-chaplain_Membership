@@ -250,7 +250,8 @@
     "descriptionTooLong": "Description must be 500 characters or fewer.",
     "logoTooLarge": "Logo exceeds 2 MB — choose a smaller file.",
     "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP.",
-    "logoProfileMissing": "Member profile not found — reload the page and try again."
+    "logoProfileMissing": "Member profile not found — reload the page and try again.",
+    "logoInvalidImage": "We couldn't read that image — the file may be corrupt. Try re-exporting it."
   },
   "admin": {
     "directory": {

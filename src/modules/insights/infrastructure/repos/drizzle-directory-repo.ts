@@ -63,6 +63,9 @@ function contactName(first: string | null, last: string | null): string | null {
   return name === '' ? null : name;
 }
 
+// NOTE: the DB column stays `logo_blob_key` (a column rename is a migration); the
+// application field is `logoUrl` — its true meaning, a public Blob URL. The
+// app↔DB name divergence is intentional; do NOT "fix" one side. See directory-repo.ts.
 function toListingRecord(
   row: SearchRawRow | PublishedRawRow,
   memberId: string,

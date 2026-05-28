@@ -26,7 +26,7 @@ export default async function Loading(): Promise<React.JSX.Element> {
         <Skeleton className="h-6 w-64" />
         <div className="space-y-2">
           {FIELD_ROWS.map((i) => (
-            <Skeleton key={i} className="h-5 w-48" />
+            <Skeleton key={i} className="h-5 w-full max-w-xs" />
           ))}
         </div>
         <div className="space-y-3">

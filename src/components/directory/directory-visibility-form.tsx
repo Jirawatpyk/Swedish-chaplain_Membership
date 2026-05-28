@@ -26,6 +26,7 @@ import {
   type FieldVisibility,
   type UpdateDirectoryListingError,
 } from '@/modules/insights';
+import { readErrorCode } from './read-error-code';
 
 export interface DirectoryVisibilityFormInitial {
   readonly listed: boolean;
@@ -84,10 +85,7 @@ export function DirectoryVisibilityForm({
           }),
         });
         if (!res.ok) {
-          const code = await res
-            .json()
-            .then((b: { error?: { code?: UpdateDirectoryListingError } }) => b?.error?.code)
-            .catch(() => undefined);
+          const code = await readErrorCode<UpdateDirectoryListingError>(res);
           if (code === 'invalid_website') setWebsiteError(t('invalidWebsite'));
           else if (code === 'description_too_long') setDescriptionError(t('descriptionTooLong'));
           else toast.error(t('saveFailed'));
@@ -141,7 +139,9 @@ export function DirectoryVisibilityForm({
             rows={3}
             aria-invalid={descriptionError !== null}
             aria-describedby={
-              descriptionError !== null ? 'dir-description-error' : 'dir-description-count'
+              descriptionError !== null
+                ? 'dir-description-count dir-description-error'
+                : 'dir-description-count'
             }
           />
           <div className="flex items-center justify-between gap-2">

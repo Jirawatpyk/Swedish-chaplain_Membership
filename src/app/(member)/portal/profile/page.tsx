@@ -48,6 +48,7 @@ export default async function PortalProfilePage() {
   if (!memberResult.ok) {
     return (
       <DetailContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('notLinked')}</p>
         </div>
@@ -70,6 +71,7 @@ export default async function PortalProfilePage() {
   if (!result.ok) {
     return (
       <DetailContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('loadError')}</p>
         </div>

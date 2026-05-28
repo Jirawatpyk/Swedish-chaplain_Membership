@@ -12,11 +12,13 @@
  * its own (session cookie only). So a low-impact CSRF vector DOES exist: a page the
  * logged-in admin visits could force this GET and burn a single-use token. We accept
  * it because (a) `jobId` is an unguessable UUID, so an attacker cannot target a known
- * job; (b) the cross-origin response is an opaque attachment the attacker cannot read
- * (no data exfiltration); and (c) the worst outcome is a forced one-shot download /
- * `ready→delivered` churn on an already staff-visible artefact, recoverable by
- * re-preparing. If this surface ever returns readable data or gains a non-idempotent
- * effect, convert it to POST behind the CSRF Origin check.
+ * job; (b) this route replies 303 to the proxy — an attacker cannot read the redirect
+ * `Location` cross-origin (so cannot steal the minted token), and following it yields
+ * an opaque attachment they also cannot read (no data exfiltration); and (c) the worst
+ * outcome is a forced one-shot download / `ready→delivered` churn on an already
+ * staff-visible artefact, recoverable by re-preparing. If this surface ever returns
+ * readable data or gains a non-idempotent effect, convert it to POST behind the CSRF
+ * Origin check.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';

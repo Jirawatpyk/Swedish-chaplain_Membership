@@ -89,7 +89,10 @@ export function DirectoryTable({
                   <span className="sr-only">{labels.hasLogo}</span>
                 </span>
               ) : (
-                DASH
+                <>
+                  <span aria-hidden>{DASH}</span>
+                  <span className="sr-only">{labels.no}</span>
+                </>
               )}
             </TableCell>
             <TableCell>{row.contactName ?? DASH}</TableCell>
