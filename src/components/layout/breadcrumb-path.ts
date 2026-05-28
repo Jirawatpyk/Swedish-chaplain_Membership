@@ -95,6 +95,14 @@ export function parseBreadcrumbPath({
     // breadcrumb segment fell through to a real link at
     // `/admin/settings/integrations` which has no `page.tsx` → 404.
     ['settings', new Set(['renewals', 'integrations'])],
+    // F6 — `/admin/events/<id>/registrations/<id>/erase` is a deep route
+    // whose only `page.tsx` lives at the `erase` leaf. Neither
+    // `/admin/events/<id>/registrations` nor
+    // `/admin/events/<id>/registrations/<id>` has an index page, so both
+    // intermediate crumbs would 404 (and the prefetch logs a console
+    // error). `registrations` is the structural opener; the UUID
+    // `registrationId` beneath it is handled by the subtree cascade below.
+    ['events', new Set(['registrations'])],
   ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;
@@ -115,6 +123,22 @@ export function parseBreadcrumbPath({
     return NON_ROUTE_BY_PARENT.get(parent)?.has(segment) ?? false;
   };
 
+  // Subtree cascade: once a structural (non-route) segment opens, every
+  // following NON-leaf segment is also a non-route 404 target — the whole
+  // subtree has no index page.tsx except the leaf the user is actually on.
+  // e.g. `events/<id>/registrations/<id>/erase`: `registrations` is the
+  // direct NON_ROUTE_BY_PARENT match and the UUID `registrationId` beneath
+  // it inherits non-route status here (it can't be enumerated by name).
+  // The leaf (isCurrent) is the real route and always renders as
+  // BreadcrumbPage, so it is excluded. Cascade can only DOWNGRADE a crumb
+  // to plain text — it never produces a clickable bad link.
+  const nonRouteFlags: boolean[] = new Array(rawParts.length).fill(false);
+  let inStructuralSubtree = false;
+  for (let i = 0; i < lastIndex; i++) {
+    if (isNonRouteSegment(i)) inStructuralSubtree = true;
+    nonRouteFlags[i] = inStructuralSubtree;
+  }
+
   return rawParts
     .map((rawSegment, index) => {
       const decoded = decodedParts[index] ?? rawSegment;
@@ -122,7 +146,7 @@ export function parseBreadcrumbPath({
       let isLinkable = true;
       if (isPlansYear(index)) {
         href = `/admin/plans?year=${decoded}`;
-      } else if (isNonRouteSegment(index)) {
+      } else if (nonRouteFlags[index]) {
         // Point at the parent path (drop THIS segment); parent is the
         // last routable ancestor. Mark as non-linkable so the UI
         // renders this as plain text — clicking would otherwise
