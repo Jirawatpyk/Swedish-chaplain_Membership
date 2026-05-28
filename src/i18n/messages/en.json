@@ -209,7 +209,102 @@
     "yes": "Yes",
     "no": "No"
   },
+  "directorySettings": {
+    "title": "Directory listing",
+    "subtitle": "Choose whether you appear in the member directory and which details are shown",
+    "emptyTitle": "No member profile",
+    "empty": "Your account isn't linked to a member profile yet.",
+    "listed": "List my organisation in the member directory",
+    "listedHint": "When off, you won't appear in the directory, E-Book, or data export.",
+    "fieldsHeading": "Fields to show",
+    "fields": {
+      "name": "Organisation name",
+      "tier": "Membership tier",
+      "industry": "Industry / category",
+      "description": "Short description",
+      "website": "Website",
+      "logo": "Logo",
+      "location": "Location (city / country)",
+      "contact_name": "Contact name",
+      "contact_email": "Contact email"
+    },
+    "detailsHeading": "Directory details",
+    "industry": "Industry / category",
+    "description": "Short description",
+    "website": "Website",
+    "city": "City",
+    "country": "Country (ISO code, e.g. TH)",
+    "logoHeading": "Logo",
+    "logoHint": "PNG, JPEG, or WebP, up to 2 MB. Re-encoded and stripped of metadata on upload.",
+    "logoUpload": "Upload logo",
+    "logoRemove": "Remove logo",
+    "logoCurrent": "Current logo",
+    "save": "Save",
+    "saved": "Directory listing saved.",
+    "saveFailed": "Could not save. Please check your details and try again.",
+    "logoSaved": "Logo updated.",
+    "logoFailed": "Could not upload the logo (PNG/JPEG/WebP, max 2 MB).",
+    "logoRemoved": "Logo removed."
+  },
   "admin": {
+    "directory": {
+      "title": "Member directory",
+      "subtitle": "Search members and produce the directory E-Book + data export",
+      "forbidden": "You do not have access to the directory.",
+      "search": {
+        "label": "Search directory",
+        "placeholder": "Search by company, industry, or description",
+        "tier": "Tier",
+        "tierAll": "All tiers",
+        "listedOnly": "Listed only",
+        "submit": "Search",
+        "clear": "Clear"
+      },
+      "resultCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+      "table": {
+        "caption": "Members and their directory listing status",
+        "company": "Company",
+        "tier": "Tier",
+        "industry": "Industry",
+        "location": "Location",
+        "listed": "Listed",
+        "logo": "Logo",
+        "contact": "Contact",
+        "hasLogo": "Has logo",
+        "yes": "Yes",
+        "no": "No",
+        "emptyTitle": "No members found",
+        "empty": "Try adjusting your search or filters."
+      },
+      "generate": {
+        "heading": "Generate",
+        "ebook": "Generate E-Book (PDF)",
+        "json": "Export data (JSON)",
+        "queued": "Generation queued — it will be ready shortly.",
+        "failed": "Could not start generation. Please try again."
+      },
+      "exports": {
+        "heading": "Recent exports",
+        "empty": "No exports yet.",
+        "caption": "Recently generated directory exports",
+        "kindLabel": "Type",
+        "statusLabel": "Status",
+        "requestedLabel": "Requested",
+        "kind": {
+          "directory_ebook": "Directory E-Book (PDF)",
+          "directory_json": "Directory JSON"
+        },
+        "status": {
+          "requested": "Queued",
+          "processing": "Generating…",
+          "ready": "Ready",
+          "delivered": "Downloaded",
+          "expired": "Expired",
+          "failed": "Failed"
+        },
+        "download": "Download"
+      }
+    },
     "audit": {
       "title": "Audit log",
       "subtitle": "Search and export tenant audit events",
@@ -3478,7 +3573,8 @@
       "invoices": "Invoices",
       "broadcasts": "Broadcasts",
       "renewals": "Renewals",
-      "audit": "Audit log"
+      "audit": "Audit log",
+      "directory": "Directory"
     },
     "member": {
       "dashboard": "Dashboard",

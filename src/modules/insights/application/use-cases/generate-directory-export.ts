@@ -21,7 +21,7 @@ import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { exportJobIdempotencyInput, type ExportKind, type ExportStatus } from '../../domain/export-job';
 import type { ClockPort } from '../ports/clock-port';
-import type { ExportJobRepo } from '../ports/export-job-repo';
+import type { ExportJobRecord, ExportJobRepo } from '../ports/export-job-repo';
 
 export type DirectoryExportActorRole = 'admin' | 'manager' | 'member';
 
@@ -88,4 +88,19 @@ export function exportDirectoryJson(
   deps: GenerateDirectoryExportDeps,
 ): Promise<Result<ExportJobRef, GenerateDirectoryExportError>> {
   return enqueueDirectoryExport('directory_json', meta, ctx, deps);
+}
+
+/** Recent directory exports (E-Book + JSON) for the staff directory page. */
+export async function listDirectoryExports(
+  meta: GenerateDirectoryExportMeta,
+  ctx: TenantContext,
+  deps: GenerateDirectoryExportDeps,
+): Promise<Result<readonly ExportJobRecord[], GenerateDirectoryExportError>> {
+  if (meta.actorRole === 'member') return err('forbidden');
+  const rows = await deps.exportJobRepo.listRecent(
+    ctx,
+    ['directory_ebook', 'directory_json'],
+    10,
+  );
+  return ok(rows);
 }

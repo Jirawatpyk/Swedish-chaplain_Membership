@@ -179,19 +179,24 @@ export {
 } from './application/use-cases/search-directory';
 export {
   updateDirectoryListing,
+  getDirectoryListing,
   type DirectoryActorRole,
+  type GetDirectoryListingError,
   type UpdateDirectoryListingError,
   type UpdateDirectoryListingInput,
   type UpdateDirectoryListingMeta,
 } from './application/use-cases/update-directory-listing';
+export type { DirectoryListingRecord } from './application/ports/directory-repo';
 export {
   generateDirectoryEbook,
   exportDirectoryJson,
+  listDirectoryExports,
   type DirectoryExportActorRole,
   type ExportJobRef,
   type GenerateDirectoryExportError,
   type GenerateDirectoryExportMeta,
 } from './application/use-cases/generate-directory-export';
+export type { ExportJobRecord } from './application/ports/export-job-repo';
 export {
   processExportJob,
   type ProcessExportJobError,
@@ -206,6 +211,16 @@ export {
   type PrepareExportDownloadError,
   type PreparedDownload,
 } from './application/use-cases/download-export';
+export {
+  setDirectoryLogo,
+  removeDirectoryLogo,
+  MAX_LOGO_UPLOAD_BYTES,
+  type DirectoryLogoMeta,
+  type LogoActorRole,
+  type RemoveDirectoryLogoError,
+  type SetDirectoryLogoError,
+  type SetDirectoryLogoInput,
+} from './application/use-cases/set-directory-logo';
 
 // --- Composition root factories (US1) -------------------------------------
 export {

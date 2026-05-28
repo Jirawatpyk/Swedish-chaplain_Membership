@@ -33,6 +33,7 @@ function stubRepo(
 ): DirectoryRepo {
   return {
     findByMemberIdInTx: vi.fn(),
+    findByMemberId: vi.fn(),
     upsertInTx: vi.fn(),
     setLogoInTx: vi.fn(),
     search: vi.fn().mockResolvedValue(result),

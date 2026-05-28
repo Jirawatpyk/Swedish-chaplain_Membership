@@ -17,6 +17,7 @@ import {
   ScrollTextIcon,
   HistoryIcon,
   GiftIcon,
+  BookUserIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,16 @@ export const staffNavConfig: NavConfig = {
           icon: ScrollTextIcon,
           href: '/admin/audit',
           activePattern: '/admin/audit',
+        },
+        // F9 US5 — member directory + E-Book/JSON export. Admin + manager
+        // (member never reaches /admin/*). Gated server-side by
+        // FEATURE_F9_DASHBOARD (notFound when dark); nav entry stays visible
+        // (mirrors the F9 audit + F6 EventCreate pattern).
+        {
+          titleKey: 'nav.staff.directory',
+          icon: BookUserIcon,
+          href: '/admin/directory',
+          activePattern: '/admin/directory',
         },
       ],
     },

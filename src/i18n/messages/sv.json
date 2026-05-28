@@ -209,7 +209,102 @@
     "yes": "Ja",
     "no": "Nej"
   },
+  "directorySettings": {
+    "title": "Katalogpost",
+    "subtitle": "Välj om du visas i medlemskatalogen och vilka uppgifter som visas",
+    "emptyTitle": "Ingen medlemsprofil",
+    "empty": "Ditt konto är inte kopplat till en medlemsprofil än.",
+    "listed": "Lista min organisation i medlemskatalogen",
+    "listedHint": "När detta är av visas du inte i katalogen, E-boken eller dataexporten.",
+    "fieldsHeading": "Fält att visa",
+    "fields": {
+      "name": "Organisationsnamn",
+      "tier": "Medlemsnivå",
+      "industry": "Bransch / kategori",
+      "description": "Kort beskrivning",
+      "website": "Webbplats",
+      "logo": "Logotyp",
+      "location": "Plats (stad / land)",
+      "contact_name": "Kontaktnamn",
+      "contact_email": "Kontaktmejl"
+    },
+    "detailsHeading": "Kataloguppgifter",
+    "industry": "Bransch / kategori",
+    "description": "Kort beskrivning",
+    "website": "Webbplats",
+    "city": "Stad",
+    "country": "Land (ISO-kod, t.ex. TH)",
+    "logoHeading": "Logotyp",
+    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Omkodas och metadata tas bort vid uppladdning.",
+    "logoUpload": "Ladda upp logotyp",
+    "logoRemove": "Ta bort logotyp",
+    "logoCurrent": "Nuvarande logotyp",
+    "save": "Spara",
+    "saved": "Katalogposten sparades.",
+    "saveFailed": "Kunde inte spara. Kontrollera uppgifterna och försök igen.",
+    "logoSaved": "Logotypen uppdaterades.",
+    "logoFailed": "Kunde inte ladda upp logotypen (PNG/JPEG/WebP, max 2 MB).",
+    "logoRemoved": "Logotypen togs bort."
+  },
   "admin": {
+    "directory": {
+      "title": "Medlemskatalog",
+      "subtitle": "Sök medlemmar och skapa katalog-E-bok + dataexport",
+      "forbidden": "Du har inte åtkomst till katalogen.",
+      "search": {
+        "label": "Sök i katalogen",
+        "placeholder": "Sök på företag, bransch eller beskrivning",
+        "tier": "Nivå",
+        "tierAll": "Alla nivåer",
+        "listedOnly": "Endast listade",
+        "submit": "Sök",
+        "clear": "Rensa"
+      },
+      "resultCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+      "table": {
+        "caption": "Medlemmar och deras katalogstatus",
+        "company": "Företag",
+        "tier": "Nivå",
+        "industry": "Bransch",
+        "location": "Plats",
+        "listed": "Listad",
+        "logo": "Logotyp",
+        "contact": "Kontakt",
+        "hasLogo": "Har logotyp",
+        "yes": "Ja",
+        "no": "Nej",
+        "emptyTitle": "Inga medlemmar hittades",
+        "empty": "Justera sökningen eller filtren."
+      },
+      "generate": {
+        "heading": "Skapa",
+        "ebook": "Skapa E-bok (PDF)",
+        "json": "Exportera data (JSON)",
+        "queued": "Genereringen är köad — den är klar snart.",
+        "failed": "Kunde inte starta genereringen. Försök igen."
+      },
+      "exports": {
+        "heading": "Senaste exporter",
+        "empty": "Inga exporter än.",
+        "caption": "Nyligen genererade katalogexporter",
+        "kindLabel": "Typ",
+        "statusLabel": "Status",
+        "requestedLabel": "Begärd",
+        "kind": {
+          "directory_ebook": "Katalog-E-bok (PDF)",
+          "directory_json": "Katalog-JSON"
+        },
+        "status": {
+          "requested": "Köad",
+          "processing": "Genererar…",
+          "ready": "Klar",
+          "delivered": "Nedladdad",
+          "expired": "Utgången",
+          "failed": "Misslyckades"
+        },
+        "download": "Ladda ner"
+      }
+    },
     "audit": {
       "title": "Granskningslogg",
       "subtitle": "Sök och exportera revisionshändelser för organisationen",
@@ -3478,7 +3573,8 @@
       "invoices": "Fakturor",
       "broadcasts": "Utskick",
       "renewals": "Förnyelser",
-      "audit": "Granskningslogg"
+      "audit": "Granskningslogg",
+      "directory": "Katalog"
     },
     "member": {
       "dashboard": "Instrumentpanel",

@@ -108,6 +108,33 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       };
     },
 
+    async findByMemberId(
+      ctx: TenantContext,
+      memberId: string,
+    ): Promise<DirectoryListingRecord | null> {
+      if (!UUID_RE.test(memberId)) return null;
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(directoryListings)
+          .where(eq(directoryListings.memberId, memberId))
+          .limit(1);
+        const row = rows[0];
+        if (row === undefined) return null;
+        return {
+          memberId: row.memberId,
+          listed: row.listed,
+          fieldVisibility: sanitizeFieldVisibility(row.fieldVisibility),
+          industry: row.industry,
+          description: row.description,
+          website: row.website,
+          logoBlobKey: row.logoBlobKey,
+          locationCity: row.locationCity,
+          locationCountry: row.locationCountry,
+        };
+      });
+    },
+
     async upsertInTx(
       tx: TenantTx,
       memberId: string,
@@ -156,7 +183,13 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       tx: TenantTx,
       memberId: string,
       logoBlobKey: string | null,
-    ): Promise<void> {
+    ): Promise<{ readonly memberNotFound: boolean }> {
+      if (!UUID_RE.test(memberId)) return { memberNotFound: true };
+      const existing = (await tx.execute(
+        sql`SELECT 1 AS ok FROM members WHERE member_id = ${memberId}::uuid LIMIT 1`,
+      )) as unknown as Array<{ ok: number }>;
+      if (existing.length === 0) return { memberNotFound: true };
+
       const now = new Date();
       await tx
         .insert(directoryListings)
@@ -172,6 +205,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
           target: [directoryListings.tenantId, directoryListings.memberId],
           set: { logoBlobKey, updatedAt: now },
         });
+      return { memberNotFound: false };
     },
 
     async search(

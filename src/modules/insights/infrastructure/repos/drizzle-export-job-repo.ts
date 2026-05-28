@@ -6,7 +6,7 @@
  * (`WHERE id = $id AND status = $from`) so a concurrent writer cannot corrupt
  * the row — the guard returns 0 rows and the caller learns the transition lost.
  */
-import { and, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { exportJobs, type ExportJobRow } from '../db/schema-insights';
@@ -105,6 +105,19 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         .where(eq(exportJobs.id, jobId))
         .limit(1);
       return rows[0] === undefined ? null : toRecord(rows[0]);
+    },
+
+    async listRecent(ctx, kinds, limit) {
+      if (kinds.length === 0) return [];
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(exportJobs)
+          .where(inArray(exportJobs.kind, [...kinds]))
+          .orderBy(desc(exportJobs.createdAt))
+          .limit(limit);
+        return rows.map(toRecord);
+      });
     },
 
     async listRequestedIds(ctx: TenantContext, limit: number) {

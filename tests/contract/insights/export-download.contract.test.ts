@@ -60,6 +60,7 @@ function stubRepo(jobRecord: ExportJobRecord | null): ExportJobRepo {
     acquireJobLockInTx: vi.fn(),
     findById: vi.fn().mockResolvedValue(jobRecord),
     findByIdInTx: vi.fn(),
+    listRecent: vi.fn(),
     listRequestedIds: vi.fn(),
     claimInTx: vi.fn(),
     markReadyInTx: vi.fn(),

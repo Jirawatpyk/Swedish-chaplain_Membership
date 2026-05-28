@@ -24,6 +24,7 @@ const ctx = asTenantContext('test-tenant');
 function stubDeps(): UpdateDirectoryListingDeps {
   const directoryRepo: DirectoryRepo = {
     findByMemberIdInTx: vi.fn(),
+    findByMemberId: vi.fn(),
     upsertInTx: vi.fn(),
     setLogoInTx: vi.fn(),
     search: vi.fn(),

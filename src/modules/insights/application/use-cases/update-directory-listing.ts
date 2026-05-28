@@ -178,3 +178,32 @@ export async function updateDirectoryListing(
   insightsMetrics.directoryListingUpdated(ctx.slug);
   return ok(undefined);
 }
+
+// --- read (pre-fill the settings form) --------------------------------------
+
+export interface GetDirectoryListingDeps {
+  readonly directoryRepo: DirectoryRepo;
+}
+
+export type GetDirectoryListingError = 'forbidden';
+
+/**
+ * Read a member's directory listing (member: own only; staff: any). Returns
+ * `null` when the member has no listing row yet (the form falls back to the
+ * default-private/email-hidden defaults).
+ */
+export async function getDirectoryListing(
+  input: { readonly memberId: string },
+  meta: {
+    readonly actorRole: DirectoryActorRole;
+    readonly actorMemberId: string | null;
+  },
+  ctx: TenantContext,
+  deps: GetDirectoryListingDeps,
+): Promise<Result<DirectoryListingRecord | null, GetDirectoryListingError>> {
+  if (meta.actorRole === 'member' && meta.actorMemberId !== input.memberId) {
+    return err('forbidden');
+  }
+  const record = await deps.directoryRepo.findByMemberId(ctx, input.memberId);
+  return ok(record);
+}

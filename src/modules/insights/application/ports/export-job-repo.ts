@@ -71,6 +71,13 @@ export interface ExportJobRepo {
   findById(ctx: TenantContext, jobId: string): Promise<ExportJobRecord | null>;
   findByIdInTx(tx: TenantTx, jobId: string): Promise<ExportJobRecord | null>;
 
+  /** Recent jobs of the given kinds, newest first — for the directory page list. */
+  listRecent(
+    ctx: TenantContext,
+    kinds: readonly ExportKind[],
+    limit: number,
+  ): Promise<readonly ExportJobRecord[]>;
+
   /** Ids of `requested` jobs for the worker to claim (oldest first). */
   listRequestedIds(ctx: TenantContext, limit: number): Promise<readonly string[]>;
 

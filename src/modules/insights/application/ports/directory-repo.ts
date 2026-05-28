@@ -90,6 +90,12 @@ export interface DirectoryRepo {
     memberId: string,
   ): Promise<DirectoryListingRecord | null>;
 
+  /** Standalone read of a member's listing row (pre-fills the settings form). */
+  findByMemberId(
+    ctx: TenantContext,
+    memberId: string,
+  ): Promise<DirectoryListingRecord | null>;
+
   /**
    * Upsert the listing metadata + visibility. Returns `memberNotFound` when no
    * such member exists in the tenant (checked before the write so no failing
@@ -102,12 +108,16 @@ export interface DirectoryRepo {
     patch: DirectoryListingPatch,
   ): Promise<{ readonly memberNotFound: boolean }>;
 
-  /** Set or clear the logo blob key (FR-025a). Upserts the row if absent. */
+  /**
+   * Set or clear the logo URL/key (FR-025a). Upserts the row if absent; returns
+   * `memberNotFound` when no such member exists in the tenant (checked before
+   * the write so no failing FK statement poisons the caller's tx).
+   */
   setLogoInTx(
     tx: TenantTx,
     memberId: string,
     logoBlobKey: string | null,
-  ): Promise<void>;
+  ): Promise<{ readonly memberNotFound: boolean }>;
 
   /** Staff search across all members + listing status (FR-024). */
   search(
