@@ -396,5 +396,35 @@ describe('F9 directory — integration (T074/T078)', () => {
       expect(out.contact).toEqual({ name: 'Somchai Lastname', contactForm: true });
       expect(out.contact).not.toHaveProperty('email');
     });
+
+    it('opt-out after listing: a new export immediately excludes the member (FR-028 edge — point-in-time snapshot)', async () => {
+      const repo = makeSearchDirectoryDeps(tenant.ctx.slug).directoryRepo;
+      // m1 is currently listed (from the prior test) → present in a fresh export.
+      const before = await runInTenant(tenant.ctx, (tx) => repo.listPublishedInTx(tx));
+      expect(before.map((p) => p.memberId)).toContain(m1);
+
+      // Member opts out.
+      const optOut = await updateDirectoryListing(
+        {
+          memberId: m1,
+          listed: false,
+          fieldVisibility: { name: true },
+          industry: 'Manufacturing',
+          description: 'We make widgets.',
+          website: null,
+          locationCity: 'Bangkok',
+          locationCountry: 'TH',
+        },
+        memberMeta(m1, `dir-optout-${randomUUID()}`),
+        tenant.ctx,
+        makeUpdateDirectoryListingDeps(tenant.ctx.slug),
+      );
+      expect(optOut.ok).toBe(true);
+
+      // A NEW export reflects the current opt-out (a previously generated
+      // artefact is a point-in-time snapshot; the source query is not).
+      const after = await runInTenant(tenant.ctx, (tx) => repo.listPublishedInTx(tx));
+      expect(after.map((p) => p.memberId)).not.toContain(m1);
+    });
   });
 });

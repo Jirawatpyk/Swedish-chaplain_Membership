@@ -99,4 +99,30 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     await expect(page.getByRole('heading', { name: 'Benefits', level: 1 })).toBeVisible();
     await expectNoAxeViolations(page, '/portal/benefits');
   });
+
+  // F9 US5 — staff directory (search filters, results table, generate controls,
+  // recent-exports). FR-035 / SC-010 WCAG 2.1 AA on the directory surface.
+  test('staff directory (/admin/directory)', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/directory');
+    await expect(
+      page.getByRole('heading', { name: 'Member directory', level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByRole('table')).toBeVisible({ timeout: 15_000 });
+    await expectNoAxeViolations(page, '/admin/directory');
+  });
+
+  // F9 US5 — member self-service directory settings (listed switch, per-field
+  // visibility checkboxes, metadata inputs, logo control). FR-025/FR-035.
+  test('member directory settings (/portal/profile/directory)', async ({ page }) => {
+    if (!MEMBER_EMAIL) {
+      throw new Error('E2E_MEMBER_EMAIL missing — set it in .env.local before running this suite.');
+    }
+    await signInAsMember(page);
+    await page.goto('/portal/profile/directory');
+    await expect(
+      page.getByRole('heading', { name: 'Directory listing', level: 1 }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page, '/portal/profile/directory');
+  });
 });

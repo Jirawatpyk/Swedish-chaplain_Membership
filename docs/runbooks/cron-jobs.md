@@ -658,6 +658,52 @@ for the full operational runbook.
 
 ---
 
+## F9 — insights (dashboard snapshot + export worker)
+
+Two cron coordinators keep the F9 admin dashboard fresh and process async
+directory/GDPR export artefacts. Both: `POST`, Bearer `CRON_SECRET`
+(constant-time), Node runtime, **retry OFF** (idempotent), and return **200**
+when `FEATURE_F9_DASHBOARD=false` (`{ skipped: true }`) so a dark launch never
+retry-storms.
+
+| Schedule | Endpoint | Purpose |
+|----------|----------|---------|
+| `*/5 * * * *` | `/api/cron/insights/snapshot-refresh-coordinator` | recompute `dashboard_metrics_cache` (FR-005 freshness; single-tenant MVP) |
+| `*/5 * * * *` | `/api/cron/insights/process-export-jobs` | claim+build E-Book/JSON (US5) / GDPR (US6) jobs → private Blob; reclaim stuck `processing` (>10 min); TTL-sweep `ready\|delivered` past `expires_at` (delete Blob → `expired`) |
+
+### Setup steps (cron-job.org, one-time)
+
+1. Two jobs, schedule `*/5 * * * *`, method `POST`, header
+   `Authorization: Bearer $CRON_SECRET`, retries **0**, timeout 60 s.
+2. Verify each returns `{ skipped: true }` while `FEATURE_F9_DASHBOARD=false`,
+   then `{ refreshed: 1 }` / `{ processed, reclaimed, expired }` once flipped on.
+
+### ⚠️ Ship-day operator gate — private Blob store (T101a)
+
+The export worker + download proxy store E-Book / GDPR artefacts via
+`put({ access: 'private' })`. The default Vercel Blob store is **public** and
+rejects private puts (`"Cannot use private access on a public store"`). Before
+flipping `FEATURE_F9_DASHBOARD` on in any environment that exercises exports:
+
+1. Provision (or reconfigure) the linked Blob store with **private access**, or
+   add a dedicated private store and repoint `BLOB_READ_WRITE_TOKEN`.
+2. Set `EXPORT_DOWNLOAD_TOKEN_SECRET` (≥32 bytes; distinct from auth/unsubscribe).
+3. Smoke-test: generate a directory JSON on `/admin/directory` → wait for the
+   `process-export-jobs` tick → download via the "Download" link (the staff
+   prepare-and-redirect route mints a single-use token → private proxy streams).
+
+Worker/proxy/adapter code is correct + tested with an in-memory blob stub; **no
+code change** is needed — only the store provisioning. Member directory logos
+use the **public** store (they appear in published outputs) and are unaffected.
+
+### Handler modules
+
+`src/app/api/cron/insights/snapshot-refresh-coordinator/route.ts` ·
+`src/app/api/cron/insights/process-export-jobs/route.ts` ·
+download proxy `src/app/api/internal/exports/[jobId]/download/route.ts`.
+
+---
+
 ## Owner
 
 Platform on-call (default: maintainer). Per-feature ownership escalates
