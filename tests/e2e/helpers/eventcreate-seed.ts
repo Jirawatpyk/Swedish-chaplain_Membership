@@ -885,26 +885,40 @@ export async function seedF6RelinkFixture(
     //    so the member row satisfies the `members.plan_id` FK.
     const RELINK_TARGET_COMPANY = 'Relink Target E2E Co';
     const RELINK_TARGET_EMAIL = 'relink-target-e2e@chamber.example';
-    // Pick any active plan from this tenant so the FK is satisfied.
-    // If the tenant has no plans (rare in a freshly-bootstrapped CI
-    // tenant), fall back to inserting WITHOUT plan_id and let the
-    // CHECK constraint accept NULL (members.plan_id is nullable for
-    // historical members per the F2 schema).
+    // Pick an ACTIVE plan for plan_year 2026. The members INSERT below
+    // hardcodes plan_year=2026 and members carries a composite FK
+    // (tenant_id, plan_id, plan_year) → membership_plans, so the lookup
+    // MUST be year-scoped — otherwise a tenant whose active plan belongs
+    // to a different year yields a plan_id with no (…, 2026) row and the
+    // INSERT fails the FK. ORDER BY plan_id for a deterministic pick.
     const planLookupRows = await client.sql<Array<{ plan_id: string }>>`
       SELECT plan_id
       FROM membership_plans
-      WHERE tenant_id = ${tenantSlug} AND is_active = TRUE
+      WHERE tenant_id = ${tenantSlug} AND plan_year = 2026 AND is_active = TRUE
+      ORDER BY plan_id
       LIMIT 1
     `;
-    const fallbackPlanId = planLookupRows[0]?.plan_id ?? null;
+    // members.plan_id is NOT NULL with a composite FK — there is no valid
+    // "plan-less" member to fall back to, so fail loudly with an
+    // actionable message rather than a cryptic NOT NULL / FK violation.
+    const relinkPlanId = planLookupRows[0]?.plan_id ?? null;
+    if (relinkPlanId === null) {
+      throw new Error(
+        `[e2e seed F6 relink] no active 2026 membership plan for tenant ` +
+          `${tenantSlug} — seed a plan before running the relink fixture`,
+      );
+    }
     // `members` has no unique constraint on (tenant_id, company_name) —
     // company names are not unique — so ON CONFLICT cannot target it.
     // Reuse the existing test target on re-run (idempotent without deleting
     // its dependent contact/registration rows); otherwise insert a fresh row.
+    // ORDER BY makes the pick deterministic if a prior crashed/concurrent
+    // run left duplicate-named rows (company_name has no unique constraint).
     const existingRelinkTarget = await client.sql<Array<{ member_id: string }>>`
       SELECT member_id::text AS member_id
       FROM members
       WHERE tenant_id = ${tenantSlug} AND company_name = ${RELINK_TARGET_COMPANY}
+      ORDER BY created_at, member_id
       LIMIT 1
     `;
     let relinkTargetMemberId = existingRelinkTarget[0]?.member_id ?? null;
@@ -916,15 +930,24 @@ export async function seedF6RelinkFixture(
           member_id, tenant_id, company_name, country, plan_id, plan_year, status
         ) VALUES (
           gen_random_uuid(), ${tenantSlug}, ${RELINK_TARGET_COMPANY}, 'TH',
-          ${fallbackPlanId}, 2026, 'active'
+          ${relinkPlanId}, 2026, 'active'
         )
         RETURNING member_id::text AS member_id
       `;
       relinkTargetMemberId = insertedRelinkTarget[0]?.member_id ?? null;
     } else {
+      // Converge the reused row to the canonical fixture state. Clearing
+      // archived_at alongside status='active' is required by the
+      // members_archived_consistency CHECK (status<>'archived' ⇒
+      // archived_at IS NULL); refreshing plan_id/plan_year/country keeps
+      // the reuse path identical to a fresh insert.
       await client.sql`
         UPDATE members
-          SET status = 'active'
+          SET status = 'active',
+              archived_at = NULL,
+              plan_id = ${relinkPlanId},
+              plan_year = 2026,
+              country = 'TH'
           WHERE tenant_id = ${tenantSlug}
             AND member_id = ${relinkTargetMemberId}::uuid
       `;
@@ -934,6 +957,19 @@ export async function seedF6RelinkFixture(
         '[e2e seed F6 relink] relinkTarget member upsert returned no rows',
       );
     }
+    // A reused member may already own a DIFFERENT active primary contact;
+    // the upsert below forces is_primary=TRUE, which would otherwise
+    // collide with the contacts_one_primary_per_member partial unique
+    // (tenant_id, member_id) WHERE is_primary AND removed_at IS NULL.
+    // Demote any existing active primary first so exactly one remains.
+    await client.sql`
+      UPDATE contacts
+        SET is_primary = FALSE
+        WHERE tenant_id = ${tenantSlug}
+          AND member_id = ${relinkTargetMemberId}::uuid
+          AND is_primary = TRUE
+          AND removed_at IS NULL
+    `;
     // Primary contact for the target member — required so the picker
     // surfaces a "Relink Target E2E Co · primary contact" hit when
     // the AS2 spec searches by company-name substring.

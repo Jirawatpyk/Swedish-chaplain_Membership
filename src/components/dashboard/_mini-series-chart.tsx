@@ -237,9 +237,16 @@ export function MiniSeriesChart({
                   <span
                     className={cn(
                       'text-caption font-medium tabular-nums',
-                      // emerald-700 (not -600) so the 14px delta meets WCAG AA
-                      // 4.5:1 on white (~5.5:1); -600 was 3.65:1 (QA TC-019).
-                      delta.direction === 'up' ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive',
+                      // AA-safe delta colours at 14px (QA TC-019). Up =
+                      // emerald-700 (~5.5:1 on white) / emerald-400 on dark.
+                      // The down delta only renders when data trends down, so
+                      // the data-dependent axe scan never exercised it — pin
+                      // explicit red-700 (~5.9:1 on white) / red-400 on dark
+                      // rather than the `text-destructive` token, whose
+                      // contrast isn't guaranteed ≥4.5:1 for text.
+                      delta.direction === 'up'
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-red-700 dark:text-red-400',
                     )}
                   >
                     {delta.direction === 'up' ? '▲' : '▼'} {delta.label}

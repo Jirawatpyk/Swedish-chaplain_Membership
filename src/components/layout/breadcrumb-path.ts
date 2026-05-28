@@ -123,20 +123,35 @@ export function parseBreadcrumbPath({
     return NON_ROUTE_BY_PARENT.get(parent)?.has(segment) ?? false;
   };
 
-  // Subtree cascade: once a structural (non-route) segment opens, every
-  // following NON-leaf segment is also a non-route 404 target — the whole
-  // subtree has no index page.tsx except the leaf the user is actually on.
-  // e.g. `events/<id>/registrations/<id>/erase`: `registrations` is the
-  // direct NON_ROUTE_BY_PARENT match and the UUID `registrationId` beneath
-  // it inherits non-route status here (it can't be enumerated by name).
-  // The leaf (isCurrent) is the real route and always renders as
-  // BreadcrumbPage, so it is excluded. Cascade can only DOWNGRADE a crumb
-  // to plain text — it never produces a clickable bad link.
+  // A dynamic id segment (UUID) under a structural opener has no own
+  // page.tsx — it can't be enumerated in NON_ROUTE_BY_PARENT by name, so
+  // it inherits non-route status here.
+  const isDynamicId = (s: string | undefined): boolean =>
+    s !== undefined &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+  // Scoped subtree cascade. A non-leaf segment is non-route when it is a
+  // direct NON_ROUTE_BY_PARENT match, OR it is a DYNAMIC id sitting inside
+  // a structural subtree opened by an earlier match — e.g.
+  // `events/<id>/registrations/<id>/erase`: `registrations` matches
+  // directly and the UUID `registrationId` cascades. A NAMED non-leaf
+  // segment is NOT auto-downgraded: it may be a real nested route, so it
+  // ends the structural run and must opt in explicitly via
+  // NON_ROUTE_BY_PARENT. The leaf (isCurrent) is the real route and renders
+  // as BreadcrumbPage regardless. The cascade can only DOWNGRADE a crumb to
+  // plain text — it never produces a clickable bad link.
   const nonRouteFlags: boolean[] = new Array(rawParts.length).fill(false);
   let inStructuralSubtree = false;
   for (let i = 0; i < lastIndex; i++) {
-    if (isNonRouteSegment(i)) inStructuralSubtree = true;
-    nonRouteFlags[i] = inStructuralSubtree;
+    if (isNonRouteSegment(i)) {
+      inStructuralSubtree = true;
+      nonRouteFlags[i] = true;
+    } else if (inStructuralSubtree && isDynamicId(decodedParts[i])) {
+      nonRouteFlags[i] = true;
+    } else {
+      // A named, potentially-routable segment closes the structural run.
+      inStructuralSubtree = false;
+    }
   }
 
   return rawParts
