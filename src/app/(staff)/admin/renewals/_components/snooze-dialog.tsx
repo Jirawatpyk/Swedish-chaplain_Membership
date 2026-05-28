@@ -110,7 +110,7 @@ export function SnoozeDialog({
         >
           {[7, 30, 90].map((d) => (
             <div key={d} className="flex items-center gap-2">
-              <RadioGroupItem id={`snooze-${d}`} value={String(d)} />
+              <RadioGroupItem id={`snooze-${d}`} value={String(d)} aria-label={t('option', { days: d })} />
               <Label htmlFor={`snooze-${d}`} className="cursor-pointer">
                 {t('option', { days: d })}
               </Label>

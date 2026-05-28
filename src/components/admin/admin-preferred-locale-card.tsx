@@ -93,7 +93,7 @@ export function AdminPreferredLocaleCard({
                 opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
               return (
                 <div key={opt} className="flex items-center gap-2">
-                  <RadioGroupItem id={id} value={opt} />
+                  <RadioGroupItem id={id} value={opt} aria-label={label} />
                   <Label htmlFor={id} className="mb-0 leading-4 cursor-pointer">
                     {label}
                   </Label>

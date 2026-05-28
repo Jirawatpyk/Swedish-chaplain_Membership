@@ -84,6 +84,10 @@ export function SegmentPicker({
                 id={`segment-${opt}`}
                 value={opt}
                 disabled={comingSoon || disabled}
+                // base-ui Radio.Root renders its own internal id, so the
+                // sibling <Label htmlFor> can't name it — set the accessible
+                // name directly (fixes axe aria-toggle-field-name).
+                aria-label={tOption(opt)}
               />
               <Label
                 htmlFor={`segment-${opt}`}

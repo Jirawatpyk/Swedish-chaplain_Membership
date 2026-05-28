@@ -69,6 +69,10 @@ export function SchedulePicker({
       <div className="flex items-center gap-2">
         <Checkbox
           id="schedule-immediate"
+          // base-ui Checkbox.Root renders its own internal id, so the
+          // sibling <Label htmlFor> can't name it — set the accessible
+          // name directly (fixes axe aria-toggle-field-name).
+          aria-label={t('scheduleHelp')}
           checked={value === null}
           onCheckedChange={(checked: boolean | 'indeterminate') => {
             if (checked === true) {

@@ -188,6 +188,10 @@ export function WebhookSecretReveal({
         <div className="flex items-start gap-2">
           <Checkbox
             id="secret-saved-checkbox"
+            // base-ui Checkbox.Root renders its own internal id, so the
+            // sibling <Label htmlFor> can't name it — set the accessible
+            // name directly (fixes axe aria-toggle-field-name).
+            aria-label={t('savedInPasswordManager')}
             checked={saved}
             onCheckedChange={(checked) =>
               handleSavedChange(checked === true)
