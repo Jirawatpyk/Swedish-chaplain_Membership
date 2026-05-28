@@ -63,7 +63,7 @@ export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {
     >
       {copied ? (
         <CheckIcon
-          className="size-3.5 text-emerald-600 dark:text-emerald-400"
+          className="size-3.5 text-emerald-700 dark:text-emerald-400"
           aria-hidden="true"
         />
       ) : (

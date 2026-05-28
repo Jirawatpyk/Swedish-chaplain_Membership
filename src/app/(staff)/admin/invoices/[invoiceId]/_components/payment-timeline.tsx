@@ -128,18 +128,18 @@ const EVENT_VISUAL: Record<
   payment_initiated: { icon: BanknoteIcon, cls: 'text-foreground' },
   payment_succeeded: {
     icon: CheckCircle2Icon,
-    cls: 'text-emerald-600 dark:text-emerald-400',
+    cls: 'text-emerald-700 dark:text-emerald-400',
   },
   payment_failed: { icon: XCircleIcon, cls: 'text-destructive' },
   payment_canceled: { icon: XOctagonIcon, cls: 'text-muted-foreground' },
   invoice_paid: {
     icon: CheckCircle2Icon,
-    cls: 'text-emerald-600 dark:text-emerald-400',
+    cls: 'text-emerald-700 dark:text-emerald-400',
   },
   refund_initiated: { icon: RefreshCcwIcon, cls: 'text-foreground' },
   refund_succeeded: {
     icon: ArrowDownToLineIcon,
-    cls: 'text-emerald-600 dark:text-emerald-400',
+    cls: 'text-emerald-700 dark:text-emerald-400',
   },
   refund_failed: { icon: XCircleIcon, cls: 'text-destructive' },
 };

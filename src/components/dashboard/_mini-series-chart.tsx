@@ -237,7 +237,9 @@ export function MiniSeriesChart({
                   <span
                     className={cn(
                       'text-caption font-medium tabular-nums',
-                      delta.direction === 'up' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive',
+                      // emerald-700 (not -600) so the 14px delta meets WCAG AA
+                      // 4.5:1 on white (~5.5:1); -600 was 3.65:1 (QA TC-019).
+                      delta.direction === 'up' ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive',
                     )}
                   >
                     {delta.direction === 'up' ? '▲' : '▼'} {delta.label}
