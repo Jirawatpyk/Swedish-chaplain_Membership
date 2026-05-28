@@ -40,6 +40,10 @@ export const F9_AUDIT_EVENT_TYPES = [
   'audit_log_exported',
   // PII read — staff opens a member's benefit view (US4, FR-036).
   'member_benefit_viewed',
+  // PII read — staff opens a member's unified timeline (US3, FR-036). The
+  // timeline is the highest-PII surface (all invoices/payments/events), so a
+  // staff read is audited; member self-views are NOT (not third-party access).
+  'member_timeline_viewed',
   // An insight is dismissed (US1).
   'smart_insight_dismissed',
   // Member changes directory visibility / field exposure / logo (US5).
@@ -82,6 +86,11 @@ export interface F9AuditPayloadByType {
   member_benefit_viewed: {
     readonly subject_member_id: string;
     readonly membership_year: number;
+  };
+  member_timeline_viewed: {
+    readonly subject_member_id: string;
+    /** Whether any source/actor/date filter was applied on the viewed page. */
+    readonly filter_applied: boolean;
   };
   smart_insight_dismissed: {
     /** Post-validation insight key (narrowed by `isInsightKey` at the emit site). */
@@ -174,6 +183,7 @@ export const F9_AUDIT_RETENTION_YEARS: Record<F9AuditEventType, 5> = {
   audit_log_queried: 5,
   audit_log_exported: 5,
   member_benefit_viewed: 5,
+  member_timeline_viewed: 5,
   smart_insight_dismissed: 5,
   directory_listing_updated: 5,
   directory_ebook_generated: 5,

@@ -138,6 +138,7 @@ export {
   makeComputeDashboardSnapshotDeps,
   makeComputeBenefitUsageDeps,
   recordStaffBenefitView,
+  recordStaffTimelineView,
   makeListDashboardDeps,
   makeListSmartInsightsDeps,
   makeActivityFeedDeps,

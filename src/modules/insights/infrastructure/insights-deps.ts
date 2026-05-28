@@ -112,6 +112,34 @@ export async function recordStaffBenefitView(input: {
   insightsMetrics.benefitViewed(input.actorRole, input.tenantId);
 }
 
+/**
+ * US3 (staff-review R002 / FR-036) — best-effort PII-read trail for a STAFF
+ * timeline view (the member's full multi-source history). Member self-views at
+ * /portal/timeline are NOT audited (not third-party access). Best-effort: the
+ * adapter logs+meters+swallows, so the read never blocks on the audit write.
+ */
+export async function recordStaffTimelineView(input: {
+  readonly tenantId: string;
+  readonly requestId: string | null;
+  readonly actorUserId: string;
+  readonly actorRole: 'admin' | 'manager';
+  readonly subjectMemberId: string;
+  readonly filterApplied: boolean;
+}): Promise<void> {
+  await insightsAuditAdapter.record({
+    tenantId: input.tenantId,
+    requestId: input.requestId,
+    eventType: 'member_timeline_viewed',
+    actorUserId: input.actorUserId,
+    retentionYears: f9RetentionFor('member_timeline_viewed'),
+    summary: `timeline view of ${input.subjectMemberId} by ${input.actorRole}`,
+    payload: {
+      subject_member_id: input.subjectMemberId,
+      filter_applied: input.filterApplied,
+    },
+  });
+}
+
 /** US1 (T027/T031) — `listDashboard` read-path dependency bundle. */
 export function makeListDashboardDeps(tenantId: string): ListDashboardDeps {
   return {

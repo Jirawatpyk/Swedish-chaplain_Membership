@@ -105,6 +105,27 @@ export const SENSITIVE_PAYLOAD_FIELDS: Readonly<
 };
 
 /**
+ * Email-like token matcher for `summary` redaction. Conservative: a run of
+ * non-space/non-@ chars, `@`, then a dotted domain. Matches the F1
+ * user-management summaries (`disabled manager user@x.com`).
+ */
+const SUMMARY_EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/g;
+
+/**
+ * Redact a free-text audit `summary` for the viewing role (staff-review R001).
+ * `payload` redaction (above) does not cover `summary`, but F1
+ * disable/create/enable-user events embed the target's **email** in the
+ * summary string (`"disabled manager user@x"`). The structured
+ * actorUserId/targetUserId already give a manager accountability, so the email
+ * is third-party PII a manager need not see (PDPA §19 / GDPR Art. 5(1)(c)).
+ * `admin` → full summary; `manager` → emails replaced with `[email redacted]`.
+ */
+export function redactSummaryForRole(summary: string, role: AuditViewerRole): string {
+  if (role === 'admin') return summary;
+  return summary.replace(SUMMARY_EMAIL_RE, '[email redacted]');
+}
+
+/**
  * Project a single audit row's `payload` for the viewing role. Returns a fresh
  * object (never mutates the input). `admin` → full payload; `manager` → payload
  * minus the global + per-event-type sensitive field names; `null` → `null`.

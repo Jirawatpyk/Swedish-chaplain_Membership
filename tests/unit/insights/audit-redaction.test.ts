@@ -11,6 +11,7 @@ import {
   GLOBAL_SENSITIVE_PAYLOAD_FIELDS,
   SENSITIVE_PAYLOAD_FIELDS,
   redactPayloadForRole,
+  redactSummaryForRole,
 } from '@/modules/insights/application/audit-redaction';
 
 describe('redactPayloadForRole', () => {
@@ -80,5 +81,28 @@ describe('redactPayloadForRole', () => {
   it('exposes a non-empty global deny-list and a per-type map (FR-011 defined map)', () => {
     expect(GLOBAL_SENSITIVE_PAYLOAD_FIELDS.length).toBeGreaterThan(0);
     expect(Object.keys(SENSITIVE_PAYLOAD_FIELDS).length).toBeGreaterThan(0);
+  });
+});
+
+describe('redactSummaryForRole (staff-review R001)', () => {
+  it('admin sees the full summary verbatim (incl email)', () => {
+    expect(redactSummaryForRole('disabled manager user@example.com', 'admin')).toBe(
+      'disabled manager user@example.com',
+    );
+  });
+
+  it('manager: email tokens replaced with [email redacted]', () => {
+    expect(redactSummaryForRole('disabled manager user@example.com', 'manager')).toBe(
+      'disabled manager [email redacted]',
+    );
+    expect(redactSummaryForRole('invited admin a.b+x@sub.example.co.uk', 'manager')).toBe(
+      'invited admin [email redacted]',
+    );
+  });
+
+  it('manager: a summary with no email is unchanged', () => {
+    expect(redactSummaryForRole('3 session(s) revoked on account disable', 'manager')).toBe(
+      '3 session(s) revoked on account disable',
+    );
   });
 });

@@ -3,8 +3,9 @@
  *
  * Writes to F1's shared `audit_log` table via raw SQL (same pattern as the
  * F4/F5 adapters — the Drizzle `auditLog` table def does not include the
- * `retention_years` column, added by migration 0039). The 14 F9 event types
- * were added to the `audit_event_type` enum by migration 0191.
+ * `retention_years` column, added by migration 0039). The F9 event types were
+ * added to the `audit_event_type` enum by migration 0191 (+ 0193 added
+ * `member_timeline_viewed`).
  *
  *   - `recordInTx(tx, event)` → atomic with the caller's tenant-scoped tx;
  *     bubbles any failure so the caller's tx rolls back.

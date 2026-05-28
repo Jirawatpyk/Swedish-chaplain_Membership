@@ -86,6 +86,19 @@ describe('activityFeedQuery', () => {
     expect(recent).toHaveBeenCalledWith(ctx, 10);
   });
 
+  it('manager: email in a summary is redacted; admin sees it verbatim (R001)', async () => {
+    const withEmail: readonly ActivityFeedItem[] = [
+      { ...item('1', 'account_disabled'), summary: 'disabled manager user@example.com' },
+    ];
+    const mgr = await activityFeedQuery({ limit: 5 }, meta('manager'), ctx, depsReturning(withEmail).deps);
+    expect(mgr.ok).toBe(true);
+    if (mgr.ok) expect(mgr.value[0]!.summary).toBe('disabled manager [email redacted]');
+
+    const adm = await activityFeedQuery({ limit: 5 }, meta('admin'), ctx, depsReturning(withEmail).deps);
+    expect(adm.ok).toBe(true);
+    if (adm.ok) expect(adm.value[0]!.summary).toBe('disabled manager user@example.com');
+  });
+
   it('clamps limit to the [1, 100] range', async () => {
     const { deps, recent } = depsReturning(MIXED);
     await activityFeedQuery({ limit: 500 }, meta('admin'), ctx, deps);

@@ -11,6 +11,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
+import { redactSummaryForRole } from '../audit-redaction';
 import type {
   ActivityFeedItem,
   ActivityFeedSource,
@@ -43,5 +44,12 @@ export async function activityFeedQuery(
   // redaction is a separate concern handled by the F9 audit viewer, FR-011).
   if (meta.actorRole === 'member') return err('forbidden');
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
-  return ok(await deps.activitySource.recent(ctx, limit));
+  const items = await deps.activitySource.recent(ctx, limit);
+  // Redact third-party email from the free-text summary for the manager
+  // projection (staff-review R001) — consistent with the US2 audit viewer; F1
+  // user-management events embed the target email in `summary`. Admin: full.
+  if (meta.actorRole === 'manager') {
+    return ok(items.map((it) => ({ ...it, summary: redactSummaryForRole(it.summary, 'manager') })));
+  }
+  return ok(items);
 }

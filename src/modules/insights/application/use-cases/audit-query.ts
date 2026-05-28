@@ -27,6 +27,7 @@ import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   redactPayloadForRole,
+  redactSummaryForRole,
   type AuditViewerRole,
 } from '../audit-redaction';
 import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
@@ -226,7 +227,7 @@ function toRow(
       r.targetUserId && isResolvableActor(r.targetUserId)
         ? actorLabelOf(r.targetUserId, identities)
         : null,
-    summary: r.summary,
+    summary: redactSummaryForRole(r.summary, role),
     occurredAt: r.occurredAt.toISOString(),
     requestId: r.requestId,
     payload: redactPayloadForRole(r.eventType, r.payload, role),

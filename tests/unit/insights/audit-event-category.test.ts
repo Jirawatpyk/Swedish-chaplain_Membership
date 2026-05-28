@@ -15,6 +15,7 @@ describe('auditEventCategory', () => {
     // F9 read/oversight — incl. the member_-prefixed one (ordering trap)
     ['dashboard_viewed', 'dashboard'],
     ['member_benefit_viewed', 'dashboard'],
+    ['member_timeline_viewed', 'dashboard'],
     ['audit_log_exported', 'dashboard'],
     ['smart_insight_dismissed', 'dashboard'],
     ['directory_ebook_generated', 'dashboard'],

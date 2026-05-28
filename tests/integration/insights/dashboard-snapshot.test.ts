@@ -15,8 +15,10 @@ import { db, runInTenant } from '@/lib/db';
 import {
   computeDashboardSnapshot,
   dismissInsight,
+  listDashboard,
   makeComputeDashboardSnapshotDeps,
   makeDismissInsightDeps,
+  makeListDashboardDeps,
 } from '@/modules/insights';
 import { dashboardMetricsCache, smartInsightDismissals } from '@/modules/insights/infrastructure/db/schema-insights';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -300,6 +302,20 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
       ).toBe(150_000n);
       expect(result.value.memberGrowth).toHaveLength(12);
       expect(result.value.memberGrowth.at(-1)?.cumulative).toBe(1);
+    }
+  });
+
+  it('FR-007 (staff-review R011): a MANAGER reading the dashboard sees YTD revenue (live Neon)', async () => {
+    // The prior test computed + cached the snapshot. A manager read must return
+    // the revenue figure (manager is "read-only on finance", not finance-blind).
+    const result = await listDashboard(
+      { actorUserId: admin.userId, actorRole: 'manager', requestId: 'mgr-dash-1' },
+      tenant.ctx,
+      makeListDashboardDeps(tenant.ctx.slug),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.metrics.ytdPaidRevenueSatang).toBe('150000');
     }
   });
 });

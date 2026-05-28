@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
-import { auditQuery, makeAuditQueryDeps } from '@/modules/insights';
+import { auditQuery, auditExport, makeAuditQueryDeps } from '@/modules/insights';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
@@ -94,6 +94,29 @@ describe('F9 auditQuery — integration (T040)', () => {
         'A role change 0',
       ]);
     }
+  });
+
+  it('FR-012 (staff-review R010): auditExport writes an audit_log_exported row (live Neon)', async () => {
+    const exporter = randomUUID();
+    const res = await auditExport(
+      { eventType: ['role_changed'], limit: 100 },
+      { actorUserId: exporter, actorRole: 'admin', requestId: `aq-exp-${randomUUID()}` },
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(res.ok).toBe(true);
+    // The export ACTION itself must be audited (FR-012) — verify the real
+    // audit port wrote the row to live Neon (the contract test mocks it).
+    const rows = await runInTenant(tenantA.ctx, async (tx) =>
+      tx.execute(sql`
+        SELECT 1 FROM audit_log
+        WHERE tenant_id = ${tenantA.ctx.slug}
+          AND event_type = 'audit_log_exported'
+          AND actor_user_id = ${exporter}
+        LIMIT 1
+      `),
+    );
+    expect(rows.length).toBe(1);
   });
 
   it('keeps the sensitive payload field for admin but strips it for manager (FR-011)', async () => {

@@ -25,6 +25,7 @@ import { asTimelineSource, asTimelineActorKind } from '@/lib/timeline-shared';
 import { buildTimelineFilterInput, timelineFilterKey } from '@/lib/timeline-filter-input';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { getMember, timelineList, type MemberId } from '@/modules/members';
+import { recordStaffTimelineView } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   Card,
@@ -137,6 +138,27 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
     : [];
   const initialCursor = timelineResult.ok ? timelineResult.value.nextCursor : null;
   const totalEvents = timelineResult.ok ? timelineResult.value.total : 0;
+
+  // FR-036 PII-read trail (R002): a staff member viewing another member's full
+  // timeline is a third-party PII access — audit it. requireSession('staff')
+  // admits only admin + manager; validate rather than cast. Best-effort.
+  //
+  // Scope decision (staff-review R2): ONE emit per full-timeline-page view —
+  // the deliberate "show me everything" access. Consistent with
+  // member_benefit_viewed's one-emit-per-page model: the load-more API
+  // (/api/members/[id]/timeline) and the 3-row preview snippet on the member
+  // detail page do NOT re-emit (avoids audit-log inflation; the page-view event
+  // already establishes who accessed whose timeline).
+  if (session.user.role === 'admin' || session.user.role === 'manager') {
+    await recordStaffTimelineView({
+      tenantId: tenant.slug,
+      requestId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+      subjectMemberId: member.memberId,
+      filterApplied: hasFilter,
+    });
+  }
 
   // Remount the stream on filter change so paginated state resets cleanly.
   const filterKey = timelineFilterKey(filterArgs);

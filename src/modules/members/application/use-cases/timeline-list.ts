@@ -96,10 +96,17 @@ function redactPayload(
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
-  return events.map((e) => ({
-    ...e,
-    payload: redactPayload(e.payload),
-  }));
+  return events.map((e) => {
+    const redactedPayload = redactPayload(e.payload);
+    // Member projection MUST NOT expose the acting STAFF user's id/name on an
+    // audit row (R004 — migration 0192 injects actor_user_id into
+    // member_timeline_v; a member viewing their own history should never see
+    // which staff UUID edited their record). Blank both for audit rows.
+    if (e.source === 'audit') {
+      return { ...e, payload: redactedPayload, actorUserId: '', actorDisplayName: null };
+    }
+    return { ...e, payload: redactedPayload };
+  });
 }
 
 // ---------------------------------------------------------------------------

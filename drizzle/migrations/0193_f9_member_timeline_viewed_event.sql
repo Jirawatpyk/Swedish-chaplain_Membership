@@ -1,0 +1,11 @@
+-- F9 US3 (staff-review R002 / FR-036) — add the `member_timeline_viewed`
+-- audit event type. A staff member opening /admin/members/[id]/timeline reads
+-- the highest-PII surface (all invoices/payments/events/broadcasts); FR-036
+-- requires that PII read to be audit-logged (the benefit view already emits
+-- member_benefit_viewed; the timeline read did not). Member self-views are NOT
+-- audited (not third-party access). 5-year retention (F9 default).
+--
+-- Postgres requires ADD VALUE to commit before the value is used; the emit
+-- site (recordStaffTimelineView) ships in the same release but the enum value
+-- must exist first.
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'member_timeline_viewed';--> statement-breakpoint

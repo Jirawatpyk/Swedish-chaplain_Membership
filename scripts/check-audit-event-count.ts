@@ -50,10 +50,12 @@ const REVIEWS_SUBDIR = 'reviews'; // Point-in-time reports — exempt from drift
 //   2. the TS `F9_AUDIT_EVENT_TYPES` tuple (insights audit port)
 // This guard parses both from disk (no alias import) and fails on any drift —
 // catches "added a label to the enum but forgot the taxonomy" (or vice-versa).
-const F9_MIGRATION = resolve(
-  ROOT,
-  'drizzle/migrations/0191_f9_audit_event_types.sql',
-);
+// F9 enum values live across multiple migrations (0191 initial 14 + 0193 added
+// member_timeline_viewed). Add any future F9-scoped ADD VALUE migration here.
+const F9_MIGRATIONS = [
+  resolve(ROOT, 'drizzle/migrations/0191_f9_audit_event_types.sql'),
+  resolve(ROOT, 'drizzle/migrations/0193_f9_member_timeline_viewed_event.sql'),
+];
 const F9_PORT = resolve(
   ROOT,
   'src/modules/insights/application/ports/audit-port.ts',
@@ -140,12 +142,13 @@ async function scanProse(canonical: number): Promise<Mismatch[]> {
 // --- F9 enum ↔ taxonomy parity (T014) ----------------------------------------
 
 async function checkF9Parity(): Promise<boolean> {
-  const migrationSql = await readFile(F9_MIGRATION, 'utf8');
-  const enumLabels = new Set(
-    (migrationSql.match(/ADD VALUE IF NOT EXISTS '([^']+)'/g) ?? []).map((m) =>
-      m.replace(/.*'([^']+)'.*/, '$1'),
-    ),
-  );
+  const enumLabels = new Set<string>();
+  for (const migration of F9_MIGRATIONS) {
+    const migrationSql = await readFile(migration, 'utf8');
+    for (const m of migrationSql.match(/ADD VALUE IF NOT EXISTS '([^']+)'/g) ?? []) {
+      enumLabels.add(m.replace(/.*'([^']+)'.*/, '$1'));
+    }
+  }
 
   const portSrc = await readFile(F9_PORT, 'utf8');
   const tupleBlock = portSrc.match(
@@ -160,13 +163,13 @@ async function checkF9Parity(): Promise<boolean> {
 
   if (enumLabels.size === tupleLabels.size && onlyInEnum.length === 0 && onlyInTuple.length === 0) {
     console.log(
-      `[check:audit-events] OK — F9 enum ↔ taxonomy parity: ${enumLabels.size} event types match (migration 0191 ↔ F9_AUDIT_EVENT_TYPES).`,
+      `[check:audit-events] OK — F9 enum ↔ taxonomy parity: ${enumLabels.size} event types match (migrations 0191+0193 ↔ F9_AUDIT_EVENT_TYPES).`,
     );
     return true;
   }
 
   console.error(
-    `[check:audit-events] F9 DRIFT — migration 0191 has ${enumLabels.size} ADD VALUE labels, ` +
+    `[check:audit-events] F9 DRIFT — migrations 0191+0193 have ${enumLabels.size} ADD VALUE labels, ` +
       `F9_AUDIT_EVENT_TYPES has ${tupleLabels.size}.`,
   );
   if (onlyInEnum.length > 0) console.error(`  only in migration: ${onlyInEnum.join(', ')}`);
