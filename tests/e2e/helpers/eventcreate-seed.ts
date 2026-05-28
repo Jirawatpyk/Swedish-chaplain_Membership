@@ -893,22 +893,42 @@ export async function seedF6RelinkFixture(
     const planLookupRows = await client.sql<Array<{ plan_id: string }>>`
       SELECT plan_id
       FROM membership_plans
-      WHERE tenant_id = ${tenantSlug} AND status = 'active'
+      WHERE tenant_id = ${tenantSlug} AND is_active = TRUE
       LIMIT 1
     `;
     const fallbackPlanId = planLookupRows[0]?.plan_id ?? null;
-    const upsertedRelinkTarget = await client.sql<Array<{ member_id: string }>>`
-      INSERT INTO members (
-        tenant_id, company_name, country, plan_id, plan_year, status
-      ) VALUES (
-        ${tenantSlug}, ${RELINK_TARGET_COMPANY}, 'TH',
-        ${fallbackPlanId}, 2026, 'active'
-      )
-      ON CONFLICT (tenant_id, company_name) DO UPDATE
-        SET status = 'active'
-      RETURNING member_id::text AS member_id
+    // `members` has no unique constraint on (tenant_id, company_name) —
+    // company names are not unique — so ON CONFLICT cannot target it.
+    // Reuse the existing test target on re-run (idempotent without deleting
+    // its dependent contact/registration rows); otherwise insert a fresh row.
+    const existingRelinkTarget = await client.sql<Array<{ member_id: string }>>`
+      SELECT member_id::text AS member_id
+      FROM members
+      WHERE tenant_id = ${tenantSlug} AND company_name = ${RELINK_TARGET_COMPANY}
+      LIMIT 1
     `;
-    const relinkTargetMemberId = upsertedRelinkTarget[0]?.member_id;
+    let relinkTargetMemberId = existingRelinkTarget[0]?.member_id ?? null;
+    if (relinkTargetMemberId === null) {
+      const insertedRelinkTarget = await client.sql<
+        Array<{ member_id: string }>
+      >`
+        INSERT INTO members (
+          member_id, tenant_id, company_name, country, plan_id, plan_year, status
+        ) VALUES (
+          gen_random_uuid(), ${tenantSlug}, ${RELINK_TARGET_COMPANY}, 'TH',
+          ${fallbackPlanId}, 2026, 'active'
+        )
+        RETURNING member_id::text AS member_id
+      `;
+      relinkTargetMemberId = insertedRelinkTarget[0]?.member_id ?? null;
+    } else {
+      await client.sql`
+        UPDATE members
+          SET status = 'active'
+          WHERE tenant_id = ${tenantSlug}
+            AND member_id = ${relinkTargetMemberId}::uuid
+      `;
+    }
     if (!relinkTargetMemberId) {
       throw new Error(
         '[e2e seed F6 relink] relinkTarget member upsert returned no rows',
@@ -919,12 +939,12 @@ export async function seedF6RelinkFixture(
     // the AS2 spec searches by company-name substring.
     await client.sql`
       INSERT INTO contacts (
-        tenant_id, member_id, first_name, last_name, email, is_primary
+        contact_id, tenant_id, member_id, first_name, last_name, email, is_primary
       ) VALUES (
-        ${tenantSlug}, ${relinkTargetMemberId}::uuid,
+        gen_random_uuid(), ${tenantSlug}, ${relinkTargetMemberId}::uuid,
         'Relink', 'Target', ${RELINK_TARGET_EMAIL}, TRUE
       )
-      ON CONFLICT (tenant_id, email) WHERE removed_at IS NULL DO UPDATE
+      ON CONFLICT (tenant_id, lower(email)) WHERE removed_at IS NULL DO UPDATE
         SET first_name = EXCLUDED.first_name,
             last_name = EXCLUDED.last_name,
             is_primary = TRUE
