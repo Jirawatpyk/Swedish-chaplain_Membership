@@ -7,12 +7,8 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,20 +62,15 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
 
       // Contact fields
       const contactPatch: Record<string, unknown> = {};
-      if (values.firstName !== initialValues.firstName)
-        contactPatch.firstName = values.firstName;
-      if (values.lastName !== initialValues.lastName)
-        contactPatch.lastName = values.lastName;
-      if (values.phone !== initialValues.phone)
-        contactPatch.phone = values.phone || null;
+      if (values.firstName !== initialValues.firstName) contactPatch.firstName = values.firstName;
+      if (values.lastName !== initialValues.lastName) contactPatch.lastName = values.lastName;
+      if (values.phone !== initialValues.phone) contactPatch.phone = values.phone || null;
       if (values.preferredLanguage !== initialValues.preferredLanguage)
         contactPatch.preferredLanguage = values.preferredLanguage;
-      if (Object.keys(contactPatch).length > 0)
-        body.primary_contact = contactPatch;
+      if (Object.keys(contactPatch).length > 0) body.primary_contact = contactPatch;
 
       // Member fields
-      if (values.website !== initialValues.website)
-        body.website = values.website || null;
+      if (values.website !== initialValues.website) body.website = values.website || null;
       if (values.description !== initialValues.description)
         body.description = values.description || null;
 
@@ -176,9 +167,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
               )}
             </div>
             <div>
-              <Label htmlFor="preferredLanguage">
-                {t('fields.preferredLanguage')}
-              </Label>
+              <Label htmlFor="preferredLanguage">{t('fields.preferredLanguage')}</Label>
               {/* W-9: Use Controller for proper RHF integration */}
               <Controller
                 control={form.control}
@@ -234,7 +223,11 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 {...form.register('description')}
               />
               {errors.description && (
-                <p id="description-error" role="alert" className="mt-1 text-caption text-destructive">
+                <p
+                  id="description-error"
+                  role="alert"
+                  className="mt-1 text-caption text-destructive"
+                >
                   {errors.description.message}
                 </p>
               )}
@@ -247,15 +240,18 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
 
         {/* Actions — H5: justify-end + Cancel before Submit (ux-standards § 11.1). */}
         <div className="flex items-center justify-end gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.push('/portal/profile')}
-          >
+          <Button type="button" variant="outline" onClick={() => router.push('/portal/profile')}>
             {t('cancelButton')}
           </Button>
           <Button type="submit" disabled={submitting}>
-            {submitting ? t('saving') : t('saveButton')}
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                {t('saving')}
+              </>
+            ) : (
+              t('saveButton')
+            )}
           </Button>
         </div>
       </div>

@@ -30,10 +30,7 @@ export default async function PortalEditPage() {
   const deps = buildMembersDeps(tenant);
 
   // Resolve member from linked user
-  const memberResult = await deps.memberRepo.findByLinkedUserId(
-    tenant,
-    user.id,
-  );
+  const memberResult = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberResult.ok) {
     // Distinguish a legitimate "no member linked" (repo.not_found → notLinked)
     // from a real DB/RLS failure (repo.unexpected). Without this split a
@@ -45,12 +42,10 @@ export default async function PortalEditPage() {
         'portal.edit.member_lookup_failed',
       );
     }
-    const message =
-      memberResult.error.code === 'repo.not_found'
-        ? t('notLinked')
-        : t('loadError');
+    const message = memberResult.error.code === 'repo.not_found' ? t('notLinked') : t('loadError');
     return (
       <FormContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{message}</p>
         </div>
@@ -61,10 +56,7 @@ export default async function PortalEditPage() {
   const member = memberResult.value;
 
   // Load contacts to find the caller's own contact
-  const contactsResult = await deps.contactRepo.listByMember(
-    tenant,
-    member.memberId,
-  );
+  const contactsResult = await deps.contactRepo.listByMember(tenant, member.memberId);
   if (!contactsResult.ok) {
     if (contactsResult.error.code !== 'repo.not_found') {
       logger.error(
@@ -74,6 +66,7 @@ export default async function PortalEditPage() {
     }
     return (
       <FormContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('loadError')}</p>
         </div>
@@ -87,6 +80,7 @@ export default async function PortalEditPage() {
   if (!ownContact) {
     return (
       <FormContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('notLinked')}</p>
         </div>

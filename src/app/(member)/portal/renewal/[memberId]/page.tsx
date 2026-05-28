@@ -18,22 +18,17 @@ import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent } from '@/components/ui/card';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asPlanYear, listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import {
-  loadRenewalSummary,
-  makeRenewalsDeps,
-} from '@/modules/renewals';
+import { loadRenewalSummary, makeRenewalsDeps } from '@/modules/renewals';
 import { BenefitSummary } from './_components/benefit-summary';
 import { OnboardingBanner } from './_components/onboarding-banner';
-import {
-  RenewalConfirmFlow,
-  type RenewalPlanOption,
-} from './_components/renewal-confirm-flow';
+import { RenewalConfirmFlow, type RenewalPlanOption } from './_components/renewal-confirm-flow';
 // Round-3 test-coverage I1 fix: locale fallback resolver extracted
 // to a testable utility module so the en/th/sv branching is covered
 // by a unit test instead of relying on E2E for behavioural pinning.
@@ -59,10 +54,7 @@ export default async function RenewalPortalPage({
 
   // Resolve the session-member.
   const membersDeps = buildMembersDeps(tenant);
-  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-    tenant,
-    user.id,
-  );
+  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberLookup.ok) {
     logger.warn(
       { tenantId: tenant.slug, userId: user.id },
@@ -111,10 +103,7 @@ export default async function RenewalPortalPage({
   }
 
   const renewalsDeps = makeRenewalsDeps(tenant.slug);
-  const activeCycle = await renewalsDeps.cyclesRepo.findActiveForMember(
-    tenant.slug,
-    urlMemberId,
-  );
+  const activeCycle = await renewalsDeps.cyclesRepo.findActiveForMember(tenant.slug, urlMemberId);
   if (!activeCycle) {
     redirect('/portal');
   }
@@ -157,24 +146,22 @@ export default async function RenewalPortalPage({
     : [];
 
   const currentPlanLabel =
-    availablePlans.find((p) => p.planId === summary.planIdAtCycleStart)
-      ?.label ?? summary.planIdAtCycleStart;
+    availablePlans.find((p) => p.planId === summary.planIdAtCycleStart)?.label ??
+    summary.planIdAtCycleStart;
 
   // UX R5/C2: translate the frozen tier slug. Fallback emits the raw
   // slug suffixed with "(untranslated)" so missing keys are visible
   // in development without crashing the page.
   const tierKey = summary.tierAtCycleStart;
-  const tierLabel = tTier.has(tierKey)
-    ? tTier(tierKey)
-    : `${tierKey} (untranslated)`;
+  const tierLabel = tTier.has(tierKey) ? tTier(tierKey) : `${tierKey} (untranslated)`;
 
   // UX R5/C1: format the frozen plan price via Intl currency rather
   // than emitting `36000.00 THB` raw — this is the price shown right
   // before the renewal CTA, so it must read as money to the member.
-  const frozenPriceFormatted = formatter.number(
-    Number(summary.frozenPlanPriceThb),
-    { style: 'currency', currency: summary.frozenPlanCurrency ?? 'THB' },
-  );
+  const frozenPriceFormatted = formatter.number(Number(summary.frozenPlanPriceThb), {
+    style: 'currency',
+    currency: summary.frozenPlanCurrency ?? 'THB',
+  });
 
   return (
     <DetailContainer>
@@ -191,49 +178,40 @@ export default async function RenewalPortalPage({
           renewers; otherwise the page's heading ladder stays h1 → h2 → h2. */}
       {summary.isFirstTimeRenewer && <OnboardingBanner />}
 
-      <section
-        aria-labelledby="plan-summary-heading"
-        className="rounded-lg border bg-card p-4"
-      >
-        <h2
-          id="plan-summary-heading"
-          className="mb-3 text-lg font-medium"
-        >
-          {t('membershipPlanHeading')}
-        </h2>
-        {/* UX R5 / Mobile #1: `grid-cols-1` base + `sm:grid-cols-2` so
-            the dl reflows into a single column at <640px viewports
-            where Thai plan names ("Premium Plus / สมาชิกระดับพรีเมี่ยม")
-            would otherwise overflow the 136px column on a 320px
-            device (WCAG 1.4.10 Reflow). */}
-        <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
-          <dt className="text-muted-foreground">{tField('plan')}</dt>
-          <dd>{currentPlanLabel}</dd>
-          <dt className="text-muted-foreground">{tField('tier')}</dt>
-          <dd>{tierLabel}</dd>
-          <dt className="text-muted-foreground">{tField('frozenPrice')}</dt>
-          <dd>{frozenPriceFormatted}</dd>
-          <dt className="text-muted-foreground">{tField('term')}</dt>
-          <dd>
-            {tField('termMonths', { count: summary.frozenPlanTermMonths })}
-          </dd>
-          <dt className="text-muted-foreground">{tField('expiry')}</dt>
-          <dd>
-            <time dateTime={summary.expiresAt}>
-              {formatter.dateTime(new Date(summary.expiresAt), {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </time>
-          </dd>
-        </dl>
-      </section>
+      <Card role="region" aria-labelledby="plan-summary-heading">
+        <CardContent className="flex flex-col gap-3">
+          <h2 id="plan-summary-heading" className="text-h4">
+            {t('membershipPlanHeading')}
+          </h2>
+          {/* UX R5 / Mobile #1: `grid-cols-1` base + `sm:grid-cols-2` so
+              the dl reflows into a single column at <640px viewports
+              where Thai plan names ("Premium Plus / สมาชิกระดับพรีเมี่ยม")
+              would otherwise overflow the 136px column on a 320px
+              device (WCAG 1.4.10 Reflow). */}
+          <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
+            <dt className="text-muted-foreground">{tField('plan')}</dt>
+            <dd>{currentPlanLabel}</dd>
+            <dt className="text-muted-foreground">{tField('tier')}</dt>
+            <dd>{tierLabel}</dd>
+            <dt className="text-muted-foreground">{tField('frozenPrice')}</dt>
+            <dd>{frozenPriceFormatted}</dd>
+            <dt className="text-muted-foreground">{tField('term')}</dt>
+            <dd>{tField('termMonths', { count: summary.frozenPlanTermMonths })}</dd>
+            <dt className="text-muted-foreground">{tField('expiry')}</dt>
+            <dd>
+              <time dateTime={summary.expiresAt}>
+                {formatter.dateTime(new Date(summary.expiresAt), {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </time>
+            </dd>
+          </dl>
+        </CardContent>
+      </Card>
 
-      <BenefitSummary
-        benefits={summary.benefits}
-        benefitsAvailable={summary.benefitsAvailable}
-      />
+      <BenefitSummary benefits={summary.benefits} benefitsAvailable={summary.benefitsAvailable} />
 
       <RenewalConfirmFlow
         memberId={urlMemberId}
@@ -246,4 +224,3 @@ export default async function RenewalPortalPage({
     </DetailContainer>
   );
 }
-

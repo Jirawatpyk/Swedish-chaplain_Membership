@@ -22,6 +22,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowLeft } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
@@ -58,10 +59,7 @@ export default async function BroadcastDetailPage(props: {
   const tenant = resolveTenantFromRequest();
 
   const membersDeps = buildMembersDeps(tenant);
-  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-    tenant,
-    session.user.id,
-  );
+  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, session.user.id);
   if (!memberLookup.ok) {
     // 404 covers both "user has no member row" (legitimate) and "DB
     // outage" (incident). Discriminate via the error code so a real
@@ -100,15 +98,12 @@ export default async function BroadcastDetailPage(props: {
     return notFound();
   }
 
-  const result = await getMemberBroadcast(
-    makeGetMemberBroadcastDeps(tenant.slug),
-    {
-      memberId,
-      broadcastId: parsed.value,
-      actorUserId: session.user.id,
-      requestId: randomUUID(),
-    },
-  );
+  const result = await getMemberBroadcast(makeGetMemberBroadcastDeps(tenant.slug), {
+    memberId,
+    broadcastId: parsed.value,
+    actorUserId: session.user.id,
+    requestId: randomUUID(),
+  });
   if (!result.ok) return notFound();
 
   const { broadcast, delivery } = result.value;
@@ -133,111 +128,100 @@ export default async function BroadcastDetailPage(props: {
         {t('back')}
       </Link>
 
-      <section
-        aria-labelledby="broadcast-detail-fields-heading"
-        className="space-y-3 rounded-md border p-4"
-      >
-        <h2
-          id="broadcast-detail-fields-heading"
-          className="text-sm font-semibold"
-        >
-          {t('fields.subject')}
-        </h2>
-        <p className="text-base">{broadcast.subject}</p>
-        <dl className="grid grid-cols-2 gap-3 pt-2 text-sm">
-          <div>
-            <dt className="text-xs text-muted-foreground">{t('fields.status')}</dt>
-            <dd className="mt-1">
-              {/* F1 UX hardening — use the shared `getBroadcastStatusBadgeProps`
+      <Card role="region" aria-labelledby="broadcast-detail-fields-heading">
+        <CardContent className="space-y-3">
+          <h2 id="broadcast-detail-fields-heading" className="text-h4">
+            {t('fields.subject')}
+          </h2>
+          <p className="text-base">{broadcast.subject}</p>
+          <dl className="grid grid-cols-2 gap-3 pt-2 text-sm">
+            <div>
+              <dt className="text-xs text-muted-foreground">{t('fields.status')}</dt>
+              <dd className="mt-1">
+                {/* F1 UX hardening — use the shared `getBroadcastStatusBadgeProps`
                   (H4) so rejected broadcasts show as destructive (red), sending
                   pulses, etc. Previously every status rendered as a neutral
                   outline badge, losing the colour signal. */}
-              {(() => {
-                const props = getBroadcastStatusBadgeProps(broadcast.status);
-                return (
-                  <Badge variant={props.variant} className={cn(props.className)}>
-                    {tStatus(broadcast.status as Parameters<typeof tStatus>[0])}
-                  </Badge>
-                );
-              })()}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">
-              {t('fields.recipients')}
-            </dt>
-            <dd className="mt-1 tabular-nums">
-              {broadcast.estimatedRecipientCount}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">
-              {t('fields.submittedAt')}
-            </dt>
-            <dd className="mt-1 text-muted-foreground">
-              {broadcast.submittedAt !== null
-                ? dateFormatter.format(new Date(broadcast.submittedAt))
-                : '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">{t('fields.sentAt')}</dt>
-            <dd className="mt-1 text-muted-foreground">
-              {broadcast.sentAt !== null
-                ? dateFormatter.format(new Date(broadcast.sentAt))
-                : '—'}
-            </dd>
-          </div>
-        </dl>
-      </section>
+                {(() => {
+                  const props = getBroadcastStatusBadgeProps(broadcast.status);
+                  return (
+                    <Badge variant={props.variant} className={cn(props.className)}>
+                      {tStatus.has(broadcast.status as Parameters<typeof tStatus>[0])
+                        ? tStatus(broadcast.status as Parameters<typeof tStatus>[0])
+                        : broadcast.status}
+                    </Badge>
+                  );
+                })()}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">{t('fields.recipients')}</dt>
+              <dd className="mt-1 tabular-nums">{broadcast.estimatedRecipientCount}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">{t('fields.submittedAt')}</dt>
+              <dd className="mt-1 text-muted-foreground">
+                {broadcast.submittedAt !== null
+                  ? dateFormatter.format(new Date(broadcast.submittedAt))
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">{t('fields.sentAt')}</dt>
+              <dd className="mt-1 text-muted-foreground">
+                {broadcast.sentAt !== null ? dateFormatter.format(new Date(broadcast.sentAt)) : '—'}
+              </dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
 
       {/* AS3 — Delivery breakdown (delivered / bounced / complained /
           soft-bounced / sent / total). Exposes testids for T129; uses
           aria-labelledby (not aria-label) so the visible h2 is the
           single accessible name (avoids SR double-announce — WCAG
           1.3.1 + 4.1.2). */}
-      <section
+      <Card
+        role="region"
         data-testid="delivery-breakdown"
         aria-labelledby="delivery-breakdown-heading"
-        className="grid grid-cols-2 gap-3 rounded-md border p-4 sm:grid-cols-3"
       >
-        <h2
-          id="delivery-breakdown-heading"
-          className="col-span-full text-sm font-semibold"
-        >
-          {t('delivery.title')}
-        </h2>
-        <DeliveryStat
-          label={t('delivery.delivered')}
-          value={delivery.delivered}
-          testId="delivery-delivered-count"
-        />
-        <DeliveryStat
-          label={t('delivery.bounced')}
-          value={delivery.bounced}
-          testId="delivery-bounced-count"
-        />
-        <DeliveryStat
-          label={t('delivery.complained')}
-          value={delivery.complained}
-          testId="delivery-complained-count"
-        />
-        <DeliveryStat
-          label={t('delivery.softBounced')}
-          value={delivery.softBounced}
-          testId="delivery-soft-bounced-count"
-        />
-        <DeliveryStat
-          label={t('delivery.sent')}
-          value={delivery.sent}
-          testId="delivery-sent-count"
-        />
-        <DeliveryStat
-          label={t('delivery.total')}
-          value={delivery.total}
-          testId="delivery-total-count"
-        />
-      </section>
+        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <h2 id="delivery-breakdown-heading" className="col-span-full text-h4">
+            {t('delivery.title')}
+          </h2>
+          <DeliveryStat
+            label={t('delivery.delivered')}
+            value={delivery.delivered}
+            testId="delivery-delivered-count"
+          />
+          <DeliveryStat
+            label={t('delivery.bounced')}
+            value={delivery.bounced}
+            testId="delivery-bounced-count"
+          />
+          <DeliveryStat
+            label={t('delivery.complained')}
+            value={delivery.complained}
+            testId="delivery-complained-count"
+          />
+          <DeliveryStat
+            label={t('delivery.softBounced')}
+            value={delivery.softBounced}
+            testId="delivery-soft-bounced-count"
+          />
+          <DeliveryStat
+            label={t('delivery.sent')}
+            value={delivery.sent}
+            testId="delivery-sent-count"
+          />
+          <DeliveryStat
+            label={t('delivery.total')}
+            value={delivery.total}
+            testId="delivery-total-count"
+          />
+        </CardContent>
+      </Card>
     </DetailContainer>
   );
 }

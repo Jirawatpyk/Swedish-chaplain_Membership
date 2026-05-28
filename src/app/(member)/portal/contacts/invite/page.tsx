@@ -26,13 +26,11 @@ export default async function PortalInvitePage() {
   const deps = buildMembersDeps(tenant);
 
   // Resolve member from linked user
-  const memberResult = await deps.memberRepo.findByLinkedUserId(
-    tenant,
-    user.id,
-  );
+  const memberResult = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberResult.ok) {
     return (
       <FormContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('notLinked')}</p>
         </div>
@@ -43,13 +41,11 @@ export default async function PortalInvitePage() {
   const member = memberResult.value;
 
   // Check if user is primary contact
-  const contactsResult = await deps.contactRepo.listByMember(
-    tenant,
-    member.memberId,
-  );
+  const contactsResult = await deps.contactRepo.listByMember(tenant, member.memberId);
   if (!contactsResult.ok) {
     return (
       <FormContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('loadError')}</p>
         </div>
@@ -63,6 +59,7 @@ export default async function PortalInvitePage() {
   if (!ownContact?.isPrimary) {
     return (
       <FormContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('notPrimary')}</p>
         </div>

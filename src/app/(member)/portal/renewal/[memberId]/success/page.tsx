@@ -15,6 +15,8 @@ import { headers } from 'next/headers';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -50,10 +52,7 @@ export default async function RenewalSuccessPage({
   const formatter = await getFormatter();
 
   const membersDeps = buildMembersDeps(tenant);
-  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-    tenant,
-    user.id,
-  );
+  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberLookup.ok) {
     logger.warn(
       { tenantId: tenant.slug, userId: user.id },
@@ -66,10 +65,7 @@ export default async function RenewalSuccessPage({
   }
 
   const renewalsDeps = makeRenewalsDeps(tenant.slug);
-  const activeCycle = await renewalsDeps.cyclesRepo.findActiveForMember(
-    tenant.slug,
-    urlMemberId,
-  );
+  const activeCycle = await renewalsDeps.cyclesRepo.findActiveForMember(tenant.slug, urlMemberId);
 
   // R7-M6 — fetch the invoice so we can (a) display the real document
   // number (instead of the UUID from the query param) on the download
@@ -112,8 +108,7 @@ export default async function RenewalSuccessPage({
         return null;
       })
     : null;
-  const invoice =
-    invoiceForReceipt && invoiceForReceipt.ok ? invoiceForReceipt.value : null;
+  const invoice = invoiceForReceipt && invoiceForReceipt.ok ? invoiceForReceipt.value : null;
 
   return (
     <DetailContainer>
@@ -131,69 +126,61 @@ export default async function RenewalSuccessPage({
           external <AutoFocusH1> component which mutated `tabIndex`
           directly on a React-owned DOM node — fragile if PageHeader
           ever re-rendered client-side). */}
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        autoFocusTitle
-      />
+      <PageHeader title={t('title')} subtitle={t('subtitle')} autoFocusTitle />
 
-      <section
-        aria-labelledby="renewal-details-heading"
-        className="rounded-lg border bg-card p-4"
-      >
-        <h2
-          id="renewal-details-heading"
-          className="mb-3 text-lg font-medium"
-        >
-          {t('detailsHeading')}
-        </h2>
-        {activeCycle ? (
-          // UX R5 / Mobile #1: responsive grid — single column at
-          // <640px so Thai/SV labels don't squeeze the value column.
-          <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
-            <dt className="text-muted-foreground">{t('newExpiry')}</dt>
-            <dd>
-              <time dateTime={activeCycle.expiresAt}>
-                {formatter.dateTime(new Date(activeCycle.expiresAt), {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </time>
-            </dd>
-            {/* UX R5 / S3: only show cycle status when it's actually
+      <Card role="region" aria-labelledby="renewal-details-heading">
+        <CardContent className="flex flex-col gap-3">
+          <h2 id="renewal-details-heading" className="text-h4">
+            {t('detailsHeading')}
+          </h2>
+          {activeCycle ? (
+            // UX R5 / Mobile #1: responsive grid — single column at
+            // <640px so Thai/SV labels don't squeeze the value column.
+            <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
+              <dt className="text-muted-foreground">{t('newExpiry')}</dt>
+              <dd>
+                <time dateTime={activeCycle.expiresAt}>
+                  {formatter.dateTime(new Date(activeCycle.expiresAt), {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </time>
+              </dd>
+              {/* UX R5 / S3: only show cycle status when it's actually
                 completed. Stripe webhooks land async, so a member
                 redirected from F5 can briefly see status='awaiting_payment'
                 even though the success page heading says "Renewal
                 complete" — confusing. Hiding the row keeps the page
                 consistent until the cycle truly transitions. */}
-            {activeCycle.status === 'completed' && (
-              <>
-                <dt className="text-muted-foreground">{t('cycleStatus')}</dt>
-                <dd>{tStatus(activeCycle.status)}</dd>
-              </>
-            )}
-          </dl>
-        ) : (
-          // Round-3 UX H1 fix: announce the async-processing state to
-          // SR via aria-live="polite" so users hear the transition
-          // when Stripe webhook lands and the page re-renders with
-          // status=completed (WCAG 4.1.3).
-          // Round-3 UX M4 fix: provide a back-to-portal CTA so members
-          // who never see the webhook arrive (network drop, blocked)
-          // have an explicit next step instead of a dead-end page.
-          <div role="status" aria-live="polite" className="space-y-3">
-            <p className="text-sm text-muted-foreground">{t('processing')}</p>
-            <Link
-              href="/portal"
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
-              data-testid="processing-back-to-portal"
-            >
-              {t('backToPortal')}
-            </Link>
-          </div>
-        )}
-      </section>
+              {activeCycle.status === 'completed' && (
+                <>
+                  <dt className="text-muted-foreground">{t('cycleStatus')}</dt>
+                  <dd>{tStatus(activeCycle.status)}</dd>
+                </>
+              )}
+            </dl>
+          ) : (
+            // Round-3 UX H1 fix: announce the async-processing state to
+            // SR via aria-live="polite" so users hear the transition
+            // when Stripe webhook lands and the page re-renders with
+            // status=completed (WCAG 4.1.3).
+            // Round-3 UX M4 fix: provide a back-to-portal CTA so members
+            // who never see the webhook arrive (network drop, blocked)
+            // have an explicit next step instead of a dead-end page.
+            <div role="status" aria-live="polite" className="space-y-3">
+              <p className="text-sm text-muted-foreground">{t('processing')}</p>
+              <Link
+                href="/portal"
+                className={buttonVariants({ variant: 'outline' })}
+                data-testid="processing-back-to-portal"
+              >
+                {t('backToPortal')}
+              </Link>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* UX R5 / Mobile #2: download receipt is the primary success-
           page action — must hit ≥36px tap target on mobile. Plain
@@ -210,8 +197,11 @@ export default async function RenewalSuccessPage({
           // R7-M6 — render the right download variant based on invoice
           // state, with a real document number so the fallback filename
           // is `INV-2026-0042.pdf` (not the bare UUID).
-          const sharedClassName =
-            'inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50';
+          // Outline button chrome via the shared `buttonVariants` cva
+          // (default size = h-9 → ≥36px WCAG 2.5.8 tap target) applied
+          // to Link/anchor className — the house pattern (credit-note
+          // page, invoices list) for button-shaped links.
+          const sharedClassName = buttonVariants({ variant: 'outline' });
           if (!invoiceId) {
             // No invoice id in URL — F5 redirect dropped the param, or
             // member navigated here directly. Surface the list page
@@ -231,9 +221,7 @@ export default async function RenewalSuccessPage({
             // is what the member should grab. Combined-mode reuses the
             // invoice number; separate-mode has its own RC-… number.
             const documentNumber =
-              invoice.receiptDocumentNumberRaw ??
-              invoice.documentNumber?.raw ??
-              invoiceId;
+              invoice.receiptDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId;
             return (
               <PortalReceiptDownloadButton
                 invoiceId={invoiceId}
@@ -315,10 +303,10 @@ export default async function RenewalSuccessPage({
         <Link
           href="/portal"
           // S-4 review-fix: button-shaped link for primary nav so the
-          // hit area meets WCAG 2.5.8 (≥36px). Base UI Button doesn't
-          // support `asChild`, so we mirror the `outline` variant
-          // styling on a Link directly.
-          className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+          // hit area meets WCAG 2.5.8 (≥36px). `buttonVariants` (default
+          // size = h-9) applied to the Link className — no Button/asChild
+          // needed; matches the house pattern used across the portal.
+          className={buttonVariants({ variant: 'outline' })}
         >
           {t('backToPortal')}
         </Link>

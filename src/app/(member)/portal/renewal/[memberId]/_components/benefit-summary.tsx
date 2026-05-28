@@ -22,6 +22,7 @@
  * show against an infinite cap).
  */
 import { useTranslations } from 'next-intl';
+import { Card, CardContent } from '@/components/ui/card';
 import type { BenefitConsumptionEntry } from '@/modules/renewals';
 
 export interface BenefitSummaryProps {
@@ -29,43 +30,39 @@ export interface BenefitSummaryProps {
   readonly benefitsAvailable: boolean;
 }
 
-export function BenefitSummary({
-  benefits,
-  benefitsAvailable,
-}: BenefitSummaryProps) {
+export function BenefitSummary({ benefits, benefitsAvailable }: BenefitSummaryProps) {
   const t = useTranslations('portal.renewal.benefits');
   const hasContent = benefitsAvailable && benefits.length > 0;
   return (
-    <section
-      aria-labelledby="benefits-heading"
-      className="rounded-lg border bg-card p-4"
-    >
-      <h2 id="benefits-heading" className="mb-3 text-lg font-medium">
-        {t('heading')}
-      </h2>
-      {hasContent ? (
-        // Round-3 UX M2 fix: reference the section heading from the
-        // <ul> so SR users hear the list's purpose ("Membership
-        // benefits, list, N items") instead of just "list, N items".
-        // The list is inside the labelled <section>, but most SR engines
-        // do not propagate the section's accessible name to nested
-        // <ul> announcements (WCAG 1.3.1).
-        //
-        // R2-S7: use `aria-label={t('heading')}` instead of reusing
-        // `aria-labelledby="benefits-heading"` (which would point to
-        // the same id used by the parent <section>) — id-reuse can
-        // produce SR redundancy ("Membership benefits, Membership
-        // benefits list, N items"). aria-label gives the <ul> its
-        // own accessible name without traversing the same node twice.
-        <ul aria-label={t('heading')} className="space-y-3 text-sm">
-          {benefits.map((b) => (
-            <BenefitRow key={b.key} benefit={b} />
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t('unavailable')}</p>
-      )}
-    </section>
+    <Card role="region" aria-labelledby="benefits-heading">
+      <CardContent className="flex flex-col gap-3">
+        <h2 id="benefits-heading" className="text-h4">
+          {t('heading')}
+        </h2>
+        {hasContent ? (
+          // Round-3 UX M2 fix: reference the region heading from the
+          // <ul> so SR users hear the list's purpose ("Membership
+          // benefits, list, N items") instead of just "list, N items".
+          // The list is inside the labelled region, but most SR engines
+          // do not propagate the region's accessible name to nested
+          // <ul> announcements (WCAG 1.3.1).
+          //
+          // R2-S7: use `aria-label={t('heading')}` instead of reusing
+          // `aria-labelledby="benefits-heading"` (which would point to
+          // the same id used by the parent region) — id-reuse can
+          // produce SR redundancy ("Membership benefits, Membership
+          // benefits list, N items"). aria-label gives the <ul> its
+          // own accessible name without traversing the same node twice.
+          <ul aria-label={t('heading')} className="space-y-3 text-sm">
+            {benefits.map((b) => (
+              <BenefitRow key={b.key} benefit={b} />
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('unavailable')}</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -79,13 +76,9 @@ function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
       <li>
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-medium">{label}</span>
-          <span className="text-xs text-muted-foreground">
-            {t('usageUnmetered', { used })}
-          </span>
+          <span className="text-xs text-muted-foreground">{t('usageUnmetered', { used })}</span>
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {t('unmeteredQuota')}
-        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{t('unmeteredQuota')}</p>
       </li>
     );
   }
@@ -116,9 +109,7 @@ function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {t('percentUsed', { percent: pct })}
-      </p>
+      <p className="mt-1 text-xs text-muted-foreground">{t('percentUsed', { percent: pct })}</p>
     </li>
   );
 }
