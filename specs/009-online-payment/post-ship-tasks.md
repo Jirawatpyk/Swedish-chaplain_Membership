@@ -121,7 +121,7 @@ for itself.
 **Origin**: L-2 (types-agent, 80% confidence)
 
 **Current state**: `audit-port.ts` defines `payload: Record<string,
-unknown>` for all 22 F5 event types. A typo in a payload key
+unknown>` for all 20 F5 event types. A typo in a payload key
 (`processor_payment_intent_id` vs `payment_intent_id`) is silently
 accepted; only ad-hoc unit-test assertions catch it.
 

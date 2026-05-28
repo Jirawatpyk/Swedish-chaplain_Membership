@@ -12,8 +12,8 @@
  *   1. Parses all `ADD VALUE 'payment_*' | 'refund_*' | ...` statements
  *      from `drizzle/migrations/0040_audit_log_f5_extension.sql` to
  *      compute the canonical F5 event count.
- *   2. Greps every .md under `specs/009-online-payment/` (excluding the reviews
- *      directory — review reports record point-in-time state) for
+ *   2. Greps every .md under `specs/009-online-payment/` (excluding the
+ *      reviews/ and qa/ directories — those record point-in-time state) for
  *      prose that quantifies the F5 event count: patterns like
  *      `N F5` / `N F5-introduced` / `all N F5` / `all N event types`
  *      where N is a digit sequence.
@@ -42,7 +42,11 @@ const F5_MIGRATIONS = [
   ),
 ];
 const SPEC_DIR = resolve(ROOT, 'specs/009-online-payment');
-const REVIEWS_SUBDIR = 'reviews'; // Point-in-time reports — exempt from drift check.
+// Point-in-time report subdirs — exempt from the prose drift check. These
+// record state at a fixed date (e.g. `qa-2026-04-28.md` legitimately says
+// "18 F5 event types" because migration 0046 added the final 2 afterwards);
+// rewriting them to the current count would falsify the historical snapshot.
+const POINT_IN_TIME_SUBDIRS: ReadonlySet<string> = new Set(['reviews', 'qa']);
 
 // --- F9 (T014) — enum ↔ taxonomy parity --------------------------------------
 // F9 audit event types live in TWO places that MUST stay in lockstep:
@@ -105,7 +109,7 @@ async function walkMarkdown(dir: string): Promise<string[]> {
     const full = join(dir, entry);
     const s = await stat(full);
     if (s.isDirectory()) {
-      if (entry === REVIEWS_SUBDIR) continue;
+      if (POINT_IN_TIME_SUBDIRS.has(entry)) continue;
       out.push(...(await walkMarkdown(full)));
     } else if (entry.endsWith('.md')) {
       out.push(full);
