@@ -57,6 +57,41 @@ export {
   type QuantifiableBenefitKey,
 } from './domain/benefit-usage';
 
+// --- Domain (US5 — directory + export job) --------------------------------
+export {
+  DIRECTORY_FIELDS,
+  DEFAULT_FIELD_VISIBILITY,
+  MAX_DIRECTORY_DESCRIPTION_LENGTH,
+  isDirectoryField,
+  isFieldVisible,
+  isValidDirectoryWebsite,
+  isDescriptionWithinCap,
+  sanitizeFieldVisibility,
+  projectPublishedListing,
+  type DirectoryField,
+  type FieldVisibility,
+  type DirectoryIdentity,
+  type DirectoryMetadata,
+  type DirectoryRecord,
+  type PublishedContact,
+  type PublishedListing,
+  type PublishedLocation,
+} from './domain/directory-listing';
+export {
+  EXPORT_KINDS,
+  EXPORT_STATUSES,
+  DEFAULT_EXPORT_TTL_MS,
+  STUCK_PROCESSING_TIMEOUT_MS,
+  canTransition,
+  isAsyncExportKind,
+  isClaimable,
+  isStuckProcessing,
+  isTerminal,
+  exportJobIdempotencyInput,
+  type ExportKind,
+  type ExportStatus,
+} from './domain/export-job';
+
 // --- Application audit-event taxonomy (Foundational T013) -----------------
 export {
   F9_AUDIT_EVENT_TYPES,
@@ -132,6 +167,46 @@ export type {
   ActorIdentityView,
 } from './application/ports/actor-directory';
 
+// --- Application use-cases (US5 — directory) ------------------------------
+export {
+  searchDirectory,
+  type DirectorySearchItem,
+  type SearchDirectoryActorRole,
+  type SearchDirectoryError,
+  type SearchDirectoryInput,
+  type SearchDirectoryMeta,
+  type SearchDirectoryResult,
+} from './application/use-cases/search-directory';
+export {
+  updateDirectoryListing,
+  type DirectoryActorRole,
+  type UpdateDirectoryListingError,
+  type UpdateDirectoryListingInput,
+  type UpdateDirectoryListingMeta,
+} from './application/use-cases/update-directory-listing';
+export {
+  generateDirectoryEbook,
+  exportDirectoryJson,
+  type DirectoryExportActorRole,
+  type ExportJobRef,
+  type GenerateDirectoryExportError,
+  type GenerateDirectoryExportMeta,
+} from './application/use-cases/generate-directory-export';
+export {
+  processExportJob,
+  type ProcessExportJobError,
+} from './application/use-cases/process-export-job';
+export {
+  prepareExportDownload,
+  downloadExport,
+  type DownloadActorRole,
+  type DownloadExportError,
+  type DownloadExportMeta,
+  type DownloadExportResult,
+  type PrepareExportDownloadError,
+  type PreparedDownload,
+} from './application/use-cases/download-export';
+
 // --- Composition root factories (US1) -------------------------------------
 export {
   makeDismissInsightDeps,
@@ -143,5 +218,10 @@ export {
   makeListSmartInsightsDeps,
   makeActivityFeedDeps,
   makeAuditQueryDeps,
+  makeSearchDirectoryDeps,
+  makeUpdateDirectoryListingDeps,
+  makeGenerateDirectoryExportDeps,
+  makePrepareExportDownloadDeps,
+  makeDownloadExportDeps,
   systemClock,
 } from './infrastructure/insights-deps';

@@ -18,6 +18,9 @@ import { insightsAuditAdapter } from './audit/insights-audit-adapter';
 import { f9RetentionFor } from '../application/ports/audit-port';
 import { makeDrizzleInsightDismissalRepo } from './repos/drizzle-insight-dismissal-repo';
 import { makeDrizzleSnapshotRepo } from './repos/drizzle-snapshot-repo';
+import { makeDrizzleDirectoryRepo } from './repos/drizzle-directory-repo';
+import { makeDrizzleExportJobRepo } from './repos/drizzle-export-job-repo';
+import { privateBlobAdapter } from './blob/private-blob-adapter';
 import { memberSourceAdapter } from './sources/member-source-adapter';
 import { memberPlanSourceAdapter } from './sources/member-plan-source-adapter';
 import { planSourceAdapter } from './sources/plan-source-adapter';
@@ -35,6 +38,13 @@ import type { ListDashboardDeps } from '../application/use-cases/list-dashboard'
 import type { ListSmartInsightsDeps } from '../application/use-cases/list-smart-insights';
 import type { ActivityFeedDeps } from '../application/use-cases/activity-feed-query';
 import type { AuditQueryDeps } from '../application/use-cases/audit-query';
+import type { SearchDirectoryDeps } from '../application/use-cases/search-directory';
+import type { UpdateDirectoryListingDeps } from '../application/use-cases/update-directory-listing';
+import type { GenerateDirectoryExportDeps } from '../application/use-cases/generate-directory-export';
+import type {
+  DownloadExportDeps,
+  PrepareExportDownloadDeps,
+} from '../application/use-cases/download-export';
 
 /** Shared wall-clock port impl (injected so use-cases stay deterministic in tests). */
 export const systemClock = {
@@ -175,5 +185,49 @@ export function makeAuditQueryDeps(): AuditQueryDeps {
     source: auditEventSourceAdapter,
     audit: insightsAuditAdapter,
     actorDirectory: actorDirectoryAdapter,
+  };
+}
+
+/** US5 (T078) — `searchDirectory` per-tenant deps (staff browse, FR-024). */
+export function makeSearchDirectoryDeps(tenantId: string): SearchDirectoryDeps {
+  return { directoryRepo: makeDrizzleDirectoryRepo(tenantId) };
+}
+
+/** US5 (T078) — `updateDirectoryListing` per-tenant deps (member/admin edit, FR-025). */
+export function makeUpdateDirectoryListingDeps(
+  tenantId: string,
+): UpdateDirectoryListingDeps {
+  return {
+    directoryRepo: makeDrizzleDirectoryRepo(tenantId),
+    audit: insightsAuditAdapter,
+  };
+}
+
+/**
+ * US5 (T080/T081) — `generateDirectoryEbook` / `exportDirectoryJson` enqueue
+ * deps. Light (no react-pdf): the artefact build happens in the cron worker,
+ * whose heavy deps live in `process-export-job-deps.ts` so pages importing this
+ * barrel never pull `@react-pdf/renderer` into their bundle.
+ */
+export function makeGenerateDirectoryExportDeps(
+  tenantId: string,
+): GenerateDirectoryExportDeps {
+  return { exportJobRepo: makeDrizzleExportJobRepo(tenantId), clock: systemClock };
+}
+
+/** US5/US6 (T073) — `prepareExportDownload` mint deps. */
+export function makePrepareExportDownloadDeps(
+  tenantId: string,
+): PrepareExportDownloadDeps {
+  return { exportJobRepo: makeDrizzleExportJobRepo(tenantId), clock: systemClock };
+}
+
+/** US5/US6 (T073) — `downloadExport` proxy deps (private blob + audit). */
+export function makeDownloadExportDeps(tenantId: string): DownloadExportDeps {
+  return {
+    exportJobRepo: makeDrizzleExportJobRepo(tenantId),
+    blob: privateBlobAdapter,
+    audit: insightsAuditAdapter,
+    clock: systemClock,
   };
 }

@@ -3670,4 +3670,53 @@ export const insightsMetrics = {
       ).record(ms, { outcome });
     });
   },
+  /** A member/admin updated a directory listing (US5 / FR-025). */
+  directoryListingUpdated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_directory_listing_updated_total',
+        'F9 directory listing visibility/metadata updates',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+  /**
+   * Async export-job processing latency by kind (US5 E-Book/JSON + US6 GDPR).
+   * `kind` is the low-cardinality `export_kind` enum — no PII (research R12).
+   */
+  exportJobDurationMs(ms: number, kind: string): void {
+    safeMetric(() => {
+      histogram(
+        'insights_export_job_duration_ms',
+        'F9 async export-job artefact build latency by kind',
+        'ms',
+      ).record(ms, { kind });
+    });
+  },
+  /** Export-job tick outcome (ok|failed) by kind. */
+  exportJobProcessed(kind: string, outcome: 'ok' | 'failed', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_export_job_processed_total',
+        'F9 async export-job ticks by kind + outcome',
+      ).add(1, { kind, outcome, tenant: tenantId });
+    });
+  },
+  /** A stuck `processing` export job reclaimed by the cron sweep (critique E2). */
+  exportJobReclaimed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_export_job_reclaimed_total',
+        'F9 stuck-processing export jobs reclaimed by the sweep',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+  /** A private export artefact downloaded via the authenticated proxy (FR-030). */
+  exportDownloaded(kind: string, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_export_downloaded_total',
+        'F9 private export-artefact downloads by kind',
+      ).add(1, { kind, tenant: tenantId });
+    });
+  },
 } as const;
