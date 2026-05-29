@@ -13,9 +13,9 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 9 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users, Audit (F9 US2 Audit entry added)', () => {
+  it('first section has 10 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users, Audit, Directory (F9 US2 Audit + US5 Directory entries added)', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(9);
+    expect(mainSection.items).toHaveLength(10);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
     expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
@@ -31,6 +31,8 @@ describe('staffNavConfig', () => {
     expect(mainSection.items[7]!.titleKey).toBe('nav.staff.users');
     // F9 US2 — audit log viewer entry appended after Users.
     expect(mainSection.items[8]!.titleKey).toBe('nav.staff.audit');
+    // F9 US5 — member directory entry appended after Audit.
+    expect(mainSection.items[9]!.titleKey).toBe('nav.staff.directory');
   });
 
   it('second section is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate (F7.1a US2 entry added)', () => {
