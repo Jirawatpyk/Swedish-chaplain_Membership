@@ -21,7 +21,15 @@ type OverrideT = ReturnType<
 >;
 
 type OverrideWarningDetails = {
-  readonly type?: string;
+  // Known discriminants mirror the create-member / change-plan use-case
+  // error unions; `(string & {})` keeps the type open to unknown wire
+  // values (this is an untrusted 422 body) while documenting the cases
+  // the switch handles.
+  readonly type?:
+    | 'turnover_out_of_band'
+    | 'startup_too_old'
+    | 'age_not_eligible'
+    | (string & {});
   readonly turnoverThb?: number;
   readonly band?: {
     readonly minThb?: number | null;
@@ -39,7 +47,13 @@ function group(n: number | null | undefined): string {
 }
 
 export function formatOverrideWarning(details: unknown, t: OverrideT): string {
-  const d = (details ?? {}) as OverrideWarningDetails;
+  // `details` is an untrusted 422 body — guard it is an object before the
+  // structural cast so a primitive (string/number) can't reach the nested
+  // `d.band?.minThb` access below.
+  const d: OverrideWarningDetails =
+    typeof details === 'object' && details !== null
+      ? (details as OverrideWarningDetails)
+      : {};
   switch (d.type) {
     case 'turnover_out_of_band': {
       const turnover = group(d.turnoverThb);

@@ -1214,7 +1214,8 @@
           "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först.",
           "emailChangeNotSupported": "E-postadressen kan endast ändras för kontakter som är kopplade till ett portalkonto. Bjud in dem till portalen först och ändra sedan e-postadressen.",
           "emailTaken": "E-postadressen används redan.",
-          "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678."
+          "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678.",
+          "partialSave": "Vissa ändringar sparades innan ett fel uppstod. Granska medlemmen och försök igen med resten."
         }
       },
       "contactForm": {

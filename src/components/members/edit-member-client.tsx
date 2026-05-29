@@ -272,14 +272,25 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const onSubmit = async (values: MemberFormValues) => {
     lastValuesRef.current = values;
     setSubmitting(true);
+    // Tracks whether an earlier request already persisted a mutation, so a
+    // later-step failure can tell the admin "some changes were saved"
+    // instead of leaving them to assume nothing landed.
+    let savedSomething = false;
+    // Shown when a later step fails after an earlier one already committed.
+    const reportStepFailure = () => {
+      if (savedSomething) toast.warning(t('errors.partialSave'));
+    };
     try {
       // Each mutation is a SEPARATE request with its own idempotency key.
       // Order: member-company fields → contact fields → contact email →
       // plan change LAST (plan change may pop bundle/override dialogs that
       // re-submit only the plan payload, so the other edits must already
-      // be persisted by then).
+      // be persisted by then). These are NOT atomic across endpoints — the
+      // partial-save warning + idempotent re-submit cover a mid-sequence
+      // failure.
 
-      // 1. Member-company field updates.
+      // 1. Member-company field updates. (First step — a failure here means
+      //    nothing has been persisted yet, so no partial-save warning.)
       if (hasFieldDiff(values, member)) {
         idemKeyRef.current = uuid();
         const fieldRes = await patch(fieldPayload(values));
@@ -287,6 +298,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           await handleResponse(fieldRes);
           return;
         }
+        savedSomething = true;
       }
 
       // 2. Primary-contact non-email fields (name / phone / role /
@@ -294,7 +306,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       //    but never sent them anywhere.
       if (contactFieldsChanged(values)) {
         const res = await patchContact(contactFieldPayload(values));
-        if (!(await handleContactResponse(res))) return;
+        if (!(await handleContactResponse(res))) {
+          reportStepFailure();
+          return;
+        }
+        savedSomething = true;
       }
 
       // 3. Primary-contact email change — constrained path (succeeds only
@@ -305,7 +321,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           email: values.primary_contact.email.trim(),
           locale: values.primary_contact.preferred_language,
         });
-        if (!(await handleContactResponse(res))) return;
+        if (!(await handleContactResponse(res))) {
+          reportStepFailure();
+          return;
+        }
+        savedSomething = true;
       }
 
       // 4. Plan change last.
@@ -319,6 +339,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       // All non-plan mutations succeeded (or nothing changed) → toast +
       // redirect to the detail page.
       handleSuccess();
+    } catch {
+      // Network / unexpected failure — without this the rejected fetch
+      // would surface as an unhandled rejection with no user feedback.
+      toast.error(t('errors.generic'));
+      reportStepFailure();
     } finally {
       setSubmitting(false);
     }

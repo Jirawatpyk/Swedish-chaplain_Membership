@@ -1214,7 +1214,8 @@
           "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first.",
           "emailChangeNotSupported": "Email can only be changed for contacts linked to a portal account. Invite them to the portal first, then change the email.",
           "emailTaken": "That email address is already in use.",
-          "invalidPhone": "Phone number must be in international format, e.g. +66812345678."
+          "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
+          "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest."
         }
       },
       "contactForm": {

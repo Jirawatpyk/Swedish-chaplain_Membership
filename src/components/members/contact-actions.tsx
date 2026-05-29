@@ -50,10 +50,10 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
 
   const contactName = `${contact.firstName} ${contact.lastName}`.trim();
 
-  const handleError = async (res: Response): Promise<void> => {
-    const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: string };
-    };
+  // Promote/Remove failures aren't code-discriminated (unlike the
+  // contact-form dialog's 409 email-taken case), so the response body is
+  // never read — map purely on status. Keep it sync; no body parse.
+  const handleError = (res: Response): void => {
     if (res.status === 409) {
       toast.error(t('errors.conflict'));
     } else if (res.status === 404) {
@@ -61,7 +61,6 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
     } else {
       toast.error(t('errors.generic'));
     }
-    void body;
   };
 
   const handleRemove = async () => {
@@ -72,7 +71,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         { method: 'DELETE' },
       );
       if (!res.ok) {
-        await handleError(res);
+        handleError(res);
         return;
       }
       toast.success(t('removeSuccess'));
@@ -93,7 +92,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         { method: 'POST' },
       );
       if (!res.ok) {
-        await handleError(res);
+        handleError(res);
         return;
       }
       toast.success(t('promoteSuccess'));

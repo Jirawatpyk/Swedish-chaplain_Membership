@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatOverrideWarning } from '@/components/members/override-warning-message';
 
-type Call = { key: string; values?: Record<string, unknown> };
+type Call = { key: string; values: Record<string, unknown> | undefined };
 
 function makeT() {
   const calls: Call[] = [];

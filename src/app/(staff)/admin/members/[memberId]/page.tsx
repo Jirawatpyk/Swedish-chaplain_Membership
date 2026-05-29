@@ -339,7 +339,10 @@ function ContactBlock({
               contactId: contact.contactId,
               firstName: contact.firstName,
               lastName: contact.lastName,
-              email: contact.email ?? '',
+              // `contact.email` is a non-null branded Email on the domain
+              // aggregate; pass it straight through (the dialog widens it to
+              // a plain string for the RHF form value).
+              email: contact.email,
               phone: contact.phone ?? null,
               roleTitle: contact.roleTitle ?? null,
               preferredLanguage: contact.preferredLanguage,
