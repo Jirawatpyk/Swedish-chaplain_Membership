@@ -1,8 +1,9 @@
 /**
  * F9 US6 (T090/T091) — `GdprArchiveSource` adapter.
  *
- * Gathers ONE member's personal data for their GDPR archive, composing the five
- * source modules' PUBLIC BARRELS (+ the auth GDPR audit reader) — no deep
+ * Gathers ONE member's personal data for their GDPR archive, composing the four
+ * data-source module barrels (members, invoicing, events, broadcasts) + the auth
+ * GDPR audit-subset reader — all via PUBLIC BARRELS, no deep
  * imports (Constitution Principle III). Returns `null` when the subject member
  * does not exist for the tenant (the worker maps that to `member_not_found`); an
  * ARCHIVED member still resolves (FR-032a).
@@ -83,11 +84,19 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     const member = memberRes.value;
 
     // 2) Contacts (incl. removed — the member's own data). Derive the set of
-    //    linked user accounts for audit scoping.
+    //    linked user accounts for audit scoping. FAIL-LOUD (staff-review C2): a
+    //    repo error must NOT degrade to `[]` — that would ship a falsely-complete
+    //    archive (empty contacts.json + an under-scoped audit subset, since
+    //    memberUserIds derives from contacts) with a valid manifest, violating
+    //    FR-037. A genuinely contact-less member still returns ok([]). Mirrors
+    //    the invoice list-failure throw below.
     const contactsRes = await memberDeps.contactRepo.listByMember(ctx, memberId, {
       includeRemoved: true,
     });
-    const contacts = contactsRes.ok ? contactsRes.value : [];
+    if (!contactsRes.ok) {
+      throw new Error(`GDPR gather: contacts list failed (${contactsRes.error.code})`);
+    }
+    const contacts = contactsRes.value;
     const memberUserIds = [
       ...new Set(
         contacts
@@ -119,8 +128,15 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
           // archive over one missing PDF.
           try {
             const bytes = await vercelBlobAdapter.downloadBytes(inv.pdf.blobKey);
-            const name = inv.documentNumber ?? inv.invoiceId;
-            pdf = { filename: `${name}.pdf`, bytes };
+            // Disambiguate with invoiceId (staff-review I3): two invoices can
+            // share a documentNumber (or a draft has none), and the zip entry key
+            // `invoices/<filename>` is last-writer-wins — a collision would
+            // silently drop a document the member is entitled to. invoiceId is
+            // unique, so suffixing it guarantees one entry per invoice.
+            const base = inv.documentNumber ?? inv.invoiceId;
+            const filename =
+              inv.documentNumber !== null ? `${base}-${inv.invoiceId}.pdf` : `${inv.invoiceId}.pdf`;
+            pdf = { filename, bytes };
           } catch (e) {
             logger.warn(
               { errKind: errKind(e), invoiceId: inv.invoiceId, route: 'insights.gdpr-gather' },

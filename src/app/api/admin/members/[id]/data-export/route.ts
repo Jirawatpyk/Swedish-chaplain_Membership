@@ -14,6 +14,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { isLocale } from '@/i18n/config';
 import { tryMemberId } from '@/modules/members';
 import { requestDataExport, makeRequestDataExportDeps } from '@/modules/insights';
 
@@ -36,7 +37,8 @@ export async function POST(
   }
 
   const tenant = resolveTenantFromRequest(request);
-  const requesterLocale = await getLocale();
+  const activeLocale = await getLocale();
+  const requesterLocale = isLocale(activeLocale) ? activeLocale : 'en';
 
   try {
     const result = await requestDataExport(

@@ -114,7 +114,7 @@ export default async function MemberAccountPage() {
               href="/portal/account/data-export"
               className={buttonVariants({ variant: 'outline' })}
             >
-              {tExport('title')}
+              {tExport('open')}
             </Link>
           </CardContent>
         </Card>

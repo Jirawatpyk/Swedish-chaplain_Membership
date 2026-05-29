@@ -246,6 +246,17 @@ describe('processExportJob — claim guards', () => {
     );
   });
 
+  it('gdpr_member_archive with null requesterLocale → builds with tenantDefaultLocale (staff-review)', async () => {
+    const noLocale = { ...job('gdpr_member_archive'), requesterLocale: null };
+    const { deps, gdprArchive } = makeMocks({ jobRecord: noLocale });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(true);
+    expect(gdprArchive.buildArchiveForMember).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ requesterLocale: 'en' }), // tenantDefaultLocale fallback
+    );
+  });
+
   it('gdpr_member_archive with null subjectMemberId → failed (member_not_found), no build (S2)', async () => {
     // A malformed GDPR enqueue (null subject) must fail loud, never build/upload.
     const malformed = { ...job('gdpr_member_archive'), subjectMemberId: null };

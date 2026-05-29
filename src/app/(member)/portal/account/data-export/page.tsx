@@ -15,30 +15,21 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { listMemberDataExports, type ExportStatus } from '@/modules/insights';
+import { listMemberDataExports } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
+import { DataExportPanel } from '@/components/data-export/data-export-panel';
 import {
-  DataExportPanel,
-  type DataExportRow,
-} from '@/components/data-export/data-export-panel';
+  buildDataExportLabels,
+  buildDataExportRows,
+} from '@/components/data-export/data-export-view-model';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('dataExport');
   return { title: t('title') };
 }
-
-const STATUS_LABEL_KEY: Record<ExportStatus, string> = {
-  requested: 'statusPending',
-  processing: 'statusPending',
-  ready: 'statusReady',
-  delivered: 'statusDelivered',
-  expired: 'statusExpired',
-  failed: 'statusFailed',
-};
 
 export default async function PortalDataExportPage(): Promise<React.JSX.Element> {
   const { user } = await requireSession('member');
@@ -74,38 +65,14 @@ export default async function PortalDataExportPage(): Promise<React.JSX.Element>
   }
 
   const jobs = await listMemberDataExports(tenant, memberResult.value.memberId);
-  const rows: DataExportRow[] = jobs.map((job) => ({
-    jobId: job.id,
-    status: job.status,
-    statusLabel: t(STATUS_LABEL_KEY[job.status]),
-    downloadable: job.status === 'ready' || job.status === 'delivered',
-    requestedAt: formatLocalisedDate(job.createdAt.toISOString(), locale, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }),
-  }));
 
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <p className="max-w-prose text-sm text-muted-foreground">{t('description')}</p>
       <DataExportPanel
-        rows={rows}
-        labels={{
-          requestButton: t('requestButton'),
-          requesting: t('requesting'),
-          requestedTitle: t('requestedTitle'),
-          requestedBody: t('requestedBody'),
-          statusHeading: t('statusHeading'),
-          empty: t('empty'),
-          download: t('download'),
-          errorTitle: t('errorTitle'),
-          errorBody: t('errorBody'),
-          expiresHint: t('expiresHint'),
-          colStatus: t('colStatus'),
-          colRequested: t('colRequested'),
-          caption: t('statusHeading'),
-        }}
+        rows={buildDataExportRows(jobs, t, locale)}
+        labels={buildDataExportLabels(t)}
       />
     </DetailContainer>
   );

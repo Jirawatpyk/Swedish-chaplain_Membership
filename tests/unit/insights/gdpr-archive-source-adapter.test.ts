@@ -123,7 +123,9 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
 
     const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
     expect(data!.invoices[0]!.pdf).not.toBeNull();
-    expect(data!.invoices[0]!.pdf!.filename).toBe('INV-2026-0001.pdf');
+    // I3: filename disambiguated with invoiceId when a documentNumber is present
+    // (collision-safe zip entry key).
+    expect(data!.invoices[0]!.pdf!.filename).toBe('INV-2026-0001-inv-1.pdf');
     expect(Array.from(data!.invoices[0]!.pdf!.bytes)).toEqual([0x25, 0x50, 0x44, 0x46]);
   });
 

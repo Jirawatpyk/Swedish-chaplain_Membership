@@ -143,7 +143,7 @@ describe('requestDataExport — idempotency', () => {
 
   it('uses a per-minute idempotency window (same minute → same key)', async () => {
     const { deps, createOrGetInTx } = makeDeps();
-    const meta = { actorUserId: MEMBER_USER, actorRole: 'member' as const, actorMemberId: MEMBER, requesterLocale: 'en', requestId: 'r6' };
+    const meta = { actorUserId: MEMBER_USER, actorRole: 'member' as const, actorMemberId: MEMBER, requesterLocale: 'en' as const, requestId: 'r6' };
     await requestDataExport({ subjectMemberId: MEMBER }, meta, ctx, deps);
     const input = createOrGetInTx.mock.calls[0]![1] as CreateExportJobInput;
     // clock = 2026-05-29T08:30:15Z → minute bucket 2026-05-29T08:30

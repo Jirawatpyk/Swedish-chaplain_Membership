@@ -200,6 +200,9 @@ describe('downloadExport — authz matrix (T073a)', () => {
     );
     const r = await downloadExport({ jobId: JOB_ID, token }, member('m-1'), ctx, downloadDeps(repo, stubBlob()));
     expect(r.ok).toBe(true);
+    // C1 (staff-review): a GDPR archive is a ZIP — the attachment filename MUST
+    // be `.zip` (was mislabelled `data-export.json` by the old default branch).
+    if (r.ok) expect(r.value.filename).toBe('data-export.zip');
   });
 
   it('Q2: the token is single-use — a replay after consumption is rejected', async () => {

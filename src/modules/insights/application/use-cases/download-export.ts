@@ -61,14 +61,20 @@ function isExpired(job: ExportJobRecord, nowMs: number): boolean {
 }
 
 function filenameFor(job: ExportJobRecord): string {
-  const ext = job.blobKey?.endsWith('.pdf') === true ? 'pdf' : 'json';
   switch (job.kind) {
     case 'directory_ebook':
-      return `directory-ebook.${ext}`;
+      return 'directory-ebook.pdf';
     case 'directory_json':
       return 'directory.json';
+    case 'gdpr_member_archive':
+      // The GDPR archive is a ZIP (EXTENSION_BY_KIND in process-export-job.ts);
+      // the proxy streams it as application/zip, so the attachment name MUST be
+      // `.zip` or the OS won't recognise the archive (the prior `.json` default
+      // mislabelled the download — staff-review C1).
+      return 'data-export.zip';
     default:
-      return `data-export.${ext}`;
+      // audit_export (not yet downloadable) — derive from the stored key.
+      return job.blobKey?.endsWith('.pdf') === true ? 'data-export.pdf' : 'data-export.json';
   }
 }
 

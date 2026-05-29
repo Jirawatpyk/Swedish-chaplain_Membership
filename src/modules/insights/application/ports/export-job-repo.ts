@@ -17,6 +17,7 @@
  */
 import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
+import type { Locale } from '@/i18n/config';
 import type { ExportKind, ExportStatus } from '../../domain/export-job';
 
 export interface ExportJobRecord {
@@ -27,7 +28,7 @@ export interface ExportJobRecord {
   readonly requestedBy: string;
   readonly requestedForPeriod: string | null;
   /** FR-029 — requester's locale for the GDPR README (null for non-GDPR kinds). */
-  readonly requesterLocale: string | null;
+  readonly requesterLocale: Locale | null;
   readonly status: ExportStatus;
   readonly idempotencyKey: string;
   readonly blobKey: string | null;
@@ -44,7 +45,7 @@ export interface CreateExportJobInput {
   readonly requestedBy: string;
   readonly requestedForPeriod: string | null;
   /** FR-029 — requester locale for the GDPR README (null for non-GDPR kinds). */
-  readonly requesterLocale: string | null;
+  readonly requesterLocale: Locale | null;
   readonly idempotencyKey: string;
 }
 

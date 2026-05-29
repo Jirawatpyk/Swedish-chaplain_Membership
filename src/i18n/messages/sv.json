@@ -4653,14 +4653,15 @@
     "statusExpired": "Utgången",
     "statusFailed": "Misslyckades",
     "download": "Ladda ner",
-    "expiresHint": "Nedladdningslänkar upphör att gälla efter en kort tid för din säkerhet.",
+    "expiresHint": "Nedladdningslänkar upphör att gälla 1 timme efter att arkivet är klart, för din säkerhet. Begär en ny export om en länk har gått ut.",
     "empty": "Du har inte begärt någon dataexport ännu.",
     "errorTitle": "Kunde inte begära export",
     "errorBody": "Något gick fel när din dataexport begärdes. Försök igen.",
-    "downloadError": "Den här nedladdningslänken är inte längre giltig. Begär en ny export.",
     "colStatus": "Status",
     "colRequested": "Begärd",
     "adminHeading": "Dataexport (GDPR)",
-    "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig."
+    "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig.",
+    "alreadyPending": "En export förbereds redan — se status nedan.",
+    "open": "Gå till dataexport"
   }
 }

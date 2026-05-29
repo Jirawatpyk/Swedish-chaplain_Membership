@@ -28,7 +28,9 @@ function toRecord(row: ExportJobRow): ExportJobRecord {
     subjectMemberId: row.subjectMemberId,
     requestedBy: row.requestedBy,
     requestedForPeriod: row.requestedForPeriod,
-    requesterLocale: row.requesterLocale,
+    // The text column is app-controlled (only `requestDataExport` writes it, with
+    // a validated Locale); narrow back from the inferred `string | null`.
+    requesterLocale: row.requesterLocale as ExportJobRecord['requesterLocale'],
     status: row.status,
     idempotencyKey: row.idempotencyKey,
     blobKey: row.blobKey,

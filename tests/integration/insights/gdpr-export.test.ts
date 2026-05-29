@@ -109,6 +109,17 @@ describe('F9 GDPR archive — integration (T086)', () => {
         requestId: randomUUID(),
         payload: { member_id: subject, email: 'old@x.com', fields_changed: ['email'] },
       });
+      // Member-targeted via the `subject_member_id` payload arm (F9/on-behalf
+      // taxonomy) — exercises the second JSONB union arm of the SQL reader
+      // against live Neon (staff-review test gap).
+      await tx.insert(auditLog).values({
+        tenantId: tenant.ctx.slug,
+        eventType: 'data_export_requested',
+        actorUserId: 'system:test',
+        summary: 'export requested on behalf',
+        requestId: randomUUID(),
+        payload: { job_id: randomUUID(), subject_member_id: subject, on_behalf: true },
+      });
       // Unrelated member's audit row — must NOT appear in the subject's archive.
       await tx.insert(auditLog).values({
         tenantId: tenant.ctx.slug,
@@ -193,6 +204,12 @@ describe('F9 GDPR archive — integration (T086)', () => {
       (e) => (e.payload as { member_id?: string } | null)?.member_id === subject,
     );
     expect(changeRow, 'member-targeted row present').toBeDefined();
+    // The `subject_member_id` payload arm of the SQL reader is exercised: the
+    // on-behalf request row scoped via subject_member_id is also in the subset.
+    const subjRow = auditEvents.find(
+      (e) => (e.payload as { subject_member_id?: string } | null)?.subject_member_id === subject,
+    );
+    expect(subjRow, 'subject_member_id-scoped row present').toBeDefined();
     // Third-party email payload field stripped (standard role projection).
     expect(changeRow!.payload).not.toHaveProperty('email');
     // Structured member id retained for accountability (the member's own).

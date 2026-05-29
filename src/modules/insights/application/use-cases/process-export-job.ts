@@ -28,6 +28,7 @@ import { insightsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
+import type { Locale } from '@/i18n/config';
 import { DEFAULT_EXPORT_TTL_MS, isClaimable, type ExportKind } from '../../domain/export-job';
 import {
   projectPublishedListing,
@@ -52,8 +53,8 @@ export interface ProcessExportJobDeps {
   readonly clock: ClockPort;
   /** Chamber name for artefact branding. */
   readonly tenantName: string;
-  /** Tenant default display locale for the E-Book labels (FR-026). */
-  readonly tenantDefaultLocale: string;
+  /** Tenant default display locale (E-Book labels FR-026 + GDPR README fallback FR-029). */
+  readonly tenantDefaultLocale: Locale;
 }
 
 export type ProcessExportJobError =
@@ -116,15 +117,14 @@ export async function processExportJob(
   if (claim.outcome === 'lost_claim') return err('lost_claim');
   const kind: ExportKind = claim.kind;
 
-  if (kind === 'audit_export') {
-    // Not handled by this worker yet. H3: log + guard the mark so a failing
-    // write can't throw out of the cron's per-job loop and mask the whole tick.
-    logger.error(
-      { kind, jobId, route: 'insights.process-export-job' },
-      'insights.export_job.unsupported_kind',
-    );
-    const unsupportedMarked = await runInTenant(ctx, (tx) =>
-      deps.exportJobRepo.markFailedInTx(tx, jobId, 'unsupported_kind'),
+  // Single fail path for the FR-037 "no silent failure" invariant: guarded
+  // markFailed + log-on-mark-failure + log-on-lost-race + the `failed` metric.
+  // Used by every failure branch so the invariant can't drift asymmetrically
+  // (staff-review F3 — previously the gdpr-missing-subject branch skipped the
+  // mark_failed_failed log).
+  const failJob = async (errorCode: string): Promise<void> => {
+    const marked = await runInTenant(ctx, (tx) =>
+      deps.exportJobRepo.markFailedInTx(tx, jobId, errorCode),
     ).catch((markErr) => {
       logger.error(
         { errKind: errKind(markErr), kind, jobId, route: 'insights.process-export-job' },
@@ -132,23 +132,14 @@ export async function processExportJob(
       );
       return null;
     });
-    if (unsupportedMarked === false) {
+    if (marked === false) {
       logger.error(
         { kind, jobId, route: 'insights.process-export-job' },
         'insights.export_job.mark_failed_lost',
       );
     }
     insightsMetrics.exportJobProcessed(kind, 'failed', ctx.slug);
-    return err('unsupported_kind');
-  }
-
-  const startedMs = deps.clock.now().getTime();
-  const generatedAtIso = new Date(startedMs).toISOString();
-  // Deterministic per-job key (kind → extension). Computed up-front so the
-  // failure paths below can delete an orphaned artefact even when the build /
-  // upload partially succeeded (C2 — the TTL sweep only reaps ready|delivered,
-  // so a `failed` job's blob would otherwise be orphaned PII forever).
-  const blobKey = `exports/${ctx.slug}/${jobId}.${EXTENSION_BY_KIND[kind]}`;
+  };
 
   // Best-effort `data_export_failed` emit (GDPR only — FR-037; the directory
   // taxonomy has no failed event). Never throws into the worker loop.
@@ -167,6 +158,25 @@ export async function processExportJob(
       .catch(() => {});
   };
 
+  if (kind === 'audit_export') {
+    // Not handled by this worker yet. H3: log + guarded mark (via failJob) so a
+    // failing write can't throw out of the cron's per-job loop and mask the tick.
+    logger.error(
+      { kind, jobId, route: 'insights.process-export-job' },
+      'insights.export_job.unsupported_kind',
+    );
+    await failJob('unsupported_kind');
+    return err('unsupported_kind');
+  }
+
+  const startedMs = deps.clock.now().getTime();
+  const generatedAtIso = new Date(startedMs).toISOString();
+  // Deterministic per-job key (kind → extension). Computed up-front so the
+  // failure paths below can delete an orphaned artefact even when the build /
+  // upload partially succeeded (C2 — the TTL sweep only reaps ready|delivered,
+  // so a `failed` job's blob would otherwise be orphaned PII forever).
+  const blobKey = `exports/${ctx.slug}/${jobId}.${EXTENSION_BY_KIND[kind]}`;
+
   try {
     let built: { readonly bytes: Uint8Array; readonly contentType: string };
     let summary: string;
@@ -182,11 +192,8 @@ export async function processExportJob(
           { jobId, route: 'insights.process-export-job' },
           'insights.export_job.gdpr_missing_subject',
         );
-        await runInTenant(ctx, (tx) =>
-          deps.exportJobRepo.markFailedInTx(tx, jobId, 'member_not_found'),
-        ).catch(() => null);
+        await failJob('member_not_found');
         await emitGdprFailed('member_not_found');
-        insightsMetrics.exportJobProcessed(kind, 'failed', ctx.slug);
         return err('member_not_found');
       }
       const archive = await deps.gdprArchive.buildArchiveForMember(ctx, {
@@ -197,11 +204,8 @@ export async function processExportJob(
       if (!archive.ok) {
         // member_not_found (FR-032a: a truly-absent / cross-tenant subject) →
         // fail the job with a clear code (no silent failure, FR-037).
-        await runInTenant(ctx, (tx) =>
-          deps.exportJobRepo.markFailedInTx(tx, jobId, archive.error),
-        ).catch(() => null);
+        await failJob(archive.error);
         await emitGdprFailed(archive.error);
-        insightsMetrics.exportJobProcessed(kind, 'failed', ctx.slug);
         return err('member_not_found');
       }
       built = archive.value;
@@ -296,23 +300,8 @@ export async function processExportJob(
     // threw before upload — `delete` is idempotent).
     await deps.blob.delete(blobKey).catch(() => {});
     // H2: a FAILING failure-mark must be logged+metered, not silently swallowed.
-    const failMarked = await runInTenant(ctx, (tx) =>
-      deps.exportJobRepo.markFailedInTx(tx, jobId, 'build_failed'),
-    ).catch((markErr) => {
-      logger.error(
-        { errKind: errKind(markErr), kind, jobId, route: 'insights.process-export-job' },
-        'insights.export_job.mark_failed_failed',
-      );
-      return null;
-    });
-    if (failMarked === false) {
-      logger.error(
-        { kind, jobId, route: 'insights.process-export-job' },
-        'insights.export_job.mark_failed_lost',
-      );
-    }
+    await failJob('build_failed');
     await emitGdprFailed('build_failed');
-    insightsMetrics.exportJobProcessed(kind, 'failed', ctx.slug);
     return err('build_failed');
   }
 }

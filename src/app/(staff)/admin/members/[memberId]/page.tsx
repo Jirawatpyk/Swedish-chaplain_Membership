@@ -51,6 +51,7 @@ import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
+import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -809,7 +810,9 @@ export default async function MemberDetailPage({
             (GDPR export is an admin/DPO action; the read-only manager is
             excluded, mirroring requestDataExport). F9-flag-gated. */}
         {env.features.f9Dashboard && session.user.role === 'admin' && (
-          <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
+          <Suspense fallback={<MemberDataExportSkeleton />}>
+            <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
+          </Suspense>
         )}
 
     </DetailContainer>

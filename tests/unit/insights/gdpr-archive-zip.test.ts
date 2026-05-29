@@ -67,6 +67,13 @@ describe('buildGdprArchiveBytes', () => {
     expect(readme).toContain(MEMBER);
   });
 
+  it('renders the README in Swedish (FR-034 — SV is first-class)', () => {
+    const files = unzipSync(buildGdprArchiveBytes(data, { ...meta, requesterLocale: 'sv' }).bytes);
+    const readme = strFromU8(files['README.txt']!);
+    expect(readme).toContain('Export av dina uppgifter'); // SV README title
+    expect(readme).toContain(MEMBER);
+  });
+
   it('falls back to EN for an unknown locale', () => {
     const files = unzipSync(buildGdprArchiveBytes(data, { ...meta, requesterLocale: 'de' }).bytes);
     expect(strFromU8(files['README.txt']!)).toContain('Your data export');

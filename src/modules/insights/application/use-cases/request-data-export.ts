@@ -27,7 +27,8 @@
 import { runInTenant } from '@/lib/db';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { exportJobIdempotencyInput } from '../../domain/export-job';
+import type { Locale } from '@/i18n/config';
+import { exportJobIdempotencyInput, type ExportStatus } from '../../domain/export-job';
 import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ExportJobRepo } from '../ports/export-job-repo';
@@ -45,7 +46,7 @@ export interface RequestDataExportMeta {
   /** Resolved member id for a member session (null for staff). */
   readonly actorMemberId: string | null;
   /** Requester's session locale — persisted for the worker's README (FR-029). */
-  readonly requesterLocale: string;
+  readonly requesterLocale: Locale;
   readonly requestId: string;
 }
 
@@ -59,7 +60,7 @@ export type RequestDataExportError = 'forbidden';
 
 export interface RequestDataExportResult {
   readonly jobId: string;
-  readonly status: string;
+  readonly status: ExportStatus;
   /** false when a same-window duplicate returned the existing job. */
   readonly created: boolean;
 }

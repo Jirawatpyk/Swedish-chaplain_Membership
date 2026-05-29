@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { Download, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -52,6 +53,8 @@ export interface DataExportLabels {
   readonly colStatus: string;
   readonly colRequested: string;
   readonly caption: string;
+  /** Shown (+ button disabled) when an export is already requested/processing. */
+  readonly alreadyPending: string;
 }
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
@@ -81,6 +84,14 @@ export function DataExportPanel({
 }): React.JSX.Element {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
+  // Polite live-region message so screen-reader users hear the request result
+  // even if the sonner toast (rendered in a portal outside main) is missed (W1).
+  const [announcement, setAnnouncement] = React.useState('');
+
+  // An export already in flight (requested/processing) — disable the button so a
+  // member can't spawn duplicate jobs across idempotency windows (W4).
+  const hasPending = rows.some((r) => r.status === 'requested' || r.status === 'processing');
+  const disabled = pending || hasPending;
 
   async function requestExport(): Promise<void> {
     setPending(true);
@@ -92,12 +103,15 @@ export function DataExportPanel({
       });
       if (!res.ok) {
         toast.error(labels.errorTitle, { description: labels.errorBody });
+        setAnnouncement(labels.errorTitle);
         return;
       }
       toast.success(labels.requestedTitle, { description: labels.requestedBody });
+      setAnnouncement(`${labels.requestedTitle}. ${labels.requestedBody}`);
       router.refresh();
     } catch {
       toast.error(labels.errorTitle, { description: labels.errorBody });
+      setAnnouncement(labels.errorTitle);
     } finally {
       setPending(false);
     }
@@ -105,8 +119,8 @@ export function DataExportPanel({
 
   return (
     <div className="space-y-6">
-      <div>
-        <Button onClick={requestExport} disabled={pending} aria-busy={pending}>
+      <div className="space-y-2">
+        <Button onClick={requestExport} disabled={disabled} aria-busy={pending}>
           {pending ? (
             <>
               <Loader2 aria-hidden="true" className="size-4 animate-spin" />
@@ -116,6 +130,14 @@ export function DataExportPanel({
             labels.requestButton
           )}
         </Button>
+        {hasPending && !pending ? (
+          <p className="text-sm text-muted-foreground">{labels.alreadyPending}</p>
+        ) : null}
+      </div>
+
+      {/* SR-only live region — announces the request outcome (W1). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
       </div>
 
       <section aria-labelledby="data-export-recent-heading" className="space-y-3">
@@ -149,7 +171,8 @@ export function DataExportPanel({
                         <a
                           href={`${downloadUrlBase}/${row.jobId}/download`}
                           aria-label={`${labels.download} — ${row.requestedAt}`}
-                          className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                          // min-h-11 = 44px touch target on mobile (ux-standards § 9.1 / S4).
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'min-h-11')}
                         >
                           <Download aria-hidden="true" className="size-4" />
                           {labels.download}

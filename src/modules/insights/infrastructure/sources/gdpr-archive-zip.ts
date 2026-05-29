@@ -101,7 +101,7 @@ export function buildGdprArchiveBytes(
   };
   entries['manifest.json'] = jsonBytes(manifest);
 
-  // 3) Zip (STORE/DEFLATE; mtime pinned for container determinism).
+  // 3) Zip (fflate default DEFLATE; mtime pinned for container determinism).
   const bytes = zipSync(
     Object.fromEntries(
       Object.entries(entries).map(([path, content]) => [path, [content, { mtime: ZIP_MTIME }]]),

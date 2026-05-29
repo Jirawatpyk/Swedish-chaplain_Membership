@@ -4653,14 +4653,15 @@
     "statusExpired": "Expired",
     "statusFailed": "Failed",
     "download": "Download",
-    "expiresHint": "Download links expire after a short time for your security.",
+    "expiresHint": "Download links expire 1 hour after the archive is ready, for your security. Request a new export if a link has expired.",
     "empty": "You have not requested a data export yet.",
     "errorTitle": "Could not request export",
     "errorBody": "Something went wrong requesting your data export. Please try again.",
-    "downloadError": "This download link is no longer valid. Request a new export.",
     "colStatus": "Status",
     "colRequested": "Requested",
     "adminHeading": "Data export (GDPR)",
-    "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you."
+    "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you.",
+    "alreadyPending": "An export is already being prepared — see its status below.",
+    "open": "Go to data export"
   }
 }

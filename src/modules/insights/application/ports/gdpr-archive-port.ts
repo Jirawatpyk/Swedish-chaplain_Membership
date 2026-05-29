@@ -13,6 +13,7 @@
  */
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
+import type { Locale } from '@/i18n/config';
 
 export interface BuildGdprArchiveResult {
   readonly bytes: Uint8Array;
@@ -22,7 +23,7 @@ export interface BuildGdprArchiveResult {
 export interface BuildArchiveForMemberOpts {
   readonly subjectMemberId: string;
   /** Requester's locale for the README (EN fallback) — FR-029. */
-  readonly requesterLocale: string;
+  readonly requesterLocale: Locale;
   /** ISO-8601 UTC generation instant (README + manifest). */
   readonly generatedAtIso: string;
 }
