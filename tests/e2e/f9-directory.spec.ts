@@ -47,7 +47,7 @@ test.describe('F9 — member directory (US5) @f9', () => {
     await page.goto('/admin/directory');
 
     await expect(page.getByRole('heading', { name: 'Member directory', level: 1 })).toBeVisible();
-    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByRole('table', { name: /members and their directory/i })).toBeVisible();
     // Generate controls (FR-026/027).
     await expect(page.getByRole('button', { name: /generate e-book/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /export data \(json\)/i })).toBeVisible();
@@ -59,7 +59,7 @@ test.describe('F9 — member directory (US5) @f9', () => {
     await page.waitForURL(/q=a/, { timeout: 15_000 });
     // Re-renders without crashing — a results table or the empty state.
     await expect(
-      page.getByRole('table').or(page.getByText(/no members found/i)),
+      page.getByRole('table', { name: /members and their directory/i }).or(page.getByText(/no members found/i)),
     ).toBeVisible();
   });
 
@@ -67,16 +67,20 @@ test.describe('F9 — member directory (US5) @f9', () => {
     await signInAsAdmin(page);
     await page.goto('/admin/directory');
     await page.getByRole('button', { name: /generate e-book/i }).click();
-    // Queued confirmation (ux-standards § 5 toast). The async worker is
-    // operator-gated, so we only assert the enqueue acknowledgement here.
-    await expect(page.getByText(/queued|will be ready/i)).toBeVisible({ timeout: 15_000 });
+    // Queued confirmation (ux-standards § 5 toast). Scope to the sonner toaster
+    // region — the recent-exports table also renders "Queued" status badges once
+    // export jobs exist, which makes a bare getByText ambiguous (strict-mode).
+    // The async worker is operator-gated, so we only assert the enqueue ack here.
+    await expect(
+      page.locator('[data-sonner-toaster]').getByText(/queued|will be ready/i),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('manager sees the read-only directory + generate controls', async ({ page }) => {
     await signInAsManager(page);
     await page.goto('/admin/directory');
     await expect(page.getByRole('heading', { name: 'Member directory', level: 1 })).toBeVisible();
-    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByRole('table', { name: /members and their directory/i })).toBeVisible();
   });
 
   test('member is denied the directory (redirected off /admin/directory)', async ({ page }) => {
