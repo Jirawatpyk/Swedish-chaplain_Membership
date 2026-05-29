@@ -681,20 +681,31 @@ retry-storms.
 ### ⚠️ Ship-day operator gate — private Blob store (T101a)
 
 The export worker + download proxy store E-Book / GDPR artefacts via
-`put({ access: 'private' })`. The default Vercel Blob store is **public** and
-rejects private puts (`"Cannot use private access on a public store"`). Before
-flipping `FEATURE_F9_DASHBOARD` on in any environment that exercises exports:
+`put({ access: 'private' })`. A Vercel Blob store is **public XOR private**
+(chosen at store creation — the dashboard offers exactly one access mode). The
+existing `BLOB_READ_WRITE_TOKEN` store is **public** — it backs F4 invoice PDFs
+**and** F9 directory logos, all uploaded with `access:'public'` — so private
+export puts on it are rejected (`"Cannot use private access on a public store"`).
+A **second, dedicated private store** is therefore required. Before flipping
+`FEATURE_F9_DASHBOARD` on in any environment that exercises exports:
 
-1. Provision (or reconfigure) the linked Blob store with **private access**, or
-   add a dedicated private store and repoint `BLOB_READ_WRITE_TOKEN`.
-2. Set `EXPORT_DOWNLOAD_TOKEN_SECRET` (≥32 bytes; distinct from auth/unsubscribe).
-3. Smoke-test: generate a directory JSON on `/admin/directory` → wait for the
+1. **Vercel dashboard → Storage → Create** a new Blob store, choosing
+   **Private** access. (Or CLI: `vercel blob create-store <name> --access private`.)
+2. Copy its read/write token into **`BLOB_PRIVATE_READ_WRITE_TOKEN`** (Production
+   + Preview). Leave `BLOB_READ_WRITE_TOKEN` pointed at the existing public store
+   — F4 PDFs + F9 logos must stay public (they appear in published outputs).
+3. Set `EXPORT_DOWNLOAD_TOKEN_SECRET` (≥32 bytes; distinct from auth/unsubscribe).
+4. Smoke-test: generate a directory JSON on `/admin/directory` → wait for the
    `process-export-jobs` tick → download via the "Download" link (the staff
    prepare-and-redirect route mints a single-use token → private proxy streams).
 
-Worker/proxy/adapter code is correct + tested with an in-memory blob stub; **no
-code change** is needed — only the store provisioning. Member directory logos
-use the **public** store (they appear in published outputs) and are unaffected.
+**Code wiring (done — commit on `015-admin-dashboard`):** `private-blob-adapter.ts`
+reads `env.blob.privateReadWriteToken`, which is `BLOB_PRIVATE_READ_WRITE_TOKEN`
+falling back to `BLOB_READ_WRITE_TOKEN` when unset — so dev/test/dark-launch boot
+without a private store (exports use an in-memory stub in tests and are
+flag-gated in prod). The only ship-day action is **provisioning the private store
++ setting the two env vars**; no further code change. F4 invoice PDFs + F9 logos
+are untouched (still on the public store).
 
 ### Handler modules
 

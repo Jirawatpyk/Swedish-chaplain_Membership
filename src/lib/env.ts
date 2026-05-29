@@ -190,6 +190,19 @@ const schema = z.object({
   // ship-blocker: F4 cannot render/store/serve PDFs without it.
   BLOB_READ_WRITE_TOKEN: z.string().min(10),
 
+  // --- F9 Insights export (private Blob store) ------------------------------
+  // Read/write token for a SEPARATE, **private-access** Vercel Blob store used
+  // ONLY by `private-blob-adapter.ts` to persist F9 E-Book / GDPR export
+  // artefacts via `put({ access: 'private' })`. A Vercel Blob store is public
+  // XOR private (chosen at store-creation); the existing `BLOB_READ_WRITE_TOKEN`
+  // store is PUBLIC (it backs F4 invoice PDFs + F9 directory logos, all
+  // `access:'public'`), so private puts on it are rejected. Optional: when
+  // unset it falls back to `BLOB_READ_WRITE_TOKEN` so dev/test boot + the
+  // dark-launch path keep working (exports use an in-memory stub in tests and
+  // are flag-gated in prod). Ship-day operator MUST provision a private store
+  // and set this before flipping `FEATURE_F9_DASHBOARD` on (runbook T101a).
+  BLOB_PRIVATE_READ_WRITE_TOKEN: z.string().min(10).optional(),
+
   // Shared secret used by Vercel Cron to authenticate the auto-email
   // dispatcher endpoint (`/api/cron/auto-email-dispatch`). The route
   // handler compares this against the `Authorization: Bearer <secret>`
@@ -798,6 +811,12 @@ export const env = {
   // F4 Invoicing
   blob: {
     readWriteToken: raw.BLOB_READ_WRITE_TOKEN,
+    // F9 private-export store token. Falls back to the public read/write token
+    // when no dedicated private store is provisioned (dev/test/dark-launch);
+    // ship-day operator sets BLOB_PRIVATE_READ_WRITE_TOKEN to the private store
+    // before enabling exports (T101a). Only `private-blob-adapter.ts` reads it.
+    privateReadWriteToken:
+      raw.BLOB_PRIVATE_READ_WRITE_TOKEN ?? raw.BLOB_READ_WRITE_TOKEN,
   },
   cron: {
     secret: raw.CRON_SECRET,
