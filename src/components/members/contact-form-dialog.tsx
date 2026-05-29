@@ -48,6 +48,15 @@ import {
 // formatting before testing so "+66 81-234-5678" is accepted.
 const PHONE_RE = /^\+[1-9]\d{7,14}$/;
 
+// Language endonyms (shown in their own language) — full names so screen
+// readers announce "English" / "ภาษาไทย" / "Svenska" instead of spelling
+// out the "EN" / "TH" / "SV" abbreviations letter by letter.
+const LANG_LABELS: Record<'en' | 'th' | 'sv', string> = {
+  en: 'English',
+  th: 'ภาษาไทย',
+  sv: 'Svenska',
+};
+
 export type ContactInitial = {
   readonly contactId: string;
   readonly firstName: string;
@@ -256,6 +265,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               </Label>
               <Input
                 id="cf-first-name"
+                autoFocus
                 autoComplete="given-name"
                 maxLength={100}
                 aria-invalid={Boolean(errors.first_name)}
@@ -361,13 +371,16 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger id="cf-language" className="w-full">
                     <SelectValue>
-                      {(value: string | null) => (value ?? 'en').toUpperCase()}
+                      {(value: string | null) =>
+                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
+                        LANG_LABELS.en
+                      }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">EN</SelectItem>
-                    <SelectItem value="th">TH</SelectItem>
-                    <SelectItem value="sv">SV</SelectItem>
+                    <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
+                    <SelectItem value="th">{LANG_LABELS.th}</SelectItem>
+                    <SelectItem value="sv">{LANG_LABELS.sv}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

@@ -28,6 +28,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -110,6 +111,15 @@ export const memberFormSchema = z.object({
 });
 
 export type MemberFormValues = z.infer<typeof memberFormSchema>;
+
+// Language endonyms (shown in their own language) — full names so screen
+// readers announce "English" / "ภาษาไทย" / "Svenska" rather than spelling
+// out the "EN" / "TH" / "SV" abbreviations letter by letter (a11y).
+const LANG_LABELS: Record<'en' | 'th' | 'sv', string> = {
+  en: 'English',
+  th: 'ภาษาไทย',
+  sv: 'Svenska',
+};
 
 // --- Props -------------------------------------------------------------------
 
@@ -637,14 +647,15 @@ export function MemberForm({
                   >
                     <SelectValue>
                       {(value: string | null) =>
-                        (value ?? 'en').toUpperCase()
+                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
+                        LANG_LABELS.en
                       }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">EN</SelectItem>
-                    <SelectItem value="th">TH</SelectItem>
-                    <SelectItem value="sv">SV</SelectItem>
+                    <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
+                    <SelectItem value="th">{LANG_LABELS.th}</SelectItem>
+                    <SelectItem value="sv">{LANG_LABELS.sv}</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -685,6 +696,9 @@ export function MemberForm({
           </Button>
         )}
         <Button type="submit" disabled={submitting}>
+          {submitting && (
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+          )}
           {submitting ? submittingLabel : submitLabel}
         </Button>
       </div>

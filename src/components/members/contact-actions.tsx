@@ -139,7 +139,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel disabled={busy}>
+                <AlertDialogCancel disabled={busy} autoFocus>
                   {t('cancel')}
                 </AlertDialogCancel>
                 <AlertDialogAction
@@ -174,7 +174,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel disabled={busy}>
+                <AlertDialogCancel disabled={busy} autoFocus>
                   {t('cancel')}
                 </AlertDialogCancel>
                 <AlertDialogAction
@@ -184,7 +184,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
                   }}
                   disabled={busy}
                   aria-busy={busy}
-                  className={buttonVariants({ variant: 'destructive' })}
+                  variant="destructive"
                 >
                   {busy && (
                     <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
