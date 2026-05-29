@@ -301,6 +301,9 @@ describe('processExportJob — claim guards', () => {
       'failed',
       'test-tenant',
     );
+    // Lock the once-invariant (R2-4): a failure branch must meter exactly once
+    // (no double-emit via failJob + a stray sibling path).
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledTimes(1);
   });
 });
 

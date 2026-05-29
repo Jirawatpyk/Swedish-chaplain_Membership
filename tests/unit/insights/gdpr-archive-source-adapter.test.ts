@@ -134,4 +134,25 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
     expect(data).toBeNull();
   });
+
+  it('FAILS LOUD when the contacts read errors — never degrades to an empty archive (C2)', async () => {
+    // The headline C2 fix: a contacts DB error must throw (→ worker marks the job
+    // failed), NOT silently ship a hollow contacts.json + under-scoped audit subset.
+    listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+    contactListByMemberMock.mockResolvedValue({ ok: false, error: { code: 'repo.unexpected' } });
+    await expect(
+      gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER }),
+    ).rejects.toThrow(/contacts list failed/);
+  });
+
+  it('names a draft invoice PDF by invoiceId alone when it has no documentNumber (I3)', async () => {
+    listInvoicesByMemberMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [{ ...invoiceWithPdf(), documentNumber: null }], total: 1 },
+    });
+    downloadBytesMock.mockResolvedValue(new Uint8Array([1]));
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    // No leading dash / no documentNumber → just the unique invoiceId.
+    expect(data!.invoices[0]!.pdf!.filename).toBe('inv-1.pdf');
+  });
 });

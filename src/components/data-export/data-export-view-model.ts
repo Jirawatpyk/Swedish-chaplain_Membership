@@ -2,7 +2,7 @@
  * F9 US6 (staff-review F1) — shared view-model builders for `DataExportPanel`.
  *
  * The member self-service page and the admin on-behalf card render the SAME
- * panel from the SAME export-job rows + the SAME 12-key label set. Centralising
+ * panel from the SAME export-job rows + the SAME label set. Centralising
  * the row projection (status-label map + date formatting + downloadable flag)
  * and the label assembly here removes the drift hazard of two byte-identical
  * copies (add a label to one caller, forget the other).
