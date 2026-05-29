@@ -55,7 +55,12 @@ test.describe('F9 — member directory (US5) @f9', () => {
     // Keyword search (FR-024) commits to the URL (debounced).
     const search = page.getByRole('textbox', { name: /search directory/i });
     await expect(search).toBeVisible();
-    await search.fill('a');
+    // pressSequentially (real per-key events), NOT fill(): webkit + React can
+    // drop the synthetic onChange from a one-shot fill(), so the 300ms-debounced
+    // URL sync never fires (the input shows the value but ?q= never commits).
+    // Chromium/mobile-chrome tolerate fill(); webkit needs real keystrokes.
+    await search.click();
+    await search.pressSequentially('a');
     await page.waitForURL(/q=a/, { timeout: 15_000 });
     // Re-renders without crashing — a results table or the empty state.
     await expect(
