@@ -57,7 +57,9 @@ function isoOrNull(d: Date | string | null): string | null {
 function serialiseInvoiceRecord(inv: Invoice): Record<string, unknown> {
   return {
     invoiceId: String(inv.invoiceId),
-    documentNumber: inv.documentNumber === null ? null : String(inv.documentNumber),
+    // `documentNumber` is a DocumentNumber CLASS (no toString) — use `.raw` or it
+    // serialises to "[object Object]" (security-review F9-US6-03).
+    documentNumber: inv.documentNumber === null ? null : inv.documentNumber.raw,
     status: inv.status,
     fiscalYear: inv.fiscalYear === null ? null : Number(inv.fiscalYear),
     issueDate: inv.issueDate,
@@ -133,9 +135,12 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
             // `invoices/<filename>` is last-writer-wins — a collision would
             // silently drop a document the member is entitled to. invoiceId is
             // unique, so suffixing it guarantees one entry per invoice.
-            const base = inv.documentNumber ?? inv.invoiceId;
+            // `documentNumber.raw` (NOT the DocumentNumber object) — else the
+            // filename becomes "[object Object]-<id>.pdf" (security-review F9-US6-03).
             const filename =
-              inv.documentNumber !== null ? `${base}-${inv.invoiceId}.pdf` : `${inv.invoiceId}.pdf`;
+              inv.documentNumber !== null
+                ? `${inv.documentNumber.raw}-${inv.invoiceId}.pdf`
+                : `${inv.invoiceId}.pdf`;
             pdf = { filename, bytes };
           } catch (e) {
             logger.warn(

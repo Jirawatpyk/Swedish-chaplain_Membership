@@ -75,7 +75,9 @@ function baseMember() {
 function invoiceWithPdf() {
   return {
     invoiceId: 'inv-1',
-    documentNumber: 'INV-2026-0001',
+    // DocumentNumber is a class with a `.raw` string (NOT a plain string) — mock
+    // it faithfully so the `.raw` access path is exercised (F9-US6-03 guard).
+    documentNumber: { raw: 'INV-2026-0001' },
     status: 'issued',
     fiscalYear: 2026,
     issueDate: '2026-02-01',
@@ -124,9 +126,12 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
     expect(data!.invoices[0]!.pdf).not.toBeNull();
     // I3: filename disambiguated with invoiceId when a documentNumber is present
-    // (collision-safe zip entry key).
+    // (collision-safe zip entry key). F9-US6-03: uses documentNumber.raw, NOT the
+    // DocumentNumber object (would be "[object Object]-inv-1.pdf").
     expect(data!.invoices[0]!.pdf!.filename).toBe('INV-2026-0001-inv-1.pdf');
     expect(Array.from(data!.invoices[0]!.pdf!.bytes)).toEqual([0x25, 0x50, 0x44, 0x46]);
+    // invoices.json record serialises documentNumber via .raw (not [object Object]).
+    expect(data!.invoices[0]!.record.documentNumber).toBe('INV-2026-0001');
   });
 
   it('returns null when the subject member does not exist (→ member_not_found)', async () => {
