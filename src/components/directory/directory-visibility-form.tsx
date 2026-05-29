@@ -110,7 +110,17 @@ export function DirectoryVisibilityForm({
     <form onSubmit={onSubmit} className="space-y-6">
       <div className="space-y-1">
         <div className="flex items-center gap-3">
-          <Switch id="dir-listed" checked={listed} onCheckedChange={setListed} />
+          {/* aria-label in addition to the <Label>: the base-ui Switch renders
+              its own internal id, so htmlFor="dir-listed" doesn't reliably
+              associate → no accessible name (axe aria-toggle-field-name, WCAG
+              4.1.2). The explicit aria-label guarantees the SR name regardless,
+              matching the field-checkbox pattern below. */}
+          <Switch
+            id="dir-listed"
+            checked={listed}
+            onCheckedChange={setListed}
+            aria-label={t('listed')}
+          />
           <Label htmlFor="dir-listed">{t('listed')}</Label>
         </div>
         <p className="text-sm text-muted-foreground">{t('listedHint')}</p>
