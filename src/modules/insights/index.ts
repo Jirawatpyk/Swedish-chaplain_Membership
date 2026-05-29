@@ -211,6 +211,15 @@ export {
   type PrepareExportDownloadError,
   type PreparedDownload,
 } from './application/use-cases/download-export';
+// US6 — GDPR self-service / admin-on-behalf data export request.
+export {
+  requestDataExport,
+  type RequestDataExportActorRole,
+  type RequestDataExportError,
+  type RequestDataExportInput,
+  type RequestDataExportMeta,
+  type RequestDataExportResult,
+} from './application/use-cases/request-data-export';
 export {
   setDirectoryLogo,
   removeDirectoryLogo,
@@ -238,5 +247,7 @@ export {
   makeGenerateDirectoryExportDeps,
   makePrepareExportDownloadDeps,
   makeDownloadExportDeps,
+  makeRequestDataExportDeps,
+  listMemberDataExports,
   systemClock,
 } from './infrastructure/insights-deps';

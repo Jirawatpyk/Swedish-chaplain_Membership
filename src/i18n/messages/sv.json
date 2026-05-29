@@ -4619,5 +4619,49 @@
       "body": "Vid {elapsed}% av året har du använt {consumed}% av dina förmåner. Få ut mesta möjliga av ditt medlemskap.",
       "action": "Använd en förmån"
     }
+  },
+  "gdprExport": {
+    "readme": {
+      "title": "Export av dina uppgifter",
+      "intro": "Detta arkiv innehåller en kopia av dina personuppgifter som {tenant} har lagrat, genererat {generatedAt}. Det tillhandahålls för att stödja din rätt till dataportabilitet enligt GDPR artikel 20 och Thailands PDPA.",
+      "subjectLine": "Registrerad (medlems-id): {memberId}",
+      "filesHeading": "Vad arkivet innehåller",
+      "files": {
+        "profile": "profile.json — uppgifter om din organisations-/medlemsprofil.",
+        "contacts": "contacts.json — kontaktpersonerna kopplade till ditt medlemskap.",
+        "invoices": "invoices.json — dina fakturor (nummer, datum, belopp, status). PDF-dokumenten finns i mappen invoices/.",
+        "events": "events.json — evenemang du har deltagit i.",
+        "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
+        "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
+        "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
+      },
+      "privacyNote": "För din säkerhet kan detta arkiv innehålla personuppgifter. Förvara det säkert och radera det när du inte längre behöver det."
+    }
+  },
+  "dataExport": {
+    "title": "Exportera mina uppgifter",
+    "subtitle": "Ladda ner en kopia av dina personuppgifter",
+    "description": "Begär ett nedladdningsbart arkiv med din profil, kontakter, fakturor, evenemang, utskick och de aktivitetsloggshändelser som rör dig. Det kan ta några minuter att förbereda arkivet; du kan ladda ner det från denna sida när det är klart.",
+    "requestButton": "Begär export av mina uppgifter",
+    "requesting": "Begär…",
+    "requestedTitle": "Export begärd",
+    "requestedBody": "Vi förbereder din dataexport. Den här sidan visar en nedladdningslänk när den är klar (vanligtvis inom några minuter).",
+    "statusHeading": "Senaste begäranden",
+    "statusPending": "Förbereder",
+    "statusReady": "Klar att ladda ner",
+    "statusDelivered": "Nedladdad",
+    "statusExpired": "Utgången",
+    "statusFailed": "Misslyckades",
+    "download": "Ladda ner",
+    "requestedAt": "Begärd {at}",
+    "expiresHint": "Nedladdningslänkar upphör att gälla efter en kort tid för din säkerhet.",
+    "empty": "Du har inte begärt någon dataexport ännu.",
+    "errorTitle": "Kunde inte begära export",
+    "errorBody": "Något gick fel när din dataexport begärdes. Försök igen.",
+    "downloadError": "Den här nedladdningslänken är inte längre giltig. Begär en ny export.",
+    "colStatus": "Status",
+    "colRequested": "Begärd",
+    "adminHeading": "Dataexport (GDPR)",
+    "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig."
   }
 }

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { headers } from 'next/headers';
@@ -49,6 +50,7 @@ import { ArchiveMemberButton } from '@/components/members/archive-member-button'
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
+import { MemberDataExportSection } from './_components/member-data-export-section';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -800,6 +802,13 @@ export default async function MemberDetailPage({
             actorRole={session.user.role as 'admin' | 'manager' | 'member'}
           />
         </Suspense>
+
+        {/* F9 US6 (FR-031) — admin on-behalf GDPR data export. Admin-only
+            (GDPR export is an admin/DPO action; the read-only manager is
+            excluded, mirroring requestDataExport). F9-flag-gated. */}
+        {env.features.f9Dashboard && session.user.role === 'admin' && (
+          <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
+        )}
 
     </DetailContainer>
   );

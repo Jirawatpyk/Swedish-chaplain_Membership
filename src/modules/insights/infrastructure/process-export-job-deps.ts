@@ -12,6 +12,7 @@ import { insightsAuditAdapter } from './audit/insights-audit-adapter';
 import { makeDrizzleDirectoryRepo } from './repos/drizzle-directory-repo';
 import { makeDrizzleExportJobRepo } from './repos/drizzle-export-job-repo';
 import { directoryArtefactAdapter } from './directory-artefact-adapter';
+import { makeGdprArchiveAdapter } from './gdpr-archive-adapter';
 import { privateBlobAdapter } from './blob/private-blob-adapter';
 import type { ProcessExportJobDeps } from '../application/use-cases/process-export-job';
 
@@ -26,6 +27,9 @@ export function makeProcessExportJobDeps(tenantId: string): ProcessExportJobDeps
     exportJobRepo: makeDrizzleExportJobRepo(tenantId),
     directoryRepo: makeDrizzleDirectoryRepo(tenantId),
     artefact: directoryArtefactAdapter,
+    // US6 — GDPR archive builder (gather + zip). Heavy (fflate + source-module
+    // barrels); kept off the page-imported barrel, only the cron pulls it.
+    gdprArchive: makeGdprArchiveAdapter(TENANT_DISPLAY_NAME),
     blob: privateBlobAdapter,
     audit: insightsAuditAdapter,
     clock: systemClock,

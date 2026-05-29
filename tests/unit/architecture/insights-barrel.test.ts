@@ -54,7 +54,16 @@ const FORBIDDEN_PATH_PATTERNS: readonly RegExp[] = [
  * that is impossible add a `${file}::${importPath}` key here with a one-line
  * rationale (matching the broadcasts-barrel deferral convention).
  */
-const KNOWN_BACKLOG: ReadonlySet<string> = new Set<string>([]);
+const KNOWN_BACKLOG: ReadonlySet<string> = new Set<string>([
+  // Deliberate composition-root deep imports that MUST NOT be re-exported from
+  // the barrel: doing so would pull a heavy dependency (`@react-pdf/renderer`,
+  // `sharp`, `fflate`) into every page bundle that imports `@/modules/insights`
+  // (`check:bundle-budgets`). These factories are documented as cron/route-only
+  // composition roots (`process-export-job-deps.ts`, `set-directory-logo-deps.ts`).
+  'src/app/api/cron/insights/process-export-jobs/route.ts::@/modules/insights/infrastructure/process-export-job-deps',
+  'src/app/api/cron/insights/process-export-jobs/route.ts::@/modules/insights/infrastructure/repos/drizzle-export-job-repo',
+  'src/app/api/portal/directory/logo/route.ts::@/modules/insights/infrastructure/set-directory-logo-deps',
+]);
 
 async function* walkTs(dir: string): AsyncGenerator<string> {
   let entries: string[];

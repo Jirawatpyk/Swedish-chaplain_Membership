@@ -64,9 +64,10 @@ function job(kind: ExportKind, status: ExportJobRecord['status'] = 'requested'):
     id: JOB_ID,
     tenantId: 'test-tenant',
     kind,
-    subjectMemberId: null,
+    subjectMemberId: kind === 'gdpr_member_archive' ? 'mem-1' : null,
     requestedBy: 'u-1',
     requestedForPeriod: null,
+    requesterLocale: kind === 'gdpr_member_archive' ? 'en' : null,
     status,
     idempotencyKey: 'k',
     blobKey: null,
@@ -84,6 +85,7 @@ interface Mocks {
   blob: Record<string, ReturnType<typeof vi.fn>>;
   audit: Record<string, ReturnType<typeof vi.fn>>;
   artefact: Record<string, ReturnType<typeof vi.fn>>;
+  gdprArchive: Record<string, ReturnType<typeof vi.fn>>;
 }
 
 function makeMocks(opts: {
@@ -93,6 +95,7 @@ function makeMocks(opts: {
   buildThrows?: boolean;
   markFailedThrows?: boolean;
   markFailedReturnsFalse?: boolean;
+  gdprNotFound?: boolean;
 }): Mocks {
   const exportJobRepo = {
     acquireJobLockInTx: vi.fn().mockResolvedValue(undefined),
@@ -108,7 +111,10 @@ function makeMocks(opts: {
     delete: vi.fn().mockResolvedValue(undefined),
     download: vi.fn(),
   };
-  const audit = { recordInTx: vi.fn().mockResolvedValue(undefined), record: vi.fn() };
+  const audit = {
+    recordInTx: vi.fn().mockResolvedValue(undefined),
+    record: vi.fn().mockResolvedValue(undefined),
+  };
   const artefact = {
     buildJson: opts.buildThrows
       ? vi.fn().mockRejectedValue(new Error('render failed'))
@@ -120,17 +126,28 @@ function makeMocks(opts: {
     buildEbookPdf: vi.fn(),
   };
   const directoryRepo = { listPublishedInTx: vi.fn().mockResolvedValue([]) };
+  const gdprArchive = {
+    buildArchiveForMember: opts.gdprNotFound
+      ? vi.fn().mockResolvedValue({ ok: false, error: 'member_not_found' })
+      : opts.buildThrows
+        ? vi.fn().mockRejectedValue(new Error('gather failed'))
+        : vi.fn().mockResolvedValue({
+            ok: true,
+            value: { bytes: new Uint8Array([0x50, 0x4b]), contentType: 'application/zip' },
+          }),
+  };
   const deps = {
     exportJobRepo,
     directoryRepo,
     artefact,
+    gdprArchive,
     blob,
     audit,
     clock: { now: () => new Date() },
     tenantName: 'SweCham',
     tenantDefaultLocale: 'en',
   } as unknown as ProcessExportJobDeps;
-  return { deps, exportJobRepo, blob, audit, artefact };
+  return { deps, exportJobRepo, blob, audit, artefact, gdprArchive };
 }
 
 describe('processExportJob — claim guards', () => {
@@ -164,8 +181,8 @@ describe('processExportJob — claim guards', () => {
     expect(artefact.buildJson).not.toHaveBeenCalled(); // never built on a lost claim
   });
 
-  it('unsupported_kind → failed (Gap F)', async () => {
-    const { deps, exportJobRepo } = makeMocks({ jobRecord: job('gdpr_member_archive') });
+  it('unsupported_kind → failed (Gap F) — audit_export is not handled here', async () => {
+    const { deps, exportJobRepo } = makeMocks({ jobRecord: job('audit_export') });
     const r = await processExportJob(JOB_ID, ctx, deps);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('unsupported_kind');
@@ -175,7 +192,7 @@ describe('processExportJob — claim guards', () => {
       'unsupported_kind',
     );
     expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
-      'gdpr_member_archive',
+      'audit_export',
       'failed',
       'test-tenant',
     );
@@ -183,7 +200,7 @@ describe('processExportJob — claim guards', () => {
 
   it('unsupported_kind: a failing markFailed is swallowed (logged), not rethrown', async () => {
     const { deps } = makeMocks({
-      jobRecord: job('gdpr_member_archive'),
+      jobRecord: job('audit_export'),
       markFailedThrows: true,
     });
     // Mirrors H2 for the unsupported-kind branch: the guarded mark may throw, but
@@ -191,6 +208,62 @@ describe('processExportJob — claim guards', () => {
     const r = await processExportJob(JOB_ID, ctx, deps);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('unsupported_kind');
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'audit_export',
+      'failed',
+      'test-tenant',
+    );
+  });
+
+  it('gdpr_member_archive → ready: builds, uploads zip, emits data_export_generated', async () => {
+    const { deps, exportJobRepo, blob, audit, gdprArchive } = makeMocks({
+      jobRecord: job('gdpr_member_archive'),
+    });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(true);
+    expect(gdprArchive.buildArchiveForMember).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ subjectMemberId: 'mem-1', requesterLocale: 'en' }),
+    );
+    // zip uploaded under a .zip key.
+    expect(blob.putPrivate).toHaveBeenCalledWith(
+      expect.objectContaining({ contentType: 'application/zip' }),
+    );
+    const putArgs = blob.putPrivate!.mock.calls[0]![0] as { key: string };
+    expect(putArgs.key).toContain('.zip');
+    // markReady + the data_export_generated audit event.
+    expect(exportJobRepo.markReadyInTx).toHaveBeenCalled();
+    const event = audit.recordInTx!.mock.calls[0]![1] as {
+      eventType: string;
+      payload: { subject_member_id: string };
+    };
+    expect(event.eventType).toBe('data_export_generated');
+    expect(event.payload.subject_member_id).toBe('mem-1');
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'gdpr_member_archive',
+      'ok',
+      'test-tenant',
+    );
+  });
+
+  it('gdpr_member_archive: member_not_found → failed + data_export_failed, no upload', async () => {
+    const { deps, exportJobRepo, blob, audit } = makeMocks({
+      jobRecord: job('gdpr_member_archive'),
+      gdprNotFound: true,
+    });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('member_not_found');
+    expect(blob.putPrivate).not.toHaveBeenCalled();
+    expect(exportJobRepo.markFailedInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      JOB_ID,
+      'member_not_found',
+    );
+    const failedEvent = audit.record!.mock.calls.find(
+      (c) => (c[0] as { eventType?: string }).eventType === 'data_export_failed',
+    );
+    expect(failedEvent).toBeDefined();
     expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
       'gdpr_member_archive',
       'failed',

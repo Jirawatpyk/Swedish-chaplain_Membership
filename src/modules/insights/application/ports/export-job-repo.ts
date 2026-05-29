@@ -26,6 +26,8 @@ export interface ExportJobRecord {
   readonly subjectMemberId: string | null;
   readonly requestedBy: string;
   readonly requestedForPeriod: string | null;
+  /** FR-029 — requester's locale for the GDPR README (null for non-GDPR kinds). */
+  readonly requesterLocale: string | null;
   readonly status: ExportStatus;
   readonly idempotencyKey: string;
   readonly blobKey: string | null;
@@ -41,6 +43,8 @@ export interface CreateExportJobInput {
   readonly subjectMemberId: string | null;
   readonly requestedBy: string;
   readonly requestedForPeriod: string | null;
+  /** FR-029 — requester locale for the GDPR README (null for non-GDPR kinds). */
+  readonly requesterLocale: string | null;
   readonly idempotencyKey: string;
 }
 
@@ -75,6 +79,17 @@ export interface ExportJobRepo {
   listRecent(
     ctx: TenantContext,
     kinds: readonly ExportKind[],
+    limit: number,
+  ): Promise<readonly ExportJobRecord[]>;
+
+  /**
+   * Recent jobs of one kind for a single subject member, newest first — for the
+   * member's GDPR data-export portal page (US6). Tenant + subject scoped.
+   */
+  listRecentForSubject(
+    ctx: TenantContext,
+    subjectMemberId: string,
+    kind: ExportKind,
     limit: number,
   ): Promise<readonly ExportJobRecord[]>;
 

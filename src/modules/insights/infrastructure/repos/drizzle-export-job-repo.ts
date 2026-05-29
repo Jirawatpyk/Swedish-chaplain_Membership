@@ -28,6 +28,7 @@ function toRecord(row: ExportJobRow): ExportJobRecord {
     subjectMemberId: row.subjectMemberId,
     requestedBy: row.requestedBy,
     requestedForPeriod: row.requestedForPeriod,
+    requesterLocale: row.requesterLocale,
     status: row.status,
     idempotencyKey: row.idempotencyKey,
     blobKey: row.blobKey,
@@ -50,6 +51,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           subjectMemberId: input.subjectMemberId,
           requestedBy: input.requestedBy,
           requestedForPeriod: input.requestedForPeriod,
+          requesterLocale: input.requesterLocale,
           idempotencyKey: input.idempotencyKey,
           status: 'requested',
         })
@@ -114,6 +116,24 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           .select()
           .from(exportJobs)
           .where(inArray(exportJobs.kind, [...kinds]))
+          .orderBy(desc(exportJobs.createdAt))
+          .limit(limit);
+        return rows.map(toRecord);
+      });
+    },
+
+    async listRecentForSubject(ctx, subjectMemberId, kind, limit) {
+      if (!UUID_RE.test(subjectMemberId)) return [];
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(exportJobs)
+          .where(
+            and(
+              eq(exportJobs.subjectMemberId, subjectMemberId),
+              eq(exportJobs.kind, kind),
+            ),
+          )
           .orderBy(desc(exportJobs.createdAt))
           .limit(limit);
         return rows.map(toRecord);

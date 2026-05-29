@@ -44,6 +44,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
       subjectMemberId: null,
       requestedBy: requester,
       requestedForPeriod: '2026',
+      requesterLocale: null,
       idempotencyKey: idem('2026'),
     };
     const first = await runInTenant(tenant.ctx, (tx) => repo().createOrGetInTx(tx, input));
@@ -62,6 +63,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
         subjectMemberId: null,
         requestedBy: requester,
         requestedForPeriod: 'json-2026',
+        requesterLocale: null,
         idempotencyKey: idem('json-2026'),
       }),
     );
@@ -105,6 +107,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
         subjectMemberId: null,
         requestedBy: requester,
         requestedForPeriod: 'sweep-2026',
+        requesterLocale: null,
         idempotencyKey: idem('sweep-2026'),
       }),
     );
@@ -137,6 +140,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
         subjectMemberId: null,
         requestedBy: requester,
         requestedForPeriod: 'fail-2026',
+        requesterLocale: null,
         idempotencyKey: idem('fail-2026'),
       }),
     );
@@ -155,6 +159,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
         subjectMemberId: null,
         requestedBy: requester,
         requestedForPeriod: 'stuck-2026',
+        requesterLocale: null,
         idempotencyKey: idem('stuck-2026'),
       }),
     );

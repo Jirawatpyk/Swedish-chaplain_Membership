@@ -206,6 +206,12 @@ export {
   type AuditQueryReadRow,
 } from './application/audit-query-read';
 export { auditQueryReadAdapter } from './infrastructure/db/audit-query-repo';
+// F9 US6 — bounded GDPR audit-subset reader (member-performed ∪ member-targeted).
+export {
+  type GdprAuditSubsetReadInput,
+  type GdprAuditSubsetReadPort,
+} from './application/gdpr-audit-subset-read';
+export { gdprAuditSubsetReadAdapter } from './infrastructure/db/gdpr-audit-subset-repo';
 export {
   resolveActorIdentities,
   type ActorIdentity,

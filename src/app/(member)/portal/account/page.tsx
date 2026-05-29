@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import {
   Card,
@@ -8,6 +9,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+import { env } from '@/lib/env';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 import { FormContainer } from '@/components/layout';
@@ -35,6 +38,7 @@ export default async function MemberAccountPage() {
   const t = await getTranslations('auth.changePassword');
   const tLocale = await getTranslations('portal.preferredLocale');
   const tShell = await getTranslations('shell.roleBadge');
+  const tExport = await getTranslations('dataExport');
 
   // SSR-seed PreferredLocaleForm to eliminate the client-side
   // GET-on-mount waterfall (was causing in-card Skeleton flash on
@@ -98,6 +102,23 @@ export default async function MemberAccountPage() {
           <PreferredLocaleForm initialValue={initialLocale} />
         </CardContent>
       </Card>
+
+      {env.features.f9Dashboard ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{tExport('title')}</CardTitle>
+            <CardDescription>{tExport('subtitle')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/portal/account/data-export"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              {tExport('title')}
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
     </FormContainer>
   );
 }

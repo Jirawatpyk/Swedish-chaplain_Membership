@@ -67,6 +67,9 @@ async function enqueueDirectoryExport(
       subjectMemberId: null,
       requestedBy: meta.actorUserId,
       requestedForPeriod: period,
+      // Directory artefacts have no requester-locale README (FR-026 uses the
+      // tenant default locale); only GDPR archives carry a requester locale.
+      requesterLocale: null,
       idempotencyKey,
     }),
   );

@@ -130,6 +130,9 @@ export const exportJobs = pgTable(
     subjectMemberId: uuid('subject_member_id'),
     requestedBy: uuid('requested_by').notNull(),
     requestedForPeriod: text('requested_for_period'),
+    // FR-029 (US6) — requester's locale captured at request time so the async
+    // worker renders the GDPR README in it (EN fallback). Null for non-GDPR kinds.
+    requesterLocale: text('requester_locale'),
     status: exportStatusEnum('status').notNull().default('requested'),
     idempotencyKey: text('idempotency_key').notNull(),
     blobKey: text('blob_key'),

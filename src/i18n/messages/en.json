@@ -4619,5 +4619,49 @@
       "body": "At {elapsed}% of the year you've used {consumed}% of your benefits. Make the most of your membership.",
       "action": "Use a benefit"
     }
+  },
+  "gdprExport": {
+    "readme": {
+      "title": "Your data export",
+      "intro": "This archive contains a copy of your personal data held by {tenant}, generated on {generatedAt}. It is provided to support your data-portability rights under GDPR Article 20 and Thailand PDPA.",
+      "subjectLine": "Data subject (member id): {memberId}",
+      "filesHeading": "What is in this archive",
+      "files": {
+        "profile": "profile.json — your organisation/member profile details.",
+        "contacts": "contacts.json — the contact people linked to your membership.",
+        "invoices": "invoices.json — your invoices (numbers, dates, amounts, status). The PDF documents are in the invoices/ folder.",
+        "events": "events.json — events you attended.",
+        "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
+        "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
+        "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
+      },
+      "privacyNote": "For your protection this archive may contain personal information. Store it securely and delete it when you no longer need it."
+    }
+  },
+  "dataExport": {
+    "title": "Export my data",
+    "subtitle": "Download a copy of your personal data",
+    "description": "Request a downloadable archive of your profile, contacts, invoices, events, broadcasts, and the activity-log events relating to you. Preparing the archive may take a few minutes; you can download it from this page when it is ready.",
+    "requestButton": "Request my data export",
+    "requesting": "Requesting…",
+    "requestedTitle": "Export requested",
+    "requestedBody": "We are preparing your data export. This page will show a download link when it is ready (usually within a few minutes).",
+    "statusHeading": "Recent requests",
+    "statusPending": "Preparing",
+    "statusReady": "Ready to download",
+    "statusDelivered": "Downloaded",
+    "statusExpired": "Expired",
+    "statusFailed": "Failed",
+    "download": "Download",
+    "requestedAt": "Requested {at}",
+    "expiresHint": "Download links expire after a short time for your security.",
+    "empty": "You have not requested a data export yet.",
+    "errorTitle": "Could not request export",
+    "errorBody": "Something went wrong requesting your data export. Please try again.",
+    "downloadError": "This download link is no longer valid. Request a new export.",
+    "colStatus": "Status",
+    "colRequested": "Requested",
+    "adminHeading": "Data export (GDPR)",
+    "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you."
   }
 }

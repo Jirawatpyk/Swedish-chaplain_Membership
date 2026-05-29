@@ -45,6 +45,9 @@ import type {
   DownloadExportDeps,
   PrepareExportDownloadDeps,
 } from '../application/use-cases/download-export';
+import type { RequestDataExportDeps } from '../application/use-cases/request-data-export';
+import type { ExportJobRecord } from '../application/ports/export-job-repo';
+import type { TenantContext } from '@/modules/tenants';
 
 /** Shared wall-clock port impl (injected so use-cases stay deterministic in tests). */
 export const systemClock = {
@@ -230,4 +233,31 @@ export function makeDownloadExportDeps(tenantId: string): DownloadExportDeps {
     audit: insightsAuditAdapter,
     clock: systemClock,
   };
+}
+
+/** US6 (T089) — `requestDataExport` enqueue deps (light; no archive build). */
+export function makeRequestDataExportDeps(tenantId: string): RequestDataExportDeps {
+  return {
+    exportJobRepo: makeDrizzleExportJobRepo(tenantId),
+    audit: insightsAuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * US6 (T093) — recent GDPR export jobs for a member's data-export portal page.
+ * Tenant + subject scoped (RLS); newest first. A page helper rather than a
+ * use-case (read-only, no policy beyond the page's own session → member resolve).
+ */
+export function listMemberDataExports(
+  tenant: TenantContext,
+  subjectMemberId: string,
+  limit = 5,
+): Promise<readonly ExportJobRecord[]> {
+  return makeDrizzleExportJobRepo(tenant.slug).listRecentForSubject(
+    tenant,
+    subjectMemberId,
+    'gdpr_member_archive',
+    limit,
+  );
 }
