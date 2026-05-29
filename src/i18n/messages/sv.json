@@ -1129,6 +1129,7 @@
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för Thai Alumni-planen",
+          "phoneError": "Använd internationellt format, t.ex. +66812345678",
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
           "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
@@ -1171,7 +1172,10 @@
           "notFound": "Medlem hittades inte.",
           "validation": "Rätta markerade fält.",
           "contactNotFound": "Kontakt hittades inte.",
-          "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först."
+          "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först.",
+          "emailChangeNotSupported": "E-postadressen kan endast ändras för kontakter som är kopplade till ett portalkonto. Bjud in dem till portalen först och ändra sedan e-postadressen.",
+          "emailTaken": "E-postadressen används redan.",
+          "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678."
         }
       },
       "contactForm": {

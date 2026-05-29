@@ -48,6 +48,7 @@ type Props = {
   readonly member: MemberInitialValues;
   readonly plans: readonly PlanOption[];
   readonly primaryContact: {
+    readonly contactId: string;
     readonly firstName: string;
     readonly lastName: string;
     readonly email: string;
@@ -79,6 +80,58 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       },
       body: JSON.stringify(body),
     });
+  };
+
+  /**
+   * PATCH the member's primary contact. The edit form exposes the primary
+   * contact's name / phone / role / language / email, but those edits used
+   * to be silently dropped — `fieldPayload` / `planPayload` only ever sent
+   * member-company + plan fields to `PATCH /api/members/[memberId]`, and
+   * `updateMemberSchema` (`.strict()`) carries no contact fields. The
+   * contact endpoint + `updateContactFields` use case already exist; this
+   * wires the form to actually call them. Each call gets a fresh
+   * idempotency key.
+   */
+  const patchContact = async (
+    body: Record<string, unknown>,
+  ): Promise<Response> => {
+    idemKeyRef.current = uuid();
+    return fetch(
+      `/api/members/${member.memberId}/contacts/${primaryContact.contactId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idemKeyRef.current,
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  };
+
+  /** Returns true on success; otherwise shows a localised toast. */
+  const handleContactResponse = async (res: Response): Promise<boolean> => {
+    if (res.ok) return true;
+    const body = await res.json().catch(() => ({}));
+    const code = body?.error?.code;
+    if (res.status === 409 && code === 'not_supported') {
+      toast.error(t('errors.emailChangeNotSupported'));
+    } else if (res.status === 409 && code === 'conflict') {
+      toast.error(t('errors.emailTaken'));
+    } else if (res.status === 404) {
+      toast.error(t('errors.contactNotFound'));
+    } else if (
+      res.status === 400 &&
+      code === 'validation_error' &&
+      body?.error?.details?.type === 'invalid_phone'
+    ) {
+      toast.error(t('errors.invalidPhone'));
+    } else if (res.status === 400) {
+      toast.error(t('errors.validation'));
+    } else {
+      toast.error(t('errors.generic'));
+    }
+    return false;
   };
 
   const handleSuccess = () => {
@@ -143,6 +196,46 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
   });
 
+  /**
+   * Non-email primary-contact patch — only the fields that actually
+   * changed. Sending the full set would needlessly re-validate untouched
+   * fields server-side (e.g. editing just the role would re-run the
+   * strict E.164 phone check on the unchanged phone).
+   */
+  const contactFieldPayload = (
+    values: MemberFormValues,
+  ): Record<string, unknown> => {
+    const c = values.primary_contact;
+    const body: Record<string, unknown> = {};
+    if (c.first_name.trim() !== primaryContact.firstName)
+      body.first_name = c.first_name.trim();
+    if (c.last_name.trim() !== primaryContact.lastName)
+      body.last_name = c.last_name.trim();
+    if ((c.phone?.trim() || null) !== (primaryContact.phone ?? null))
+      body.phone = c.phone?.trim() || null;
+    if ((c.role_title?.trim() || null) !== (primaryContact.roleTitle ?? null))
+      body.role_title = c.role_title?.trim() || null;
+    if (c.preferred_language !== primaryContact.preferredLanguage)
+      body.preferred_language = c.preferred_language;
+    return body;
+  };
+
+  /** True when any non-email primary-contact field changed. */
+  const contactFieldsChanged = (values: MemberFormValues): boolean => {
+    const c = values.primary_contact;
+    return (
+      c.first_name.trim() !== primaryContact.firstName ||
+      c.last_name.trim() !== primaryContact.lastName ||
+      (c.phone?.trim() || null) !== (primaryContact.phone ?? null) ||
+      (c.role_title?.trim() || null) !== (primaryContact.roleTitle ?? null) ||
+      c.preferred_language !== primaryContact.preferredLanguage
+    );
+  };
+
+  /** True when the primary-contact email changed (constrained server-side). */
+  const contactEmailChanged = (values: MemberFormValues): boolean =>
+    values.primary_contact.email.trim() !== primaryContact.email;
+
   const planPayload = (
     values: MemberFormValues,
     extras: {
@@ -166,26 +259,52 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     lastValuesRef.current = values;
     setSubmitting(true);
     try {
-      if (planChanged(values)) {
-        // Plan change is a SEPARATE request from field updates. Field
-        // edits first (if any), then plan change. The idempotency layer
-        // handles each with its own key.
-        const fieldChanged = hasFieldDiff(values, member);
-        if (fieldChanged) {
-          idemKeyRef.current = uuid();
-          const fieldRes = await patch(fieldPayload(values));
-          if (!fieldRes.ok) {
-            await handleResponse(fieldRes);
-            return;
-          }
+      // Each mutation is a SEPARATE request with its own idempotency key.
+      // Order: member-company fields → contact fields → contact email →
+      // plan change LAST (plan change may pop bundle/override dialogs that
+      // re-submit only the plan payload, so the other edits must already
+      // be persisted by then).
+
+      // 1. Member-company field updates.
+      if (hasFieldDiff(values, member)) {
+        idemKeyRef.current = uuid();
+        const fieldRes = await patch(fieldPayload(values));
+        if (!fieldRes.ok) {
+          await handleResponse(fieldRes);
+          return;
         }
+      }
+
+      // 2. Primary-contact non-email fields (name / phone / role /
+      //    language). Previously dropped — the form rendered these inputs
+      //    but never sent them anywhere.
+      if (contactFieldsChanged(values)) {
+        const res = await patchContact(contactFieldPayload(values));
+        if (!(await handleContactResponse(res))) return;
+      }
+
+      // 3. Primary-contact email change — constrained path (succeeds only
+      //    when the contact is linked to a portal user; otherwise 409
+      //    not_supported, surfaced via handleContactResponse).
+      if (contactEmailChanged(values)) {
+        const res = await patchContact({
+          email: values.primary_contact.email.trim(),
+          locale: values.primary_contact.preferred_language,
+        });
+        if (!(await handleContactResponse(res))) return;
+      }
+
+      // 4. Plan change last.
+      if (planChanged(values)) {
         idemKeyRef.current = uuid();
         const res = await patch(planPayload(values));
         await handleResponse(res);
-      } else {
-        const res = await patch(fieldPayload(values));
-        await handleResponse(res);
+        return;
       }
+
+      // All non-plan mutations succeeded (or nothing changed) → toast +
+      // redirect to the detail page.
+      handleSuccess();
     } finally {
       setSubmitting(false);
     }

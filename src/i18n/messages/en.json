@@ -1129,6 +1129,7 @@
           "preferredLanguage": "Preferred language",
           "dateOfBirth": "Date of birth",
           "dateOfBirthHint": "Required for Thai Alumni plan",
+          "phoneError": "Use international format, e.g. +66812345678",
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
           "notesHint": "Visible to chamber staff only. Not shown to members."
@@ -1171,7 +1172,10 @@
           "notFound": "Member not found.",
           "validation": "Please fix the highlighted fields.",
           "contactNotFound": "Contact not found.",
-          "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first."
+          "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first.",
+          "emailChangeNotSupported": "Email can only be changed for contacts linked to a portal account. Invite them to the portal first, then change the email.",
+          "emailTaken": "That email address is already in use.",
+          "invalidPhone": "Phone number must be in international format, e.g. +66812345678."
         }
       },
       "contactForm": {

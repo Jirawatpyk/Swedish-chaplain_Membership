@@ -80,7 +80,24 @@ export const memberFormSchema = z.object({
     first_name: z.string().trim().min(1, 'required').max(100),
     last_name: z.string().trim().min(1, 'required').max(100),
     email: z.string().trim().min(1, 'required').max(254),
-    phone: z.string().max(20).optional(),
+    // Phone must be E.164 (matches the `asPhone` domain value object used
+    // by create-member + updateContactFields). Validating client-side
+    // highlights the field inline instead of letting the server reject it
+    // with a 400 that surfaces only as a generic "fix highlighted fields"
+    // toast with nothing actually highlighted. Empty is allowed (optional);
+    // spaces / dashes / parens are stripped before the format check so
+    // "+66 81-234-5678" is accepted and normalised server-side.
+    phone: z
+      .string()
+      .max(20)
+      .optional()
+      .refine(
+        (v) =>
+          v === undefined ||
+          v.trim() === '' ||
+          /^\+[1-9]\d{7,14}$/.test(v.replace(/[\s\-()]/g, '')),
+        { message: 'phoneFormat' },
+      ),
     role_title: z.string().max(100).optional(),
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
@@ -520,7 +537,13 @@ export function MemberForm({
             />
             <FieldError
               id="contact_phone-error"
-              message={errors.primary_contact?.phone?.message}
+              message={
+                errors.primary_contact?.phone
+                  ? errors.primary_contact.phone.message === 'phoneFormat'
+                    ? tf('phoneError')
+                    : errors.primary_contact.phone.message
+                  : undefined
+              }
             />
           </div>
         </div>

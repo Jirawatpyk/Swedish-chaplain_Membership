@@ -185,6 +185,7 @@ export default async function EditMemberPage({ params }: PageProps) {
             }}
             plans={plans}
             primaryContact={{
+              contactId: primary?.contactId ?? '',
               firstName: primary?.firstName ?? '',
               lastName: primary?.lastName ?? '',
               email: primary?.email ?? '',
