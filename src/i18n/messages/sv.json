@@ -4653,7 +4653,6 @@
     "statusExpired": "Utgången",
     "statusFailed": "Misslyckades",
     "download": "Ladda ner",
-    "requestedAt": "Begärd {at}",
     "expiresHint": "Nedladdningslänkar upphör att gälla efter en kort tid för din säkerhet.",
     "empty": "Du har inte begärt någon dataexport ännu.",
     "errorTitle": "Kunde inte begära export",

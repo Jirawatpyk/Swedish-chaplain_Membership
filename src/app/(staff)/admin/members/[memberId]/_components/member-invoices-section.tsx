@@ -359,7 +359,10 @@ export async function MemberInvoicesSection({
                               remaining !== null &&
                                 remaining > 0n &&
                                 inv.status !== 'paid' &&
-                                'text-amber-600 dark:text-amber-400',
+                                // amber-700 (not -600) on white = 4.8:1, meets
+                                // WCAG 2.1 AA 1.4.3 (a11y scan fix); dark mode
+                                // keeps amber-400 (sufficient on dark bg).
+                                'text-amber-700 dark:text-amber-400',
                             )}
                           >
                             {formatBaht(remaining)}

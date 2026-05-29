@@ -256,7 +256,12 @@ separately to bound the all-PII review blast radius.
 
 **Migration**: `0194_f9_export_jobs_requester_locale.sql` (nullable `requester_locale`; FR-029) — applied to live Neon + threaded through schema/port/repo.
 
+**FR-030 delivery model (decision, verify C1)**: US6 delivers the ready archive via the **in-portal download** path (the data-export page lists ready jobs with a single-use download link) — FR-030's *explicitly permitted* "**or an in-portal download**" alternative. There is **no push "export ready" notification** (no email/in-app push from the cron worker); the member/admin revisits the page (status "Ready to download"). This mirrors the US5 directory recent-exports pattern. The request acknowledgement IS localised (the toast). A proactive ready-notification is a deliberate non-goal for this increment; if added later it must be localised to the recipient's locale per FR-030.
+
 **Checkpoint**: **Slice B complete** (US5–US6) — review/ship as the second increment.
+
+**Verify-remediation (2026-05-29, `/speckit.verify.run` round-1)**: F1 (Principle I) — added a GDPR audit-subset reader cross-tenant test to `cross-tenant-isolation.test.ts` (tenant B's reader returns 0 of tenant A's member audit rows + tenant-A control; **12/12 GREEN**). D1 — extended `f9-a11y.spec.ts` to scan `/portal/account/data-export` (full page) + the admin member-detail page incl. the GDPR card (full page); **6/6 GREEN** across chromium/mobile-safari/mobile-chrome. C1 — FR-030 in-portal delivery documented (above). G1 — `fflate` added to `plan.md` § Complexity Tracking. G2 — removed unused `dataExport.requestedAt` i18n key.
+- **D2 (pre-existing a11y debt surfaced + fixed)**: the new full-page member-detail axe scan caught 2 pre-existing serious WCAG 2.1 AA violations (F3/F4, not US6): (1) `member-invoices-section.tsx` overdue-amount `text-amber-600` on white = 3.19:1 → `text-amber-700` (4.8:1, SC 1.4.3); (2) member description/notes `<dt>/<dd>` wrapped in a bare `<div>` → `<dl>` (axe `dlitem`, SC 1.3.1). Page now scans clean.
 
 ---
 

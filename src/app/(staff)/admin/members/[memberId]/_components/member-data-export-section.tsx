@@ -50,7 +50,7 @@ export async function MemberDataExportSection({
   const base = `/api/admin/members/${memberId}/data-export`;
 
   return (
-    <Card>
+    <Card data-testid="member-data-export-card">
       <CardHeader>
         <CardTitle className="text-base">{t('adminHeading')}</CardTitle>
         <CardDescription>{t('adminDescription')}</CardDescription>

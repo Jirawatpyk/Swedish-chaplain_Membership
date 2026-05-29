@@ -688,22 +688,24 @@ export default async function MemberDetailPage({
               )}
             </dl>
             {member.description && (
-              <div className="mt-4 border-t pt-4">
+              /* <dl> wrapper (not <div>) so the <dt>/<dd> have a list parent —
+                 WCAG 2.1 AA 1.3.1 (a11y scan fix: axe `dlitem`). */
+              <dl className="mt-4 border-t pt-4">
                 <dt className="text-xs text-muted-foreground mb-1">
                   {t('fields.description')}
                 </dt>
                 <dd className="text-sm whitespace-pre-wrap">
                   {member.description}
                 </dd>
-              </div>
+              </dl>
             )}
             {member.notes && (
-              <div className="mt-4 border-t pt-4">
+              <dl className="mt-4 border-t pt-4">
                 <dt className="text-xs text-muted-foreground mb-1">
                   {t('fields.notes')}
                 </dt>
                 <dd className="text-sm whitespace-pre-wrap">{member.notes}</dd>
-              </div>
+              </dl>
             )}
           </CardContent>
         </Card>

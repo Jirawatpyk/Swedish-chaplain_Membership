@@ -125,4 +125,39 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     ).toBeVisible();
     await expectNoAxeViolations(page, '/portal/profile/directory');
   });
+
+  // F9 US6 — member GDPR self-service data export (request button, status
+  // table, download links). FR-029/FR-035 WCAG 2.1 AA.
+  test('member data export (/portal/account/data-export)', async ({ page }) => {
+    if (!MEMBER_EMAIL) {
+      throw new Error('E2E_MEMBER_EMAIL missing — set it in .env.local before running this suite.');
+    }
+    await signInAsMember(page);
+    await page.goto('/portal/account/data-export');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: /request my data export/i }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page, '/portal/account/data-export');
+  });
+
+  // F9 US6 — admin member-detail page incl. the on-behalf GDPR card (FR-031).
+  // FULL-PAGE scan: the GDPR card is the US6 addition, but the verify pass also
+  // surfaced + fixed 2 pre-existing violations on this F3/F4 page (invoices-
+  // section amber contrast → amber-700; member description/notes <dt>/<dd>
+  // wrapped in <dl>), so the whole page now meets WCAG 2.1 AA.
+  test('admin member detail GDPR card (/admin/members/[id])', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/members');
+    const firstRow = page.locator('table tbody tr').first();
+    await firstRow.waitFor({ timeout: 15_000 });
+    const href = await firstRow.locator('a').first().getAttribute('href');
+    const memberId = href?.match(/\/admin\/members\/([0-9a-f-]+)/)?.[1];
+    if (!memberId) throw new Error('No member rows — seed required for a11y scan');
+    await page.goto(`/admin/members/${memberId}`);
+    await expect(
+      page.locator('[data-testid="member-data-export-card"]'),
+    ).toBeVisible({ timeout: 15_000 });
+    await expectNoAxeViolations(page, '/admin/members/[id] (detail + GDPR card)');
+  });
 });

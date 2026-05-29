@@ -28,6 +28,8 @@ import {
   smartInsightDismissals,
   exportJobs,
 } from '@/modules/insights/infrastructure/db/schema-insights';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { gdprAuditSubsetReadAdapter } from '@/modules/auth';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
 describe('F9 insights cross-tenant isolation — REVIEW-GATE BLOCKER (T019)', () => {
@@ -35,11 +37,25 @@ describe('F9 insights cross-tenant isolation — REVIEW-GATE BLOCKER (T019)', ()
   let tenantB: TestTenant;
   let dismissalAId: string;
   let exportJobAId: string;
+  const memberAId = randomUUID();
+  const actorAUserId = randomUUID();
 
   beforeAll(async () => {
     const pair = await createTwoTestTenants();
     tenantA = pair.a;
     tenantB = pair.b;
+
+    // Seed a tenant-A audit row that the GDPR audit-subset reader would scope to
+    // member A (both member-targeted via payload + member-performed via actor),
+    // so the F1 cross-tenant test below can prove tenant B's reader never sees it.
+    await db.insert(auditLog).values({
+      tenantId: tenantA.ctx.slug,
+      eventType: 'member_updated',
+      actorUserId: actorAUserId,
+      summary: 'tenant A member update',
+      requestId: randomUUID(),
+      payload: { member_id: memberAId },
+    });
 
     // Seed one row per tenant in each table via schema-owner `db` (BYPASSES
     // RLS — required for cross-tenant test setup).
@@ -93,6 +109,7 @@ describe('F9 insights cross-tenant isolation — REVIEW-GATE BLOCKER (T019)', ()
 
   afterAll(async () => {
     const slugs = [tenantA.ctx.slug, tenantB.ctx.slug];
+    await db.delete(auditLog).where(inArray(auditLog.tenantId, slugs)).catch(() => {});
     await db.delete(exportJobs).where(inArray(exportJobs.tenantId, slugs));
     await db
       .delete(smartInsightDismissals)
@@ -246,6 +263,31 @@ describe('F9 insights cross-tenant isolation — REVIEW-GATE BLOCKER (T019)', ()
           }),
         ),
       ).rejects.toThrow();
+    });
+  });
+
+  // --- GDPR audit-subset reader (US6 / T091 / F1) ---------------------------
+  // The new bounded `gdprAuditSubsetReadAdapter` (audit_log union reader) backs
+  // a member's GDPR archive. Principle I §3: a new tenant-scoped surface needs
+  // an explicit cross-tenant test — tenant B must NEVER read tenant A's member
+  // audit rows even when querying with tenant A's member/actor ids.
+  describe('gdpr audit-subset reader (member archive)', () => {
+    const query = (ctx: TestTenant['ctx']) =>
+      gdprAuditSubsetReadAdapter.query(ctx, {
+        memberUserIds: [actorAUserId],
+        memberId: memberAId,
+        limit: 100,
+      });
+
+    it('READ: tenant B cannot read tenant A member audit rows', async () => {
+      const rows = await query(tenantB.ctx);
+      expect(rows).toHaveLength(0);
+    });
+
+    it('READ: tenant A reads its own member audit row (control — reader works)', async () => {
+      const rows = await query(tenantA.ctx);
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      expect(rows.every((r) => (r.payload as { member_id?: string } | null)?.member_id === memberAId)).toBe(true);
     });
   });
 });

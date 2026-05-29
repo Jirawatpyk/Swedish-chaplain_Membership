@@ -4653,7 +4653,6 @@
     "statusExpired": "Expired",
     "statusFailed": "Failed",
     "download": "Download",
-    "requestedAt": "Requested {at}",
     "expiresHint": "Download links expire after a short time for your security.",
     "empty": "You have not requested a data export yet.",
     "errorTitle": "Could not request export",
