@@ -177,6 +177,10 @@ export async function downloadExport(
       summary: `export ${job.id} (${job.kind}) downloaded by ${meta.actorRole}`,
       payload: {
         job_id: job.id,
+        // `data_export_downloaded` fires for BOTH a subject (GDPR) artefact and
+        // a directory artefact (no subject). The payload type requires a string,
+        // so a directory download records the `''` sentinel (NOT null) — readers
+        // treat empty `subject_member_id` as "tenant-wide artefact, no subject".
         subject_member_id: job.subjectMemberId ?? '',
       },
     });

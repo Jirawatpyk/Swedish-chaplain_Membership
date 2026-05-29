@@ -246,6 +246,27 @@ describe('processExportJob — claim guards', () => {
     );
   });
 
+  it('gdpr_member_archive with null subjectMemberId → failed (member_not_found), no build (S2)', async () => {
+    // A malformed GDPR enqueue (null subject) must fail loud, never build/upload.
+    const malformed = { ...job('gdpr_member_archive'), subjectMemberId: null };
+    const { deps, exportJobRepo, blob, gdprArchive } = makeMocks({ jobRecord: malformed });
+    const r = await processExportJob(JOB_ID, ctx, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('member_not_found');
+    expect(gdprArchive.buildArchiveForMember).not.toHaveBeenCalled();
+    expect(blob.putPrivate).not.toHaveBeenCalled();
+    expect(exportJobRepo.markFailedInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      JOB_ID,
+      'member_not_found',
+    );
+    expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
+      'gdpr_member_archive',
+      'failed',
+      'test-tenant',
+    );
+  });
+
   it('gdpr_member_archive: member_not_found → failed + data_export_failed, no upload', async () => {
     const { deps, exportJobRepo, blob, audit } = makeMocks({
       jobRecord: job('gdpr_member_archive'),

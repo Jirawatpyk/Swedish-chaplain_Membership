@@ -38,6 +38,54 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
       requestedForPeriod: period,
     });
 
+  it('listRecentForSubject: subject + kind scoped, newest-first (US6 / W2)', async () => {
+    const subjectA = randomUUID();
+    const subjectB = randomUUID();
+    // Two GDPR jobs for subject A + one for subject B + one directory job.
+    for (const [subject, period] of [
+      [subjectA, 'lrs-A1'],
+      [subjectA, 'lrs-A2'],
+      [subjectB, 'lrs-B1'],
+    ] as const) {
+      await runInTenant(tenant.ctx, (tx) =>
+        repo().createOrGetInTx(tx, {
+          kind: 'gdpr_member_archive',
+          subjectMemberId: subject,
+          requestedBy: requester,
+          requestedForPeriod: period,
+          requesterLocale: 'en',
+          idempotencyKey: exportJobIdempotencyInput({
+            tenantId: tenant.ctx.slug,
+            kind: 'gdpr_member_archive',
+            subjectMemberId: subject,
+            requestedForPeriod: period,
+          }),
+        }),
+      );
+    }
+
+    const rows = await repo().listRecentForSubject(
+      tenant.ctx,
+      subjectA,
+      'gdpr_member_archive',
+      5,
+    );
+    // Only subject A's GDPR jobs (2), never subject B's.
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.subjectMemberId === subjectA)).toBe(true);
+    expect(rows.every((r) => r.kind === 'gdpr_member_archive')).toBe(true);
+    // Newest-first (createdAt DESC).
+    expect(rows[0]!.createdAt.getTime()).toBeGreaterThanOrEqual(rows[1]!.createdAt.getTime());
+    // A non-existent subject → empty.
+    const none = await repo().listRecentForSubject(
+      tenant.ctx,
+      randomUUID(),
+      'gdpr_member_archive',
+      5,
+    );
+    expect(none).toHaveLength(0);
+  });
+
   it('createOrGet is idempotent on (tenant, idempotency_key)', async () => {
     const input = {
       kind: 'directory_ebook' as const,
