@@ -2,21 +2,16 @@
 
 /**
  * Route-level error boundary for /portal/preferences/renewals. Recoverable,
- * page-scoped error (Retry + `error.digest`) in the detail container so a throw
- * in the reminder-preferences load/save doesn't bubble to the root portal boundary.
+ * page-scoped error (Retry + `error.digest`) in the form container (matches
+ * preferences/renewals/page.tsx) so a throw in the reminder-preferences load/save
+ * doesn't bubble to the root portal boundary.
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertCircleIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { DetailContainer } from '@/components/layout';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export default function PortalRenewalPreferencesError({
@@ -34,7 +29,7 @@ export default function PortalRenewalPreferencesError({
   }, [error]);
 
   return (
-    <DetailContainer>
+    <FormContainer>
       <PageHeader title={t('generic')} />
       <Card>
         <CardHeader className="flex flex-row items-start gap-3">
@@ -50,6 +45,6 @@ export default function PortalRenewalPreferencesError({
           <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
-    </DetailContainer>
+    </FormContainer>
   );
 }

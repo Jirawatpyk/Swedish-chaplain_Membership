@@ -60,14 +60,18 @@ function formatIssueDate(isoDate: string, locale: string): string {
   const month = Number(mStr);
   const day = Number(dStr);
   if (!year || !month || !day) return isoDate;
-  const ce = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
+  // ICU already renders the Buddhist-Era year for `th` (e.g. 2568) — do NOT
+  // append a "(พ.ศ. …)" suffix or the BE year prints twice
+  // ("28 พ.ค. 2568 (พ.ศ. 2568)"). EN/SV render Gregorian. UTC construction +
+  // `timeZone: 'UTC'` keeps the date stable regardless of server TZ. Mirrors
+  // the sibling invoice-detail formatDate() which relies on the same ICU BE
+  // behaviour.
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     timeZone: 'UTC',
   });
-  if (locale.startsWith('th')) return `${ce} (พ.ศ. ${year + 543})`;
-  return ce;
 }
 
 // F4/F5 polish retrospective Phase E (2026-05-17) — `force-dynamic`

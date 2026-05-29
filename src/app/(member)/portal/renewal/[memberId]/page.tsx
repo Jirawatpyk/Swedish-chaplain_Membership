@@ -213,14 +213,22 @@ export default async function RenewalPortalPage({
 
       <BenefitSummary benefits={summary.benefits} benefitsAvailable={summary.benefitsAvailable} />
 
-      <RenewalConfirmFlow
-        memberId={urlMemberId}
-        cycleId={summary.cycleId}
-        planYear={planYear}
-        currentPlanId={summary.planIdAtCycleStart}
-        currentPlanLabel={currentPlanLabel}
-        availablePlans={availablePlans}
-      />
+      {/* Confirm flow wrapped in a Card so the renewal page reads as a
+          consistent 3-card stack (plan summary · benefits · confirm) and
+          matches the loading skeleton — was a card-less control group that
+          flashed on hydration (UX R2-I2). */}
+      <Card>
+        <CardContent>
+          <RenewalConfirmFlow
+            memberId={urlMemberId}
+            cycleId={summary.cycleId}
+            planYear={planYear}
+            currentPlanId={summary.planIdAtCycleStart}
+            currentPlanLabel={currentPlanLabel}
+            availablePlans={availablePlans}
+          />
+        </CardContent>
+      </Card>
     </DetailContainer>
   );
 }

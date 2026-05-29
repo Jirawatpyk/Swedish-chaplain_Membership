@@ -300,16 +300,22 @@ export default async function RenewalSuccessPage({
             </Link>
           );
         })()}
-        <Link
-          href="/portal"
-          // S-4 review-fix: button-shaped link for primary nav so the
-          // hit area meets WCAG 2.5.8 (≥36px). `buttonVariants` (default
-          // size = h-9) applied to the Link className — no Button/asChild
-          // needed; matches the house pattern used across the portal.
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          {t('backToPortal')}
-        </Link>
+        {/* In the processing state (activeCycle null) the processing card
+            already renders a `processing-back-to-portal` CTA, so suppress
+            this duplicate here to avoid two identical "Back to portal" links
+            (UX R2-I4). When the cycle is completed this is the sole back CTA. */}
+        {activeCycle ? (
+          <Link
+            href="/portal"
+            // S-4 review-fix: button-shaped link for primary nav so the
+            // hit area meets WCAG 2.5.8 (≥36px). `buttonVariants` (default
+            // size = h-9) applied to the Link className — no Button/asChild
+            // needed; matches the house pattern used across the portal.
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            {t('backToPortal')}
+          </Link>
+        ) : null}
       </div>
     </DetailContainer>
   );

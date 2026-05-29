@@ -479,7 +479,7 @@ export default async function PortalInvoiceDetailPage({
         <CardContent className="flex flex-col gap-4">
           <h2 className="text-h4">{t('linesHeading')}</h2>
           <div className="overflow-x-auto">
-            <Table>
+            <Table aria-label={t('linesHeading')}>
               <TableHeader>
                 <TableRow>
                   <TableHead scope="col">{t('lines.description')}</TableHead>

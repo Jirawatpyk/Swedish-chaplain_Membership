@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * Route-level error boundary for /portal/benefits. Recoverable, page-scoped
- * error (Retry + `error.digest`) in the detail container (matches benefits/page.tsx)
- * so a `computeBenefitUsage` throw surfaces here instead of silently bubbling to
- * the root portal boundary.
+ * Route-level error boundary for /portal/credit-notes/[creditNoteId].
+ * Recoverable, page-scoped error (Retry + `error.digest`) in the detail
+ * container (matches the credit-note detail page) so a throw in the
+ * credit-note lookup / PDF link doesn't bubble to the root portal boundary.
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
-export default function PortalBenefitsError({
+export default function PortalCreditNoteError({
   error,
   reset,
 }: {
@@ -25,7 +25,7 @@ export default function PortalBenefitsError({
   const tButtons = useTranslations('buttons');
 
   useEffect(() => {
-    console.error('[portal benefits error boundary]', error);
+    console.error('[portal credit-note error boundary]', error);
   }, [error]);
 
   return (

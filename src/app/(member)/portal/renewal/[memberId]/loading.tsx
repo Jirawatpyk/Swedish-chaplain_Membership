@@ -122,18 +122,13 @@ export default async function RenewalPortalLoading() {
             </div>
           </CardContent>
         </Card>
-        {/* RenewalConfirmFlow card — plan select + helper text +
-            primary CTA + secondary cancel link. */}
+        {/* RenewalConfirmFlow card — no heading (the real card is an action
+            group: plan select label + select + confirm CTA). */}
         <Card>
-          <CardContent>
-            <Skeleton className="mb-3 h-6 w-40" />
-            <Skeleton className="h-4 w-full max-w-xs" />
-            <Skeleton className="mt-3 h-9 w-full" />
-            <Skeleton className="mt-3 h-3 w-3/4" />
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <Skeleton className="h-10 w-full sm:w-40" />
-              <Skeleton className="h-4 w-32" />
-            </div>
+          <CardContent className="flex flex-col gap-3">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full sm:w-40" />
           </CardContent>
         </Card>
       </div>

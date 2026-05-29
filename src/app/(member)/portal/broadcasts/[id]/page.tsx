@@ -130,10 +130,19 @@ export default async function BroadcastDetailPage(props: {
 
       <Card role="region" aria-labelledby="broadcast-detail-fields-heading">
         <CardContent className="space-y-3">
-          <h2 id="broadcast-detail-fields-heading" className="text-h4">
-            {t('fields.subject')}
-          </h2>
-          <p className="text-base">{broadcast.subject}</p>
+          {/* The subject value is the card's title (and its accessible
+              region name); "Subject" is a small overline label so the value
+              reads as the dominant element rather than being subordinate to
+              its own label (UX R2-I3 — the text-h4 label outweighed the 16px
+              value). */}
+          <div className="space-y-1">
+            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              {t('fields.subject')}
+            </p>
+            <h2 id="broadcast-detail-fields-heading" className="text-h4">
+              {broadcast.subject}
+            </h2>
+          </div>
           <dl className="grid grid-cols-2 gap-3 pt-2 text-sm">
             <div>
               <dt className="text-xs text-muted-foreground">{t('fields.status')}</dt>

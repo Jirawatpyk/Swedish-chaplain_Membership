@@ -2,21 +2,16 @@
 
 /**
  * Route-level error boundary for /portal/timeline. Recoverable, page-scoped
- * error (Retry + `error.digest`) in the list container so a throw in the member
- * timeline query doesn't fall back to the root portal boundary's wrong container.
+ * error (Retry + `error.digest`) in the detail container (matches timeline/page.tsx)
+ * so a throw in the member timeline query doesn't fall back to the root portal
+ * boundary's wrong container.
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertCircleIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { TableContainer } from '@/components/layout';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export default function PortalTimelineError({
@@ -34,7 +29,7 @@ export default function PortalTimelineError({
   }, [error]);
 
   return (
-    <TableContainer>
+    <DetailContainer>
       <PageHeader title={t('generic')} />
       <Card>
         <CardHeader className="flex flex-row items-start gap-3">
@@ -50,6 +45,6 @@ export default function PortalTimelineError({
           <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
-    </TableContainer>
+    </DetailContainer>
   );
 }

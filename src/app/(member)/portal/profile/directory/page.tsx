@@ -16,7 +16,13 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { getDirectoryListing, makeUpdateDirectoryListingDeps } from '@/modules/insights';
+import {
+  DEFAULT_FIELD_VISIBILITY,
+  DIRECTORY_FIELDS,
+  MAX_DIRECTORY_DESCRIPTION_LENGTH,
+  getDirectoryListing,
+  makeUpdateDirectoryListingDeps,
+} from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -77,13 +83,20 @@ export default async function PortalDirectorySettingsPage(): Promise<React.JSX.E
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <section aria-labelledby="dir-logo-heading" className="space-y-3">
-        <h2 id="dir-logo-heading" className="text-sm font-semibold">
+        <h2 id="dir-logo-heading" className="text-h4">
           {t('logoHeading')}
         </h2>
         <DirectoryLogoControl currentLogoUrl={listing?.logoUrl ?? null} />
       </section>
 
       <DirectoryVisibilityForm
+        // Pure directory constants are passed from this server page so the
+        // client form imports types only (not values) from the insights
+        // barrel — avoids leaking the barrel's server-only runtime into the
+        // browser bundle (RSC boundary; see the form's import note).
+        directoryFields={DIRECTORY_FIELDS}
+        defaultFieldVisibility={DEFAULT_FIELD_VISIBILITY}
+        maxDescriptionLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
         initial={{
           listed: listing?.listed ?? false,
           fieldVisibility: listing?.fieldVisibility ?? {},

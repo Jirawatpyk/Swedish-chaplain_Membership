@@ -265,14 +265,18 @@ export default async function EblastsListPage(props: {
       {history.length === 0 ? (
         <section
           data-testid="broadcast-empty-state"
-          aria-label={t('emptyTitle')}
           className="flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
         >
+          {/* No `aria-label` on the section — it would duplicate the visible
+              title below and make screen readers announce it twice (UX R2-I5).
+              The visible icon + title + description carry the meaning. */}
           <div className="rounded-full bg-muted p-3">
             {/* Icon size 48×48 per ux-standards.md § 13 empty-state spec. */}
             <Mail className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
           </div>
-          <p className="text-sm font-medium">{t('emptyTitle')}</p>
+          {/* Title at text-base font-medium to match the shared <EmptyState>
+              primitive (ux-standards § 3.1) — was text-sm. */}
+          <p className="text-base font-medium">{t('emptyTitle')}</p>
           <p className="max-w-md text-sm text-muted-foreground">{t('empty')}</p>
           {composeDisabled ? null : (
             <Link href="/portal/broadcasts/new" className={buttonVariants({ size: 'sm' })}>

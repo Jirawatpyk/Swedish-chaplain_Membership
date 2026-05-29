@@ -1,20 +1,20 @@
 'use client';
 
 /**
- * Route-level error boundary for /portal/benefits. Recoverable, page-scoped
- * error (Retry + `error.digest`) in the detail container (matches benefits/page.tsx)
- * so a `computeBenefitUsage` throw surfaces here instead of silently bubbling to
- * the root portal boundary.
+ * Route-level error boundary for /portal/account. Recoverable, page-scoped
+ * error (Retry + `error.digest`) in the form container (matches
+ * account/page.tsx) so a throw in the account load/save doesn't bubble to the
+ * root portal boundary.
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertCircleIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { DetailContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
-export default function PortalBenefitsError({
+export default function PortalAccountError({
   error,
   reset,
 }: {
@@ -25,11 +25,11 @@ export default function PortalBenefitsError({
   const tButtons = useTranslations('buttons');
 
   useEffect(() => {
-    console.error('[portal benefits error boundary]', error);
+    console.error('[portal account error boundary]', error);
   }, [error]);
 
   return (
-    <DetailContainer>
+    <FormContainer>
       <PageHeader title={t('generic')} />
       <Card>
         <CardHeader className="flex flex-row items-start gap-3">
@@ -45,6 +45,6 @@ export default function PortalBenefitsError({
           <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
-    </DetailContainer>
+    </FormContainer>
   );
 }
