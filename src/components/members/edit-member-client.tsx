@@ -37,6 +37,11 @@ type MemberInitialValues = {
   readonly website: string | null;
   readonly description: string | null;
   readonly notes: string | null;
+  readonly addressLine1: string | null;
+  readonly addressLine2: string | null;
+  readonly city: string | null;
+  readonly province: string | null;
+  readonly postalCode: string | null;
   readonly foundedYear: number | null;
   readonly turnoverThb: number | null;
   readonly planId: string;
@@ -187,6 +192,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     tax_id: values.tax_id?.trim() || null,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
+    address_line1: values.address_line1?.trim() || null,
+    address_line2: values.address_line2?.trim() || null,
+    city: values.city?.trim() || null,
+    province: values.province?.trim() || null,
+    postal_code: values.postal_code?.trim() || null,
     // `values.notes` is already `string | null` after the form's zod
     // transform (round-3 N-I4). Safe to trim only when string.
     notes: values.notes ? values.notes.trim() || null : null,
@@ -352,6 +362,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,
           description: member.description ?? undefined,
+          address_line1: member.addressLine1 ?? undefined,
+          address_line2: member.addressLine2 ?? undefined,
+          city: member.city ?? undefined,
+          province: member.province ?? undefined,
+          postal_code: member.postalCode ?? undefined,
           // Round-4 R4-I3: the form schema now accepts `null` on input
           // (via `.nullable().optional()`) and transforms to `null` on
           // submit. Passing `member.notes` directly (string | null) is
@@ -406,6 +421,11 @@ function hasFieldDiff(
     (values.legal_entity_type?.trim() ?? null) !== (member.legalEntityType ?? null) ||
     (values.tax_id?.trim() ?? null) !== (member.taxId ?? null) ||
     (values.website?.trim() || null) !== (member.website ?? null) ||
+    (values.address_line1?.trim() || null) !== (member.addressLine1 ?? null) ||
+    (values.address_line2?.trim() || null) !== (member.addressLine2 ?? null) ||
+    (values.city?.trim() || null) !== (member.city ?? null) ||
+    (values.province?.trim() || null) !== (member.province ?? null) ||
+    (values.postal_code?.trim() || null) !== (member.postalCode ?? null) ||
     // Round-3 N-I5: use `|| null` consistently so empty string is treated
     // the same way as the fieldPayload builder (line 137) — otherwise the
     // diff says "changed" but the payload sends `null` (no-op PATCH).

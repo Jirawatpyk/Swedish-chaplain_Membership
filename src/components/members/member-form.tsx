@@ -52,6 +52,11 @@ export const memberFormSchema = z.object({
   tax_id: z.string().max(50).optional(),
   website: z.string().max(200).url().optional().or(z.literal('')),
   description: z.string().max(2000).optional(),
+  address_line1: z.string().max(200).optional(),
+  address_line2: z.string().max(200).optional(),
+  city: z.string().max(100).optional(),
+  province: z.string().max(100).optional(),
+  postal_code: z.string().max(20).optional(),
   founded_year: z
     .union([z.string(), z.number()])
     .optional()
@@ -435,6 +440,60 @@ export function MemberForm({
             type="date"
             {...register('registration_date')}
           />
+        </div>
+      </fieldset>
+
+      {/* --- Address section (optional, structured) --- */}
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-base font-semibold">
+          {t('sections.address')}
+        </legend>
+        <div>
+          <Label htmlFor="address_line1">{tf('addressLine1')}</Label>
+          <Input
+            id="address_line1"
+            {...register('address_line1')}
+            maxLength={200}
+            autoComplete="address-line1"
+          />
+        </div>
+        <div>
+          <Label htmlFor="address_line2">{tf('addressLine2')}</Label>
+          <Input
+            id="address_line2"
+            {...register('address_line2')}
+            maxLength={200}
+            autoComplete="address-line2"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <Label htmlFor="city">{tf('city')}</Label>
+            <Input
+              id="city"
+              {...register('city')}
+              maxLength={100}
+              autoComplete="address-level2"
+            />
+          </div>
+          <div>
+            <Label htmlFor="province">{tf('province')}</Label>
+            <Input
+              id="province"
+              {...register('province')}
+              maxLength={100}
+              autoComplete="address-level1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="postal_code">{tf('postalCode')}</Label>
+            <Input
+              id="postal_code"
+              {...register('postal_code')}
+              maxLength={20}
+              autoComplete="postal-code"
+            />
+          </div>
         </div>
       </fieldset>
 

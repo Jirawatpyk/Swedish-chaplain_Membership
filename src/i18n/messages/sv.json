@@ -976,6 +976,7 @@
           "taxId": "Skatte-ID",
           "website": "Webbplats",
           "description": "Beskrivning",
+          "address": "Adress",
           "foundedYear": "Grundat",
           "turnoverThb": "Årsomsättning (THB)",
           "planId": "Paket-ID",
@@ -1127,6 +1128,7 @@
         "cancel": "Avbryt",
         "sections": {
           "company": "Företag",
+          "address": "Adress",
           "primaryContact": "Primär kontakt"
         },
         "fields": {
@@ -1138,6 +1140,11 @@
           "taxIdHintTH": "Thailändskt 13-siffrigt skatte-ID med checksiffra",
           "website": "Webbplats",
           "websitePlaceholder": "https://…",
+          "addressLine1": "Adressrad 1",
+          "addressLine2": "Adressrad 2",
+          "city": "Ort/Stad",
+          "province": "Län/Region",
+          "postalCode": "Postnummer",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",

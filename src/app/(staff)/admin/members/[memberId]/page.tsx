@@ -706,6 +706,26 @@ export default async function MemberDetailPage({
                 />
               )}
             </dl>
+            {(() => {
+              const cityLine = [member.city, member.province, member.postalCode]
+                .filter((p) => p && p.trim().length > 0)
+                .join(' ');
+              const addressLines = [
+                member.addressLine1,
+                member.addressLine2,
+                cityLine,
+              ].filter((l): l is string => Boolean(l && l.trim().length > 0));
+              return addressLines.length > 0 ? (
+                <dl className="mt-4 border-t pt-4">
+                  <dt className="text-xs text-muted-foreground mb-1">
+                    {t('fields.address')}
+                  </dt>
+                  <dd className="text-sm whitespace-pre-wrap">
+                    {addressLines.join('\n')}
+                  </dd>
+                </dl>
+              ) : null;
+            })()}
             {member.description && (
               /* <dl> wrapper (not <div>) so the <dt>/<dd> have a list parent —
                  WCAG 2.1 AA 1.3.1 (a11y scan fix: axe `dlitem`). */

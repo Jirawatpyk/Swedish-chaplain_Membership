@@ -38,6 +38,11 @@ export const updateMemberSchema = z
     tax_id: z.string().max(50).nullable().optional(),
     website: z.string().max(200).url().nullable().optional().or(z.literal('')),
     description: z.string().max(2000).nullable().optional(),
+    address_line1: z.string().max(200).nullable().optional(),
+    address_line2: z.string().max(200).nullable().optional(),
+    city: z.string().max(100).nullable().optional(),
+    province: z.string().max(100).nullable().optional(),
+    postal_code: z.string().max(20).nullable().optional(),
     founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
     turnover_thb: z.number().int().nonnegative().nullable().optional(),
     notes: z.string().max(4000).nullable().optional(),
@@ -167,6 +172,13 @@ export async function updateMember(
       }
       if (data.website !== undefined) draft.website = data.website || null;
       if (data.description !== undefined) draft.description = data.description;
+      if (data.address_line1 !== undefined)
+        draft.addressLine1 = data.address_line1;
+      if (data.address_line2 !== undefined)
+        draft.addressLine2 = data.address_line2;
+      if (data.city !== undefined) draft.city = data.city;
+      if (data.province !== undefined) draft.province = data.province;
+      if (data.postal_code !== undefined) draft.postalCode = data.postal_code;
       if (data.founded_year !== undefined) draft.foundedYear = data.founded_year;
       if (data.turnover_thb !== undefined) draft.turnoverThb = data.turnover_thb;
       if (data.notes !== undefined) draft.notes = data.notes;

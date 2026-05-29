@@ -976,6 +976,7 @@
           "taxId": "Tax ID",
           "website": "Website",
           "description": "Description",
+          "address": "Address",
           "foundedYear": "Founded",
           "turnoverThb": "Annual turnover (THB)",
           "planId": "Plan ID",
@@ -1127,6 +1128,7 @@
         "cancel": "Cancel",
         "sections": {
           "company": "Company",
+          "address": "Address",
           "primaryContact": "Primary contact"
         },
         "fields": {
@@ -1138,6 +1140,11 @@
           "taxIdHintTH": "Thai 13-digit tax ID with checksum",
           "website": "Website",
           "websitePlaceholder": "https://…",
+          "addressLine1": "Address line 1",
+          "addressLine2": "Address line 2",
+          "city": "City / District",
+          "province": "Province / State",
+          "postalCode": "Postal code",
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",

@@ -107,6 +107,11 @@ export type MemberPatch = Partial<
     | 'notes'
     | 'foundedYear'
     | 'turnoverThb'
+    | 'addressLine1'
+    | 'addressLine2'
+    | 'city'
+    | 'province'
+    | 'postalCode'
   > & {
     country: IsoCountryCode;
     taxId: TaxId | null;

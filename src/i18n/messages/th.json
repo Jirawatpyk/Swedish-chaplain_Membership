@@ -976,6 +976,7 @@
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "website": "เว็บไซต์",
           "description": "คำอธิบาย",
+          "address": "ที่อยู่",
           "foundedYear": "ปีที่ก่อตั้ง",
           "turnoverThb": "ยอดขายต่อปี (บาท)",
           "planId": "รหัสแพ็กเกจ",
@@ -1127,6 +1128,7 @@
         "cancel": "ยกเลิก",
         "sections": {
           "company": "ข้อมูลบริษัท",
+          "address": "ที่อยู่",
           "primaryContact": "ผู้ติดต่อหลัก"
         },
         "fields": {
@@ -1138,6 +1140,11 @@
           "taxIdHintTH": "เลข 13 หลัก พร้อม checksum ตามเกณฑ์สรรพากร",
           "website": "เว็บไซต์",
           "websitePlaceholder": "https://…",
+          "addressLine1": "ที่อยู่ บรรทัด 1",
+          "addressLine2": "ที่อยู่ บรรทัด 2",
+          "city": "อำเภอ/เขต",
+          "province": "จังหวัด",
+          "postalCode": "รหัสไปรษณีย์",
           "description": "คำอธิบาย",
           "foundedYear": "ปีก่อตั้ง",
           "turnoverThb": "ยอดขายต่อปี (บาท)",

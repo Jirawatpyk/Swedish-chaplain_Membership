@@ -55,6 +55,11 @@ function toPayload(
     tax_id: values.tax_id?.trim() || null,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
+    address_line1: values.address_line1?.trim() || null,
+    address_line2: values.address_line2?.trim() || null,
+    city: values.city?.trim() || null,
+    province: values.province?.trim() || null,
+    postal_code: values.postal_code?.trim() || null,
     founded_year:
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
