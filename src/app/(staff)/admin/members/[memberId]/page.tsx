@@ -20,6 +20,7 @@ import {
   MailWarningIcon,
   PencilIcon,
   ClockIcon,
+  UserPlusIcon,
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -37,7 +38,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -47,6 +48,8 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
+import { ContactFormDialog } from '@/components/members/contact-form-dialog';
+import { ContactActions } from '@/components/members/contact-actions';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
@@ -318,16 +321,31 @@ function ContactBlock({
             )}
           </div>
         </div>
-        {canInvite && (
-          <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
-        )}
-        {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
-            invitation bounced AND the contact still has a linked (pending)
-            user. The button calls the resend-invite route, which re-issues
-            the invitation email (owner role) then clears the bounce flag. */}
-        {contact.inviteBouncedAt && contact.linkedUserId && (
-          <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canInvite && (
+            <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
+          )}
+          {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
+              invitation bounced AND the contact still has a linked (pending)
+              user. The button calls the resend-invite route, which re-issues
+              the invitation email (owner role) then clears the bounce flag. */}
+          {contact.inviteBouncedAt && contact.linkedUserId && (
+            <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
+          )}
+          <ContactActions
+            memberId={memberId}
+            isPrimary={contact.isPrimary}
+            contact={{
+              contactId: contact.contactId,
+              firstName: contact.firstName,
+              lastName: contact.lastName,
+              email: contact.email ?? '',
+              phone: contact.phone ?? null,
+              roleTitle: contact.roleTitle ?? null,
+              preferredLanguage: contact.preferredLanguage,
+            }}
+          />
+        </div>
       </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
         <Field
@@ -738,6 +756,23 @@ export default async function MemberDetailPage({
                 </p>
               </PopoverContent>
             </Popover>
+            {member.status !== 'archived' && (
+              <ContactFormDialog
+                memberId={member.memberId}
+                mode="add"
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto gap-2"
+                  >
+                    <UserPlusIcon className="size-4" aria-hidden="true" />
+                    {t('contactActions.add')}
+                  </Button>
+                }
+              />
+            )}
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {primary ? (

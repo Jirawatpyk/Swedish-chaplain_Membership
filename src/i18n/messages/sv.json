@@ -1011,12 +1011,36 @@
         "emergencyPrimary": {
           "ariaLabel": "Hjälp — nödöverföring av primär kontakt",
           "title": "Nödöverföring av primär kontakt",
-          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Öppna Redigera-sidan och lägg till den nya personen under \"Övriga kontakter\", återgå sedan hit och använd Befordra för att göra dem till den primära. Den gamla primära nedgraderas automatiskt."
+          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Använd \"Lägg till kontakt\" för att lägga till den nya personen och använd sedan \"Gör till primär\" på deras rad. Den gamla primära nedgraderas automatiskt."
         },
         "portal": {
           "linked": "Portalansluten"
         },
-        "editCta": "Redigera"
+        "editCta": "Redigera",
+        "contactActions": {
+          "add": "Lägg till kontakt",
+          "edit": "Redigera",
+          "remove": "Ta bort",
+          "promote": "Gör till primär",
+          "addSuccess": "Kontakt tillagd.",
+          "editSuccess": "Kontakt uppdaterad.",
+          "removeSuccess": "Kontakt borttagen.",
+          "promoteSuccess": "Primär kontakt uppdaterad.",
+          "removeTitle": "Ta bort kontakt?",
+          "removeDescription": "Ta bort {name} från denna medlem. Detta kan inte ångras härifrån.",
+          "removeConfirm": "Ta bort kontakt",
+          "promoteTitle": "Gör {name} till primär kontakt?",
+          "promoteDescription": "Den nuvarande primära kontakten blir en sekundär kontakt.",
+          "promoteConfirm": "Gör till primär",
+          "cancel": "Avbryt",
+          "errors": {
+            "validation": "Rätta markerade fält.",
+            "emailTaken": "E-postadressen används redan.",
+            "conflict": "Åtgärden kunde inte slutföras. Uppdatera och försök igen.",
+            "notFound": "Kontakt hittades inte.",
+            "generic": "Något gick fel. Försök igen."
+          }
+        }
       },
       "timeline": {
         "pageTitle": "Tidslinje · {companyName} · SweCham",
@@ -1181,6 +1205,11 @@
       "contactForm": {
         "title": "Lägg till kontakt",
         "editTitle": "Redigera kontakt",
+        "description": "Lägg till ytterligare en person hos denna medlem. De läggs till som en sekundär kontakt.",
+        "editDescription": "Uppdatera den här kontaktens uppgifter.",
+        "emailEditNote": "För att ändra kontaktens e-postadress, använd portalinbjudningsflödet.",
+        "fieldRequired": "Detta fält är obligatoriskt.",
+        "emailInvalid": "Ange en giltig e-postadress.",
         "submit": "Spara",
         "submitting": "Sparar…",
         "cancel": "Avbryt"

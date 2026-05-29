@@ -1011,12 +1011,36 @@
         "emergencyPrimary": {
           "ariaLabel": "Help — emergency primary contact transfer",
           "title": "Emergency primary contact transfer",
-          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Open the Edit page and add the new person under \"Other contacts\", then return here and use Promote to make them the primary. The old primary is automatically demoted."
+          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Use \"Add contact\" to add the new person, then use \"Make primary\" on their row. The old primary is automatically demoted."
         },
         "portal": {
           "linked": "Portal linked"
         },
-        "editCta": "Edit"
+        "editCta": "Edit",
+        "contactActions": {
+          "add": "Add contact",
+          "edit": "Edit",
+          "remove": "Remove",
+          "promote": "Make primary",
+          "addSuccess": "Contact added.",
+          "editSuccess": "Contact updated.",
+          "removeSuccess": "Contact removed.",
+          "promoteSuccess": "Primary contact updated.",
+          "removeTitle": "Remove contact?",
+          "removeDescription": "Remove {name} from this member. This can't be undone from here.",
+          "removeConfirm": "Remove contact",
+          "promoteTitle": "Make {name} the primary contact?",
+          "promoteDescription": "The current primary contact becomes a secondary contact.",
+          "promoteConfirm": "Make primary",
+          "cancel": "Cancel",
+          "errors": {
+            "validation": "Please fix the highlighted fields.",
+            "emailTaken": "That email address is already in use.",
+            "conflict": "Couldn't complete the action. Please refresh and try again.",
+            "notFound": "Contact not found.",
+            "generic": "Something went wrong. Please try again."
+          }
+        }
       },
       "timeline": {
         "pageTitle": "Timeline · {companyName} · SweCham",
@@ -1181,6 +1205,11 @@
       "contactForm": {
         "title": "Add contact",
         "editTitle": "Edit contact",
+        "description": "Add another person at this member. They are added as a secondary contact.",
+        "editDescription": "Update this contact's details.",
+        "emailEditNote": "To change this contact's email, use the portal invitation flow.",
+        "fieldRequired": "This field is required.",
+        "emailInvalid": "Enter a valid email address.",
         "submit": "Save",
         "submitting": "Saving…",
         "cancel": "Cancel"
