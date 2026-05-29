@@ -16,20 +16,37 @@ export interface EmptyStateProps {
   readonly description?: string;
   readonly action?: ReactNode;
   readonly className?: string;
+  /**
+   * When false, render without the dashed-border box chrome (just centred
+   * icon + copy) — for use INSIDE a Card/section that already supplies the
+   * surface, avoiding a double border. Defaults to true (standalone bordered
+   * placeholder, the original behaviour).
+   */
+  readonly bordered?: boolean;
+  /** Optional test hook (e.g. list-empty E2E assertions). */
+  readonly 'data-testid'?: string;
 }
 
-export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+  className,
+  bordered = true,
+  'data-testid': dataTestId,
+}: EmptyStateProps) {
   return (
     <div
+      data-testid={dataTestId}
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-12 text-center',
+        'flex flex-col items-center justify-center gap-3 text-center',
+        bordered ? 'rounded-lg border border-dashed border-border p-12' : 'py-12',
         className,
       )}
       role="status"
     >
-      {Icon ? (
-        <Icon className="size-10 text-muted-foreground" aria-hidden />
-      ) : null}
+      {Icon ? <Icon className="size-10 text-muted-foreground" aria-hidden /> : null}
       <div className="space-y-1">
         <p className="text-base font-medium">{title}</p>
         {description ? (

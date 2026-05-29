@@ -62,10 +62,12 @@ function formatIssueDate(isoDate: string, locale: string): string {
   if (!year || !month || !day) return isoDate;
   // ICU already renders the Buddhist-Era year for `th` (e.g. 2568) — do NOT
   // append a "(พ.ศ. …)" suffix or the BE year prints twice
-  // ("28 พ.ค. 2568 (พ.ศ. 2568)"). EN/SV render Gregorian. UTC construction +
-  // `timeZone: 'UTC'` keeps the date stable regardless of server TZ. Mirrors
-  // the sibling invoice-detail formatDate() which relies on the same ICU BE
-  // behaviour.
+  // ("28 พ.ค. 2568 (พ.ศ. 2568)"). EN/SV render Gregorian. `cn.issueDate` is a
+  // bare YYYY-MM-DD; building it via Date.UTC + `timeZone: 'UTC'` keeps the
+  // rendered day stable regardless of server TZ. (NOTE: the shared
+  // invoices/_utils/format.ts `formatDate` does the same ICU BE conversion but
+  // does NOT pin UTC — so it is intentionally not reused here; the two are not
+  // byte-identical near a TZ-midnight boundary.)
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
     year: 'numeric',
     month: 'short',

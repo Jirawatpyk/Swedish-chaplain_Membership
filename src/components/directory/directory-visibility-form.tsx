@@ -18,18 +18,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-// TYPE-ONLY import from the insights barrel. A *value* import here (the
-// previous `DEFAULT_FIELD_VISIBILITY` / `DIRECTORY_FIELDS` /
-// `MAX_DIRECTORY_DESCRIPTION_LENGTH`) pulled the barrel's server-only runtime
-// (postgres → fs/net, @node-rs/argon2, pino → worker_threads, revalidateTag)
-// into this `'use client'` bundle and 500'd /portal/profile/directory once
-// FEATURE_F9_DASHBOARD was on. Those pure constants are now passed as props
-// from the server page (Principle III blocks a deep `insights/domain` import).
-import type {
-  DirectoryField,
-  FieldVisibility,
-  UpdateDirectoryListingError,
-} from '@/modules/insights';
+// Pure directory constants come from the insights CLIENT-SAFE sub-entry
+// (`@/modules/insights/constants`), never the index barrel. Importing these
+// runtime values from `@/modules/insights` would drag the barrel's server-only
+// runtime (postgres → fs/net, @node-rs/argon2, pino → worker_threads,
+// revalidateTag) into this `'use client'` bundle and 500 /portal/profile/
+// directory once FEATURE_F9_DASHBOARD is on. `UpdateDirectoryListingError` is a
+// type-only import (erased at compile, so no runtime leak).
+import {
+  DEFAULT_FIELD_VISIBILITY,
+  DIRECTORY_FIELDS,
+  MAX_DIRECTORY_DESCRIPTION_LENGTH,
+  type DirectoryField,
+  type FieldVisibility,
+} from '@/modules/insights/constants';
+import type { UpdateDirectoryListingError } from '@/modules/insights';
 import { readErrorCode } from './read-error-code';
 
 export interface DirectoryVisibilityFormInitial {
@@ -44,17 +47,8 @@ export interface DirectoryVisibilityFormInitial {
 
 export function DirectoryVisibilityForm({
   initial,
-  directoryFields,
-  defaultFieldVisibility,
-  maxDescriptionLength,
 }: {
   readonly initial: DirectoryVisibilityFormInitial;
-  /** Pure directory constants passed from the server page so this client
-   *  component does not import them as runtime values from the server-laden
-   *  insights barrel (see the type-only import note above). */
-  readonly directoryFields: readonly DirectoryField[];
-  readonly defaultFieldVisibility: Record<DirectoryField, boolean>;
-  readonly maxDescriptionLength: number;
 }): React.JSX.Element {
   const t = useTranslations('directorySettings');
   const tf = useTranslations('directorySettings.fields');
@@ -63,8 +57,8 @@ export function DirectoryVisibilityForm({
 
   const [listed, setListed] = useState(initial.listed);
   const [vis, setVis] = useState<Record<DirectoryField, boolean>>(() => {
-    const base: Record<DirectoryField, boolean> = { ...defaultFieldVisibility };
-    for (const f of directoryFields) {
+    const base: Record<DirectoryField, boolean> = { ...DEFAULT_FIELD_VISIBILITY };
+    for (const f of DIRECTORY_FIELDS) {
       const v = initial.fieldVisibility[f];
       if (v !== undefined) base[f] = v;
     }
@@ -124,7 +118,7 @@ export function DirectoryVisibilityForm({
 
       <fieldset className="space-y-2">
         <legend className="mb-1 text-sm font-semibold">{t('fieldsHeading')}</legend>
-        {directoryFields.map((f) => (
+        {DIRECTORY_FIELDS.map((f) => (
           <label key={f} className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={vis[f]}
@@ -147,7 +141,7 @@ export function DirectoryVisibilityForm({
           <Textarea
             id="dir-description"
             value={description}
-            maxLength={maxDescriptionLength}
+            maxLength={MAX_DIRECTORY_DESCRIPTION_LENGTH}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             aria-invalid={descriptionError !== null}
@@ -170,7 +164,7 @@ export function DirectoryVisibilityForm({
               aria-live="polite"
               className="text-sm text-muted-foreground"
             >
-              {description.length}/{maxDescriptionLength}
+              {description.length}/{MAX_DIRECTORY_DESCRIPTION_LENGTH}
             </p>
           </div>
         </div>

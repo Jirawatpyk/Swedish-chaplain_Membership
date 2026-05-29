@@ -30,6 +30,7 @@ import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
 import { History as HistoryIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/shell/empty-state';
 import { TimelineEventItem, type TimelineItemProps } from './timeline-event-item';
 
 const VIRTUALIZE_THRESHOLD = 40;
@@ -123,17 +124,11 @@ export function TimelineStream({
   };
 
   if (events.length === 0) {
-    return (
-      <div role="status" className="flex flex-col items-center gap-3 py-12 text-center">
-        <div className="rounded-full bg-muted p-3">
-          {/* 48×48 icon per ux-standards.md § 13 empty-state spec — matches
-              the HistoryIcon used for the Timeline nav entry (config/nav.ts)
-              and the e-blasts empty-state idiom (icon-in-muted-circle + copy). */}
-          <HistoryIcon className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
-        </div>
-        <p className="max-w-md text-sm text-muted-foreground">{emptyLabel}</p>
-      </div>
-    );
+    // Shared EmptyState (bordered={false} — the page wraps the timeline in a
+    // Card, so the dashed-border box would double up). Single canonical
+    // empty-state treatment across the app; HistoryIcon matches the Timeline
+    // nav entry (config/nav.ts).
+    return <EmptyState icon={HistoryIcon} title={emptyLabel} bordered={false} />;
   }
 
   return (

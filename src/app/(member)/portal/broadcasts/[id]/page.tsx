@@ -153,11 +153,15 @@ export default async function BroadcastDetailPage(props: {
                   outline badge, losing the colour signal. */}
                 {(() => {
                   const props = getBroadcastStatusBadgeProps(broadcast.status);
+                  // Guard the i18n lookup; fall back to the raw status so a
+                  // future enum value degrades gracefully. Cast hoisted once.
+                  const statusKey = broadcast.status as Parameters<typeof tStatus>[0];
+                  const statusLabel = tStatus.has(statusKey)
+                    ? tStatus(statusKey)
+                    : broadcast.status;
                   return (
                     <Badge variant={props.variant} className={cn(props.className)}>
-                      {tStatus.has(broadcast.status as Parameters<typeof tStatus>[0])
-                        ? tStatus(broadcast.status as Parameters<typeof tStatus>[0])
-                        : broadcast.status}
+                      {statusLabel}
                     </Badge>
                   );
                 })()}

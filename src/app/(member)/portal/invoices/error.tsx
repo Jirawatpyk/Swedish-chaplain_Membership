@@ -1,56 +1,22 @@
 'use client';
 
-/**
- * Route-level error boundary for /portal/invoices. Renders a recoverable,
- * page-scoped error (Retry + `error.digest`) inside the LIST container so a
- * runtime throw doesn't bubble to the root portal boundary (which uses the
- * narrower DetailContainer and would mis-size the list error).
- */
-import { useEffect } from 'react';
-import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
+import { PortalRouteError } from '@/components/shell/portal-route-error';
 
-export default function PortalInvoicesError({
-  error,
-  reset,
-}: {
+/**
+ * Route-level error boundary for /portal/invoices — renders in the LIST
+ * container (matches the page) so a runtime throw doesn't bubble to the root
+ * portal boundary's narrower container.
+ */
+export default function PortalInvoicesError(props: {
   error: Error & { digest?: string };
   reset: () => void;
 }): React.JSX.Element {
-  const t = useTranslations('errors');
-  const tButtons = useTranslations('buttons');
-
-  useEffect(() => {
-    console.error('[portal invoices error boundary]', error);
-  }, [error]);
-
   return (
-    <TableContainer>
-      <PageHeader title={t('generic')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-        </CardContent>
-      </Card>
-    </TableContainer>
+    <PortalRouteError
+      {...props}
+      container={TableContainer}
+      logTag="[portal invoices error boundary]"
+    />
   );
 }

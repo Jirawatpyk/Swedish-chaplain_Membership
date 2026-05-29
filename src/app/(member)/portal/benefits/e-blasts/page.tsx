@@ -35,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { EmptyState } from '@/components/shell/empty-state';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { logger } from '@/lib/logger';
@@ -263,27 +264,21 @@ export default async function EblastsListPage(props: {
 
       {/* AS4 empty-state OR AS1 history-table */}
       {history.length === 0 ? (
-        <section
+        // Shared EmptyState (standalone, so the default bordered placeholder).
+        // One canonical empty-state treatment across the app (UX R2 #8/#10).
+        <EmptyState
           data-testid="broadcast-empty-state"
-          className="flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
-        >
-          {/* No `aria-label` on the section — it would duplicate the visible
-              title below and make screen readers announce it twice (UX R2-I5).
-              The visible icon + title + description carry the meaning. */}
-          <div className="rounded-full bg-muted p-3">
-            {/* Icon size 48×48 per ux-standards.md § 13 empty-state spec. */}
-            <Mail className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
-          </div>
-          {/* Title at text-base font-medium to match the shared <EmptyState>
-              primitive (ux-standards § 3.1) — was text-sm. */}
-          <p className="text-base font-medium">{t('emptyTitle')}</p>
-          <p className="max-w-md text-sm text-muted-foreground">{t('empty')}</p>
-          {composeDisabled ? null : (
-            <Link href="/portal/broadcasts/new" className={buttonVariants({ size: 'sm' })}>
-              {t('emptyCta')}
-            </Link>
-          )}
-        </section>
+          icon={Mail}
+          title={t('emptyTitle')}
+          description={t('empty')}
+          action={
+            composeDisabled ? undefined : (
+              <Link href="/portal/broadcasts/new" className={buttonVariants({ size: 'sm' })}>
+                {t('emptyCta')}
+              </Link>
+            )
+          }
+        />
       ) : (
         <Card>
           <CardContent>
@@ -302,38 +297,38 @@ export default async function EblastsListPage(props: {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {history.map((row) => (
-                  <TableRow key={row.broadcastId}>
-                    <TableCell>
-                      <Link
-                        href={`/portal/broadcasts/${row.broadcastId}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {row.subject}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {/* Guard the i18n lookup: a broadcast status without
-                            a matching `status.*` key would otherwise throw at
-                            render (next-intl). Fall back to the raw status so
-                            a future enum value degrades gracefully. */}
-                        {tStatus.has(row.status as Parameters<typeof tStatus>[0])
-                          ? tStatus(row.status as Parameters<typeof tStatus>[0])
-                          : row.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="tabular-nums">{row.estimatedRecipientCount}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.submittedAt !== null
-                        ? dateFormatter.format(new Date(row.submittedAt))
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {history.map((row) => {
+                  // Guard the i18n lookup: a broadcast status without a matching
+                  // `status.*` key would otherwise throw at render (next-intl).
+                  // Fall back to the raw status so a future enum value degrades
+                  // gracefully. Cast hoisted once (was repeated in has()+call()).
+                  const statusKey = row.status as Parameters<typeof tStatus>[0];
+                  const statusLabel = tStatus.has(statusKey) ? tStatus(statusKey) : row.status;
+                  return (
+                    <TableRow key={row.broadcastId}>
+                      <TableCell>
+                        <Link
+                          href={`/portal/broadcasts/${row.broadcastId}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {row.subject}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{statusLabel}</Badge>
+                      </TableCell>
+                      <TableCell className="tabular-nums">{row.estimatedRecipientCount}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.submittedAt !== null
+                          ? dateFormatter.format(new Date(row.submittedAt))
+                          : '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—'}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
