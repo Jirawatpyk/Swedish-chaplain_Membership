@@ -24,6 +24,9 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { uuid } from '@/lib/uuid';
+// Deep import (not the members barrel) — pure TS, keeps the E.164 phone
+// rule single-sourced with the domain value object.
+import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
 import {
   Dialog,
   DialogContent,
@@ -44,9 +47,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-// E.164 (matches the `asPhone` domain value object) — strip ASCII
-// formatting before testing so "+66 81-234-5678" is accepted.
-const PHONE_RE = /^\+[1-9]\d{7,14}$/;
 
 // Language endonyms (shown in their own language) — full names so screen
 // readers announce "English" / "ภาษาไทย" / "Svenska" instead of spelling
@@ -97,12 +97,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
     const phone = z
       .string()
       .max(20)
-      .refine(
-        (v) =>
-          v.trim() === '' ||
-          PHONE_RE.test(v.replace(/[\s\-()]/g, '')),
-        { message: tf('phoneError') },
-      );
+      .refine((v) => isAcceptablePhoneInput(v), { message: tf('phoneError') });
     const shape = {
       first_name: z.string().trim().min(1, t('fieldRequired')).max(100),
       last_name: z.string().trim().min(1, t('fieldRequired')).max(100),

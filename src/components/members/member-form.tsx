@@ -29,6 +29,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
 import { Loader2Icon } from 'lucide-react';
+// Deep import (NOT the `@/modules/members` barrel) — phone.ts is pure TS
+// (pulls only `@/lib/result`) so it is safe in this client component and
+// keeps the E.164 rule single-sourced with the domain value object.
+import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -97,13 +101,9 @@ export const memberFormSchema = z.object({
       .string()
       .max(20)
       .optional()
-      .refine(
-        (v) =>
-          v === undefined ||
-          v.trim() === '' ||
-          /^\+[1-9]\d{7,14}$/.test(v.replace(/[\s\-()]/g, '')),
-        { message: 'phoneFormat' },
-      ),
+      .refine((v) => v === undefined || isAcceptablePhoneInput(v), {
+        message: 'phoneFormat',
+      }),
     role_title: z.string().max(100).optional(),
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),

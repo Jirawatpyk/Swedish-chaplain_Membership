@@ -28,40 +28,24 @@ import {
   type OverrideReasonResult,
 } from './override-reason-dialog';
 import { formatOverrideWarning } from './override-warning-message';
+import {
+  buildFieldPayload,
+  buildContactPayload,
+  hasFieldDiff,
+  contactFieldsChanged as contactFieldsChangedPure,
+  contactEmailChanged as contactEmailChangedPure,
+  planChanged as planChangedPure,
+  type MemberInitialValues,
+  type EditablePrimaryContact,
+} from './edit-member-payloads';
 
-type MemberInitialValues = {
-  readonly memberId: string;
-  readonly companyName: string;
-  readonly legalEntityType: string | null;
-  readonly country: string;
-  readonly taxId: string | null;
-  readonly website: string | null;
-  readonly description: string | null;
-  readonly notes: string | null;
-  readonly addressLine1: string | null;
-  readonly addressLine2: string | null;
-  readonly city: string | null;
-  readonly province: string | null;
-  readonly postalCode: string | null;
-  readonly foundedYear: number | null;
-  readonly turnoverThb: number | null;
-  readonly planId: string;
-  readonly planYear: number;
-  readonly registrationDate: string;
-};
+// MemberInitialValues + EditablePrimaryContact are defined alongside the
+// pure payload builders in ./edit-member-payloads (imported above).
 
 type Props = {
   readonly member: MemberInitialValues;
   readonly plans: readonly PlanOption[];
-  readonly primaryContact: {
-    readonly contactId: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly email: string;
-    readonly phone: string | null;
-    readonly roleTitle: string | null;
-    readonly preferredLanguage: 'en' | 'th' | 'sv';
-  };
+  readonly primaryContact: EditablePrimaryContact;
 };
 
 import { uuid } from '@/lib/uuid';
@@ -186,69 +170,23 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     toast.error(t('errors.generic'));
   };
 
+  // Thin wrappers that bind the captured `member` / `primaryContact` to the
+  // pure builders in ./edit-member-payloads (unit-tested there).
   const planChanged = (values: MemberFormValues): boolean =>
-    values.plan_id !== member.planId || values.plan_year !== member.planYear;
+    planChangedPure(values, member);
 
-  const fieldPayload = (values: MemberFormValues): Record<string, unknown> => ({
-    company_name: values.company_name.trim(),
-    legal_entity_type: values.legal_entity_type?.trim() || null,
-    country: values.country.toUpperCase(),
-    tax_id: values.tax_id?.trim() || null,
-    website: values.website?.trim() || null,
-    description: values.description?.trim() || null,
-    address_line1: values.address_line1?.trim() || null,
-    address_line2: values.address_line2?.trim() || null,
-    city: values.city?.trim() || null,
-    province: values.province?.trim() || null,
-    postal_code: values.postal_code?.trim() || null,
-    // `values.notes` is already `string | null` after the form's zod
-    // transform (round-3 N-I4). Safe to trim only when string.
-    notes: values.notes ? values.notes.trim() || null : null,
-    founded_year:
-      typeof values.founded_year === 'number' ? values.founded_year : null,
-    turnover_thb:
-      typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
-  });
+  const fieldPayload = (values: MemberFormValues): Record<string, unknown> =>
+    buildFieldPayload(values);
 
-  /**
-   * Non-email primary-contact patch — only the fields that actually
-   * changed. Sending the full set would needlessly re-validate untouched
-   * fields server-side (e.g. editing just the role would re-run the
-   * strict E.164 phone check on the unchanged phone).
-   */
   const contactFieldPayload = (
     values: MemberFormValues,
-  ): Record<string, unknown> => {
-    const c = values.primary_contact;
-    const body: Record<string, unknown> = {};
-    if (c.first_name.trim() !== primaryContact.firstName)
-      body.first_name = c.first_name.trim();
-    if (c.last_name.trim() !== primaryContact.lastName)
-      body.last_name = c.last_name.trim();
-    if ((c.phone?.trim() || null) !== (primaryContact.phone ?? null))
-      body.phone = c.phone?.trim() || null;
-    if ((c.role_title?.trim() || null) !== (primaryContact.roleTitle ?? null))
-      body.role_title = c.role_title?.trim() || null;
-    if (c.preferred_language !== primaryContact.preferredLanguage)
-      body.preferred_language = c.preferred_language;
-    return body;
-  };
+  ): Record<string, unknown> => buildContactPayload(values, primaryContact);
 
-  /** True when any non-email primary-contact field changed. */
-  const contactFieldsChanged = (values: MemberFormValues): boolean => {
-    const c = values.primary_contact;
-    return (
-      c.first_name.trim() !== primaryContact.firstName ||
-      c.last_name.trim() !== primaryContact.lastName ||
-      (c.phone?.trim() || null) !== (primaryContact.phone ?? null) ||
-      (c.role_title?.trim() || null) !== (primaryContact.roleTitle ?? null) ||
-      c.preferred_language !== primaryContact.preferredLanguage
-    );
-  };
+  const contactFieldsChanged = (values: MemberFormValues): boolean =>
+    contactFieldsChangedPure(values, primaryContact);
 
-  /** True when the primary-contact email changed (constrained server-side). */
   const contactEmailChanged = (values: MemberFormValues): boolean =>
-    values.primary_contact.email.trim() !== primaryContact.email;
+    contactEmailChangedPure(values, primaryContact);
 
   const planPayload = (
     values: MemberFormValues,
@@ -437,32 +375,5 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         onConfirm={onOverrideConfirm}
       />
     </>
-  );
-}
-
-function hasFieldDiff(
-  values: MemberFormValues,
-  member: MemberInitialValues,
-): boolean {
-  return (
-    values.company_name.trim() !== member.companyName ||
-    (values.country?.toUpperCase() ?? '') !== member.country ||
-    (values.legal_entity_type?.trim() ?? null) !== (member.legalEntityType ?? null) ||
-    (values.tax_id?.trim() ?? null) !== (member.taxId ?? null) ||
-    (values.website?.trim() || null) !== (member.website ?? null) ||
-    (values.address_line1?.trim() || null) !== (member.addressLine1 ?? null) ||
-    (values.address_line2?.trim() || null) !== (member.addressLine2 ?? null) ||
-    (values.city?.trim() || null) !== (member.city ?? null) ||
-    (values.province?.trim() || null) !== (member.province ?? null) ||
-    (values.postal_code?.trim() || null) !== (member.postalCode ?? null) ||
-    // Round-3 N-I5: use `|| null` consistently so empty string is treated
-    // the same way as the fieldPayload builder (line 137) — otherwise the
-    // diff says "changed" but the payload sends `null` (no-op PATCH).
-    (values.description?.trim() || null) !== (member.description ?? null) ||
-    (values.notes ? values.notes.trim() || null : null) !== (member.notes ?? null) ||
-    (typeof values.founded_year === 'number' ? values.founded_year : null) !==
-      (member.foundedYear ?? null) ||
-    (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==
-      (member.turnoverThb ?? null)
   );
 }

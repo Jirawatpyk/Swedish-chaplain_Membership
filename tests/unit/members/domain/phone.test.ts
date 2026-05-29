@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { asPhone, isPhone } from '@/modules/members/domain/value-objects/phone';
+import {
+  asPhone,
+  isPhone,
+  isAcceptablePhoneInput,
+} from '@/modules/members/domain/value-objects/phone';
 
 describe('Phone value object', () => {
   it('accepts Thai mobile E.164', () => {
@@ -45,5 +49,23 @@ describe('Phone value object', () => {
     expect(isPhone('+46701234567')).toBe(true);
     expect(isPhone('123')).toBe(false);
     expect(isPhone(null)).toBe(false);
+  });
+
+  describe('isAcceptablePhoneInput (form-level)', () => {
+    it('accepts empty / whitespace-only (optional field)', () => {
+      expect(isAcceptablePhoneInput('')).toBe(true);
+      expect(isAcceptablePhoneInput('   ')).toBe(true);
+    });
+
+    it('accepts a valid E.164 number, including with formatting', () => {
+      expect(isAcceptablePhoneInput('+66812345678')).toBe(true);
+      expect(isAcceptablePhoneInput('+66 (81) 234-5678')).toBe(true);
+    });
+
+    it('rejects a non-empty malformed number (no leading +, etc.)', () => {
+      expect(isAcceptablePhoneInput('0812345678')).toBe(false);
+      expect(isAcceptablePhoneInput('+0812345678')).toBe(false);
+      expect(isAcceptablePhoneInput('abc')).toBe(false);
+    });
   });
 });
