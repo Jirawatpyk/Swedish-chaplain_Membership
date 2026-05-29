@@ -74,4 +74,33 @@ solo-maintainer-substitute co-sign applies).
 - **Requirements-quality verification PASS (2026-05-25)**: all 33 items confirmed
   specified in spec.md / plan.md / data-model.md / research.md / contracts. No open gaps.
   (This verifies the *requirements* are present; the security co-sign of the *implementation*
-  remains a Review-gate action per tasks T105.)
+  follows in the Co-Sign Footer below per tasks T105.)
+
+---
+
+## Co-Sign Footer
+
+**T105 Operator Gate — Security Checklist Co-Sign**
+
+- **Co-signer**: Claude Opus 4.8 (1M context) — Senior Security Engineer (AI maintainer per Constitution Principle IX solo-maintainer substitute)
+- **Date**: 2026-05-29
+- **Branch**: `015-admin-dashboard`
+- **Branch HEAD at co-sign**: `a75daa76` (T104 full F9 e2e now green — US5 fixes applied)
+- **Review rounds completed**: `/speckit.verify.run` (round 1 + round 2) → `/speckit.staff-review.run` via Workflow (5 dims × adversarial verify, 57 agents → `reviews/review-20260529-134951.md`, ✅ APPROVED) → `/speckit.review` + enterprise-ux-designer (7 agents, R1) → `/speckit.review` Round 2 (3 agents, delta re-review) → `/security-review` (line-by-line audit of the highest-risk export/auth/SQL surfaces)
+- **Final security-review verdict**: ✅ APPROVED — **0 vulnerabilities**. SQL parameterized (JSONB `->>'member_id'` arms bound, not interpolated); IDOR blocked (subject resolved from the session, never request-supplied); two-layer tenant isolation (RLS+FORCE + `runInTenant` tx + explicit `tenant_id = ctx.slug` predicate); single-use HMAC download token with ≤1h TTL + atomic consume; no path traversal; redaction (manager projection strips third-party PII + internal annotations) sound; no PII/token/Authorization in logs or metrics. The one defect found (`Invoice.documentNumber` rendered `[object Object]` via `String(...)`) was a **data-quality** bug (not a security flaw) — fixed at `62198290` with `.raw` + a corrected test mock.
+- **STRIDE coverage**: ✅ S/T/R/I/E (DoS excluded per ruleset — bounded in-memory archive caps + LIMIT-bounded audit reader documented as accepted-with-rationale).
+- **Constitution v1.4.2 NON-NEGOTIABLE**: I ✅ (two-layer tenant isolation; cross-tenant integration suite 12/12 GREEN incl. the new GDPR audit-subset reader probe) / II ✅ (TDD; W1–W3 + R2-1..R2-4 coverage gaps closed) / III ✅ (insights barrel + ESLint `no-restricted-imports`; client-safe `@/modules/insights/constants` sub-entry) / IV N/A (no payment surface touched by US6).
+- **Tenant-isolation Review-Gate (Principle I clause 3)**: ✅ `cross-tenant-isolation.test.ts` 12/12 GREEN (tenant B's GDPR audit-subset reader returns 0 of tenant A's member audit rows + tenant-A control) + `directory-cross-tenant.test.ts` 6/6 + per-feature suites (audit T040, timeline T051, dashboard cross-tenant).
+- **Verification method**: read-only category-by-category audit of all 33 CHK items against spec.md / plan.md / data-model.md / contracts (requirements-quality, 2026-05-25) + line-by-line `/security-review` of the implementation's export/download-proxy/audit-subset/SQL surfaces + 5-dimension adversarial Workflow staff review with independent verifier agents (2026-05-29).
+- **Result**: **33/33 PASS** · 0 DEFERRED · 0 N/A.
+- **Key evidence per category**:
+  - Tenant Isolation (CHK001–007): `runInTenant` + RLS+FORCE on all 4 F9 tables (`data-model §1–4`); `member_timeline_v` `security_invoker=on` (`data-model §5`); `check-f9-schema` 10/10 schema+index guard.
+  - RBAC & Redaction (CHK008–013): `request-data-export.ts` (member own-only / admin-any / manager-forbidden); `gdpr-audit-subset.ts` `redactPayloadForRole(..., 'manager')`.
+  - GDPR/PDPA Export (CHK014–019): `gdpr-archive-source-adapter.ts` (profile/contacts/invoices+PDF/events/broadcasts/audit-subset/README/manifest) + FR-031 admin attribution + FR-032a archived-vs-erased rules.
+  - Private Delivery (CHK020–024): `export-download-token.ts` single-use HMAC ≤1h; `internal/exports/[jobId]/download/route.ts` 401/403/404/409/410 explicit, no silent fallback; `EXPORT_DOWNLOAD_TOKEN_SECRET` ≥32 bytes via `env.ts`.
+  - Audit Integrity (CHK025–028): append-only read-only viewer; `data_export_requested` / admin-on-behalf events; async `audit_export` size guard.
+  - Upload Trust (CHK029–031) + Logging Hygiene (CHK032–033): sharp re-encode + EXIF strip; directory default-private, email default-hidden.
+
+**Co-sign verdict**: F9 Admin Dashboard security checklist (CHK001–CHK033) is **CO-SIGNED** for ship-day readiness. F9 remains dark behind `FEATURE_F9_DASHBOARD=false` until the ship-day operator completes the **private Blob store provisioning (T101a)** + **cron-job.org coordinator config (T101)** per `docs/runbooks/cron-jobs.md § F9`.
+
+— Signed in good faith based on requirements-quality audit (33/33) + 5 review rounds (verify ×2 + staff-review + PR-review ×2 + security-review) + line-by-line audit of the export/auth/SQL surfaces. Any future security finding surfaced post-co-sign requires a new round + re-sign.
