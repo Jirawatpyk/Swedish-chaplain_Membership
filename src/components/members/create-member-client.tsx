@@ -24,6 +24,7 @@ import {
   OverrideReasonDialog,
   type OverrideReasonResult,
 } from './override-reason-dialog';
+import { formatOverrideWarning } from './override-warning-message';
 import { SoftDuplicateDialog } from './soft-duplicate-dialog';
 
 type Props = {
@@ -87,6 +88,7 @@ function toPayload(
 
 export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
   const t = useTranslations('admin.members.create');
+  const tOverride = useTranslations('admin.members.overrideReason');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [softDup, setSoftDup] = useState<SoftDupState | null>(null);
@@ -131,9 +133,9 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
       return;
     }
     if (res.status === 422) {
-      const details = body.error?.details ?? {};
-      const msg = JSON.stringify(details);
-      setOverride({ message: msg });
+      setOverride({
+        message: formatOverrideWarning(body.error?.details, tOverride),
+      });
       return;
     }
     if (res.status === 403) {

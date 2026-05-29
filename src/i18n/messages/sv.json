@@ -826,6 +826,14 @@
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
+        "warnings": {
+          "turnoverOutOfBand": "Omsättning {turnover} THB ligger utanför planens intervall ({min}–{max} THB).",
+          "turnoverBelow": "Omsättning {turnover} THB är under planens minimum på {min} THB.",
+          "turnoverAbove": "Omsättning {turnover} THB överstiger planens maximum på {max} THB.",
+          "startupTooOld": "Grundningsår {year} överskrider planens gräns på {maxYears} år.",
+          "ageNotEligible": "Ålder {age} överstiger planens maximum på {maxAge}.",
+          "generic": "Värdet ligger utanför planens gränser. Ange en anledning för att fortsätta."
+        },
         "title": "Anledning till att kringgå validering",
         "description": "Registrera varför du fortsätter trots varningen. Anledningen sparas i revisionsloggen.",
         "codeLabel": "Anledning",

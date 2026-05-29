@@ -826,6 +826,14 @@
     "members": {
       "title": "สมาชิก",
       "overrideReason": {
+        "warnings": {
+          "turnoverOutOfBand": "ยอดขาย {turnover} บาท อยู่นอกช่วงของแพ็กเกจ ({min}–{max} บาท)",
+          "turnoverBelow": "ยอดขาย {turnover} บาท ต่ำกว่าขั้นต่ำของแพ็กเกจ ({min} บาท)",
+          "turnoverAbove": "ยอดขาย {turnover} บาท สูงกว่าขั้นสูงของแพ็กเกจ ({max} บาท)",
+          "startupTooOld": "ปีก่อตั้ง {year} เกินกำหนดของแพ็กเกจ ({maxYears} ปี)",
+          "ageNotEligible": "อายุ {age} เกินสูงสุดของแพ็กเกจ ({maxAge})",
+          "generic": "ค่านี้อยู่นอกเงื่อนไขของแพ็กเกจ กรุณาระบุเหตุผลเพื่อดำเนินการต่อ"
+        },
         "title": "เหตุผลในการข้ามการตรวจสอบ",
         "description": "ระบุเหตุผลที่ดำเนินการต่อแม้มีคำเตือน เหตุผลนี้จะถูกบันทึกใน audit log",
         "codeLabel": "เหตุผล",

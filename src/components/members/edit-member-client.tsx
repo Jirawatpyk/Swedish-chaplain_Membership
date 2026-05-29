@@ -27,6 +27,7 @@ import {
   OverrideReasonDialog,
   type OverrideReasonResult,
 } from './override-reason-dialog';
+import { formatOverrideWarning } from './override-warning-message';
 
 type MemberInitialValues = {
   readonly memberId: string;
@@ -67,6 +68,7 @@ import { uuid } from '@/lib/uuid';
 
 export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const t = useTranslations('admin.members.edit');
+  const tOverride = useTranslations('admin.members.overrideReason');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [bundleState, setBundleState] = useState<BundleChangePayload | null>(null);
@@ -164,7 +166,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       return;
     }
     if (res.status === 422) {
-      setOverrideState({ message: JSON.stringify(body.error?.details ?? {}) });
+      setOverrideState({
+        message: formatOverrideWarning(body.error?.details, tOverride),
+      });
       return;
     }
     if (res.status === 403) {

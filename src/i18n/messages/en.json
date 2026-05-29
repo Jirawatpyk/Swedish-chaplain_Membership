@@ -826,6 +826,14 @@
     "members": {
       "title": "Members",
       "overrideReason": {
+        "warnings": {
+          "turnoverOutOfBand": "Turnover {turnover} THB is outside the plan band ({min}–{max} THB).",
+          "turnoverBelow": "Turnover {turnover} THB is below the plan minimum of {min} THB.",
+          "turnoverAbove": "Turnover {turnover} THB is above the plan maximum of {max} THB.",
+          "startupTooOld": "Founded year {year} exceeds the plan limit of {maxYears} years.",
+          "ageNotEligible": "Age {age} exceeds the plan maximum of {maxAge}.",
+          "generic": "This value is outside the plan limits. Provide a reason to proceed."
+        },
         "title": "Reason for bypassing validation",
         "description": "Record why you are proceeding despite the warning. The reason is kept in the audit log.",
         "codeLabel": "Reason",
