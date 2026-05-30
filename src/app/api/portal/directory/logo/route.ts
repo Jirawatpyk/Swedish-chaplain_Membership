@@ -52,6 +52,14 @@ async function gate(
     current.user.id,
   );
   if (!memberResult.ok) {
+    // not_found → 404; a DB/RLS fault must surface as 500 (logged), not 404.
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { correlationId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        'portal.directory.logo.member_lookup_failed',
+      );
+      return NextResponse.json({ error: { code: 'server_error' }, correlationId }, { status: 500 });
+    }
     return NextResponse.json({ error: { code: 'no_member_profile' }, correlationId }, { status: 404 });
   }
   return { tenant, memberId: memberResult.value.memberId, current };

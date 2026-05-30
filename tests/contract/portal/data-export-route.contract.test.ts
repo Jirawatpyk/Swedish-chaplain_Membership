@@ -101,6 +101,15 @@ describe('POST /api/portal/account/data-export (member self-service)', () => {
     expect(res.status).toBe(404);
   });
 
+  it('member lookup DB fault → 500, NOT a masked 404 (review C2)', async () => {
+    // A DB/RLS fault (repo.unexpected) must surface as 500 — never be conflated
+    // with "no profile" (404), which would silently drop a GDPR portability req.
+    memberLookup = { ok: false, error: { code: 'repo.unexpected' } };
+    const res = await (await route()).POST(memberReq());
+    expect(res.status).toBe(500);
+    expect(requestDataExportMock).not.toHaveBeenCalled();
+  });
+
   it('use-case forbidden → 403', async () => {
     requestDataExportMock.mockResolvedValue(err('forbidden'));
     const res = await (await route()).POST(memberReq());

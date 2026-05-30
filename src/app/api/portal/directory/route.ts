@@ -68,6 +68,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     current.user.id,
   );
   if (!memberResult.ok) {
+    // not_found (session user has no member profile) → 404; a DB/RLS fault must
+    // surface as 500 with a log, not be masked as "no profile".
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { correlationId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        'portal.directory.member_lookup_failed',
+      );
+      return NextResponse.json({ error: { code: 'server_error' }, correlationId }, { status: 500 });
+    }
     return NextResponse.json({ error: { code: 'no_member_profile' }, correlationId }, { status: 404 });
   }
   const memberId = memberResult.value.memberId;

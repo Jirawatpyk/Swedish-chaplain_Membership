@@ -44,6 +44,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     current.user.id,
   );
   if (!memberResult.ok) {
+    // Distinguish a benign "session user isn't a member" (404) from a DB/RLS
+    // fault (500) — conflating them silently fails a GDPR portability request
+    // as "no profile" with no log. Mirrors portal/timeline/route.ts.
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { correlationId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        'portal.data_export.member_lookup_failed',
+      );
+      return NextResponse.json(
+        { error: { code: 'server_error' }, correlationId },
+        { status: 500 },
+      );
+    }
     return NextResponse.json(
       { error: { code: 'no_member_profile' }, correlationId },
       { status: 404 },

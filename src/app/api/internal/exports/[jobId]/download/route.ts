@@ -24,6 +24,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { downloadExport, makeDownloadExportDeps } from '@/modules/insights';
 import { drizzleMemberRepo } from '@/modules/members';
@@ -62,7 +64,20 @@ export async function GET(
   let actorMemberId: string | null = null;
   if (session.user.role === 'member') {
     const member = await drizzleMemberRepo.findByLinkedUserId(tenant, session.user.id);
-    actorMemberId = member.ok ? member.value.memberId : null;
+    if (!member.ok) {
+      // not_found (no linked member) → proceed with null (authorize() denies a
+      // subject artefact). A DB/RLS fault must NOT masquerade as 403 forbidden —
+      // surface it as 500 with a log instead.
+      if (member.error.code !== 'repo.not_found') {
+        logger.error(
+          { jobId, requestId, errKind: errKind(member.error) },
+          'exports.download.member_lookup_failed',
+        );
+        return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
+      }
+    } else {
+      actorMemberId = member.value.memberId;
+    }
   }
 
   const result = await downloadExport(

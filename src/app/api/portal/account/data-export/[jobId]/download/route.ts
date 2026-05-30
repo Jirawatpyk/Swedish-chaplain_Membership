@@ -58,6 +58,15 @@ export async function GET(
     current.user.id,
   );
   if (!memberResult.ok) {
+    // not_found → 404; a DB/RLS fault must surface as 500 (logged), not be
+    // masked as "no profile" on a download the subject is entitled to.
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.error(
+        { jobId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        'portal.data_export.download.member_lookup_failed',
+      );
+      return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
+    }
     return NextResponse.json({ error: { code: 'no_member_profile' } }, { status: 404 });
   }
 
