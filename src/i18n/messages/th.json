@@ -436,6 +436,7 @@
           "invoice_issued": "ออกใบแจ้งหนี้",
           "invoice_paid": "ชำระใบแจ้งหนี้แล้ว",
           "invoice_voided": "ยกเลิกใบแจ้งหนี้",
+          "invoice_pdf_downloaded": "ดาวน์โหลด PDF ใบแจ้งหนี้",
           "invoice_credited": "ออกใบลดหนี้ให้ใบแจ้งหนี้",
           "credit_note_issued": "ออกใบลดหนี้",
           "payment_succeeded": "ชำระเงินสำเร็จ",

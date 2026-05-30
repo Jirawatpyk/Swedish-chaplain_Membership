@@ -436,6 +436,7 @@
           "invoice_issued": "Faktura utfärdad",
           "invoice_paid": "Faktura betald",
           "invoice_voided": "Faktura makulerad",
+          "invoice_pdf_downloaded": "Faktura-PDF nedladdad",
           "invoice_credited": "Faktura krediterad",
           "credit_note_issued": "Kreditnota utfärdad",
           "payment_succeeded": "Betalning genomförd",

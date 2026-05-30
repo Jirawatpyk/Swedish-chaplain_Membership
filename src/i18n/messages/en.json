@@ -436,6 +436,7 @@
           "invoice_issued": "Invoice issued",
           "invoice_paid": "Invoice paid",
           "invoice_voided": "Invoice voided",
+          "invoice_pdf_downloaded": "Invoice PDF downloaded",
           "invoice_credited": "Invoice credited",
           "credit_note_issued": "Credit note issued",
           "payment_succeeded": "Payment succeeded",
