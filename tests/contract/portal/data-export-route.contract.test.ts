@@ -107,6 +107,10 @@ describe('POST /api/portal/account/data-export (member self-service)', () => {
     memberLookup = { ok: false, error: { code: 'repo.unexpected' } };
     const res = await (await route()).POST(memberReq());
     expect(res.status).toBe(500);
+    // Distinct body code from the 404 not_found path — locks "not conflated" at
+    // the payload level, not just the status.
+    const body = await res.json();
+    expect(body.error.code).toBe('server_error');
     expect(requestDataExportMock).not.toHaveBeenCalled();
   });
 

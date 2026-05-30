@@ -235,9 +235,14 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
   });
 
   it('cross-tenant isolation: tenant B cannot read/claim/list tenant A jobs (review I4b)', async () => {
-    // Exercises the explicit `eq(exportJobs.tenantId, …)` second-wall predicate
-    // (alongside RLS) on findById / claimInTx / listRecentForSubject. A job owned
-    // by tenant A must be invisible + immutable from a tenant-B repo + context.
+    // Cross-tenant REGRESSION net for findById / claimInTx / listRecentForSubject:
+    // a job owned by tenant A must be invisible + immutable from a tenant-B repo +
+    // context. NOTE: this asserts the COMBINED guarantee — tenant B runs under its
+    // own RLS context (`runInTenant(other.ctx)`), so RLS alone already hides A's
+    // row; it does NOT isolate the explicit `eq(exportJobs.tenantId, …)` second
+    // wall (that is covered by code review + the per-method predicate). The value
+    // here is catching any future change that breaks cross-tenant isolation end
+    // to end, not proving which of the two layers does the blocking.
     const other = await createTestTenant('test-chamber');
     const otherRepo = () => makeDrizzleExportJobRepo(other.ctx.slug);
     const subject = randomUUID();

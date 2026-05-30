@@ -193,5 +193,8 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
     // space/parens → `_`; the allowed `.` `-` are preserved.
     expect(data!.invoices[0]!.pdf!.filename).toBe('INV_2026-001__copy_.txt-inv-1.pdf');
+    // Symmetry with the path-traversal case: no separator survives.
+    expect(data!.invoices[0]!.pdf!.filename).not.toContain('/');
+    expect(data!.invoices[0]!.pdf!.filename).not.toContain('\\');
   });
 });

@@ -87,7 +87,10 @@ describe('canTransition (state machine, data-model § 4)', () => {
   // `canTransition`. This mirror pins every guard the repo relies on to the Domain
   // graph — if a future edit to ALLOWED_TRANSITIONS drops an edge a repo method
   // uses, this fails CI, flagging that the repo guard (drizzle-export-job-repo.ts)
-  // is now stale. (The full fix — drive the repo from the graph — is tracked.)
+  // is now stale. (The full fix — drive the repo guards from ALLOWED_TRANSITIONS
+  // so they cannot drift — was reviewed and deliberately left as a follow-up:
+  // refactoring the 7 security-critical transition methods is higher-risk than
+  // this tripwire's value; see the R2 review notes.)
   // Genuine state-CHANGING guards (a `from → to` graph edge). Note: the repo's
   // consume/setDownloadToken/markExpired methods ALSO accept `delivered` as a
   // from-state for idempotent re-runs (delivered→delivered / token re-set) — that
