@@ -426,7 +426,13 @@ audit-logged.
   resolves the key so all six sources render consistently in EN/TH/SV (legacy
   `audit_log.summary` is a fallback display value only).
 - **FR-015**: The timeline MUST support filtering by source type, date range, and
-  actor (staff vs member vs system).
+  actor (staff vs member vs system). The actor kind for audit rows is derived from
+  member-contact linkage (an actor linked to a member contact is `member`, else
+  `staff`); a **dual-role** account — a staff user that is also linked as a member
+  contact — is therefore classified `member` for its audited actions under this
+  filter. This is an accepted edge: it affects only the actor *filter/attribution*,
+  not data redaction (which keys on the event **source**, not actor kind), so no
+  data is exposed. (Documented 2026-05-31 — retrospective PSC-2.)
 - **FR-016**: The timeline MUST remain responsive for members with very large
   histories (1,000+ entries) via keyset-paginated incremental loading, with each
   additional page returning at **p95 < 500 ms**; no full-history load is required to
@@ -549,7 +555,11 @@ audit-logged.
   and the GDPR data archive MUST be produced **asynchronously** via a background job
   that, on completion, notifies the requester and provides a time-limited signed
   download link (per FR-030). No export may silently fail — failures MUST surface to
-  the requester and be audit-logged.
+  the requester and be audit-logged. Where an export applies a defensive per-category
+  volume cap, the result MUST be **disclosed as partial, never presented as complete**:
+  the integrity manifest MUST carry a completeness flag (`complete: false` + the list
+  of capped files) **and** the README MUST include a localised partial-export warning
+  naming those categories. (Clarified 2026-05-31 — retrospective PSC-1; implemented.)
 
 > **Resolved (2026-05-25) — Smart-intelligence depth = "Balanced"**: F9 delivers the
 > four named pillars **plus** Engagement Score (#15, the positive-framed inverse of
@@ -700,6 +710,14 @@ audit-logged.
   tenant approaches **~20,000 members**, the snapshot/partition/index strategy MUST be
   revisited (e.g. incremental snapshot, source-side aggregates) before it becomes the
   bottleneck. This is the explicit 10x-growth revisit trigger.
+- **Known index characteristic — timeline audit branch** (added 2026-05-31, retro PSC-3):
+  the per-member timeline's five non-audit sources are sargable via tenant-leading
+  `(tenant_id, (member_id::text), …)` expression indexes (migrations 0196/0197,
+  EXPLAIN-verified). The **audit branch** matches `COALESCE(member_id, related_member_id)`
+  on `audit_log.payload`, which the single-expression `audit_log_member_timeline_idx`
+  cannot serve, so that branch is served by the tenant index + a heap filter — O(tenant
+  audit rows). Acceptable at the SC-002 5k scale; if a tenant approaches the ~20k
+  revisit trigger, split it into two partial expression indexes (one per payload key).
 
 ## Dependencies
 
