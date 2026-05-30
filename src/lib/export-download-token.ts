@@ -54,8 +54,13 @@ export function verifyDownloadToken(
   token: string,
   storedHash: string,
 ): boolean {
-  const computed = Buffer.from(hashDownloadToken(jobId, token), 'utf8');
-  const stored = Buffer.from(storedHash, 'utf8');
-  if (computed.length !== stored.length) return false;
+  // Both sides are SHA-256 HMAC hex strings (`digest('hex')`). Decode as hex so
+  // the constant-time compare runs over the 32 raw digest bytes, not the 64 hex
+  // text bytes — semantically correct and robust if the digest encoding changes.
+  // A malformed (non-hex) storedHash decodes to a different length and is caught
+  // by the length guard below before timingSafeEqual (which throws on mismatch).
+  const computed = Buffer.from(hashDownloadToken(jobId, token), 'hex');
+  const stored = Buffer.from(storedHash, 'hex');
+  if (computed.length !== stored.length || computed.length === 0) return false;
   return timingSafeEqual(computed, stored);
 }

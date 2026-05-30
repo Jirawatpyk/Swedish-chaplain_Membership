@@ -288,6 +288,11 @@ export const drizzleMemberRepo: MemberRepo = {
           )
           .where(
             and(
+              // Explicit tenant predicate (defence-in-depth alongside RLS):
+              // Constitution Principle I two-layer isolation. `findByLinkedUserId`
+              // resolves the member for a session user, so a cross-tenant leak here
+              // would be a Principle I violation if RLS were ever misconfigured.
+              eq(members.tenantId, ctx.slug),
               eq(contacts.linkedUserId, userId),
               sql`${contacts.removedAt} IS NULL`,
             ),

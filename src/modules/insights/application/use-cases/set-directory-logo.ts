@@ -70,7 +70,13 @@ export async function setDirectoryLogo(
 ): Promise<Result<{ readonly logoUrl: string }, SetDirectoryLogoError>> {
   if (!authorizeMutation(meta, input.memberId)) return err('forbidden');
   if (input.bytes.length > MAX_LOGO_UPLOAD_BYTES) return err('too_large');
-  if (!ALLOWED_UPLOAD_MIME.has(input.declaredMime)) return err('unsupported_format');
+  // Normalise the declared Content-Type before the allow-list check: a browser
+  // (or proxy) may append parameters (`image/jpeg; charset=utf-8`) or vary case.
+  // The byte-level `sharp` re-encode below is the authoritative format guard;
+  // this string check is the cheap pre-filter and must not reject a valid type
+  // over a harmless parameter. Essence = type/subtype, lower-cased.
+  const declaredMime = input.declaredMime.split(';')[0]!.trim().toLowerCase();
+  if (!ALLOWED_UPLOAD_MIME.has(declaredMime)) return err('unsupported_format');
 
   const reencoded = await deps.image.reencode(input.bytes);
   if (!reencoded.ok) {

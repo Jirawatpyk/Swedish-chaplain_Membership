@@ -47,6 +47,19 @@ export async function POST(
   }
 
   const { tenantId } = await context.params;
+
+  // MVP single-tenant guard (MTA+STD): the URL `tenantId` must match the
+  // deployed tenant. Without this a cron caller holding CRON_SECRET could refresh
+  // (and inject a `dashboard_metrics_cache` row for) an arbitrary tenant name —
+  // a cross-tenant write once MTA is live. Mirrors the F8 at-risk-recompute guard.
+  if (tenantId !== env.tenant.slug) {
+    logger.warn(
+      { tenantId, expectedTenant: env.tenant.slug },
+      'cron.insights.snapshot_refresh.unknown_tenant',
+    );
+    return NextResponse.json({ error: { code: 'unknown_tenant' } }, { status: 400 });
+  }
+
   let tenant;
   try {
     tenant = asTenantContext(tenantId);

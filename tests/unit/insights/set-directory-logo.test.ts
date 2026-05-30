@@ -94,4 +94,25 @@ describe('setDirectoryLogo — guard branches', () => {
     if (!r.ok) expect(r.error).toBe('unsupported_format');
     expect(deps.image.reencode).not.toHaveBeenCalled();
   });
+
+  it('accepts an allow-listed MIME carrying a parameter / mixed case (normalised pre-filter)', async () => {
+    const deps = stubDeps();
+    // Re-encode fails closed so we stop before upload/runInTenant — we only need
+    // to prove the declared-MIME pre-filter PASSED (reencode was reached).
+    vi.mocked(deps.image.reencode).mockResolvedValue({
+      ok: false,
+      error: { code: 'invalid_image' },
+    });
+    const r = await setDirectoryLogo(
+      { memberId: 'm-1', bytes: png, declaredMime: 'IMAGE/JPEG; charset=utf-8' },
+      memberMeta,
+      ctx,
+      deps,
+    );
+    // Pre-filter passed → reencode ran (the byte-level guard is authoritative).
+    expect(deps.image.reencode).toHaveBeenCalledTimes(1);
+    // It then fails on the (stubbed) byte validation, NOT on unsupported_format.
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('invalid_image');
+  });
 });

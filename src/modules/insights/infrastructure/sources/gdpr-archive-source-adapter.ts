@@ -137,10 +137,16 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
             // unique, so suffixing it guarantees one entry per invoice.
             // `documentNumber.raw` (NOT the DocumentNumber object) — else the
             // filename becomes "[object Object]-<id>.pdf" (security-review F9-US6-03).
-            const filename =
+            // Sanitise the zip entry stem (zip-slip / double-extension defence):
+            // `documentNumber.raw` is §87-allocator-generated today (no separators),
+            // but the entry key `invoices/<filename>` must never be able to escape
+            // the `invoices/` prefix or smuggle a path. Collapse anything outside
+            // [A-Za-z0-9._-] to `_`; invoiceId (UUID) keeps each entry unique.
+            const stem =
               inv.documentNumber !== null
-                ? `${inv.documentNumber.raw}-${inv.invoiceId}.pdf`
-                : `${inv.invoiceId}.pdf`;
+                ? `${inv.documentNumber.raw}-${inv.invoiceId}`
+                : inv.invoiceId;
+            const filename = `${stem.replace(/[^A-Za-z0-9._-]/g, '_')}.pdf`;
             pdf = { filename, bytes };
           } catch (e) {
             logger.warn(

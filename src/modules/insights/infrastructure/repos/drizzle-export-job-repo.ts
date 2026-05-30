@@ -95,7 +95,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         const rows = await tx
           .select()
           .from(exportJobs)
-          .where(eq(exportJobs.id, jobId))
+          .where(and(eq(exportJobs.tenantId, tenantId), eq(exportJobs.id, jobId)))
           .limit(1);
         return rows[0] === undefined ? null : toRecord(rows[0]);
       });
@@ -106,7 +106,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       const rows = await tx
         .select()
         .from(exportJobs)
-        .where(eq(exportJobs.id, jobId))
+        .where(and(eq(exportJobs.tenantId, tenantId), eq(exportJobs.id, jobId)))
         .limit(1);
       return rows[0] === undefined ? null : toRecord(rows[0]);
     },
@@ -117,7 +117,12 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         const rows = await tx
           .select()
           .from(exportJobs)
-          .where(inArray(exportJobs.kind, [...kinds]))
+          .where(
+            and(
+              eq(exportJobs.tenantId, tenantId),
+              inArray(exportJobs.kind, [...kinds]),
+            ),
+          )
           .orderBy(desc(exportJobs.createdAt))
           .limit(limit);
         return rows.map(toRecord);
@@ -132,6 +137,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           .from(exportJobs)
           .where(
             and(
+              eq(exportJobs.tenantId, tenantId),
               eq(exportJobs.subjectMemberId, subjectMemberId),
               eq(exportJobs.kind, kind),
             ),
@@ -147,7 +153,12 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         const rows = await tx
           .select({ id: exportJobs.id })
           .from(exportJobs)
-          .where(eq(exportJobs.status, 'requested'))
+          .where(
+            and(
+              eq(exportJobs.tenantId, tenantId),
+              eq(exportJobs.status, 'requested'),
+            ),
+          )
           .orderBy(exportJobs.createdAt)
           .limit(limit);
         return rows.map((r) => r.id);
@@ -158,7 +169,13 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       const updated = await tx
         .update(exportJobs)
         .set({ status: 'processing', updatedAt: new Date() })
-        .where(and(eq(exportJobs.id, jobId), eq(exportJobs.status, 'requested')))
+        .where(
+          and(
+            eq(exportJobs.tenantId, tenantId),
+            eq(exportJobs.id, jobId),
+            eq(exportJobs.status, 'requested'),
+          ),
+        )
         .returning({ id: exportJobs.id });
       return updated.length > 0;
     },
@@ -173,7 +190,13 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           errorCode: null,
           updatedAt: new Date(),
         })
-        .where(and(eq(exportJobs.id, jobId), eq(exportJobs.status, 'processing')))
+        .where(
+          and(
+            eq(exportJobs.tenantId, tenantId),
+            eq(exportJobs.id, jobId),
+            eq(exportJobs.status, 'processing'),
+          ),
+        )
         .returning({ id: exportJobs.id });
       return updated.length > 0;
     },
@@ -184,6 +207,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         .set({ status: 'failed', errorCode, updatedAt: new Date() })
         .where(
           and(
+            eq(exportJobs.tenantId, tenantId),
             eq(exportJobs.id, jobId),
             inArray(exportJobs.status, ['requested', 'processing']),
           ),
@@ -198,6 +222,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         .set({ downloadTokenHash: tokenHash, updatedAt: new Date() })
         .where(
           and(
+            eq(exportJobs.tenantId, tenantId),
             eq(exportJobs.id, jobId),
             inArray(exportJobs.status, ['ready', 'delivered']),
           ),
@@ -212,6 +237,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         .set({ status: 'delivered', downloadTokenHash: null, updatedAt: new Date() })
         .where(
           and(
+            eq(exportJobs.tenantId, tenantId),
             eq(exportJobs.id, jobId),
             inArray(exportJobs.status, ['ready', 'delivered']),
           ),
@@ -227,6 +253,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           .from(exportJobs)
           .where(
             and(
+              eq(exportJobs.tenantId, tenantId),
               inArray(exportJobs.status, ['ready', 'delivered']),
               lt(exportJobs.expiresAt, new Date()),
             ),
@@ -241,6 +268,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         .set({ status: 'expired', downloadTokenHash: null, updatedAt: new Date() })
         .where(
           and(
+            eq(exportJobs.tenantId, tenantId),
             eq(exportJobs.id, jobId),
             inArray(exportJobs.status, ['ready', 'delivered']),
           ),
@@ -257,6 +285,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
           .from(exportJobs)
           .where(
             and(
+              eq(exportJobs.tenantId, tenantId),
               eq(exportJobs.status, 'processing'),
               lt(exportJobs.updatedAt, cutoff),
             ),
@@ -269,7 +298,13 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       const updated = await tx
         .update(exportJobs)
         .set({ status: 'failed', errorCode, updatedAt: new Date() })
-        .where(and(eq(exportJobs.id, jobId), eq(exportJobs.status, 'processing')))
+        .where(
+          and(
+            eq(exportJobs.tenantId, tenantId),
+            eq(exportJobs.id, jobId),
+            eq(exportJobs.status, 'processing'),
+          ),
+        )
         .returning({ id: exportJobs.id });
       return updated.length > 0;
     },
