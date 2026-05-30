@@ -188,6 +188,10 @@ async function main(): Promise<void> {
       'renewal_cycles_tenant_member_text_period_idx',
       'broadcasts_tenant_member_text_sent_idx',
       'event_registrations_tenant_member_text_idx',
+      // Round 2 (migration 0197): payments member-text sargability (#4) +
+      // the contacts.linked_user_id index backing the actor-kind EXISTS (#5).
+      'payments_tenant_member_text_completed_idx',
+      'contacts_tenant_linked_user_text_idx',
     ];
     const idx = await sql<{ indexname: string }[]>`
       SELECT indexname FROM pg_indexes

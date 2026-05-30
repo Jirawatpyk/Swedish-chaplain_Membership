@@ -44,11 +44,14 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
       if (filters.targetUserId) {
         conds.push(eq(auditLog.targetUserId, filters.targetUserId));
       }
+      // Cast the full-precision (µs) ISO bound to timestamptz — same precision
+      // contract as the cursor below; a JS Date would truncate to ms and re-drop
+      // the day's final-µs window. (code-review Round 2 — #14)
       if (filters.from) {
-        conds.push(gte(auditLog.timestamp, filters.from));
+        conds.push(gte(auditLog.timestamp, sql`${filters.from}::timestamptz`));
       }
       if (filters.to) {
-        conds.push(lte(auditLog.timestamp, filters.to));
+        conds.push(lte(auditLog.timestamp, sql`${filters.to}::timestamptz`));
       }
       // Keyset on `(timestamp DESC, id DESC)`: rows strictly "older" than the
       // cursor — (ts < c.ts) OR (ts = c.ts AND id < c.id). An offset-free scan

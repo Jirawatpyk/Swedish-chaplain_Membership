@@ -157,6 +157,47 @@ describe('F9 auditQuery — integration (T040)', () => {
     }
   });
 
+  it('FR-009 (Round 2 #14): a row in the final µs of the day survives the `to` bound', async () => {
+    // Insert a row at .999500Z via raw SQL — a JS Date is ms-only and cannot
+    // represent sub-ms. Before the #14 fix the `to` bound was funnelled through
+    // `new Date(...)`, truncating .999999Z → .999Z, so this .999500 row
+    // (.999500 > .999000) was wrongly EXCLUDED. With the µs string cast to
+    // `::timestamptz` it is correctly included.
+    const microActor = randomUUID();
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO audit_log (tenant_id, event_type, actor_user_id, summary, request_id, timestamp, payload)
+        VALUES (${tenantA.ctx.slug}, 'role_changed', ${microActor}, 'micro-boundary row',
+                ${`aq-micro-${randomUUID()}`}, '2031-03-15T23:59:59.999500Z'::timestamptz, '{}'::jsonb)
+      `);
+    });
+
+    // µs-precise day-end `to` (the .999999 cap tenantDayEndUtc produces): INCLUDED.
+    const included = await auditQuery(
+      { actorUserId: microActor, from: '2031-03-15T00:00:00.000Z', to: '2031-03-15T23:59:59.999999Z', limit: 10 },
+      meta('admin'),
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(included.ok).toBe(true);
+    if (included.ok) {
+      expect(included.value.rows.some((r) => r.summary === 'micro-boundary row')).toBe(true);
+    }
+
+    // A `to` bound BELOW the row's µs (.999000) correctly EXCLUDES it — proving
+    // the boundary discriminates at microsecond precision, not millisecond.
+    const excluded = await auditQuery(
+      { actorUserId: microActor, from: '2031-03-15T00:00:00.000Z', to: '2031-03-15T23:59:59.999000Z', limit: 10 },
+      meta('admin'),
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(excluded.ok).toBe(true);
+    if (excluded.ok) {
+      expect(excluded.value.rows.some((r) => r.summary === 'micro-boundary row')).toBe(false);
+    }
+  });
+
   it('filters by target record (targetRef → target_user_id)', async () => {
     const res = await auditQuery(
       { targetRef: targetA, limit: 100 },

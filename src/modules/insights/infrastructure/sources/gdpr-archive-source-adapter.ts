@@ -117,6 +117,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     // 3) Invoices (+ PDF bytes for documented invoices).
     const invoiceDeps = makeListInvoicesByMemberDeps(ctx.slug);
     const invoices: GdprInvoiceEntry[] = [];
+    let invoiceTotal = 0; // DB total — drives truncation precisely (not `>= cap`).
     let offset = 0;
     for (;;) {
       const page = await listInvoicesByMember(invoiceDeps, {
@@ -127,6 +128,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         status: 'all',
       });
       if (!page.ok) throw new Error(`GDPR gather: invoice list failed (${page.error.type})`);
+      invoiceTotal = page.value.total;
       for (const inv of page.value.rows) {
         let pdf: GdprInvoiceEntry['pdf'] = null;
         if (inv.pdf !== null) {
@@ -174,14 +176,17 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       }
     }
 
-    // 4) Events — all attendance (wide window), fail-loud reader.
-    const eventRecords = await getEventAttendeesByMember(
+    // 4) Events — all attendance (wide window), fail-loud reader. Over-fetch by
+    //    one so a member with EXACTLY MAX_EVENTS is not false-flagged truncated
+    //    (Round 2 — #1); keep MAX, flag only on a genuine overflow.
+    const eventRecordsRaw = await getEventAttendeesByMember(
       asTenantId(ctx.slug),
       memberId,
-      { sinceIso: EPOCH_ISO, untilIso: new Date().toISOString(), limit: MAX_EVENTS },
+      { sinceIso: EPOCH_ISO, untilIso: new Date().toISOString(), limit: MAX_EVENTS + 1 },
       { query: drizzleEventAttendeesQueryStrict },
     );
-    const events = eventRecords.map((r) => ({
+    const eventsTruncated = eventRecordsRaw.length > MAX_EVENTS;
+    const events = eventRecordsRaw.slice(0, MAX_EVENTS).map((r) => ({
       eventId: r.eventId,
       eventType: r.eventType,
       attendedAt: r.attendedAt,
@@ -207,24 +212,32 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
           submittedAt: isoOrNull(b.submittedAt),
           sentAt: isoOrNull(b.sentAt),
         });
-        if (broadcasts.length >= MAX_BROADCASTS) break;
+        // Collect one past the cap (`> MAX`) so exactly-MAX is not false-flagged
+        // truncated (Round 2 — #1); the array is trimmed to MAX below.
+        if (broadcasts.length > MAX_BROADCASTS) break;
       }
       if (
         list.rows.length < BROADCAST_PAGE ||
         page >= list.totalPages ||
-        broadcasts.length >= MAX_BROADCASTS
+        broadcasts.length > MAX_BROADCASTS
       ) {
         break;
       }
       page += 1;
     }
+    const broadcastsTruncated = broadcasts.length > MAX_BROADCASTS;
+    if (broadcastsTruncated) broadcasts.length = MAX_BROADCASTS; // trim the probe row
 
     // 6) Audit subset (member-performed ∪ member-targeted) → redacted entries.
-    const auditRows = await gdprAuditSubsetReadAdapter.query(ctx, {
+    //    Over-fetch by one so exactly-MAX_AUDIT_ROWS is not false-flagged
+    //    truncated (Round 2 — #1); trim to MAX before building the subset.
+    const auditRowsRaw = await gdprAuditSubsetReadAdapter.query(ctx, {
       memberUserIds,
       memberId: opts.subjectMemberId,
-      limit: MAX_AUDIT_ROWS,
+      limit: MAX_AUDIT_ROWS + 1,
     });
+    const auditTruncated = auditRowsRaw.length > MAX_AUDIT_ROWS;
+    const auditRows = auditRowsRaw.slice(0, MAX_AUDIT_ROWS);
     const auditEvents = buildMemberAuditSubset(
       auditRows.map((r) => ({
         id: r.id,
@@ -242,11 +255,14 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     // only its most-recent N records — flag it so the README + manifest say so.
     // (auditEvents is post-redaction count; the cap is on the read, so test the
     // raw `auditRows` length.)
+    // Strict-overflow flags (Round 2 — #1): a category that holds EXACTLY its
+    // cap is COMPLETE and must not be flagged. Invoices use the DB total;
+    // events/broadcasts/audit over-fetched one probe row above.
     const truncatedCategories: GdprTruncatableCategory[] = [];
-    if (invoices.length >= MAX_INVOICES) truncatedCategories.push('invoices');
-    if (events.length >= MAX_EVENTS) truncatedCategories.push('events');
-    if (broadcasts.length >= MAX_BROADCASTS) truncatedCategories.push('broadcasts');
-    if (auditRows.length >= MAX_AUDIT_ROWS) truncatedCategories.push('auditEvents');
+    if (invoiceTotal > MAX_INVOICES) truncatedCategories.push('invoices');
+    if (eventsTruncated) truncatedCategories.push('events');
+    if (broadcastsTruncated) truncatedCategories.push('broadcasts');
+    if (auditTruncated) truncatedCategories.push('auditEvents');
 
     return {
       subjectMemberId: opts.subjectMemberId,

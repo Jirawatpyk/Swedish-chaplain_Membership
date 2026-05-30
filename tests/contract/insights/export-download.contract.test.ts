@@ -205,6 +205,34 @@ describe('downloadExport — authz matrix (T073a)', () => {
     if (r.ok) expect(r.value.filename).toBe('data-export.zip');
   });
 
+  it('Round 2: a lost single-use race (consume matches 0 rows) cancels the stream + does not audit', async () => {
+    // Concurrent double-download: the snapshot verified the token, but the
+    // guarded consume returns false (the winner already nulled the hash). The
+    // loser must NOT stream/audit, and must cancel the blob stream it opened
+    // before the consume — releasing the upstream fetch instead of leaking it.
+    const token = mintDownloadToken();
+    const repo = stubRepo(job({ downloadTokenHash: hashDownloadToken(JOB_ID, token) }));
+    (repo.consumeForDownloadInTx as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const stream = new ReadableStream<Uint8Array>();
+    const cancelSpy = vi.spyOn(stream, 'cancel');
+    const blob: PrivateBlobPort = {
+      putPrivate: vi.fn(),
+      delete: vi.fn(),
+      download: vi.fn().mockResolvedValue({ stream, contentType: 'application/json' }),
+    };
+    const a = audit();
+    const r = await downloadExport(
+      { jobId: JOB_ID, token },
+      staff('admin'),
+      ctx,
+      { exportJobRepo: repo, blob, audit: a, clock },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('invalid_token');
+    expect(cancelSpy).toHaveBeenCalledOnce(); // stream released, not abandoned
+    expect(a.recordInTx).not.toHaveBeenCalled(); // loser must not audit
+  });
+
   it('Q2: the token is single-use — a replay after consumption is rejected', async () => {
     // Stateful stub: consume nulls the hash AND advances ready→delivered (mirrors
     // the real consumeForDownloadInTx), so the SAME token replayed after a

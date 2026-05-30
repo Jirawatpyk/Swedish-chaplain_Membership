@@ -33,8 +33,9 @@ export interface AuditSourceFilters {
   readonly eventType?: readonly AuditEventCode[];
   readonly actorUserId?: string;
   readonly targetUserId?: string;
-  readonly from?: Date;
-  readonly to?: Date;
+  /** Full-precision (µs) UTC ISO instant; cast to `::timestamptz` by the reader. */
+  readonly from?: string;
+  readonly to?: string;
   readonly cursor?: AuditSourceCursor;
   /** Reader fetches exactly this many rows (the use-case passes `limit + 1`). */
   readonly limit: number;

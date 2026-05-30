@@ -142,21 +142,24 @@ export async function timelineList(
   // 1a. Value-validate the date bounds (presentation passes UTC ISO instants).
   //     A malformed/impossible date is rejected here rather than reaching the
   //     repo's `::timestamptz` cast (which would surface as a 500).
+  // Forward the VALIDATED original ISO string — do NOT round-trip through
+  // `new Date(...).toISOString()`, which truncates µs to ms and would silently
+  // re-drop the day's final-µs window the `tenantDayEndUtc` .999999 cap exists
+  // to keep (the repo casts `${toTs}::timestamptz`, preserving full precision).
+  // (code-review Round 2 — R2 #14-dead fix)
   let fromTs: string | undefined;
   let toTs: string | undefined;
   if (from !== undefined) {
-    const d = new Date(from);
-    if (Number.isNaN(d.getTime())) {
+    if (Number.isNaN(new Date(from).getTime())) {
       return err({ type: 'invalid_input', message: 'Invalid "from" date' });
     }
-    fromTs = d.toISOString();
+    fromTs = from;
   }
   if (to !== undefined) {
-    const d = new Date(to);
-    if (Number.isNaN(d.getTime())) {
+    if (Number.isNaN(new Date(to).getTime())) {
       return err({ type: 'invalid_input', message: 'Invalid "to" date' });
     }
-    toTs = d.toISOString();
+    toTs = to;
   }
   if (fromTs && toTs && new Date(fromTs).getTime() > new Date(toTs).getTime()) {
     return err({ type: 'invalid_input', message: '"from" must be on or before "to"' });

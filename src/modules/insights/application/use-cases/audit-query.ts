@@ -168,20 +168,24 @@ function resolveFilters(
   input: AuditQueryInput,
 ): { ok: true; value: ResolvedFilters } | { ok: false } {
   const applied: string[] = [];
-  let from: Date | undefined;
-  let to: Date | undefined;
+  // Keep the bounds as the VALIDATED full-precision ISO string (µs), not a JS
+  // Date — a Date holds only ms and would truncate `tenantDayEndUtc`'s .999999
+  // cap back to .999, re-dropping the day's final-µs window. The reader casts
+  // `${from|to}::timestamptz` (like the keyset cursor). (Round 2 — #14-dead fix)
+  let from: string | undefined;
+  let to: string | undefined;
 
   if (input.from !== undefined) {
-    from = new Date(input.from);
-    if (Number.isNaN(from.getTime())) return { ok: false };
+    if (Number.isNaN(new Date(input.from).getTime())) return { ok: false };
+    from = input.from;
     applied.push('from');
   }
   if (input.to !== undefined) {
-    to = new Date(input.to);
-    if (Number.isNaN(to.getTime())) return { ok: false };
+    if (Number.isNaN(new Date(input.to).getTime())) return { ok: false };
+    to = input.to;
     applied.push('to');
   }
-  if (from && to && from.getTime() > to.getTime()) return { ok: false };
+  if (from && to && new Date(from).getTime() > new Date(to).getTime()) return { ok: false };
 
   let cursor: AuditSourceCursor | undefined;
   if (input.cursor !== undefined) {

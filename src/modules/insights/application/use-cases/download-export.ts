@@ -201,8 +201,15 @@ export async function downloadExport(
 
   // Lost the concurrent race (or the token was already consumed): the snapshot
   // verified above, but the row's hash was nulled by the winner. Treat as a
-  // spent token — do not stream a second copy.
-  if (!consumed) return err('invalid_token');
+  // spent token — do not stream a second copy. Cancel the blob stream we opened
+  // before the consume (the ordering is deliberate: probing the blob BEFORE the
+  // consume keeps a missing blob from burning the single-use token) so the loser
+  // releases the upstream fetch connection instead of abandoning it to GC.
+  // (code-review Round 2 — R2 stream-leak finding)
+  if (!consumed) {
+    await obj.stream.cancel().catch(() => {});
+    return err('invalid_token');
+  }
 
   insightsMetrics.exportDownloaded(job.kind, ctx.slug);
 

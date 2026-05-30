@@ -42,8 +42,14 @@ export interface AuditQueryReadFilters {
   readonly eventType?: readonly AuditEventType[];
   readonly actorUserId?: string;
   readonly targetUserId?: string;
-  readonly from?: Date;
-  readonly to?: Date;
+  /**
+   * Full-precision (µs) UTC ISO instant — bound as `${from|to}::timestamptz`
+   * (NOT a JS `Date`, which is ms-only and would truncate the µs that
+   * `tenantDayEndUtc`'s .999999 day-cap relies on). Same precision contract as
+   * the keyset cursor below. (code-review Round 2 — #14)
+   */
+  readonly from?: string;
+  readonly to?: string;
   readonly cursor?: AuditQueryCursor;
   readonly limit: number;
 }
