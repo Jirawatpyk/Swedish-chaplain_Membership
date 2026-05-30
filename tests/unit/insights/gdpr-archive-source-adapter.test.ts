@@ -160,4 +160,38 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     // No leading dash / no documentNumber → just the unique invoiceId.
     expect(data!.invoices[0]!.pdf!.filename).toBe('inv-1.pdf');
   });
+
+  it('collapses path separators in a hostile documentNumber stem (zip-slip defence)', async () => {
+    // documentNumber.raw is §87-allocator-generated today, but the zip entry key
+    // `invoices/<filename>` must never be able to carry a path separator. A `/`
+    // is collapsed to `_` so the entry can never escape the `invoices/` prefix.
+    listInvoicesByMemberMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [{ ...invoiceWithPdf(), documentNumber: { raw: '../../etc/passwd' } }],
+        total: 1,
+      },
+    });
+    downloadBytesMock.mockResolvedValue(new Uint8Array([1]));
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    const filename = data!.invoices[0]!.pdf!.filename;
+    // Every `/` → `_`; dots/dashes are allowed (a `..` with no separator is inert).
+    expect(filename).toBe('.._.._etc_passwd-inv-1.pdf');
+    // The load-bearing invariant: no path separator survives.
+    expect(filename).not.toContain('/');
+  });
+
+  it('collapses spaces and special chars in a documentNumber stem (zip-slip defence)', async () => {
+    listInvoicesByMemberMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [{ ...invoiceWithPdf(), documentNumber: { raw: 'INV 2026-001 (copy).txt' } }],
+        total: 1,
+      },
+    });
+    downloadBytesMock.mockResolvedValue(new Uint8Array([1]));
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    // space/parens → `_`; the allowed `.` `-` are preserved.
+    expect(data!.invoices[0]!.pdf!.filename).toBe('INV_2026-001__copy_.txt-inv-1.pdf');
+  });
 });

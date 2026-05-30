@@ -233,4 +233,47 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
     // All earlier jobs have advanced past requested; nothing should be requested.
     expect(Array.isArray(ids)).toBe(true);
   });
+
+  it('cross-tenant isolation: tenant B cannot read/claim/list tenant A jobs (review I4b)', async () => {
+    // Exercises the explicit `eq(exportJobs.tenantId, …)` second-wall predicate
+    // (alongside RLS) on findById / claimInTx / listRecentForSubject. A job owned
+    // by tenant A must be invisible + immutable from a tenant-B repo + context.
+    const other = await createTestTenant('test-chamber');
+    const otherRepo = () => makeDrizzleExportJobRepo(other.ctx.slug);
+    const subject = randomUUID();
+    try {
+      const created = await runInTenant(tenant.ctx, (tx) =>
+        repo().createOrGetInTx(tx, {
+          kind: 'gdpr_member_archive',
+          subjectMemberId: subject,
+          requestedBy: requester,
+          requestedForPeriod: 'xt-2026',
+          requesterLocale: 'en',
+          idempotencyKey: exportJobIdempotencyInput({
+            tenantId: tenant.ctx.slug,
+            kind: 'gdpr_member_archive',
+            subjectMemberId: subject,
+            requestedForPeriod: 'xt-2026',
+          }),
+        }),
+      );
+      const jobId = created.job.id;
+
+      // findById under tenant B → not visible.
+      expect(await otherRepo().findById(other.ctx, jobId)).toBeNull();
+      // claimInTx under tenant B → 0 rows matched (cannot mutate A's job).
+      expect(await runInTenant(other.ctx, (tx) => otherRepo().claimInTx(tx, jobId))).toBe(false);
+      // listRecentForSubject under tenant B (same subject id) → empty.
+      expect(
+        await otherRepo().listRecentForSubject(other.ctx, subject, 'gdpr_member_archive', 10),
+      ).toHaveLength(0);
+
+      // Tenant A's job is untouched (still `requested`).
+      const stillA = await repo().findById(tenant.ctx, jobId);
+      expect(stillA?.status).toBe('requested');
+    } finally {
+      await db.delete(exportJobs).where(eq(exportJobs.tenantId, other.ctx.slug)).catch(() => {});
+      await other.cleanup().catch(() => {});
+    }
+  });
 });

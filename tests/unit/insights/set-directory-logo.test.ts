@@ -101,7 +101,7 @@ describe('setDirectoryLogo — guard branches', () => {
     // to prove the declared-MIME pre-filter PASSED (reencode was reached).
     vi.mocked(deps.image.reencode).mockResolvedValue({
       ok: false,
-      error: { code: 'invalid_image' },
+      error: { code: 'decode_failed', reason: 'stubbed' },
     });
     const r = await setDirectoryLogo(
       { memberId: 'm-1', bytes: png, declaredMime: 'IMAGE/JPEG; charset=utf-8' },

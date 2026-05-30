@@ -81,6 +81,34 @@ describe('canTransition (state machine, data-model § 4)', () => {
       expect(canTransition(s, s)).toBe(false);
     }
   });
+
+  // Repo↔Domain parity tripwire (review I5): the Drizzle repo enforces each
+  // transition with a hand-rolled `WHERE status = $from` guard rather than calling
+  // `canTransition`. This mirror pins every guard the repo relies on to the Domain
+  // graph — if a future edit to ALLOWED_TRANSITIONS drops an edge a repo method
+  // uses, this fails CI, flagging that the repo guard (drizzle-export-job-repo.ts)
+  // is now stale. (The full fix — drive the repo from the graph — is tracked.)
+  // Genuine state-CHANGING guards (a `from → to` graph edge). Note: the repo's
+  // consume/setDownloadToken/markExpired methods ALSO accept `delivered` as a
+  // from-state for idempotent re-runs (delivered→delivered / token re-set) — that
+  // is intentionally NOT a graph edge (no-op, not a transition) and is excluded.
+  const REPO_GUARD_TRANSITIONS: Array<[string, ExportStatus, ExportStatus]> = [
+    ['claimInTx', 'requested', 'processing'],
+    ['markReadyInTx', 'processing', 'ready'],
+    ['markFailedInTx (from requested)', 'requested', 'failed'],
+    ['markFailedInTx (from processing)', 'processing', 'failed'],
+    ['consumeForDownloadInTx', 'ready', 'delivered'],
+    ['markExpiredInTx (from ready)', 'ready', 'expired'],
+    ['markExpiredInTx (from delivered)', 'delivered', 'expired'],
+    ['reclaimStuckInTx', 'processing', 'failed'],
+  ];
+
+  it.each(REPO_GUARD_TRANSITIONS)(
+    'repo guard %s (%s → %s) is permitted by the Domain graph',
+    (_method, from, to) => {
+      expect(canTransition(from, to)).toBe(true);
+    },
+  );
 });
 
 describe('predicates', () => {
