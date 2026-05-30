@@ -8,6 +8,7 @@
  */
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { isLocale } from '@/i18n/config';
 import type { TenantContext } from '@/modules/tenants';
 import { exportJobs, type ExportJobRow } from '../db/schema-insights';
 import type {
@@ -29,8 +30,13 @@ function toRecord(row: ExportJobRow): ExportJobRecord {
     requestedBy: row.requestedBy,
     requestedForPeriod: row.requestedForPeriod,
     // The text column is app-controlled (only `requestDataExport` writes it, with
-    // a validated Locale); narrow back from the inferred `string | null`.
-    requesterLocale: row.requesterLocale as ExportJobRecord['requesterLocale'],
+    // a validated Locale), but re-validate at the read boundary rather than trust
+    // a non-local invariant: a manual backfill / migration default could seed a
+    // non-Locale string. An invalid value narrows to null (→ tenant default).
+    requesterLocale:
+      row.requesterLocale !== null && isLocale(row.requesterLocale)
+        ? row.requesterLocale
+        : null,
     status: row.status,
     idempotencyKey: row.idempotencyKey,
     blobKey: row.blobKey,

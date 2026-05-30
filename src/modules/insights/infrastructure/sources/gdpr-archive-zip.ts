@@ -13,7 +13,8 @@
  *     its own bytes).
  *
  * Determinism: file contents are stable for given data; `zipSync` is invoked
- * with `mtime: 0` so the container bytes don't vary by wall-clock. The manifest
+ * with a fixed `mtime: ZIP_MTIME` (2020-01-01) so the container bytes don't vary
+ * by wall-clock (epoch 0 is rejected by fflate as pre-1980). The manifest
  * checksums are over the UNCOMPRESSED file contents, so they are independent of
  * the zip encoding entirely.
  *

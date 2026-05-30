@@ -6,12 +6,11 @@
  * path in `listDashboard`. Idempotent — the projection is derived + safe to
  * rebuild.
  *
- * Computes membership counts + at-risk insight via `MemberSource`, and YTD paid
- * revenue + overdue-invoice count via `InvoiceSource` (Increment 1 + 2). Still
- * scoped follow-ups (emitted as 0/empty with the field present so the UI stays
- * stable):
- *   - needsAttention.broadcastsAwaitingApproval
- *     → BroadcastConsumptionSource (needs a broadcasts barrel count export)
+ * Computes membership counts + at-risk insight via `MemberSource`, YTD paid
+ * revenue + overdue-invoice count via `InvoiceSource`, and
+ * needsAttention.broadcastsAwaitingApproval via `BroadcastConsumptionSource`
+ * (`countAwaitingApproval`). Still scoped follow-up (emitted as 0/empty with the
+ * field present so the UI stays stable):
  *   - underDeliveredBenefitCount + the 2 quota insights
  *     → US4 benefit-usage aggregate (cross-member)
  *
