@@ -17,7 +17,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Lock } from 'lucide-react';
+import { Loader2Icon, Lock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -271,7 +271,10 @@ export function PlanEditForm({
             {tButtons('cancel')}
           </Button>
         ) : null}
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting} aria-busy={submitting}>
+          {submitting && (
+            <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />
+          )}
           {submitting ? tEdit('saving') : tEdit('save')}
         </Button>
       </div>

@@ -119,19 +119,19 @@ export function UserListTable({
       <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.email')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.name')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.role')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.status')}
               </TableHead>
-              <TableHead className="text-right text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-right text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.actions')}
               </TableHead>
             </TableRow>

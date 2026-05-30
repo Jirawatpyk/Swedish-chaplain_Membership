@@ -105,21 +105,21 @@ export function EventsListTable({ rows }: Props) {
            * sortable column that doesn't react to user input. Drop it
            * until sort UI lands (Phase 10 or smart-feature follow-up).
            */}
-          <TableHead>{t('columns.date')}</TableHead>
-          <TableHead>{t('columns.name')}</TableHead>
+          <TableHead scope="col">{t('columns.date')}</TableHead>
+          <TableHead scope="col">{t('columns.name')}</TableHead>
           {/* Phase D D3 — hide low-priority columns at <md to avoid
               horizontal scroll on tablet portrait (768px). Name + date
               + registrations carry the headline signal. */}
-          <TableHead className="hidden md:table-cell">
+          <TableHead scope="col" className="hidden md:table-cell">
             {t('columns.category')}
           </TableHead>
-          <TableHead className="text-right">
+          <TableHead scope="col" className="text-right">
             {t('columns.registrations')}
           </TableHead>
-          <TableHead className="hidden md:table-cell">
+          <TableHead scope="col" className="hidden md:table-cell">
             {t('columns.partnerBenefit')}
           </TableHead>
-          <TableHead className="hidden md:table-cell text-right">
+          <TableHead scope="col" className="hidden md:table-cell text-right">
             {t('columns.matchRate')}
           </TableHead>
         </TableRow>

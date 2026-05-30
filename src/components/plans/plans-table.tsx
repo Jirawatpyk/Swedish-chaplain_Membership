@@ -323,26 +323,26 @@ export function PlansTable({
       <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.name')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.category')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.annualFee')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.memberType')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.year')}
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.status')}
               </TableHead>
               {isAdmin ? (
-                <TableHead className="w-[48px] text-xs uppercase tracking-wide text-muted-foreground">
+                <TableHead scope="col" className="w-[48px] text-xs uppercase tracking-wide text-muted-foreground">
                   <span className="sr-only">{t('columns.actions')}</span>
                 </TableHead>
               ) : null}

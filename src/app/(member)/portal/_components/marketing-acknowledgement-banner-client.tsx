@@ -135,7 +135,7 @@ export function AcknowledgementBannerClient({
                   data-testid="banner-acknowledge-cta"
                 >
                   {pending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                    <Loader2 className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
                   ) : null}
                   {acknowledge}
                 </Button>

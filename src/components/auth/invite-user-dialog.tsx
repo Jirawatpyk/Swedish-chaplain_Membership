@@ -318,7 +318,7 @@ export function InviteUserDialog({
             <Button type="submit" disabled={submitting || !email.trim()}>
               {submitting ? (
                 <>
-                  <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                  <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
                   {t('submitting')}
                 </>
               ) : (

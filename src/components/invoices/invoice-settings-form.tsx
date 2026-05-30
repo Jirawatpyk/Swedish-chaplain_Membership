@@ -22,6 +22,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -557,6 +558,9 @@ export function InvoiceSettingsForm({
           disabled={submitting}
           aria-busy={submitting}
         >
+          {submitting && (
+            <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />
+          )}
           {submitting
             ? t('saving')
             : exists

@@ -44,7 +44,7 @@ export function RenewalsErrorRetry({
           motion text fallback so reduced-motion users see textual
           loading feedback. */}
       {isPending && (
-        <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
+        <Loader2 className="mr-2 size-3.5 motion-safe:animate-spin" aria-hidden />
       )}
       {isPending ? retryingLabel : label}
     </Button>
