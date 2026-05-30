@@ -13,6 +13,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { readErrorCode } from './read-error-code';
 
 export function DirectoryLogoControl({
@@ -26,6 +27,8 @@ export function DirectoryLogoControl({
   const [pending, startTransition] = useTransition();
   // Track which action is running so only that button shows the spinner.
   const [pendingAction, setPendingAction] = useState<'upload' | 'remove' | null>(null);
+  // Destructive logo removal is confirmed via an AlertDialog (ux-standards § 6).
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -121,7 +124,7 @@ export function DirectoryLogoControl({
             variant="ghost"
             disabled={pending}
             aria-busy={pendingAction === 'remove'}
-            onClick={onRemove}
+            onClick={() => setRemoveOpen(true)}
           >
             {pendingAction === 'remove' ? (
               <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
@@ -130,6 +133,16 @@ export function DirectoryLogoControl({
           </Button>
         ) : null}
       </div>
+      <ConfirmationDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        title={t('logoRemoveTitle')}
+        description={t('logoRemoveDescription')}
+        confirmLabel={t('logoRemoveConfirm')}
+        cancelLabel={t('cancel')}
+        destructive
+        onConfirm={onRemove}
+      />
     </div>
   );
 }

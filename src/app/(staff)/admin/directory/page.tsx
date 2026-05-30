@@ -19,6 +19,8 @@ import { DirectorySearchFilters } from '@/components/directory/directory-search-
 import { DirectoryTable, type DirectoryTableRow } from '@/components/directory/directory-table';
 import { GenerateExportActions } from '@/components/directory/generate-export-actions';
 import { RecentExports, type RecentExportRow } from '@/components/directory/recent-exports';
+import { EmptyState } from '@/components/shell/empty-state';
+import { ShieldAlertIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -99,9 +101,7 @@ export default async function DirectoryPage({
     return (
       <TableContainer>
         {header}
-        <p className="rounded-md border py-10 text-center text-muted-foreground">
-          {t('forbidden')}
-        </p>
+        <EmptyState icon={ShieldAlertIcon} title={t('forbidden')} />
       </TableContainer>
     );
   }

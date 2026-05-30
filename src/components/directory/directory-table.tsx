@@ -61,13 +61,13 @@ export function DirectoryTable({
       <TableCaption className="sr-only">{labels.caption}</TableCaption>
       <TableHeader>
         <TableRow>
-          <TableHead>{labels.company}</TableHead>
-          <TableHead>{labels.tier}</TableHead>
-          <TableHead>{labels.industry}</TableHead>
-          <TableHead>{labels.location}</TableHead>
-          <TableHead>{labels.listed}</TableHead>
-          <TableHead>{labels.logo}</TableHead>
-          <TableHead>{labels.contact}</TableHead>
+          <TableHead scope="col">{labels.company}</TableHead>
+          <TableHead scope="col">{labels.tier}</TableHead>
+          <TableHead scope="col">{labels.industry}</TableHead>
+          <TableHead scope="col">{labels.location}</TableHead>
+          <TableHead scope="col">{labels.listed}</TableHead>
+          <TableHead scope="col">{labels.logo}</TableHead>
+          <TableHead scope="col">{labels.contact}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

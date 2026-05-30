@@ -245,6 +245,10 @@
     "logoSaved": "Logo updated.",
     "logoFailed": "Could not upload the logo (PNG/JPEG/WebP, max 2 MB).",
     "logoRemoved": "Logo removed.",
+    "logoRemoveTitle": "Remove this logo?",
+    "logoRemoveDescription": "Your directory listing will show no logo until you upload a new one. You can re-upload at any time.",
+    "logoRemoveConfirm": "Remove logo",
+    "cancel": "Cancel",
     "manage": "Manage listing",
     "invalidWebsite": "Website must start with http:// or https://",
     "descriptionTooLong": "Description must be 500 characters or fewer.",
@@ -3604,7 +3608,9 @@
       "escalationTasksOverdue": "Escalation tasks: overdue only",
       "eventsList": "Events",
       "eventcreateIntegration": "EventCreate integration",
-      "csvImportHistory": "CSV import history"
+      "csvImportHistory": "CSV import history",
+      "auditLog": "Audit log",
+      "directory": "Member directory"
     }
   },
   "nav": {

@@ -30,12 +30,17 @@ export function NeedsAttentionList({
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
-          <p className="text-body text-muted-foreground">{emptyLabel}</p>
+          <p role="status" className="text-body text-muted-foreground">
+            {emptyLabel}
+          </p>
         ) : (
           <ul className="grid gap-2 text-body">
             {items.map((item) => (
               <li key={item.id} className="flex items-center justify-between gap-3">
-                <Link href={item.href} className="hover:underline">
+                <Link
+                  href={item.href}
+                  className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                >
                   {item.label}
                 </Link>
                 <span className="tabular-nums font-medium">{item.count}</span>

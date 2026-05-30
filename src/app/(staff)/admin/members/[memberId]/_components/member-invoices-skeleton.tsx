@@ -18,13 +18,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export function MemberInvoicesSkeleton(): React.ReactElement {
   return (
-    <section aria-busy="true" aria-labelledby="member-invoices-heading">
+    // No `aria-labelledby` here: during the shimmer the heading has no text
+    // (icon is aria-hidden + a bare Skeleton div), so labelling the section by it
+    // resolves to an empty name → axe `aria-prohibited-attr` (a <section> with no
+    // accessible name is role=generic, where aria-labelledby is prohibited). The
+    // loaded `MemberInvoicesSection` carries the real aria-labelledby. `aria-busy`
+    // alone is valid on the placeholder.
+    <section aria-busy="true">
       <Card>
         <CardHeader>
-          <CardTitle
-            id="member-invoices-heading"
-            className="text-base flex items-center gap-2"
-          >
+          <CardTitle className="text-base flex items-center gap-2">
             <ReceiptIcon className="size-4" aria-hidden="true" />
             <Skeleton className="h-4 w-24" />
           </CardTitle>

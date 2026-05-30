@@ -76,10 +76,10 @@ export function RecentExports({
           <TableCaption className="sr-only">{labels.caption}</TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead>{labels.kindLabel}</TableHead>
-              <TableHead>{labels.statusLabel}</TableHead>
-              <TableHead>{labels.requestedLabel}</TableHead>
-              <TableHead className="sr-only">{labels.download}</TableHead>
+              <TableHead scope="col">{labels.kindLabel}</TableHead>
+              <TableHead scope="col">{labels.statusLabel}</TableHead>
+              <TableHead scope="col">{labels.requestedLabel}</TableHead>
+              <TableHead scope="col" className="sr-only">{labels.download}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

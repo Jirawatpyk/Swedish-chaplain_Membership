@@ -19,6 +19,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
+import { EmptyState } from '@/components/shell/empty-state';
+import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
 import { requireSession } from '@/lib/auth-session';
@@ -151,9 +153,7 @@ export default async function AuditLogPage({
       <TableContainer>
         {header}
         {result.error === 'forbidden' ? (
-          <p className="rounded-md border py-10 text-center text-muted-foreground">
-            {t('forbidden')}
-          </p>
+          <EmptyState icon={ShieldAlertIcon} title={t('forbidden')} />
         ) : (
           <>
             <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />

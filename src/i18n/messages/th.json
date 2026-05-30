@@ -245,6 +245,10 @@
     "logoSaved": "อัปเดตโลโก้แล้ว",
     "logoFailed": "อัปโหลดโลโก้ไม่สำเร็จ (PNG/JPEG/WebP ไม่เกิน 2 MB)",
     "logoRemoved": "ลบโลโก้แล้ว",
+    "logoRemoveTitle": "ลบโลโก้นี้หรือไม่?",
+    "logoRemoveDescription": "รายชื่อในไดเรกทอรีของคุณจะไม่แสดงโลโก้จนกว่าจะอัปโหลดใหม่ คุณอัปโหลดใหม่ได้ทุกเมื่อ",
+    "logoRemoveConfirm": "ลบโลโก้",
+    "cancel": "ยกเลิก",
     "manage": "จัดการการแสดง",
     "invalidWebsite": "เว็บไซต์ต้องขึ้นต้นด้วย http:// หรือ https://",
     "descriptionTooLong": "คำอธิบายต้องไม่เกิน 500 ตัวอักษร",
@@ -3604,7 +3608,9 @@
       "escalationTasksOverdue": "งานติดตามด่วน: เฉพาะที่เกินกำหนด",
       "eventsList": "กิจกรรม",
       "eventcreateIntegration": "การเชื่อมต่อ EventCreate",
-      "csvImportHistory": "ประวัติการนำเข้า CSV"
+      "csvImportHistory": "ประวัติการนำเข้า CSV",
+      "auditLog": "บันทึกการตรวจสอบ",
+      "directory": "ไดเรกทอรีสมาชิก"
     }
   },
   "nav": {

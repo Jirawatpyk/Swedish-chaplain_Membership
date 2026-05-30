@@ -23,6 +23,8 @@ import {
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { RevenueTrendChart } from '@/components/dashboard/revenue-trend-chart';
 import { MemberGrowthChart } from '@/components/dashboard/member-growth-chart';
+import { EmptyState } from '@/components/shell/empty-state';
+import { ShieldAlertIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -132,11 +134,7 @@ export default async function StaffHomePage() {
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         {forbidden ? (
-          <Card>
-            <CardContent className="py-10 text-center text-muted-foreground">
-              {t('forbidden')}
-            </CardContent>
-          </Card>
+          <EmptyState icon={ShieldAlertIcon} title={t('forbidden')} />
         ) : (
           <DashboardErrorState title={t('error.title')} description={t('error.body')} />
         )}
@@ -149,6 +147,10 @@ export default async function StaffHomePage() {
   const asOf = new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
+    // Render the "as of" instant in the tenant timezone — the Vercel runtime is
+    // UTC, so without this the th-TH label shows UTC midnight, not Asia/Bangkok
+    // (mirrors the audit page's dual-timestamp fix).
+    timeZone: env.tenant.timezone,
   }).format(new Date(computedAt));
   // FR-007: revenue is visible to all staff (admin + the "read-only on finance"
   // manager role); only members are denied the dashboard (handled upstream).

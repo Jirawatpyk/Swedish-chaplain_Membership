@@ -123,7 +123,7 @@ export function DataExportPanel({
         <Button onClick={requestExport} disabled={disabled} aria-busy={pending}>
           {pending ? (
             <>
-              <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+              <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />
               {labels.requesting}
             </>
           ) : (

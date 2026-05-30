@@ -245,6 +245,10 @@
     "logoSaved": "Logotypen uppdaterades.",
     "logoFailed": "Kunde inte ladda upp logotypen (PNG/JPEG/WebP, max 2 MB).",
     "logoRemoved": "Logotypen togs bort.",
+    "logoRemoveTitle": "Ta bort den här logotypen?",
+    "logoRemoveDescription": "Din katalogpost visar ingen logotyp förrän du laddar upp en ny. Du kan ladda upp igen när som helst.",
+    "logoRemoveConfirm": "Ta bort logotyp",
+    "cancel": "Avbryt",
     "manage": "Hantera katalogpost",
     "invalidWebsite": "Webbplatsen måste börja med http:// eller https://",
     "descriptionTooLong": "Beskrivningen får vara högst 500 tecken.",
@@ -3604,7 +3608,9 @@
       "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade",
       "eventsList": "Evenemang",
       "eventcreateIntegration": "EventCreate-integration",
-      "csvImportHistory": "CSV-importhistorik"
+      "csvImportHistory": "CSV-importhistorik",
+      "auditLog": "Granskningslogg",
+      "directory": "Medlemskatalog"
     }
   },
   "nav": {

@@ -35,7 +35,9 @@ export function InsightsPanel({
       </CardHeader>
       <CardContent>
         {lines.length === 0 ? (
-          <p className="text-body text-muted-foreground">{emptyLabel}</p>
+          <p role="status" className="text-body text-muted-foreground">
+            {emptyLabel}
+          </p>
         ) : (
           <ul className="grid gap-2 text-body">
             {lines.map((line) => (
@@ -44,7 +46,9 @@ export function InsightsPanel({
                 <InsightDismissButton
                   insightKey={line.key}
                   {...(line.scopeRef !== undefined ? { scopeRef: line.scopeRef } : {})}
-                  label={dismissLabel}
+                  // Compose a UNIQUE accessible name per insight (WCAG 2.4.6 /
+                  // voice-control): "Dismiss insight: <the insight text>".
+                  label={`${dismissLabel}: ${line.text}`}
                   successLabel={dismissedLabel}
                   errorLabel={dismissErrorLabel}
                 />

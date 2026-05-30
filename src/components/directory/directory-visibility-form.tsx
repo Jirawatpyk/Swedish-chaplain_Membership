@@ -11,6 +11,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -213,6 +214,7 @@ export function DirectoryVisibilityForm({
       </fieldset>
 
       <Button type="submit" disabled={pending}>
+        {pending && <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />}
         {t('save')}
       </Button>
     </form>
