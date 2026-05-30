@@ -86,7 +86,8 @@ jobs:
 
       - name: F7 status badge
         if: always()
-        run: echo "F7 broadcasts readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "F7 broadcasts readiness: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
 
   f8:
     name: F8 renewals readiness
@@ -145,4 +146,5 @@ jobs:
 
       - name: F8 status badge
         if: always()
-        run: echo "F8 renewals readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "F8 renewals readiness: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
