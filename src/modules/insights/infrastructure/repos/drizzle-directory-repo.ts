@@ -233,9 +233,13 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         }
         if (filter.listedOnly === true) conds.push(sql`dl.listed = true`);
 
+        // Seed with the explicit tenant predicate (defence-in-depth alongside
+        // RLS): Constitution Principle I two-layer isolation. The JOINs link on
+        // `*.tenant_id = m.tenant_id`, but nothing pins `m` itself to the bound
+        // tenant without this — matches the ExportJobRepo second-wall pattern.
         const whereSql = conds.reduce<SQL>(
-          (acc, c, i) => (i === 0 ? c : sql`${acc} AND ${c}`),
-          sql``,
+          (acc, c) => sql`${acc} AND ${c}`,
+          sql`m.tenant_id = ${tenantId}`,
         );
 
         const rows = (await tx.execute(sql`
@@ -311,7 +315,7 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         LEFT JOIN contacts c
           ON c.tenant_id = m.tenant_id AND c.member_id = m.member_id
              AND c.is_primary = true AND c.removed_at IS NULL
-        WHERE dl.listed = true
+        WHERE dl.tenant_id = ${tenantId} AND dl.listed = true
         ORDER BY m.company_name ASC, m.member_id ASC
       `)) as unknown as PublishedRawRow[];
 
