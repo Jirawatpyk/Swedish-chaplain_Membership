@@ -79,6 +79,32 @@ describe('buildGdprArchiveBytes', () => {
     expect(strFromU8(files['README.txt']!)).toContain('Your data export');
   });
 
+  it('a complete archive (no truncation) marks the manifest complete and omits the README warning (F9 #5)', () => {
+    const files = unzipSync(buildGdprArchiveBytes(data, meta).bytes);
+    const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+    expect(manifest.completeness).toEqual({ complete: true, truncatedFiles: [] });
+    expect(strFromU8(files['README.txt']!)).not.toContain('PARTIAL EXPORT');
+  });
+
+  it('discloses a capped export in BOTH the README and the manifest (F9 #5)', () => {
+    const truncated: GdprMemberData = {
+      ...data,
+      completeness: { truncatedCategories: ['events', 'auditEvents'] },
+    };
+    const files = unzipSync(buildGdprArchiveBytes(truncated, meta).bytes);
+
+    // Manifest: machine-readable partial-export signal over the capped files.
+    const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+    expect(manifest.completeness.complete).toBe(false);
+    expect(manifest.completeness.truncatedFiles).toEqual(['events.json', 'audit-events.json']);
+
+    // README: human-readable warning naming the capped files (so the archive is
+    // never presented as a complete copy when it is not — FR-037).
+    const readme = strFromU8(files['README.txt']!);
+    expect(readme).toContain('PARTIAL EXPORT');
+    expect(readme).toContain('events.json, audit-events.json');
+  });
+
   it('manifest checksums validate against each archived file (SC-008)', () => {
     const files = unzipSync(buildGdprArchiveBytes(data, meta).bytes);
     const manifest = JSON.parse(strFromU8(files['manifest.json']!));

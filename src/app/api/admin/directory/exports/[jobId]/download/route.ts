@@ -25,6 +25,8 @@ import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import {
   prepareExportDownload,
   makePrepareExportDownloadDeps,
@@ -58,23 +60,37 @@ export async function GET(
 
   const { jobId } = await params;
   const tenant = resolveTenantFromRequest(request);
-  const result = await prepareExportDownload(
-    { jobId },
-    {
-      actorUserId: current.user.id as string,
-      actorRole: current.user.role,
-      actorMemberId: null,
-      requestId: randomUUID(),
-    },
-    tenant,
-    makePrepareExportDownloadDeps(tenant.slug),
-  );
+  const requestId = randomUUID();
 
-  if (!result.ok) {
-    return NextResponse.json({ error: { code: result.error } }, { status: STATUS[result.error] });
+  // `prepareExportDownload` runs `findById` + `setDownloadTokenInTx`, both
+  // `runInTenant` queries that THROW on a DB/RLS fault. Surface a throw as a
+  // logged 500 (not a bodyless framework 500), matching the two sibling GDPR
+  // download routes (admin members + portal). [code-review max F9 — finding #3]
+  try {
+    const result = await prepareExportDownload(
+      { jobId },
+      {
+        actorUserId: current.user.id as string,
+        actorRole: current.user.role,
+        actorMemberId: null,
+        requestId,
+      },
+      tenant,
+      makePrepareExportDownloadDeps(tenant.slug),
+    );
+
+    if (!result.ok) {
+      return NextResponse.json({ error: { code: result.error } }, { status: STATUS[result.error] });
+    }
+
+    const url = new URL(`/api/internal/exports/${jobId}/download`, request.nextUrl.origin);
+    url.searchParams.set('token', result.value.token);
+    return NextResponse.redirect(url, 303);
+  } catch (e) {
+    logger.error(
+      { jobId, requestId, tenantId: tenant.slug, errKind: errKind(e) },
+      'admin.directory.exports.download.unexpected_error',
+    );
+    return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
   }
-
-  const url = new URL(`/api/internal/exports/${jobId}/download`, request.nextUrl.origin);
-  url.searchParams.set('token', result.value.token);
-  return NextResponse.redirect(url, 303);
 }

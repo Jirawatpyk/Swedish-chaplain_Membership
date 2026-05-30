@@ -37,8 +37,16 @@ export interface GdprReadmeVars {
 /**
  * Build the plain-text README for the requester's locale (EN fallback for an
  * unknown/unsupported locale code).
+ *
+ * `truncatedFiles` (F9 #5): when a category was capped at its most-recent N
+ * records, its filename is listed here so the README discloses the partial
+ * export (FR-037 "no silent failure / mislead"). Empty ⇒ complete copy.
  */
-export function buildGdprReadme(locale: string, vars: GdprReadmeVars): string {
+export function buildGdprReadme(
+  locale: string,
+  vars: GdprReadmeVars,
+  truncatedFiles: readonly string[] = [],
+): string {
   const r = BUNDLES[isLocale(locale) ? locale : 'en'];
   const lines: string[] = [
     r.title,
@@ -58,8 +66,13 @@ export function buildGdprReadme(locale: string, vars: GdprReadmeVars): string {
     `- ${r.files.auditEvents}`,
     `- ${r.files.manifest}`,
     '',
-    r.privacyNote,
-    '',
   ];
+  if (truncatedFiles.length > 0) {
+    lines.push(
+      interpolate(r.truncationWarning, { files: truncatedFiles.join(', ') }),
+      '',
+    );
+  }
+  lines.push(r.privacyNote, '');
   return lines.join('\n');
 }

@@ -12,14 +12,16 @@ import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-rang
 
 describe('tenantDayStartUtc / tenantDayEndUtc', () => {
   it('Asia/Bangkok (UTC+7) — local day maps to the offset UTC instants', () => {
-    // 2026-05-27 00:00 +07 = 2026-05-26 17:00Z; 23:59:59.999 +07 = 2026-05-27 16:59:59.999Z
+    // 2026-05-27 00:00 +07 = 2026-05-26 17:00Z; 23:59:59.999999 +07 = 2026-05-27 16:59:59.999999Z
+    // End cap is microsecond-precise (.999999) so it covers a timestamptz(6)
+    // column's full final second under an inclusive `lte` (F9 #14).
     expect(tenantDayStartUtc('2026-05-27', 'Asia/Bangkok')).toBe('2026-05-26T17:00:00Z');
-    expect(tenantDayEndUtc('2026-05-27', 'Asia/Bangkok')).toBe('2026-05-27T16:59:59.999Z');
+    expect(tenantDayEndUtc('2026-05-27', 'Asia/Bangkok')).toBe('2026-05-27T16:59:59.999999Z');
   });
 
   it('UTC — identity (start of day, end of day)', () => {
     expect(tenantDayStartUtc('2026-05-27', 'UTC')).toBe('2026-05-27T00:00:00Z');
-    expect(tenantDayEndUtc('2026-05-27', 'UTC')).toBe('2026-05-27T23:59:59.999Z');
+    expect(tenantDayEndUtc('2026-05-27', 'UTC')).toBe('2026-05-27T23:59:59.999999Z');
   });
 
   it('Europe/Stockholm — DST-correct (CEST = UTC+2 in summer)', () => {

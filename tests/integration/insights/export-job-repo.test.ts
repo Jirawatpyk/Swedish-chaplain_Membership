@@ -146,6 +146,15 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
     row = await repo().findById(tenant.ctx, jobId);
     expect(row?.status).toBe('delivered');
     expect(row?.downloadTokenHash).toBeNull();
+
+    // Single-use is ATOMIC: a SECOND consume of the now-token-less job matches
+    // 0 rows (the `downloadTokenHash IS NOT NULL` guard) → false. This is the
+    // optimistic lock that makes two concurrent downloads of the SAME token
+    // mutually exclusive — only the first wins; the loser must not stream/audit.
+    // (code-review max F9 — finding #11)
+    expect(
+      await runInTenant(tenant.ctx, (tx) => repo().consumeForDownloadInTx(tx, jobId)),
+    ).toBe(false);
   });
 
   it('TTL sweep: a delivered job past expires_at is sweepable → expired', async () => {

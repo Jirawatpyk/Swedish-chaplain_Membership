@@ -85,31 +85,45 @@ export async function GET(
     }
   }
 
-  const result = await downloadExport(
-    { jobId, token },
-    {
-      actorUserId: session.user.id,
-      actorRole: session.user.role,
-      actorMemberId,
-      requestId,
-    },
-    tenant,
-    makeDownloadExportDeps(tenant.slug),
-  );
-
-  if (!result.ok) {
-    return NextResponse.json(
-      { error: { code: result.error } },
-      { status: STATUS[result.error] },
+  // `downloadExport` runs `findById` (runInTenant), `blob.download`, and the
+  // consume+audit `runInTenant` tx — each can THROW on an infra fault (Neon
+  // drop, Blob 5xx). A throw here (the route that streams the GDPR PII archive)
+  // must surface as a logged 500, NOT a bodyless framework 500 — mirroring the
+  // member-lookup discrimination above and the sibling download routes
+  // (admin/portal data-export, dismiss). [code-review max F9 — finding #2]
+  try {
+    const result = await downloadExport(
+      { jobId, token },
+      {
+        actorUserId: session.user.id,
+        actorRole: session.user.role,
+        actorMemberId,
+        requestId,
+      },
+      tenant,
+      makeDownloadExportDeps(tenant.slug),
     );
-  }
 
-  return new NextResponse(result.value.stream, {
-    status: 200,
-    headers: {
-      'Content-Type': result.value.contentType ?? 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${result.value.filename}"`,
-      'Cache-Control': 'private, no-store',
-    },
-  });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: { code: result.error } },
+        { status: STATUS[result.error] },
+      );
+    }
+
+    return new NextResponse(result.value.stream, {
+      status: 200,
+      headers: {
+        'Content-Type': result.value.contentType ?? 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${result.value.filename}"`,
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  } catch (e) {
+    logger.error(
+      { jobId, requestId, errKind: errKind(e) },
+      'exports.download.unexpected_error',
+    );
+    return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
+  }
 }

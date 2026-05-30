@@ -9,7 +9,8 @@
  *   - member-role projection strips internal annotations (FR-017)
  */
 import { describe, expect, it, vi } from 'vitest';
-import { ok } from '@/lib/result';
+import { ok, err } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { timelineList } from '@/modules/members/application/use-cases/timeline-list';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberRepo } from '@/modules/members/application/ports/member-repo';
@@ -158,5 +159,56 @@ describe('timelineList — filter resolution (D1)', () => {
     const ev = r.value.events[0]!;
     expect(ev.payload).not.toHaveProperty('notes');
     expect(ev.payload).toMatchObject({ status: 'issued', invoice_id: 'inv-9' });
+  });
+
+  it('threads the UNDERLYING repo error as `cause`, not the RepoError wrapper (F9 #7/#9)', async () => {
+    // The timeline routes log `errKind((result.error).cause)` with a SINGLE
+    // `.cause` unwrap. If the use-case threads the whole `{ code, cause }`
+    // RepoError wrapper, that unwrap lands on a plain object → errKind 'unknown'.
+    // It must thread the real Error so the log carries the actual class.
+    const realError = new TypeError('Connection terminated unexpectedly');
+    const memberRepo = {
+      findById: vi.fn().mockResolvedValue(ok({})),
+    } as unknown as MemberRepo;
+    const timeline = {
+      listByMember: vi.fn(async () =>
+        err({ code: 'repo.unexpected' as const, cause: realError }),
+      ),
+    } as unknown as TimelinePort;
+
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, {
+      memberRepo,
+      timeline,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.type).toBe('server_error');
+      const cause = (r.error as { cause?: unknown }).cause;
+      expect(cause).toBe(realError); // the real Error, NOT the {code,cause} wrapper
+      expect(errKind(cause)).toBe('TypeError'); // not 'unknown'
+    }
+  });
+
+  it('threads the underlying member-verify repo error as `cause` (F9 #7)', async () => {
+    const realError = new Error('RLS context missing');
+    const memberRepo = {
+      findById: vi.fn().mockResolvedValue(
+        err({ code: 'repo.unexpected' as const, cause: realError }),
+      ),
+    } as unknown as MemberRepo;
+    const timeline = { listByMember: vi.fn() } as unknown as TimelinePort;
+
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, {
+      memberRepo,
+      timeline,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.type).toBe('server_error');
+      expect((r.error as { cause?: unknown }).cause).toBe(realError);
+    }
+    expect(timeline.listByMember).not.toHaveBeenCalled();
   });
 });

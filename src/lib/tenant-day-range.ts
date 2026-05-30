@@ -38,10 +38,19 @@ export function tenantDayStartUtc(ymd: string, tz: string): string {
   return LocalDate.parse(ymd).atStartOfDay(ZoneId.of(tz)).toInstant().toString();
 }
 
-/** UTC instant (ISO 8601) at the END (23:59:59.999) of `ymd` in tenant tz `tz`. */
+/**
+ * UTC instant (ISO 8601) at the END (23:59:59.999999) of `ymd` in tenant tz `tz`.
+ *
+ * Capped at MICROsecond precision (999_999_000 ns), not millisecond: the
+ * `audit_log.timestamp` column is `timestamptz(6)` (microsecond) and the reader
+ * filters `lte(timestamp, to)` inclusively. A millisecond cap (`.999`) would
+ * silently drop an event committed in the final [.999001, .999999] µs of the
+ * selected day — the same truncation class the keyset cursor already guards
+ * against. (code-review max F9 — finding #14)
+ */
 export function tenantDayEndUtc(ymd: string, tz: string): string {
   return LocalDate.parse(ymd)
-    .atTime(LocalTime.of(23, 59, 59, 999_000_000))
+    .atTime(LocalTime.of(23, 59, 59, 999_999_000))
     .atZone(ZoneId.of(tz))
     .toInstant()
     .toString();

@@ -4617,6 +4617,7 @@
       "succeeded": "Payment received",
       "failed": "Payment failed",
       "refunded": "Payment refunded",
+      "partially_refunded": "Payment partially refunded",
       "canceled": "Payment canceled"
     },
     "event": {
@@ -4691,6 +4692,7 @@
         "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
       },
+      "truncationWarning": "⚠ PARTIAL EXPORT — Some categories contain only your most recent records; older entries were omitted to keep the archive a manageable size: {files}. To request your complete history for these categories, contact the chamber. The manifest checksums cover only the records included here.",
       "privacyNote": "For your protection this archive may contain personal information. Store it securely and delete it when you no longer need it."
     }
   },

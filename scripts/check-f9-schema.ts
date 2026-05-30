@@ -179,7 +179,15 @@ async function main(): Promise<void> {
       'broadcasts_tenant_member_sent_idx',
       'renewal_cycles_tenant_member_period_idx',
       'events_tenant_start_date_idx',
-      'event_registrations_tenant_member_idx',
+      // Sargable expression indexes matching the view's `member_id::text` cast
+      // (migration 0196 / code-review max #1). The raw-uuid keyset indexes above
+      // stay (they serve non-view uuid-member lookups); these serve the timeline
+      // `(member_id)::text = $1` qual. The 0189 full `event_registrations_tenant_member_idx`
+      // was dropped (#15 — redundant with the 0131 partial).
+      'invoices_tenant_member_text_issue_idx',
+      'renewal_cycles_tenant_member_text_period_idx',
+      'broadcasts_tenant_member_text_sent_idx',
+      'event_registrations_tenant_member_text_idx',
     ];
     const idx = await sql<{ indexname: string }[]>`
       SELECT indexname FROM pg_indexes

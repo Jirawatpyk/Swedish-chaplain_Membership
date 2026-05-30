@@ -118,9 +118,13 @@ export interface ExportJobRepo {
   ): Promise<boolean>;
 
   /**
-   * Consume on download: `ready → delivered` (first download) and null the
-   * token hash (single-use). A re-download of an already-`delivered` job stays
-   * delivered; the proxy requires a freshly-minted token each time.
+   * Consume on download: `ready → delivered` and null the token hash
+   * (single-use). Implemented as an ATOMIC guarded check-and-consume (the
+   * write only matches a row whose `download_token_hash IS NOT NULL`), so two
+   * concurrent downloads of the same token serialise on the row lock and only
+   * the first returns `true` — the caller MUST treat `false` as a spent token
+   * and not stream/audit (TOCTOU defence, F9 #11). A re-download requires a
+   * freshly-minted token each time (the mint re-sets the hash).
    */
   consumeForDownloadInTx(tx: TenantTx, jobId: string): Promise<boolean>;
 

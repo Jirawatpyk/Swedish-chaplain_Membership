@@ -21,6 +21,7 @@ import { db, runInTenant } from '@/lib/db';
 import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { payments } from '@/modules/payments/infrastructure/schema';
 import { events, eventRegistrations } from '@/modules/events/infrastructure/schema';
@@ -527,5 +528,117 @@ describe('F9 US3 — cross-tenant isolation of the UNION view (I4, live Neon)', 
     const sources = new Set(own.value.events.map((e) => e.source));
     expect(sources.has('invoice')).toBe(true);
     expect(sources.has('audit')).toBe(true);
+  });
+});
+
+describe('F9 US3 — actorKind classifies member-linked audit actors (code-review max #8, live Neon)', () => {
+  let tenant: TestTenant;
+  let memberUser: TestUser;
+  let staffUser: TestUser;
+  let ownerCleanup: () => Promise<void>;
+  const memberId = randomUUID();
+
+  beforeAll(async () => {
+    staffUser = await createActiveTestUser('admin');
+    memberUser = await createActiveTestUser('member');
+    tenant = await createTestTenant('test-swecham');
+    const seeded = await seedMemberAndRenewalCycle({
+      tenant: tenant.ctx,
+      planIdAtCycleStart: PLAN_ID,
+      tierAtCycleStart: 'regular',
+    });
+    ownerCleanup = seeded.ownerCleanup;
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'Self-Service Co',
+        country: 'TH',
+        planId: PLAN_ID,
+        planYear: 2026,
+      });
+      // A contact LINKED to memberUser → an audit row whose actor is that user
+      // must classify as actor_kind='member' (migration 0196 / #8).
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Self',
+        lastName: 'Service',
+        email: 'self-service@example.com',
+        isPrimary: true,
+        linkedUserId: memberUser.userId,
+      });
+    });
+
+    // Member self-service audit row (actor = the member's own linked user id).
+    await db.insert(auditLog).values({
+      eventType: 'member_self_updated',
+      actorUserId: memberUser.userId,
+      summary: 'member self-updated profile',
+      requestId: `ak-${randomUUID()}`,
+      tenantId: tenant.ctx.slug,
+      payload: { member_id: memberId, fields_changed: ['phone'] },
+      timestamp: new Date('2026-09-01T10:00:00.000Z'),
+    });
+    // Staff audit row (actor = admin user, NOT a linked contact) → 'staff'.
+    await db.insert(auditLog).values({
+      eventType: 'member_updated',
+      actorUserId: staffUser.userId,
+      summary: 'staff updated member',
+      requestId: `ak-${randomUUID()}`,
+      tenantId: tenant.ctx.slug,
+      payload: { member_id: memberId, fields_changed: ['company_name'] },
+      timestamp: new Date('2026-09-02T10:00:00.000Z'),
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await deleteSeededRows(tenant.ctx.slug);
+    await db.delete(contacts).where(eq(contacts.tenantId, tenant.ctx.slug)).catch(() => {});
+    await ownerCleanup().catch(() => {});
+    await tenant.cleanup().catch(() => {});
+  }, 120_000);
+
+  it('a member-linked audit actor is actorKind=member; the actor filter splits member vs staff (FR-015 / #8)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const meta = (rid: string) => ({ actorUserId: staffUser.userId, actorRole: 'admin' as const, requestId: rid });
+
+    // Unfiltered: the self-service audit row is classified 'member' (was 'staff').
+    const all = await timelineList({ memberId, limit: 50 }, meta('ak-all'), tenant.ctx, {
+      memberRepo: deps.memberRepo,
+      timeline: deps.timeline,
+    });
+    expect(all.ok).toBe(true);
+    if (!all.ok) return;
+    const selfRow = all.value.events.find(
+      (e) => e.source === 'audit' && e.eventType === 'member_self_updated',
+    );
+    expect(selfRow?.actorKind).toBe('member');
+
+    // actorKind=member surfaces the self-service audit row and excludes the staff one.
+    const memberFiltered = await timelineList(
+      { memberId, limit: 50, actorKind: 'member' },
+      meta('ak-m'),
+      tenant.ctx,
+      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    );
+    expect(memberFiltered.ok).toBe(true);
+    if (!memberFiltered.ok) return;
+    const memberAudit = memberFiltered.value.events.filter((e) => e.source === 'audit');
+    expect(memberAudit.length).toBeGreaterThanOrEqual(1);
+    expect(memberAudit.every((e) => e.eventType === 'member_self_updated')).toBe(true);
+
+    // actorKind=staff surfaces the staff audit row and NOT the member self-update.
+    const staffFiltered = await timelineList(
+      { memberId, limit: 50, actorKind: 'staff' },
+      meta('ak-s'),
+      tenant.ctx,
+      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    );
+    expect(staffFiltered.ok).toBe(true);
+    if (!staffFiltered.ok) return;
+    expect(staffFiltered.value.events.some((e) => e.eventType === 'member_self_updated')).toBe(false);
   });
 });

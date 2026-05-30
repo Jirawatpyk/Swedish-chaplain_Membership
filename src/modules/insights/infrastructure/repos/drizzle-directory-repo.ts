@@ -15,7 +15,7 @@
  * with a guarded raw SELECT *before* writing, so a non-existent member yields
  * `memberNotFound` without a failing FK statement poisoning the caller's tx.
  */
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { sanitizeFieldVisibility } from '../../domain/directory-listing';
 import type {
@@ -94,7 +94,10 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       const rows = await tx
         .select()
         .from(directoryListings)
-        .where(eq(directoryListings.memberId, memberId))
+        // Explicit tenant predicate (Principle I second wall, defence-in-depth
+        // alongside RLS) — matches `search`/`listPublishedInTx` + ExportJobRepo.
+        // (code-review max F9 — finding #10)
+        .where(and(eq(directoryListings.tenantId, tenantId), eq(directoryListings.memberId, memberId)))
         .limit(1);
       const row = rows[0];
       if (row === undefined) return null;
@@ -120,7 +123,8 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         const rows = await tx
           .select()
           .from(directoryListings)
-          .where(eq(directoryListings.memberId, memberId))
+          // Explicit tenant predicate (Principle I second wall). #10
+          .where(and(eq(directoryListings.tenantId, tenantId), eq(directoryListings.memberId, memberId)))
           .limit(1);
         const row = rows[0];
         if (row === undefined) return null;
@@ -145,9 +149,11 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
     ): Promise<{ readonly memberNotFound: boolean }> {
       if (!UUID_RE.test(memberId)) return { memberNotFound: true };
       // Existence check BEFORE the write so a missing member never fires an FK
-      // violation that would poison the caller's tx. RLS scopes to the tenant.
+      // violation that would poison the caller's tx. Explicit tenant predicate
+      // (Principle I second wall, defence-in-depth alongside RLS) matches the
+      // rest of this file's queries. (code-review max F9 — finding #13)
       const existing = (await tx.execute(
-        sql`SELECT 1 AS ok FROM members WHERE member_id = ${memberId}::uuid LIMIT 1`,
+        sql`SELECT 1 AS ok FROM members WHERE tenant_id = ${tenantId} AND member_id = ${memberId}::uuid LIMIT 1`,
       )) as unknown as Array<{ ok: number }>;
       if (existing.length === 0) return { memberNotFound: true };
 
@@ -188,8 +194,9 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       logoUrl: string | null,
     ): Promise<{ readonly memberNotFound: boolean }> {
       if (!UUID_RE.test(memberId)) return { memberNotFound: true };
+      // Explicit tenant predicate (Principle I second wall). #13
       const existing = (await tx.execute(
-        sql`SELECT 1 AS ok FROM members WHERE member_id = ${memberId}::uuid LIMIT 1`,
+        sql`SELECT 1 AS ok FROM members WHERE tenant_id = ${tenantId} AND member_id = ${memberId}::uuid LIMIT 1`,
       )) as unknown as Array<{ ok: number }>;
       if (existing.length === 0) return { memberNotFound: true };
 

@@ -4617,6 +4617,7 @@
       "succeeded": "Betalning mottagen",
       "failed": "Betalning misslyckades",
       "refunded": "Betalning återbetald",
+      "partially_refunded": "Betalning delvis återbetald",
       "canceled": "Betalning avbruten"
     },
     "event": {
@@ -4691,6 +4692,7 @@
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
       },
+      "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",
       "privacyNote": "För din säkerhet kan detta arkiv innehålla personuppgifter. Förvara det säkert och radera det när du inte längre behöver det."
     }
   },

@@ -25,6 +25,21 @@ export interface GdprInvoiceEntry {
   readonly pdf: { readonly filename: string; readonly bytes: Uint8Array } | null;
 }
 
+/** A category whose export was capped at the most-recent N records. */
+export type GdprTruncatableCategory = 'invoices' | 'events' | 'broadcasts' | 'auditEvents';
+
+/**
+ * Completeness signal (FR-037 — "no export may silently fail/mislead"). The
+ * GDPR path applies defensive per-category caps and keeps the NEWEST records;
+ * when a cap is hit the OLDEST data is dropped. `truncatedCategories` records
+ * which categories were capped so the archive (README + manifest) can disclose
+ * the partial export instead of presenting a checksummed archive as complete.
+ * Empty array ⇒ the archive is a complete copy. (code-review max F9 — finding #5)
+ */
+export interface GdprCompleteness {
+  readonly truncatedCategories: readonly GdprTruncatableCategory[];
+}
+
 /** The full per-member data bundle the zip builder serialises. */
 export interface GdprMemberData {
   readonly subjectMemberId: string;
@@ -34,6 +49,11 @@ export interface GdprMemberData {
   readonly events: readonly Record<string, unknown>[];
   readonly broadcasts: readonly Record<string, unknown>[];
   readonly auditEvents: readonly GdprAuditEntry[];
+  /**
+   * Per-category truncation disclosure. Optional for backward-compatible test
+   * fixtures (absent ⇒ treated as complete); the adapter always populates it.
+   */
+  readonly completeness?: GdprCompleteness;
 }
 
 export interface GdprArchiveSource {

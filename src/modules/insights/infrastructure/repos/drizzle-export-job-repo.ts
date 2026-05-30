@@ -6,7 +6,7 @@
  * (`WHERE id = $id AND status = $from`) so a concurrent writer cannot corrupt
  * the row — the guard returns 0 rows and the caller learns the transition lost.
  */
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { isLocale } from '@/i18n/config';
 import type { TenantContext } from '@/modules/tenants';
@@ -238,6 +238,15 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
     },
 
     async consumeForDownloadInTx(tx, jobId) {
+      // Atomic single-use consume. The `downloadTokenHash IS NOT NULL` guard
+      // makes this an optimistic-lock check-and-consume: under two concurrent
+      // downloads of the SAME minted token, Postgres row-locking serialises the
+      // UPDATEs — the first nulls the hash and returns 1 row; the second
+      // re-evaluates the WHERE against the committed row, sees a null hash, and
+      // returns 0. The use-case treats `false` as `invalid_token` and does NOT
+      // stream/audit, closing the read-verify-vs-consume TOCTOU on the GDPR PII
+      // token (double-click / link-prefetch). A re-download still works because
+      // prepare re-mints a fresh hash. (code-review max F9 — finding #11)
       const updated = await tx
         .update(exportJobs)
         .set({ status: 'delivered', downloadTokenHash: null, updatedAt: new Date() })
@@ -246,6 +255,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
             eq(exportJobs.tenantId, tenantId),
             eq(exportJobs.id, jobId),
             inArray(exportJobs.status, ['ready', 'delivered']),
+            isNotNull(exportJobs.downloadTokenHash),
           ),
         )
         .returning({ id: exportJobs.id });

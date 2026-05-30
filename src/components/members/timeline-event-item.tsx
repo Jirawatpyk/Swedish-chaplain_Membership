@@ -175,11 +175,17 @@ export function TimelineEventItem({
       eventLabel = summary.length > 0 ? summary : tTimeline('source.audit');
     }
   } else {
-    try {
-      eventLabel = tTimeline(`${source}.${eventType}` as 'unknownEvent');
-    } catch {
-      eventLabel = tTimeline(`source.${source}` as 'unknownEvent');
-    }
+    // `.has` guard (NOT try/catch), same reason as the audit branch above:
+    // next-intl's onError reporter logs `MISSING_MESSAGE` to console.error
+    // BEFORE a catch can run (t() returns the key path, it does not throw), so
+    // try/catch is dead code AND noisy. An uncatalogued non-audit event-kind
+    // (e.g. a payment `partially_refunded` that has no `timeline.payment.*`
+    // key) must fall back silently to the source label.
+    // (code-review max F9 — finding #6)
+    const tlKey = `${source}.${eventType}`;
+    eventLabel = tTimeline.has(tlKey as 'unknownEvent')
+      ? tTimeline(tlKey as 'unknownEvent')
+      : tTimeline(`source.${source}` as 'unknownEvent');
   }
 
   // --- actor attribution --------------------------------------------------

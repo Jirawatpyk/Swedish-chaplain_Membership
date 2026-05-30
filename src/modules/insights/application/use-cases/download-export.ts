@@ -172,8 +172,15 @@ export async function downloadExport(
   }
 
   // Consume (single-use) + transition ready→delivered + audit, atomically.
+  // The consume is a guarded check-and-consume (repo: status ready|delivered
+  // AND downloadTokenHash IS NOT NULL). Under two concurrent downloads of the
+  // same token exactly ONE wins; the loser gets `consumed=false` and must NOT
+  // stream or audit — otherwise the single-use PII token would be honoured
+  // twice and `data_export_downloaded` would fire twice (TOCTOU, finding #11).
+  let consumed = false;
   await runInTenant(ctx, async (tx) => {
-    await deps.exportJobRepo.consumeForDownloadInTx(tx, job.id);
+    consumed = await deps.exportJobRepo.consumeForDownloadInTx(tx, job.id);
+    if (!consumed) return;
     await deps.audit.recordInTx(tx, {
       tenantId: ctx.slug,
       requestId: meta.requestId,
@@ -191,6 +198,12 @@ export async function downloadExport(
       },
     });
   });
+
+  // Lost the concurrent race (or the token was already consumed): the snapshot
+  // verified above, but the row's hash was nulled by the winner. Treat as a
+  // spent token — do not stream a second copy.
+  if (!consumed) return err('invalid_token');
+
   insightsMetrics.exportDownloaded(job.kind, ctx.slug);
 
   return ok({

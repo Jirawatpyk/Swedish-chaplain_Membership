@@ -56,8 +56,10 @@ export type TimelineListInput = z.infer<typeof timelineListSchema>;
 export type TimelineListError =
   | { type: 'not_found'; message: string }
   | { type: 'invalid_input'; message: string }
-  // `cause` preserves the underlying repo error so the route can log a real
-  // diagnostic instead of a generic string (review-run I1).
+  // `cause` is the underlying Error thrown by the repo (e.g. a NeonDbError),
+  // unwrapped from the `repo.unexpected` RepoError wrapper, so the route's
+  // single-`.cause` `errKind(...)` logs the real class — not 'unknown'
+  // (review-run I1; code-review max F9 #7/#9).
   | { type: 'server_error'; message: string; cause?: unknown };
 
 // ---------------------------------------------------------------------------
@@ -172,7 +174,11 @@ export async function timelineList(
     return err({
       type: 'server_error',
       message: 'Failed to verify member',
-      cause: memberResult.error,
+      // Thread the UNDERLYING error (repo.unexpected.cause), not the RepoError
+      // wrapper: the routes log `errKind(result.error.cause)` with a single
+      // unwrap, and errKind on the plain `{ code, cause }` wrapper always yields
+      // 'unknown'. (code-review max F9 — finding #7/#9)
+      cause: (memberResult.error as { cause?: unknown }).cause,
     });
   }
 
@@ -194,7 +200,10 @@ export async function timelineList(
     return err({
       type: 'server_error',
       message: 'Failed to load timeline',
-      cause: timelineResult.error,
+      // Underlying error, not the RepoError wrapper (see member-verify branch
+      // above) — keeps the routes' single `.cause` unwrap on a real Error so
+      // `errKind` logs the actual class (e.g. NeonDbError), not 'unknown'.
+      cause: (timelineResult.error as { cause?: unknown }).cause,
     });
   }
 

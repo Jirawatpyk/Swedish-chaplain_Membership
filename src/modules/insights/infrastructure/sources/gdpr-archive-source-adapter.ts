@@ -37,9 +37,15 @@ import type {
   GdprArchiveSource,
   GdprInvoiceEntry,
   GdprMemberData,
+  GdprTruncatableCategory,
 } from '../../application/ports/gdpr-archive-source';
 
-/** Defensive caps — the GDPR path is low-volume; bound the blast radius (FR-037). */
+/**
+ * Defensive caps — the GDPR path is low-volume; bound the blast radius (FR-037).
+ * When a cap is hit the NEWEST records are kept and the category is recorded in
+ * `completeness.truncatedCategories` so the README + manifest disclose the
+ * partial export rather than presenting it as a complete copy (F9 #5).
+ */
 const INVOICE_PAGE = 200;
 const MAX_INVOICES = 1000;
 const MAX_EVENTS = 1000;
@@ -232,8 +238,19 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       { memberUserIds, memberId: opts.subjectMemberId },
     );
 
+    // Completeness disclosure (FR-037 / F9 #5): a category that hit its cap kept
+    // only its most-recent N records — flag it so the README + manifest say so.
+    // (auditEvents is post-redaction count; the cap is on the read, so test the
+    // raw `auditRows` length.)
+    const truncatedCategories: GdprTruncatableCategory[] = [];
+    if (invoices.length >= MAX_INVOICES) truncatedCategories.push('invoices');
+    if (events.length >= MAX_EVENTS) truncatedCategories.push('events');
+    if (broadcasts.length >= MAX_BROADCASTS) truncatedCategories.push('broadcasts');
+    if (auditRows.length >= MAX_AUDIT_ROWS) truncatedCategories.push('auditEvents');
+
     return {
       subjectMemberId: opts.subjectMemberId,
+      completeness: { truncatedCategories },
       profile: {
         memberId: member.memberId,
         companyName: member.companyName,

@@ -112,7 +112,14 @@ export const drizzleTimelineRepo: TimelinePort = {
 
       const result = await runInTenant(ctx, async (tx) => {
         // --- shared filter fragments (count + page) ---------------------
-        const conditions = [sql`member_id = ${memberId}`];
+        // Explicit tenant predicate (Principle I second wall, defence-in-depth
+        // behind the view's security_invoker RLS). `member_timeline_v` emits a
+        // `tenant_id` column (0192), and `audit_log`'s RLS is NULL-permissive
+        // (`tenant_id IS NULL OR ...`), so without this an RLS misconfig / a
+        // pooled connection missing app.current_tenant could surface another
+        // tenant's rows. `ctx.slug` is what every tenant_id column stores.
+        // (code-review max F9 — finding #12)
+        const conditions = [sql`tenant_id = ${ctx.slug}`, sql`member_id = ${memberId}`];
         if (filter.source) conditions.push(sql`source = ${filter.source}`);
         if (filter.actorKind) conditions.push(sql`actor_kind = ${filter.actorKind}`);
         if (filter.fromTs) conditions.push(sql`occurred_at >= ${filter.fromTs}::timestamptz`);
