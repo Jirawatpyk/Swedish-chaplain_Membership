@@ -16,7 +16,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -66,7 +66,7 @@ export async function GET(
           jobId,
           tenantId: tenant.slug,
           errCode: memberResult.error.code,
-          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+          errKind: errKind(rootCause(memberResult.error)),
         },
         'portal.data_export.download.member_lookup_failed',
       );

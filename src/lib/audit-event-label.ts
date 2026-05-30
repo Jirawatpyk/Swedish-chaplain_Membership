@@ -21,9 +21,26 @@ export function humanizeEventType(eventType: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** Localised label for an event code, falling back to the humanised form. */
-export function resolveEventLabel(t: EventLabelTranslator, eventType: string): string {
-  return t.has(eventType) ? t(eventType) : humanizeEventType(eventType);
+/**
+ * Localised label for an event code.
+ *
+ * Resolution order: the primary translator (`admin.dashboard.activity.events`,
+ * which carries the viewer-context phrasing for the common events) → an optional
+ * `tFallback` (the `audit.eventType` timeline catalogue, ~99 events with EN/TH/SV)
+ * → the deterministic humanised form. The fallback lets the audit viewer + activity
+ * feed reuse the timeline's localised labels for events not in their own namespace
+ * (so a TH/SV admin sees a localised label instead of the English humanised form),
+ * without duplicating ~90 keys. Truly-internal/rare events (in neither catalogue)
+ * still humanise gracefully. (code-review deferred-item: audit-label localisation.)
+ */
+export function resolveEventLabel(
+  t: EventLabelTranslator,
+  eventType: string,
+  tFallback?: EventLabelTranslator,
+): string {
+  if (t.has(eventType)) return t(eventType);
+  if (tFallback?.has(eventType)) return tFallback(eventType);
+  return humanizeEventType(eventType);
 }
 
 /**

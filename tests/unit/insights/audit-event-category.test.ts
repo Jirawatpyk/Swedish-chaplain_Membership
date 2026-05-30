@@ -8,7 +8,12 @@
  * silently mis-group the filter dropdown with zero failure otherwise.
  */
 import { describe, expect, it } from 'vitest';
-import { auditEventCategory } from '@/lib/audit-event-label';
+import {
+  auditEventCategory,
+  resolveEventLabel,
+  humanizeEventType,
+  type EventLabelTranslator,
+} from '@/lib/audit-event-label';
 
 describe('auditEventCategory', () => {
   it.each([
@@ -43,5 +48,41 @@ describe('auditEventCategory', () => {
     ['something_unmapped', 'other'],
   ] as const)('%s → %s', (code, expected) => {
     expect(auditEventCategory(code)).toBe(expected);
+  });
+});
+
+/** Build a fake next-intl-shaped translator over a static label map. */
+function fakeT(map: Readonly<Record<string, string>>): EventLabelTranslator {
+  const fn = ((key: string) => map[key] ?? key) as EventLabelTranslator;
+  fn.has = (key: string) => key in map;
+  return fn;
+}
+
+describe('resolveEventLabel (viewer/feed → timeline-catalogue fallback)', () => {
+  // Primary = sparse viewer namespace; fallback = the richer `audit.eventType`
+  // timeline catalogue (localised). Mirrors the audit viewer/feed wiring.
+  const primary = fakeT({ member_created: 'Member created' });
+  const fallback = fakeT({ member_created: 'สร้างสมาชิก', member_plan_changed: 'Plan changed' });
+
+  it('prefers the primary translator when it has the key', () => {
+    expect(resolveEventLabel(primary, 'member_created', fallback)).toBe('Member created');
+  });
+
+  it('falls back to the timeline catalogue when the primary lacks the key', () => {
+    // Localised label reused from the timeline namespace instead of humanising.
+    expect(resolveEventLabel(primary, 'member_plan_changed', fallback)).toBe('Plan changed');
+  });
+
+  it('humanises when neither catalogue has the key', () => {
+    expect(resolveEventLabel(primary, 'webhook_signature_rejected', fallback)).toBe(
+      'Webhook signature rejected',
+    );
+  });
+
+  it('back-compat: humanises when no fallback translator is provided', () => {
+    expect(resolveEventLabel(primary, 'lockout_triggered')).toBe(
+      humanizeEventType('lockout_triggered'),
+    );
+    expect(resolveEventLabel(primary, 'lockout_triggered')).toBe('Lockout triggered');
   });
 });

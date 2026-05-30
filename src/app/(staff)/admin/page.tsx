@@ -227,12 +227,15 @@ export default async function StaffHomePage() {
 
   const timeFmt = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
   const tEvents = await getTranslations('admin.dashboard.activity.events');
+  // Fallback to the timeline `audit.eventType` catalogue (EN/TH/SV) for codes
+  // the feed namespace lacks → localised label instead of humanised English.
+  const tEventsFallback = await getTranslations('audit.eventType');
   const activityItems: readonly ActivityFeedEntry[] = feed.map((item) => ({
     id: item.id,
     // Localised action label (FR-034) — resolved per-locale from the audit
     // event type, NOT the raw English summary (which would leak to TH/SV).
-    // Uncatalogued types fall back to a humanised token (no English sentence).
-    label: resolveEventLabel(tEvents, item.eventType),
+    // Falls back to the timeline catalogue, then a humanised token.
+    label: resolveEventLabel(tEvents, item.eventType, tEventsFallback),
     occurredAt: item.occurredAt,
     timeLabel: timeFmt.format(new Date(item.occurredAt)),
   }));

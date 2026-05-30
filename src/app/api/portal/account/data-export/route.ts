@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { getLocale } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { isLocale } from '@/i18n/config';
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // The Result error is a plain `{code, cause}` object, not an Error —
           // errKind must read the wrapped DB error in `.cause` (errKind(error)
           // would always log 'unknown').
-          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+          errKind: errKind(rootCause(memberResult.error)),
         },
         'portal.data_export.member_lookup_failed',
       );

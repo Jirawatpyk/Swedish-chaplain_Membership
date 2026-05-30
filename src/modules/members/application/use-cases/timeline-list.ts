@@ -14,6 +14,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { rootCause } from '@/lib/log-id';
 import { TIMELINE_SOURCES, TIMELINE_ACTOR_KINDS } from '@/lib/timeline-shared';
 import type { TenantContext } from '@/modules/tenants';
 import type {
@@ -181,7 +182,7 @@ export async function timelineList(
       // wrapper: the routes log `errKind(result.error.cause)` with a single
       // unwrap, and errKind on the plain `{ code, cause }` wrapper always yields
       // 'unknown'. (code-review max F9 — finding #7/#9)
-      cause: (memberResult.error as { cause?: unknown }).cause,
+      cause: rootCause(memberResult.error),
     });
   }
 
@@ -206,7 +207,7 @@ export async function timelineList(
       // Underlying error, not the RepoError wrapper (see member-verify branch
       // above) — keeps the routes' single `.cause` unwrap on a real Error so
       // `errKind` logs the actual class (e.g. NeonDbError), not 'unknown'.
-      cause: (timelineResult.error as { cause?: unknown }).cause,
+      cause: rootCause(timelineResult.error),
     });
   }
 

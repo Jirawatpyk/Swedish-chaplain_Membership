@@ -16,7 +16,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { isYmd } from '@/lib/tenant-day-range';
 import { buildTimelineFilterInput } from '@/lib/timeline-filter-input';
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // Unwrap `.cause`: the Result error is a plain object, not an Error,
           // so errKind(error) would log 'unknown' (cf. the use-case path below
           // which already reads `.cause`).
-          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+          errKind: errKind(rootCause(memberResult.error)),
         },
         'portal.timeline.member_lookup_failed',
       );
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(EMPTY);
     }
     logger.error(
-      { requestId, errKind: errKind((result.error as { cause?: unknown }).cause) },
+      { requestId, errKind: errKind(rootCause(result.error)) },
       'portal.timeline.server_error',
     );
     return NextResponse.json(

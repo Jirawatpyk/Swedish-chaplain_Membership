@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import {
   timelineList,
   TIMELINE_SOURCES,
@@ -143,7 +143,7 @@ export async function GET(
         // a raw Neon error carrying SQL params/table names (forbidden-fields
         // hygiene, R003).
         logger.error(
-          { requestId: ctx.requestId, errKind: errKind((result.error as { cause?: unknown }).cause) },
+          { requestId: ctx.requestId, errKind: errKind(rootCause(result.error)) },
           'timeline.server_error',
         );
         return NextResponse.json(

@@ -43,6 +43,10 @@ export function AuditFilters({
 }): React.JSX.Element {
   const t = useTranslations('admin.audit.filters');
   const tEvents = useTranslations('admin.dashboard.activity.events');
+  // Fallback catalogue: the timeline's `audit.eventType` namespace (~99 events
+  // with EN/TH/SV) covers codes the viewer namespace lacks, so the filter shows
+  // localised labels instead of the humanised English form.
+  const tEventsFallback = useTranslations('audit.eventType');
   const tGroups = useTranslations('admin.audit.filters.groups');
   const router = useRouter();
 
@@ -54,7 +58,11 @@ export function AuditFilters({
     (grouped.get(cat) ?? grouped.set(cat, []).get(cat)!).push(et);
   }
   for (const list of grouped.values()) {
-    list.sort((a, b) => resolveEventLabel(tEvents, a).localeCompare(resolveEventLabel(tEvents, b)));
+    list.sort((a, b) =>
+      resolveEventLabel(tEvents, a, tEventsFallback).localeCompare(
+        resolveEventLabel(tEvents, b, tEventsFallback),
+      ),
+    );
   }
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -114,7 +122,7 @@ export function AuditFilters({
           <TranslatedSelectValue
             placeholder={t('eventTypeAll')}
             translate={(v) =>
-              v === ALL ? t('eventTypeAll') : resolveEventLabel(tEvents, v)
+              v === ALL ? t('eventTypeAll') : resolveEventLabel(tEvents, v, tEventsFallback)
             }
           />
         </SelectTrigger>
@@ -125,7 +133,7 @@ export function AuditFilters({
               <SelectLabel>{tGroups(cat)}</SelectLabel>
               {grouped.get(cat)!.map((et) => (
                 <SelectItem key={et} value={et}>
-                  {resolveEventLabel(tEvents, et)}
+                  {resolveEventLabel(tEvents, et, tEventsFallback)}
                 </SelectItem>
               ))}
             </SelectGroup>

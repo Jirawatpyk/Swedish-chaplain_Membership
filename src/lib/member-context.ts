@@ -16,7 +16,7 @@ import type { CurrentSession } from '@/lib/auth-session';
 import { getCurrentSession } from '@/lib/auth-session';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
-import { errKind, hashId } from '@/lib/log-id';
+import { errKind, hashId, rootCause } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -83,7 +83,7 @@ export async function requireMemberContext(
           {
             requestId,
             userIdHash: hashId(current.user.id),
-            errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+            errKind: errKind(rootCause(memberResult.error)),
           },
           'member-context: member lookup failed (DB fault)',
         );

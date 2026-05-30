@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { updateDirectoryListing, makeUpdateDirectoryListingDeps } from '@/modules/insights';
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           correlationId,
           tenantId: tenant.slug,
           errCode: memberResult.error.code,
-          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+          errKind: errKind(rootCause(memberResult.error)),
         },
         'portal.directory.member_lookup_failed',
       );

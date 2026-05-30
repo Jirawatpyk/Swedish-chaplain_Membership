@@ -10,7 +10,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession, type CurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { setDirectoryLogo, removeDirectoryLogo, MAX_LOGO_UPLOAD_BYTES } from '@/modules/insights';
@@ -59,7 +59,7 @@ async function gate(
           correlationId,
           tenantId: tenant.slug,
           errCode: memberResult.error.code,
-          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+          errKind: errKind(rootCause(memberResult.error)),
         },
         'portal.directory.logo.member_lookup_failed',
       );

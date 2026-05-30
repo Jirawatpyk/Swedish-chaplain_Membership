@@ -25,7 +25,7 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { downloadExport, makeDownloadExportDeps } from '@/modules/insights';
 import { drizzleMemberRepo } from '@/modules/members';
@@ -74,11 +74,11 @@ export async function GET(
             jobId,
             requestId,
             errCode: member.error.code,
-            errKind: errKind((member.error as { cause?: unknown }).cause),
+            errKind: errKind(rootCause(member.error)),
           },
           'exports.download.member_lookup_failed',
         );
-        return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
+        return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
       }
     } else {
       actorMemberId = member.value.memberId;
@@ -124,6 +124,6 @@ export async function GET(
       { jobId, requestId, errKind: errKind(e) },
       'exports.download.unexpected_error',
     );
-    return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
+    return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
   }
 }

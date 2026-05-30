@@ -52,7 +52,10 @@ vi.mock('@/modules/insights', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/lib/log-id', () => ({ errKind: () => 'MockError' }));
+vi.mock('@/lib/log-id', () => ({
+  errKind: () => 'MockError',
+  rootCause: (e: unknown) => (e as { cause?: unknown } | null | undefined)?.cause,
+}));
 
 function memberReq() {
   return new NextRequest('http://localhost/api/portal/account/data-export', {

@@ -176,12 +176,15 @@ export default async function AuditLogPage({
     timeZone: tz,
   });
   const tEvents = await getTranslations('admin.dashboard.activity.events');
+  // Fallback to the timeline `audit.eventType` catalogue (EN/TH/SV) for codes
+  // the viewer namespace lacks → localised label instead of humanised English.
+  const tEventsFallback = await getTranslations('audit.eventType');
   const noneLabel = t('table.none');
   const rows: readonly AuditTableRow[] = result.value.rows.map((r) => ({
     id: r.id,
     occurredAtUtc: r.occurredAt,
     occurredAtLocal: dateFmt.format(new Date(r.occurredAt)),
-    eventTypeLabel: resolveEventLabel(tEvents, r.eventType),
+    eventTypeLabel: resolveEventLabel(tEvents, r.eventType, tEventsFallback),
     eventType: r.eventType,
     actorLabel: r.actorLabel,
     actorUserId: r.actorUserId,
