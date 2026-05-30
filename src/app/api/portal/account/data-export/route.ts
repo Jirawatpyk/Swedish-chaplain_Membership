@@ -15,6 +15,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { isLocale } from '@/i18n/config';
 import { requestDataExport, makeRequestDataExportDeps } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
@@ -49,7 +50,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
   const memberId = memberResult.value.memberId;
-  const requesterLocale = await getLocale();
+  const activeLocale = await getLocale();
+  const requesterLocale = isLocale(activeLocale) ? activeLocale : 'en';
 
   try {
     const result = await requestDataExport(
