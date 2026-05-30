@@ -70,7 +70,12 @@ export async function GET(
       // surface it as 500 with a log instead.
       if (member.error.code !== 'repo.not_found') {
         logger.error(
-          { jobId, requestId, errKind: errKind(member.error) },
+          {
+            jobId,
+            requestId,
+            errCode: member.error.code,
+            errKind: errKind((member.error as { cause?: unknown }).cause),
+          },
           'exports.download.member_lookup_failed',
         );
         return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });

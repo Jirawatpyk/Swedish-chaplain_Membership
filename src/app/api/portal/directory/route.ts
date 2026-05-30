@@ -72,7 +72,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // surface as 500 with a log, not be masked as "no profile".
     if (memberResult.error.code !== 'repo.not_found') {
       logger.error(
-        { correlationId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        {
+          correlationId,
+          tenantId: tenant.slug,
+          errCode: memberResult.error.code,
+          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+        },
         'portal.directory.member_lookup_failed',
       );
       return NextResponse.json({ error: { code: 'server_error' }, correlationId }, { status: 500 });

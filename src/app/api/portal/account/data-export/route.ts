@@ -49,7 +49,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // as "no profile" with no log. Mirrors portal/timeline/route.ts.
     if (memberResult.error.code !== 'repo.not_found') {
       logger.error(
-        { correlationId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        {
+          correlationId,
+          tenantId: tenant.slug,
+          errCode: memberResult.error.code,
+          // The Result error is a plain `{code, cause}` object, not an Error —
+          // errKind must read the wrapped DB error in `.cause` (errKind(error)
+          // would always log 'unknown').
+          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+        },
         'portal.data_export.member_lookup_failed',
       );
       return NextResponse.json(

@@ -16,6 +16,7 @@ import type { CurrentSession } from '@/lib/auth-session';
 import { getCurrentSession } from '@/lib/auth-session';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
+import { errKind, hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -73,9 +74,29 @@ export async function requireMemberContext(
       current.user.id,
     );
     if (!memberResult.ok) {
-      // User has member role but no linked member — data inconsistency
+      // Distinguish a benign "member-role user with no linked member" (404) from
+      // a DB/RLS fault (500). Conflating them masked a transient DB outage as a
+      // 404 across every member route that uses this helper (review-run R2).
+      // Hash the user id in logs (CLAUDE.md — never log a raw user id).
+      if (memberResult.error.code !== 'repo.not_found') {
+        logger.error(
+          {
+            requestId,
+            userIdHash: hashId(current.user.id),
+            errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+          },
+          'member-context: member lookup failed (DB fault)',
+        );
+        return {
+          response: NextResponse.json(
+            { error: { code: 'internal', message: 'Internal server error.' } },
+            { status: 500 },
+          ),
+        };
+      }
+      // not_found — member-role user with no linked member (data inconsistency).
       logger.warn(
-        { userId: current.user.id, requestId },
+        { userIdHash: hashId(current.user.id), requestId },
         'member-context: member role user has no linked member',
       );
       return {

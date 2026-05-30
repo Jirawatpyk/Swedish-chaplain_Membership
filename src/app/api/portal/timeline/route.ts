@@ -77,7 +77,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // as "no activity" (review-run C1).
     if (memberResult.error.code !== 'repo.not_found') {
       logger.error(
-        { requestId, errKind: errKind(memberResult.error) },
+        {
+          requestId,
+          errCode: memberResult.error.code,
+          // Unwrap `.cause`: the Result error is a plain object, not an Error,
+          // so errKind(error) would log 'unknown' (cf. the use-case path below
+          // which already reads `.cause`).
+          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+        },
         'portal.timeline.member_lookup_failed',
       );
       return NextResponse.json(

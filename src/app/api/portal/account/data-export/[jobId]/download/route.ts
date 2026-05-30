@@ -62,7 +62,12 @@ export async function GET(
     // masked as "no profile" on a download the subject is entitled to.
     if (memberResult.error.code !== 'repo.not_found') {
       logger.error(
-        { jobId, tenantId: tenant.slug, errKind: errKind(memberResult.error) },
+        {
+          jobId,
+          tenantId: tenant.slug,
+          errCode: memberResult.error.code,
+          errKind: errKind((memberResult.error as { cause?: unknown }).cause),
+        },
         'portal.data_export.download.member_lookup_failed',
       );
       return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
