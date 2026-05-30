@@ -70,7 +70,9 @@ export function BenefitUsageCard({
   const hasContent = quantifiable.length > 0 || active.length > 0;
 
   return (
-    <Card>
+    // Stable settle hook for the a11y e2e scan: the Suspense skeleton has no such
+    // testid, so a scan can wait for the LOADED card before running axe (F9-QA-03).
+    <Card data-testid="benefit-usage-card">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
           <CardTitle>{t('card.title', { year: membershipYear })}</CardTitle>

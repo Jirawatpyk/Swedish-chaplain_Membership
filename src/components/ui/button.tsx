@@ -61,9 +61,16 @@ function Button({
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
-      data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      // `data-slot` is applied AFTER the spread so it is DETERMINISTIC: when a
+      // base-ui `render={<Button/>}` (DialogTrigger/DialogClose/AlertDialog) merges
+      // its own `data-slot` (e.g. "dialog-trigger") into props, base-ui resolves
+      // that merge differently on SSR vs hydration — producing a `data-slot`
+      // hydration mismatch (F9-QA-02). Pinning Button's own slot last makes the
+      // rendered element always `data-slot="button"` on both passes. Nothing in
+      // the codebase styles/targets the trigger slot, so this is purely a fix.
+      data-slot="button"
     />
   )
 }

@@ -85,6 +85,9 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     await expect(
       page.getByRole('heading', { name: 'Member benefits', level: 1 }),
     ).toBeVisible();
+    // Wait for the LOADED benefit card (past its Suspense skeleton) before the
+    // axe scan — scanning the shimmer races a mid-render state and flakes (F9-QA-03).
+    await expect(page.getByTestId('benefit-usage-card')).toBeVisible({ timeout: 15_000 });
     await expectNoAxeViolations(page, '/admin/members/[id]/benefits');
   });
 
@@ -97,6 +100,8 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     await signInAsMember(page);
     await page.goto('/portal/benefits');
     await expect(page.getByRole('heading', { name: 'Benefits', level: 1 })).toBeVisible();
+    // Settle past the Suspense skeleton before scanning (F9-QA-03 flake fix).
+    await expect(page.getByTestId('benefit-usage-card')).toBeVisible({ timeout: 15_000 });
     await expectNoAxeViolations(page, '/portal/benefits');
   });
 
