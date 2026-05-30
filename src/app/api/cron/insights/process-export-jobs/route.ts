@@ -74,7 +74,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // 3) TTL sweep — delete the private artefact + mark expired.
     const sweepable = await repo.listSweepable(tenant);
     for (const { jobId, blobKey } of sweepable) {
-      if (blobKey !== null) await deps.blob.delete(blobKey).catch(() => {});
+      if (blobKey !== null) {
+        // A delete failure here orphans a private-Blob artefact (member PII for
+        // GDPR archives) — never reaped again (sweep only lists ready|delivered).
+        // Don't fail the tick, but it MUST be observable, not silently swallowed.
+        await deps.blob.delete(blobKey).catch((delErr) => {
+          logger.warn(
+            { tenantId: tenant.slug, jobId, errKind: errKind(delErr) },
+            'cron.insights.export_job.sweep_blob_delete_failed',
+          );
+        });
+      }
       const did = await runInTenant(tenant, (tx) => repo.markExpiredInTx(tx, jobId));
       if (did) expired += 1;
     }
@@ -90,6 +100,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   } catch (e) {
     const durationMs = Date.now() - startedAt;
+    // Meter the tick-level failure (parity with the snapshot crons) so a metric-
+    // based alert fires — a log line alone won't trip OTel alert rules.
+    insightsMetrics.exportJobProcessed('tick', 'failed', env.tenant.slug);
     logger.error(
       { tenantId: env.tenant.slug, errKind: errKind(e), durationMs },
       'cron.insights.process_export_jobs.threw',

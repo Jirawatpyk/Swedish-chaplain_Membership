@@ -279,7 +279,13 @@ export async function processExportJob(
       // C1: the row left `processing` after the upload (stuck-reclaim / expire
       // race). Never meter 'ok' / return ready when the durable state wasn't
       // advanced — delete the orphan artefact + report the lost race instead.
-      await deps.blob.delete(blobKey).catch(() => {});
+      await deps.blob.delete(blobKey).catch((delErr) => {
+        // A failed delete here orphans the uploaded artefact (PII) — surface it.
+        logger.warn(
+          { errKind: errKind(delErr), kind, jobId, route: 'insights.process-export-job' },
+          'insights.export_job.mark_ready_lost_blob_delete_failed',
+        );
+      });
       logger.error(
         { kind, jobId, route: 'insights.process-export-job' },
         'insights.export_job.mark_ready_lost',
@@ -296,9 +302,15 @@ export async function processExportJob(
       { errKind: errKind(e), kind, jobId, route: 'insights.process-export-job' },
       'insights.export_job.build_failed',
     );
-    // C2: delete any partially-uploaded artefact (no-op + swallowed if the build
-    // threw before upload — `delete` is idempotent).
-    await deps.blob.delete(blobKey).catch(() => {});
+    // C2: delete any partially-uploaded artefact (no-op if the build threw
+    // before upload — `delete` is idempotent). A delete failure orphans the
+    // artefact, so log it rather than swallow silently.
+    await deps.blob.delete(blobKey).catch((delErr) => {
+      logger.warn(
+        { errKind: errKind(delErr), kind, jobId, route: 'insights.process-export-job' },
+        'insights.export_job.build_failed_blob_delete_failed',
+      );
+    });
     // H2: a FAILING failure-mark must be logged+metered, not silently swallowed.
     await failJob('build_failed');
     await emitGdprFailed('build_failed');
