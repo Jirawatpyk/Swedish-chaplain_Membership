@@ -38,6 +38,7 @@ import { env } from '@/lib/env';
 import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
+import { buildRenewalRedeemLinkUrl } from './build-renewal-redeem-link-url';
 import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
 import { asCycleId } from '../../../domain/renewal-cycle';
 import { asTaskId } from '../../../domain/renewal-escalation-task';
@@ -767,11 +768,19 @@ async function dispatchEmailStep(
       cycle_expires_at: cycle.expiresAt,
       tier_bucket: cycle.tierAtCycleStart,
       step_id: step.stepId,
-      // J1-B1: populate CTA target. Uses the member portal landing
-      // (`/portal/account`) until the signed-token renewal route lands;
-      // a blank href would leave every dispatched email with a broken
-      // CTA button, defeating the reminder's primary purpose.
-      renewal_link_url: `${env.app.baseUrl}/portal/account`,
+      // S1-P0-4: signed-token redeem-link (was the `/portal/account`
+      // dead-end). Lands the member in the actual renewal flow after a
+      // one-time-use HMAC verify + auto-sign-in.
+      renewal_link_url: buildRenewalRedeemLinkUrl(
+        deps.tokenSigner,
+        env.app.baseUrl,
+        {
+          tenantId: ctx.tenantId,
+          memberId: member.memberId,
+          cycleId: cycle.cycleId,
+          now: new Date(ctx.nowIso),
+        },
+      ),
     },
     idempotencyKey: reminderEventId,
   });
