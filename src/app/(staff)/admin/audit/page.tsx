@@ -28,11 +28,10 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
 import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
-import { AUDIT_EVENT_TYPES } from '@/modules/auth';
+import { ALL_AUDIT_EVENT_TYPES } from '@/modules/auth';
 import {
   auditQuery,
   makeAuditQueryDeps,
-  F9_AUDIT_EVENT_TYPES,
   type AuditQueryInput,
 } from '@/modules/insights';
 
@@ -41,10 +40,13 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 
-/** Selectable event-type codes — the F1/F5 enum set plus the F9 read events. */
-const EVENT_TYPE_OPTIONS: readonly string[] = [
-  ...new Set<string>([...AUDIT_EVENT_TYPES, ...F9_AUDIT_EVENT_TYPES]),
-].sort();
+/**
+ * Selectable event-type codes — the FULL cross-module set (every value in the
+ * `audit_event_type` pg enum). S1-P1-7: the prior list was auth+payment+F9 only,
+ * so ~80% of the types that actually appear in the log (member/invoice/broadcast/
+ * renewal/plan/event) were unfilterable.
+ */
+const EVENT_TYPE_OPTIONS: readonly string[] = ALL_AUDIT_EVENT_TYPES;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

@@ -30,7 +30,7 @@ export type DirectoryFilter = {
    * the supplied value; members with `null` band (not yet scored) are
    * excluded from the filtered result.
    */
-  readonly riskBand?: RiskBand;
+  readonly riskBand?: RiskBand | readonly RiskBand[];
   readonly limit: number;
   readonly cursor?: string;
 };
@@ -47,7 +47,7 @@ export type DirectoryOffsetFilter = {
   readonly planYear?: number;
   readonly country?: string;
   readonly planId?: string;
-  readonly riskBand?: RiskBand;
+  readonly riskBand?: RiskBand | readonly RiskBand[];
   /**
    * Sort column (FR-007a). `engagement` orders by the F8 risk score inverted
    * (engagement = 100 − risk): `desc` (default) = healthiest first; `asc` =

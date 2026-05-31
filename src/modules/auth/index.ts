@@ -186,6 +186,8 @@ export type { EmailLocale } from './infrastructure/email/reset-password-email';
 
 export type { AuditEventType, AuditEvent, ActorRef } from './domain/audit-event';
 export { AUDIT_EVENT_TYPES, AUDIT_SUMMARY_MAX_LENGTH } from './domain/audit-event';
+// Canonical FULL cross-module audit-event-type list (S1-P1-7) — see schema.ts.
+export { ALL_AUDIT_EVENT_TYPES } from './infrastructure/db/schema';
 
 // F9 activity feed (FR-003) — read-only recent-audit-events reader.
 export {

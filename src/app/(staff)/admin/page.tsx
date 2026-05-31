@@ -197,7 +197,10 @@ export default async function StaffHomePage() {
         id: 'atRisk',
         n: metrics.needsAttention.atRiskMembers,
         label: t('needsAttention.atRisk'),
-        href: '/admin/members?risk_band=at-risk',
+        // S1-P1-6: the count sums all three at-risk bands (countAtRisk), so the
+        // drill-down must filter to the same three — not just 'at-risk' — or
+        // critical/warning members are hidden from the destination list.
+        href: '/admin/members?risk_band=critical,at-risk,warning',
       },
       {
         id: 'broadcasts',

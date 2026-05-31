@@ -37,6 +37,7 @@ import type {
   MemberPatch,
   MemberRepo,
   RepoError,
+  RiskBand,
 } from '../../application/ports/member-repo';
 import {
   memberLifecycle,
@@ -144,8 +145,16 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
   // I1 round-10 ui-design-specialist — filter by F8-derived risk_score_band.
   // Members with `null` band (not yet scored) are excluded when active
   // (eq() over the nullable column matches only rows with the exact value).
-  if (filter.riskBand !== undefined)
-    conds.push(eq(members.riskScoreBand, filter.riskBand));
+  if (filter.riskBand !== undefined) {
+    // S1-P1-6: accept a single band OR an array (the dashboard "needs
+    // attention" KPI drills into all three at-risk bands so the count and the
+    // destination list agree). Members with `null` band are excluded either way.
+    conds.push(
+      Array.isArray(filter.riskBand)
+        ? inArray(members.riskScoreBand, [...filter.riskBand])
+        : eq(members.riskScoreBand, filter.riskBand as RiskBand),
+    );
+  }
   return conds;
 }
 
