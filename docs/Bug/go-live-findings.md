@@ -4,6 +4,15 @@
 **Raw (all 250)**: `docs/Bug/go-live-findings-raw.json`. **Posture**: Launch-minimal.
 **Branch**: `015-admin-dashboard`. Every P0/P1 below adversarially verified.
 
+## Stage 2 progress (2026-05-31)
+
+**All 4 P0 fixed + committed** on `015-admin-dashboard`:
+- ✅ **S1-P0-2 + S1-P0-3** — Clean-Arch guardrail reinstated (source-scan arch-test) + member-count query moved to infrastructure. `[Spec Kit] fix(arch)` `d1ecaa52`.
+- ✅ **S1-P0-1 (+ S1-P1-11)** — raw attendee email redacted from audit payloads (hash / domain-only). `[Spec Kit] fix(events)` `bfdeb193`.
+- ✅ **S1-P0-4 (+ S1-P1-1)** — renewal email CTA wired to the signed redeem-link (dormant route now live). `[Spec Kit] fix(renewals)` `80b2ef50`.
+
+**P1 batch — remaining (19):** S1-P1-2/3 (renewal nav links + email unsubscribe — rest of Cluster A), S1-P1-13 (auth infra-value imports — in arch-test KNOWN_BACKLOG), + clusters B/C/D/E/G/H/I/J. Next.
+
 ## Counts
 
 | | P0 | P1 | P2 | P3 |
