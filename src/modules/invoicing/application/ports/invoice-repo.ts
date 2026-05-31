@@ -76,7 +76,10 @@ export interface InvoiceRepo {
     opts: {
       readonly offset: number;
       readonly pageSize: number;
-      readonly status?: InvoiceStatus | 'all' | undefined;
+      // 'overdue' is a DERIVED filter (issued + Bangkok-today > dueDate), not a
+      // stored status — the repo translates it to the equivalent predicate
+      // (S1-P1-8). All other values map to stored `invoices.status`.
+      readonly status?: InvoiceStatus | 'all' | 'overdue' | undefined;
       readonly fiscalYear?: number | undefined;
       readonly memberId?: string | undefined;
       readonly search?: string | undefined;

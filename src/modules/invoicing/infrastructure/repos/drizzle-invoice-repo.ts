@@ -360,6 +360,15 @@ export function makeDrizzleInvoiceRepo(
           // S1-P1-9: cursor predicate MUST match the descending sort
           // (orderBy desc(issueDate), desc(invoiceId)). `gt` paginated the
           // wrong direction, so pages 2+ returned wrong/overlapping rows.
+          //
+          // KNOWN LIMITATION (S1-P1-9b, P2 — see docs/Bug/go-live-findings.md):
+          // this is a single-column keyset on a RANDOM-UUID invoiceId while the
+          // primary sort is issueDate. It is correct within a single issueDate
+          // and for single-page results (the launch case: <100 invoices/tenant
+          // → cursor never engages, PAGE=100). Across multiple issueDates at
+          // >1 page it can skip/duplicate rows — fix is a composite
+          // (issueDate, invoiceId) keyset with NULLS handling for drafts.
+          // Tracked for post-launch (manifests only beyond launch scale).
           filters.push(lt(invoices.invoiceId, opts.cursor));
         }
 
@@ -412,7 +421,16 @@ export function makeDrizzleInvoiceRepo(
         if (!includeDrafts && !opts.status) {
           filters.push(sql`${invoices.status} != 'draft'`);
         }
-        if (opts.status && opts.status !== 'all') {
+        if (opts.status === 'overdue') {
+          // S1-P1-8: 'overdue' is a DERIVED view, not a stored status, so the
+          // old `eq(status,'overdue')` matched zero rows. Mirror the
+          // computeIsOverdue rule (status='issued' AND Bangkok-today > dueDate,
+          // strict) in SQL so this filter agrees with the per-row overdue badge.
+          filters.push(eq(invoices.status, 'issued'));
+          filters.push(
+            sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < (now() AT TIME ZONE 'Asia/Bangkok')::date`,
+          );
+        } else if (opts.status && opts.status !== 'all') {
           filters.push(eq(invoices.status, opts.status));
         }
         if (opts.fiscalYear !== undefined) {

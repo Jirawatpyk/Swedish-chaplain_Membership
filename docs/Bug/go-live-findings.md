@@ -111,6 +111,19 @@ These were flagged because they touch product behaviour / scope sequencing.
 
 **Stage 2 order**: start with the 4 P0 (operator: "เริ่ม P0 ก่อน"). P0-2 (ESLint guardrail) first — re-enabling the ban surfaces any other hidden import violations.
 
+## 🆕 P1-9b — invoice cursor keyset incomplete (discovered Stage 2, P2 post-launch)
+
+While fixing S1-P1-9 (cursor `gt`→`lt`), found a deeper issue: `list()` keysets on
+a **random-UUID `invoiceId`** while sorting `desc(issueDate), desc(invoiceId)`.
+The `lt` fix corrects direction and is correct within a single issueDate / single
+page, but across multiple issueDates at >1 page it can skip/duplicate rows. This
+feeds the F9 insights adapter, which pages the full set to sum revenue / count
+overdue (`invoice-source-adapter.ts`) — so totals could drift **once a tenant
+exceeds PAGE=100 invoices in scope**. **Dormant at launch** (SweCham ~131 members
+→ <100 invoices/page → cursor never engages). **P2 — fix post-launch** with a
+composite `(issueDate, invoiceId)` keyset + NULLS handling for drafts. Documented
+in `drizzle-invoice-repo.ts` list().
+
 ## 📋 P2 / P3 — backlog (211, full list in raw JSON)
 
 Not launch-blocking. P2 by module: events 18 · invoicing 15 · broadcasts 15 · auth 13 · members 13 · insights 12 · presentation 12 · plans 11 · renewals 11 · payments 10 · pdpa 7 · (others). Triage into post-launch waves during Stage 2.
