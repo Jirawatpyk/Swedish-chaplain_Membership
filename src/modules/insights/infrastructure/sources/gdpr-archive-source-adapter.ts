@@ -273,6 +273,13 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         legalEntityType: member.legalEntityType,
         country: member.country,
         taxId: member.taxId,
+        // S1-P1-12: postal address (migration 0195) — part of the data
+        // subject's profile, required for GDPR Art. 20 portability completeness.
+        addressLine1: member.addressLine1,
+        addressLine2: member.addressLine2,
+        city: member.city,
+        province: member.province,
+        postalCode: member.postalCode,
         website: member.website,
         description: member.description,
         foundedYear: member.foundedYear,

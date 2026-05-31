@@ -111,6 +111,19 @@ These were flagged because they touch product behaviour / scope sequencing.
 
 **Stage 2 order**: start with the 4 P0 (operator: "เริ่ม P0 ก่อน"). P0-2 (ESLint guardrail) first — re-enabling the ban surfaces any other hidden import violations.
 
+## ⚠️ P1-16 — tax_id-required: ESCALATED (Stage 2, needs operator/tax decision)
+
+The finding recommended requiring `tax_id` when `plan.planCategory` is
+corporate/partnership. But **every** plan's `planCategory` is one of those two
+(`plan-lookup-port.ts:23`), and the "corporate" category includes the
+**Individual** + **Thai Alumni** tiers — which are PEOPLE, not companies, and do
+not have a company tax ID. So the naive check would wrongly force tax_id on
+individual members and break ~10 test fixtures. The correct rule is likely
+`memberTypeScope === 'company'`, OR (more aligned with Thai law) enforce at
+**invoice-issue** time (a tax invoice needs the buyer's tax ID; `issue-invoice.ts`
+currently has no such check). **Escalated** — operator to confirm which members
+must carry a tax_id and at which gate. Not implemented in Medium-C.
+
 ## 🆕 P1-9b — invoice cursor keyset incomplete (discovered Stage 2, P2 post-launch)
 
 While fixing S1-P1-9 (cursor `gt`→`lt`), found a deeper issue: `list()` keysets on
