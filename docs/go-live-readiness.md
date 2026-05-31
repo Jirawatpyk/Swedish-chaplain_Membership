@@ -57,7 +57,7 @@ the system safely and completely — across the readiness dimensions below
 |-------|------|-------|--------------|
 | **0. Baseline** ✅ | Run full CI gate suite on current branch; capture deterministic failures | Claude | **DONE 2026-05-31** → `docs/Bug/stage0-baseline.md`. 13/13 static+schema gates green; 6 test reds all root-caused as test-quality/env, **0 product regressions** |
 | **1. Readiness Audit** ✅ | Multi-agent fan-out across all dimensions (incl. UI + UX separately) × modules → prioritized findings (P0=launch blocker) | Claude (workflow) | **DONE 2026-05-31** → `docs/Bug/go-live-findings.md` (199 agents). 4 real P0 + 21 real P1 + 211 P2/P3 backlog; F4 Thai-tax = PASS. 3 escalations pending operator |
-| **2. Fix P0/P1** 🔄 | Remediate launch blockers in gated batches | Claude | **P0: 4/4 DONE** (commits d1ecaa52, bfdeb193, 80b2ef50). P1: 19 remaining (in progress) |
+| **2. Fix P0/P1** ✅ (main batch) | Remediate launch blockers in gated batches | Claude | **P0 4/4 + P1 16/19 DONE** (16 commits, each gated). Remaining deferred to focused tasks (none blocks golden path): P1-9b (P2 cursor), P1-16 (tax_id → importer enforces), P1-4/P1-5/P1-17 (Heavy, feature-sized — see `docs/Bug/go-live-findings.md`) |
 | **3. Data importer** | Build member/contact importer (validate → dry-run → import → rollback); PII-safe | Claude builds / operator runs | Dry-run clean on real Excel; row counts match |
 | **4. Operator gates** | Provision Vercel env, register crons, deploy ClamAV, flag-flip | Claude writes runbook / **operator runs** | All gates in § 6 checked |
 | **5. QA + Go/No-Go** | Full golden-path E2E on preview/staging deploy + final decision | Both | All § 7 criteria PASS |
