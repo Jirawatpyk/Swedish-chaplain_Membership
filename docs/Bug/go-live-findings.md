@@ -111,7 +111,29 @@ These were flagged because they touch product behaviour / scope sequencing.
 
 **Stage 2 order**: start with the 4 P0 (operator: "เริ่ม P0 ก่อน"). P0-2 (ESLint guardrail) first — re-enabling the ban surfaces any other hidden import violations.
 
-## ⚠️ P1-16 — tax_id-required: ESCALATED (Stage 2, needs operator/tax decision)
+## ⚠️ P1-16 — tax_id-required: RULE DECIDED, code-enforcement DEFERRED (focused task)
+
+**Operator decision (2026-05-31): rule = `memberTypeScope === 'company'`** (companies
+need a tax ID; the Individual/Thai-Alumni person tiers do not). **Gate = invoice-issue**
+(Thai law requires the buyer's tax ID on the tax-invoice document; `issue-invoice.ts`
+loads `member.snapshot.tax_id` already, but not the plan's memberTypeScope).
+
+**Why code-enforcement is deferred to a focused task (not Stage-2):** during
+implementation we found `tax_id`-optional is a **deeply embedded assumption** —
+`create-member`'s canonical `goodInput()` and 11+ member fixtures create company
+members with no tax_id, and invoicing fixtures then issue invoices for them.
+Enforcing at ANY gate triggers a broad cross-suite fixture sweep + adding
+memberTypeScope to the member-identity view. That sweep is its own deliberate
+task, not a rushed batch (would otherwise scatter ~15 fixture edits).
+
+**Launch is still covered**: the Stage-3 member importer REQUIRES tax_id for
+company members (`docs/member-import-spec.md` § 3) — so the real SweCham data is
+tax-compliant at entry even before the code gate lands. Defense-in-depth code
+enforcement at invoice-issue = post-Stage-2 focused task.
+
+(superseded analysis below kept for context.)
+
+## ⚠️ P1-16 — tax_id-required: original escalation analysis
 
 The finding recommended requiring `tax_id` when `plan.planCategory` is
 corporate/partnership. But **every** plan's `planCategory` is one of those two

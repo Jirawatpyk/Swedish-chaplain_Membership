@@ -59,7 +59,13 @@ Fail-loud, per-row, accumulating a report:
 5. `registration_date` parses as Gregorian; **flag any year > 2400** (BE leak).
 6. `phone` normalizes to E.164 or is empty (never store malformed).
 7. Exactly one primary contact per member.
-8. `tax_id` format check for TH companies.
+8. **`tax_id` REQUIRED for company-scoped members** (resolved plan
+   `memberTypeScope === 'company'`) — FR-009a + Thai tax-invoice law (S1-P1-16,
+   operator-decided rule). Individual/person tiers (Thai Alumni / Individual)
+   may omit it. For `country='TH'` company members, the tax_id must be a valid
+   13-digit Thai TIN (checksum); other countries: 1–50 chars. A company member
+   with no tax_id is an import ERROR (so launch data is tax-compliant at entry,
+   even before the invoice-issue code gate lands — see go-live-findings P1-16).
 
 ---
 
