@@ -43,18 +43,12 @@ const FORBIDDEN_PACKAGES = [
 // VALUE import of a project-local infrastructure path (relative or alias).
 const INFRA_PATH = /(^|['"])(@\/modules\/[^/]+\/infrastructure\/|(\.\.?\/)+infrastructure\/)/;
 
-// Pre-existing, audit-tracked violations (S1-P1-13). Cleared in the P1 batch.
-// Key: "<module-relative path>::<imported source>".
-const KNOWN_BACKLOG = new Set<string>([
-  'auth/application/change-password.ts::@/modules/auth/infrastructure/password/argon2-hasher',
-  'auth/application/change-password.ts::@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter',
-  'auth/application/forgot-password.ts::@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter',
-  'auth/application/heartbeat.ts::@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter',
-  'auth/application/redeem-invite.ts::@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter',
-  'auth/application/reset-password.ts::@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter',
-  'auth/application/sign-in.ts::@/modules/auth/infrastructure/password/argon2-hasher',
-  'auth/application/sign-in.ts::@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter',
-]);
+// Pre-existing violations are now CLEARED (S1-P1-13 fixed in Stage 2 Medium-E:
+// MalformedHashError + retryAfterSeconds moved into the Application layer). The
+// backlog is empty — any NEW application→infrastructure VALUE import fails the
+// first test below. Keep this list empty; do not add to it without an audit.
+// Key format: "<module-relative path>::<imported source>".
+const KNOWN_BACKLOG = new Set<string>([]);
 
 function listAppFiles(): string[] {
   const out: string[] = [];

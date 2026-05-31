@@ -30,6 +30,10 @@ import {
   type PasswordHash,
 } from '@/modules/auth/domain/branded';
 import { logger } from '@/lib/logger';
+// S1-P1-13: `MalformedHashError` moved to the Application layer (use-cases
+// inspect it; Principle III forbids them importing an Infrastructure VALUE).
+// The hasher throws it + re-exports it here for existing consumers/tests.
+import { MalformedHashError } from '@/modules/auth/application/password-errors';
 
 /**
  * B4 (post-ship 2026-05-17) — typed error thrown by `verify` when the
@@ -39,16 +43,9 @@ import { logger } from '@/lib/logger';
  * skip the `incrementFailedCount` + lockout-trigger path — otherwise
  * a DB corruption issue would lock the legitimate user out and the
  * audit trail would read "user kept entering wrong password",
- * misleading operators.
+ * misleading operators. Definition now in `application/password-errors.ts`.
  */
-export class MalformedHashError extends Error {
-  override readonly cause: unknown;
-  constructor(cause: unknown) {
-    super('argon2 verify: malformed hash');
-    this.name = 'MalformedHashError';
-    this.cause = cause;
-  }
-}
+export { MalformedHashError };
 
 // `@node-rs/argon2` exports `Algorithm` as an ambient const enum which
 // trips Next.js' `isolatedModules: true`. We use the literal value:

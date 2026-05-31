@@ -34,7 +34,7 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
 import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
 // `buildResetPasswordEmail` is a PURE template function (no DB, no
 // network). The function VALUE is injected via `ForgotPasswordDeps`

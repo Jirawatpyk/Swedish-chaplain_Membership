@@ -54,7 +54,7 @@ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo'
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
 import { defaultRedeemInviteDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------

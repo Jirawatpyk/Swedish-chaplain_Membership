@@ -57,9 +57,9 @@ import type { Session } from '@/modules/auth/domain/session';
 // concrete Infrastructure singletons into its own module graph.
 // Default wiring lives in the composition root (@/lib/auth-deps).
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
-import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { MalformedHashError } from '@/modules/auth/application/password-errors';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';

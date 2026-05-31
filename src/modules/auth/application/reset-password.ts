@@ -62,7 +62,7 @@ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo'
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
 import type { Role } from '@/modules/auth/domain/role';
 import { PORTAL_FOR_ROLE } from '@/modules/auth/domain/role';
 import { defaultResetPasswordDeps } from '@/lib/auth-deps';
