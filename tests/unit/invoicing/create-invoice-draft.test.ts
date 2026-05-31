@@ -43,6 +43,7 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
     memberId: '00000000-0000-0000-0000-00000000aaaa',
     isActive: true,
     isArchived: false,
+    memberTypeScope: 'company', // S1-P1-16 (create-draft has no tax_id gate; snapshot has tax_id anyway)
     registrationDate: '2024-06-01',
     registrationFeePaid: true,
     snapshot: {

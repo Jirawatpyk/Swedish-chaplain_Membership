@@ -123,6 +123,7 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
     memberId: 'member-1',
     isActive: true,
     isArchived: false,
+    memberTypeScope: 'company', // S1-P1-16 default — snapshot has a tax_id so the gate passes
     registrationDate: '2026-01-15',
     registrationFeePaid: true,
     snapshot: Object.freeze({
@@ -295,6 +296,117 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('member_archived');
+  });
+
+  it('tax_id_required — COMPANY member with no tax_id → err (S1-P1-16 / FR-009a)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({
+        memberTypeScope: 'company',
+        snapshot: {
+          legal_name: 'No-Tax Co',
+          tax_id: null,
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'John Doe',
+          primary_contact_email: 'john@acme.example',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+  });
+
+  it('tax_id_required — COMPANY member with whitespace-only tax_id → err (S1-P1-16 trim branch)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({
+        memberTypeScope: 'company',
+        snapshot: {
+          legal_name: 'Blank-Tax Co',
+          // Whitespace must be treated as "no tax_id" — the gate trims
+          // before the empty check, so this is rejected, not admitted.
+          tax_id: '   ',
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'John Doe',
+          primary_contact_email: 'john@acme.example',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+  });
+
+  it('tax_id NOT required for an INDIVIDUAL-tier member without tax_id (S1-P1-16)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({
+        memberTypeScope: 'individual',
+        snapshot: {
+          legal_name: 'Solo Person',
+          tax_id: null,
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'Jane',
+          primary_contact_email: 'jane@example.com',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    // Gate is exempt for individuals: the result is NEVER tax_id_required,
+    // whether the issue ultimately succeeds or fails downstream. Asserting on
+    // `blockedByGate` (rather than a bare `if (!r.ok)`) keeps this non-vacuous
+    // even when the issue happens to succeed.
+    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
+    expect(blockedByGate).toBe(false);
+  });
+
+  it('tax_id NOT required when memberTypeScope is null (plan row missing → fail-open exemption, S1-P1-16)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({
+        memberTypeScope: null,
+        snapshot: {
+          legal_name: 'No-Plan Co',
+          tax_id: null,
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'Pat',
+          primary_contact_email: 'pat@example.com',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    // Gate fires ONLY on an explicit 'company' scope. A null scope (plan row
+    // could not be joined) must not block issuance — fail-open by design.
+    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
+    expect(blockedByGate).toBe(false);
+  });
+
+  it("tax_id NOT required for a 'both'-scope plan member without tax_id (S1-P1-16)", async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({
+        memberTypeScope: 'both',
+        snapshot: {
+          legal_name: 'Mixed-Scope Co',
+          tax_id: null,
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'Alex',
+          primary_contact_email: 'alex@example.com',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    // 'both'-scope plans admit person-tier members, so the gate exempts them.
+    // No SweCham 2026 plan uses 'both'; documented as a known future-tenant
+    // gap in issue-invoice.ts (not a live defect).
+    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
+    expect(blockedByGate).toBe(false);
   });
 
   it('overflow — seq > 999_999 → err (FR-035)', async () => {

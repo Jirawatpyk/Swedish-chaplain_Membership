@@ -1762,6 +1762,7 @@
         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "errors": {
           "failed": "Issue failed",
+          "tax_id_required": "This member is a company tier but has no tax ID on record. A Thai tax invoice requires the buyer's tax ID — update the member before issuing.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         },

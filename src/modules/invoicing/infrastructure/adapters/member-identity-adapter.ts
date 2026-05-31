@@ -30,20 +30,37 @@ export const memberIdentityAdapter: MemberIdentityPort = {
     const tx = txUnknown as TenantTx;
     const forUpdate = opts?.forUpdate === true;
 
+    // S1-P1-16: LEFT JOIN the F2 plan to read `member_type_scope` (company vs
+    // individual) so issue-invoice can require a tax_id on company tax invoices.
+    // Cross-module raw SQL — same posture this adapter already takes when it
+    // reads the F3 `members` table from the invoicing module (RLS still scopes
+    // both tables via the per-tenant `tx`); the F2 plans barrel exposes no
+    // per-issue scope lookup. `FOR UPDATE OF m` locks ONLY the members row (the
+    // archive-race guard), never the plan catalogue.
     const memberRows = (await tx.execute(
       forUpdate
         ? sql`
-            SELECT member_id, company_name, tax_id, country, status, archived_at,
-                   registration_date, registration_fee_paid
-              FROM members
-             WHERE tenant_id = ${tenantId} AND member_id = ${memberId}
-             FOR UPDATE
+            SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
+                   m.archived_at, m.registration_date, m.registration_fee_paid,
+                   mp.member_type_scope
+              FROM members m
+              LEFT JOIN membership_plans mp
+                ON mp.tenant_id = m.tenant_id
+               AND mp.plan_id = m.plan_id
+               AND mp.plan_year = m.plan_year
+             WHERE m.tenant_id = ${tenantId} AND m.member_id = ${memberId}
+             FOR UPDATE OF m
           `
         : sql`
-            SELECT member_id, company_name, tax_id, country, status, archived_at,
-                   registration_date, registration_fee_paid
-              FROM members
-             WHERE tenant_id = ${tenantId} AND member_id = ${memberId}
+            SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
+                   m.archived_at, m.registration_date, m.registration_fee_paid,
+                   mp.member_type_scope
+              FROM members m
+              LEFT JOIN membership_plans mp
+                ON mp.tenant_id = m.tenant_id
+               AND mp.plan_id = m.plan_id
+               AND mp.plan_year = m.plan_year
+             WHERE m.tenant_id = ${tenantId} AND m.member_id = ${memberId}
           `,
     )) as unknown as Array<{
       member_id: string;
@@ -54,6 +71,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       archived_at: Date | null;
       registration_date: Date | string;
       registration_fee_paid: boolean;
+      member_type_scope: 'company' | 'individual' | 'both' | null;
     }>;
 
     const m = memberRows[0];
@@ -80,6 +98,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       memberId,
       isActive: m.status === 'active',
       isArchived: m.archived_at !== null,
+      memberTypeScope: m.member_type_scope ?? null,
       registrationDate: regDate,
       registrationFeePaid: m.registration_fee_paid,
       snapshot: makeMemberIdentitySnapshot({

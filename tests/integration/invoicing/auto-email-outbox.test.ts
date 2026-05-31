@@ -219,6 +219,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
         memberId,
         isActive: true,
         isArchived: false,
+        memberTypeScope: 'company' as const, // S1-P1-16 (snapshot has tax_id → gate passes)
         registrationFeePaid: true,
         registrationDate: '2026-01-01',
         snapshot: {

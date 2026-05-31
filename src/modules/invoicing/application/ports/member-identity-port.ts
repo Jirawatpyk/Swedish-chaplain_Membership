@@ -13,6 +13,15 @@ export interface MemberIdentityView {
   readonly isArchived: boolean;
   readonly snapshot: MemberIdentitySnapshot;
   /**
+   * The member's plan `memberTypeScope` (S1-P1-16). `'company'` members MUST
+   * carry a tax_id to be issued a Thai tax invoice (FR-009a / Revenue Code §86);
+   * person tiers (`'individual'`) and mixed `'both'`-scope plans are exempt.
+   * `null` when the plan row is missing (defensive — treated as not-a-company so
+   * issue is never blocked on a data gap). The gate fires ONLY on an explicit
+   * `'company'` scope, so `'both'`/`'individual'`/`null` all fail open.
+   */
+  readonly memberTypeScope: 'company' | 'individual' | 'both' | null;
+  /**
    * ISO date string (YYYY-MM-DD) of when the member joined the chamber.
    * Used by the invoicing pro-rate policy to decide the correct factor
    * on the FIRST invoice of a cycle (US1 AS2).
