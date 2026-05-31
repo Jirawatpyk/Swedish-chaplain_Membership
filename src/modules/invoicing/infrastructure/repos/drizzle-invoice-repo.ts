@@ -5,7 +5,7 @@
  * role via `runInTenant(ctx, fn)` so RLS policies enforce tenant
  * scoping even on paths that forget an explicit WHERE filter.
  */
-import { and, asc, desc, eq, gt, ne, sql, ilike } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, ne, sql, ilike } from 'drizzle-orm';
 import type { InvoiceRepo } from '../../application/ports/invoice-repo';
 import {
   asInvoiceId,
@@ -357,7 +357,10 @@ export function makeDrizzleInvoiceRepo(
           filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
         }
         if (opts.cursor) {
-          filters.push(gt(invoices.invoiceId, opts.cursor));
+          // S1-P1-9: cursor predicate MUST match the descending sort
+          // (orderBy desc(issueDate), desc(invoiceId)). `gt` paginated the
+          // wrong direction, so pages 2+ returned wrong/overlapping rows.
+          filters.push(lt(invoices.invoiceId, opts.cursor));
         }
 
         const rows = await tx

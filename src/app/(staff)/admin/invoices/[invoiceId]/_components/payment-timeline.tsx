@@ -106,6 +106,10 @@ function formatTimestamp(date: Date, locale: string): string {
     hour: '2-digit',
     minute: '2-digit',
     timeZoneName: 'short',
+    // S1-P1-20: pin to Asia/Bangkok. Without an explicit timeZone, the value
+    // renders in the server's UTC offset on SSR, so Bangkok payment events
+    // appear ~7h off. Storage stays ISO UTC; this is display-only.
+    timeZone: 'Asia/Bangkok',
   });
 }
 

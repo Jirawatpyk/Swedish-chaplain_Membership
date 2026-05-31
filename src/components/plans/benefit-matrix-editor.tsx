@@ -71,7 +71,8 @@ function NumberField({
   const id = useId();
   return (
     <div className="space-y-1">
-      <Label>{label}</Label>
+      {/* S1-P1-19: associate Label↔Input (WCAG 1.3.1 / 4.1.2). */}
+      <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}
         type="number"
