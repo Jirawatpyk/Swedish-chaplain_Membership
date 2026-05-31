@@ -146,6 +146,35 @@ individual members and break ~10 test fixtures. The correct rule is likely
 currently has no such check). **Escalated** — operator to confirm which members
 must carry a tax_id and at which gate. Not implemented in Medium-C.
 
+## 🏗️ Heavy batch (P1-4 / P1-5 / P1-17) — feature-sized, recommended as focused tasks
+
+Investigated 2026-05-31. All three are feature-completion, not bounded fixes:
+
+- **P1-4 (FR-004 quota insights) + P1-5 (FR-001 under-delivered count)** — the
+  source ports (`BroadcastConsumptionSource`, `EventConsumptionSource`,
+  `PlanSource`) are **per-member**. The dashboard insight cards need a
+  CROSS-member aggregate (every member's entitlement vs consumption, rolled up)
+  — the "US4 benefit-usage aggregate" the code itself defers
+  (`compute-dashboard-snapshot.ts:14-15,104-105,125`). Building it = a new
+  member-enumeration source method + either N-member loop (N+1 perf at scale) or
+  new aggregate SQL methods across the broadcasts/events/members barrels + the
+  under-use roll-up + dismissal wiring for the 2 new insight keys + tests.
+  **Dashboard is functional without them** (at-risk insight works; the field is
+  present at 0 so the UI is stable) — these are enrichment cards.
+
+- **P1-17 (bulk send_portal_invite)** — currently an audit-only stub
+  (`bulk-action.ts:305`). Wiring real dispatch needs restructuring the bulk
+  use-case for **post-commit email fan-out** (must NOT send invites inside the
+  bulk transaction) + per-member partial-failure reporting + Resend throttling +
+  tests. **The per-member InvitePortalButton works today** (the launch fallback
+  for onboarding the 131 members; bulk is a convenience).
+
+**Recommendation (Launch-minimal):** treat these as **focused post-launch
+feature tasks** rather than rushing three feature-sized changes at the tail of a
+long Stage-2 session. None blocks the launch golden path. If one is wanted
+pre-launch, P1-17 has the clearest launch value (bulk onboarding) and should be
+its own deliberate task with the post-commit fan-out designed properly.
+
 ## 🆕 P1-9b — invoice cursor keyset incomplete (discovered Stage 2, P2 post-launch)
 
 While fixing S1-P1-9 (cursor `gt`→`lt`), found a deeper issue: `list()` keysets on
