@@ -20,11 +20,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import {
-  listInvoicesPaged,
-  makeListInvoicesDeps,
-  computeIsOverdue,
-} from '@/modules/invoicing';
+import { listInvoicesPaged, makeListInvoicesDeps, computeIsOverdue } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -42,14 +38,7 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  Clock,
-  FileText,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle2, Clock, FileText, type LucideIcon } from 'lucide-react';
 import {
   formatDate,
   formatSatangThb,
@@ -117,10 +106,7 @@ export default async function PortalInvoicesPage({
   // Resolve the member linked to this user — if none, surface the
   // "not linked" empty state instead of listing zero rows (which
   // would be indistinguishable from "member with no invoices").
-  const memberResult = await memberDeps.memberRepo.findByLinkedUserId(
-    tenantCtx,
-    user.id,
-  );
+  const memberResult = await memberDeps.memberRepo.findByLinkedUserId(tenantCtx, user.id);
   if (!memberResult.ok) {
     return (
       <TableContainer>
@@ -142,18 +128,15 @@ export default async function PortalInvoicesPage({
   const searchTerm = (query.q ?? '').trim().slice(0, 100);
   const statusFilter = parseStatusFilter(query.status);
 
-  const invoicesResult = await listInvoicesPaged(
-    makeListInvoicesDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      offset,
-      pageSize: PAGE_SIZE,
-      includeDrafts: false, // members never see drafts
-      memberId: member.memberId,
-      search: searchTerm.length > 0 ? searchTerm : undefined,
-      status: statusFilter,
-    },
-  );
+  const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
+    tenantId: tenantCtx.slug,
+    offset,
+    pageSize: PAGE_SIZE,
+    includeDrafts: false, // members never see drafts
+    memberId: member.memberId,
+    search: searchTerm.length > 0 ? searchTerm : undefined,
+    status: statusFilter,
+  });
 
   // R7-M3 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
   // Empty fallback is indistinguishable from "no invoices" — members
@@ -220,28 +203,49 @@ export default async function PortalInvoicesPage({
                   portal list has 7 columns; without the cue, members
                   on phones miss the right-edge Total + Actions silently. */}
               <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
-                <Table>
+                <Table aria-label={t('title')}>
                   <TableHeader>
                     <TableRow>
-                      <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
                         {t('columns.documentNumber')}
                       </TableHead>
-                      <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap"
+                      >
                         {t('columns.receiptNumber')}
                       </TableHead>
-                      <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
                         {t('columns.status')}
                       </TableHead>
-                      <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
                         {t('columns.issueDate')}
                       </TableHead>
-                      <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
                         {t('columns.dueDate')}
                       </TableHead>
-                      <TableHead scope="col" className="text-right text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableHead
+                        scope="col"
+                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
+                      >
                         {t('columns.total')}
                       </TableHead>
-                      <TableHead scope="col" className="text-right text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableHead
+                        scope="col"
+                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
+                      >
                         {t('columns.actions')}
                       </TableHead>
                     </TableRow>
@@ -318,8 +322,7 @@ export default async function PortalInvoicesPage({
                               r.receiptPdfStatus === 'rendered';
                             const showInvoice = r.pdf !== null && !isCombinedPaid;
                             const showReceipt =
-                              r.status === 'paid' &&
-                              r.receiptPdfStatus === 'rendered';
+                              r.status === 'paid' && r.receiptPdfStatus === 'rendered';
                             // R7-M5 — async receipt-PDF gate. When the
                             // receipt is mid-render (status pending/failed
                             // /null on a paid invoice), surface a compact

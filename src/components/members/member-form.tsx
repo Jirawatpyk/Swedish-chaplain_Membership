@@ -28,6 +28,11 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
+// Deep import (NOT the `@/modules/members` barrel) — phone.ts is pure TS
+// (pulls only `@/lib/result`) so it is safe in this client component and
+// keeps the E.164 rule single-sourced with the domain value object.
+import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -52,6 +57,11 @@ export const memberFormSchema = z.object({
   tax_id: z.string().max(50).optional(),
   website: z.string().max(200).url().optional().or(z.literal('')),
   description: z.string().max(2000).optional(),
+  address_line1: z.string().max(200).optional(),
+  address_line2: z.string().max(200).optional(),
+  city: z.string().max(100).optional(),
+  province: z.string().max(100).optional(),
+  postal_code: z.string().max(20).optional(),
   founded_year: z
     .union([z.string(), z.number()])
     .optional()
@@ -80,7 +90,20 @@ export const memberFormSchema = z.object({
     first_name: z.string().trim().min(1, 'required').max(100),
     last_name: z.string().trim().min(1, 'required').max(100),
     email: z.string().trim().min(1, 'required').max(254),
-    phone: z.string().max(20).optional(),
+    // Phone must be E.164 (matches the `asPhone` domain value object used
+    // by create-member + updateContactFields). Validating client-side
+    // highlights the field inline instead of letting the server reject it
+    // with a 400 that surfaces only as a generic "fix highlighted fields"
+    // toast with nothing actually highlighted. Empty is allowed (optional);
+    // spaces / dashes / parens are stripped before the format check so
+    // "+66 81-234-5678" is accepted and normalised server-side.
+    phone: z
+      .string()
+      .max(20)
+      .optional()
+      .refine((v) => v === undefined || isAcceptablePhoneInput(v), {
+        message: 'phoneFormat',
+      }),
     role_title: z.string().max(100).optional(),
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
@@ -88,6 +111,15 @@ export const memberFormSchema = z.object({
 });
 
 export type MemberFormValues = z.infer<typeof memberFormSchema>;
+
+// Language endonyms (shown in their own language) — full names so screen
+// readers announce "English" / "ภาษาไทย" / "Svenska" rather than spelling
+// out the "EN" / "TH" / "SV" abbreviations letter by letter (a11y).
+const LANG_LABELS: Record<'en' | 'th' | 'sv', string> = {
+  en: 'English',
+  th: 'ภาษาไทย',
+  sv: 'Svenska',
+};
 
 // --- Props -------------------------------------------------------------------
 
@@ -421,6 +453,60 @@ export function MemberForm({
         </div>
       </fieldset>
 
+      {/* --- Address section (optional, structured) --- */}
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-base font-semibold">
+          {t('sections.address')}
+        </legend>
+        <div>
+          <Label htmlFor="address_line1">{tf('addressLine1')}</Label>
+          <Input
+            id="address_line1"
+            {...register('address_line1')}
+            maxLength={200}
+            autoComplete="address-line1"
+          />
+        </div>
+        <div>
+          <Label htmlFor="address_line2">{tf('addressLine2')}</Label>
+          <Input
+            id="address_line2"
+            {...register('address_line2')}
+            maxLength={200}
+            autoComplete="address-line2"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <Label htmlFor="city">{tf('city')}</Label>
+            <Input
+              id="city"
+              {...register('city')}
+              maxLength={100}
+              autoComplete="address-level2"
+            />
+          </div>
+          <div>
+            <Label htmlFor="province">{tf('province')}</Label>
+            <Input
+              id="province"
+              {...register('province')}
+              maxLength={100}
+              autoComplete="address-level1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="postal_code">{tf('postalCode')}</Label>
+            <Input
+              id="postal_code"
+              {...register('postal_code')}
+              maxLength={20}
+              autoComplete="postal-code"
+            />
+          </div>
+        </div>
+      </fieldset>
+
       {/* --- Primary contact section --- */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
         <legend className="px-2 text-base font-semibold">
@@ -520,7 +606,13 @@ export function MemberForm({
             />
             <FieldError
               id="contact_phone-error"
-              message={errors.primary_contact?.phone?.message}
+              message={
+                errors.primary_contact?.phone
+                  ? errors.primary_contact.phone.message === 'phoneFormat'
+                    ? tf('phoneError')
+                    : errors.primary_contact.phone.message
+                  : undefined
+              }
             />
           </div>
         </div>
@@ -555,14 +647,15 @@ export function MemberForm({
                   >
                     <SelectValue>
                       {(value: string | null) =>
-                        (value ?? 'en').toUpperCase()
+                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
+                        LANG_LABELS.en
                       }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">EN</SelectItem>
-                    <SelectItem value="th">TH</SelectItem>
-                    <SelectItem value="sv">SV</SelectItem>
+                    <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
+                    <SelectItem value="th">{LANG_LABELS.th}</SelectItem>
+                    <SelectItem value="sv">{LANG_LABELS.sv}</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -603,6 +696,9 @@ export function MemberForm({
           </Button>
         )}
         <Button type="submit" disabled={submitting}>
+          {submitting && (
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+          )}
           {submitting ? submittingLabel : submitLabel}
         </Button>
       </div>

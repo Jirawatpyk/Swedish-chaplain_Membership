@@ -76,7 +76,9 @@ export function ConfirmationDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      {/* Explicit initialFocus on Cancel (ux-standards § 6 "safest default") —
+          don't rely on DOM order, which a CSS reorder could silently break. */}
+      <AlertDialogContent initialFocus={cancelRef}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 
 // I9 round-10 ui-design-specialist — `change_plan` was declared but
@@ -50,6 +51,7 @@ export function BulkActionBar({
   const t = useTranslations('admin.members.bulk');
   const router = useRouter();
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<{
     action: string;
@@ -166,7 +168,7 @@ export function BulkActionBar({
               variant="outline"
               size="sm"
               disabled={executing || overCap}
-              onClick={() => executeBulk('send_portal_invite')}
+              onClick={() => setInviteDialogOpen(true)}
               className="min-h-[36px]"
             >
               <MailIcon className="mr-1.5 h-4 w-4" />
@@ -197,6 +199,17 @@ export function BulkActionBar({
         count={count}
         onConfirm={handleArchiveConfirm}
         pending={executing}
+      />
+
+      <ConfirmationDialog
+        open={inviteDialogOpen}
+        onOpenChange={setInviteDialogOpen}
+        title={t('confirmInviteTitle', { count })}
+        description={t('confirmInviteDescription')}
+        confirmLabel={t('confirmInviteAction')}
+        cancelLabel={t('cancel')}
+        confirmDisabled={executing}
+        onConfirm={() => executeBulk('send_portal_invite')}
       />
 
       {progress && (

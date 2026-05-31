@@ -14,6 +14,10 @@ import {
   CalendarDaysIcon,
   PlugZapIcon,
   Settings2Icon,
+  ScrollTextIcon,
+  HistoryIcon,
+  GiftIcon,
+  BookUserIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -151,6 +155,26 @@ export const staffNavConfig: NavConfig = {
           href: '/admin/users',
           activePattern: '/admin/users',
         },
+        // F9 US2 — staff audit-log viewer. Admin + manager (member never
+        // reaches /admin/*). Surface gated server-side by FEATURE_F9_DASHBOARD
+        // (notFound when dark); the nav entry stays visible (mirrors the F6
+        // EventCreate pattern below).
+        {
+          titleKey: 'nav.staff.audit',
+          icon: ScrollTextIcon,
+          href: '/admin/audit',
+          activePattern: '/admin/audit',
+        },
+        // F9 US5 — member directory + E-Book/JSON export. Admin + manager
+        // (member never reaches /admin/*). Gated server-side by
+        // FEATURE_F9_DASHBOARD (notFound when dark); nav entry stays visible
+        // (mirrors the F9 audit + F6 EventCreate pattern).
+        {
+          titleKey: 'nav.staff.directory',
+          icon: BookUserIcon,
+          href: '/admin/directory',
+          activePattern: '/admin/directory',
+        },
       ],
     },
     {
@@ -240,6 +264,15 @@ export const memberNavConfig: NavConfig = {
           href: '/portal/invoices',
           activePattern: '/portal/invoices',
         },
+        // F9 US4 — benefit usage dashboard (consumption vs entitlement +
+        // under-use warning). Shown to every member regardless of tier.
+        {
+          titleKey: 'nav.member.benefits',
+          icon: GiftIcon,
+          href: '/portal/benefits',
+          // Exact-match so the E-Blast sub-route doesn't also light this item.
+          activePattern: 'exact:/portal/benefits',
+        },
         // F7 — Email Broadcasts (E-Blast) entry point. Lands on the
         // benefits dashboard which shows quota + history + Compose CTA.
         // Members on plans with no E-Blast quota still see the page
@@ -250,6 +283,13 @@ export const memberNavConfig: NavConfig = {
           icon: MegaphoneIcon,
           href: '/portal/benefits/e-blasts',
           activePattern: '/portal/benefits/e-blasts',
+        },
+        // F9 US3 — member's own unified activity timeline.
+        {
+          titleKey: 'nav.member.timeline',
+          icon: HistoryIcon,
+          href: '/portal/timeline',
+          activePattern: '/portal/timeline',
         },
         {
           titleKey: 'nav.member.account',

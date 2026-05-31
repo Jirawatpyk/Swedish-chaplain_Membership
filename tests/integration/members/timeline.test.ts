@@ -327,6 +327,12 @@ describe('timeline integration (T128, US6)', () => {
     expect(planChanged.payload.override_reason_note).toBeUndefined();
     // Non-sensitive keys survive
     expect(planChanged.payload.member_id).toBe(memberIdA);
+    // R004 — the acting STAFF user id/name is stripped for the member
+    // projection (migration 0192 injects actor_user_id into the view).
+    if (planChanged.source === 'audit') {
+      expect(planChanged.actorUserId).toBe('');
+      expect(planChanged.actorDisplayName).toBeNull();
+    }
   });
 
   it('admin role — override_reason_* payload keys are preserved', async () => {

@@ -281,6 +281,26 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'password_change_failed',
   'password_reset_email_failed',
   'password_malformed_hash_detected',
+  // --- F9 Admin Dashboard (migration 0191 + 0193) — 15 event types ---
+  //     written to this shared audit_log via the insights audit adapter with
+  //     5y retention (no tax-document overlap). Keep in lockstep with
+  //     `F9_AUDIT_EVENT_TYPES` (insights audit port) — `check:audit-events`
+  //     F9 parity guard enforces it. ---
+  'dashboard_viewed',
+  'audit_log_queried',
+  'audit_log_exported',
+  'member_benefit_viewed',
+  'member_timeline_viewed',
+  'smart_insight_dismissed',
+  'directory_listing_updated',
+  'directory_ebook_generated',
+  'directory_json_exported',
+  'data_export_requested',
+  'data_export_generated',
+  'data_export_downloaded',
+  'data_export_failed',
+  'data_export_expired',
+  'insights_cross_tenant_probe',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

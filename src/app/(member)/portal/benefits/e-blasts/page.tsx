@@ -26,6 +26,16 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { EmptyState } from '@/components/shell/empty-state';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { logger } from '@/lib/logger';
@@ -40,10 +50,7 @@ import {
 import { asMemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  intlLocale,
-  shouldShowPlanChangedExplainer,
-} from './_helpers/quota-banner';
+import { intlLocale, shouldShowPlanChangedExplainer } from './_helpers/quota-banner';
 
 /** 60-second segment-level revalidate per plan.md § Cold-start, caching, & memoisation (CHK056) — full Cache
  *  Components migration is F7.1 polish (D5 of plan). */
@@ -63,9 +70,7 @@ export default async function EblastsListPage(props: {
   const tStatus = await getTranslations('portal.broadcasts.list.status');
   const tCompose = await getTranslations('portal.broadcasts.compose');
   const tQuota = await getTranslations('portal.broadcasts.quota');
-  const tPagination = await getTranslations(
-    'portal.broadcasts.list.pagination',
-  );
+  const tPagination = await getTranslations('portal.broadcasts.list.pagination');
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
     dateStyle: 'medium',
@@ -78,10 +83,7 @@ export default async function EblastsListPage(props: {
   const session = await requireSession('member');
   const tenant = resolveTenantFromRequest();
   const membersDeps = buildMembersDeps(tenant);
-  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-    tenant,
-    session.user.id,
-  );
+  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, session.user.id);
   const memberId = memberLookup.ok ? memberLookup.value.memberId : null;
 
   const searchParams = await props.searchParams;
@@ -131,10 +133,8 @@ export default async function EblastsListPage(props: {
       }),
     ]);
 
-    const quotaResult =
-      quotaResultS.status === 'fulfilled' ? quotaResultS.value : null;
-    const planLookup =
-      planLookupS.status === 'fulfilled' ? planLookupS.value : null;
+    const quotaResult = quotaResultS.status === 'fulfilled' ? quotaResultS.value : null;
+    const planLookup = planLookupS.status === 'fulfilled' ? planLookupS.value : null;
 
     if (quotaResult && quotaResult.ok) {
       const v = quotaResult.value;
@@ -166,23 +166,18 @@ export default async function EblastsListPage(props: {
           'broadcasts.benefits_page.find_last_plan_changed_at_failed',
         );
       }
-      const lastPlanChangedAt =
-        planLookup && planLookup.ok ? planLookup.value : null;
+      const lastPlanChangedAt = planLookup && planLookup.ok ? planLookup.value : null;
       if (
         lastPlanChangedAt !== null &&
-        shouldShowPlanChangedExplainer(
-          lastPlanChangedAt,
-          v.quotaYear,
-          v.tenantTimezone,
-        )
+        shouldShowPlanChangedExplainer(lastPlanChangedAt, v.quotaYear, v.tenantTimezone)
       ) {
         // Format the plan-changed date in the tenant timezone so the
         // microcopy reads "Plan changed on <Bangkok-day>" regardless
         // of where the server is running.
-        const planChangedFormatter = new Intl.DateTimeFormat(
-          intlLocale(locale),
-          { dateStyle: 'long', timeZone: v.tenantTimezone },
-        );
+        const planChangedFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+          dateStyle: 'long',
+          timeZone: v.tenantTimezone,
+        });
         planChangedExplainer = tQuota('planChangedExplainer', {
           date: planChangedFormatter.format(lastPlanChangedAt),
         });
@@ -190,9 +185,12 @@ export default async function EblastsListPage(props: {
     } else {
       // Quota query failure (rejected promise OR Result.err) must not
       // silently render zero counters with the Compose CTA enabled.
-      const err = quotaResultS.status === 'rejected'
-        ? quotaResultS.reason
-        : (quotaResult && !quotaResult.ok ? quotaResult.error : null);
+      const err =
+        quotaResultS.status === 'rejected'
+          ? quotaResultS.reason
+          : quotaResult && !quotaResult.ok
+            ? quotaResult.error
+            : null;
       logger.error(
         { err, tenantId: tenant.slug, memberId },
         'broadcasts.benefits_page.compute_quota_counter_failed',
@@ -246,10 +244,7 @@ export default async function EblastsListPage(props: {
               })}
             />
           ) : (
-            <Link
-              href="/portal/broadcasts/new"
-              className={buttonVariants({ variant: 'default' })}
-            >
+            <Link href="/portal/broadcasts/new" className={buttonVariants({ variant: 'default' })}>
               {tCompose('title')}
             </Link>
           )
@@ -269,88 +264,75 @@ export default async function EblastsListPage(props: {
 
       {/* AS4 empty-state OR AS1 history-table */}
       {history.length === 0 ? (
-        <section
+        // Shared EmptyState (standalone, so the default bordered placeholder).
+        // One canonical empty-state treatment across the app (UX R2 #8/#10).
+        <EmptyState
           data-testid="broadcast-empty-state"
-          aria-label={t('emptyTitle')}
-          className="flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
-        >
-          <div className="rounded-full bg-muted p-3">
-            {/* Icon size 48×48 per ux-standards.md § 13 empty-state spec. */}
-            <Mail className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
-          </div>
-          <p className="text-sm font-medium">{t('emptyTitle')}</p>
-          <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>
-          {composeDisabled ? null : (
-            <Link
-              href="/portal/broadcasts/new"
-              className={buttonVariants({ size: 'sm' })}
-            >
-              {t('emptyCta')}
-            </Link>
-          )}
-        </section>
+          icon={Mail}
+          title={t('emptyTitle')}
+          description={t('empty')}
+          action={
+            composeDisabled ? undefined : (
+              <Link href="/portal/broadcasts/new" className={buttonVariants({ size: 'sm' })}>
+                {t('emptyCta')}
+              </Link>
+            )
+          }
+        />
       ) : (
-        <section
-          aria-label={t('title')}
-          className="overflow-x-auto rounded-md border"
-        >
-          <table
-            data-testid="broadcast-history-table"
-            className="w-full min-w-[640px] text-sm"
-          >
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide">
-              <tr>
-                <th scope="col" className="px-3 py-2 text-left">
-                  {t('columns.subject')}
-                </th>
-                <th scope="col" className="px-3 py-2 text-left">
-                  {t('columns.status')}
-                </th>
-                <th scope="col" className="px-3 py-2 text-left">
-                  {t('columns.audience')}
-                </th>
-                <th scope="col" className="px-3 py-2 text-left">
-                  {t('columns.submittedAt')}
-                </th>
-                <th scope="col" className="px-3 py-2 text-left">
-                  {t('columns.sentAt')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((row) => (
-                <tr key={row.broadcastId} className="border-t">
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/portal/broadcasts/${row.broadcastId}`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      {row.subject}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2">
-                    <Badge variant="outline">
-                      {tStatus(row.status as Parameters<typeof tStatus>[0])}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2 tabular-nums">
-                    {row.estimatedRecipientCount}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {row.submittedAt !== null
-                      ? dateFormatter.format(new Date(row.submittedAt))
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {row.sentAt !== null
-                      ? dateFormatter.format(new Date(row.sentAt))
-                      : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <Card>
+          <CardContent>
+            <Table
+              data-testid="broadcast-history-table"
+              aria-label={t('title')}
+              className="min-w-[640px]"
+            >
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">{t('columns.subject')}</TableHead>
+                  <TableHead scope="col">{t('columns.status')}</TableHead>
+                  <TableHead scope="col">{t('columns.audience')}</TableHead>
+                  <TableHead scope="col">{t('columns.submittedAt')}</TableHead>
+                  <TableHead scope="col">{t('columns.sentAt')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {history.map((row) => {
+                  // Guard the i18n lookup: a broadcast status without a matching
+                  // `status.*` key would otherwise throw at render (next-intl).
+                  // Fall back to the raw status so a future enum value degrades
+                  // gracefully. Cast hoisted once (was repeated in has()+call()).
+                  const statusKey = row.status as Parameters<typeof tStatus>[0];
+                  const statusLabel = tStatus.has(statusKey) ? tStatus(statusKey) : row.status;
+                  return (
+                    <TableRow key={row.broadcastId}>
+                      <TableCell>
+                        <Link
+                          href={`/portal/broadcasts/${row.broadcastId}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {row.subject}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{statusLabel}</Badge>
+                      </TableCell>
+                      <TableCell className="tabular-nums">{row.estimatedRecipientCount}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.submittedAt !== null
+                          ? dateFormatter.format(new Date(row.submittedAt))
+                          : '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—'}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
 
       {/* Server-driven pagination (T128 / T129). At edges, render a

@@ -1,0 +1,356 @@
+---
+description: "F9 task list — Admin Dashboard + Directory + Timeline + Audit"
+---
+
+# Tasks: F9 — Admin Dashboard + Directory + Timeline + Audit
+
+**Input**: Design documents from `/specs/015-admin-dashboard/`
+**Prerequisites**: plan.md, spec.md (6 user stories), research.md (R1–R12), data-model.md
+(4 tables + `member_timeline_v` + 14 audit events), contracts/ (application-ports, http-endpoints)
+
+**Tests**: INCLUDED — TDD is **NON-NEGOTIABLE** (Constitution Principle II). Each user
+story authors failing tests (contract/integration/acceptance) **before** implementation.
+Coverage: Domain 100% line · Application ≥80% line+branch · **100% branch on
+security-critical paths** (audit redaction, GDPR scoping, tenant isolation, engagement
+projection).
+
+**Delivery slicing** (critique P1/X1): **Slice A** = US1–US4 (dashboard, audit, timeline,
+benefits); **Slice B** = US5–US6 (directory + E-Book, GDPR export). Ship/review each slice
+separately to bound the all-PII review blast radius.
+
+**Format**: `[ID] [P?] [Story?] Description with file path` — `[P]` = parallelizable
+(different files, no incomplete deps).
+
+---
+
+## Phase 1: Setup (Shared Infrastructure)
+
+- [X] T001 [P] Add `FEATURE_F9_DASHBOARD` (default false) + `EXPORT_DOWNLOAD_TOKEN_SECRET` (≥32 bytes) to the zod schema in `src/lib/env.ts` and `.env.local.example` — done 2026-05-25: secret is `.optional()` + cross-field-required when `FEATURE_F9_DASHBOARD=true` (mirrors F6 salt idiom; keeps F9-dark + local Slice-A boot clean); exposed as `env.features.f9Dashboard` + `env.insights.exportDownloadTokenSecret` (`?? null`). `.env.example` block appended.
+- [X] T002 [P] Scaffold `src/modules/insights/` (`domain/`, `application/{use-cases,ports}/`, `infrastructure/{db,repos,pdf,blob,sources,audit}/`) + public barrel `src/modules/insights/index.ts` — done 2026-05-25 (barrel is `export {}` until first export lands).
+- [X] T003 [P] Add ESLint `no-restricted-imports` boundary rule for `src/modules/insights/**` (Domain/Application/Infrastructure deep-import block) in `eslint.config.mjs` — done 2026-05-25 (added insights pattern block + added `src/modules/insights/**` to cross-module ignores). NOTE: flat-config shadow block (events-brand, `files: src/**`) still shadows this at runtime — a source-scan architecture test backstops it (add alongside T017a).
+- [X] T004 [P] Confirm `@vercel/blob` exposes `access:'private'` in the installed types; bump within `^2` if 2.3.3 predates the literal (`package.json`) [research R6] — done 2026-05-25: installed 2.3.3 `dist/index.d.ts` already exposes `access: 'public' | 'private'` on `put`/`get`. No bump needed.
+- [X] T005 [P] Create composition-root stub `src/modules/insights/insights-deps.ts` (`buildInsightsDeps()`) — done 2026-05-25 (exposes `systemClock` + stub `buildInsightsDeps()`; located under `infrastructure/` per plan source tree). typecheck + lint GREEN.
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**⚠️ CRITICAL**: Blocks ALL user stories. Migrations applied to live Neon + integration baseline before any story code (CLAUDE.md R8 gotcha).
+
+- [X] T006 Migration `0185_f9_dashboard_metrics_cache.sql` — table + RLS + FORCE + tenant policy + chamber_app GRANT + rollback SQL. Applied to live Neon 2026-05-25.
+- [X] T007 [P] Migration `0186_f9_smart_insight_dismissals.sql` — table + RLS+FORCE + unique `(tenant_id,insight_key,scope_ref,cycle_key)` + insight_key CHECK + GRANT. Applied. NOTE: scope_ref is `NOT NULL DEFAULT ''` (sentinel) so the unique index dedupes tenant-wide dismissals (NULLs would be distinct).
+- [X] T008 [P] Migration `0187_f9_directory_listings.sql` — table + RLS+FORCE + composite FK `(tenant_id,member_id)` to `members` + website-scheme/description-length CHECKs + GRANT. Applied.
+- [X] T009 [P] Migration `0188_f9_export_jobs.sql` — enums `export_kind`(incl `audit_export`)/`export_status` + table + RLS+FORCE + unique idempotency + `(tenant_id,status)` index + GRANT. Applied.
+- [X] T010 Migration `0189_f9_member_timeline_view.sql` — `CREATE VIEW member_timeline_v WITH (security_invoker = on)` (6-source UNION ALL) + 7 per-source keyset indexes [data-model §9]. Applied + verified `security_invoker=on`. DISCOVERY: `member_id`/`ref_id` emitted as TEXT (not uuid) — `payments.member_id` is uuid-in-DB + `payments.id` is ULID-text + audit payload member_id is text; uniform UNION type requires text (documented in migration header).
+- [X] T011 Migration `0190_f9_audit_indexes_and_stale_trigger.sql` — 3 `audit_log` composite indexes + `AFTER INSERT` trigger `trg_f9_flag_dashboard_stale` flipping `dashboard_metrics_cache.stale` (SECURITY INVOKER, `event_type::text` compare so a non-enum label can't break audit inserts; fires on member_created/status_changed/archived/plan_changed/payment_succeeded/broadcast_approved) [R2-E1/E4]. Applied.
+- [X] T011a Migration `0191_f9_audit_event_types.sql` — `ALTER TYPE audit_event_type ADD VALUE IF NOT EXISTS …` for the 14 F9 audit event types (data-model §7) [analyze H1]. Applied + verified 14/14.
+- [X] T012 Apply migrations 0185–0191 — **DONE** (`pnpm db:migrate` → all 7 applied to live Neon; `pnpm check:f9-schema` PASS). Integration baseline 2026-05-25 — **F9 VERIFIED CLEAN**:
+  - Stale-trigger proven harmless: fires on every `audit_log` insert yet broke ZERO audit-writing tests (F4 timeline / F6 webhook_rolled_back / broadcasts cross-tenant probe / payments OOB-refund all GREEN). Its UPDATE matches 0 rows under RLS with no tenant context → cannot error; F9 makes zero changes to audit_log read semantics. **No failure references any F9 artifact.**
+  - Pre-existing non-F9 red #1 (~29 tests, FIXED on this branch per user OK): F8 seed helper `tests/integration/helpers/seed-f8-plan.ts:62` defaulted `description: {en:''}` (PR #24) → violates F7.1a constraint `membership_plans_description_en_non_empty` (migration 0174, PR #27). Fixed default → `{ en: 'F8 Test Plan' }`; previously-failing subset re-run = 37/38 GREEN.
+  - Pre-existing non-F9 red #2 (1 test, REPORTED, NOT fixed — out of scope): `tests/integration/broadcasts/us3-tenant-isolation.test.ts:165` seeds `payload: { memberId }` (camelCase) but `MemberRepo.findLastPlanChangedAt` (drizzle-member-repo.ts:911) queries `payload->>'member_id'` (snake_case) → returns null. 1-line test-seed typo, fails identically on main, unrelated to F9.
+  - NOTE: full-suite re-run after the seed-helper fix not repeated (avoid heavy re-runs); subset re-verified GREEN + change is low-risk (only affects seedF8 callers omitting a description). Recommend one final full `pnpm test:integration` before Slice-A ship.
+- [X] T013 [P] Define 14 F9 audit event types + `InsightsAuditPort` (record/recordInTx) in `src/modules/insights/application/ports/audit-port.ts` [data-model §7] — done 2026-05-25: typed discriminated union (no-PII payloads), all 5y retention; Infra adapter `infrastructure/audit/insights-audit-adapter.ts` writes raw SQL to shared `audit_log` w/ `retention_years` (mirrors F5). typecheck+lint GREEN.
+- [X] T014 [P] Extend `pnpm check:audit-events` to include the F9 event-type set (`scripts/check-audit-event-count.ts`) — done 2026-05-25: `checkF9Parity()` asserts migration 0191 ADD VALUEs ↔ `F9_AUDIT_EVENT_TYPES` (both 14). F9 part prints `OK — 14 match`. NOTE: script overall exits 1 on a **pre-existing F5 prose drift** (canonical 20 vs stale "22"/"18" in specs/009 docs) — unrelated to F9, untouched F5 docs, not in default pre-push. Edit is behavior-preserving for F5; F5 cleanup = separate PR.
+- [X] T015 Drizzle schema for the 4 tables in `src/modules/insights/infrastructure/db/schema-insights.ts` — done 2026-05-25: byte-faithful to migrations 0185–0188; registered in `drizzle.config.ts` (R022 anti-DROP). typecheck+lint GREEN.
+- [X] T016 [P] Source-reader ports (`MemberSource`, `PlanSource`, `BroadcastConsumptionSource`, `EventConsumptionSource`, `InvoiceSource`) in `src/modules/insights/application/ports/source-ports.ts` — done 2026-05-25: interfaces grounded in FR-001/002/019/021 + data-model R1/R2; each annotated w/ backing barrel export + gaps. typecheck+lint GREEN.
+- [~] T017 [P] Source-reader adapters in `src/modules/insights/infrastructure/sources/*` — **MemberSource + InvoiceSource DONE** 2026-05-25, both compose from EXISTING barrels (zero members/invoicing surgery; all F9 code stays in insights): `member-source-adapter.ts` (`directorySearchWithCount`+`buildMembersDeps`) + `invoice-source-adapter.ts` (`listInvoices`+`computeIsOverdue`+`makeListInvoicesDeps`; sums `Invoice.total.satang` for paid, counts overdue issued). Both verified via T022 integration (live Neon, empty-invoice case GREEN — adapter+pagination runs cleanly). **PENDING**: `BroadcastConsumptionSource` (eblast `computeQuotaCounter`; awaiting-approval count needs a NEW broadcasts barrel export), `EventConsumptionSource` (`getEventAttendeesByMember` filtered cultural), `PlanSource` (`getPlan`) — all couple to US4 benefit aggregate / a broadcasts export. **Follow-up**: a non-zero revenue/overdue integration assertion needs invoice seeding (deferred — adapter logic is type-checked + the empty path is live-verified).
+- [X] T017a [P] Contract tests for inter-module boundaries [analyze R2-M1] — **DONE 2026-05-27** in `tests/contract/insights/source-adapters-boundary.contract.test.ts` (10 GREEN + 1 todo). Pins the Principle-III boundary: each sibling barrel (`@/modules/invoicing` listInvoices/makeListInvoicesDeps/computeIsOverdue · `@/modules/members` directorySearchWithCount/buildMembersDeps · `@/modules/broadcasts` makeBroadcastApprovalCounter) still exports the symbols the F9 source-adapters compose from, with the callable/factory shape the adapter assumes; each adapter satisfies its F9-owned port (InvoiceSource/MemberSource/BroadcastConsumptionSource); + `computeIsOverdue` pure-rule conformance the `countOverdue` adapter relies on. Behavioural conformance against real barrels = integration layer (T022 5/5 + T019 10/10), cross-referenced via `it.todo` (unit-vs-integration split mirrors `event-attendees-port.contract.test.ts`). Adapters' DB-touching methods intentionally not invoked (unit env has placeholder DATABASE_URL).
+- [X] T018 `check-f9-schema` CI guard (asserts RLS+FORCE on 4 tables + 4 policies + `member_timeline_v` is `security_invoker` + 2 export enums + 14 audit event types + stale trigger) in `scripts/check-f9-schema.ts` + `pnpm check:f9-schema`. Run 2026-05-25 → PASS.
+- [X] T019 [P] Cross-tenant isolation integration harness in `tests/integration/insights/cross-tenant-isolation.test.ts` — done 2026-05-25: **10/10 GREEN on live Neon** (READ/UPDATE/DELETE/INSERT-spoof probes on the 3 FK-free F9 tables + own-row-visible sanity). Principle I DB-layer guarantee proven. `directory_listings` (member+plan FK chain) → US5; `member_timeline_v` → US3; audit-query → US2; aggregate closure → T102.
+
+**Checkpoint**: Foundation ready — Slice A stories can begin.
+
+---
+
+## Phase 3: User Story 1 — Admin Operations Dashboard (P1) 🎯 MVP · Slice A
+
+**Goal**: Replace the `/admin` placeholder with a live KPI dashboard (counts, YTD revenue, needs-attention, activity feed, smart insights, Engagement Score) served from a cached snapshot at p95 < 1.5 s.
+**Independent Test**: Seed a tenant in known states; admin sees correct KPIs + needs-attention links + reverse-chron feed; manager sees the same read-only dashboard incl. revenue (FR-007, amended 2026-05-27); member is denied; empty tenant renders empty states.
+
+### Tests (write first, ensure FAIL)
+
+- [X] T020 [P] [US1] Contract test `listDashboard` role projections (admin/manager/member) — done 2026-05-25, 5 unit tests GREEN in `tests/unit/insights/list-dashboard.test.ts` (mocked; member-forbidden + admin-full + manager-full + cold-start-recompute + recompute-fail→snapshot_unavailable). `listDashboard` opens no direct DB tx (repo self-scopes) so it's fully unit-testable. **Amended 2026-05-27 (FR-007)**: manager projection now full read-only (revenue visible), not redacted.
+- [X] T021 [P] [US1] Unit test `projectEngagementScore` (inverse, band map, null score, clamp) in `tests/unit/insights/engagement-score.test.ts` — done 2026-05-25, 12 tests GREEN (TDD: authored RED before T024). NOTE: null-LAST sort is a presentation concern (members-list column T034), not the pure projection; the projection returns null for un-scored members and the column sorts nulls last.
+- [X] T022 [P] [US1] Integration test `computeDashboardSnapshot` vs seeded data in `tests/integration/insights/dashboard-snapshot.test.ts` — **DONE 2026-05-27**, 5/5 GREEN on live Neon. Increment 1 (counts {total:8, active:6, atRisk:3} + at_risk_followup insight + dismissal suppression). Increment 2 (I-5): **revenue 150000 (AS-1)** + overdue 1 + broadcasts-awaiting 1 (AS-2). Trend (G2/G3): revenueTrend 12 buckets summing 160000 (out-of-window discarded) + memberGrowth 12 buckets cumulative-on-baseline. `underDeliveredBenefitCount` asserted as 0 (US4 benefit aggregate not yet built — Phase 6).
+- [X] T023 [P] [US1] E2E `@f9` dashboard in `tests/e2e/f9-dashboard.spec.ts` — done 2026-05-25, **9/9 GREEN** across chromium + mobile-safari + mobile-chrome (1.3m, `--workers=1`): admin sees KPIs + needs-attention links (asserts hrefs) + insights + activity feed + THB revenue + "As of" freshness; manager finance-redacted (no THB in KPI region); member denied (redirected off /admin). Structure/role assertions (not brittle counts), runs vs the seeded swecham tenant. Confirms mobile-first responsive too. **Amended 2026-05-27 (FR-007)**: manager test now asserts the manager DOES see the THB revenue figure + revenue-trend chart (read-only), not a redaction.
+
+### Implementation
+
+- [X] T024 [P] [US1] `EngagementScore` domain projection (100−risk clamp, band inversion, null) in `src/modules/insights/domain/engagement-score.ts` — done 2026-05-25, 12/12 GREEN. Pure (no imports). `RiskBand`→`EngagementBand` map: critical→critical, at-risk→warning, warning→moderate, healthy→healthy.
+- [X] T025 [P] [US1] `DashboardSnapshot` VO + fixed `SmartInsight` catalogue (3 keys) in `src/modules/insights/domain/{dashboard-snapshot,smart-insight}.ts` — done 2026-05-25, 5/5 GREEN. Catalogue `INSIGHT_KEYS` + per-insight `INSIGHT_CATALOGUE` granularity (membership_year | iso_week); drift-guarded against migration 0186 CHECK. `DashboardSnapshot` carries money as satang string (JSONB no-bigint) + `emptySnapshot()` for FR-006.
+- [~] T026 [US1] `computeDashboardSnapshot` use-case in `src/modules/insights/application/use-cases/compute-dashboard-snapshot.ts` — **Increment 1 + 2 DONE** 2026-05-25: reads `MemberSource` (counts by status + at-risk) + `InvoiceSource` (YTD paid revenue + overdue count, calendar-year-in-tenant-tz) → builds `DashboardSnapshot` → filters dismissed insights (in-tx via `isDismissedInTx`) → upserts cache (`runInTenant`). 2/2 integration GREEN. **`broadcastsAwaitingApproval` now DONE 2026-05-26** (`BroadcastApprovalCounter` port + drizzle count of `status='submitted'` + broadcasts barrel `makeBroadcastApprovalCounter` + insights `broadcast-source-adapter`; AS-2 asserted non-zero in the T022 revenue/overdue integration test). **Still pending**: `underDeliveredBenefitCount` + 2 quota insights (US4 benefit aggregate) — emitted as 0/empty with fields present. Also DONE: synced Drizzle `auditEventTypeEnum` (auth/schema.ts) with the 14 F9 values (F5/F7 precedent).
+- [X] T027 [US1] `listDashboard` use-case (role projection + **cold-start lazy compute**, R1/E3) in `src/modules/insights/application/use-cases/list-dashboard.ts` — done 2026-05-25: member→forbidden, admin→full, manager→finance-redacted (`ytdPaidRevenueSatang` null), cold-start→`recompute` lazy compute, compute-fail→`snapshot_unavailable`; emits best-effort `dashboard_viewed` PII-read audit (FR-036). `DashboardView` + `ProjectedDashboard` types. Refactored `SnapshotRepo.readInTx(tx)` → `read(ctx)` (self-scoping) so the read path needs no direct `runInTenant`. 5 unit tests GREEN; `makeListDashboardDeps` + barrel exports. **Amended 2026-05-27 (FR-007 revision)**: dashboard finance-redaction REMOVED — the "read-only on finance" manager role now sees revenue read-only (member still forbidden). Dropped `ProjectedDashboard`/`financeRedacted`; `metrics` is the plain `DashboardSnapshot`. Manager unit test flipped to assert revenue visible.
+- [X] T028 [US1] `listSmartInsights` + `dismissInsight` use-cases in `src/modules/insights/application/use-cases/` — **dismissInsight DONE** 2026-05-25 (+ `cycleKeyFor` domain helper, 5 unit tests GREEN): use-case (RBAC staff-only/member-forbidden + invalid-key guards + idempotent write + atomic `smart_insight_dismissed` audit) → `InsightDismissalRepo` port + `makeDrizzleInsightDismissalRepo` (ON CONFLICT DO NOTHING) + `makeDismissInsightDeps` + barrel exports. 2 unit (guard branches) + 3 integration (live Neon: write/audit, idempotent replay, manager-allowed) GREEN. **`listSmartInsights` DONE 2026-05-26**: reads cached `snapshot.topInsights` then LIVE-filters current-cycle dismissals (so a just-dismissed insight disappears on refresh without waiting for the cron) + cached fallback on error; `makeListSmartInsightsDeps` + barrel export + 5 unit tests GREEN; wired into the dashboard page (insights panel uses the live-filtered list). typecheck+lint clean.
+- [X] T029 [US1] `activityFeedQuery` — **live** last-N audit query, separate from snapshot (R2-E2/P2) — done 2026-05-25, 3/3 integration GREEN. Built the auth-side reader (`listRecentAuditEvents` use-case + `auditReadAdapter`, RLS-scoped via `runInTenant`, SEPARATE from the append-only `auditRepo`) + auth barrel export; insights `ActivityFeedSource` port + `activity-feed-adapter` (calls auth barrel, Principle III) + `activityFeedQuery` use-case (staff-only, member-forbidden). Integration verifies newest-first + RLS isolation (tenant B's event absent) + limit + forbidden. NOTE: the shared test DB's null-tenant_id legacy audit rows surface to all tenants per the existing `audit_log_tenant_isolation` policy (pre-existing F2 behaviour) — the feed correctly scopes non-null rows to the tenant. **Amended 2026-05-27 (FR-007 / speckit-review)**: the original C-3 manager finance-event redaction (drop payment/invoice/refund events from the manager feed) was REMOVED — managers now see the full feed incl. finance events, consistent with FR-007 (read-only on finance = may view). Dropped `FINANCE_EVENT_PREFIXES`/`isFinanceEvent`/over-fetch; unit test flipped to assert manager == admin feed.
+- [~] T030 [US1] `SnapshotRepo` + `InsightDismissalRepo` drizzle impls — **DONE** 2026-05-25: `makeDrizzleSnapshotRepo` (read + upsert via PK ON CONFLICT, clears stale + refresh_started_at) + `makeDrizzleInsightDismissalRepo` (dismiss ON CONFLICT DO NOTHING + isDismissedInTx). Both thread `tx` via `runInTenant`. **PENDING refinement (DEFERRED — verify-run G1, decision 2026-05-27)**: the `refresh_started_at` **claim-marker** concurrency guard (cold-start vs cron double-compute, analyze R2-L2). Column exists + cleared on upsert. **Decision: defer until horizontal scale.** Rationale — (1) the snapshot is a *derived, deterministic projection*; two concurrent recomputes produce the SAME result and the last upsert wins → **no corruption, purely wasted compute**, never a correctness bug; (2) the current topology is a **single coordinator** (`snapshot-refresh-coordinator` fans out per-tenant sequentially), so concurrent recompute of one tenant effectively cannot occur today; (3) a speculative atomic-claim + stuck-claim-sweep would add complexity for a scenario that can't happen yet (Constitution X — Simplicity). Promote the claim-marker (atomic `UPDATE … WHERE refresh_started_at IS NULL OR < now()-window RETURNING` + skip + integration test) when a multi-runner/horizontally-scaled cron is introduced.
+- [X] T031 [US1] Wire `insights-deps.ts` (snapshot/insight/source/audit ports) — done 2026-05-26: `makeComputeDashboardSnapshotDeps` (member/invoice/**broadcast**/snapshot/dismissal/clock), `makeListDashboardDeps`, `makeListSmartInsightsDeps`, `makeDismissInsightDeps`, `makeActivityFeedDeps` + `systemClock`; all source adapters (member/invoice/broadcast/activity-feed) + audit adapter bound here (Principle III composition root). Barrel re-exports the factories.
+- [X] T032 [US1] Dashboard page replacing placeholder (feature-flagged) in `src/app/(staff)/admin/page.tsx` — done + **BROWSER-VERIFIED via Playwright** 2026-05-25 on :3100 (FEATURE_F9_DASHBOARD=true): admin sees KPIs (Total 49 / Active 49 / At-risk 6 / **Paid revenue THB 1,475,915**), Needs-attention (Overdue 1 + links), Smart insights ("6 at-risk members need follow-up"), Recent-activity feed (newest-first incl. `dashboard viewed by admin`), "As of" freshness. No-session → redirects to /admin/sign-in (auth guard). **Amended 2026-05-27 (FR-007 revision)**: manager now sees the full read-only dashboard INCLUDING revenue (no "—" redaction) — the "read-only on finance" role may view financial figures. **0 console errors.** This ALSO proved the non-zero InvoiceSource path (revenue/overdue from real invoices) that the T022 integration couldn't cover. Components rendered inline (T033 refactor follow-up).
+- [X] T033 [P] [US1] Dashboard components `KpiCard` / `NeedsAttentionList` / `ActivityFeed` (polite live region) / `InsightsPanel` in `src/components/dashboard/` — done 2026-05-25: extracted the 4 inline sections into pure presentational server components (display-ready props; page keeps data+format/i18n). `/admin/page.tsx` refactored to compose them. typecheck + lint clean. **BROWSER-VERIFIED via Playwright** — refactored page renders identically (needs-attention links, insights, activity feed), 0 console errors. (Note: the "manager revenue —" state described here was the pre-FR-007 behaviour; managers now see real revenue — see T027/T032 amendments.)
+- [X] T034 [US1] Engagement Score column on admin members list (non-colour band) in `src/components/members/members-table.tsx` — **added** 2026-05-25: display column projecting engagement from the existing `member_risk_flag` (score + band), rendered as numeric score + text band label (non-colour, FR-035); null → "—". i18n `columns.engagement` + `engagementBand.*` in EN/TH/SV (check:i18n OK). typecheck + lint clean. **G1 done 2026-05-25** — projection moved SERVER-SIDE to the page row-mapping (`src/app/(staff)/admin/members/page.tsx`) using the canonical `projectEngagementScore` (`@/modules/insights`); the client cell now only renders the ready `{score,band}` value via a type-only `EngagementBand` import (erased at build — no insights server-graph leak into the client component, barrel-guard clean). Sort/filter reuses the existing server-side `?risk_band=` param. **BROWSER-VERIFIED via Playwright** 2026-05-25: correct inversion — risk 40/Warning → "60 Moderate", risk 65/At-risk → "35 Watch", risk 78/Critical → "22 Critical" (non-colour text), 0 console errors. **e2e @f9 + @a11y T097 6/6 GREEN** post-G1 (members page renders + axe-clean across 3 platforms). **FR-007a engagement SORT done 2026-05-26** (Round-1 review D7): server-side `?sort=engagement&order=asc|desc` → `DirectoryOffsetFilter.sort/order` → drizzle `ORDER BY risk_score (inverted) NULLS LAST, member_id` (engagement desc = risk asc; unscored always last); sortable `EngagementSortHeader` (aria-sort + `sortByEngagement` aria-label, EN/TH/SV); 2 integration tests (desc/asc order + null-last) GREEN. Supersedes the earlier "sort reuses `?risk_band=`" note — engagement now has its own dedicated sort.
+- [X] T035 [US1] Cron `snapshot-refresh-coordinator` + `snapshot-refresh/[tenantId]` routes in `src/app/api/cron/insights/` — done 2026-05-25: both `verifyCronBearer` (constant-time) + `FEATURE_F9_DASHBOARD` 200-skipped guard (no retry-storm dark-launch) + `runtime='nodejs'` + call the tested `computeDashboardSnapshot`; failures log + return 200 (cron-job.org-safe). Coordinator refreshes the deployed tenant (single-tenant MVP; multi-tenant fan-out + stale-prioritisation deferred to F10). Per-tenant route validates `[tenantId]` via `asTenantContext`. typecheck + lint clean. **Follow-up**: a contract test for the 401/skipped/ok paths + cron-job.org config (T101).
+- [X] T036 [P] [US1] i18n keys EN/TH/SV for dashboard + insights — done 2026-05-25: `admin.dashboard.*` added to all 3 locales (title/subtitle/asOf/empty/kpi/needsAttention/insights/activity); `check:i18n` OK (3157 keys parity). Dates render via `Intl.DateTimeFormat(locale)`; THB via `Intl.NumberFormat`. (BE-display for th-TH is `Intl`-driven at render — verify in-browser with T023.)
+- [X] T037 [US1] Metrics in `src/lib/metrics.ts` — **done 2026-05-25** (typecheck + 29 unit + lint GREEN): added `insightsMetrics` (cardinality-safe, no PII labels) → `snapshot_refresh_duration_ms` (histogram) + `snapshot_refresh_total` (counter, ok/failed) wired into both cron routes; `dashboard_viewed_total` wired into `listDashboard`; `insight_dismissed_total` (SC-012 / analyze M2) wired into `dismissInsight`. (`dashboard_viewed` + `smart_insight_dismissed` AUDIT events already emit via the use-cases.) SLOs/alerts now documented in `docs/observability.md` §25 (T099 ✓). **Intentionally deferred**: `snapshot_age_seconds` observable gauge (needs a scrape-time per-tenant DB read; staleness already bounded by FR-005 cadence + SC-013).
+- [X] T038 [US1] Nav item Dashboard (staff nav — admin + manager) in `src/config/nav.ts` — already present (the `/admin` Dashboard item with `LayoutDashboardIcon` exists in `staffNavConfig`); the F9 dashboard replaces that route's content. No nav change needed.
+
+### US1 trend charts (FR-001a — self-built SVG, no charting dep)
+
+- [X] T038b [US1] Extend `InvoiceSource` (12-month monthly paid revenue, tenant-tz calendar months — bucket paid invoices by `paidAt` month) + `MemberSource` (`joinDistribution`: baseline + per-month joins via paginate-all) aggregation in `src/modules/insights/infrastructure/sources/*` — done 2026-05-26. Pure `trend-window` domain helper (`lastNMonthKeys`/`monthKeyOf`, tenant-tz). Port types added (`MemberJoinDistribution`, `getMonthlyPaidRevenueSatang`). Adapter-side bucketing (no new module-barrel surface; promote GROUP-BY aggregate at ~20k per source-ports note).
+- [X] T038c [US1] Extend `DashboardSnapshot` VO (`revenueTrend[12]` + `memberGrowth[]`) + `computeDashboardSnapshot` (12 tenant-tz month keys → align series; cumulative = baseline + Σ byMonth) + `emptySnapshot` + drizzle-snapshot zod — done 2026-05-26. T022 integration asserts both arrays (12 buckets; revenue sum 150_000 in I-5, growth cumulative 8/1) GREEN on live Neon. **Amended 2026-05-27 (FR-007)**: revenue-trend is no longer redacted for managers — both charts visible to all staff.
+- [X] T038d [P] [US1] `<RevenueTrendChart>` (bar) + `<MemberGrowthChart>` (line) in `src/components/dashboard/` — done 2026-05-26: **self-built SVG**, **no charting dep** (Constitution X); stable display-ready prop contract (thin wrappers over swappable internal `MiniSeriesChart`, research R8); visually-hidden `<table>` equivalent inside (WCAG 1.4.1, non-colour — value via bar height/line + table); i18n `revenueTrend.*`/`memberGrowth.*` EN/TH/SV.
+- [X] T038e [US1] Wire both charts into `src/app/(staff)/admin/page.tsx` (snapshot data; manager revenueTrend already redacted to `[]` upstream → empty state) — done 2026-05-26. e2e `@f9` asserts both chart titles + `getByRole('table')` equivalents present; `@a11y` axe scans them clean; 0 console errors.
+
+**Checkpoint**: US1 fully functional + independently testable (MVP).
+
+---
+
+## Phase 4: User Story 2 — Queryable Audit Log Viewer (P2) · Slice A
+
+**Goal**: Read-only, filterable, exportable viewer over the append-only `audit_log`.
+**Independent Test**: Seeded audit events filter correctly by type/actor/target/date, newest-first, role-redacted payload (actor identity visible to managers), export reproduces the filtered set, no mutation path, tenant-scoped.
+
+> **Module-placement deviation (2026-05-27)**: tasks.md placed the `auditQuery`
+> use-case + redaction map + barrel exports in the `auth` module (T042/T043/T045).
+> They were instead implemented in the **`insights`** module because the F9 audit
+> taxonomy (`audit_log_queried` / `audit_log_exported`, 5-y retention) is owned by
+> the insights `InsightsAuditPort` (Foundational T013), and `insights → auth` is
+> the correct dependency direction (auth is the lower-level module). Placing the
+> use-case in auth would invert it (`auth → insights`) and split the F9 taxonomy
+> across two modules — a Principle III violation. The `auth` module keeps only the
+> audit_log **reader** (`auditQueryReadAdapter` + `resolveActorIdentities`), exactly
+> as `src/modules/insights/index.ts` already documents ("the audit-query reader
+> lives in auth"). This mirrors the existing `activityFeedQuery` split.
+
+### Tests (write first, ensure FAIL)
+
+- [X] T039 [P] [US2] Contract test `auditQuery` + `auditExport` (filters, keyset, redaction, emit, sync cap, actor resolution) — **`tests/contract/insights/audit-query.contract.test.ts`** (11 tests GREEN). Redaction map unit: `tests/unit/insights/audit-redaction.test.ts` (7 GREEN).
+- [X] T040 [P] [US2] Integration test (live Neon) tenant scope (RLS) + per-event redaction + actor-visible-to-manager + eventType filter + invalid_range — **`tests/integration/insights/audit-query.test.ts`** (5 GREEN).
+- [X] T041 [P] [US2] E2E `@f9` audit viewer: table, filter round-trip, export link, manager read-only, member-denied in `tests/e2e/f9-audit.spec.ts`.
+
+### Implementation
+
+- [X] T042 [US2] `auditQuery` use-case (filters, keyset `(timestamp,id)`, opaque cursor, p95 metric) — **`src/modules/insights/application/use-cases/audit-query.ts`** (see deviation note above).
+- [X] T043 [US2] Per-event-type **redaction map** (FR-011 — global annotation deny-list + per-type extension; admin full, manager projected; actor identity never redacted) — **`src/modules/insights/application/audit-redaction.ts`**.
+- [X] T044 [US2] Audit reader (keyset over `audit_log`, tenant-scoped, full payload) in `src/modules/auth/infrastructure/db/audit-query-repo.ts` + contract types `src/modules/auth/application/audit-query-read.ts`; actor resolver `actor-identity-repo.ts`. Indexes already shipped by migration 0190.
+- [X] T045 [US2] Export `auditQuery` + `auditExport` + redaction + actor-directory types via `src/modules/insights/index.ts`; reader + `resolveActorIdentities` via `src/modules/auth/index.ts`.
+- [X] T046 [US2] `auditExport` — sync stream with ≤10k row cap (`AUDIT_EXPORT_SYNC_CAP`) → `export_too_large` boundary; CSV route `src/app/api/admin/audit/export.csv/route.ts` (UTF-8+BOM). Async `audit_export` job fallback deferred to US6.
+- [X] T047 [US2] Audit viewer page (TableContainer, role-gated, flag-gated, keyset pagination link) in `src/app/(staff)/admin/audit/page.tsx` + shimmer `loading.tsx`.
+- [X] T048 [P] [US2] `AuditTable` (read-only, dual timestamp, localized event label, readable payload, actor name+id) + `AuditFilters` (client, shadcn `Select` + URL-state, `TranslatedSelectValue`) in `src/components/audit/`.
+- [X] T049 [P] [US2] i18n keys `admin.audit.*` (EN/TH/SV parity) + dual timestamp (UTC + locale-local) rendering; reuses `admin.dashboard.activity.events.*` via shared `src/lib/audit-event-label.ts`.
+- [X] T050 [US2] Emit `audit_log_queried` + `audit_log_exported` (InsightsAuditPort); metric `insights_audit_query_duration_ms`; Nav item Audit (staff nav, ScrollText icon) in `src/config/nav.ts`.
+
+**Checkpoint**: US1 + US2 work independently. ✅ (US2 implemented 2026-05-27)
+
+---
+
+## Phase 5: User Story 3 — Unified Multi-Source Timeline (P3) · Slice A
+
+**Goal**: Enrich the F3 audit-only timeline into a 6-source union with filtering, keyset pagination, role redaction, and member-portal parity.
+**Independent Test**: Seeded multi-source member shows interleaved chrono stream; filters narrow by source/date/actor; 1,000+ entries paginate at p95<500ms/page; member sees own redacted timeline only.
+
+### Tests (write first, ensure FAIL)
+
+- [X] T051 [P] [US3] Integration test `member_timeline_v` union ordering across 6 sources — **DONE 2026-05-27**, `tests/integration/members/timeline-multisource.test.ts` (5/5 GREEN live Neon): AS-1 six-source merge + reverse-chron, AS-3 source/actorKind/date-range filters.
+- [X] T052 [P] [US3] Integration test keyset cursor for identical `occurred_at` across sources (`ref_id` text tiebreak, R2-E7) — **DONE 2026-05-27**, same file (invoice `issue_date 2026-07-01` vs audit `timestamp 2026-07-01T00:00:00Z` collide on `occurred_at`; limit=1 pages both with no loss/dup). Cursor carries full `occurred_at::text` µs (US2 keyset lesson).
+- [X] T053 [P] [US3] E2E `@f9` timeline filters + member-own in `tests/e2e/f9-timeline.spec.ts` — admin source-filter round-trip + member `/portal/timeline` own-history. (NOT flag-gated — in-place F3-route enrichment.)
+
+### Implementation
+
+- [X] T054 [US3] Swap timeline repo to query `member_timeline_v` (keyset) in `src/modules/members/infrastructure/timeline/drizzle-timeline-repo.ts` — **DONE**: raw `member_timeline_v` query, `(occurred_at DESC, ref_id DESC)` keyset over TEXT ref_id, source/actorKind/date filters; audit rows keep plan-name enrichment + actor display-name resolution (event_type/summary/actor_user_id lifted from the 0192-enriched payload). **Prereq migration 0192** (`CREATE OR REPLACE VIEW` audit-payload enrich) applied to live Neon.
+- [X] T055 [US3] Extend `timelineList` input with `{source?,actorKind?,from?,to?}` — **DONE**, signature preserved; `from`/`to` are UTC ISO (presentation converts ymd→tenant-tz UTC via `@/lib/tenant-day-range`, keeping env out of the application layer); `TimelineEvent` gains `source`+`actorKind`; redaction unchanged.
+- [X] T056 [US3] Timeline i18n mapping `(source,eventKind)→timeline.<source>.<eventKind>` + `audit.eventType.*` reuse + legacy `summary` fallback in `src/components/members/timeline-event-item.tsx` (source badge + icon + actor-kind label for non-audit).
+- [X] T057 [US3] Member portal own-timeline page `src/app/(member)/portal/timeline/page.tsx` (`requireSession('member')` → `findByLinkedUserId`, own-history-only) + load-more API `src/app/api/portal/timeline/route.ts` + member nav item.
+- [X] T058 [P] [US3] `<TimelineFilters>` (URL-state source/actor/date) + `<TimelineStream>` (window-virtualized via `useWindowVirtualizer`, explicit Load-more, sr-only live region) in `src/components/members/`. Staff timeline page rewired to both.
+- [X] T059 [P] [US3] i18n keys top-level `timeline.*` (source/actorKind/per-source eventKinds/filters/page) EN/TH/SV — `check:i18n` 3300 keys parity GREEN.
+
+**Checkpoint**: US1–US3 work independently.
+
+---
+
+## Phase 6: User Story 4 — Member Benefit Usage Dashboard (P3) · Slice A
+
+**Goal**: Per-member, per-(calendar-tenant-tz)-year consumption vs entitlement, with the ≥25pt under-use warning. Member + staff views.
+**Independent Test**: Seeded plan + consumption shows correct used/entitlement per benefit, last-used date, unlimited shown as active, warning fires at 25pt gap; year boundary correct.
+
+### Tests (write first, ensure FAIL)
+
+- [X] T060 [P] [US4] Unit test benefit aggregation = mean of quantifiable ratios excluding unlimited + 25pt warning (fast-check) in `tests/unit/insights/benefit-usage.test.ts` — **DONE 2026-05-27**, 10/10 GREEN (assessUnderUse property + spec worked-example + yearElapsedPct clamping + buildBenefitUsage AS-1/AS-3).
+- [X] T061 [P] [US4] Integration test membership-year boundary (Dec-31 vs Jan-1, tenant-tz) in `tests/integration/insights/benefit-year-boundary.test.ts` (R2-E5) — **DONE 2026-05-27**, 2/2 GREEN on live Neon (fake-clock 23:00 ICT 31-Dec→year N / 00:30 ICT 1-Jan→N+1; real-clock prior-year exclusion + entitlements 6 + active benefits).
+- [X] T062 [P] [US4] E2E `@f9` benefit dashboard (member + admin variants) in `tests/e2e/f9-benefits.spec.ts` — **DONE 2026-05-27** (admin member benefit view + back link; member own /portal/benefits; structural assertions, ungated like US3).
+
+### Implementation
+
+- [X] T063 [US4] `BenefitUsage` domain VO (ratios, unlimited handling, calendar-tenant-tz year) in `src/modules/insights/domain/benefit-usage.ts` — **DONE 2026-05-27**, pure VO: `assessUnderUse` (mean-of-ratios, 25pt gap), `yearElapsedPct` (pure arithmetic over UTC bounds — tz derivation lives in Application), `buildBenefitUsage`.
+- [X] T064 [US4] `computeBenefitUsage` use-case (plans + broadcast + event consumption) in `src/modules/insights/application/use-cases/compute-benefit-usage.ts` — **DONE 2026-05-27**, composes MemberPlanSource + PlanSource + Broadcast/Event consumption; tenant-tz year bounds via js-joda; `member_not_found`/`compute_failed` Result; deps `makeComputeBenefitUsageDeps`.
+- [X] T065 [US4] Member benefit page (extend) in `src/app/(member)/portal/benefits/page.tsx` — **DONE 2026-05-27**, session-resolved member (findByLinkedUserId), compute_failed→error boundary, unlinked→empty, SC-012 self-view metric, nav entry added.
+- [X] T066 [US4] Staff member benefit page in `src/app/(staff)/admin/members/[memberId]/benefits/page.tsx` — **DONE 2026-05-27**, requireSession('staff'), getMember 404/probe, `recordStaffBenefitView` (member_benefit_viewed + metric), mailto reminder to primary contact (AS-4).
+- [X] T067 [P] [US4] `BenefitUsageCard` + `UnderUseWarning` components (non-colour bars) in `src/components/benefits/` — **DONE 2026-05-27**, client-safe (local prop types, no insights-barrel import → no server-graph leak); ProgressBar (used/entitlement), active-benefit badges, icon+text warning (non-colour-alone).
+- [X] T068 [US4] Emit `member_benefit_viewed` (staff reads) + **member self-view counter** (SC-012 adoption measurement, analyze M2); i18n keys EN/TH/SV — **DONE 2026-05-27**, `recordStaffBenefitView` (audit best-effort + `insightsMetrics.benefitViewed`); member page emits `benefitViewed('member')`; benefits.* + admin.members.benefits + nav.member.benefits across en/th/sv (3327-key parity).
+
+**Checkpoint**: **Slice A complete** (US1–US4) — review/ship as the first increment.
+
+---
+
+## Phase 7: User Story 5 — Directory + E-Book (P4) · Slice B
+
+**Goal**: Internal searchable directory, opt-in listings (fixed field set + logo), deterministic PDF E-Book, JSON export.
+**Independent Test**: Staff search all; published outputs include only listed members + chosen fields (email hidden by default); E-Book deterministic; JSON contains exactly opt-in listings.
+
+### Slice B shared export infrastructure (used by US5 + US6)
+
+- [X] T069 [US5] `PrivateBlobPort` + `private-blob-adapter` — done 2026-05-28 (`infrastructure/blob/private-blob-adapter.ts`, `@vercel/blob` access:'private'; token helper `src/lib/export-download-token.ts` HMAC single-use). Verified the SDK call is correct (out-of-band) — private-store provisioning is a ship-day gate (T101a).
+- [X] T070 [US5] `ExportJob` domain state machine (+ stuck reclaim) + `ExportJobRepo` — done 2026-05-28 (`domain/export-job.ts`; `repos/drizzle-export-job-repo.ts` guarded transitions + per-(tenant,job) advisory lock + idempotent create). 31 domain unit + 6 repo integration GREEN.
+- [X] T071 [US5] `processExportJob` worker (claim under advisory lock → build → private blob → ready + audit) — done 2026-05-28 (`use-cases/process-export-job.ts`). 4 worker integration GREEN (in-memory blob stub; real private store = T101a gate).
+- [X] T072 [US5] Cron `process-export-jobs` route (claim + reclaim + TTL sweep) — done 2026-05-28 (`api/cron/insights/process-export-jobs/route.ts`, verifyCronBearer + flag-skip + nodejs).
+- [X] T073 [US5] Authenticated download proxy (session + RBAC + single-use token + expiry; Blob URL never exposed) — done 2026-05-28 (`api/internal/exports/[jobId]/download/route.ts` + `downloadExport`/`prepareExportDownload` use-cases).
+- [X] T073a [P] [US5] Download-proxy authz contract test — done 2026-05-28, **13 GREEN** in `tests/contract/insights/export-download.contract.test.ts` (403/404/409/410/invalid_token + single-use consume + member/admin/manager matrix).
+
+### Tests (write first, ensure FAIL)
+
+- [X] T074 [P] [US5] Integration test directory publication — done 2026-05-28, **13 GREEN** in `tests/integration/insights/directory.test.ts` (search q across industry/description, tier/listed/country filters, write+audit+changed_fields, member_not_found, SC-007 publish projection: opted-out + archived excluded, hidden email → contact-form).
+- [X] T075 [P] [US5] Integration test logo pipeline — done 2026-05-28, **4 GREEN** in `tests/integration/insights/logo-upload.test.ts` (real sharp re-encode/bound, original-never-served, set/remove + audit, reject non-image, member_not_found rollback).
+- [X] T076 [P] [US5] E2E `@f9` directory — done 2026-05-28, `tests/e2e/f9-directory.spec.ts` (search round-trip + E-Book enqueue toast + admin/manager/member role projection). **RUN gated on dev server** (`FEATURE_F9_DASHBOARD=true`, `--workers=1`); full download E2E gated by the private-Blob store (T101a).
+
+### Implementation
+
+- [X] T077 [US5] `DirectoryListing` domain (fixed 9-field set + visibility policy + SC-007 publish projection) — done 2026-05-28 (`domain/directory-listing.ts`, 19 unit GREEN).
+- [X] T078 [US5] `searchDirectory` + `updateDirectoryListing` (+ `getDirectoryListing`) use-cases + `DirectoryRepo` (RLS-scoped cross-table JOIN, `member_timeline_v` precedent) — done 2026-05-28 (13 unit + 13 integration GREEN).
+- [X] T079 [US5] Logo upload pipeline (`sharp` re-encode/EXIF strip) — done 2026-05-28 in `infrastructure/logo/sharp-logo-adapter.ts` + `set-directory-logo.ts`. **DEVIATION**: logo stored in **PUBLIC** Blob (re-encoded), not private — the logo appears in published outputs (E-Book embed + JSON reference) so it must be servable; FR-025a only mandates "original never served" + re-encode/EXIF-strip, both honoured. 11 unit + 4 integration GREEN.
+- [X] T080 [US5] `generateDirectoryEbook` use-case (→ `export_jobs`) + react-pdf E-Book document (tenant-default locale EN, Sarabun) — done 2026-05-28 (`infrastructure/pdf/directory-ebook-document.tsx` + `directory-artefact-adapter.ts`). Artefact build happens in the worker (T071), not at enqueue.
+- [X] T081 [US5] `exportDirectoryJson` use-case (opt-in only, chosen fields, nested JSON) — done 2026-05-28 (artefact adapter `buildJson` + `generate-directory-export.ts`).
+- [X] T082 [US5] Directory admin page (`/admin/directory`) + member visibility settings (`/portal/profile/directory`) — done 2026-05-28. **DEVIATION**: member settings at `/portal/profile/directory` (sub-route). Routes: `api/admin/directory/exports` + `[jobId]/download` (staff) · `api/portal/directory` + `/logo` (member-own). **Verify-remediation 2026-05-28**: discoverability link from `/portal/profile` → `/portal/profile/directory` DONE (F9-flag-gated card reusing `directorySettings` i18n). Admin listing-edit UI remains an optional follow-on (member self-service covers FR-025; `updateDirectoryListing` admin-role path is backend-tested). Verify findings D1 (a11y scan extended to `/admin/directory` + `/portal/profile/directory` in `f9-a11y.spec.ts`) + G1 (opt-out-after-listing regression in `directory.test.ts`, 14/14 GREEN) both closed.
+- [X] T083 [P] [US5] `DirectoryTable` + `DirectorySearchFilters` + `GenerateExportActions` + `RecentExports` (staff) + `DirectoryVisibilityForm` + `DirectoryLogoControl` (member) in `src/components/directory/` — done 2026-05-28.
+- [X] T084 [US5] i18n keys (`admin.directory.*` + `directorySettings.*`) EN/TH/SV + Nav item Directory — done 2026-05-28, `check:i18n` 3408 keys GREEN.
+- [X] T085 [US5] Emit `directory_listing_updated` (+ logo_action) / `directory_ebook_generated` / `directory_json_exported` / `data_export_downloaded`; export-job metrics — done 2026-05-28 (wired in the use-cases + `insightsMetrics`).
+
+**Checkpoint**: US5 functional; shared export infra ready for US6. ✅ (implemented 2026-05-28, commits 2ddde00e + e41f1bc3 + this polish; ~108 unit/contract + 31 live-Neon integration GREEN. Residuals: private-Blob store provisioning (T101a), E2E run + browser verify on dev server, discoverability link + admin-edit UI follow-ons.)
+
+**Deferred review findings (Round-1 review 2026-05-28 — `/speckit-review` + 6 agents).** All Critical/Important findings (G1 worker race/failure correctness, G2 doc/type, G3 tests, G4 UX field-validation + counter + a11y, G5 orphan-blob + CSRF cross-ref comments) were fixed and gated GREEN (typecheck · lint · check:i18n 3413 · 250 unit+contract · 16 integration). The following 3 were **intentionally deferred** — none block ship:
+
+- **Gap C (Suggestion · test coverage)** — add a deterministic **result-ordering** assertion for `searchDirectory`/`listPublishedInTx`. Ordering is correct in code; Gap A (company-name match) + Gap B (LIKE-escape) already cover the correctness-critical paths. In-scope for US5 — pick up in a follow-up test pass.
+- **M3 (Medium · cross-feature)** — register directory + export actions in the shared **command palette** (cmdk, since F2). Cross-cutting surface work, not US5-specific; should be done once across all surfaces, not piecemeal here.
+- **S1 (Suggestion · feature-add)** — listing / E-Book **preview affordance** before generate. New capability with no US5 FR; needs `/speckit.clarify` against spec before building.
+
+---
+
+## Phase 8: User Story 6 — GDPR Self-Service Export (P4) · Slice B
+
+**Goal**: Member self-service (and admin-on-behalf) data archive with redacted audit subset, delivered via private single-use download.
+**Independent Test**: Member exports own data only; archive has all categories + README + manifest; audit subset = member-performed ∪ member-targeted with third-party PII stripped; admin-on-behalf attributed.
+
+### Tests (write first, ensure FAIL)
+
+- [X] T086 [P] [US6] Integration test archive contents + **audit-subset redaction** (100% branch on scoping) + **manifest checksum validates** (SC-008, analyze R2-L4) in `tests/integration/insights/gdpr-export.test.ts` — done 2026-05-29, **1 GREEN** (request→process→ready; all 8 archive entries; manifest SHA-256 validates per file; member-targeted row redacted [email payload field + summary email stripped]; unrelated member's row absent). + pure-unit scoping/redaction in `tests/unit/insights/gdpr-audit-subset.test.ts` (**12 GREEN**, 100% branch) + `gdpr-archive-zip.test.ts` (**7 GREEN**, deterministic zip + manifest + locale README).
+- [X] T087 [P] [US6] Integration test member-cannot-export-others + admin-on-behalf attribution in `tests/integration/insights/gdpr-authz.test.ts` — done 2026-05-29, **3 GREEN** (member→other forbidden + no job; self-service on_behalf=false + requester locale persisted; admin on-behalf on_behalf=true attributed to admin).
+- [X] T088 [P] [US6] E2E `@f9` portal export request → notification → single-use download in `tests/e2e/f9-gdpr-export.spec.ts` — done 2026-05-29, **3 passed** on dev server (`--workers=1`; flaky retries from Next dev cold-compile, not a code bug). Covers request→toast→pending row + account-page discoverability link. **Full download round-trip gated by T101a** (private-Blob store) + the cron worker — same operator gate as US5; the single-use download proxy is covered by the contract + worker-integration suites.
+
+### Implementation
+
+- [X] T089 [US6] `requestDataExport` use-case (idempotent; own-only / admin-on-behalf) in `src/modules/insights/application/use-cases/request-data-export.ts` — done 2026-05-29 (RBAC member-own / admin-on-behalf / manager-forbidden; per-minute-UTC idempotency window; `data_export_requested` emitted atomically on a fresh job only; requester locale captured for FR-029). **6 unit GREEN.**
+- [X] T090 [US6] GDPR archive builder (profile/contacts/invoices+PDFs/events/broadcasts/audit-subset/README/manifest) — done 2026-05-29. **DEVIATION (path):** split into `infrastructure/sources/gdpr-archive-source-adapter.ts` (gather via 5 module barrels + auth audit reader) + `infrastructure/sources/gdpr-archive-zip.ts` (deterministic `fflate` zip + per-file SHA-256 manifest) + `infrastructure/gdpr-archive-adapter.ts` (`GdprArchivePort` composing the two), rather than a single `gdpr-archive-builder.ts`, to keep gather (I/O) testable apart from the deterministic byte assembly. **New dep `fflate@0.8.3`** (approved 2026-05-29 — multi-file archive needs a zip writer; documented deviation from the F6+ zero-new-deps goal).
+- [X] T091 [US6] Audit-subset query (member-performed ∪ member-targeted + third-party redaction) + handle archived/erased subject (FR-032a) — done 2026-05-29. Bounded union reader `gdprAuditSubsetReadAdapter` added to **auth** (owns `audit_log`); pure scoping+redaction in `insights/application/gdpr-audit-subset.ts` (reuses the `manager` projection of `audit-redaction`). FR-032a: gather resolves an archived member (only a truly-absent/cross-tenant subject → `member_not_found`); redaction only ever REMOVES data (never resurrects erased PII).
+- [X] T092 [US6] Wire `processExportJob` for `gdpr_member_archive` kind — done 2026-05-29 (`gdprArchive` dep + branch: build→upload zip→markReady + `data_export_generated`; `member_not_found`→failed + `data_export_failed`; `audit_export` remains the only unsupported kind). **12 unit GREEN** (incl. gdpr ready + member_not_found).
+- [X] T093 [US6] Portal data-export page in `src/app/(member)/portal/account/data-export/page.tsx` — done 2026-05-29 + `POST /api/portal/account/data-export` (request) + `GET .../[jobId]/download` (member prepare-and-redirect) + client `DataExportPanel` (request button + status table + download links) + discoverability card on `/portal/account`. All F9-flag-gated.
+- [X] **FR-031 admin-on-behalf SURFACE** (closes the prior follow-on) — done 2026-05-29: `POST /api/admin/members/[id]/data-export` (admin-only via `requireAdminContext` members/write → manager blocked) + `GET .../[jobId]/download` (admin prepare-and-redirect, members/read; manager still blocked by the use-case authorize) + `MemberDataExportSection` card on the admin member-detail page (admin-only, F9-gated) reusing the now endpoint-configurable `DataExportPanel`. E2E `FR-031` GREEN (admin produces a member's export on their behalf). FR-031 is now fully shipped UI-wise (not just backend-tested).
+- [X] T094 [US6] README localisation (requester locale) + manifest (neutral) + localised notifications — done 2026-05-29. `gdpr-readme.ts` reads the static EN/TH/SV message bundle (EN fallback); manifest English-keyed + locale-neutral; `dataExport.*` + `gdprExport.*` i18n added across 3 locales (`check:i18n` 3449 GREEN). Toast notifications localised via the page labels.
+- [X] T095 [US6] Emit `data_export_requested/generated/downloaded/failed/expired` — done 2026-05-29 (`requested`@request, `generated`@worker-ready, `downloaded`@download-proxy [US5 path, GDPR-ready], `failed`@worker-build-fail, `expired`@TTL-sweep cron).
+
+**Migration**: `0194_f9_export_jobs_requester_locale.sql` (nullable `requester_locale`; FR-029) — applied to live Neon + threaded through schema/port/repo.
+
+**FR-030 delivery model (decision, verify C1)**: US6 delivers the ready archive via the **in-portal download** path (the data-export page lists ready jobs with a single-use download link) — FR-030's *explicitly permitted* "**or an in-portal download**" alternative. There is **no push "export ready" notification** (no email/in-app push from the cron worker); the member/admin revisits the page (status "Ready to download"). This mirrors the US5 directory recent-exports pattern. The request acknowledgement IS localised (the toast). A proactive ready-notification is a deliberate non-goal for this increment; if added later it must be localised to the recipient's locale per FR-030.
+
+**Checkpoint**: **Slice B complete** (US5–US6) — review/ship as the second increment.
+
+**Verify-remediation (2026-05-29, `/speckit.verify.run` round-1)**: F1 (Principle I) — added a GDPR audit-subset reader cross-tenant test to `cross-tenant-isolation.test.ts` (tenant B's reader returns 0 of tenant A's member audit rows + tenant-A control; **12/12 GREEN**). D1 — extended `f9-a11y.spec.ts` to scan `/portal/account/data-export` (full page) + the admin member-detail page incl. the GDPR card (full page); **6/6 GREEN** across chromium/mobile-safari/mobile-chrome. C1 — FR-030 in-portal delivery documented (above). G1 — `fflate` added to `plan.md` § Complexity Tracking. G2 — removed unused `dataExport.requestedAt` i18n key.
+- **D2 (pre-existing a11y debt surfaced + fixed)**: the new full-page member-detail axe scan caught 2 pre-existing serious WCAG 2.1 AA violations (F3/F4, not US6): (1) `member-invoices-section.tsx` overdue-amount `text-amber-600` on white = 3.19:1 → `text-amber-700` (4.8:1, SC 1.4.3); (2) member description/notes `<dt>/<dd>` wrapped in a bare `<div>` → `<dl>` (axe `dlitem`, SC 1.3.1). Page now scans clean.
+
+**PR-review (2026-05-29, `/speckit.review` + enterprise-ux-designer — 7 agents)**: found NEW signal the staff-review missed; all fixed. **C1** GDPR download mislabelled `.json` → `data-export.zip` (+ contract assertion). **C2** contacts read-failure silently shipped a hollow archive → fail-loud throw (FR-037). **I1** admin GDPR card wrapped in `<Suspense>` + skeleton. **I2** added `loading.tsx` + `error.tsx` for `/portal/account/data-export`. **I3** invoice PDF filenames disambiguated by invoiceId (zip-collision). **I4** `requesterLocale: string` → `Locale` union (4 sites) + `RequestDataExportResult.status` → `ExportStatus`. **I5** removed dead `dataExport.downloadError` key. **W1** SR live-region on request. **W2** `expiresHint` states the 1-hour TTL. **W3** account-card link → "Go to data export". **W4** request button disables while an export is pending (+ hint). **S4** download touch-target ≥44px. **Comments**: "four source modules + auth" + "DEFLATE" wording. **Simplify F1**: extracted `data-export-view-model.ts` (dedupes the 2 panel callers). **Simplify F3**: `failJob` worker helper (consolidates FR-037 mark-failed, fixes a logging asymmetry). New tests: gather PDF-fail-soft (3), SV README + null-locale fallback, `subject_member_id` SQL-arm integration, C1 filename. e2e made state-aware (W4 button-disable). Gates: typecheck 0 · lint 0 · i18n 3451 · 298 unit/contract · 20 integration · 9 e2e + a11y GREEN.
+
+**PR-review Round 2 (2026-05-29, `/speckit.review` — 3 agents, delta re-review)**: **✅ all round-1 fixes verified correct, 0 regressions, 0 blockers.** F3 failJob / F1 view-model / I4 Locale / C1 / C2 / I3 all confirmed behaviour-preserving. Closed the new test-coverage gaps protecting the fixes: **R2-1** C2 contacts-throw test (`gdpr-archive-source-adapter.test.ts` — rejects on contacts `!ok`), **R2-2** F1 view-model unit test (`tests/unit/components/data-export/data-export-view-model.test.ts`, 7 — status map/downloadable/BE-year/label set), **R2-3** I3 null-documentNumber filename arm, **R2-4** worker `toHaveBeenCalledTimes(1)` once-invariant on the failed metric, + the stale "12-key" comment. Gates: typecheck 0 · lint 0 · 26 affected unit GREEN.
+
+**Staff-review (2026-05-29, `/speckit.staff-review.run` via Workflow — 57 agents, 5 dims × adversarial verify → `reviews/review-20260529-134951.md`)**: **✅ APPROVED** (0 blockers, 0 correctness/security defects; 9/9 FR/SC evidenced). The 3 raw "blockers" were positive confirmations of correct controls; 2 correctness flags (invoice-pagination skip, null-subject silent failure) verified false-positive. Closed the 3 real test-coverage conditions + 2 suggestions: **W1** PDF-fetch fail-soft (`gdpr-archive-source-adapter.test.ts`, 3), **W2** `listRecentForSubject` (`export-job-repo.test.ts`), **W3** request-route error mappings (`tests/contract/portal/data-export-route.contract.test.ts`, 10), **S1** sentinel comment, **S2** worker null-subject branch test. Accepted-with-rationale: in-memory archive (bounded caps), JSONB-scan audit reader (LIMIT+index), README EN fallback (check:i18n parity).
+
+---
+
+## Phase 9: Polish & Cross-Cutting Concerns
+
+- [X] T096 [P] i18n parity: `pnpm check:i18n` GREEN for all F9 keys (EN canonical, TH+SV present); BE display verified — done 2026-05-29 (`check:i18n` 3451 keys all 3 locales incl. `dataExport.*` + `gdprExport.*`; BE display via `formatLocalisedDate` `th-TH-u-ca-buddhist` on the data-export status dates).
+- [X] T097 [P] a11y (E2): `pnpm test:e2e --grep "@a11y T097" --workers=1` — **done 2026-05-25, 6/6 GREEN** (chromium + mobile-safari + mobile-chrome × /admin + /admin/members) via new `tests/e2e/f9-a11y.spec.ts` (AxeBuilder wcag2a/aa/21a/21aa, fail on serious/critical). Scan surfaced + fixed **2 pre-existing F8 `aria-prohibited-attr` violations** on the members page (engagement column itself was clean): (1) risk-not-computed `<span>` — removed redundant prohibited `aria-label` (visible text "Not yet scored" is the accessible name; tooltip wired via aria-describedby; WCAG 2.5.3 satisfied); (2) `RiskScoreBadge` — added `role="img"` to make its `aria-label` valid (badge pattern, inner spans aria-hidden, SR experience preserved). Dashboard `/admin` had zero violations. Remaining a11y surfaces (audit/timeline/directory) ship with US2–US4.
+- [~] T098 [P] Perf (E1): index-existence guard **done 2026-05-25** — `scripts/check-f9-schema.ts` asserts all 10 perf-critical indexes present (3 audit_log composites + 7 timeline keyset indexes; `pnpm check:f9-schema` → "F9 perf indexes 10/10" PASS). **EXPLAIN-backed DB-layer evidence done 2026-05-29** (server-side, network-independent — runs entirely on Neon, so unaffected by the ~25ms Bangkok→Singapore RTT that inflates local wall-clock):
+  - **FR-008 audit @ 50,000 events** (seeded test tenant, `EXPLAIN (ANALYZE, BUFFERS)` under `runInTenant`): first-page keyset (`WHERE tenant_id ORDER BY timestamp DESC, id DESC LIMIT 50`) = **27.84 ms** server-side via Bitmap Index Scan (no Seq Scan); filtered-by-event_type = **20.05 ms** via the `(tenant_id, event_type, timestamp DESC)` composite. Both ≈20–28 ms ≪ the <1 s budget (even +25 ms RTT ≪ 1 s). ✅ DB-layer validated.
+  - **SC-002 dashboard read** is an **O(1) single-row PK lookup** on `dashboard_metrics_cache` (`makeDrizzleSnapshotRepo` → `WHERE tenant_id = $1`), **independent of member count by design** — the 5k-member cost lives in the offline `computeDashboardSnapshot` cron, not the user-facing read. ✅ architecturally satisfied at the read path.
+  - **FR-016 timeline**: `tests/integration/members/timeline-perf.test.ts` (`RUN_PERF=1`) measured **p95≈636–651 ms local @ 1,000 events** — this is the documented network-distance artifact (Bangkok↔SG RTT × multi-op × 20 samples), NOT a regression; the `member_timeline_v` UNION is index-backed (migration 0189 keyset indexes). **EXPLAIN (ANALYZE) diagnosis 2026-05-30 (server-side, network-independent)**: the two view queries are each **~39 ms** — `count(*)` over the 6-source UNION = **39.74 ms**, keyset page (`LIMIT 51`) = **38.76 ms**; the audit branch uses a Bitmap Index Scan, the other 5 sources Seq-Scan tiny per-member result sets (optimal at that size). **The query is NOT the bottleneck** — the ~650 ms local wall-clock is dominated by `timelineList`'s ~5 sequential DB round-trips (`memberRepo.findById` → count → page → users-enrichment → plan-enrichment) × ~25 ms Bangkok→SG RTT, which collapses in-region. So FR-016 needs only the in-region wall-clock confirmation (no query optimisation required). **Optional headroom levers if a future in-region run is tight**: lazy `count(*)` (page already does LIMIT+1 "has more", so count only the first page) + `Promise.all` the independent users/plan enrichments (−~2 round-trips).
+  - **Committed RUN_PERF=1 perf gates (2026-05-30)** for ship-day staging re-run with one command — mirror `timeline-perf.test.ts` (env-overridable targets, network-distance note):
+    - `tests/integration/insights/audit-perf.test.ts` — seeds **50,000** audit rows; first-page + event-type-filtered `auditQuery`. **Local result @ 50k: p95 363 ms / 351 ms — PASS at the FR-008 1 s CP even from Bangkok** (the 1 s budget absorbs the RTT). Override `PERF_AUDIT_P95_MS` for a strict in-region assertion.
+    - `tests/integration/insights/dashboard-perf.test.ts` — seeds **5,000** members; measures the SC-002 data path. **Local result: listDashboard READ p95 251 ms — PASS at the SC-002 1.5 s CP** (cached O(1) read). The offline `computeDashboardSnapshot` cron measured ~19 s local @ 5k — cross-region RTT tax on a multi-pass aggregate, **not** an SC-002 regression (user reads the cache; FR-005 freshness < 15 min is the only constraint); in-region collapses to a few seconds. Gated by a loose 60 s "cron-window" sanity ceiling (`PERF_DASHBOARD_COMPUTE_MS` to tighten in-region).
+  - **PENDING (staging/in-region gate only)**: the literal **full-interactive-render** wall-clock for SC-002 (Next render, not vitest-testable) and the **FR-016 timeline <500 ms** wall-clock require an **in-region** staging run / production RUM (the timeline UNION's 636 ms local is RTT-inflated). The two committed gates above already PASS their data-path CPs locally; the residual is the render-inclusive + timeline numbers, confirmed on staging before flag-flip. Per "verify numeric CPs before marking" the render-inclusive CPs stay unflipped until measured in-region.
+- [X] T099 [P] Observability (F1): **done 2026-05-25** — added `docs/observability.md` §25 (F9): metrics catalogue (`snapshot_refresh_duration_ms`, `snapshot_refresh_total`, `dashboard_viewed_total`, `insight_dismissed_total`), SLO budgets, and alert thresholds. Verified no PII in metric labels (cardinality-safe: tenant slug + outcome only, no member/actor identifiers).
+- [X] T100 [P] Runbook: append F9 cron section (snapshot + export) to `docs/runbooks/cron-jobs.md` — done 2026-05-28 (both crons + setup + the **private-Blob store ship-day gate (T101a)** + handler modules).
+- [ ] T101 cron-job.org coordinator config documented (snapshot-refresh */5 + process-export-jobs */5, Bearer CRON_SECRET) — ship-day gate
+- [X] T101a **Private Blob store provisioned + verified** — done 2026-05-29. A Vercel Blob store is **public XOR private** (one access mode at creation). The existing `BLOB_READ_WRITE_TOKEN` store is **public** (backs F4 invoice PDFs + F9 logos, all `access:'public'`), so private export puts on it were rejected. **Resolution**: code wiring (commit `5dc1312a`) — `private-blob-adapter.ts` reads `env.blob.privateReadWriteToken` = `BLOB_PRIVATE_READ_WRITE_TOKEN` ?? `BLOB_READ_WRITE_TOKEN` (fallback for dev/test/dark-launch); `env-blob-private-token.test.ts` 3/3 GREEN. **Operator provisioned** the dedicated private store `swecham-exports` (region sin1) + set `BLOB_PRIVATE_READ_WRITE_TOKEN` (62 chars, distinct from the public token — verified public≠private) + `EXPORT_DOWNLOAD_TOKEN_SECRET` (64 chars). **VERIFIED**: a private `put`/`download`/`delete` round-trip succeeded against the real store via `privateBlobAdapter` + real token (smoke script, since removed) — the exact `access:'private'` path that was blocked now works. F4 PDFs + logos untouched (public store). Runbook §F9 T101a documents the procedure.
+- [X] T102 **Cross-tenant isolation suite GREEN** across dashboard/audit/timeline/directory/export — done 2026-05-28. T019 (3 FK-free F9 tables, 10/10) + `tests/integration/insights/directory-cross-tenant.test.ts` (**6/6 GREEN**: directory_listings DB-layer RLS READ/UPDATE/INSERT-spoof + use-case scoping — searchDirectory/listPublishedInTx never surface another tenant's members + export-job findById is tenant-scoped → not_found under tenant B) + per-feature suites (audit-query T040, timeline T051, dashboard cross-tenant). Principle I Review-Gate blocker closed.
+- [X] T103 [P] Update CLAUDE.md module list — done 2026-05-28: added `src/modules/insights/**` (F9) to the Repository-status Source-modules line. (Recent Changes section is auto-managed — `## Recent Changes` do-not-hand-edit marker — populated by `/speckit.ship`/`sync`.)
+- [X] T103a Extend `vitest.config.ts` 100%-branch coverage include with the F9 security-critical use-cases — **done 2026-05-25**: added F9 per-file thresholds — `engagement-score.ts` / `insight-cycle-key.ts` / `smart-insight.ts` at full 100% (statements/branches/functions/lines) + `list-dashboard.ts` at branches:100 (role-projection guard). Verified via `pnpm test:coverage`: all tests pass, ZERO insights threshold errors, F9 100% pins hold. Audit-query redaction + GDPR export scoping thresholds deferred to US2/US4 when those use-cases land. [analyze M1, Constitution II/IX]
+- [~] T104 Full CI: `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:f9-schema && pnpm check:audit-events && pnpm test:integration && pnpm test:e2e` — **run 2026-05-29 (e2e scoped to F9 per request)**: lint 0-err · typecheck 0 · check:i18n 3451 · check:f9-schema 10/10 · check:audit-events parity · **full unit/contract 6649 GREEN** (fixed 1 pre-existing stale nav-count drift, c67d75a1) · **F9 integration 76/76 GREEN** · **F9 e2e GREEN, 0 hard failures** (US6 GDPR 100% green). The first full F9 e2e run surfaced + fixed 4 PRE-EXISTING US5/Slice-A issues (none US6): (1) stale nav count 9→10 (c67d75a1); (2) directory `getByRole('table')`/`getByText('Queued')` selector ambiguity once export jobs accumulate (f4535574); (3) mobile-safari directory-search `fill()` dropping React onChange on webkit → `pressSequentially` (6ce6cf2b); (4) **real WCAG 4.1.2 violation** — directory listed-Switch had no accessible name (base-ui id not associated) → explicit aria-label (8e995801). Remaining: 1 cold-compile flaky (GDPR-card axe on mobile-chrome, passes on retry). Full cross-module integration + `test:coverage` thresholds = ship-day reproduction.
+- [X] T105 Co-sign `checklists/security.md` (solo-maintainer substitute footer, v1.4.2) at Review gate — done 2026-05-29. Appended the T105 Co-Sign Footer to `checklists/security.md` (HEAD `a75daa76`): **33/33 PASS · 0 deferred**, ✅ APPROVED across verify ×2 + staff-review (57-agent Workflow) + PR-review ×2 + `/security-review` (0 vulnerabilities). Constitution v1.4.2 NON-NEGOTIABLE: I ✅ / II ✅ / III ✅ / IV N/A. Tenant-isolation Review-Gate blocker (Principle I clause 3): cross-tenant suite 12/12 GREEN. Co-signed for ship-day readiness; F9 stays dark behind `FEATURE_F9_DASHBOARD=false` until T101 + T101a operator gates clear.
+
+---
+
+## Dependencies & Execution Order
+
+### Phase dependencies
+
+- **Setup (P1)** → no deps.
+- **Foundational (P2)** → after Setup; **BLOCKS all stories**. Migrations (T006–T012) before any schema-referencing code.
+- **Slice A**: US1 (P3) → US2 (P4) → US3 (P5) → US4 (P6). All depend on Foundational; independently testable.
+- **Slice B**: US5 (P7) ships the **shared export infra (T069–T073)** that **US6 (P8) depends on**. Both depend on Foundational; deliver/review as one slice.
+- **Polish (P9)** → after the stories in scope are complete.
+
+### Story independence
+
+- US1–US4 are mutually independent (each independently testable); recommended order is priority order.
+- US6 depends on US5's export infrastructure (T069–T073) — both are Slice B, delivered together.
+
+### Within each story
+
+- Tests authored + **failing** before implementation (Constitution II).
+- Domain → Application (use-cases) → Infrastructure (repos/adapters) → Presentation → cron/metrics/i18n.
+
+### Parallel opportunities
+
+- Setup T001–T005 all `[P]`.
+- Foundational migrations T007–T009 `[P]` (T006/T010/T011 touch shared/ordered SQL; T012 gates).
+- Per-story: all test tasks `[P]`; domain VOs `[P]`; components `[P]`.
+- With capacity, US1–US4 can be built in parallel after Foundational.
+
+---
+
+## Parallel Example: User Story 1
+
+```bash
+# Tests first (all parallel):
+Task: T020 Contract test listDashboard role projections
+Task: T021 Unit test projectEngagementScore (null-last)
+Task: T022 Integration test computeDashboardSnapshot
+Task: T023 E2E @f9 dashboard
+
+# Then domain (parallel):
+Task: T024 EngagementScore projection
+Task: T025 DashboardSnapshot VO + SmartInsight catalogue
+```
+
+---
+
+## Implementation Strategy
+
+- **MVP** = Setup + Foundational + **US1** (dashboard). Stop, validate, demo.
+- **Slice A** (US1–US4) = first reviewable/shippable increment → `/speckit.verify` → `/speckit.review` (security co-sign) → optional flag-flip.
+- **Slice B** (US5–US6) = second increment (directory + GDPR) → review → flag-flip.
+- Flag everything behind `FEATURE_F9_DASHBOARD`; tables + cron ship dark first.
+
+## Notes
+
+- `[P]` = different files, no incomplete deps. `[USx]` maps to spec user stories.
+- Every repo method threads `tx` from `runInTenant` — never the global `db` (CLAUDE.md gotcha).
+- Apply each migration + run integration before committing schema-referencing code (CLAUDE.md R8).
+- `--workers=1` mandatory on `pnpm test:e2e`.
+- Total: **113 tasks** across 9 phases. Added post-`/speckit.analyze`: R1 — T011a (audit-enum migration H1), T103a (vitest coverage config M1); R2 — T017a (inter-module contract tests M1), T073a (download-proxy authz contract test M2). FR-001a charts (2026-05-26, self-built SVG, no dep): T038b–T038e (US1).

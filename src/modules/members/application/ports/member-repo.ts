@@ -48,6 +48,14 @@ export type DirectoryOffsetFilter = {
   readonly country?: string;
   readonly planId?: string;
   readonly riskBand?: RiskBand;
+  /**
+   * Sort column (FR-007a). `engagement` orders by the F8 risk score inverted
+   * (engagement = 100 − risk): `desc` (default) = healthiest first; `asc` =
+   * least-engaged first. Unscored members (null risk) always sort last.
+   * Omitted → default recency order (`last_activity_at DESC`).
+   */
+  readonly sort?: 'engagement';
+  readonly order?: 'asc' | 'desc';
   readonly limit: number;
   readonly offset: number;
 };
@@ -99,6 +107,11 @@ export type MemberPatch = Partial<
     | 'notes'
     | 'foundedYear'
     | 'turnoverThb'
+    | 'addressLine1'
+    | 'addressLine2'
+    | 'city'
+    | 'province'
+    | 'postalCode'
   > & {
     country: IsoCountryCode;
     taxId: TaxId | null;

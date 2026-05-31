@@ -29,3 +29,16 @@ export function asPhone(raw: string): Result<Phone, PhoneError> {
 export function isPhone(value: unknown): value is Phone {
   return typeof value === 'string' && asPhone(value).ok;
 }
+
+/**
+ * Form-level acceptance check: a phone INPUT is acceptable when it is
+ * empty (the field is optional on member/contact forms) OR a valid E.164
+ * number once ASCII formatting is stripped. Delegates to `asPhone` so the
+ * regex + strip rule lives in exactly one place — client-side form
+ * validation (member-form, contact-form-dialog) and the server-side
+ * value object can never drift. Pure TS; safe to import from client
+ * components (this module pulls only `@/lib/result`).
+ */
+export function isAcceptablePhoneInput(raw: string): boolean {
+  return raw.trim() === '' || asPhone(raw).ok;
+}

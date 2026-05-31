@@ -21,9 +21,11 @@ import { PageHeader } from '@/components/layout/page-header';
 function TimelineEventSkeleton() {
   return (
     <li className="relative border-l-2 border-muted pl-6 py-3">
+      {/* Matches the real TimelineEventItem source marker (24px circle at
+          -left-[13px]) so skeleton→content is CLS-free (review-run R2-3). */}
       <span
         aria-hidden
-        className="absolute -left-[5px] top-5 h-2 w-2 rounded-full bg-muted"
+        className="absolute -left-[13px] top-4 size-6 rounded-full border bg-background"
       />
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline gap-2">

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations, getFormatter } from 'next-intl/server';
-import { PencilIcon, UserPlusIcon } from 'lucide-react';
+import { BookUserIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -18,6 +18,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { getMember } from '@/modules/members';
+import { env } from '@/lib/env';
 
 /**
  * Portal profile view — US5 AS1 (T123).
@@ -34,6 +35,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function PortalProfilePage() {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.profile');
+  const tDir = await getTranslations('directorySettings');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
@@ -46,6 +48,7 @@ export default async function PortalProfilePage() {
   if (!memberResult.ok) {
     return (
       <DetailContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('notLinked')}</p>
         </div>
@@ -68,6 +71,7 @@ export default async function PortalProfilePage() {
   if (!result.ok) {
     return (
       <DetailContainer>
+        <PageHeader title={t('pageTitle')} />
         <div className="py-12 text-center">
           <p className="text-body text-muted-foreground">{t('loadError')}</p>
         </div>
@@ -271,6 +275,28 @@ export default async function PortalProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* F9 US5 — directory listing self-service (FR-025). Gated on the F9 flag
+          so it stays hidden until the feature flips on; the target page itself
+          notFounds when dark. Keeps the member's directory settings discoverable
+          "under /portal/profile" per the IA. */}
+      {env.features.f9Dashboard ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{tDir('title')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-body text-muted-foreground">{tDir('subtitle')}</p>
+            <Link
+              href="/portal/profile/directory"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              <BookUserIcon className="size-4" aria-hidden />
+              {tDir('manage')}
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
     </DetailContainer>
   );
 }

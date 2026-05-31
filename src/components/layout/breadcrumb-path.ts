@@ -95,6 +95,14 @@ export function parseBreadcrumbPath({
     // breadcrumb segment fell through to a real link at
     // `/admin/settings/integrations` which has no `page.tsx` → 404.
     ['settings', new Set(['renewals', 'integrations'])],
+    // F6 — `/admin/events/<id>/registrations/<id>/erase` is a deep route
+    // whose only `page.tsx` lives at the `erase` leaf. Neither
+    // `/admin/events/<id>/registrations` nor
+    // `/admin/events/<id>/registrations/<id>` has an index page, so both
+    // intermediate crumbs would 404 (and the prefetch logs a console
+    // error). `registrations` is the structural opener; the UUID
+    // `registrationId` beneath it is handled by the subtree cascade below.
+    ['events', new Set(['registrations'])],
   ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;
@@ -115,6 +123,37 @@ export function parseBreadcrumbPath({
     return NON_ROUTE_BY_PARENT.get(parent)?.has(segment) ?? false;
   };
 
+  // A dynamic id segment (UUID) under a structural opener has no own
+  // page.tsx — it can't be enumerated in NON_ROUTE_BY_PARENT by name, so
+  // it inherits non-route status here.
+  const isDynamicId = (s: string | undefined): boolean =>
+    s !== undefined &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+  // Scoped subtree cascade. A non-leaf segment is non-route when it is a
+  // direct NON_ROUTE_BY_PARENT match, OR it is a DYNAMIC id sitting inside
+  // a structural subtree opened by an earlier match — e.g.
+  // `events/<id>/registrations/<id>/erase`: `registrations` matches
+  // directly and the UUID `registrationId` cascades. A NAMED non-leaf
+  // segment is NOT auto-downgraded: it may be a real nested route, so it
+  // ends the structural run and must opt in explicitly via
+  // NON_ROUTE_BY_PARENT. The leaf (isCurrent) is the real route and renders
+  // as BreadcrumbPage regardless. The cascade can only DOWNGRADE a crumb to
+  // plain text — it never produces a clickable bad link.
+  const nonRouteFlags: boolean[] = new Array(rawParts.length).fill(false);
+  let inStructuralSubtree = false;
+  for (let i = 0; i < lastIndex; i++) {
+    if (isNonRouteSegment(i)) {
+      inStructuralSubtree = true;
+      nonRouteFlags[i] = true;
+    } else if (inStructuralSubtree && isDynamicId(decodedParts[i])) {
+      nonRouteFlags[i] = true;
+    } else {
+      // A named, potentially-routable segment closes the structural run.
+      inStructuralSubtree = false;
+    }
+  }
+
   return rawParts
     .map((rawSegment, index) => {
       const decoded = decodedParts[index] ?? rawSegment;
@@ -122,7 +161,7 @@ export function parseBreadcrumbPath({
       let isLinkable = true;
       if (isPlansYear(index)) {
         href = `/admin/plans?year=${decoded}`;
-      } else if (isNonRouteSegment(index)) {
+      } else if (nonRouteFlags[index]) {
         // Point at the parent path (drop THIS segment); parent is the
         // last routable ancestor. Mark as non-linkable so the UI
         // renders this as plain text — clicking would otherwise

@@ -154,6 +154,11 @@ export type Member = {
   readonly registrationFeePaid: boolean;
   readonly lastActivityAt: Date | null;
   readonly notes: string | null;
+  readonly addressLine1: string | null;
+  readonly addressLine2: string | null;
+  readonly city: string | null;
+  readonly province: string | null;
+  readonly postalCode: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 } & MemberLifecycle;

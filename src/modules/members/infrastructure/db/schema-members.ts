@@ -82,6 +82,16 @@ export const members = pgTable(
     // Admin-only free text — redacted from member-self GET responses in Application.
     notes: text('notes'),
 
+    // Postal address (optional, structured). The 2-letter `country` lives
+    // above (ISO 3166-1 alpha-2); these columns hold the street-level parts.
+    // Added 2026-05-29 (migration 0195). All nullable — existing members
+    // carry no address.
+    addressLine1: text('address_line1'),
+    addressLine2: text('address_line2'),
+    city: text('city'),
+    province: text('province'),
+    postalCode: text('postal_code'),
+
     // State
     status: memberStatusEnum('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),

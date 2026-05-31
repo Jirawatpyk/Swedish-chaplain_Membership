@@ -97,72 +97,61 @@ export function AcknowledgementBannerClient({
     <>
       {hidden ? null : (
         // Outer wrapper matches DetailContainer's `mx-auto + max-w +
-        // px-[var(--page-padding-x)]` so the amber card edges align with
-        // the page content cards below on narrow viewports (was flush to
-        // viewport edges < 1152px).
-        <div
-          className="mx-auto w-full max-w-(--layout-max-width-detail) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]"
-        >
-        <div
-          ref={ref}
-          role="region"
-          aria-labelledby="broadcasts-ack-banner-heading"
-          data-testid="broadcasts-acknowledge-banner"
-          className="flex items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
-        >
-          <ShieldCheck
-            className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
-            aria-hidden="true"
-          />
-          <div className="flex-1 space-y-2">
-            <h2
-              id="broadcasts-ack-banner-heading"
-              className="text-sm font-semibold"
-            >
-              {title}
-            </h2>
-            <p className="text-sm text-muted-foreground">{body}</p>
-            {privacyPolicyUrl && privacyPolicyLinkLabel ? (
-              <p className="text-sm">
-                <a
-                  href={privacyPolicyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        // px-[var(--page-padding-x)]` so the warning-banner edges align
+        // with the page content cards below on narrow viewports (was
+        // flush to viewport edges < 1152px).
+        <div className="mx-auto w-full max-w-(--layout-max-width-detail) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]">
+          <div
+            ref={ref}
+            role="region"
+            aria-labelledby="broadcasts-ack-banner-heading"
+            data-testid="broadcasts-acknowledge-banner"
+            className="flex items-start gap-4 rounded-md border border-warning/30 bg-warning-surface p-4"
+          >
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+            <div className="flex-1 space-y-2">
+              <h2 id="broadcasts-ack-banner-heading" className="text-sm font-semibold">
+                {title}
+              </h2>
+              <p className="text-sm text-muted-foreground">{body}</p>
+              {privacyPolicyUrl && privacyPolicyLinkLabel ? (
+                <p className="text-sm">
+                  <a
+                    href={privacyPolicyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    {privacyPolicyLinkLabel}
+                  </a>
+                </p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onAcknowledge}
+                  disabled={pending}
+                  data-testid="banner-acknowledge-cta"
                 >
-                  {privacyPolicyLinkLabel}
-                </a>
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={onAcknowledge}
-                disabled={pending}
-                data-testid="banner-acknowledge-cta"
-              >
-                {pending ? (
-                  <Loader2
-                    className="mr-2 h-4 w-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {acknowledge}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={dismiss}
-                disabled={pending}
-                data-testid="banner-remind-later"
-              >
-                {remindLater}
-              </Button>
+                  {pending ? (
+                    <Loader2 className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+                  ) : null}
+                  {acknowledge}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={dismiss}
+                  disabled={pending}
+                  data-testid="banner-remind-later"
+                >
+                  {remindLater}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
         </div>
       )}
       {/* a11y CHK042 — focus anchor stays mounted ACROSS the hidden

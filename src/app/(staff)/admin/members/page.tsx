@@ -23,6 +23,10 @@ import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+// F9 (G1) — Engagement Score is projected SERVER-SIDE here (canonical, unit-
+// tested) and passed to the client table as a ready value (no client-side
+// projection / no insights-barrel import in the client component).
+import { projectEngagementScore } from '@/modules/insights';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
@@ -54,6 +58,9 @@ interface SearchParams {
   readonly page?: string;
   /** I1 round-10 — quick filter on F8-derived risk score band. */
   readonly risk_band?: string;
+  /** F9 FR-007a — engagement column sort. */
+  readonly sort?: string;
+  readonly order?: string;
 }
 
 const VALID_STATUSES = new Set(['active', 'inactive', 'archived']);
@@ -140,6 +147,11 @@ async function MembersDirectoryBody({
     query.show_archived === '1' ||
     riskBand !== undefined;
 
+  // F9 FR-007a — engagement sort (only valid sort column today).
+  const sort = query.sort === 'engagement' ? ('engagement' as const) : undefined;
+  const order =
+    query.order === 'asc' ? ('asc' as const) : query.order === 'desc' ? ('desc' as const) : undefined;
+
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page =
     Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -158,6 +170,7 @@ async function MembersDirectoryBody({
           ? { planId: query.plan_id }
           : {}),
         ...(riskBand ? { riskBand } : {}),
+        ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
         status: [...statuses],
         limit: PAGE_SIZE,
         offset,
@@ -203,7 +216,13 @@ async function MembersDirectoryBody({
     );
   }
 
-  const rows: MembersTableRow[] = result.value.items.map((row) => ({
+  const rows: MembersTableRow[] = result.value.items.map((row) => {
+    // F9 (G1) — server-side engagement projection (inverse of F8 risk).
+    const eng = projectEngagementScore({
+      riskScore: row.riskScore,
+      riskScoreBand: row.riskScoreBand,
+    });
+    return {
     member_id: row.member.memberId,
     company_name: row.member.companyName,
     country: row.member.country,
@@ -218,6 +237,10 @@ async function MembersDirectoryBody({
       row.riskScore !== null && row.riskScoreBand !== null
         ? { score: row.riskScore, band: row.riskScoreBand }
         : null,
+    engagement:
+      eng.score !== null && eng.band !== null
+        ? { score: eng.score, band: eng.band }
+        : null,
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,
     notes: row.member.notes,
     primary_contact: row.primaryContact
@@ -228,7 +251,8 @@ async function MembersDirectoryBody({
           email: row.primaryContact.email,
         }
       : null,
-  }));
+    };
+  });
 
   // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
   // client component that calls useSearchParams — prevents the whole route

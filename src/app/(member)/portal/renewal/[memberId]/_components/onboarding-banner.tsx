@@ -17,7 +17,7 @@ export async function OnboardingBanner() {
       // screen readers don't announce the heading twice. Matches the
       // pattern in benefit-summary.tsx + plan-summary section.
       aria-labelledby="renewal-onboarding-heading"
-      className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-900 dark:bg-blue-950"
+      className="rounded-lg border border-info/30 bg-info-surface p-4 text-sm"
     >
       <h2 id="renewal-onboarding-heading" className="mb-1 font-medium">
         {t('heading')}

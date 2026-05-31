@@ -172,3 +172,11 @@ scripts/_demo-data/
 # staging baselines are committed (env-prefixed `staging-*.json`).
 # ============================================
 specs/012-eventcreate-integration/perf-results/local-*.json
+
+# ============================================
+# Ad-hoc verification screenshots dropped at repo root during
+# Playwright-MCP / /speckit-* manual QA (e.g. f9-dashboard-admin.png).
+# Root-anchored so legit assets under public/ src/ specs/ are unaffected.
+# (Pre-existing tracked root PNGs are not retro-untracked by this rule.)
+# ============================================
+/*.png

@@ -27,40 +27,32 @@ import {
   OverrideReasonDialog,
   type OverrideReasonResult,
 } from './override-reason-dialog';
+import { formatOverrideWarning } from './override-warning-message';
+import {
+  buildFieldPayload,
+  buildContactPayload,
+  hasFieldDiff,
+  contactFieldsChanged as contactFieldsChangedPure,
+  contactEmailChanged as contactEmailChangedPure,
+  planChanged as planChangedPure,
+  type MemberInitialValues,
+  type EditablePrimaryContact,
+} from './edit-member-payloads';
 
-type MemberInitialValues = {
-  readonly memberId: string;
-  readonly companyName: string;
-  readonly legalEntityType: string | null;
-  readonly country: string;
-  readonly taxId: string | null;
-  readonly website: string | null;
-  readonly description: string | null;
-  readonly notes: string | null;
-  readonly foundedYear: number | null;
-  readonly turnoverThb: number | null;
-  readonly planId: string;
-  readonly planYear: number;
-  readonly registrationDate: string;
-};
+// MemberInitialValues + EditablePrimaryContact are defined alongside the
+// pure payload builders in ./edit-member-payloads (imported above).
 
 type Props = {
   readonly member: MemberInitialValues;
   readonly plans: readonly PlanOption[];
-  readonly primaryContact: {
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly email: string;
-    readonly phone: string | null;
-    readonly roleTitle: string | null;
-    readonly preferredLanguage: 'en' | 'th' | 'sv';
-  };
+  readonly primaryContact: EditablePrimaryContact;
 };
 
 import { uuid } from '@/lib/uuid';
 
 export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const t = useTranslations('admin.members.edit');
+  const tOverride = useTranslations('admin.members.overrideReason');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [bundleState, setBundleState] = useState<BundleChangePayload | null>(null);
@@ -79,6 +71,58 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       },
       body: JSON.stringify(body),
     });
+  };
+
+  /**
+   * PATCH the member's primary contact. The edit form exposes the primary
+   * contact's name / phone / role / language / email, but those edits used
+   * to be silently dropped — `fieldPayload` / `planPayload` only ever sent
+   * member-company + plan fields to `PATCH /api/members/[memberId]`, and
+   * `updateMemberSchema` (`.strict()`) carries no contact fields. The
+   * contact endpoint + `updateContactFields` use case already exist; this
+   * wires the form to actually call them. Each call gets a fresh
+   * idempotency key.
+   */
+  const patchContact = async (
+    body: Record<string, unknown>,
+  ): Promise<Response> => {
+    idemKeyRef.current = uuid();
+    return fetch(
+      `/api/members/${member.memberId}/contacts/${primaryContact.contactId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idemKeyRef.current,
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  };
+
+  /** Returns true on success; otherwise shows a localised toast. */
+  const handleContactResponse = async (res: Response): Promise<boolean> => {
+    if (res.ok) return true;
+    const body = await res.json().catch(() => ({}));
+    const code = body?.error?.code;
+    if (res.status === 409 && code === 'not_supported') {
+      toast.error(t('errors.emailChangeNotSupported'));
+    } else if (res.status === 409 && code === 'conflict') {
+      toast.error(t('errors.emailTaken'));
+    } else if (res.status === 404) {
+      toast.error(t('errors.contactNotFound'));
+    } else if (
+      res.status === 400 &&
+      code === 'validation_error' &&
+      body?.error?.details?.type === 'invalid_phone'
+    ) {
+      toast.error(t('errors.invalidPhone'));
+    } else if (res.status === 400) {
+      toast.error(t('errors.validation'));
+    } else {
+      toast.error(t('errors.generic'));
+    }
+    return false;
   };
 
   const handleSuccess = () => {
@@ -106,7 +150,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       return;
     }
     if (res.status === 422) {
-      setOverrideState({ message: JSON.stringify(body.error?.details ?? {}) });
+      setOverrideState({
+        message: formatOverrideWarning(body.error?.details, tOverride),
+      });
       return;
     }
     if (res.status === 403) {
@@ -124,24 +170,23 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     toast.error(t('errors.generic'));
   };
 
+  // Thin wrappers that bind the captured `member` / `primaryContact` to the
+  // pure builders in ./edit-member-payloads (unit-tested there).
   const planChanged = (values: MemberFormValues): boolean =>
-    values.plan_id !== member.planId || values.plan_year !== member.planYear;
+    planChangedPure(values, member);
 
-  const fieldPayload = (values: MemberFormValues): Record<string, unknown> => ({
-    company_name: values.company_name.trim(),
-    legal_entity_type: values.legal_entity_type?.trim() || null,
-    country: values.country.toUpperCase(),
-    tax_id: values.tax_id?.trim() || null,
-    website: values.website?.trim() || null,
-    description: values.description?.trim() || null,
-    // `values.notes` is already `string | null` after the form's zod
-    // transform (round-3 N-I4). Safe to trim only when string.
-    notes: values.notes ? values.notes.trim() || null : null,
-    founded_year:
-      typeof values.founded_year === 'number' ? values.founded_year : null,
-    turnover_thb:
-      typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
-  });
+  const fieldPayload = (values: MemberFormValues): Record<string, unknown> =>
+    buildFieldPayload(values);
+
+  const contactFieldPayload = (
+    values: MemberFormValues,
+  ): Record<string, unknown> => buildContactPayload(values, primaryContact);
+
+  const contactFieldsChanged = (values: MemberFormValues): boolean =>
+    contactFieldsChangedPure(values, primaryContact);
+
+  const contactEmailChanged = (values: MemberFormValues): boolean =>
+    contactEmailChangedPure(values, primaryContact);
 
   const planPayload = (
     values: MemberFormValues,
@@ -165,27 +210,78 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const onSubmit = async (values: MemberFormValues) => {
     lastValuesRef.current = values;
     setSubmitting(true);
+    // Tracks whether an earlier request already persisted a mutation, so a
+    // later-step failure can tell the admin "some changes were saved"
+    // instead of leaving them to assume nothing landed.
+    let savedSomething = false;
+    // Shown when a later step fails after an earlier one already committed.
+    const reportStepFailure = () => {
+      if (savedSomething) toast.warning(t('errors.partialSave'));
+    };
     try {
-      if (planChanged(values)) {
-        // Plan change is a SEPARATE request from field updates. Field
-        // edits first (if any), then plan change. The idempotency layer
-        // handles each with its own key.
-        const fieldChanged = hasFieldDiff(values, member);
-        if (fieldChanged) {
-          idemKeyRef.current = uuid();
-          const fieldRes = await patch(fieldPayload(values));
-          if (!fieldRes.ok) {
-            await handleResponse(fieldRes);
-            return;
-          }
+      // Each mutation is a SEPARATE request with its own idempotency key.
+      // Order: member-company fields → contact fields → contact email →
+      // plan change LAST (plan change may pop bundle/override dialogs that
+      // re-submit only the plan payload, so the other edits must already
+      // be persisted by then). These are NOT atomic across endpoints — the
+      // partial-save warning + idempotent re-submit cover a mid-sequence
+      // failure.
+
+      // 1. Member-company field updates. (First step — a failure here means
+      //    nothing has been persisted yet, so no partial-save warning.)
+      if (hasFieldDiff(values, member)) {
+        idemKeyRef.current = uuid();
+        const fieldRes = await patch(fieldPayload(values));
+        if (!fieldRes.ok) {
+          await handleResponse(fieldRes);
+          return;
         }
+        savedSomething = true;
+      }
+
+      // 2. Primary-contact non-email fields (name / phone / role /
+      //    language). Previously dropped — the form rendered these inputs
+      //    but never sent them anywhere.
+      if (contactFieldsChanged(values)) {
+        const res = await patchContact(contactFieldPayload(values));
+        if (!(await handleContactResponse(res))) {
+          reportStepFailure();
+          return;
+        }
+        savedSomething = true;
+      }
+
+      // 3. Primary-contact email change — constrained path (succeeds only
+      //    when the contact is linked to a portal user; otherwise 409
+      //    not_supported, surfaced via handleContactResponse).
+      if (contactEmailChanged(values)) {
+        const res = await patchContact({
+          email: values.primary_contact.email.trim(),
+          locale: values.primary_contact.preferred_language,
+        });
+        if (!(await handleContactResponse(res))) {
+          reportStepFailure();
+          return;
+        }
+        savedSomething = true;
+      }
+
+      // 4. Plan change last.
+      if (planChanged(values)) {
         idemKeyRef.current = uuid();
         const res = await patch(planPayload(values));
         await handleResponse(res);
-      } else {
-        const res = await patch(fieldPayload(values));
-        await handleResponse(res);
+        return;
       }
+
+      // All non-plan mutations succeeded (or nothing changed) → toast +
+      // redirect to the detail page.
+      handleSuccess();
+    } catch {
+      // Network / unexpected failure — without this the rejected fetch
+      // would surface as an unhandled rejection with no user feedback.
+      toast.error(t('errors.generic'));
+      reportStepFailure();
     } finally {
       setSubmitting(false);
     }
@@ -233,6 +329,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,
           description: member.description ?? undefined,
+          address_line1: member.addressLine1 ?? undefined,
+          address_line2: member.addressLine2 ?? undefined,
+          city: member.city ?? undefined,
+          province: member.province ?? undefined,
+          postal_code: member.postalCode ?? undefined,
           // Round-4 R4-I3: the form schema now accepts `null` on input
           // (via `.nullable().optional()`) and transforms to `null` on
           // submit. Passing `member.notes` directly (string | null) is
@@ -274,27 +375,5 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         onConfirm={onOverrideConfirm}
       />
     </>
-  );
-}
-
-function hasFieldDiff(
-  values: MemberFormValues,
-  member: MemberInitialValues,
-): boolean {
-  return (
-    values.company_name.trim() !== member.companyName ||
-    (values.country?.toUpperCase() ?? '') !== member.country ||
-    (values.legal_entity_type?.trim() ?? null) !== (member.legalEntityType ?? null) ||
-    (values.tax_id?.trim() ?? null) !== (member.taxId ?? null) ||
-    (values.website?.trim() || null) !== (member.website ?? null) ||
-    // Round-3 N-I5: use `|| null` consistently so empty string is treated
-    // the same way as the fieldPayload builder (line 137) — otherwise the
-    // diff says "changed" but the payload sends `null` (no-op PATCH).
-    (values.description?.trim() || null) !== (member.description ?? null) ||
-    (values.notes ? values.notes.trim() || null : null) !== (member.notes ?? null) ||
-    (typeof values.founded_year === 'number' ? values.founded_year : null) !==
-      (member.foundedYear ?? null) ||
-    (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==
-      (member.turnoverThb ?? null)
   );
 }

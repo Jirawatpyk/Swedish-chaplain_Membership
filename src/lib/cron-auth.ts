@@ -14,6 +14,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
 import { uuidv7 } from '@/lib/request-id';
@@ -118,15 +119,10 @@ export async function gateCronBearerOrRespond(
       );
     }
   } catch (e) {
-    const errInstance = e instanceof Error ? e : new Error(String(e));
+    // Log errKind only — a wrapped Postgres/Upstash error message/stack can
+    // carry SQL params or connection detail (forbidden-fields hygiene).
     logger.warn(
-      {
-        errMsg: errInstance.message.slice(0, 200),
-        errName: errInstance.name,
-        errStack: errInstance.stack?.slice(0, 500),
-        ip,
-        route: options.route,
-      },
+      { errKind: errKind(e), ip, route: options.route },
       'cron.coordinator.rate_limit_check_failed_fail_open',
     );
     options.rateLimitFallbackCounter?.();
@@ -149,7 +145,7 @@ export async function gateCronBearerOrRespond(
     );
   } catch (e) {
     logger.error(
-      { err: e instanceof Error ? e : new Error(String(e)), route: options.route },
+      { errKind: errKind(e), route: options.route },
       'cron.coordinator.bearer_rejected_audit_failed',
     );
     options.metricsCounter?.();

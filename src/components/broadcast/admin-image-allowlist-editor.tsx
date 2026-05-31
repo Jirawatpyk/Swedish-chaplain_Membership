@@ -22,6 +22,7 @@
  *     it's non-destructive.
  */
 import { useState, useTransition } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -124,8 +125,12 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
           <Button
             type="submit"
             disabled={isPending || !hostname.trim()}
+            aria-busy={isPending}
             className="shrink-0"
           >
+            {isPending && (
+              <Loader2Icon className="mr-2 size-4 motion-safe:animate-spin" aria-hidden />
+            )}
             {t('addButton')}
           </Button>
         </div>

@@ -23,6 +23,7 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const FALLBACK_LOADING_ANNOUNCE = 'Loading renewal details…';
@@ -41,10 +42,9 @@ async function resolveLoadingAnnounce(): Promise<string> {
     // instead of attributing every silent EN fallback to "missing
     // locale key" guesswork. Server component → console.warn lands in
     // the Vercel function log stream.
-    console.warn(
-      '[renewal/loading] getTranslations failed — falling back to EN canonical',
-      { err: e instanceof Error ? e.message : String(e) },
-    );
+    console.warn('[renewal/loading] getTranslations failed — falling back to EN canonical', {
+      err: e instanceof Error ? e.message : String(e),
+    });
     return FALLBACK_LOADING_ANNOUNCE;
   }
 }
@@ -90,46 +90,47 @@ export default async function RenewalPortalLoading() {
             the 3-step flow, so any jump distracts from comprehension). */}
         <Skeleton className="h-12 w-full rounded-lg" />
         {/* Plan summary card */}
-        <div className="rounded-lg border bg-card p-4">
-          <Skeleton className="mb-3 h-6 w-32" />
-          <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-2 sm:gap-x-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="contents">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-32" />
-              </div>
-            ))}
-          </div>
-        </div>
+        <Card>
+          <CardContent>
+            <Skeleton className="mb-3 h-6 w-32" />
+            <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-2 sm:gap-x-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="contents">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
         {/* Benefit summary card — real BenefitSummary renders ~3
             progress rows (e-blast, events, member-search, etc.)
             with bar + label per row. */}
-        <div className="rounded-lg border bg-card p-4">
-          <Skeleton className="mb-3 h-6 w-40" />
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-3 w-16" />
+        <Card>
+          <CardContent>
+            <Skeleton className="mb-3 h-6 w-40" />
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-baseline justify-between">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <Skeleton className="h-2 w-full rounded-full" />
                 </div>
-                <Skeleton className="h-2 w-full rounded-full" />
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* RenewalConfirmFlow card — plan select + helper text +
-            primary CTA + secondary cancel link. */}
-        <div className="rounded-lg border bg-card p-4">
-          <Skeleton className="mb-3 h-6 w-40" />
-          <Skeleton className="h-4 w-full max-w-xs" />
-          <Skeleton className="mt-3 h-9 w-full" />
-          <Skeleton className="mt-3 h-3 w-3/4" />
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <Skeleton className="h-10 w-full sm:w-40" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        {/* RenewalConfirmFlow card — no heading (the real card is an action
+            group: plan select label + select + confirm CTA). */}
+        <Card>
+          <CardContent className="flex flex-col gap-3">
             <Skeleton className="h-4 w-32" />
-          </div>
-        </div>
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full sm:w-40" />
+          </CardContent>
+        </Card>
       </div>
     </DetailContainer>
   );

@@ -174,7 +174,7 @@ export function ErasePiiDialog({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t('confirmTitle')}</AlertDialogTitle>
+          <AlertDialogTitle>{t('confirmTitle', { attendeeName })}</AlertDialogTitle>
           <AlertDialogDescription>
             {t('confirmBody', { attendeeName })}
           </AlertDialogDescription>

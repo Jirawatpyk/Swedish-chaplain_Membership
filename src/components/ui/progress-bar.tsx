@@ -68,6 +68,9 @@ function ProgressBar({
         {...(value === undefined ? {} : { value })}
         max={max}
         aria-labelledby={labelId}
+        // The visible readout is aria-hidden, so expose the same human-readable
+        // value to AT via aria-valuetext (e.g. "3 of 5 used" not bare "3").
+        {...(readout !== null ? { "aria-valuetext": readout } : {})}
         {...props}
       />
     </div>

@@ -175,6 +175,11 @@ export default async function EditMemberPage({ params }: PageProps) {
               website: member.website,
               description: member.description,
               notes: member.notes,
+              addressLine1: member.addressLine1,
+              addressLine2: member.addressLine2,
+              city: member.city,
+              province: member.province,
+              postalCode: member.postalCode,
               foundedYear: member.foundedYear,
               turnoverThb: member.turnoverThb,
               planId: member.planId,
@@ -185,6 +190,7 @@ export default async function EditMemberPage({ params }: PageProps) {
             }}
             plans={plans}
             primaryContact={{
+              contactId: primary?.contactId ?? '',
               firstName: primary?.firstName ?? '',
               lastName: primary?.lastName ?? '',
               email: primary?.email ?? '',

@@ -47,22 +47,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
+import { formatSatangThb } from '@/lib/format-thb';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.creditNotes.detail.meta');
   return { title: t('title') };
-}
-
-function formatSatang(satang: bigint | null): string {
-  if (satang === null) return '—';
-  const abs = satang < 0n ? -satang : satang;
-  const whole = abs / 100n;
-  const rem = abs % 100n;
-  const sign = satang < 0n ? '-' : '';
-  // FR-005 — explicit `'en-US'` pin matches the admin surface so
-  // customer-facing amounts read identically between admin and
-  // portal renders of the same document.
-  return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 function formatIssueDate(isoDate: string, locale: string): string {
@@ -71,14 +60,20 @@ function formatIssueDate(isoDate: string, locale: string): string {
   const month = Number(mStr);
   const day = Number(dStr);
   if (!year || !month || !day) return isoDate;
-  const ce = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
+  // ICU already renders the Buddhist-Era year for `th` (e.g. 2568) — do NOT
+  // append a "(พ.ศ. …)" suffix or the BE year prints twice
+  // ("28 พ.ค. 2568 (พ.ศ. 2568)"). EN/SV render Gregorian. `cn.issueDate` is a
+  // bare YYYY-MM-DD; building it via Date.UTC + `timeZone: 'UTC'` keeps the
+  // rendered day stable regardless of server TZ. (NOTE: the shared
+  // invoices/_utils/format.ts `formatDate` does the same ICU BE conversion but
+  // does NOT pin UTC — so it is intentionally not reused here; the two are not
+  // byte-identical near a TZ-midnight boundary.)
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     timeZone: 'UTC',
   });
-  if (locale.startsWith('th')) return `${ce} (พ.ศ. ${year + 543})`;
-  return ce;
 }
 
 // F4/F5 polish retrospective Phase E (2026-05-17) — `force-dynamic`
@@ -105,10 +100,7 @@ export default async function PortalCreditNoteDetailPage({
   // Resolve the signed-in user to a member — opaque notFound() on
   // any miss so enumeration via 401/404 differential is blocked.
   const memberDeps = buildMembersDeps(tenantCtx);
-  const memberResult = await memberDeps.memberRepo.findByLinkedUserId(
-    tenantCtx,
-    user.id,
-  );
+  const memberResult = await memberDeps.memberRepo.findByLinkedUserId(tenantCtx, user.id);
   if (!memberResult.ok) notFound();
   const member = memberResult.value;
 
@@ -166,40 +158,27 @@ export default async function PortalCreditNoteDetailPage({
 
             <dt className="text-muted-foreground">{t('fields.originalInvoice')}</dt>
             <dd>
-              <Link
-                href={invoiceHref}
-                className="font-mono underline-offset-2 hover:underline"
-              >
+              <Link href={invoiceHref} className="font-mono underline-offset-2 hover:underline">
                 {t('fields.originalInvoiceLinkLabel')}
               </Link>
             </dd>
 
             <dt className="text-muted-foreground">{t('fields.creditAmount')}</dt>
-            <dd className="tabular-nums">
-              {formatSatang(cn.creditAmount.satang)}{' '}
-              <span className="text-muted-foreground">THB</span>
-            </dd>
+            <dd className="tabular-nums">{formatSatangThb(cn.creditAmount.satang, locale)}</dd>
 
             <dt className="text-muted-foreground">{t('fields.vat')}</dt>
-            <dd className="tabular-nums">
-              {formatSatang(cn.vat.satang)}{' '}
-              <span className="text-muted-foreground">THB</span>
-            </dd>
+            <dd className="tabular-nums">{formatSatangThb(cn.vat.satang, locale)}</dd>
 
             <dt className="text-muted-foreground font-medium">{t('fields.total')}</dt>
             <dd className="font-semibold tabular-nums">
-              {formatSatang(cn.total.satang)}{' '}
-              <span className="text-muted-foreground">THB</span>
+              {formatSatangThb(cn.total.satang, locale)}
             </dd>
           </dl>
 
           <Separator className="my-6" />
 
           <section aria-labelledby="cn-reason-heading" className="flex flex-col gap-2">
-            <h3
-              id="cn-reason-heading"
-              className="text-sm font-medium text-muted-foreground"
-            >
+            <h3 id="cn-reason-heading" className="text-sm font-medium text-muted-foreground">
               {t('reason.heading')}
             </h3>
             <p className="whitespace-pre-wrap text-sm">{cn.reason}</p>

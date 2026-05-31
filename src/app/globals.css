@@ -166,7 +166,11 @@
   --success-foreground: oklch(0.985 0 0);
   --success-surface: oklch(0.965 0.03 145);
 
-  --warning: oklch(0.55 0.15 75);
+  /* L lowered 0.55→0.48 so warning text on --warning-surface meets WCAG AA
+     (was 4.47:1, now ~6:1 — covers InlineAlert's opacity-90 description too).
+     Darkening only improves --warning-as-background (white-text) contrast, so
+     no warning-button/badge regression. Dark-mode --warning already passes. */
+  --warning: oklch(0.48 0.15 75);
   --warning-foreground: oklch(0.985 0 0);
   --warning-surface: oklch(0.97 0.04 75);
 

@@ -20,9 +20,11 @@ import {
   MailWarningIcon,
   PencilIcon,
   ClockIcon,
+  UserPlusIcon,
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { headers } from 'next/headers';
@@ -36,7 +38,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -46,9 +48,13 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
+import { ContactFormDialog } from '@/components/members/contact-form-dialog';
+import { ContactActions } from '@/components/members/contact-actions';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
+import { MemberDataExportSection } from './_components/member-data-export-section';
+import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -315,16 +321,34 @@ function ContactBlock({
             )}
           </div>
         </div>
-        {canInvite && (
-          <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
-        )}
-        {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
-            invitation bounced AND the contact still has a linked (pending)
-            user. The button calls the resend-invite route, which re-issues
-            the invitation email (owner role) then clears the bounce flag. */}
-        {contact.inviteBouncedAt && contact.linkedUserId && (
-          <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canInvite && (
+            <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
+          )}
+          {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
+              invitation bounced AND the contact still has a linked (pending)
+              user. The button calls the resend-invite route, which re-issues
+              the invitation email (owner role) then clears the bounce flag. */}
+          {contact.inviteBouncedAt && contact.linkedUserId && (
+            <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
+          )}
+          <ContactActions
+            memberId={memberId}
+            isPrimary={contact.isPrimary}
+            contact={{
+              contactId: contact.contactId,
+              firstName: contact.firstName,
+              lastName: contact.lastName,
+              // `contact.email` is a non-null branded Email on the domain
+              // aggregate; pass it straight through (the dialog widens it to
+              // a plain string for the RHF form value).
+              email: contact.email,
+              phone: contact.phone ?? null,
+              roleTitle: contact.roleTitle ?? null,
+              preferredLanguage: contact.preferredLanguage,
+            }}
+          />
+        </div>
       </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
         <Field
@@ -685,23 +709,45 @@ export default async function MemberDetailPage({
                 />
               )}
             </dl>
+            {(() => {
+              const cityLine = [member.city, member.province, member.postalCode]
+                .filter((p) => p && p.trim().length > 0)
+                .join(' ');
+              const addressLines = [
+                member.addressLine1,
+                member.addressLine2,
+                cityLine,
+              ].filter((l): l is string => Boolean(l && l.trim().length > 0));
+              return addressLines.length > 0 ? (
+                <dl className="mt-4 border-t pt-4">
+                  <dt className="text-xs text-muted-foreground mb-1">
+                    {t('fields.address')}
+                  </dt>
+                  <dd className="text-sm whitespace-pre-wrap">
+                    {addressLines.join('\n')}
+                  </dd>
+                </dl>
+              ) : null;
+            })()}
             {member.description && (
-              <div className="mt-4 border-t pt-4">
+              /* <dl> wrapper (not <div>) so the <dt>/<dd> have a list parent —
+                 WCAG 2.1 AA 1.3.1 (a11y scan fix: axe `dlitem`). */
+              <dl className="mt-4 border-t pt-4">
                 <dt className="text-xs text-muted-foreground mb-1">
                   {t('fields.description')}
                 </dt>
                 <dd className="text-sm whitespace-pre-wrap">
                   {member.description}
                 </dd>
-              </div>
+              </dl>
             )}
             {member.notes && (
-              <div className="mt-4 border-t pt-4">
+              <dl className="mt-4 border-t pt-4">
                 <dt className="text-xs text-muted-foreground mb-1">
                   {t('fields.notes')}
                 </dt>
                 <dd className="text-sm whitespace-pre-wrap">{member.notes}</dd>
-              </div>
+              </dl>
             )}
           </CardContent>
         </Card>
@@ -733,6 +779,23 @@ export default async function MemberDetailPage({
                 </p>
               </PopoverContent>
             </Popover>
+            {member.status !== 'archived' && (
+              <ContactFormDialog
+                memberId={member.memberId}
+                mode="add"
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto gap-2"
+                  >
+                    <UserPlusIcon className="size-4" aria-hidden="true" />
+                    {t('contactActions.add')}
+                  </Button>
+                }
+              />
+            )}
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {primary ? (
@@ -800,6 +863,15 @@ export default async function MemberDetailPage({
             actorRole={session.user.role as 'admin' | 'manager' | 'member'}
           />
         </Suspense>
+
+        {/* F9 US6 (FR-031) — admin on-behalf GDPR data export. Admin-only
+            (GDPR export is an admin/DPO action; the read-only manager is
+            excluded, mirroring requestDataExport). F9-flag-gated. */}
+        {env.features.f9Dashboard && session.user.role === 'admin' && (
+          <Suspense fallback={<MemberDataExportSkeleton />}>
+            <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
+          </Suspense>
+        )}
 
     </DetailContainer>
   );

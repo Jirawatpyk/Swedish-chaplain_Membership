@@ -180,13 +180,13 @@ export function ApproveDialog({
             className="space-y-2"
           >
             <div className="flex items-center gap-2">
-              <RadioGroupItem id="approve-send-now" value="send_now" />
+              <RadioGroupItem id="approve-send-now" value="send_now" aria-label={t('decision.sendNow')} />
               <Label htmlFor="approve-send-now" className="cursor-pointer">
                 {t('decision.sendNow')}
               </Label>
             </div>
             <div className="flex items-center gap-2">
-              <RadioGroupItem id="approve-schedule" value="schedule" />
+              <RadioGroupItem id="approve-schedule" value="schedule" aria-label={t('decision.schedule')} />
               <Label htmlFor="approve-schedule" className="cursor-pointer">
                 {t('decision.schedule')}
               </Label>

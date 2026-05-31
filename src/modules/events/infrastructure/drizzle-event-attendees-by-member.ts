@@ -28,7 +28,7 @@
  *
  * Pure Infrastructure — Drizzle types are CONFINED to this file.
  */
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -57,60 +57,80 @@ function deriveEventType(row: {
 }
 
 /**
+ * Core tenant-scoped attendances SELECT — THROWS on any fault. Shared by both
+ * the fail-open (F8) and fail-loud (F9) port variants below so the query logic
+ * + RLS scoping live in exactly one place.
+ */
+async function runAttendeesQuery(
+  input: Parameters<EventAttendeesQueryPort['list']>[0],
+): Promise<ReadonlyArray<EventAttendanceRecord>> {
+  const ctx = asTenantContext(String(input.tenantId));
+  return runInTenant(ctx, async (tx) => {
+    const rows = await tx
+      .select({
+        memberId: eventRegistrations.matchedMemberId,
+        startDate: events.startDate,
+        eventId: events.eventId,
+        isPartnerBenefit: events.isPartnerBenefit,
+        isCulturalEvent: events.isCulturalEvent,
+      })
+      .from(eventRegistrations)
+      .innerJoin(
+        events,
+        and(
+          eq(events.tenantId, eventRegistrations.tenantId),
+          eq(events.eventId, eventRegistrations.eventId),
+        ),
+      )
+      .where(
+        and(
+          // Defense-in-depth WHERE alongside the RLS GUC set by
+          // runInTenant. The matched_member_id is the F3 member uuid.
+          eq(eventRegistrations.matchedMemberId, String(input.memberId)),
+          gte(events.startDate, input.since),
+          // Optional upper bound (F9 benefit-usage year/now boundary) so
+          // future-dated + out-of-window rows don't consume the row cap or get
+          // counted as attended. F8 omits it (wants everything up to now).
+          ...(input.until !== undefined ? [lte(events.startDate, input.until)] : []),
+          // Skip pseudonymised rows (FR-032 retention-purged).
+          sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+          // Skip archived events (FR-019a quota-neutral state).
+          sql`${events.archivedAt} IS NULL`,
+        ),
+      )
+      .orderBy(desc(events.startDate))
+      .limit(input.limit);
+
+    return rows
+      .filter((r) => r.memberId !== null)
+      .map((r) => ({
+        memberId: r.memberId as string,
+        attendedAt:
+          r.startDate instanceof Date
+            ? r.startDate.toISOString()
+            : new Date(r.startDate).toISOString(),
+        eventId: r.eventId,
+        eventType: deriveEventType(r),
+      }));
+  });
+}
+
+/**
  * F8-port contract: fail-open with `[]` on any throw (DB blip, RLS
  * regression, pool exhaustion). F8's at-risk scorer expects a no-throw
  * shape per the stub-port precedent. The metric counter
  * `bridgeEventAttendeesQueryFailed` is the SRE signal — alert on
  * sustained rate > 0.
+ *
+ * NOTE: this fail-open is correct ONLY for the F8 at-risk scorer. A consumer
+ * that must distinguish "zero attendances" from "query failed" (F9 US4
+ * benefit-usage — a masked `[]` understates cultural-ticket consumption and
+ * fires a FALSE under-use warning) MUST use `drizzleEventAttendeesQueryStrict`.
  */
 export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
   async list(input): Promise<ReadonlyArray<EventAttendanceRecord>> {
     try {
-      const ctx = asTenantContext(String(input.tenantId));
-      return await runInTenant(ctx, async (tx) => {
-        const rows = await tx
-          .select({
-            memberId: eventRegistrations.matchedMemberId,
-            startDate: events.startDate,
-            eventId: events.eventId,
-            isPartnerBenefit: events.isPartnerBenefit,
-            isCulturalEvent: events.isCulturalEvent,
-          })
-          .from(eventRegistrations)
-          .innerJoin(
-            events,
-            and(
-              eq(events.tenantId, eventRegistrations.tenantId),
-              eq(events.eventId, eventRegistrations.eventId),
-            ),
-          )
-          .where(
-            and(
-              // Defense-in-depth WHERE alongside the RLS GUC set by
-              // runInTenant. The matched_member_id is the F3 member uuid.
-              eq(eventRegistrations.matchedMemberId, String(input.memberId)),
-              gte(events.startDate, input.since),
-              // Skip pseudonymised rows (FR-032 retention-purged).
-              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
-              // Skip archived events (FR-019a quota-neutral state).
-              sql`${events.archivedAt} IS NULL`,
-            ),
-          )
-          .orderBy(desc(events.startDate))
-          .limit(input.limit);
-
-        return rows
-          .filter((r) => r.memberId !== null)
-          .map((r) => ({
-            memberId: r.memberId as string,
-            attendedAt:
-              r.startDate instanceof Date
-                ? r.startDate.toISOString()
-                : new Date(r.startDate).toISOString(),
-            eventId: r.eventId,
-            eventType: deriveEventType(r),
-          }));
-      });
+      return await runAttendeesQuery(input);
     } catch (e) {
       // R3.3.4 / I-4 / R5.3.2 / Round 4 I-5 — preserve `err.stack` for
       // RLS-regression / pool-exhaustion forensics. `redactStack`
@@ -156,6 +176,20 @@ export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
       }
       return [];
     }
+  },
+};
+
+/**
+ * Fail-LOUD variant (F9 US4): rethrows on any fault so the caller surfaces it
+ * (→ `compute_failed`/500) instead of a misleading zero-consumption. F9's
+ * benefit-usage event source uses this — a masked `[]` would understate
+ * cultural-ticket usage and trigger a false under-use warning, the same
+ * masked-zero class the broadcast adapter avoids (review-run R3-1). The F8
+ * at-risk scorer keeps the no-throw `drizzleEventAttendeesQuery` above.
+ */
+export const drizzleEventAttendeesQueryStrict: EventAttendeesQueryPort = {
+  async list(input): Promise<ReadonlyArray<EventAttendanceRecord>> {
+    return runAttendeesQuery(input);
   },
 };
 

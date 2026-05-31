@@ -193,6 +193,44 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F9 (T103a): Insights security-critical paths — 100% per Constitution
+        // Principle II. Pinned to the fully UNIT-covered files: engagement
+        // projection (the plan-II-named security-critical projection), the
+        // per-insight cycle-key, and the insight catalogue — all pure +
+        // exhaustively unit-tested. `list-dashboard` pins 100% BRANCH (the
+        // role-projection security requirement; all 5 branches unit-tested).
+        // `dismiss-insight` + `compute-dashboard-snapshot` have integration-only
+        // happy paths (not in the unit/contract coverage run) → deferred to a
+        // follow-up, mirroring the F4/F8 deferred-with-rationale precedent.
+        'src/modules/insights/domain/engagement-score.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/insights/domain/insight-cycle-key.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/insights/domain/smart-insight.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F9 US4 — benefit-usage VO: pure ratio/elapsed/under-use math,
+        // exhaustively unit-tested (benefit-usage.test.ts).
+        'src/modules/insights/domain/benefit-usage.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/insights/application/use-cases/list-dashboard.ts': {
+          branches: 100,
+        },
         // F5: Payments Domain layer — 100% line coverage per Constitution
         // Principle II. Pure aggregates, VOs, state-machine policy, and
         // one-succeeded-per-invoice invariant. No framework imports.

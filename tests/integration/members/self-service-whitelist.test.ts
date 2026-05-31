@@ -47,6 +47,11 @@ const baseMember: Member = {
   registrationFeePaid: false,
   lastActivityAt: null,
   notes: 'admin notes',
+  addressLine1: null,
+  addressLine2: null,
+  city: null,
+  province: null,
+  postalCode: null,
   status: 'active',
   archivedAt: null,
   createdAt: now,
@@ -203,6 +208,40 @@ describe('US5 self-service whitelist enforcement (T115)', () => {
     }
     expect(auditEvents[0]!.payload.attempted_fields).toContain(
       'primary_contact.email',
+    );
+  });
+
+  it('rejects forged postal-address fields with 403 + audit (address is admin-only, not member-self-editable)', async () => {
+    auditEvents.length = 0;
+    const deps = makeStubDeps();
+    const result = await memberSelfUpdate(deps, {
+      memberId: 'mem-1' as MemberId,
+      contactId: 'con-1' as ContactId,
+      rawBody: {
+        address_line1: '1 Hacker Way',
+        address_line2: 'Unit 0',
+        city: 'Nowhere',
+        province: 'Void',
+        postal_code: '00000',
+      },
+      actorUserId: 'user-1',
+      requestId: 'req-addr',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('forbidden');
+    }
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]!.type).toBe('member_self_update_forbidden');
+    expect(auditEvents[0]!.payload.attempted_fields).toEqual(
+      expect.arrayContaining([
+        'address_line1',
+        'address_line2',
+        'city',
+        'province',
+        'postal_code',
+      ]),
     );
   });
 

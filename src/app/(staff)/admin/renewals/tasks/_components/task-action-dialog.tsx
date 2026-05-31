@@ -127,7 +127,7 @@ export function TaskActionDialog({
             onClick={onSubmit}
           >
             {isPending && (
-              <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
+              <Loader2 className="mr-2 size-3.5 motion-safe:animate-spin" aria-hidden />
             )}
             {isPending ? submittingLabel : confirmLabel}
           </AlertDialogAction>

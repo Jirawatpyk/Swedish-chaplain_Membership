@@ -96,6 +96,7 @@ const testRow: MembersTableRow = {
   plan_display_name: 'Premium',
   status: 'active',
   member_risk_flag: null,
+  engagement: null,
   last_activity_at: null,
   notes: null,
   primary_contact: null,

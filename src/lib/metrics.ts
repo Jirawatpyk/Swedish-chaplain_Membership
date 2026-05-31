@@ -3565,3 +3565,158 @@ export const eventcreateMetrics = {
     });
   },
 } as const;
+
+/**
+ * F9 (T037) — Admin Dashboard insights metrics (research R12).
+ *
+ * Cardinality-safe: only bounded labels (tenant slug, role, insight_key) — no
+ * PII (forbidden-fields hygiene). SLOs + alerts → docs/observability.md (T099).
+ * Slice B adds export-job + audit-query instruments.
+ */
+export const insightsMetrics = {
+  /** Snapshot recompute latency (computeDashboardSnapshot) — backs the SC-002 freshness SLO. */
+  snapshotRefreshDurationMs(ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'insights_snapshot_refresh_duration_ms',
+        'F9 dashboard snapshot recompute latency',
+        'ms',
+      ).record(ms);
+    });
+  },
+  /** Snapshot refresh tick outcome (ok|failed) per tenant. */
+  snapshotRefresh(outcome: 'ok' | 'failed', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_snapshot_refresh_total',
+        'F9 dashboard snapshot refresh ticks by outcome',
+      ).add(1, { outcome, tenant: tenantId });
+    });
+  },
+  /** Staff dashboard view (PII-read volume + SC-012 adoption signal). */
+  dashboardViewed(role: string, tenantId: string): void {
+    safeMetric(() => {
+      counter('insights_dashboard_viewed_total', 'F9 staff dashboard views by role').add(1, {
+        role,
+        tenant: tenantId,
+      });
+    });
+  },
+  /** Smart-insight dismissal (SC-012: staff act on / dismiss insights — analyze M2). */
+  insightDismissed(insightKey: string, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_insight_dismissed_total',
+        'F9 smart-insight dismissals (SC-012 engagement signal)',
+      ).add(1, { insight_key: insightKey, tenant: tenantId });
+    });
+  },
+  /**
+   * Benefit-usage view (US4 / SC-012 adoption KPI — analyze M2). `role`
+   * distinguishes a member's own self-view (the ≥50%-of-active-members
+   * adoption signal) from a staff PII read of a member's benefits.
+   */
+  benefitViewed(role: string, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_benefit_viewed_total',
+        'F9 member benefit-usage views by viewer role (SC-012 adoption)',
+      ).add(1, { role, tenant: tenantId });
+    });
+  },
+  /**
+   * Mirrors `authMetrics.auditMissing` / `broadcastsMetrics.auditEmitFailed` —
+   * incremented when a best-effort F9 audit write (e.g. the `dashboard_viewed`
+   * PII-read trail, FR-036) is swallowed by the adapter. The audit_log is a
+   * Principle I append-only compliance surface with 5-year retention; a pino
+   * log rolls off in ~30 days, so this counter is the only durable alert signal
+   * for sustained forensic-trail loss. Any non-zero sustained rate pages on-call.
+   */
+  auditEmitFailed(eventType: string, tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'insights_audit_emit_failed_total',
+        'Expected F9 audit events that failed to commit (best-effort path)',
+      ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    });
+  },
+  /**
+   * Audit-viewer query latency (US2 / FR-008) — backs the p95 < 1 s @ 50k
+   * events SLO. Measures the keyset-paginated `auditQuery` reader round-trip.
+   */
+  auditQueryDurationMs(ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'insights_audit_query_duration_ms',
+        'F9 audit-viewer keyset query latency',
+        'ms',
+      ).record(ms);
+    });
+  },
+  /**
+   * Unified-timeline query latency (US3 / FR-016) — backs the p95 < 500 ms
+   * per-page SLO. Measures the keyset-paginated `member_timeline_v` round-trip
+   * (count + page + actor/plan enrichment) inside the timeline repo. Recorded
+   * on BOTH outcomes (ok/error) so a query that does real work then throws
+   * still contributes a latency sample — otherwise the p95 histogram would
+   * stay green during an outage (review-run R2 I-1).
+   */
+  timelineQueryDurationMs(ms: number, outcome: 'ok' | 'error'): void {
+    safeMetric(() => {
+      histogram(
+        'insights_timeline_query_duration_ms',
+        'F9 unified multi-source timeline keyset query latency',
+        'ms',
+      ).record(ms, { outcome });
+    });
+  },
+  /** A member/admin updated a directory listing (US5 / FR-025). */
+  directoryListingUpdated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_directory_listing_updated_total',
+        'F9 directory listing visibility/metadata updates',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+  /**
+   * Async export-job processing latency by kind (US5 E-Book/JSON + US6 GDPR).
+   * `kind` is the low-cardinality `export_kind` enum — no PII (research R12).
+   */
+  exportJobDurationMs(ms: number, kind: string): void {
+    safeMetric(() => {
+      histogram(
+        'insights_export_job_duration_ms',
+        'F9 async export-job artefact build latency by kind',
+        'ms',
+      ).record(ms, { kind });
+    });
+  },
+  /** Export-job tick outcome (ok|failed) by kind. */
+  exportJobProcessed(kind: string, outcome: 'ok' | 'failed', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_export_job_processed_total',
+        'F9 async export-job ticks by kind + outcome',
+      ).add(1, { kind, outcome, tenant: tenantId });
+    });
+  },
+  /** A stuck `processing` export job reclaimed by the cron sweep (critique E2). */
+  exportJobReclaimed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_export_job_reclaimed_total',
+        'F9 stuck-processing export jobs reclaimed by the sweep',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+  /** A private export artefact downloaded via the authenticated proxy (FR-030). */
+  exportDownloaded(kind: string, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'insights_export_downloaded_total',
+        'F9 private export-artefact downloads by kind',
+      ).add(1, { kind, tenant: tenantId });
+    });
+  },
+} as const;

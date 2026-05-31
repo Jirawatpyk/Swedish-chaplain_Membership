@@ -108,8 +108,7 @@ export function QuotaDisplay({
 
   // Clamp percentage at 100 to avoid race conditions where used+reserved
   // briefly exceeds cap (P6 finding).
-  const rawPct =
-    snap && snap.cap > 0 ? ((snap.used + snap.reserved) / snap.cap) * 100 : 0;
+  const rawPct = snap && snap.cap > 0 ? ((snap.used + snap.reserved) / snap.cap) * 100 : 0;
   const pct = Math.min(100, rawPct);
   const exhausted = snap !== null && snap.remaining === 0;
   const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
@@ -149,11 +148,7 @@ export function QuotaDisplay({
             >
               <Counter label={t('used')} value={snap.used} />
               <Counter label={t('reserved')} value={snap.reserved} />
-              <Counter
-                label={t('remaining')}
-                value={snap.remaining}
-                emphasise={exhausted}
-              />
+              <Counter label={t('remaining')} value={snap.remaining} emphasise={exhausted} />
               <Counter label={t('cap')} value={snap.cap} />
             </div>
             <div
@@ -165,17 +160,12 @@ export function QuotaDisplay({
               aria-label={t('progressLabel')}
             >
               <div
-                className={cn(
-                  'h-full transition-all',
-                  exhausted ? 'bg-destructive' : 'bg-primary',
-                )}
+                className={cn('h-full transition-all', exhausted ? 'bg-destructive' : 'bg-primary')}
                 style={{ width: `${pct}%` }}
               />
             </div>
             {exhausted ? (
-              <p className="text-xs text-destructive">
-                {t('exhausted', { year: snap.quotaYear })}
-              </p>
+              <p className="text-xs text-destructive">{t('exhausted', { year: snap.quotaYear })}</p>
             ) : showComposeCta ? (
               <Link
                 href="/portal/broadcasts/new"
@@ -188,18 +178,12 @@ export function QuotaDisplay({
                 inside the Card footer so they read as quota metadata
                 rather than a heading floating between cards. */}
             {nextResetCopy !== null ? (
-              <p
-                data-testid="quota-next-reset"
-                className="text-xs text-muted-foreground"
-              >
+              <p data-testid="quota-next-reset" className="text-xs text-muted-foreground">
                 {nextResetCopy}
               </p>
             ) : null}
             {planChangedExplainer !== null ? (
-              <p
-                data-testid="quota-plan-changed-explainer"
-                className="text-xs text-amber-700 dark:text-amber-300"
-              >
+              <p data-testid="quota-plan-changed-explainer" className="text-xs text-warning">
                 {planChangedExplainer}
               </p>
             ) : null}
@@ -210,10 +194,7 @@ export function QuotaDisplay({
           // page jumps when data arrives (CLS). Previous single h-12
           // bar was ~48 px while the populated state is ~120-140 px.
           <>
-            <div
-              className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2"
-              aria-hidden="true"
-            >
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2" aria-hidden="true">
               <Skeleton className="h-14 w-full" />
               <Skeleton className="h-14 w-full" />
               <Skeleton className="h-14 w-full" />
@@ -239,12 +220,7 @@ function Counter({
 }): React.ReactElement {
   return (
     <div>
-      <div
-        className={cn(
-          'text-2xl font-semibold tabular-nums',
-          emphasise && 'text-destructive',
-        )}
-      >
+      <div className={cn('text-2xl font-semibold tabular-nums', emphasise && 'text-destructive')}>
         {value}
       </div>
       <div className="text-xs text-muted-foreground">{label}</div>

@@ -12,8 +12,8 @@
  *   1. Parses all `ADD VALUE 'payment_*' | 'refund_*' | ...` statements
  *      from `drizzle/migrations/0040_audit_log_f5_extension.sql` to
  *      compute the canonical F5 event count.
- *   2. Greps every .md under `specs/009-online-payment/` (excluding the reviews
- *      directory — review reports record point-in-time state) for
+ *   2. Greps every .md under `specs/009-online-payment/` (excluding the
+ *      reviews/ and qa/ directories — those record point-in-time state) for
  *      prose that quantifies the F5 event count: patterns like
  *      `N F5` / `N F5-introduced` / `all N F5` / `all N event types`
  *      where N is a digit sequence.
@@ -42,7 +42,28 @@ const F5_MIGRATIONS = [
   ),
 ];
 const SPEC_DIR = resolve(ROOT, 'specs/009-online-payment');
-const REVIEWS_SUBDIR = 'reviews'; // Point-in-time reports — exempt from drift check.
+// Point-in-time report subdirs — exempt from the prose drift check. These
+// record state at a fixed date (e.g. `qa-2026-04-28.md` legitimately says
+// "18 F5 event types" because migration 0046 added the final 2 afterwards);
+// rewriting them to the current count would falsify the historical snapshot.
+const POINT_IN_TIME_SUBDIRS: ReadonlySet<string> = new Set(['reviews', 'qa']);
+
+// --- F9 (T014) — enum ↔ taxonomy parity --------------------------------------
+// F9 audit event types live in TWO places that MUST stay in lockstep:
+//   1. the Postgres `audit_event_type` enum (migration 0191 `ADD VALUE`s)
+//   2. the TS `F9_AUDIT_EVENT_TYPES` tuple (insights audit port)
+// This guard parses both from disk (no alias import) and fails on any drift —
+// catches "added a label to the enum but forgot the taxonomy" (or vice-versa).
+// F9 enum values live across multiple migrations (0191 initial 14 + 0193 added
+// member_timeline_viewed). Add any future F9-scoped ADD VALUE migration here.
+const F9_MIGRATIONS = [
+  resolve(ROOT, 'drizzle/migrations/0191_f9_audit_event_types.sql'),
+  resolve(ROOT, 'drizzle/migrations/0193_f9_member_timeline_viewed_event.sql'),
+];
+const F9_PORT = resolve(
+  ROOT,
+  'src/modules/insights/application/ports/audit-port.ts',
+);
 
 // --- Canonical count ---------------------------------------------------------
 
@@ -88,7 +109,7 @@ async function walkMarkdown(dir: string): Promise<string[]> {
     const full = join(dir, entry);
     const s = await stat(full);
     if (s.isDirectory()) {
-      if (entry === REVIEWS_SUBDIR) continue;
+      if (POINT_IN_TIME_SUBDIRS.has(entry)) continue;
       out.push(...(await walkMarkdown(full)));
     } else if (entry.endsWith('.md')) {
       out.push(full);
@@ -122,6 +143,44 @@ async function scanProse(canonical: number): Promise<Mismatch[]> {
   return mismatches;
 }
 
+// --- F9 enum ↔ taxonomy parity (T014) ----------------------------------------
+
+async function checkF9Parity(): Promise<boolean> {
+  const enumLabels = new Set<string>();
+  for (const migration of F9_MIGRATIONS) {
+    const migrationSql = await readFile(migration, 'utf8');
+    for (const m of migrationSql.match(/ADD VALUE IF NOT EXISTS '([^']+)'/g) ?? []) {
+      enumLabels.add(m.replace(/.*'([^']+)'.*/, '$1'));
+    }
+  }
+
+  const portSrc = await readFile(F9_PORT, 'utf8');
+  const tupleBlock = portSrc.match(
+    /F9_AUDIT_EVENT_TYPES\s*=\s*\[([\s\S]*?)\]\s*as const/,
+  )?.[1];
+  const tupleLabels = new Set(
+    (tupleBlock?.match(/'([a-z_]+)'/g) ?? []).map((s) => s.replace(/'/g, '')),
+  );
+
+  const onlyInEnum = [...enumLabels].filter((l) => !tupleLabels.has(l));
+  const onlyInTuple = [...tupleLabels].filter((l) => !enumLabels.has(l));
+
+  if (enumLabels.size === tupleLabels.size && onlyInEnum.length === 0 && onlyInTuple.length === 0) {
+    console.log(
+      `[check:audit-events] OK — F9 enum ↔ taxonomy parity: ${enumLabels.size} event types match (migrations 0191+0193 ↔ F9_AUDIT_EVENT_TYPES).`,
+    );
+    return true;
+  }
+
+  console.error(
+    `[check:audit-events] F9 DRIFT — migrations 0191+0193 have ${enumLabels.size} ADD VALUE labels, ` +
+      `F9_AUDIT_EVENT_TYPES has ${tupleLabels.size}.`,
+  );
+  if (onlyInEnum.length > 0) console.error(`  only in migration: ${onlyInEnum.join(', ')}`);
+  if (onlyInTuple.length > 0) console.error(`  only in taxonomy:  ${onlyInTuple.join(', ')}`);
+  return false;
+}
+
 // --- Main --------------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -135,23 +194,28 @@ async function main(): Promise<void> {
   }
 
   const mismatches = await scanProse(canonical);
+  let ok = true;
   if (mismatches.length === 0) {
     console.log(
       `[check:audit-events] OK — canonical F5 audit-event count = ${canonical}; all prose references agree.`,
     );
-    return;
+  } else {
+    ok = false;
+    console.error(
+      `[check:audit-events] DRIFT — canonical F5 audit-event count = ${canonical}, ` +
+        `but ${mismatches.length} prose reference(s) disagree:`,
+    );
+    for (const m of mismatches) {
+      console.error(
+        `  ${m.file}:${m.line}  claims ${m.claimed}  →  ${m.context}`,
+      );
+    }
   }
 
-  console.error(
-    `[check:audit-events] DRIFT — canonical F5 audit-event count = ${canonical}, ` +
-      `but ${mismatches.length} prose reference(s) disagree:`,
-  );
-  for (const m of mismatches) {
-    console.error(
-      `  ${m.file}:${m.line}  claims ${m.claimed}  →  ${m.context}`,
-    );
-  }
-  process.exit(1);
+  // F9 (T014) — enum ↔ taxonomy parity guard.
+  if (!(await checkF9Parity())) ok = false;
+
+  if (!ok) process.exit(1);
 }
 
 main().catch((error) => {

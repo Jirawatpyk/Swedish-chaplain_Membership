@@ -54,12 +54,22 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from '@/components/ui/tooltip';
-import { ArchiveIcon, PencilIcon, PencilLineIcon } from 'lucide-react';
+import {
+  ArchiveIcon,
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  PencilIcon,
+  PencilLineIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 // F8 Phase 6 Wave H — risk-score badge for the directory column. F8
 // shared primitive lives at src/components/renewals/risk-score-badge.tsx
 // and is barrel-safe (Domain types only; no Drizzle/server imports).
 import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
+// Type-only import (erased at compile time → no runtime/client-bundle coupling
+// to the insights server graph). The engagement value is projected server-side.
+import type { EngagementBand, RiskBand } from '@/modules/insights';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 import { CountryDisplay } from './country-display';
 import {
@@ -88,9 +98,14 @@ export type MembersTableRow = {
    * Kept under the legacy `member_risk_flag` accessor name for column
    * id stability across F3 → F8 transition.
    */
-  readonly member_risk_flag:
-    | { score: number; band: 'healthy' | 'warning' | 'at-risk' | 'critical' }
-    | null;
+  readonly member_risk_flag: { score: number; band: RiskBand } | null;
+  /**
+   * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
+   * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
+   * canonical `projectEngagementScore`; null when unscored (mirrors
+   * member_risk_flag). The cell only renders this value (no projection logic).
+   */
+  readonly engagement: { readonly score: number; readonly band: EngagementBand } | null;
   readonly last_activity_at: string | null;
   /** Admin-only inline-edit target (FR-040). Visible in the Notes cell. */
   readonly notes: string | null;
@@ -126,6 +141,44 @@ type Props = {
 };
 
 const columnHelper = createColumnHelper<MembersTableRow>();
+
+/**
+ * F9 (FR-007a) — server-side sort control for the engagement column. Toggles
+ * the `?sort=engagement&order=desc|asc` URL params (resetting to page 1); the
+ * server re-orders by the inverted F8 risk score. Own client hooks so the
+ * columns `useMemo` stays keyed only on `enableSelection`.
+ */
+function EngagementSortHeader() {
+  const t = useTranslations('admin.members.directory');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const active = searchParams.get('sort') === 'engagement';
+  const order = searchParams.get('order');
+  const nextOrder = active && order === 'desc' ? 'asc' : 'desc';
+
+  function onSort() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('sort', 'engagement');
+    params.set('order', nextOrder);
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  return (
+    <button
+      type="button"
+      onClick={onSort}
+      className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={t('sortByEngagement')}
+      {...(active ? { 'aria-sort': order === 'asc' ? 'ascending' : 'descending' } : {})}
+    >
+      {t('columns.engagement')}
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
+  );
+}
 
 /**
  * C7 round-10 ui-design-specialist — column-header affordance for the
@@ -650,12 +703,18 @@ export function MembersTable({
           // tooltip races + Tab order noise at scale.
           return (
             <Tooltip>
+              {/* T097 (F9 a11y) — no `aria-label` on this roleless <span>:
+                  ARIA prohibits aria-label on a generic span (axe
+                  `aria-prohibited-attr`, WCAG 4.1.2). The visible text
+                  ("Not yet scored") is the accessible name and the tooltip
+                  content is wired via aria-describedby, so SR users still get
+                  the full "computed after 30 days" explanation. Satisfies
+                  WCAG 2.5.3 Label in Name (visible text == accessible name). */}
               <TooltipTrigger
                 render={
                   <span
                     tabIndex={0}
                     className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                    aria-label={t('riskNotComputedAria')}
                   />
                 }
               >
@@ -678,6 +737,29 @@ export function MembersTable({
             band={flag.band}
             activeMax={100}
           />
+        );
+      },
+    }),
+    // F9 (T034) — Engagement Score column: positive-framed inverse of the F8
+    // risk score, projected on read. Non-colour encoding (numeric score + text
+    // band label, FR-035). Server-side sortable via `?sort=engagement&order=`
+    // (FR-007a); nulls render "—" (and sort last server-side).
+    columnHelper.accessor('engagement', {
+      header: () => <EngagementSortHeader />,
+      cell: (info) => {
+        // G1: engagement is PROJECTED SERVER-SIDE in the page row-mapping via
+        // the canonical `projectEngagementScore` (@/modules/insights) — this
+        // client cell just renders the result (numeric score + non-colour text
+        // band, FR-035). null = unscored → "—" (sorts last server-side).
+        const eng = info.getValue();
+        if (eng === null) return <span className="text-muted-foreground">—</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="tabular-nums font-medium">{eng.score}</span>
+            <span className="text-caption text-muted-foreground">
+              {t(`engagementBand.${eng.band}`)}
+            </span>
+          </span>
         );
       },
     }),

@@ -209,7 +209,252 @@
     "yes": "Yes",
     "no": "No"
   },
+  "directorySettings": {
+    "title": "Directory listing",
+    "subtitle": "Choose whether you appear in the member directory and which details are shown",
+    "emptyTitle": "No member profile",
+    "empty": "Your account isn't linked to a member profile yet.",
+    "listed": "List my organisation in the member directory",
+    "listedHint": "When off, you won't appear in the directory, E-Book, or data export.",
+    "fieldsHeading": "Fields to show",
+    "fields": {
+      "name": "Organisation name",
+      "tier": "Membership tier",
+      "industry": "Industry / category",
+      "description": "Short description",
+      "website": "Website",
+      "logo": "Logo",
+      "location": "Location (city / country)",
+      "contact_name": "Contact name",
+      "contact_email": "Contact email"
+    },
+    "detailsHeading": "Directory details",
+    "industry": "Industry / category",
+    "description": "Short description",
+    "website": "Website",
+    "city": "City",
+    "country": "Country (ISO code, e.g. TH)",
+    "logoHeading": "Logo",
+    "logoHint": "PNG, JPEG, or WebP, up to 2 MB. Re-encoded and stripped of metadata on upload.",
+    "logoUpload": "Upload logo",
+    "logoRemove": "Remove logo",
+    "logoCurrent": "Current logo",
+    "save": "Save",
+    "saved": "Directory listing saved.",
+    "saveFailed": "Could not save. Please check your details and try again.",
+    "logoSaved": "Logo updated.",
+    "logoFailed": "Could not upload the logo (PNG/JPEG/WebP, max 2 MB).",
+    "logoRemoved": "Logo removed.",
+    "logoRemoveTitle": "Remove this logo?",
+    "logoRemoveDescription": "Your directory listing will show no logo until you upload a new one. You can re-upload at any time.",
+    "logoRemoveConfirm": "Remove logo",
+    "cancel": "Cancel",
+    "manage": "Manage listing",
+    "invalidWebsite": "Website must start with http:// or https://",
+    "descriptionTooLong": "Description must be 500 characters or fewer.",
+    "logoTooLarge": "Logo exceeds 2 MB — choose a smaller file.",
+    "logoUnsupported": "Unsupported format — use PNG, JPEG, or WebP.",
+    "logoProfileMissing": "Member profile not found — reload the page and try again.",
+    "logoInvalidImage": "We couldn't read that image — the file may be corrupt. Try re-exporting it."
+  },
   "admin": {
+    "directory": {
+      "title": "Member directory",
+      "subtitle": "Search members and produce the directory E-Book + data export",
+      "forbidden": "You do not have access to the directory.",
+      "search": {
+        "label": "Search directory",
+        "placeholder": "Search by company, industry, or description",
+        "tier": "Tier",
+        "tierAll": "All tiers",
+        "listedOnly": "Listed only",
+        "submit": "Search",
+        "clear": "Clear"
+      },
+      "resultCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+      "table": {
+        "caption": "Members and their directory listing status",
+        "company": "Company",
+        "tier": "Tier",
+        "industry": "Industry",
+        "location": "Location",
+        "listed": "Listed",
+        "logo": "Logo",
+        "contact": "Contact",
+        "hasLogo": "Has logo",
+        "yes": "Yes",
+        "no": "No",
+        "emptyTitle": "No members found",
+        "empty": "Try adjusting your search or filters."
+      },
+      "generate": {
+        "heading": "Generate",
+        "ebook": "Generate E-Book (PDF)",
+        "json": "Export data (JSON)",
+        "queued": "Generation queued — it will be ready shortly.",
+        "failed": "Could not start generation. Please try again."
+      },
+      "exports": {
+        "heading": "Recent exports",
+        "empty": "No exports yet.",
+        "caption": "Recently generated directory exports",
+        "kindLabel": "Type",
+        "statusLabel": "Status",
+        "requestedLabel": "Requested",
+        "kind": {
+          "directory_ebook": "Directory E-Book (PDF)",
+          "directory_json": "Directory JSON"
+        },
+        "status": {
+          "requested": "Queued",
+          "processing": "Generating…",
+          "ready": "Ready",
+          "delivered": "Downloaded",
+          "expired": "Expired",
+          "failed": "Failed"
+        },
+        "download": "Download"
+      }
+    },
+    "audit": {
+      "title": "Audit log",
+      "subtitle": "Search and export tenant audit events",
+      "forbidden": "You do not have access to the audit log.",
+      "export": "Export CSV",
+      "resultCount": "{count, plural, =0 {No audit events} one {# audit event} other {# audit events}}",
+      "invalidRange": {
+        "title": "Invalid filter",
+        "body": "Check the date range and filters, then try again."
+      },
+      "filters": {
+        "legend": "Filter audit events",
+        "eventType": "Event type",
+        "eventTypeAll": "All event types",
+        "actor": "Acting user",
+        "target": "Target record",
+        "from": "From",
+        "to": "To",
+        "reset": "Reset",
+        "groups": {
+          "dashboard": "Dashboard & audit",
+          "authentication": "Authentication",
+          "members": "Members",
+          "billing": "Billing & payments",
+          "broadcasts": "Broadcasts",
+          "other": "Other"
+        }
+      },
+      "table": {
+        "caption": "Audit events, newest first",
+        "time": "Time",
+        "event": "Event",
+        "actor": "Actor",
+        "target": "Target",
+        "summary": "Summary",
+        "payload": "Details",
+        "empty": "No audit events match these filters.",
+        "none": "None",
+        "emptyTitle": "No audit events",
+        "utcLabel": "UTC"
+      },
+      "pagination": {
+        "next": "Load older events"
+      }
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "Chamber operations at a glance",
+      "asOf": "As of {time}",
+      "empty": "The dashboard is being prepared. Refresh in a moment.",
+      "forbidden": "You don't have access to this dashboard.",
+      "error": {
+        "title": "Couldn't load the dashboard",
+        "body": "We couldn't load your dashboard metrics. Please try again."
+      },
+      "kpi": {
+        "sectionLabel": "Key metrics",
+        "total": "Total members",
+        "active": "Active members",
+        "atRisk": "At-risk members",
+        "revenue": "Paid revenue (YTD)"
+      },
+      "needsAttention": {
+        "title": "Needs attention",
+        "empty": "All clear — nothing needs attention right now.",
+        "overdueInvoices": "Overdue invoices",
+        "atRisk": "At-risk members",
+        "broadcasts": "Broadcasts awaiting approval"
+      },
+      "trends": {
+        "sectionLabel": "Trend charts"
+      },
+      "revenueTrend": {
+        "title": "Revenue trend (12 months)",
+        "empty": "No paid revenue recorded yet.",
+        "sparse": "Limited history — the trend builds up as more months of revenue are recorded.",
+        "total": "12-month total",
+        "month": "Month",
+        "amount": "Paid revenue",
+        "perMonth": "Per month"
+      },
+      "memberGrowth": {
+        "title": "Member growth (12 months)",
+        "empty": "No member data yet.",
+        "sparse": "Limited history — the trend builds up as membership grows over more months.",
+        "total": "Total members",
+        "cumulative": "Cumulative",
+        "netNew": "+{count} this year",
+        "month": "Month",
+        "count": "Members"
+      },
+      "insights": {
+        "title": "Smart insights",
+        "empty": "No insights right now — all clear.",
+        "unused_eblast_quota": "{count} members have unused E-Blast quota",
+        "underused_event_tickets": "{count} members have under-used event tickets",
+        "at_risk_followup": "{count} at-risk members need follow-up",
+        "dismiss": "Dismiss insight",
+        "dismissed": "Insight dismissed",
+        "dismissError": "Couldn't dismiss the insight. Please try again."
+      },
+      "activity": {
+        "title": "Recent activity",
+        "empty": "No recent activity yet.",
+        "refresh": "Refresh",
+        "refreshed": "Activity refreshed",
+        "events": {
+          "member_created": "Member created",
+          "member_updated": "Member updated",
+          "member_archived": "Member archived",
+          "member_undeleted": "Member restored",
+          "member_status_changed": "Member status changed",
+          "member_plan_changed": "Member plan changed",
+          "plan_created": "Plan created",
+          "plan_updated": "Plan updated",
+          "plan_activated": "Plan activated",
+          "plan_deactivated": "Plan deactivated",
+          "invoice_issued": "Invoice issued",
+          "invoice_paid": "Invoice paid",
+          "invoice_voided": "Invoice voided",
+          "invoice_pdf_downloaded": "Invoice PDF downloaded",
+          "invoice_credited": "Invoice credited",
+          "credit_note_issued": "Credit note issued",
+          "payment_succeeded": "Payment succeeded",
+          "payment_failed": "Payment failed",
+          "refund_succeeded": "Refund completed",
+          "broadcast_approved": "Broadcast approved",
+          "broadcast_sent": "Broadcast sent",
+          "broadcast_rejected": "Broadcast rejected",
+          "sign_in_success": "Signed in",
+          "password_changed": "Password changed",
+          "account_created": "Account created",
+          "directory_listing_updated": "Directory listing updated",
+          "data_export_generated": "Data export generated",
+          "smart_insight_dismissed": "Insight dismissed",
+          "dashboard_viewed": "Dashboard viewed"
+        }
+      }
+    },
     "home": {
       "welcomeWithName": "Welcome, {name}",
       "subtitle": "You are signed in as {role}.",
@@ -586,6 +831,14 @@
     "members": {
       "title": "Members",
       "overrideReason": {
+        "warnings": {
+          "turnoverOutOfBand": "Turnover {turnover} THB is outside the plan band ({min}–{max} THB).",
+          "turnoverBelow": "Turnover {turnover} THB is below the plan minimum of {min} THB.",
+          "turnoverAbove": "Turnover {turnover} THB is above the plan maximum of {max} THB.",
+          "startupTooOld": "Founded year {year} exceeds the plan limit of {maxYears} years.",
+          "ageNotEligible": "Age {age} exceeds the plan maximum of {maxAge}.",
+          "generic": "This value is outside the plan limits. Provide a reason to proceed."
+        },
         "title": "Reason for bypassing validation",
         "description": "Record why you are proceeding despite the warning. The reason is kept in the audit log.",
         "codeLabel": "Reason",
@@ -640,6 +893,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "sortByEngagement": "Sort by engagement",
         "columns": {
           "company": "Company",
           "country": "Country",
@@ -648,8 +902,15 @@
           "primaryContact": "Primary contact",
           "status": "Status",
           "risk": "Risk",
+          "engagement": "Engagement",
           "lastActivity": "Last activity",
           "notes": "Notes"
+        },
+        "engagementBand": {
+          "healthy": "Healthy",
+          "moderate": "Moderate",
+          "warning": "Watch",
+          "critical": "Critical"
         },
         "riskPlaceholder": "—",
         "riskNotComputed": "Not yet scored",
@@ -728,6 +989,7 @@
           "taxId": "Tax ID",
           "website": "Website",
           "description": "Description",
+          "address": "Address",
           "foundedYear": "Founded",
           "turnoverThb": "Annual turnover (THB)",
           "planId": "Plan ID",
@@ -763,12 +1025,36 @@
         "emergencyPrimary": {
           "ariaLabel": "Help — emergency primary contact transfer",
           "title": "Emergency primary contact transfer",
-          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Open the Edit page and add the new person under \"Other contacts\", then return here and use Promote to make them the primary. The old primary is automatically demoted."
+          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Use \"Add contact\" to add the new person, then use \"Make primary\" on their row. The old primary is automatically demoted."
         },
         "portal": {
           "linked": "Portal linked"
         },
-        "editCta": "Edit"
+        "editCta": "Edit",
+        "contactActions": {
+          "add": "Add contact",
+          "edit": "Edit",
+          "remove": "Remove",
+          "promote": "Make primary",
+          "addSuccess": "Contact added.",
+          "editSuccess": "Contact updated.",
+          "removeSuccess": "Contact removed.",
+          "promoteSuccess": "Primary contact updated.",
+          "removeTitle": "Remove contact?",
+          "removeDescription": "Remove {name} from this member. This can't be undone from here.",
+          "removeConfirm": "Remove contact",
+          "promoteTitle": "Make {name} the primary contact?",
+          "promoteDescription": "The current primary contact becomes a secondary contact.",
+          "promoteConfirm": "Make primary",
+          "cancel": "Cancel",
+          "errors": {
+            "validation": "Please fix the highlighted fields.",
+            "emailTaken": "That email address is already in use.",
+            "conflict": "Couldn't complete the action. Please refresh and try again.",
+            "notFound": "Contact not found.",
+            "generic": "Something went wrong. Please try again."
+          }
+        }
       },
       "timeline": {
         "pageTitle": "Timeline · {companyName} · SweCham",
@@ -855,6 +1141,7 @@
         "cancel": "Cancel",
         "sections": {
           "company": "Company",
+          "address": "Address",
           "primaryContact": "Primary contact"
         },
         "fields": {
@@ -866,6 +1153,11 @@
           "taxIdHintTH": "Thai 13-digit tax ID with checksum",
           "website": "Website",
           "websitePlaceholder": "https://…",
+          "addressLine1": "Address line 1",
+          "addressLine2": "Address line 2",
+          "city": "City / District",
+          "province": "Province / State",
+          "postalCode": "Postal code",
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",
@@ -881,6 +1173,7 @@
           "preferredLanguage": "Preferred language",
           "dateOfBirth": "Date of birth",
           "dateOfBirthHint": "Required for Thai Alumni plan",
+          "phoneError": "Use international format, e.g. +66812345678",
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
           "notesHint": "Visible to chamber staff only. Not shown to members."
@@ -923,12 +1216,21 @@
           "notFound": "Member not found.",
           "validation": "Please fix the highlighted fields.",
           "contactNotFound": "Contact not found.",
-          "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first."
+          "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first.",
+          "emailChangeNotSupported": "Email can only be changed for contacts linked to a portal account. Invite them to the portal first, then change the email.",
+          "emailTaken": "That email address is already in use.",
+          "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
+          "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest."
         }
       },
       "contactForm": {
         "title": "Add contact",
         "editTitle": "Edit contact",
+        "description": "Add another person at this member. They are added as a secondary contact.",
+        "editDescription": "Update this contact's details.",
+        "emailEditNote": "To change this contact's email, use the portal invitation flow.",
+        "fieldRequired": "This field is required.",
+        "emailInvalid": "Enter a valid email address.",
         "submit": "Save",
         "submitting": "Saving…",
         "cancel": "Cancel"
@@ -966,6 +1268,9 @@
         "archivePhrase": "Archive {count, plural, one {# member} other {# members}}",
         "cancel": "Cancel",
         "confirmArchive": "Archive {count, plural, one {# member} other {# members}}",
+        "confirmInviteTitle": "Send {count, plural, one {# invitation} other {# invitations}}",
+        "confirmInviteDescription": "Portal invitation emails will be sent to the selected members so they can access the member portal.",
+        "confirmInviteAction": "Send invitations",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "unknownError": "Something went wrong.",
@@ -1022,6 +1327,14 @@
         "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
         "success": "Member restored.",
         "error": "Could not restore. Please try again."
+      },
+      "benefits": {
+        "title": "Member benefits",
+        "backToDetail": "Back to member",
+        "staffActions": {
+          "sendReminder": "Send reminder",
+          "reminderSubject": "Make the most of your SweCham benefits — {company}"
+        }
       }
     },
     "outboxHealth": {
@@ -1697,13 +2010,15 @@
         "body": "Manager role: you can view the queue + broadcast details but cannot approve, reject, or cancel."
       },
       "toast": {
-        "approved": "Broadcast approved.",
-        "rejected": "Broadcast rejected. Member notified.",
-        "cancelled": "Broadcast cancelled.",
-        "proxySubmitted": "Submitted for review.",
-        "clearHalted": "Halt cleared. Member can submit new broadcasts.",
-        "concurrentRace": "Another admin acted on this broadcast first. Refreshing…",
-        "error": "Action failed. Please try again."
+        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
+        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
+        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
+        "retryInvalidState": "This broadcast is not in a state that allows retry.",
+        "retryServerError": "Retry failed. Please try again or contact support.",
+        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
+        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
+        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
+        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
       },
       "deliverySummary": {
         "heading": "Delivery summary",
@@ -1788,17 +2103,6 @@
         "confirm": "Accept partial",
         "cancel": "Cancel",
         "submitting": "Accepting…"
-      },
-      "toast": {
-        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
-        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
-        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
-        "retryInvalidState": "This broadcast is not in a state that allows retry.",
-        "retryServerError": "Retry failed. Please try again or contact support.",
-        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
-        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
-        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
-        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
       },
       "templates": {
         "pageTitle": "Broadcast templates",
@@ -3305,7 +3609,9 @@
       "escalationTasksOverdue": "Escalation tasks: overdue only",
       "eventsList": "Events",
       "eventcreateIntegration": "EventCreate integration",
-      "csvImportHistory": "CSV import history"
+      "csvImportHistory": "CSV import history",
+      "auditLog": "Audit log",
+      "directory": "Member directory"
     }
   },
   "nav": {
@@ -3329,15 +3635,19 @@
       "members": "Members",
       "invoices": "Invoices",
       "broadcasts": "Broadcasts",
-      "renewals": "Renewals"
+      "renewals": "Renewals",
+      "audit": "Audit log",
+      "directory": "Directory"
     },
     "member": {
       "dashboard": "Dashboard",
       "profile": "Profile",
       "invoices": "Invoices",
       "broadcasts": "E-Blasts",
+      "timeline": "Timeline",
       "account": "Account",
-      "ariaLabel": "Member navigation"
+      "ariaLabel": "Member navigation",
+      "benefits": "Benefits"
     }
   },
   "breadcrumb": {
@@ -4259,5 +4569,157 @@
         "contact": "If the problem persists, please contact <email></email> and we will remove your email manually."
       }
     }
+  },
+  "timeline": {
+    "page": {
+      "title": "Activity timeline",
+      "subtitleStaff": "Full relationship history for this member",
+      "subtitleMember": "Your activity history",
+      "empty": "No activity recorded yet.",
+      "emptyFiltered": "No activity matches the current filters.",
+      "loadMore": "Load older activity",
+      "loading": "Loading…",
+      "loadError": "Failed to load more activity. Please try again.",
+      "results": "{count, plural, =0 {No entries} one {# entry} other {# entries}}"
+    },
+    "filters": {
+      "title": "Filters",
+      "source": "Source",
+      "actor": "Actor",
+      "from": "From date",
+      "to": "To date",
+      "all": "All",
+      "clear": "Clear filters"
+    },
+    "source": {
+      "audit": "Profile / Audit",
+      "invoice": "Invoice",
+      "payment": "Payment",
+      "event": "Event",
+      "broadcast": "E-Blast",
+      "renewal": "Renewal"
+    },
+    "actorKind": {
+      "staff": "Staff",
+      "member": "Member",
+      "system": "System"
+    },
+    "actorBy": "by {actor}",
+    "invoice": {
+      "draft": "Invoice drafted",
+      "issued": "Invoice issued",
+      "paid": "Invoice paid",
+      "void": "Invoice voided",
+      "credited": "Invoice credited",
+      "partially_credited": "Invoice partially credited"
+    },
+    "payment": {
+      "succeeded": "Payment received",
+      "failed": "Payment failed",
+      "refunded": "Payment refunded",
+      "partially_refunded": "Payment partially refunded",
+      "canceled": "Payment canceled"
+    },
+    "event": {
+      "attended": "Attended an event"
+    },
+    "broadcast": {
+      "sent": "E-Blast sent"
+    },
+    "renewal": {
+      "upcoming": "Renewal upcoming",
+      "reminded": "Renewal reminder sent",
+      "awaiting_payment": "Renewal awaiting payment",
+      "completed": "Renewal completed",
+      "lapsed": "Membership lapsed",
+      "cancelled": "Renewal cancelled",
+      "pending_admin_reactivation": "Pending reactivation",
+      "updated": "Renewal updated"
+    },
+    "unknownEvent": "Activity"
+  },
+  "benefits": {
+    "page": {
+      "title": "Benefits",
+      "subtitleMember": "Your membership benefits for this year",
+      "empty": "We couldn't find a membership profile for your account yet.",
+      "emptyTitle": "No membership profile yet"
+    },
+    "card": {
+      "title": "Benefit usage · {year}",
+      "empty": "No quantifiable benefits on your current plan.",
+      "usedOf": "{used} of {total} used",
+      "neverUsed": "Not used yet this year",
+      "lastUsed": "Last used {date}",
+      "activeHeading": "Included benefits",
+      "liveNote": "Updated on load · current year",
+      "emptyTitle": "No tracked benefits"
+    },
+    "benefit": {
+      "eblast": "E-Blasts",
+      "cultural_tickets": "Cultural event tickets",
+      "action": {
+        "eblast": "Compose",
+        "cultural_tickets": "View events"
+      }
+    },
+    "active": {
+      "all_employee_event_discount": "All-employee event discount",
+      "directory_listing": "Directory listing",
+      "m2m_benefits": "Member-to-member benefits",
+      "business_referrals": "Business referrals",
+      "tailor_made_services": "Tailor-made services",
+      "partnership_package": "Partnership package"
+    },
+    "warning": {
+      "title": "You're not using all your benefits",
+      "body": "At {elapsed}% of the year you've used {consumed}% of your benefits. Make the most of your membership.",
+      "action": "Use a benefit"
+    }
+  },
+  "gdprExport": {
+    "readme": {
+      "title": "Your data export",
+      "intro": "This archive contains a copy of your personal data held by {tenant}, generated on {generatedAt}. It is provided to support your data-portability rights under GDPR Article 20 and Thailand PDPA.",
+      "subjectLine": "Data subject (member id): {memberId}",
+      "filesHeading": "What is in this archive",
+      "files": {
+        "profile": "profile.json — your organisation/member profile details.",
+        "contacts": "contacts.json — the contact people linked to your membership.",
+        "invoices": "invoices.json — your invoices (numbers, dates, amounts, status). The PDF documents are in the invoices/ folder.",
+        "events": "events.json — events you attended.",
+        "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
+        "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
+        "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
+      },
+      "truncationWarning": "⚠ PARTIAL EXPORT — Some categories contain only your most recent records; older entries were omitted to keep the archive a manageable size: {files}. To request your complete history for these categories, contact the chamber. The manifest checksums cover only the records included here.",
+      "privacyNote": "For your protection this archive may contain personal information. Store it securely and delete it when you no longer need it."
+    }
+  },
+  "dataExport": {
+    "title": "Export my data",
+    "subtitle": "Download a copy of your personal data",
+    "description": "Request a downloadable archive of your profile, contacts, invoices, events, broadcasts, and the activity-log events relating to you. Preparing the archive may take a few minutes; you can download it from this page when it is ready.",
+    "requestButton": "Request my data export",
+    "requesting": "Requesting…",
+    "requestedTitle": "Export requested",
+    "requestedBody": "We are preparing your data export. This page will show a download link when it is ready (usually within a few minutes).",
+    "statusHeading": "Recent requests",
+    "statusPending": "Preparing",
+    "statusReady": "Ready to download",
+    "statusDelivered": "Downloaded",
+    "statusExpired": "Expired",
+    "statusFailed": "Failed",
+    "download": "Download",
+    "expiresHint": "Download links expire 1 hour after the archive is ready, for your security. Request a new export if a link has expired.",
+    "empty": "You have not requested a data export yet.",
+    "errorTitle": "Could not request export",
+    "errorBody": "Something went wrong requesting your data export. Please try again.",
+    "colStatus": "Status",
+    "colRequested": "Requested",
+    "adminHeading": "Data export (GDPR)",
+    "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you.",
+    "alreadyPending": "An export is already being prepared — see its status below.",
+    "open": "Go to data export"
   }
 }

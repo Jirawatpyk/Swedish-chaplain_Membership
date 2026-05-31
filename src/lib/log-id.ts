@@ -48,3 +48,21 @@ export function hashId(id: string): string {
 export function errKind(e: unknown): string {
   return e instanceof Error ? e.constructor.name : 'unknown';
 }
+
+/**
+ * Single-step unwrap of a `Result` error's underlying `cause` — the real Error
+ * thrown by infra (e.g. a `NeonDbError`) that a repo wraps as
+ * `{ code: 'repo.unexpected', cause }`. Pair with `errKind` for PII-safe
+ * diagnostics: `errKind(rootCause(result.error))` (a single `.cause` unwrap on
+ * the plain wrapper, then the error CLASS — never `e.message`).
+ *
+ * Returns the `.cause` (or `undefined` when there is none). Centralises the
+ * `(x as { cause?: unknown }).cause` cast hand-rolled at ~9 route + use-case
+ * logging sites (code-review Round 2 cleanup) so the unwrap depth + field name
+ * live in ONE place. Single-level BY DESIGN — the RepoError wrapper is exactly
+ * one `.cause` deep; this does NOT walk a multi-level chain (for that see
+ * `errorChainMessage` in `db-errors.ts`).
+ */
+export function rootCause(error: unknown): unknown {
+  return (error as { cause?: unknown } | null | undefined)?.cause;
+}

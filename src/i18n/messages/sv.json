@@ -209,7 +209,252 @@
     "yes": "Ja",
     "no": "Nej"
   },
+  "directorySettings": {
+    "title": "Katalogpost",
+    "subtitle": "Välj om du visas i medlemskatalogen och vilka uppgifter som visas",
+    "emptyTitle": "Ingen medlemsprofil",
+    "empty": "Ditt konto är inte kopplat till en medlemsprofil än.",
+    "listed": "Lista min organisation i medlemskatalogen",
+    "listedHint": "När detta är av visas du inte i katalogen, E-boken eller dataexporten.",
+    "fieldsHeading": "Fält att visa",
+    "fields": {
+      "name": "Organisationsnamn",
+      "tier": "Medlemsnivå",
+      "industry": "Bransch / kategori",
+      "description": "Kort beskrivning",
+      "website": "Webbplats",
+      "logo": "Logotyp",
+      "location": "Plats (stad / land)",
+      "contact_name": "Kontaktnamn",
+      "contact_email": "Kontaktmejl"
+    },
+    "detailsHeading": "Kataloguppgifter",
+    "industry": "Bransch / kategori",
+    "description": "Kort beskrivning",
+    "website": "Webbplats",
+    "city": "Stad",
+    "country": "Land (ISO-kod, t.ex. TH)",
+    "logoHeading": "Logotyp",
+    "logoHint": "PNG, JPEG eller WebP, upp till 2 MB. Omkodas och metadata tas bort vid uppladdning.",
+    "logoUpload": "Ladda upp logotyp",
+    "logoRemove": "Ta bort logotyp",
+    "logoCurrent": "Nuvarande logotyp",
+    "save": "Spara",
+    "saved": "Katalogposten sparades.",
+    "saveFailed": "Kunde inte spara. Kontrollera uppgifterna och försök igen.",
+    "logoSaved": "Logotypen uppdaterades.",
+    "logoFailed": "Kunde inte ladda upp logotypen (PNG/JPEG/WebP, max 2 MB).",
+    "logoRemoved": "Logotypen togs bort.",
+    "logoRemoveTitle": "Ta bort den här logotypen?",
+    "logoRemoveDescription": "Din katalogpost visar ingen logotyp förrän du laddar upp en ny. Du kan ladda upp igen när som helst.",
+    "logoRemoveConfirm": "Ta bort logotyp",
+    "cancel": "Avbryt",
+    "manage": "Hantera katalogpost",
+    "invalidWebsite": "Webbplatsen måste börja med http:// eller https://",
+    "descriptionTooLong": "Beskrivningen får vara högst 500 tecken.",
+    "logoTooLarge": "Logotypen överstiger 2 MB — välj en mindre fil.",
+    "logoUnsupported": "Format som inte stöds — använd PNG, JPEG eller WebP.",
+    "logoProfileMissing": "Medlemsprofilen hittades inte — ladda om sidan och försök igen.",
+    "logoInvalidImage": "Vi kunde inte läsa bilden — filen kan vara skadad. Försök exportera om den."
+  },
   "admin": {
+    "directory": {
+      "title": "Medlemskatalog",
+      "subtitle": "Sök medlemmar och skapa katalog-E-bok + dataexport",
+      "forbidden": "Du har inte åtkomst till katalogen.",
+      "search": {
+        "label": "Sök i katalogen",
+        "placeholder": "Sök på företag, bransch eller beskrivning",
+        "tier": "Nivå",
+        "tierAll": "Alla nivåer",
+        "listedOnly": "Endast listade",
+        "submit": "Sök",
+        "clear": "Rensa"
+      },
+      "resultCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+      "table": {
+        "caption": "Medlemmar och deras katalogstatus",
+        "company": "Företag",
+        "tier": "Nivå",
+        "industry": "Bransch",
+        "location": "Plats",
+        "listed": "Listad",
+        "logo": "Logotyp",
+        "contact": "Kontakt",
+        "hasLogo": "Har logotyp",
+        "yes": "Ja",
+        "no": "Nej",
+        "emptyTitle": "Inga medlemmar hittades",
+        "empty": "Justera sökningen eller filtren."
+      },
+      "generate": {
+        "heading": "Skapa",
+        "ebook": "Skapa E-bok (PDF)",
+        "json": "Exportera data (JSON)",
+        "queued": "Genereringen är köad — den är klar snart.",
+        "failed": "Kunde inte starta genereringen. Försök igen."
+      },
+      "exports": {
+        "heading": "Senaste exporter",
+        "empty": "Inga exporter än.",
+        "caption": "Nyligen genererade katalogexporter",
+        "kindLabel": "Typ",
+        "statusLabel": "Status",
+        "requestedLabel": "Begärd",
+        "kind": {
+          "directory_ebook": "Katalog-E-bok (PDF)",
+          "directory_json": "Katalog-JSON"
+        },
+        "status": {
+          "requested": "Köad",
+          "processing": "Genererar…",
+          "ready": "Klar",
+          "delivered": "Nedladdad",
+          "expired": "Utgången",
+          "failed": "Misslyckades"
+        },
+        "download": "Ladda ner"
+      }
+    },
+    "audit": {
+      "title": "Granskningslogg",
+      "subtitle": "Sök och exportera revisionshändelser för organisationen",
+      "forbidden": "Du har inte behörighet till granskningsloggen.",
+      "export": "Exportera CSV",
+      "resultCount": "{count, plural, =0 {Inga revisionshändelser} one {# revisionshändelse} other {# revisionshändelser}}",
+      "invalidRange": {
+        "title": "Ogiltigt filter",
+        "body": "Kontrollera datumintervallet och filtren och försök igen."
+      },
+      "filters": {
+        "legend": "Filtrera revisionshändelser",
+        "eventType": "Händelsetyp",
+        "eventTypeAll": "Alla händelsetyper",
+        "actor": "Utförande användare",
+        "target": "Målpost",
+        "from": "Från",
+        "to": "Till",
+        "reset": "Återställ",
+        "groups": {
+          "dashboard": "Instrumentpanel & granskning",
+          "authentication": "Autentisering",
+          "members": "Medlemmar",
+          "billing": "Fakturering & betalningar",
+          "broadcasts": "Utskick",
+          "other": "Övrigt"
+        }
+      },
+      "table": {
+        "caption": "Revisionshändelser, nyaste först",
+        "time": "Tid",
+        "event": "Händelse",
+        "actor": "Aktör",
+        "target": "Mål",
+        "summary": "Sammanfattning",
+        "payload": "Detaljer",
+        "empty": "Inga revisionshändelser matchar dessa filter.",
+        "none": "Ingen",
+        "emptyTitle": "Inga revisionshändelser",
+        "utcLabel": "UTC"
+      },
+      "pagination": {
+        "next": "Ladda äldre händelser"
+      }
+    },
+    "dashboard": {
+      "title": "Instrumentpanel",
+      "subtitle": "Handelskammarens verksamhet i överblick",
+      "asOf": "Per {time}",
+      "empty": "Instrumentpanelen förbereds. Uppdatera om en stund.",
+      "forbidden": "Du har inte åtkomst till den här instrumentpanelen.",
+      "error": {
+        "title": "Kunde inte ladda instrumentpanelen",
+        "body": "Vi kunde inte ladda dina instrumentpanelsdata. Försök igen."
+      },
+      "kpi": {
+        "sectionLabel": "Nyckeltal",
+        "total": "Totalt antal medlemmar",
+        "active": "Aktiva medlemmar",
+        "atRisk": "Medlemmar i riskzonen",
+        "revenue": "Betalda intäkter (i år)"
+      },
+      "needsAttention": {
+        "title": "Kräver åtgärd",
+        "empty": "Allt klart – inget behöver åtgärdas just nu.",
+        "overdueInvoices": "Förfallna fakturor",
+        "atRisk": "Medlemmar i riskzonen",
+        "broadcasts": "Utskick som väntar på godkännande"
+      },
+      "trends": {
+        "sectionLabel": "Trenddiagram"
+      },
+      "revenueTrend": {
+        "title": "Intäktstrend (12 månader)",
+        "empty": "Inga betalda intäkter registrerade ännu.",
+        "sparse": "Begränsad historik — trenden byggs upp när fler månaders intäkter registrerats.",
+        "total": "Totalt 12 månader",
+        "month": "Månad",
+        "amount": "Betalda intäkter",
+        "perMonth": "Per månad"
+      },
+      "memberGrowth": {
+        "title": "Medlemstillväxt (12 månader)",
+        "empty": "Ingen medlemsdata ännu.",
+        "sparse": "Begränsad historik — trenden byggs upp när medlemsantalet växer över fler månader.",
+        "total": "Totalt antal medlemmar",
+        "cumulative": "Kumulativt",
+        "netNew": "+{count} i år",
+        "month": "Månad",
+        "count": "Medlemmar"
+      },
+      "insights": {
+        "title": "Smarta insikter",
+        "empty": "Inga insikter just nu – allt är i ordning.",
+        "unused_eblast_quota": "{count} medlemmar har oanvänd E-Blast-kvot",
+        "underused_event_tickets": "{count} medlemmar har underutnyttjade evenemangsbiljetter",
+        "at_risk_followup": "{count} medlemmar i riskzonen behöver följas upp",
+        "dismiss": "Avfärda insikt",
+        "dismissed": "Insikt avfärdad",
+        "dismissError": "Kunde inte avfärda insikten. Försök igen."
+      },
+      "activity": {
+        "title": "Senaste aktivitet",
+        "empty": "Ingen aktivitet ännu.",
+        "refresh": "Uppdatera",
+        "refreshed": "Aktiviteten uppdaterad",
+        "events": {
+          "member_created": "Medlem skapad",
+          "member_updated": "Medlem uppdaterad",
+          "member_archived": "Medlem arkiverad",
+          "member_undeleted": "Medlem återställd",
+          "member_status_changed": "Medlemsstatus ändrad",
+          "member_plan_changed": "Medlemsplan ändrad",
+          "plan_created": "Plan skapad",
+          "plan_updated": "Plan uppdaterad",
+          "plan_activated": "Plan aktiverad",
+          "plan_deactivated": "Plan inaktiverad",
+          "invoice_issued": "Faktura utfärdad",
+          "invoice_paid": "Faktura betald",
+          "invoice_voided": "Faktura makulerad",
+          "invoice_pdf_downloaded": "Faktura-PDF nedladdad",
+          "invoice_credited": "Faktura krediterad",
+          "credit_note_issued": "Kreditnota utfärdad",
+          "payment_succeeded": "Betalning genomförd",
+          "payment_failed": "Betalning misslyckades",
+          "refund_succeeded": "Återbetalning genomförd",
+          "broadcast_approved": "Utskick godkänt",
+          "broadcast_sent": "Utskick skickat",
+          "broadcast_rejected": "Utskick avvisat",
+          "sign_in_success": "Inloggad",
+          "password_changed": "Lösenord ändrat",
+          "account_created": "Konto skapat",
+          "directory_listing_updated": "Kataloguppgift uppdaterad",
+          "data_export_generated": "Dataexport genererad",
+          "smart_insight_dismissed": "Insikt avfärdad",
+          "dashboard_viewed": "Instrumentpanel visad"
+        }
+      }
+    },
     "home": {
       "welcomeWithName": "Välkommen, {name}",
       "subtitle": "Du är inloggad som {role}.",
@@ -586,6 +831,14 @@
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
+        "warnings": {
+          "turnoverOutOfBand": "Omsättning {turnover} THB ligger utanför planens intervall ({min}–{max} THB).",
+          "turnoverBelow": "Omsättning {turnover} THB är under planens minimum på {min} THB.",
+          "turnoverAbove": "Omsättning {turnover} THB överstiger planens maximum på {max} THB.",
+          "startupTooOld": "Grundningsår {year} överskrider planens gräns på {maxYears} år.",
+          "ageNotEligible": "Ålder {age} överstiger planens maximum på {maxAge}.",
+          "generic": "Värdet ligger utanför planens gränser. Ange en anledning för att fortsätta."
+        },
         "title": "Anledning till att kringgå validering",
         "description": "Registrera varför du fortsätter trots varningen. Anledningen sparas i revisionsloggen.",
         "codeLabel": "Anledning",
@@ -640,6 +893,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+        "sortByEngagement": "Sortera efter engagemang",
         "columns": {
           "company": "Företag",
           "country": "Land",
@@ -648,8 +902,15 @@
           "primaryContact": "Primär kontakt",
           "status": "Status",
           "risk": "Risk",
+          "engagement": "Engagemang",
           "lastActivity": "Senaste aktivitet",
           "notes": "Anteckningar"
+        },
+        "engagementBand": {
+          "healthy": "Frisk",
+          "moderate": "Måttlig",
+          "warning": "Bevaka",
+          "critical": "Kritisk"
         },
         "riskPlaceholder": "—",
         "riskNotComputed": "Ingen poäng än",
@@ -728,6 +989,7 @@
           "taxId": "Skatte-ID",
           "website": "Webbplats",
           "description": "Beskrivning",
+          "address": "Adress",
           "foundedYear": "Grundat",
           "turnoverThb": "Årsomsättning (THB)",
           "planId": "Paket-ID",
@@ -763,12 +1025,36 @@
         "emergencyPrimary": {
           "ariaLabel": "Hjälp — nödöverföring av primär kontakt",
           "title": "Nödöverföring av primär kontakt",
-          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Öppna Redigera-sidan och lägg till den nya personen under \"Övriga kontakter\", återgå sedan hit och använd Befordra för att göra dem till den primära. Den gamla primära nedgraderas automatiskt."
+          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Använd \"Lägg till kontakt\" för att lägga till den nya personen och använd sedan \"Gör till primär\" på deras rad. Den gamla primära nedgraderas automatiskt."
         },
         "portal": {
           "linked": "Portalansluten"
         },
-        "editCta": "Redigera"
+        "editCta": "Redigera",
+        "contactActions": {
+          "add": "Lägg till kontakt",
+          "edit": "Redigera",
+          "remove": "Ta bort",
+          "promote": "Gör till primär",
+          "addSuccess": "Kontakt tillagd.",
+          "editSuccess": "Kontakt uppdaterad.",
+          "removeSuccess": "Kontakt borttagen.",
+          "promoteSuccess": "Primär kontakt uppdaterad.",
+          "removeTitle": "Ta bort kontakt?",
+          "removeDescription": "Ta bort {name} från denna medlem. Detta kan inte ångras härifrån.",
+          "removeConfirm": "Ta bort kontakt",
+          "promoteTitle": "Gör {name} till primär kontakt?",
+          "promoteDescription": "Den nuvarande primära kontakten blir en sekundär kontakt.",
+          "promoteConfirm": "Gör till primär",
+          "cancel": "Avbryt",
+          "errors": {
+            "validation": "Rätta markerade fält.",
+            "emailTaken": "E-postadressen används redan.",
+            "conflict": "Åtgärden kunde inte slutföras. Uppdatera och försök igen.",
+            "notFound": "Kontakt hittades inte.",
+            "generic": "Något gick fel. Försök igen."
+          }
+        }
       },
       "timeline": {
         "pageTitle": "Tidslinje · {companyName} · SweCham",
@@ -855,6 +1141,7 @@
         "cancel": "Avbryt",
         "sections": {
           "company": "Företag",
+          "address": "Adress",
           "primaryContact": "Primär kontakt"
         },
         "fields": {
@@ -866,6 +1153,11 @@
           "taxIdHintTH": "Thailändskt 13-siffrigt skatte-ID med checksiffra",
           "website": "Webbplats",
           "websitePlaceholder": "https://…",
+          "addressLine1": "Adressrad 1",
+          "addressLine2": "Adressrad 2",
+          "city": "Ort/Stad",
+          "province": "Län/Region",
+          "postalCode": "Postnummer",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
@@ -881,6 +1173,7 @@
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för Thai Alumni-planen",
+          "phoneError": "Använd internationellt format, t.ex. +66812345678",
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
           "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
@@ -923,12 +1216,21 @@
           "notFound": "Medlem hittades inte.",
           "validation": "Rätta markerade fält.",
           "contactNotFound": "Kontakt hittades inte.",
-          "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först."
+          "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först.",
+          "emailChangeNotSupported": "E-postadressen kan endast ändras för kontakter som är kopplade till ett portalkonto. Bjud in dem till portalen först och ändra sedan e-postadressen.",
+          "emailTaken": "E-postadressen används redan.",
+          "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678.",
+          "partialSave": "Vissa ändringar sparades innan ett fel uppstod. Granska medlemmen och försök igen med resten."
         }
       },
       "contactForm": {
         "title": "Lägg till kontakt",
         "editTitle": "Redigera kontakt",
+        "description": "Lägg till ytterligare en person hos denna medlem. De läggs till som en sekundär kontakt.",
+        "editDescription": "Uppdatera den här kontaktens uppgifter.",
+        "emailEditNote": "För att ändra kontaktens e-postadress, använd portalinbjudningsflödet.",
+        "fieldRequired": "Detta fält är obligatoriskt.",
+        "emailInvalid": "Ange en giltig e-postadress.",
         "submit": "Spara",
         "submitting": "Sparar…",
         "cancel": "Avbryt"
@@ -966,6 +1268,9 @@
         "archivePhrase": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
         "cancel": "Avbryt",
         "confirmArchive": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "confirmInviteTitle": "Skicka {count, plural, one {# inbjudan} other {# inbjudningar}}",
+        "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
+        "confirmInviteAction": "Skicka inbjudningar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "unknownError": "Något gick fel.",
@@ -1022,6 +1327,14 @@
         "confirmDescription": "Återställning återaktiverar medlemsposten. Kopplade portalanvändare måste logga in igen.",
         "success": "Medlemmen har återställts.",
         "error": "Kunde inte återställa. Försök igen."
+      },
+      "benefits": {
+        "title": "Medlemsförmåner",
+        "backToDetail": "Tillbaka till medlem",
+        "staffActions": {
+          "sendReminder": "Skicka påminnelse",
+          "reminderSubject": "Få ut mesta möjliga av dina SweCham-förmåner — {company}"
+        }
       }
     },
     "outboxHealth": {
@@ -1697,13 +2010,15 @@
         "body": "Manager-roll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
       },
       "toast": {
-        "approved": "Utskick godkänt.",
-        "rejected": "Utskick avvisat. Medlem meddelad.",
-        "cancelled": "Utskick avbrutet.",
-        "proxySubmitted": "Inskickad för granskning.",
-        "clearHalted": "Spärr hävd. Medlemmen kan skicka nya utskick.",
-        "concurrentRace": "En annan administratör hann före dig. Uppdaterar…",
-        "error": "Åtgärden misslyckades. Försök igen."
+        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
+        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
+        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
+        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
+        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
+        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
+        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
+        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
+        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
       },
       "deliverySummary": {
         "heading": "Leveranssammanfattning",
@@ -1788,17 +2103,6 @@
         "confirm": "Bekräfta partiell leverans",
         "cancel": "Avbryt",
         "submitting": "Bekräftar…"
-      },
-      "toast": {
-        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
-        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
-        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
-        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
-        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
-        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
-        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
-        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
-        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
       },
       "templates": {
         "pageTitle": "Utskicksmallar",
@@ -3305,7 +3609,9 @@
       "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade",
       "eventsList": "Evenemang",
       "eventcreateIntegration": "EventCreate-integration",
-      "csvImportHistory": "CSV-importhistorik"
+      "csvImportHistory": "CSV-importhistorik",
+      "auditLog": "Granskningslogg",
+      "directory": "Medlemskatalog"
     }
   },
   "nav": {
@@ -3329,15 +3635,19 @@
       "members": "Medlemmar",
       "invoices": "Fakturor",
       "broadcasts": "Utskick",
-      "renewals": "Förnyelser"
+      "renewals": "Förnyelser",
+      "audit": "Granskningslogg",
+      "directory": "Katalog"
     },
     "member": {
       "dashboard": "Instrumentpanel",
       "profile": "Profil",
       "invoices": "Fakturor",
       "broadcasts": "Utskick",
+      "timeline": "Tidslinje",
       "account": "Mitt konto",
-      "ariaLabel": "Medlemsnavigering"
+      "ariaLabel": "Medlemsnavigering",
+      "benefits": "Förmåner"
     }
   },
   "breadcrumb": {
@@ -4259,5 +4569,157 @@
         "contact": "Om problemet kvarstår, kontakta <email></email> så tar vi bort din e-post manuellt."
       }
     }
+  },
+  "timeline": {
+    "page": {
+      "title": "Aktivitetstidslinje",
+      "subtitleStaff": "Fullständig relationshistorik för denna medlem",
+      "subtitleMember": "Din aktivitetshistorik",
+      "empty": "Ingen aktivitet registrerad ännu.",
+      "emptyFiltered": "Ingen aktivitet matchar de aktuella filtren.",
+      "loadMore": "Ladda äldre aktivitet",
+      "loading": "Laddar…",
+      "loadError": "Det gick inte att ladda mer aktivitet. Försök igen.",
+      "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}"
+    },
+    "filters": {
+      "title": "Filter",
+      "source": "Källa",
+      "actor": "Aktör",
+      "from": "Från datum",
+      "to": "Till datum",
+      "all": "Alla",
+      "clear": "Rensa filter"
+    },
+    "source": {
+      "audit": "Profil / Granskning",
+      "invoice": "Faktura",
+      "payment": "Betalning",
+      "event": "Evenemang",
+      "broadcast": "E-utskick",
+      "renewal": "Förnyelse"
+    },
+    "actorKind": {
+      "staff": "Personal",
+      "member": "Medlem",
+      "system": "System"
+    },
+    "actorBy": "av {actor}",
+    "invoice": {
+      "draft": "Fakturautkast skapat",
+      "issued": "Faktura utfärdad",
+      "paid": "Faktura betald",
+      "void": "Faktura makulerad",
+      "credited": "Faktura krediterad",
+      "partially_credited": "Faktura delvis krediterad"
+    },
+    "payment": {
+      "succeeded": "Betalning mottagen",
+      "failed": "Betalning misslyckades",
+      "refunded": "Betalning återbetald",
+      "partially_refunded": "Betalning delvis återbetald",
+      "canceled": "Betalning avbruten"
+    },
+    "event": {
+      "attended": "Deltog i ett evenemang"
+    },
+    "broadcast": {
+      "sent": "E-utskick skickat"
+    },
+    "renewal": {
+      "upcoming": "Förnyelse kommande",
+      "reminded": "Förnyelsepåminnelse skickad",
+      "awaiting_payment": "Förnyelse inväntar betalning",
+      "completed": "Förnyelse slutförd",
+      "lapsed": "Medlemskap upphört",
+      "cancelled": "Förnyelse avbruten",
+      "pending_admin_reactivation": "Väntar på återaktivering",
+      "updated": "Förnyelse uppdaterad"
+    },
+    "unknownEvent": "Aktivitet"
+  },
+  "benefits": {
+    "page": {
+      "title": "Förmåner",
+      "subtitleMember": "Dina medlemsförmåner för i år",
+      "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
+      "emptyTitle": "Ingen medlemsprofil ännu"
+    },
+    "card": {
+      "title": "Förmånsanvändning · {year}",
+      "empty": "Inga kvantifierbara förmåner i din nuvarande plan.",
+      "usedOf": "{used} av {total} använda",
+      "neverUsed": "Inte använd i år ännu",
+      "lastUsed": "Senast använd {date}",
+      "activeHeading": "Inkluderade förmåner",
+      "liveNote": "Uppdateras vid laddning · innevarande år",
+      "emptyTitle": "Inga spårade förmåner"
+    },
+    "benefit": {
+      "eblast": "E-utskick",
+      "cultural_tickets": "Biljetter till kulturevenemang",
+      "action": {
+        "eblast": "Skriv",
+        "cultural_tickets": "Visa evenemang"
+      }
+    },
+    "active": {
+      "all_employee_event_discount": "Evenemangsrabatt för alla anställda",
+      "directory_listing": "Katalognotering",
+      "m2m_benefits": "Medlem-till-medlem-förmåner",
+      "business_referrals": "Affärsrekommendationer",
+      "tailor_made_services": "Skräddarsydda tjänster",
+      "partnership_package": "Partnerskapspaket"
+    },
+    "warning": {
+      "title": "Du använder inte alla dina förmåner",
+      "body": "Vid {elapsed}% av året har du använt {consumed}% av dina förmåner. Få ut mesta möjliga av ditt medlemskap.",
+      "action": "Använd en förmån"
+    }
+  },
+  "gdprExport": {
+    "readme": {
+      "title": "Export av dina uppgifter",
+      "intro": "Detta arkiv innehåller en kopia av dina personuppgifter som {tenant} har lagrat, genererat {generatedAt}. Det tillhandahålls för att stödja din rätt till dataportabilitet enligt GDPR artikel 20 och Thailands PDPA.",
+      "subjectLine": "Registrerad (medlems-id): {memberId}",
+      "filesHeading": "Vad arkivet innehåller",
+      "files": {
+        "profile": "profile.json — uppgifter om din organisations-/medlemsprofil.",
+        "contacts": "contacts.json — kontaktpersonerna kopplade till ditt medlemskap.",
+        "invoices": "invoices.json — dina fakturor (nummer, datum, belopp, status). PDF-dokumenten finns i mappen invoices/.",
+        "events": "events.json — evenemang du har deltagit i.",
+        "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
+        "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
+        "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
+      },
+      "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",
+      "privacyNote": "För din säkerhet kan detta arkiv innehålla personuppgifter. Förvara det säkert och radera det när du inte längre behöver det."
+    }
+  },
+  "dataExport": {
+    "title": "Exportera mina uppgifter",
+    "subtitle": "Ladda ner en kopia av dina personuppgifter",
+    "description": "Begär ett nedladdningsbart arkiv med din profil, kontakter, fakturor, evenemang, utskick och de aktivitetsloggshändelser som rör dig. Det kan ta några minuter att förbereda arkivet; du kan ladda ner det från denna sida när det är klart.",
+    "requestButton": "Begär export av mina uppgifter",
+    "requesting": "Begär…",
+    "requestedTitle": "Export begärd",
+    "requestedBody": "Vi förbereder din dataexport. Den här sidan visar en nedladdningslänk när den är klar (vanligtvis inom några minuter).",
+    "statusHeading": "Senaste begäranden",
+    "statusPending": "Förbereder",
+    "statusReady": "Klar att ladda ner",
+    "statusDelivered": "Nedladdad",
+    "statusExpired": "Utgången",
+    "statusFailed": "Misslyckades",
+    "download": "Ladda ner",
+    "expiresHint": "Nedladdningslänkar upphör att gälla 1 timme efter att arkivet är klart, för din säkerhet. Begär en ny export om en länk har gått ut.",
+    "empty": "Du har inte begärt någon dataexport ännu.",
+    "errorTitle": "Kunde inte begära export",
+    "errorBody": "Något gick fel när din dataexport begärdes. Försök igen.",
+    "colStatus": "Status",
+    "colRequested": "Begärd",
+    "adminHeading": "Dataexport (GDPR)",
+    "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig.",
+    "alreadyPending": "En export förbereds redan — se status nedan.",
+    "open": "Gå till dataexport"
   }
 }

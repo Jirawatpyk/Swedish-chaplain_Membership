@@ -1296,6 +1296,97 @@
 			"when": 1798531300000,
 			"tag": "0184_revoke_chamber_app_invitation_insert",
 			"breakpoints": true
+		},
+		{
+			"idx": 185,
+			"version": "7",
+			"when": 1798531400000,
+			"tag": "0185_f9_dashboard_metrics_cache",
+			"breakpoints": true
+		},
+		{
+			"idx": 186,
+			"version": "7",
+			"when": 1798531500000,
+			"tag": "0186_f9_smart_insight_dismissals",
+			"breakpoints": true
+		},
+		{
+			"idx": 187,
+			"version": "7",
+			"when": 1798531600000,
+			"tag": "0187_f9_directory_listings",
+			"breakpoints": true
+		},
+		{
+			"idx": 188,
+			"version": "7",
+			"when": 1798531700000,
+			"tag": "0188_f9_export_jobs",
+			"breakpoints": true
+		},
+		{
+			"idx": 189,
+			"version": "7",
+			"when": 1798531800000,
+			"tag": "0189_f9_member_timeline_view",
+			"breakpoints": true
+		},
+		{
+			"idx": 190,
+			"version": "7",
+			"when": 1798531900000,
+			"tag": "0190_f9_audit_indexes_and_stale_trigger",
+			"breakpoints": true
+		},
+		{
+			"idx": 191,
+			"version": "7",
+			"when": 1798532000000,
+			"tag": "0191_f9_audit_event_types",
+			"breakpoints": true
+		},
+		{
+			"idx": 192,
+			"version": "7",
+			"when": 1798532100000,
+			"tag": "0192_f9_timeline_view_audit_enrich",
+			"breakpoints": true
+		},
+		{
+			"idx": 193,
+			"version": "7",
+			"when": 1798532200000,
+			"tag": "0193_f9_member_timeline_viewed_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 194,
+			"version": "7",
+			"when": 1798532300000,
+			"tag": "0194_f9_export_jobs_requester_locale",
+			"breakpoints": true
+		},
+		{
+			"idx": 195,
+			"version": "7",
+			"when": 1798532400000,
+			"tag": "0195_member_address",
+			"breakpoints": true
+		},
+		{
+			"idx": 196,
+			"version": "7",
+			"when": 1798532500000,
+			"tag": "0196_f9_timeline_sargability_actorkind",
+			"breakpoints": true
+		},
+		{
+			"idx": 197,
+			"version": "7",
+			"when": 1798532600000,
+			"tag": "0197_f9_timeline_round2_indexes",
+			"breakpoints": true
 		}
 	]
 }

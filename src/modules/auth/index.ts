@@ -187,6 +187,36 @@ export type { EmailLocale } from './infrastructure/email/reset-password-email';
 export type { AuditEventType, AuditEvent, ActorRef } from './domain/audit-event';
 export { AUDIT_EVENT_TYPES, AUDIT_SUMMARY_MAX_LENGTH } from './domain/audit-event';
 
+// F9 activity feed (FR-003) — read-only recent-audit-events reader.
+export {
+  listRecentAuditEvents,
+  type AuditReadPort,
+  type RecentAuditEvent,
+} from './application/use-cases/list-recent-audit-events';
+export { auditReadAdapter } from './infrastructure/db/audit-read-repo';
+
+// F9 audit viewer (US2 / FR-008) — keyset-paginated, filterable audit-log
+// reader. `audit_log` is auth-owned, so the reader lives here; the insights
+// `auditQuery` use-case applies role redaction (FR-011) + emits the audit
+// trail on top of it (mirrors the activity-feed split above).
+export {
+  type AuditQueryCursor,
+  type AuditQueryReadFilters,
+  type AuditQueryReadPort,
+  type AuditQueryReadRow,
+} from './application/audit-query-read';
+export { auditQueryReadAdapter } from './infrastructure/db/audit-query-repo';
+// F9 US6 — bounded GDPR audit-subset reader (member-performed ∪ member-targeted).
+export {
+  type GdprAuditSubsetReadInput,
+  type GdprAuditSubsetReadPort,
+} from './application/gdpr-audit-subset-read';
+export { gdprAuditSubsetReadAdapter } from './infrastructure/db/gdpr-audit-subset-repo';
+export {
+  resolveActorIdentities,
+  type ActorIdentity,
+} from './infrastructure/db/actor-identity-repo';
+
 // --- Domain: branded-type constructors at trust boundaries --------------------
 
 export {

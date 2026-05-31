@@ -112,6 +112,61 @@ describe('parseBreadcrumbPath', () => {
     expect(result.at(-1)?.isCurrent).toBe(true);
   });
 
+  it('marks structural segments non-linkable on the F6 erase deep-route (subtree cascade)', () => {
+    // `/admin/events/<id>/registrations/<id>/erase` has a page.tsx only at
+    // the `erase` leaf. Both `registrations` and the UUID `registrationId`
+    // beneath it lack an index page, so they must render as non-linkable
+    // plain text — otherwise the prefetch of those crumb links 404s
+    // (the bug this guards). The leaf is the real current route.
+    const eventId = 'c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18';
+    const regId = '71cb2941-366e-4e8b-97c8-551d8d79f2b4';
+    const result = parseBreadcrumbPath({
+      pathname: `/admin/events/${eventId}/registrations/${regId}/erase`,
+      staticLabels: {
+        ...staticLabels,
+        events: 'Events',
+        erase: 'Erase personal data',
+      },
+      dynamicLabels: new Map(),
+    });
+
+    // `admin` dropped → [events, <eventId>, registrations, <regId>, erase]
+    expect(result.map((s) => s.segment)).toEqual([
+      'events',
+      eventId,
+      'registrations',
+      regId,
+      'erase',
+    ]);
+    const seg = (s: string) => result.find((r) => r.segment === s)!;
+    expect(seg('events').isLinkable).toBe(true); // real list route
+    expect(seg(eventId).isLinkable).toBe(true); // real event-detail route
+    expect(seg('registrations').isLinkable).toBe(false); // structural opener
+    expect(seg(regId).isLinkable).toBe(false); // cascaded structural child
+    expect(seg('erase').isCurrent).toBe(true); // real current route
+  });
+
+  it('cascade is dynamic-id only — a NAMED non-leaf segment under a structural opener stays linkable', () => {
+    // Forward-looking guard: a UUID beneath a structural opener cascades
+    // to non-linkable, but a NAMED segment may be a real nested route, so
+    // it must NOT be auto-downgraded — it ends the structural run and
+    // would opt into non-route status explicitly via NON_ROUTE_BY_PARENT
+    // if it ever needed it. Prevents the cascade from silently hiding a
+    // legitimately-linkable crumb as the events route tree deepens.
+    const eventId = 'c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18';
+    const regId = '71cb2941-366e-4e8b-97c8-551d8d79f2b4';
+    const result = parseBreadcrumbPath({
+      pathname: `/admin/events/${eventId}/registrations/${regId}/relink/confirm`,
+      staticLabels: { ...staticLabels, events: 'Events' },
+      dynamicLabels: new Map(),
+    });
+    const seg = (s: string) => result.find((r) => r.segment === s)!;
+    expect(seg('registrations').isLinkable).toBe(false); // structural opener
+    expect(seg(regId).isLinkable).toBe(false); // dynamic id cascades
+    expect(seg('relink').isLinkable).toBe(true); // NAMED → not auto-downgraded
+    expect(seg('confirm').isCurrent).toBe(true); // leaf
+  });
+
   it('preserves percent-encoded href while decoding label', () => {
     const dynamicLabels = new Map([['กรุงเทพ', 'Bangkok Chapter']]);
     // %E0%B8%81%E0%B8%A3%E0%B8%B8%E0%B8%87%E0%B9%80%E0%B8%97%E0%B8%9E = "กรุงเทพ"

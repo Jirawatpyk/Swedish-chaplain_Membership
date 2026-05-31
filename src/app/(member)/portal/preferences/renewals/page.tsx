@@ -14,6 +14,8 @@
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent } from '@/components/ui/card';
 import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -28,10 +30,7 @@ export default async function RenewalPreferencesPage() {
   const t = await getTranslations('portal.preferences.renewals');
 
   const membersDeps = buildMembersDeps(tenant);
-  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-    tenant,
-    user.id,
-  );
+  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, user.id);
   if (!memberLookup.ok) {
     logger.warn(
       { tenantId: tenant.slug, userId: user.id },
@@ -58,14 +57,12 @@ export default async function RenewalPreferencesPage() {
 
   return (
     <FormContainer>
-      <header>
-        <h1 className="text-2xl font-semibold">{t('title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-      </header>
-
-      <section className="rounded-lg border bg-card p-4">
-        <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
-      </section>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <Card>
+        <CardContent>
+          <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
+        </CardContent>
+      </Card>
     </FormContainer>
   );
 }

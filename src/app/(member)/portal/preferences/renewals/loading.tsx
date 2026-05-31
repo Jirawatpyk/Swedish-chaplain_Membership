@@ -9,10 +9,9 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
-import {
-  PageSkeletonShell,
-  SkeletonBlock,
-} from '@/components/shell/page-skeletons';
+import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 export default async function Loading() {
   const t = await getTranslations('portal.preferences.renewals');
@@ -20,14 +19,13 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <FormContainer>
-        <header>
-          <h1 className="text-2xl font-semibold">{t('title')}</h1>
-          <SkeletonBlock className="mt-2 h-4 w-72" />
-        </header>
-        <section className="rounded-lg border bg-card p-4">
-          <SkeletonBlock className="h-6 w-1/2" />
-          <SkeletonBlock className="mt-3 h-10 w-40" />
-        </section>
+        <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-72" />} />
+        <Card>
+          <CardContent className="flex flex-col gap-3">
+            <SkeletonBlock className="h-6 w-1/2" />
+            <SkeletonBlock className="h-10 w-40" />
+          </CardContent>
+        </Card>
       </FormContainer>
     </PageSkeletonShell>
   );

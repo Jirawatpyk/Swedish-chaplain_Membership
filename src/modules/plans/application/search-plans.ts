@@ -306,6 +306,21 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/events/import/history',
     requires: 'admin',
   },
+  // F9 — distinct staff-only surfaces (audit log + member directory) that
+  // otherwise can only be reached via the sidebar; both are read-tier (admin +
+  // read-only manager) per the F9 RBAC.
+  {
+    id: 'nav.auditLog',
+    label: 'palette.navigate.auditLog',
+    url: '/admin/audit',
+    requires: 'read',
+  },
+  {
+    id: 'nav.directory',
+    label: 'palette.navigate.directory',
+    url: '/admin/directory',
+    requires: 'read',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

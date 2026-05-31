@@ -588,13 +588,13 @@ export function AttendeeTable({
           <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead>{t('columns.attendee')}</TableHead>
-              <TableHead>{t('columns.match')}</TableHead>
-              <TableHead>{t('columns.ticket')}</TableHead>
-              <TableHead>{t('columns.quota')}</TableHead>
-              <TableHead>{t('columns.registered')}</TableHead>
+              <TableHead scope="col">{t('columns.attendee')}</TableHead>
+              <TableHead scope="col">{t('columns.match')}</TableHead>
+              <TableHead scope="col">{t('columns.ticket')}</TableHead>
+              <TableHead scope="col">{t('columns.quota')}</TableHead>
+              <TableHead scope="col">{t('columns.registered')}</TableHead>
               {showActions && (
-                <TableHead>
+                <TableHead scope="col">
                   <span className="sr-only">
                     {t('columns.actions')}
                   </span>

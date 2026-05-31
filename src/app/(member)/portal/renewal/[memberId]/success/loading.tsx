@@ -8,10 +8,9 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
-import {
-  PageSkeletonShell,
-  SkeletonBlock,
-} from '@/components/shell/page-skeletons';
+import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 export default async function Loading() {
   const t = await getTranslations('portal.renewal.success');
@@ -19,21 +18,20 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
       <DetailContainer>
-        <header>
-          <h1 className="text-2xl font-semibold">{t('title')}</h1>
-          <SkeletonBlock className="mt-2 h-4 w-80" />
-        </header>
-        <section className="rounded-lg border bg-card p-4">
-          <SkeletonBlock className="mb-3 h-5 w-40" />
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-            <SkeletonBlock className="h-4 w-32" />
-            <SkeletonBlock className="h-4 w-48" />
-            <SkeletonBlock className="h-4 w-32" />
-            <SkeletonBlock className="h-4 w-48" />
-            <SkeletonBlock className="h-4 w-32" />
-            <SkeletonBlock className="h-4 w-48" />
-          </div>
-        </section>
+        <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-80" />} />
+        <Card>
+          <CardContent className="flex flex-col gap-3">
+            <SkeletonBlock className="h-5 w-40" />
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <SkeletonBlock className="h-4 w-32" />
+              <SkeletonBlock className="h-4 w-48" />
+              <SkeletonBlock className="h-4 w-32" />
+              <SkeletonBlock className="h-4 w-48" />
+              <SkeletonBlock className="h-4 w-32" />
+              <SkeletonBlock className="h-4 w-48" />
+            </div>
+          </CardContent>
+        </Card>
       </DetailContainer>
     </PageSkeletonShell>
   );

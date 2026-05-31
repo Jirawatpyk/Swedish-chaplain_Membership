@@ -243,6 +243,10 @@ export {
   systemClock,
 } from './infrastructure/broadcasts-deps';
 
+// --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
+export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
+export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
+
 // --- Composition root factories (Phase 4 US2) ----------------------------
 export {
   makeApproveBroadcastDeps,

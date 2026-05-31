@@ -32,11 +32,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import {
-  getInvoice,
-  makeGetInvoiceDeps,
-  computeIsOverdue,
-} from '@/modules/invoicing';
+import { getInvoice, makeGetInvoiceDeps, computeIsOverdue } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
 // page. An Application-layer use-case is a Phase-10 consolidation
@@ -44,7 +40,7 @@ import {
 // via RLS, and this page reaches here only after getInvoice has
 // already validated member ownership of the invoice — any CN rows
 // against that invoice are, by construction, this member's.
- 
+
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { asInvoiceId } from '@/modules/invoicing';
 // F5 G4 — presentation-only settings read (FR-016/FR-030 render-gate).
@@ -52,14 +48,14 @@ import { asInvoiceId } from '@/modules/invoicing';
 // layer read-only loader is a Phase-9 consolidation candidate once
 // the admin-settings use-case lands. The repo does its own RLS-
 // scoped read under `runInTenant`, so this is safe tenant-wise.
- 
+
 import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo';
 // H-8 (review 2026-04-27): query audit_log for the auto-refund signal
 // to drive the member-facing refund banner. Same escape-hatch pattern
 // as tenant-payment-settings + CN repo above; the repo is RLS-scoped
 // + read-only. Application-layer use-case is a Phase-10 consolidation
 // candidate.
- 
+
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';
@@ -77,14 +73,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  Clock,
-  FileText,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle2, Clock, FileText, type LucideIcon } from 'lucide-react';
 import {
   formatDate,
   formatSatangThb,
@@ -146,10 +135,7 @@ export default async function PortalInvoiceDetailPage({
   const requestId = requestIdFromHeaders(reqHeaders);
 
   const memberDeps = buildMembersDeps(tenantCtx);
-  const memberResult = await memberDeps.memberRepo.findByLinkedUserId(
-    tenantCtx,
-    user.id,
-  );
+  const memberResult = await memberDeps.memberRepo.findByLinkedUserId(tenantCtx, user.id);
   if (!memberResult.ok) {
     // Same opacity as a missing invoice — no enumeration signal.
     notFound();
@@ -197,10 +183,7 @@ export default async function PortalInvoiceDetailPage({
   const renderStatusBadge = (status: typeof displayStatus | 'paid') => {
     const Icon = STATUS_ICON_MAP[statusIconName(status)];
     return (
-      <Badge
-        variant={statusBadgeVariant(status)}
-        className="inline-flex items-center gap-1"
-      >
+      <Badge variant={statusBadgeVariant(status)} className="inline-flex items-center gap-1">
         <Icon className="size-3.5" aria-hidden="true" />
         {tStatus(status)}
       </Badge>
@@ -299,13 +282,10 @@ export default async function PortalInvoiceDetailPage({
                 // Principle X — the proxy is correct, just
                 // documented here.
                 const isCombinedPaid =
-                  invoice.status === 'paid' &&
-                  invoice.receiptDocumentNumberRaw === null;
-                const showInvoicePdf =
-                  invoice.pdf !== null && !isCombinedPaid;
+                  invoice.status === 'paid' && invoice.receiptDocumentNumberRaw === null;
+                const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
                 const showReceiptPdf =
-                  invoice.status === 'paid' &&
-                  invoice.receiptPdfStatus === 'rendered';
+                  invoice.status === 'paid' && invoice.receiptPdfStatus === 'rendered';
                 // T166-10 — async receipt PDF gate. When the receipt
                 // is still being rendered by the cron worker, surface
                 // a polite "preparing…" affordance ALONGSIDE the
@@ -342,17 +322,14 @@ export default async function PortalInvoiceDetailPage({
                     {showReceiptPdf && (
                       <PortalReceiptDownloadButton
                         invoiceId={invoice.invoiceId}
-                        documentNumber={
-                          invoice.receiptDocumentNumberRaw ?? documentNumber
-                        }
+                        documentNumber={invoice.receiptDocumentNumberRaw ?? documentNumber}
                         label={
                           isCombinedPaid
                             ? tList('actions.downloadCombined')
                             : tList('actions.downloadReceipt')
                         }
                         ariaLabel={tList('actions.downloadReceiptAria', {
-                          number:
-                            invoice.receiptDocumentNumberRaw ?? documentNumber,
+                          number: invoice.receiptDocumentNumberRaw ?? documentNumber,
                         })}
                         className={cn(
                           buttonVariants({
@@ -386,21 +363,18 @@ export default async function PortalInvoiceDetailPage({
       />
 
       {/* G-V2 — voided-invoice state banner. Inline section (not
-        * <Alert>, not <Card>) mirrors the admin voidDetails pattern
-        * at /admin/invoices/[id]/page.tsx so member/admin/email
-        * carry the same destructive visual vocabulary. Renders above
-        * the totals block because void IS the most load-bearing
-        * fact on the page for a voided invoice — everything below
-        * is archival reference. */}
+       * <Alert>, not <Card>) mirrors the admin voidDetails pattern
+       * at /admin/invoices/[id]/page.tsx so member/admin/email
+       * carry the same destructive visual vocabulary. Renders above
+       * the totals block because void IS the most load-bearing
+       * fact on the page for a voided invoice — everything below
+       * is archival reference. */}
       {invoice.status === 'void' && invoice.voidedAt && (
         <section
           aria-labelledby="invoice-void-heading"
           className="rounded-md border border-destructive/30 bg-destructive/5 p-4"
         >
-          <h2
-            id="invoice-void-heading"
-            className="mb-3 text-sm font-medium text-destructive"
-          >
+          <h2 id="invoice-void-heading" className="mb-3 text-sm font-medium text-destructive">
             {t('void.title')}
           </h2>
           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6">
@@ -408,9 +382,7 @@ export default async function PortalInvoiceDetailPage({
             <dd>{formatDate(invoice.voidedAt, userLocale)}</dd>
             {invoice.voidReason ? (
               <>
-                <dt className="text-muted-foreground">
-                  {t('void.reasonLabel')}
-                </dt>
+                <dt className="text-muted-foreground">{t('void.reasonLabel')}</dt>
                 <dd className="whitespace-pre-wrap">{invoice.voidReason}</dd>
               </>
             ) : null}
@@ -432,19 +404,12 @@ export default async function PortalInvoiceDetailPage({
               data-testid="portal-invoice-auto-refund-notice"
               className="mt-4 rounded-md border border-border border-l-4 border-l-primary bg-card p-3"
             >
-              <h3
-                id="invoice-auto-refund-heading"
-                className="text-sm font-medium text-foreground"
-              >
+              <h3 id="invoice-auto-refund-heading" className="text-sm font-medium text-foreground">
                 {t('void.autoRefundHeading')}
               </h3>
               <div role="status" aria-live="polite">
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t('void.autoRefundBody')}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t('void.autoRefundContact')}
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('void.autoRefundBody')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('void.autoRefundContact')}</p>
                 {autoRefund.processorRefundId && (
                   <p
                     className="mt-2 font-mono text-xs text-muted-foreground"
@@ -498,9 +463,7 @@ export default async function PortalInvoiceDetailPage({
               <p className="text-caption uppercase tracking-wide text-muted-foreground">
                 {t('fields.receiptNumber')}
               </p>
-              <p className="text-body font-mono tabular-nums">
-                {invoice.receiptDocumentNumberRaw}
-              </p>
+              <p className="text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
             </div>
           )}
           <div>
@@ -516,7 +479,7 @@ export default async function PortalInvoiceDetailPage({
         <CardContent className="flex flex-col gap-4">
           <h2 className="text-h4">{t('linesHeading')}</h2>
           <div className="overflow-x-auto">
-            <Table>
+            <Table aria-label={t('linesHeading')}>
               <TableHeader>
                 <TableRow>
                   <TableHead scope="col">{t('lines.description')}</TableHead>
@@ -542,14 +505,11 @@ export default async function PortalInvoiceDetailPage({
                   // Keeps markup cleaner while WCAG 3.1.2 still holds:
                   // the *secondary* span always gets lang tagged
                   // because its language differs from the root.
-                  const primaryLangAttr =
-                    primaryLang === userLocale ? undefined : primaryLang;
+                  const primaryLangAttr = primaryLang === userLocale ? undefined : primaryLang;
                   const secondaryLangAttr =
                     secondaryLang === userLocale ? undefined : secondaryLang;
-                  const primary =
-                    userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
-                  const secondary =
-                    userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
+                  const primary = userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
+                  const secondary = userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
                   return (
                     <TableRow key={line.lineId}>
                       <TableCell className="align-top">
@@ -560,10 +520,7 @@ export default async function PortalInvoiceDetailPage({
                             demoting the other. If the two strings
                             are identical (common for plan-year items)
                             collapse to a single row. */}
-                        <span
-                          lang={primaryLangAttr}
-                          className="block text-body font-medium"
-                        >
+                        <span lang={primaryLangAttr} className="block text-body font-medium">
                           {primary}
                         </span>
                         {!sameText ? (
@@ -606,12 +563,8 @@ export default async function PortalInvoiceDetailPage({
             <dt className="text-caption uppercase tracking-wide text-muted-foreground">
               {t('totals.vat')}
             </dt>
-            <dd className="tabular-nums sm:justify-self-end">
-              {formatSatangThb(vat, userLocale)}
-            </dd>
-            <dt className="text-body font-medium uppercase tracking-wide">
-              {t('totals.total')}
-            </dt>
+            <dd className="tabular-nums sm:justify-self-end">{formatSatangThb(vat, userLocale)}</dd>
+            <dt className="text-body font-medium uppercase tracking-wide">{t('totals.total')}</dt>
             <dd className="text-body font-medium tabular-nums sm:justify-self-end">
               {formatSatangThb(total, userLocale)}
             </dd>
@@ -620,17 +573,17 @@ export default async function PortalInvoiceDetailPage({
       </Card>
 
       {/* F5 G4 T081 — online payment entry point. Only surfaced for
-        * 'issued' invoices; other states (paid / void / credited)
-        * render nothing here since there is nothing for the member
-        * to pay.
-        *
-        * R5 round-7 (2026-04-26): wrapped in <OptimisticPaidOverlay>
-        * so the Pay-now button hides INSTANTLY once PaySheet
-        * dispatches the optimistic-paid event — without waiting for
-        * the server-side invoice.status flip. Prevents the
-        * "ConfirmationPanel up + Pay-now button STILL rendered"
-        * UX glitch.
-        */}
+       * 'issued' invoices; other states (paid / void / credited)
+       * render nothing here since there is nothing for the member
+       * to pay.
+       *
+       * R5 round-7 (2026-04-26): wrapped in <OptimisticPaidOverlay>
+       * so the Pay-now button hides INSTANTLY once PaySheet
+       * dispatches the optimistic-paid event — without waiting for
+       * the server-side invoice.status flip. Prevents the
+       * "ConfirmationPanel up + Pay-now button STILL rendered"
+       * UX glitch.
+       */}
       {/*
        * R7 (2026-04-26): NO <OptimisticPaidOverlay> wrapper around
        * <PayNowButton> — wrapping unmounts the Radix Sheet portal
@@ -656,10 +609,7 @@ export default async function PortalInvoiceDetailPage({
             tenantPublishableKey={paymentSettings.processorPublishableKey}
           />
         ) : (
-          <OnlinePaymentDisabledCard
-            invoiceNumber={documentNumber}
-            tenantContactEmail={null}
-          />
+          <OnlinePaymentDisabledCard invoiceNumber={documentNumber} tenantContactEmail={null} />
         )
       ) : null}
 
@@ -667,9 +617,7 @@ export default async function PortalInvoiceDetailPage({
         <Card>
           <CardContent className="flex flex-col gap-4">
             <h2 className="text-h4">{t('creditNotes.heading')}</h2>
-            <p className="text-caption text-muted-foreground">
-              {t('creditNotes.description')}
-            </p>
+            <p className="text-caption text-muted-foreground">{t('creditNotes.description')}</p>
             <ul role="list" className="flex flex-col gap-2">
               {portalCreditNotes.map((pcn) => (
                 <li
@@ -677,12 +625,10 @@ export default async function PortalInvoiceDetailPage({
                   className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3"
                 >
                   <div className="flex flex-col gap-0.5">
-                    <span className="font-mono text-sm font-medium">
-                      {pcn.documentNumber.raw}
-                    </span>
+                    <span className="font-mono text-sm font-medium">{pcn.documentNumber.raw}</span>
                     <span className="text-caption text-muted-foreground tabular-nums">
                       {formatDate(pcn.issueDate, userLocale)} ·{' '}
-                      {formatSatangThb(pcn.total.satang, userLocale)} THB
+                      {formatSatangThb(pcn.total.satang, userLocale)}
                     </span>
                   </div>
                   <Link

@@ -24,6 +24,7 @@ import {
   OverrideReasonDialog,
   type OverrideReasonResult,
 } from './override-reason-dialog';
+import { formatOverrideWarning } from './override-warning-message';
 import { SoftDuplicateDialog } from './soft-duplicate-dialog';
 
 type Props = {
@@ -55,6 +56,11 @@ function toPayload(
     tax_id: values.tax_id?.trim() || null,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
+    address_line1: values.address_line1?.trim() || null,
+    address_line2: values.address_line2?.trim() || null,
+    city: values.city?.trim() || null,
+    province: values.province?.trim() || null,
+    postal_code: values.postal_code?.trim() || null,
     founded_year:
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
@@ -82,6 +88,7 @@ function toPayload(
 
 export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
   const t = useTranslations('admin.members.create');
+  const tOverride = useTranslations('admin.members.overrideReason');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [softDup, setSoftDup] = useState<SoftDupState | null>(null);
@@ -126,9 +133,9 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
       return;
     }
     if (res.status === 422) {
-      const details = body.error?.details ?? {};
-      const msg = JSON.stringify(details);
-      setOverride({ message: msg });
+      setOverride({
+        message: formatOverrideWarning(body.error?.details, tOverride),
+      });
       return;
     }
     if (res.status === 403) {

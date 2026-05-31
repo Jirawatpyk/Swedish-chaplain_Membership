@@ -658,6 +658,63 @@ for the full operational runbook.
 
 ---
 
+## F9 — insights (dashboard snapshot + export worker)
+
+Two cron coordinators keep the F9 admin dashboard fresh and process async
+directory/GDPR export artefacts. Both: `POST`, Bearer `CRON_SECRET`
+(constant-time), Node runtime, **retry OFF** (idempotent), and return **200**
+when `FEATURE_F9_DASHBOARD=false` (`{ skipped: true }`) so a dark launch never
+retry-storms.
+
+| Schedule | Endpoint | Purpose |
+|----------|----------|---------|
+| `*/5 * * * *` | `/api/cron/insights/snapshot-refresh-coordinator` | recompute `dashboard_metrics_cache` (FR-005 freshness; single-tenant MVP) |
+| `*/5 * * * *` | `/api/cron/insights/process-export-jobs` | claim+build E-Book/JSON (US5) / GDPR (US6) jobs → private Blob; reclaim stuck `processing` (>10 min); TTL-sweep `ready\|delivered` past `expires_at` (delete Blob → `expired`) |
+
+### Setup steps (cron-job.org, one-time)
+
+1. Two jobs, schedule `*/5 * * * *`, method `POST`, header
+   `Authorization: Bearer $CRON_SECRET`, retries **0**, timeout 60 s.
+2. Verify each returns `{ skipped: true }` while `FEATURE_F9_DASHBOARD=false`,
+   then `{ refreshed: 1 }` / `{ processed, reclaimed, expired }` once flipped on.
+
+### ⚠️ Ship-day operator gate — private Blob store (T101a)
+
+The export worker + download proxy store E-Book / GDPR artefacts via
+`put({ access: 'private' })`. A Vercel Blob store is **public XOR private**
+(chosen at store creation — the dashboard offers exactly one access mode). The
+existing `BLOB_READ_WRITE_TOKEN` store is **public** — it backs F4 invoice PDFs
+**and** F9 directory logos, all uploaded with `access:'public'` — so private
+export puts on it are rejected (`"Cannot use private access on a public store"`).
+A **second, dedicated private store** is therefore required. Before flipping
+`FEATURE_F9_DASHBOARD` on in any environment that exercises exports:
+
+1. **Vercel dashboard → Storage → Create** a new Blob store, choosing
+   **Private** access. (Or CLI: `vercel blob create-store <name> --access private`.)
+2. Copy its read/write token into **`BLOB_PRIVATE_READ_WRITE_TOKEN`** (Production
+   + Preview). Leave `BLOB_READ_WRITE_TOKEN` pointed at the existing public store
+   — F4 PDFs + F9 logos must stay public (they appear in published outputs).
+3. Set `EXPORT_DOWNLOAD_TOKEN_SECRET` (≥32 bytes; distinct from auth/unsubscribe).
+4. Smoke-test: generate a directory JSON on `/admin/directory` → wait for the
+   `process-export-jobs` tick → download via the "Download" link (the staff
+   prepare-and-redirect route mints a single-use token → private proxy streams).
+
+**Code wiring (done — commit on `015-admin-dashboard`):** `private-blob-adapter.ts`
+reads `env.blob.privateReadWriteToken`, which is `BLOB_PRIVATE_READ_WRITE_TOKEN`
+falling back to `BLOB_READ_WRITE_TOKEN` when unset — so dev/test/dark-launch boot
+without a private store (exports use an in-memory stub in tests and are
+flag-gated in prod). The only ship-day action is **provisioning the private store
++ setting the two env vars**; no further code change. F4 invoice PDFs + F9 logos
+are untouched (still on the public store).
+
+### Handler modules
+
+`src/app/api/cron/insights/snapshot-refresh-coordinator/route.ts` ·
+`src/app/api/cron/insights/process-export-jobs/route.ts` ·
+download proxy `src/app/api/internal/exports/[jobId]/download/route.ts`.
+
+---
+
 ## Owner
 
 Platform on-call (default: maintainer). Per-feature ownership escalates

@@ -1,14 +1,13 @@
 /**
- * T132 — /admin/members/[memberId]/timeline (US6).
+ * F9 US3 — /admin/members/[memberId]/timeline.
  *
- * Server component — queries the first page of audit events for this
- * member, redacts payload for member-role users (via the use case),
- * then hands the initial payload to a Client wrapper that provides
- * the "Load more" button.
+ * Server component — queries the first page of the unified multi-source
+ * timeline (`member_timeline_v`) for this member, applying the URL filters
+ * (source / actorKind / date range, FR-015), redacts payload for member-role
+ * users (via the use case), then hands the initial payload to the virtualized
+ * client stream + the filter bar.
  *
- * Follows FR-020 (paginated, newest-first), FR-023 (reads audit_log),
- * FR-024 (WCAG 2.1 AA — keyboard reachable, aria-live, reduced motion),
- * FR-037 (unique page title via generateMetadata).
+ * FR-016 (keyset pagination), FR-017 (role redaction), FR-037 (page title).
  */
 
 import type { Metadata } from 'next';
@@ -20,8 +19,13 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getMember, timelineList } from '@/modules/members';
-import type { MemberId } from '@/modules/members';
+import { env } from '@/lib/env';
+import { isYmd } from '@/lib/tenant-day-range';
+import { asTimelineSource, asTimelineActorKind } from '@/lib/timeline-shared';
+import { buildTimelineFilterInput, timelineFilterKey } from '@/lib/timeline-filter-input';
+import { toTimelineItemProps } from '@/lib/timeline-presenter';
+import { getMember, timelineList, type MemberId } from '@/modules/members';
+import { recordStaffTimelineView } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   Card,
@@ -32,29 +36,31 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { TimelineClient } from '@/components/members/timeline-client';
+import { TimelineFilters } from '@/components/members/timeline-filters';
+import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-interface PageProps {
-  readonly params: Promise<{ memberId: string }>;
+interface SearchParams {
+  readonly source?: string;
+  readonly actorKind?: string;
+  readonly from?: string;
+  readonly to?: string;
 }
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
-  const { memberId } = await params;
+interface PageProps {
+  readonly params: Promise<{ memberId: string }>;
+  readonly searchParams: Promise<SearchParams>;
+}
+
+export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.members.timeline');
-  // Root layout template appends "· SweCham Membership". `pageTitle`
-  // interpolation needs companyName (DB lookup) — the page itself
-  // does the lookup downstream. Use the generic `title`.
-  if (!UUID_RE.test(memberId)) return { title: t('title') };
   return { title: t('title') };
 }
 
-export default async function MemberTimelinePage({ params }: PageProps) {
+export default async function MemberTimelinePage({ params, searchParams }: PageProps) {
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
@@ -64,9 +70,9 @@ export default async function MemberTimelinePage({ params }: PageProps) {
   const requestId = requestIdFromHeaders(h);
 
   const t = await getTranslations('admin.members.timeline');
+  const tPage = await getTranslations('timeline.page');
   const tDetail = await getTranslations('admin.members.detail');
 
-  // 1. Fetch member metadata so we can show the company name in the header
   const deps = buildMembersDeps(tenant);
   const memberResult = await getMember(
     memberId as MemberId,
@@ -103,35 +109,59 @@ export default async function MemberTimelinePage({ params }: PageProps) {
 
   const { member } = memberResult.value;
 
-  // 2. Load first page of timeline events
+  // Resolve URL filters → use-case input (UTC bounds via tenant tz).
+  const sp = await searchParams;
+  const tz = env.tenant.timezone;
+  const filterArgs = {
+    source: asTimelineSource(sp.source),
+    actorKind: asTimelineActorKind(sp.actorKind),
+    fromYmd: sp.from && isYmd(sp.from) ? sp.from : undefined,
+    toYmd: sp.to && isYmd(sp.to) ? sp.to : undefined,
+  };
+  const hasFilter = Boolean(
+    filterArgs.source || filterArgs.actorKind || filterArgs.fromYmd || filterArgs.toYmd,
+  );
+
   const timelineResult = await timelineList(
-    { memberId, limit: 50 },
+    { memberId, limit: 50, ...buildTimelineFilterInput(filterArgs, tz) },
     {
       actorUserId: session.user.id,
       actorRole: session.user.role as 'admin' | 'manager' | 'member',
       requestId,
     },
     tenant,
-    {
-      memberRepo: deps.memberRepo,
-      timeline: deps.timeline,
-    },
+    { memberRepo: deps.memberRepo, timeline: deps.timeline },
   );
 
   const initialEvents: TimelineItemProps[] = timelineResult.ok
-    ? timelineResult.value.events.map((e) => ({
-        id: e.id,
-        timestamp: e.timestamp.toISOString(),
-        eventType: e.eventType,
-        actorUserId: e.actorUserId,
-        actorDisplayName: e.actorDisplayName,
-        payload: e.payload,
-      }))
+    ? timelineResult.value.events.map(toTimelineItemProps)
     : [];
-  const initialCursor = timelineResult.ok
-    ? timelineResult.value.nextCursor
-    : null;
+  const initialCursor = timelineResult.ok ? timelineResult.value.nextCursor : null;
   const totalEvents = timelineResult.ok ? timelineResult.value.total : 0;
+
+  // FR-036 PII-read trail (R002): a staff member viewing another member's full
+  // timeline is a third-party PII access — audit it. requireSession('staff')
+  // admits only admin + manager; validate rather than cast. Best-effort.
+  //
+  // Scope decision (staff-review R2): ONE emit per full-timeline-page view —
+  // the deliberate "show me everything" access. Consistent with
+  // member_benefit_viewed's one-emit-per-page model: the load-more API
+  // (/api/members/[id]/timeline) and the 3-row preview snippet on the member
+  // detail page do NOT re-emit (avoids audit-log inflation; the page-view event
+  // already establishes who accessed whose timeline).
+  if (session.user.role === 'admin' || session.user.role === 'manager') {
+    await recordStaffTimelineView({
+      tenantId: tenant.slug,
+      requestId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+      subjectMemberId: member.memberId,
+      filterApplied: hasFilter,
+    });
+  }
+
+  // Remount the stream on filter change so paginated state resets cleanly.
+  const filterKey = timelineFilterKey(filterArgs);
 
   return (
     <DetailContainer>
@@ -158,11 +188,15 @@ export default async function MemberTimelinePage({ params }: PageProps) {
             </span>
           )}
         </CardHeader>
-        <CardContent>
-          <TimelineClient
-            memberId={member.memberId}
+        <CardContent className="flex flex-col gap-4">
+          <TimelineFilters />
+          <TimelineStream
+            key={filterKey}
+            fetchPath={`/api/members/${member.memberId}/timeline`}
             initialEvents={initialEvents}
             initialCursor={initialCursor}
+            emptyLabel={hasFilter ? tPage('emptyFiltered') : tPage('empty')}
+            listLabel={t('title')}
           />
         </CardContent>
       </Card>

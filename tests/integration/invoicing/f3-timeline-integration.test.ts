@@ -203,6 +203,9 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       const row = r.value.events.find((e) => e.eventType === t);
       expect(row, `missing row for '${t}'`).toBeDefined();
       if (!row) continue;
+      // F4 invoice timeline events are audit_log rows → the audit variant of
+      // the discriminated union carries actorUserId (review-run I5).
+      if (row.source !== 'audit') throw new Error(`expected '${t}' to be an audit-source row`);
       expect(row.actorUserId).toBe(user.userId);
       const copy = resolveInvoiceEventCopy(row.eventType, row.payload);
       expect(copy, `copy resolver returned null for '${t}'`).not.toBeNull();
