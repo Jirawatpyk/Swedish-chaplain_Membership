@@ -1,0 +1,122 @@
+# Member Import Spec — SweCham / TSCC first-load
+
+**Status**: DRAFT (ready to build) · **Stage**: 3 of `docs/go-live-readiness.md`
+**Scope**: One-time bulk load of ~131 member companies + ~164 contacts from the
+operator's Excel workbook into the live tenant. **PII — the workbook is
+gitignored and never committed; the importer runs only on the operator's machine.**
+
+> Build can start now against this spec. The **final column-map is confirmed
+> against the real Excel** (which arrives later) at build/run time — until then,
+> mapping uses the documented 2026 Membership Package structure
+> (`docs/membership-benefits-analysis.md`).
+
+---
+
+## 1. Target schema (verified from F3)
+
+**`members`** (one row per company; PK `(tenant_id, member_id)`):
+`company_name`* · `legal_entity_type` · `country`* (ISO-3166-1 alpha-2) ·
+`tax_id` · `website` · `description` · `founded_year` · `turnover_thb` ·
+`plan_id`* · `plan_year`* · `registration_date`* · `registration_fee_paid` ·
+`city` · `province` · `postal_code` · `status` (default `active`) · `notes` ·
+`preferred_locale`. (* = NOT NULL)
+
+**`contacts`** (one row per person; PK `(tenant_id, contact_id)`; FK `member_id`):
+`first_name`* · `last_name`* · `email`* · `phone` · `role_title` ·
+`preferred_language` (alpha-2) · `is_primary` (exactly one per member) ·
+`date_of_birth`.
+
+---
+
+## 2. Source → target mapping (confirm vs real Excel)
+
+| Excel column (expected) | Target | Transform / validation |
+|-------------------------|--------|------------------------|
+| Company name | `members.company_name` | trim; required |
+| Country | `members.country` | map name → ISO alpha-2 via `i18n-iso-countries`; default `TH`? (confirm) |
+| Tax ID | `members.tax_id` | 13-digit Thai TIN check where `country=TH` |
+| Membership tier | `members.plan_id` | **tier-name → plan lookup** (§ 4) |
+| Turnover | `members.turnover_thb` | parse number; null ok |
+| City / Province / Postal | `members.city/province/postal_code` | trim |
+| Registration date | `members.registration_date` | parse → ISO date (UTC); **reject Buddhist Era** (off-by-543 guard) |
+| Contact first/last | `contacts.first_name/last_name` | split if single "full name" column |
+| Contact email | `contacts.email` | RFC validation (`email-validator`); lowercase; **dedupe key** |
+| Contact phone | `contacts.phone` | normalize → E.164 (reuse F3 phone rule module) |
+| Role / title | `contacts.role_title` | trim |
+| Primary contact? | `contacts.is_primary` | exactly one true per member; if none, pick first |
+| Member locale (company-level, if present) | `members.preferred_locale` | en/th/sv; null ok |
+| Contact preferred language | `contacts.preferred_language` | en/th/sv; defaults `'en'` if absent |
+
+---
+
+## 3. Validation pass (runs before any write)
+
+Fail-loud, per-row, accumulating a report:
+1. Required fields present (`company_name`, ≥1 contact with valid `email`).
+2. `email` valid + unique across the whole import (and not already in DB).
+3. `country` resolves to a real ISO alpha-2.
+4. `plan_id` resolves to a **seeded** plan for `plan_year` (§ 4) — unknown tier = error.
+5. `registration_date` parses as Gregorian; **flag any year > 2400** (BE leak).
+6. `phone` normalizes to E.164 or is empty (never store malformed).
+7. Exactly one primary contact per member.
+8. `tax_id` format check for TH companies.
+
+---
+
+## 4. Tier → plan resolution
+
+Tiers (from `membership-benefits-analysis.md`):
+- **Corporate**: Premium · Large · Regular · Start-up · Individual · Thai Alumni
+- **Partnership**: Diamond · Platinum · Gold (each *includes* Premium Corporate)
+
+Resolution: load seeded plans for the tenant + `plan_year` (`scripts/seed-swecham-2026-plans.ts`
+output), build a `{normalized-tier-name → plan_id}` map. Importer **fails** on any
+tier it can't map — no silent default. Map confirmed against real Excel labels
+(the Excel tier names historically differ from the PDF — see analysis § 1).
+
+---
+
+## 5. Execution model
+
+1. **Dry-run (default)** — validate + print a report (`would create N members / M contacts`, all errors/warnings, tier histogram). **Zero writes.**
+2. **Real run (`--commit`)** — only after a clean dry-run.
+   - One transaction via `runInTenant(ctx, async (tx) => …)` — **all queries use `tx`** (RLS gotcha, CLAUDE.md).
+   - Idempotent: dedupe by `lower(email)` **filtered `AND removed_at IS NULL`** (matches the partial unique index `contacts_tenant_email_uniq ON contacts(tenant_id, lower(email)) WHERE removed_at IS NULL`). A soft-deleted contact with the same email is invisible to that index — the importer must decide: skip-with-warning or reactivate (operator call). Re-run skips existing active contacts (report skipped).
+   - Emits `member_created` + `contact_added` audit events.
+   - Mid-batch failure → whole tx rolls back (atomic).
+3. **Pre-req order** (per `go-live-readiness.md § 6b`): tenant → plans → bootstrap admin → **PITR snapshot** → dry-run → commit.
+
+---
+
+## 6. Onboarding ≠ import (important)
+
+The importer creates **records only**. Member portal *access* is a separate
+F3 invitation step. After import: decide whether to send ~131 invitations at
+launch or stagger — **throttle to respect Resend rate limits** (do not fire 131
+at once). Invitation sending is out of scope for this importer (separate batch tool/flow).
+
+---
+
+## 7. CLI shape (proposed)
+
+> **Pre-req (build blocker)**: `package.json` has **no Excel parser**. Add one
+> before writing the importer — `pnpm add -D exceljs` (streaming, good for size)
+> or `xlsx` (lighter). Both MIT.
+
+```bash
+# dry-run (safe, default)
+pnpm tsx scripts/import-members.ts --file ./swecham-members-2026.xlsx --plan-year 2026
+
+# real import (after clean dry-run + PITR snapshot)
+pnpm tsx scripts/import-members.ts --file ./swecham-members-2026.xlsx --plan-year 2026 --commit
+```
+
+Outputs a timestamped report file (no PII in logs — counts + row indices only).
+
+---
+
+## 8. Test plan (TDD per Principle II)
+
+- Unit: mapping + validation pure functions (BE-date rejection, E.164, tier-map miss, dedupe).
+- Integration (live Neon): dry-run produces zero writes; `--commit` is idempotent on re-run; RLS isolation (rows land under correct `tenant_id`); rollback on injected mid-batch error.
+- Fixture: a small anonymized sample workbook (NOT real PII).
