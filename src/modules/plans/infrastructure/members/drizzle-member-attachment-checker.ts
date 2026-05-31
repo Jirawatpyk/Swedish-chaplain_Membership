@@ -9,7 +9,7 @@
  *   `countActiveMembersOnPlan(ctx, planId, planYear)`
  *
  * No deep import into F3 internals; the F3 free function lives at
- * `src/modules/members/application/use-cases/count-active-members-on-plan.ts`
+ * `src/modules/members/infrastructure/db/count-active-members-on-plan.ts`
  * and is re-exported from `@/modules/members`.
  */
 import { countActiveMembersOnPlan } from '@/modules/members';

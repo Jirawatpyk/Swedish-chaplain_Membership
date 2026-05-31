@@ -18,14 +18,17 @@
  * still on this plan" for FR-010 purposes; only `archived` rows are
  * excluded (they're tombstoned).
  *
- * Pure F3 Application — reads only its own schema. No deep import
- * from F2 (the F2 plan_id / plan_year are passed as plain
- * string + number; branding stays in each module's Domain).
+ * INFRASTRUCTURE layer: this is a raw Drizzle query (imports `drizzle-orm`
+ * operators + the `members` schema table + `runInTenant`). It lived under
+ * `application/use-cases/` until the go-live audit (S1-P0-3) flagged the
+ * Principle III violation — application MUST NOT import an ORM or schema
+ * VALUES. It is genuinely an Infrastructure query (no domain logic), so it
+ * moved here and is re-exported through the members barrel unchanged.
  */
 import { and, count, eq, or } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
-import { members } from '../../infrastructure/db/schema-members';
+import { members } from './schema-members';
 
 /**
  * Count active + inactive F3 members attached to (tenant, planId, planYear).
@@ -51,10 +54,7 @@ export async function countActiveMembersOnPlan(
         and(
           eq(members.planId, planId),
           eq(members.planYear, planYear),
-          or(
-            eq(members.status, 'active'),
-            eq(members.status, 'inactive'),
-          ),
+          or(eq(members.status, 'active'), eq(members.status, 'inactive')),
         ),
       ),
   );

@@ -168,7 +168,7 @@ export {
 // F2's `drizzle-member-attachment-checker.ts` infrastructure adapter
 // calls this free function via the public barrel so the soft-delete
 // FR-010 guard counts real members instead of always returning 0.
-export { countActiveMembersOnPlan } from './application/use-cases/count-active-members-on-plan';
+export { countActiveMembersOnPlan } from './infrastructure/db/count-active-members-on-plan';
 
 // --- US1 invite-portal use case ---------------------------------------------
 

@@ -77,6 +77,92 @@ const applicationForbiddenImports = [
 ];
 
 /**
+ * Shared application-layer `no-restricted-imports` payload (paths + patterns).
+ *
+ * Extracted to a single source of truth so module-specific application blocks
+ * (members, invoicing) can COMPOSE it instead of SHADOWING it. In ESLint flat
+ * config, a later config object that matches the same files and re-sets
+ * `no-restricted-imports` REPLACES the earlier rule entirely — it does not
+ * merge. The members/invoicing cross-module-port blocks below therefore MUST
+ * spread these base paths+patterns in, or the drizzle-orm + infrastructure-VALUE
+ * bans silently vanish for those two modules (go-live audit S1-P0-2).
+ */
+const APPLICATION_PATH_MESSAGE =
+  "Application layer must not depend on Next.js, React, or a specific ORM. " +
+  "Use Infrastructure adapters via dependency injection.";
+const applicationForbiddenPaths = applicationForbiddenImports.map((name) => ({
+  name,
+  message: APPLICATION_PATH_MESSAGE,
+}));
+const applicationForbiddenPatterns = [
+  {
+    // F5 subpath guard — `stripe/types`, `stripe/resources/*`, and
+    // `@stripe/*/internal` deep imports slip past the bare-name `paths:`
+    // list. F7 — same for `@tiptap/core`, `@tiptap/extension-*`, etc.
+    group: ["stripe/*", "@stripe/*", "@tiptap/*"],
+    message:
+      "Application layer must not import Stripe or Tiptap SDK subpaths. " +
+      "Go through the Infrastructure port (StripeClient / " +
+      "HtmlSanitizerPort / BroadcastsGatewayPort) — " +
+      "Constitution Principle III + PCI DSS Principle IV (F5) / OWASP A06 (F7).",
+  },
+  {
+    // Path C hardening — B1-class regression guard. Blocks Application files
+    // importing Drizzle schema VALUES directly from infrastructure paths.
+    // `allowTypeImports: true` — `import type { ... }` lines erase at compile
+    // time and create no runtime coupling (legitimate DI port-interface wiring).
+    group: [
+      "@/modules/*/infrastructure/**",
+      "./*/infrastructure/**",
+      "./infrastructure/**",
+      "../infrastructure/**",
+      "../../infrastructure/**",
+      "../../../infrastructure/**",
+    ],
+    allowTypeImports: true,
+    message:
+      "Application layer must NOT import Infrastructure VALUES directly. " +
+      "Define a Port interface in application/ports/ and inject " +
+      "the Infrastructure adapter via the composition root " +
+      "(src/lib/auth-deps.ts, src/modules/<name>/<name>-deps.ts). " +
+      "Type-only imports (`import type { ... }`) are allowed for DI wiring. " +
+      "Constitution Principle III (NON-NEGOTIABLE).",
+  },
+];
+
+const DOMAIN_PATH_MESSAGE =
+  "Domain layer must be framework-free (Constitution Principle III). " +
+  "Move framework-dependent code to application/ or infrastructure/.";
+const domainForbiddenPaths = domainForbiddenImports.map((name) => ({
+  name,
+  message: DOMAIN_PATH_MESSAGE,
+}));
+const domainForbiddenPatterns = [
+  {
+    group: ["next/*", "drizzle-orm/*", "stripe/*", "@stripe/*", "@tiptap/*"],
+    message: "Domain layer must not import framework subpaths.",
+  },
+];
+
+/**
+ * F3 Plan E2 — members module must not depend on auth Domain types
+ * (`linked_user_id` is a branded opaque `UserId` in members/domain/). Shared so
+ * the per-layer members blocks can COMPOSE it without the `members/**` block
+ * shadowing the layer-specific drizzle/framework bans (go-live audit S1-P0-2).
+ */
+const MEMBERS_AUTH_DOMAIN_PATTERN = {
+  group: [
+    "@/modules/auth/domain/**",
+    "./modules/auth/domain/**",
+    "../modules/auth/domain/**",
+    "../../modules/auth/domain/**",
+  ],
+  message:
+    "F3 Plan E2 — members module must not import `@/modules/auth/domain/**`. " +
+    "Model `linked_user_id` as a branded opaque `UserId` in members/domain/ instead.",
+};
+
+/**
  * FR-003 — page-root ad-hoc utility-class blocker.
  *
  * Defined once at module scope so all three export-shape selectors
@@ -141,62 +227,8 @@ const eslintConfig = defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          paths: applicationForbiddenImports.map((name) => ({
-            name,
-            message:
-              "Application layer must not depend on Next.js, React, or a specific ORM. " +
-              "Use Infrastructure adapters via dependency injection.",
-          })),
-          patterns: [
-            {
-              // F5 subpath guard — `stripe/types`, `stripe/resources/*`, and
-              // `@stripe/*/internal` deep imports slip past the bare-name
-              // `paths:` list. Application MUST mock/inject via Infrastructure
-              // port; ANY Stripe subpath coupling breaks that boundary.
-              // F7 — same rule applies to `@tiptap/core`, `@tiptap/extension-*`,
-              // and other Tiptap subpaths. Editor concerns belong in
-              // Presentation; sanitisation in Infrastructure (DOMPurify port).
-              group: ["stripe/*", "@stripe/*", "@tiptap/*"],
-              message:
-                "Application layer must not import Stripe or Tiptap SDK subpaths. " +
-                "Go through the Infrastructure port (StripeClient / " +
-                "HtmlSanitizerPort / BroadcastsGatewayPort) — " +
-                "Constitution Principle III + PCI DSS Principle IV (F5) / OWASP A06 (F7).",
-            },
-            {
-              // Path C hardening — B1-class regression guard.
-              // Round 3 staff review found 4 Application files importing
-              // Drizzle schema VALUES directly from
-              // `@/modules/*/infrastructure/**`. The package-name rule
-              // above (drizzle-orm, next, …) did not cover project-local
-              // infrastructure paths.
-              //
-              // `allowTypeImports: true` — `import type { ... }` lines
-              // erase at compile time and create no runtime coupling.
-              // F1 use cases (sign-in.ts, reset-password.ts, etc.)
-              // legitimately import port INTERFACES via `import type`
-              // for DI wiring; blocking those would force duplicate
-              // type definitions. What B1 caught was VALUE imports
-              // (`import { auditLog } ...` → `tx.insert(auditLog)`),
-              // which this rule still blocks.
-              group: [
-                "@/modules/*/infrastructure/**",
-                "./*/infrastructure/**",
-                "./infrastructure/**",
-                "../infrastructure/**",
-                "../../infrastructure/**",
-                "../../../infrastructure/**",
-              ],
-              allowTypeImports: true,
-              message:
-                "Application layer must NOT import Infrastructure VALUES directly. " +
-                "Define a Port interface in application/ports/ and inject " +
-                "the Infrastructure adapter via the composition root " +
-                "(src/lib/auth-deps.ts, src/modules/<name>/<name>-deps.ts). " +
-                "Type-only imports (`import type { ... }`) are allowed for DI wiring. " +
-                "Constitution Principle III (NON-NEGOTIABLE).",
-            },
-          ],
+          paths: applicationForbiddenPaths,
+          patterns: applicationForbiddenPatterns,
         },
       ],
     },
@@ -432,10 +464,16 @@ const eslintConfig = defineConfig([
     // (T019) mirrors this rule in source-code scanning.
     files: ["src/modules/invoicing/application/**/*.ts", "src/modules/invoicing/application/**/*.tsx"],
     rules: {
+      // NOTE: flat config REPLACES (not merges) `no-restricted-imports` when a
+      // later block matches the same files. This block matches invoicing/
+      // application/** which the generic application block above also matches,
+      // so it MUST re-include the base paths+patterns or they vanish (S1-P0-2).
       "no-restricted-imports": [
         "error",
         {
+          paths: applicationForbiddenPaths,
           patterns: [
+            ...applicationForbiddenPatterns,
             {
               group: [
                 "@/modules/members/application/ports/**",
@@ -454,10 +492,14 @@ const eslintConfig = defineConfig([
   {
     files: ["src/modules/members/application/**/*.ts", "src/modules/members/application/**/*.tsx"],
     rules: {
+      // Re-includes the base application paths+patterns (see note above) so the
+      // drizzle-orm + infrastructure-VALUE bans stay live for members/application.
       "no-restricted-imports": [
         "error",
         {
+          paths: applicationForbiddenPaths,
           patterns: [
+            ...applicationForbiddenPatterns,
             {
               group: [
                 "@/modules/invoicing/application/ports/**",
@@ -468,6 +510,9 @@ const eslintConfig = defineConfig([
                 "F4 — members/application MUST NOT import invoicing/application/ports. " +
                 "Use the invoicing public barrel (`@/modules/invoicing`) for cross-module reads.",
             },
+            // F3 auth-domain ban folded in (the `members/**` block below now
+            // ignores application/ so it no longer shadows this rule).
+            MEMBERS_AUTH_DOMAIN_PATTERN,
           ],
         },
       ],
@@ -508,27 +553,35 @@ const eslintConfig = defineConfig([
     // F3 Plan E2 — members module must not depend on auth Domain types.
     // `linked_user_id` is modelled as a branded opaque `UserId` inside
     // members/domain/. Importing `@/modules/auth/domain/**` from anywhere
-    // under members/** couples Member Domain to Auth Domain and defeats
-    // the opaque-type boundary. The cross-module barrel rule above
-    // ignores `src/modules/members/**`, so this dedicated rule is needed.
+    // under members/** couples Member Domain to Auth Domain.
+    //
+    // S1-P0-2 fix: this block previously matched ALL of `members/**`, which —
+    // because it comes after the generic domain + application blocks and flat
+    // config REPLACES (not merges) `no-restricted-imports` — silently disabled
+    // the drizzle/framework bans for members/application and members/domain.
+    // It now `ignores` those two layers (each re-asserts the auth-domain ban
+    // itself: members/application above, members/domain below), so this block
+    // governs only members/infrastructure + module-root files.
     files: ["src/modules/members/**/*.ts", "src/modules/members/**/*.tsx"],
+    ignores: [
+      "src/modules/members/application/**",
+      "src/modules/members/domain/**",
+    ],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [MEMBERS_AUTH_DOMAIN_PATTERN] }],
+    },
+  },
+  {
+    // members/domain — framework-free (generic domain ban) PLUS the F3
+    // auth-domain ban. Placed after the generic domain block so it wins for
+    // members/domain files without losing the drizzle/framework ban (S1-P0-2).
+    files: ["src/modules/members/domain/**/*.ts", "src/modules/members/domain/**/*.tsx"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
-          patterns: [
-            {
-              group: [
-                "@/modules/auth/domain/**",
-                "./modules/auth/domain/**",
-                "../modules/auth/domain/**",
-                "../../modules/auth/domain/**",
-              ],
-              message:
-                "F3 Plan E2 — members module must not import `@/modules/auth/domain/**`. " +
-                "Model `linked_user_id` as a branded opaque `UserId` in members/domain/ instead.",
-            },
-          ],
+          paths: domainForbiddenPaths,
+          patterns: [...domainForbiddenPatterns, MEMBERS_AUTH_DOMAIN_PATTERN],
         },
       ],
     },
