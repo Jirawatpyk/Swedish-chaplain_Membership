@@ -425,7 +425,9 @@ async function emitMatchResolutionAudit(
           registrationId,
           matchedMemberId: resolution.matchedMemberId,
           matchedContactId: resolution.matchedContactId,
-          matchedOnEmailDomain: attendeeEmail.split('@')[1] ?? '',
+          // go-live #6 — normalise domain casing so audit payloads are
+          // deterministic (matching is case-insensitive).
+          matchedOnEmailDomain: (attendeeEmail.split('@')[1] ?? '').toLowerCase(),
         },
       });
       return;
@@ -438,7 +440,8 @@ async function emitMatchResolutionAudit(
           severity: 'info',
           registrationId,
           matchedMemberId: resolution.matchedMemberId,
-          emailDomain: attendeeEmail.split('@')[1] ?? '',
+          // go-live #6 — normalise domain casing (see matched_member_contact above).
+          emailDomain: (attendeeEmail.split('@')[1] ?? '').toLowerCase(),
         },
       });
       return;

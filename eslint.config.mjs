@@ -87,13 +87,57 @@ const applicationForbiddenImports = [
  * spread these base paths+patterns in, or the drizzle-orm + infrastructure-VALUE
  * bans silently vanish for those two modules (go-live audit S1-P0-2).
  */
+// Events-brand unchecked-constructor ban (F6). The 4 unchecked UUID brand
+// constructors are INFRASTRUCTURE-ONLY (Drizzle row reads where the DB guarantees
+// UUID shape); every other layer MUST use the validating asEventId/asRegistrationId.
+// Single source of truth (go-live audit #1): composed into the application-layer
+// bans below AND applied to all other non-exempt files via the global block near
+// the end of this file — so un-shadowing the application layer does not drop this
+// ban for application files. Behaviour is keyed on importNames, not the message.
+const EVENTS_BRAND_UNCHECKED_NAMES = [
+  "asEventIdUnchecked",
+  "asRegistrationIdUnchecked",
+  "tryEventIdUnchecked",
+  "tryRegistrationIdUnchecked",
+];
+const EVENTS_BRAND_MESSAGE =
+  "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+  "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.";
+const eventsBrandForbiddenPaths = [
+  {
+    name: "@/modules/events",
+    importNames: EVENTS_BRAND_UNCHECKED_NAMES,
+    message: EVENTS_BRAND_MESSAGE,
+  },
+  {
+    name: "@/modules/events/domain/branded-types",
+    importNames: EVENTS_BRAND_UNCHECKED_NAMES,
+    message: EVENTS_BRAND_MESSAGE,
+  },
+];
+const eventsBrandForbiddenPatterns = [
+  {
+    group: [
+      "**/modules/events/domain/branded-types",
+      "**/modules/events/domain/branded-types.ts",
+    ],
+    importNames: EVENTS_BRAND_UNCHECKED_NAMES,
+    message: EVENTS_BRAND_MESSAGE,
+  },
+];
+
 const APPLICATION_PATH_MESSAGE =
   "Application layer must not depend on Next.js, React, or a specific ORM. " +
   "Use Infrastructure adapters via dependency injection.";
-const applicationForbiddenPaths = applicationForbiddenImports.map((name) => ({
-  name,
-  message: APPLICATION_PATH_MESSAGE,
-}));
+const applicationForbiddenPaths = [
+  ...applicationForbiddenImports.map((name) => ({
+    name,
+    message: APPLICATION_PATH_MESSAGE,
+  })),
+  // go-live #1 — keep the F6 events-brand ban live for application files now that
+  // the global block no longer shadows them.
+  ...eventsBrandForbiddenPaths,
+];
 const applicationForbiddenPatterns = [
   {
     // F5 subpath guard — `stripe/types`, `stripe/resources/*`, and
@@ -128,6 +172,9 @@ const applicationForbiddenPatterns = [
       "Type-only imports (`import type { ... }`) are allowed for DI wiring. " +
       "Constitution Principle III (NON-NEGOTIABLE).",
   },
+  // go-live #1 — F6 events-brand relative-import bypass guard, kept live for the
+  // application layer (see eventsBrandForbiddenPaths note above).
+  ...eventsBrandForbiddenPatterns,
 ];
 
 const DOMAIN_PATH_MESSAGE =
@@ -219,10 +266,26 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Application-layer import ban (Constitution Principle III) — drizzle/
+    // framework/infrastructure-VALUE imports forbidden; `import type` allowed
+    // (DI port wiring). go-live audit #1 FIX: this block USED to be shadowed at
+    // runtime by the global F6 events-brand block (last `no-restricted-imports`
+    // matcher; flat-config REPLACES, not merges). That block now excludes
+    // `application/**`, so this rule is the effective one for application files
+    // again — and it composes the events-brand ban (via applicationForbidden*)
+    // so nothing is lost. Measured blast radius of un-shadowing was 0 real
+    // violations (the only hits were the invoicing composition root, exempted
+    // below). `tests/unit/architecture/application-layer-imports.test.ts` remains
+    // the flat-config-immune backstop.
+    //
+    // Composition roots (`*-deps.ts`) are the documented place to wire
+    // Infrastructure adapters, so they are exempt — mirrors the source-scan
+    // test's `/-deps\.ts$/` skip.
     files: [
       "src/modules/**/application/**/*.ts",
       "src/modules/**/application/**/*.tsx",
     ],
+    ignores: ["src/modules/**/application/**/*-deps.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -463,6 +526,11 @@ const eslintConfig = defineConfig([
     // `@/modules/invoicing`) only. The architecture-invariant unit test
     // (T019) mirrors this rule in source-code scanning.
     files: ["src/modules/invoicing/application/**/*.ts", "src/modules/invoicing/application/**/*.tsx"],
+    // go-live #1 — exempt the invoicing composition root (the one `*-deps.ts`
+    // under application/) so this block doesn't re-flag its legitimate infra
+    // wiring; matches the generic application block's exemption + the source-scan
+    // test's `/-deps\.ts$/` skip.
+    ignores: ["src/modules/invoicing/application/**/*-deps.ts"],
     rules: {
       // NOTE: flat config REPLACES (not merges) `no-restricted-imports` when a
       // later block matches the same files. This block matches invoicing/
@@ -742,58 +810,31 @@ const eslintConfig = defineConfig([
     // Reference: specs/014-email-broadcast-advance/retrospective.md
     // § "Phase 5 Round 1 R1.3 — ESLint shadow bug + architecture test
     // defence-in-depth".
+    //
+    // go-live audit #1 FIX: this block used to ALSO shadow the S1-P0-2
+    // application-layer drizzle/infrastructure-VALUE bans (it matched application
+    // files last → flat-config REPLACE wiped their rule). We now EXCLUDE
+    // `application/**` here (last `ignores` entry) so the per-layer application
+    // blocks above are the effective rule for those files, AND we compose the
+    // events-brand ban into them (eventsBrandForbiddenPaths/Patterns) so excluding
+    // application here loses no coverage. The source-scan test
+    // `tests/unit/architecture/application-layer-imports.test.ts` remains the
+    // flat-config-immune backstop. (The broadcasts-barrel shadow noted above is a
+    // SEPARATE concern, still covered by its own source-scan test.)
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
       "src/modules/events/infrastructure/**",
       "src/modules/events/domain/branded-types.ts",
+      "src/modules/**/application/**",
     ],
     rules: {
+      // Single source of truth (go-live audit #1) — same const the application
+      // blocks compose, so the events-brand ban is identical everywhere.
       "no-restricted-imports": [
         "error",
         {
-          paths: [
-            {
-              name: "@/modules/events",
-              importNames: [
-                "asEventIdUnchecked",
-                "asRegistrationIdUnchecked",
-                "tryEventIdUnchecked",
-                "tryRegistrationIdUnchecked",
-              ],
-              message:
-                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
-                "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.",
-            },
-            {
-              name: "@/modules/events/domain/branded-types",
-              importNames: [
-                "asEventIdUnchecked",
-                "asRegistrationIdUnchecked",
-                "tryEventIdUnchecked",
-                "tryRegistrationIdUnchecked",
-              ],
-              message:
-                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
-                "Defense-in-depth: this rule mirrors the @/modules/events alias rule for direct path imports.",
-            },
-          ],
-          patterns: [
-            {
-              group: [
-                "**/modules/events/domain/branded-types",
-                "**/modules/events/domain/branded-types.ts",
-              ],
-              importNames: [
-                "asEventIdUnchecked",
-                "asRegistrationIdUnchecked",
-                "tryEventIdUnchecked",
-                "tryRegistrationIdUnchecked",
-              ],
-              message:
-                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
-                "Relative-import bypass blocked — use asEventId / asRegistrationId at HTTP/CSV boundaries.",
-            },
-          ],
+          paths: eventsBrandForbiddenPaths,
+          patterns: eventsBrandForbiddenPatterns,
         },
       ],
     },

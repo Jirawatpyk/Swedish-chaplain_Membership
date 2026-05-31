@@ -149,11 +149,16 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
     // S1-P1-6: accept a single band OR an array (the dashboard "needs
     // attention" KPI drills into all three at-risk bands so the count and the
     // destination list agree). Members with `null` band are excluded either way.
-    conds.push(
-      Array.isArray(filter.riskBand)
-        ? inArray(members.riskScoreBand, [...filter.riskBand])
-        : eq(members.riskScoreBand, filter.riskBand as RiskBand),
-    );
+    if (Array.isArray(filter.riskBand)) {
+      // go-live #7 — `inArray(col, [])` renders as a constant-FALSE predicate in
+      // Drizzle, which would silently return ZERO rows. Treat an empty band array
+      // as "no risk-band filter" (push nothing) rather than "match nothing".
+      if (filter.riskBand.length > 0) {
+        conds.push(inArray(members.riskScoreBand, [...filter.riskBand]));
+      }
+    } else {
+      conds.push(eq(members.riskScoreBand, filter.riskBand as RiskBand));
+    }
   }
   return conds;
 }

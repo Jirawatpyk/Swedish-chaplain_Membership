@@ -36,7 +36,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
-import { buildRenewalRedeemLinkUrl } from './_lib/build-renewal-redeem-link-url';
+import { buildRenewalCtaUrl } from './_lib/build-renewal-redeem-link-url';
 import { randomUUID } from 'node:crypto';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -202,17 +202,16 @@ async function attemptRetry(
       cycle_expires_at: candidate.cycle.expiresAt,
       tier_bucket: candidate.cycle.tierAtCycleStart,
       step_id: event.stepId,
-      // S1-P0-4: same signed redeem-link as the original dispatch path.
-      renewal_link_url: buildRenewalRedeemLinkUrl(
-        deps.tokenSigner,
-        env.app.baseUrl,
-        {
-          tenantId: event.tenantId,
-          memberId: candidate.member.memberId,
-          cycleId: event.cycleId,
-          now: new Date(nowIso),
-        },
-      ),
+      // S1-P0-4 + go-live #8: same redeem-vs-plain CTA decision as the original
+      // dispatch path (single source of truth). A retry dispatched closer to
+      // expiry can upgrade an early step's plain link back to a redeem-link.
+      renewal_link_url: buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
+        tenantId: event.tenantId,
+        memberId: candidate.member.memberId,
+        cycleId: event.cycleId,
+        now: new Date(nowIso),
+        expiresAtIso: candidate.cycle.expiresAt,
+      }),
       // S1-P1-3: footer opt-out link target.
       preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
     },

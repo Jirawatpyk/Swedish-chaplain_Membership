@@ -38,7 +38,7 @@ import { env } from '@/lib/env';
 import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
-import { buildRenewalRedeemLinkUrl } from './build-renewal-redeem-link-url';
+import { buildRenewalCtaUrl } from './build-renewal-redeem-link-url';
 import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
 import { asCycleId } from '../../../domain/renewal-cycle';
 import { asTaskId } from '../../../domain/renewal-escalation-task';
@@ -768,19 +768,16 @@ async function dispatchEmailStep(
       cycle_expires_at: cycle.expiresAt,
       tier_bucket: cycle.tierAtCycleStart,
       step_id: step.stepId,
-      // S1-P0-4: signed-token redeem-link (was the `/portal/account`
-      // dead-end). Lands the member in the actual renewal flow after a
-      // one-time-use HMAC verify + auto-sign-in.
-      renewal_link_url: buildRenewalRedeemLinkUrl(
-        deps.tokenSigner,
-        env.app.baseUrl,
-        {
-          tenantId: ctx.tenantId,
-          memberId: member.memberId,
-          cycleId: cycle.cycleId,
-          now: new Date(ctx.nowIso),
-        },
-      ),
+      // S1-P0-4 + go-live #8: signed-token redeem-link (auto-sign-in) when the
+      // token will still be valid at expiry, else the authenticated renewal page
+      // for early reminders (T-60/T-90) whose redeem-link would expire first.
+      renewal_link_url: buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
+        tenantId: ctx.tenantId,
+        memberId: member.memberId,
+        cycleId: cycle.cycleId,
+        now: new Date(ctx.nowIso),
+        expiresAtIso: cycle.expiresAt,
+      }),
       // S1-P1-3: footer opt-out link target.
       preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
     },

@@ -9,7 +9,10 @@
  * env-free contract test.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { buildRenewalRedeemLinkUrl } from '@/modules/renewals/application/use-cases/_lib/build-renewal-redeem-link-url';
+import {
+  buildRenewalRedeemLinkUrl,
+  buildRenewalCtaUrl,
+} from '@/modules/renewals/application/use-cases/_lib/build-renewal-redeem-link-url';
 import {
   RENEWAL_LINK_TOKEN_VERSION,
   RENEWAL_LINK_TOKEN_TTL_SECONDS,
@@ -65,5 +68,49 @@ describe('buildRenewalRedeemLinkUrl', () => {
     const { signer } = stubSigner('a.b+c/d=');
     const url = buildRenewalRedeemLinkUrl(signer, 'https://h', args);
     expect(url).toBe('https://h/api/portal/renewal/redeem-link?t=a.b%2Bc%2Fd%3D');
+  });
+});
+
+describe('buildRenewalCtaUrl (go-live #8 — redeem-vs-plain gating)', () => {
+  // now + RENEWAL_LINK_TOKEN_TTL_SECONDS = 2026-06-01 + 30d = 2026-07-01.
+  const now = new Date('2026-06-01T00:00:00.000Z');
+  const base = {
+    tenantId: 'swecham',
+    memberId: '00000000-0000-4000-8000-000000000abc',
+    cycleId: '11111111-1111-4111-8111-000000000def',
+    now,
+  };
+
+  it('early reminder (expiry beyond token TTL) → plain authenticated renewal page, signer NOT called', () => {
+    const { signer, sign } = stubSigner('TOK');
+    // Expiry 92 days out; token minted now expires (now+30d) long before it.
+    const url = buildRenewalCtaUrl(signer, 'https://h', {
+      ...base,
+      expiresAtIso: '2026-09-01T00:00:00.000Z',
+    });
+    expect(url).toBe(
+      'https://h/portal/renewal/00000000-0000-4000-8000-000000000abc',
+    );
+    expect(url).not.toContain('redeem-link');
+    expect(sign).not.toHaveBeenCalled();
+  });
+
+  it('near-expiry reminder (within token TTL) → signed redeem-link', () => {
+    const { signer, sign } = stubSigner('TOK');
+    const url = buildRenewalCtaUrl(signer, 'https://h', {
+      ...base,
+      expiresAtIso: '2026-06-08T00:00:00.000Z', // 7 days out, < 30d TTL
+    });
+    expect(url).toBe('https://h/api/portal/renewal/redeem-link?t=TOK');
+    expect(sign).toHaveBeenCalledTimes(1);
+  });
+
+  it('boundary: token expires exactly at cycle expiry (now + TTL == expiresAt) → redeem-link (>=)', () => {
+    const { signer } = stubSigner('TOK');
+    const url = buildRenewalCtaUrl(signer, 'https://h', {
+      ...base,
+      expiresAtIso: '2026-07-01T00:00:00.000Z', // exactly now + 30d
+    });
+    expect(url).toContain('/api/portal/renewal/redeem-link?t=TOK');
   });
 });
