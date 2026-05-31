@@ -291,6 +291,15 @@ export const memberNavConfig: NavConfig = {
           href: '/portal/timeline',
           activePattern: '/portal/timeline',
         },
+        // S1-P1-2 — inbound link to the renewal-reminder opt-out page, which
+        // otherwise had ZERO in-app links (reachable only by direct URL). The
+        // renewal FLOW page is reached via the email CTA (S1-P0-4 redeem-link).
+        {
+          titleKey: 'nav.member.renewalPrefs',
+          icon: CalendarClockIcon,
+          href: '/portal/preferences/renewals',
+          activePattern: '/portal/preferences/renewals',
+        },
         {
           titleKey: 'nav.member.account',
           icon: UserCircleIcon,

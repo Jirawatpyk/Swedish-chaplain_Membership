@@ -3647,7 +3647,8 @@
       "timeline": "Timeline",
       "account": "Account",
       "ariaLabel": "Member navigation",
-      "benefits": "Benefits"
+      "benefits": "Benefits",
+      "renewalPrefs": "Renewal reminders"
     }
   },
   "breadcrumb": {

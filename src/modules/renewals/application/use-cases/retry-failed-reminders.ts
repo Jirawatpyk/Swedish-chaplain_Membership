@@ -213,6 +213,8 @@ async function attemptRetry(
           now: new Date(nowIso),
         },
       ),
+      // S1-P1-3: footer opt-out link target.
+      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
     },
     idempotencyKey: event.reminderEventId,
   });

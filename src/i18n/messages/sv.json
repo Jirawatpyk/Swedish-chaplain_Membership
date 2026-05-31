@@ -3647,7 +3647,8 @@
       "timeline": "Tidslinje",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering",
-      "benefits": "Förmåner"
+      "benefits": "Förmåner",
+      "renewalPrefs": "Förnyelsepåminnelser"
     }
   },
   "breadcrumb": {

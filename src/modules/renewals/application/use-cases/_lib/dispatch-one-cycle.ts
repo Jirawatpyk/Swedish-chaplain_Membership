@@ -781,6 +781,8 @@ async function dispatchEmailStep(
           now: new Date(ctx.nowIso),
         },
       ),
+      // S1-P1-3: footer opt-out link target.
+      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
     },
     idempotencyKey: reminderEventId,
   });

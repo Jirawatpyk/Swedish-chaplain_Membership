@@ -52,6 +52,8 @@ export interface RenewalReminderEmailProps {
   readonly expiresAtIso: string;
   readonly daysUntilExpiry: number;
   readonly renewalLinkUrl: string;
+  /** S1-P1-3 — opt-out/manage-preferences URL for the footer link. */
+  readonly preferencesUrl?: string;
 }
 
 /**
@@ -98,6 +100,7 @@ export function RenewalReminderEmail(props: RenewalReminderEmailProps) {
       bodyContent={body}
       ctaLabel={ctaLabel}
       ctaHref={props.renewalLinkUrl}
+      {...(props.preferencesUrl ? { preferencesUrl: props.preferencesUrl } : {})}
       footer={
         <DualFormatDateFooter
           locale={props.locale}

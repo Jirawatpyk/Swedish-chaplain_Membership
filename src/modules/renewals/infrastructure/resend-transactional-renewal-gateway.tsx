@@ -287,6 +287,8 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
         input.templateVariables.days_until_expiry ?? deriveDaysFromOffset(offset),
       ),
       renewalLinkUrl: String(input.templateVariables.renewal_link_url ?? ''),
+      // S1-P1-3 — opt-out link in the footer (empty → no link rendered).
+      preferencesUrl: String(input.templateVariables.preferences_url ?? ''),
     };
 
     // 3. Compute subject (interpolated; same formula as the template body).

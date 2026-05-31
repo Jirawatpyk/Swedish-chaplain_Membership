@@ -96,4 +96,26 @@ describe('<RenewalReminderEmail> — render coverage (J10-M10)', () => {
     expect(html).toContain('2569');
     expect(html).toContain('2026');
   });
+
+  it('S1-P1-3: renders a manage-preferences opt-out link when preferencesUrl is set', async () => {
+    const prefsUrl = 'https://swecham.test/portal/preferences/renewals';
+    const html = await render(
+      <RenewalReminderEmail
+        tier="regular"
+        locale="en"
+        {...FIXED_PROPS}
+        preferencesUrl={prefsUrl}
+      />,
+    );
+    expect(html).toContain(prefsUrl);
+    expect(html).toContain('Manage reminder preferences');
+  });
+
+  it('S1-P1-3: no opt-out link when preferencesUrl is omitted (back-compat)', async () => {
+    const html = await render(
+      <RenewalReminderEmail tier="regular" locale="en" {...FIXED_PROPS} />,
+    );
+    expect(html).not.toContain('/portal/preferences/renewals');
+    expect(html).not.toContain('Manage reminder preferences');
+  });
 });
