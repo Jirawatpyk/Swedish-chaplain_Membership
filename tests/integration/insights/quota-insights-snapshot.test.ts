@@ -26,6 +26,7 @@ import {
 } from '@/modules/insights';
 import { broadcastSourceAdapter } from '@/modules/insights/infrastructure/sources/broadcast-source-adapter';
 import { benefitConsumptionAggregateAdapter } from '@/modules/insights/infrastructure/sources/benefit-consumption-aggregate-adapter';
+import { eventSourceAdapter } from '@/modules/insights/infrastructure/sources/event-source-adapter';
 import { dashboardMetricsCache, smartInsightDismissals } from '@/modules/insights/infrastructure/db/schema-insights';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
@@ -49,9 +50,14 @@ const SEED_YEAR = Number(
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric' }).format(new Date()),
 );
 const { startMs } = tenantYearBoundsUtcMs(SEED_YEAR, TZ);
-// A safely-past, in-year instant (1h into the tenant-tz year) for current-year
-// consumption; robust regardless of run date (except the first hour of the year).
-const THIS_YEAR = new Date(startMs + 3_600_000);
+// A safely-past, in-year instant for current-year consumption. The cultural
+// aggregate caps its window at min(yearEnd, Date.now()), so the seed date MUST be
+// <= now; it must also be >= yearStart. Clamp to [yearStart+1s, now-60s] so the
+// test is robust at ANY run instant (incl. the first hour of the tenant-tz year),
+// with a 60s margin for the gap between module-load and the live query's now.
+const THIS_YEAR = new Date(
+  Math.max(startMs + 1_000, Math.min(startMs + 3_600_000, Date.now() - 60_000)),
+);
 const PRIOR_YEAR = new Date(`${SEED_YEAR - 1}-08-01T09:00:00.000Z`);
 
 // planA: eblast 3 / cultural 2 (small so "fully consumed" needs few rows).
@@ -212,13 +218,35 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
     expect(r.value.underDeliveredBenefitCount).toBe(4);
   });
 
+  // EQUIVALENCE pins BOTH batched aggregates against their per-member sources so a
+  // future F6/F7 filter change fails here first. Pinned at an at-cap member (mC)
+  // AND an under-cap member (mA) — the under-cap case is the one that actually
+  // exercises a non-saturated count (the at-cap case could pass by coincidence).
+  // Valid for SEED_YEAR = the current calendar year (the only year F9 views;
+  // getEblastConsumption derives its quota year from the system clock).
   it('EQUIVALENCE: batched eblast aggregate == per-member source (filter pin)', async () => {
     const map = await benefitConsumptionAggregateAdapter.eblastUsedByMember(tenant.ctx, SEED_YEAR);
     const perMemberC = await broadcastSourceAdapter.getEblastConsumption(tenant.ctx, mC, SEED_YEAR);
+    const perMemberA = await broadcastSourceAdapter.getEblastConsumption(tenant.ctx, mA, SEED_YEAR);
     expect(map.get(mC)).toBe(3);
-    expect(map.get(mC)).toBe(perMemberC.used); // batched GROUP BY agrees with the per-member counter
+    expect(map.get(mC)).toBe(perMemberC.used); // at-cap: batched GROUP BY == per-member counter
     expect(map.get(mA)).toBe(1);
+    expect(map.get(mA)).toBe(perMemberA.used); // under-cap: non-saturated agreement
     expect(map.has(mB)).toBe(false); // 0 sent → absent (caller reads ?? 0)
+  });
+
+  it('EQUIVALENCE: batched cultural aggregate == per-member source (filter pin — the riskier JOIN + window filter)', async () => {
+    const map = await benefitConsumptionAggregateAdapter.culturalUsedByMember(tenant.ctx, SEED_YEAR);
+    // The per-member event source honours its membershipYear arg (unlike eblast),
+    // so this pins the isCulturalEvent + [yearStart, min(yearEnd, now)] + pii/
+    // archived-null filter set against the per-member path for two members.
+    const perMemberC = await eventSourceAdapter.getCulturalConsumption(tenant.ctx, mC, SEED_YEAR);
+    const perMemberA = await eventSourceAdapter.getCulturalConsumption(tenant.ctx, mA, SEED_YEAR);
+    expect(map.get(mC)).toBe(2);
+    expect(map.get(mC)).toBe(perMemberC.used); // full
+    expect(map.get(mA)).toBe(1);
+    expect(map.get(mA)).toBe(perMemberA.used); // under
+    expect(map.has(mB)).toBe(false); // 0 attended → absent
   });
 
   it('dismissing unused_eblast_quota suppresses only it; underused_event_tickets survives', async () => {
@@ -239,13 +267,21 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
 });
 
 /**
- * P1-4 — Principle I (REVIEW-GATE BLOCKER) for the NEW cross-member aggregate
- * GROUP BY queries. Seeds tenant B with sent-broadcast + cultural consumption,
- * then runs the aggregate adapter under `runInTenant(tenantA.ctx)` and asserts
- * tenant B's rows are invisible (RLS+FORCE scopes them out, on top of the
- * explicit `tenantId` predicate). A leak would surface B's memberId in A's map.
+ * P1-4 — tenant-scoping of the NEW cross-member aggregate GROUP BY queries.
+ * Seeds tenant B with sent-broadcast + cultural consumption, runs the aggregate
+ * adapter under `runInTenant(tenantA.ctx)`, and asserts tenant B's rows never
+ * surface in tenant A's map.
+ *
+ * SCOPE NOTE (honest framing): the aggregate carries an explicit
+ * `eq(tenantId, ctx.slug)` predicate, so this test proves the ADAPTER is
+ * tenant-safe (predicate + RLS defence-in-depth) — it does NOT isolate the
+ * DB-layer RLS guarantee on its own (the explicit predicate alone would filter
+ * tenant B even with RLS disabled). The pure RLS+FORCE guarantee is covered by
+ * the F9 own-tables suite `cross-tenant-isolation.test.ts` (T019), which probes
+ * via direct DB writes WITHOUT the app predicate. The control assertion below
+ * (tenant B's OWN context DOES see its rows) keeps this test non-vacuous.
  */
-describe('F9 quota aggregate — cross-tenant isolation (P1-4 / Principle I, live Neon)', () => {
+describe('F9 quota aggregate — cross-tenant scoping (P1-4, live Neon)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
   let admin: TestUser;

@@ -95,6 +95,11 @@ export const benefitConsumptionAggregateAdapter: BenefitConsumptionAggregateSour
       // Drizzle timestamp columns compare against `Date`, not ISO strings.
       const since = new Date(startMs);
       const until = new Date(untilMs);
+      // The WHERE uses `lte(startDate, until)` (inclusive) vs the per-member
+      // source's half-open `< endMs`. For the current year (the only year F9
+      // views, FR-023) `until = min(endMs, now) < endMs`, so the inclusive bound
+      // never reaches `endMs` — the two are equivalent. A non-current-year view
+      // (not reachable here) would need a half-open upper bound to match exactly.
 
       return runInTenant(ctx, async (tx) => {
         const rows = await tx

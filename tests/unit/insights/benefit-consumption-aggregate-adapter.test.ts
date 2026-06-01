@@ -21,16 +21,23 @@ function chainTx() {
   for (const m of ['from', 'innerJoin', 'where', 'groupBy']) {
     chain[m] = () => chain;
   }
-  chain.then = (onF: (v: unknown) => unknown, onR: (e: unknown) => unknown) =>
-    nextError ? Promise.reject(nextError).catch(onR) : Promise.resolve(nextRows).then(onF);
+  // The error surfaces at the QUERY level (the awaited `tx.select()...groupBy()`),
+  // NOT at runInTenant — so the fail-loud test exercises the adapter's real
+  // `await <query>` rejection path, not a short-circuit before the callback runs.
+  chain.then = (onF: (v: unknown) => unknown, onR: (e: unknown) => unknown) => {
+    if (nextError) {
+      onR(nextError);
+      return undefined;
+    }
+    return Promise.resolve(nextRows).then(onF);
+  };
   return { select: () => chain };
 }
 
 vi.mock('@/lib/db', () => ({
-  runInTenant: (_ctx: unknown, fn: (tx: unknown) => unknown) => {
-    if (nextError) return Promise.reject(nextError);
-    return fn(chainTx());
-  },
+  // Always invoke the callback with the chain-mock tx; the query thenable rejects
+  // when nextError is set, so the adapter's own try/await propagates it (fail-loud).
+  runInTenant: (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(chainTx()),
 }));
 vi.mock('@/lib/env', () => ({
   env: { tenant: { timezone: 'Asia/Bangkok' } },

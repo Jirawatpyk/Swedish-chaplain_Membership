@@ -18,6 +18,15 @@
  * Fail-loud: a directory-search error throws so the snapshot use-case logs
  * `errKind` + returns `compute_failed` rather than a partial/zero member set
  * (which would understate under-use).
+ *
+ * KNOWN LIMITATION (accepted): offset pagination is NOT a consistent snapshot —
+ * each page is its own `runInTenant` tx / MVCC snapshot, and the directory's
+ * default sort (`last_activity_at DESC NULLS LAST, member_id`) is over a column
+ * the F3 activity trigger mutates, so a member could be skipped or double-counted
+ * at a page boundary if it churns mid-enumeration. Identical to the existing
+ * `member-source-adapter.joinDistribution` pattern; off the hot path (~5-min cron,
+ * self-corrects next run) and inert below 100 members (SweCham ≈131 → ≤2 pages).
+ * Promote to a single keyset pass on a stable key if a tenant nears ~20k members.
  */
 import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
