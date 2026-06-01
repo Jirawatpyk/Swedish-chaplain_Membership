@@ -29,6 +29,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import type { ContactId } from '../../domain/contact';
@@ -177,7 +178,9 @@ export async function invitePortal(
     logger.error(
       {
         contactId: input.contactId,
-        userId: created.value.user.id,
+        // PII: hash the user id in logs (CLAUDE.md § Secrets) — requestId already
+        // provides cross-request correlation.
+        userIdHash: hashId(created.value.user.id),
         cause: linked.error,
         requestId: input.requestId,
       },
@@ -195,7 +198,7 @@ export async function invitePortal(
       // Compensation itself failed (rare-of-rare) — the orphan persists, but it
       // is now logged + the account_created audit row is the forensic trail.
       logger.error(
-        { contactId: input.contactId, userId: created.value.user.id, requestId: input.requestId },
+        { contactId: input.contactId, userIdHash: hashId(created.value.user.id), requestId: input.requestId },
         'invite-portal.compensation_failed: orphan persists — manual reconciliation needed',
       );
     }

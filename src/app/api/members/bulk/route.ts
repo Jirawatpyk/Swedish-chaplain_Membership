@@ -246,28 +246,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(body, { status: 200 });
     }
 
-    if (inviteResult.error.type === 'bulk_cap_exceeded') {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'bulk_cap_exceeded',
-            message: `Cannot exceed ${BULK_CAP} members per batch.`,
-            details: { count: inviteResult.error.count, max: BULK_CAP },
-          },
-        },
-        { status: 400 },
+    // go-live /code-review #33 — these validation errors still hold the
+    // idempotency reservation made above. Remember the response so a same-key +
+    // same-body retry replays this 400 deterministically instead of getting a
+    // stuck `idempotency_reservation_failed`. (A corrected body must use a new
+    // key — same key + different body is an idempotency_conflict by design.)
+    const errorResponse =
+      inviteResult.error.type === 'bulk_cap_exceeded'
+        ? {
+            status: 400 as const,
+            body: {
+              error: {
+                code: 'bulk_cap_exceeded' as const,
+                message: `Cannot exceed ${BULK_CAP} members per batch.`,
+                details: { count: inviteResult.error.count, max: BULK_CAP },
+              },
+            },
+          }
+        : {
+            status: 400 as const,
+            body: {
+              error: {
+                code: 'invalid_body' as const,
+                message: 'Body failed validation.',
+                details: { issues: inviteResult.error.issues },
+              },
+            },
+          };
+    try {
+      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, errorResponse);
+    } catch (e) {
+      logger.warn(
+        { err: e, requestId: ctx.requestId },
+        'bulk-invite: rememberIdempotentResponse (error path) failed (non-fatal)',
       );
     }
-    return NextResponse.json(
-      {
-        error: {
-          code: 'invalid_body',
-          message: 'Body failed validation.',
-          details: { issues: inviteResult.error.issues },
-        },
-      },
-      { status: 400 },
-    );
+    return NextResponse.json(errorResponse.body, { status: errorResponse.status });
   }
 
   const result = await bulkAction(

@@ -93,8 +93,13 @@ export function BulkActionBar({
             if (c.skipped > 0) parts.push(t('inviteSkipped', { skipped: c.skipped }));
             if (c.failed > 0) parts.push(t('inviteFailed', { failed: c.failed }));
             const message = parts.join(' · ');
+            // Only a green success when at least one invite was actually queued.
+            // If every member was skipped (e.g. all already linked → invited=0,
+            // failed=0) nothing was done, so use a neutral info toast — a success
+            // tick on a no-op misleads the admin into thinking invites were sent.
             if (c.failed > 0) toast.error(message);
-            else toast.success(message);
+            else if (c.invited > 0) toast.success(message);
+            else toast.info(message);
           } else {
             toast.success(
               t('success', {
