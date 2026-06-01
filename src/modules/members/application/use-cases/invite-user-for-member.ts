@@ -21,9 +21,15 @@
  * Atomicity: same pattern as `invite-colleague`. F1 createUser is its
  * OWN tx; the contact + link + contact_created audit run in a second
  * tx with `throw new UseCaseAbort(...)` rollback. If the second tx
- * fails, the F1 user is orphaned — acceptable per `invite-portal`
- * rationale (the invitation can still redeem, and the orphan gets
- * logged for operational reconciliation).
+ * fails, F1 createUser already committed the pending user — go-live
+ * #12-13 (follow-up): that orphan is ROLLED BACK via `deleteInvitedUser`
+ * SAGA compensation, NOT left for redemption (redeem-invite never links a
+ * contact, so the orphan would be permanent: an active user whose contact
+ * stays unlinked → broken member-portal resolution). Compensation is
+ * correct for BOTH paths — the user is always freshly created at step 4,
+ * so deleting it leaves no half-state (create_new → the new contact was
+ * already rolled back; link_existing → the pre-existing contact returns to
+ * its prior unlinked state).
  */
 
 import { runInTenant } from '@/lib/db';
@@ -37,7 +43,11 @@ import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { MemberRepo, RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
-import type { CreateUserPort } from './invite-portal';
+import {
+  compensateInviteOrphan,
+  type CreateUserPort,
+  type DeleteInvitedUserPort,
+} from './_lib/invite-saga';
 import { UseCaseAbort } from '../tx-abort';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +70,11 @@ export type InviteUserForMemberError =
   | { readonly type: 'member_not_found' }
   | { readonly type: 'contact_already_linked' }
   | { readonly type: 'email_belongs_to_other_member' }
+  // go-live #12-13 (follow-up) — the contact tx failed after createUser
+  // committed; the orphaned invite was rolled back (SAGA compensation), so a
+  // retry is safe. Distinct from server_error (an unexpected fault) for parity
+  // with invitePortal — see invite-portal.ts `link_failed`.
+  | { readonly type: 'link_failed' }
   | { readonly type: 'server_error'; readonly message: string };
 
 export type InviteUserForMemberDeps = {
@@ -68,6 +83,8 @@ export type InviteUserForMemberDeps = {
   readonly memberRepo: MemberRepo;
   readonly audit: AuditPort;
   readonly createUser: CreateUserPort;
+  /** SAGA compensation for the invite orphan window (go-live #12-13 follow-up). */
+  readonly deleteInvitedUser: DeleteInvitedUserPort;
   readonly idFactory: { contactId(): ContactId };
 };
 
@@ -323,15 +340,31 @@ export async function inviteUserForMember(
         requestId: input.requestId,
         mode: decision.mode,
       },
-      'invite-user-for-member.tx_failed: orphan F1 user left for operational reconciliation',
+      'invite-user-for-member.tx_failed: rolling back orphaned F1 user (SAGA compensation)',
     );
+    // go-live #12-13 (follow-up) — the contact tx rolled back, but F1 createUser
+    // already committed the pending user. Roll it back via the shared SAGA
+    // compensation so no orphan persists. Correct for BOTH paths: the user is
+    // freshly created at step 4; deleting it leaves create_new clean (its new
+    // contact was rolled back) and link_existing clean (the pre-existing contact
+    // stays unlinked, its original state). Never throws → cannot mask the failure.
+    await compensateInviteOrphan(deps.deleteInvitedUser, {
+      userId: created.value.user.id,
+      outboxRowId: created.value.outboxRowId,
+      actorUserId: input.actorUserId,
+      sourceIp: input.sourceIp,
+      requestId: input.requestId,
+      targetEmail: emailResult.value,
+      opLabel: 'invite-user-for-member',
+    });
     if (e instanceof UseCaseAbort) {
-      const re = e.error as RepoError;
-      return err({
-        type: 'server_error',
-        message: `invite-user-for-member tx: ${re.code}`,
-      });
+      // Controlled repo failure, orphan compensated → link_failed (retry safe),
+      // mirroring invitePortal's link_failed branch.
+      return err({ type: 'link_failed' });
     }
+    // Genuinely unexpected throw (e.g. PG connection lost). Orphan compensated,
+    // but it is an incident to investigate — keep server_error (parity with
+    // invitePortal, where an uncaught throw surfaces as a generic 500).
     return err({
       type: 'server_error',
       message: 'invite-user-for-member tx: unexpected',

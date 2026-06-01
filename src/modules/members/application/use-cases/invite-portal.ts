@@ -31,59 +31,17 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
-import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import type { ContactId } from '../../domain/contact';
 import type { ContactRepo } from '../ports/contact-repo';
+import { compensateInviteOrphan } from './_lib/invite-saga';
+import type { CreateUserPort, DeleteInvitedUserPort } from './_lib/invite-saga';
 
-/**
- * Narrowed F1 createUser surface we depend on. Typed here rather than
- * imported from `@/modules/auth` to keep the Application layer free
- * of Infrastructure composition roots — the route handler wires the
- * real `createUser` at the boundary.
- */
-export type CreateUserPort = (input: {
-  readonly email: string;
-  readonly role: 'member';
-  readonly displayName?: string | null;
-  readonly actorUserId: string;
-  readonly sourceIp: string;
-  readonly requestId: string;
-  readonly locale?: 'en' | 'th' | 'sv' | undefined;
-  /**
-   * Tenant slug carried to F1 `createUser` so the
-   * `notifications_outbox` row created inside the F1 tx satisfies the
-   * post-0098 NOT NULL + RLS constraints. The members layer always
-   * runs inside a known `TenantContext` (passed via deps.tenant), so
-   * the route handler / use-case threads `deps.tenant.slug` here.
-   */
-  readonly tenantId: TenantSlug;
-}) => Promise<
-  | {
-      readonly ok: true;
-      readonly value: {
-        readonly user: { readonly id: string };
-        /** Outbox row id for the queued invite email — needed by the SAGA
-         *  compensation (go-live #12-13) to drop a dead invite on link failure. */
-        readonly outboxRowId: string;
-      };
-    }
-  | { readonly ok: false; readonly error: { readonly code: 'invalid-input' | 'email-taken' | 'invitation-create-failed' } }
->;
-
-/**
- * Narrowed F1 `deleteInvitedUser` surface — the SAGA compensation invoked when
- * the contact-link step fails after `createUser` committed (go-live #12-13). The
- * port deletes the just-created PENDING user by exact id (+ its queued email),
- * never by email, so it can never touch the wrong / a redeemed account.
- */
-export type DeleteInvitedUserPort = (input: {
-  readonly userId: string;
-  readonly outboxRowId: string;
-  readonly actorUserId: string;
-  readonly sourceIp: string;
-  readonly requestId: string;
-  readonly targetEmail?: string | undefined;
-}) => Promise<{ readonly ok: boolean }>;
+// `CreateUserPort` + `DeleteInvitedUserPort` now live in the shared
+// `_lib/invite-saga` module (the contract is shared by invitePortal,
+// inviteColleague, inviteUserForMember). Re-exported here for backward
+// compatibility with consumers that import them from this use-case file
+// (adapters, members-deps, the module barrel, bulk-send-portal-invite).
+export type { CreateUserPort, DeleteInvitedUserPort };
 
 export type InvitePortalDeps = {
   readonly tenant: TenantContext;
@@ -186,22 +144,17 @@ export async function invitePortal(
       },
       'invite-portal.link_user_failed: rolling back orphaned invite (SAGA compensation)',
     );
-    const compensation = await deps.deleteInvitedUser({
+    // Shared SAGA compensation (owns the delete-call args + the
+    // compensation_failed log). Never throws → cannot mask this failure.
+    await compensateInviteOrphan(deps.deleteInvitedUser, {
       userId: created.value.user.id,
       outboxRowId: created.value.outboxRowId,
       actorUserId: input.actorUserId,
       sourceIp: input.sourceIp,
       requestId: input.requestId,
       targetEmail: contact.email,
+      opLabel: 'invite-portal',
     });
-    if (!compensation.ok) {
-      // Compensation itself failed (rare-of-rare) — the orphan persists, but it
-      // is now logged + the account_created audit row is the forensic trail.
-      logger.error(
-        { contactId: input.contactId, userIdHash: hashId(created.value.user.id), requestId: input.requestId },
-        'invite-portal.compensation_failed: orphan persists — manual reconciliation needed',
-      );
-    }
     return err({ code: 'link_failed' });
   }
 

@@ -71,6 +71,8 @@ type DepsOverrides = {
   addResult?: Contact | Error;
   linkUserResult?: Contact | Error;
   auditFail?: boolean;
+  /** go-live #12-13 follow-up — force the SAGA compensation to fail. */
+  compensationFails?: boolean;
 };
 
 function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
@@ -97,8 +99,14 @@ function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
     if (overrides.createUserResult && 'code' in overrides.createUserResult) {
       return err(overrides.createUserResult as { code: string });
     }
-    return ok(overrides.createUserResult ?? { user: { id: 'new-user-uuid' } });
+    return ok(
+      overrides.createUserResult ?? { user: { id: 'new-user-uuid' }, outboxRowId: 'outbox-new-user' },
+    );
   });
+
+  // go-live #12-13 (follow-up) — SAGA compensation port. Default succeeds;
+  // `compensationFails` flips it to exercise the compensation-failed log branch.
+  const deleteInvitedUser = vi.fn(async () => ({ ok: !overrides.compensationFails }));
 
   const audit = {
     record: vi.fn(async () => ok(undefined)),
@@ -113,6 +121,7 @@ function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
     contactRepo,
     audit,
     createUser,
+    deleteInvitedUser,
     idFactory: { contactId: vi.fn(() => newContactId) },
   } as unknown as InviteColleagueDeps;
 }
@@ -178,25 +187,27 @@ describe('inviteColleague use case', () => {
     if (!result.ok) expect(result.error.type).toBe('server_error');
   });
 
-  it('returns server_error when contactRepo.add fails', async () => {
+  // go-live #12-13 (follow-up) — a controlled repo failure in the contact tx is
+  // a compensated rollback → link_failed (retry safe), NOT server_error.
+  it('returns link_failed when contactRepo.add fails (compensated rollback)', async () => {
     const deps = makeDeps({ addResult: new Error('add fail') });
     const result = await inviteColleague(deps, baseInput);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.type).toBe('server_error');
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
   });
 
-  it('returns server_error when contactRepo.linkUser fails', async () => {
+  it('returns link_failed when contactRepo.linkUser fails (compensated rollback)', async () => {
     const deps = makeDeps({ linkUserResult: new Error('link fail') });
     const result = await inviteColleague(deps, baseInput);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.type).toBe('server_error');
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
   });
 
-  it('returns server_error when audit.record fails', async () => {
+  it('returns link_failed when audit.record fails (compensated rollback)', async () => {
     const deps = makeDeps({ auditFail: true });
     const result = await inviteColleague(deps, baseInput);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.type).toBe('server_error');
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
   });
 
   it('returns ok with contact and userId on success', async () => {
@@ -212,5 +223,43 @@ describe('inviteColleague use case', () => {
       expect(result.value.userId).toBe('new-user-uuid');
     }
     expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
+    // Happy path never compensates.
+    expect(deps.deleteInvitedUser).not.toHaveBeenCalled();
+  });
+
+  // go-live #12-13 (follow-up) — SAGA compensation: when the contact tx rolls
+  // back AFTER createUser committed, the orphaned F1 user is rolled back too.
+  it('compensates the orphaned F1 user when the contact tx fails (link)', async () => {
+    const deps = makeDeps({ linkUserResult: new Error('link fail') });
+    const result = await inviteColleague(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
+    // The just-created user (+ its queued invite email) is rolled back by id.
+    expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
+    expect(deps.deleteInvitedUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'new-user-uuid',
+        outboxRowId: 'outbox-new-user',
+        targetEmail: 'jane.doe@example.com',
+        requestId: 'req-001',
+      }),
+    );
+  });
+
+  it('also compensates when the add-contact step fails', async () => {
+    const deps = makeDeps({ addResult: new Error('add fail') });
+    const result = await inviteColleague(deps, baseInput);
+    expect(result.ok).toBe(false);
+    expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
+  });
+
+  it('still returns link_failed when the compensation itself fails (orphan logged)', async () => {
+    // The returned code is decided by abort-vs-throw, not by compensation success;
+    // a failed compensation is logged but the caller still sees link_failed.
+    const deps = makeDeps({ linkUserResult: new Error('link fail'), compensationFails: true });
+    const result = await inviteColleague(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
+    expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
   });
 });

@@ -70,6 +70,10 @@ const KNOWN_INVITE_ERROR_KEYS = [
   'contact-already-linked',
   'email-belongs-to-other-member',
   'forbidden',
+  // go-live #12-13 follow-up — /api/auth/invite returns `link-failed` (HTTP 500)
+  // when the contact-link step fails after createUser committed and the invite is
+  // rolled back (SAGA compensation). Distinct, retry-safe copy instead of generic.
+  'link-failed',
 ] as const;
 
 type InviteErrorKey = (typeof KNOWN_INVITE_ERROR_KEYS)[number];

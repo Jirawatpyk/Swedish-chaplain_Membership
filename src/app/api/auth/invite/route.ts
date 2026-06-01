@@ -59,9 +59,10 @@ const createUserPort: CreateUserPort = async (input) => {
     tenantId: input.tenantId,
   });
   if (result.ok) {
-    // outboxRowId is required by CreateUserPort (consumed by invitePortal's SAGA
-    // compensation, go-live #12-13). inviteUserForMember does not compensate yet
-    // — its orphan window is a tracked follow-up PR — but the port stays honest.
+    // outboxRowId is required by CreateUserPort, consumed by the SAGA compensation
+    // (go-live #12-13 + follow-up). inviteUserForMember NOW compensates: on a
+    // second-tx failure the orphaned pending user is rolled back via
+    // deleteInvitedUser (wired below) — see invite-user-for-member.ts catch block.
     return {
       ok: true,
       value: { user: { id: result.value.user.id }, outboxRowId: result.value.outboxRowId },
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         memberRepo: deps.memberRepo,
         audit: deps.audit,
         createUser: createUserPort,
+        deleteInvitedUser: deps.deleteInvitedUser,
         idFactory: deps.idFactory,
       },
       {
@@ -171,6 +173,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           { error: 'member-not-found' },
           { status: 404 },
         );
+      case 'link_failed':
+        // go-live #12-13 (follow-up) — the contact link faulted after createUser
+        // committed; the orphaned invite was rolled back (SAGA compensation), so
+        // a retry is safe. Distinct log tag from server_error so on-call can tell
+        // a benign self-healed link fault from a real incident.
+        logger.error(
+          { requestId: ctx.requestId },
+          'invite.member_link.link_failed',
+        );
+        return NextResponse.json({ error: 'link-failed' }, { status: 500 });
       case 'server_error':
         logger.error(
           { requestId: ctx.requestId, err: error },

@@ -157,6 +157,8 @@ type DepsOverrides = {
   linkUserInTxResult?: 'ok' | 'conflict';
   auditRecordResult?: 'ok' | 'fail';
   auditRecordInTxResult?: 'ok' | 'fail';
+  /** go-live #12-13 follow-up — force the SAGA compensation to fail. */
+  compensationFails?: boolean;
 };
 
 function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
@@ -182,9 +184,13 @@ function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
       case 'unexpected-code':
         return err({ code: 'invitation-create-failed' as const });
       default:
-        return ok({ user: { id: NEW_USER_ID } });
+        return ok({ user: { id: NEW_USER_ID }, outboxRowId: 'outbox-new-user' });
     }
   });
+
+  // go-live #12-13 (follow-up) — SAGA compensation port. Default succeeds;
+  // `compensationFails` flips it to exercise the compensation-failed log branch.
+  const deleteInvitedUser = vi.fn(async () => ({ ok: !overrides.compensationFails }));
 
   const contactRepo = {
     findByEmail: vi.fn(async () => {
@@ -240,6 +246,7 @@ function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
     contactRepo,
     audit,
     createUser,
+    deleteInvitedUser,
     idFactory: { contactId: vi.fn(() => newContactId) },
   } as unknown as InviteUserForMemberDeps;
 }
@@ -343,13 +350,13 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
   // Step 4: tx-level failures — orphan path (Gap 2 focus)
   // -------------------------------------------------------------------------
   describe('tx-level failures — orphan path', () => {
-    it('returns server_error when contactRepo.addInTx throws (unexpected infra error) — F1 user becomes orphan', async () => {
-      // This is the critical orphan scenario: createUser SUCCEEDS (F1 user
-      // row + pending invitation created) but the second tx (contact row)
-      // throws an unhandled error. The use case must:
+    it('returns server_error when contactRepo.addInTx throws (unexpected infra error) — orphan ROLLED BACK (go-live #12-13)', async () => {
+      // The critical orphan scenario: createUser SUCCEEDS (F1 user + pending
+      // invitation + queued email) but the second tx (contact row) throws. The
+      // use case must:
       //   1. Catch the throw from runInTenant.
-      //   2. Log the orphan breadcrumb (logger.error).
-      //   3. Return err({ type: 'server_error' }) — not re-throw.
+      //   2. SAGA-compensate — delete the just-created F1 user by id (+ outbox).
+      //   3. Return err({ type: 'server_error' }) — not re-throw, no orphan left.
       const deps = makeDeps({ addInTxResult: 'throw' });
       const result = await inviteUserForMember(deps, baseInput);
 
@@ -359,44 +366,50 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       } else {
         throw new Error('expected server_error result');
       }
-      // createUser was called (F1 user is now orphaned).
+      // createUser was called, then the orphan was COMPENSATED (not left behind).
       expect(deps.createUser).toHaveBeenCalledTimes(1);
-      // runInTenant was entered (the tx started).
       expect(runInTenantMock).toHaveBeenCalledTimes(1);
+      expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
+      expect(deps.deleteInvitedUser).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: NEW_USER_ID, outboxRowId: 'outbox-new-user' }),
+      );
     });
 
-    it('returns server_error when contactRepo.addInTx returns err (UseCaseAbort path)', async () => {
+    it('returns link_failed when contactRepo.addInTx returns err (UseCaseAbort → compensated rollback)', async () => {
       // The W1 pattern: addInTx returns err → the use case throws
       // UseCaseAbort inside the tx callback → runInTenant propagates it →
-      // outer catch returns server_error.
+      // outer catch compensates the orphan and returns link_failed (retry safe).
       const deps = makeDeps({ addInTxResult: 'conflict' });
       const result = await inviteUserForMember(deps, baseInput);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.type).toBe('server_error');
+      if (!result.ok) expect(result.error.type).toBe('link_failed');
       // linkUserInTx must NOT run after addInTx fails.
       expect(deps.contactRepo.linkUserInTx).not.toHaveBeenCalled();
+      // The orphaned F1 user was rolled back.
+      expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
     });
 
-    it('returns server_error when contactRepo.linkUserInTx returns err — audit NOT called', async () => {
+    it('returns link_failed when contactRepo.linkUserInTx returns err — audit NOT called', async () => {
       const deps = makeDeps({ linkUserInTxResult: 'conflict' });
       const result = await inviteUserForMember(deps, baseInput);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.type).toBe('server_error');
+      if (!result.ok) expect(result.error.type).toBe('link_failed');
       // Throw from linkUserInTx short-circuits the callback before audit.
       expect(deps.audit.recordInTx).not.toHaveBeenCalled();
     });
 
-    it('returns server_error when audit.recordInTx fails after add + link succeed', async () => {
+    it('returns link_failed when audit.recordInTx fails after add + link succeed', async () => {
       // W1 throw-to-rollback: add + link succeed, audit fails.
-      // The use case must rollback and return err. The audit IS attempted
-      // (so we exercise the failure branch), then the throw causes rollback.
+      // The use case must rollback (+ compensate the orphan) and return
+      // link_failed. The audit IS attempted (so we exercise the failure branch),
+      // then the throw causes rollback.
       const deps = makeDeps({ auditRecordInTxResult: 'fail' });
       const result = await inviteUserForMember(deps, baseInput);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.type).toBe('server_error');
+      if (!result.ok) expect(result.error.type).toBe('link_failed');
       expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
       expect(deps.contactRepo.addInTx).toHaveBeenCalledTimes(1);
       expect(deps.contactRepo.linkUserInTx).toHaveBeenCalledTimes(1);
@@ -593,14 +606,15 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
     });
 
-    it('(2a) Hybrid A + linkUserInTx conflict → server_error; addInTx not called (link_existing branch)', async () => {
+    it('(2a) Hybrid A + linkUserInTx conflict → link_failed + compensated; addInTx not called (link_existing branch)', async () => {
       // Hybrid A path: existing unlinked contact is found → decision=link_existing.
       // linkUserInTx races with a concurrent invite and returns repo.conflict.
       // The use case must:
       //   1. Skip addInTx entirely (reusing existing contact).
       //   2. Catch the UseCaseAbort thrown by the linkUserInTx err branch.
-      //   3. Return server_error (not contact_already_linked — the pre-tx check
-      //      already passed, so this is an unexpected race, not a user error).
+      //   3. SAGA-compensate the orphaned F1 user, then return link_failed
+      //      (compensated rollback; retry safe — go-live #12-13 follow-up). The
+      //      pre-existing unlinked contact is untouched (its link tx rolled back).
       const deps = makeDeps({
         findByEmailResult: 'same_member_unlinked',
         linkUserInTxResult: 'conflict',
@@ -609,9 +623,9 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.type).toBe('server_error');
+        expect(result.error.type).toBe('link_failed');
       } else {
-        throw new Error('expected server_error result');
+        throw new Error('expected link_failed result');
       }
 
       // addInTx must NOT have been called — link_existing path skips it.
@@ -620,12 +634,18 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       expect(deps.contactRepo.linkUserInTx).toHaveBeenCalledTimes(1);
       // Audit must NOT be emitted after the link failed.
       expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+      // The orphaned F1 user was rolled back even on the link_existing branch.
+      expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
+      expect(deps.deleteInvitedUser).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: NEW_USER_ID, outboxRowId: 'outbox-new-user' }),
+      );
     });
 
-    it('(2b) Hybrid A + audit.recordInTx fail → server_error; linkUserInTx was called (link_existing branch)', async () => {
+    it('(2b) Hybrid A + audit.recordInTx fail → link_failed + compensated; linkUserInTx was called (link_existing branch)', async () => {
       // Hybrid A path: existing unlinked contact, linkUserInTx succeeds, but
-      // audit.recordInTx returns err — the UseCaseAbort triggers rollback.
-      // Confirm: server_error returned; audit was attempted exactly once.
+      // audit.recordInTx returns err — the UseCaseAbort triggers rollback +
+      // compensation. Confirm: link_failed returned; audit attempted once; the
+      // orphaned F1 user rolled back.
       const deps = makeDeps({
         findByEmailResult: 'same_member_unlinked',
         auditRecordInTxResult: 'fail',
@@ -634,9 +654,9 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.type).toBe('server_error');
+        expect(result.error.type).toBe('link_failed');
       } else {
-        throw new Error('expected server_error result');
+        throw new Error('expected link_failed result');
       }
 
       // addInTx was skipped (link_existing mode).
@@ -645,6 +665,8 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       expect(deps.contactRepo.linkUserInTx).toHaveBeenCalledTimes(1);
       // Audit was attempted (failure is at the repo layer, not skipped entirely).
       expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
+      // The orphaned F1 user was rolled back.
+      expect(deps.deleteInvitedUser).toHaveBeenCalledOnce();
       // The audit event type must still have been contact_linked_to_user.
       const auditCall = (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
       expect(auditCall[2]).toMatchObject({ type: 'contact_linked_to_user' });

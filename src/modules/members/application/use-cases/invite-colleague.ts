@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { type MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
@@ -21,7 +22,11 @@ import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
-import type { CreateUserPort } from './invite-portal';
+import {
+  compensateInviteOrphan,
+  type CreateUserPort,
+  type DeleteInvitedUserPort,
+} from './_lib/invite-saga';
 import { UseCaseAbort } from '../tx-abort';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +60,11 @@ export type InviteColleagueError =
   | { type: 'validation_error'; issues: z.ZodIssue[] }
   | { type: 'email_taken' }
   | { type: 'invalid_email' }
+  // go-live #12-13 (follow-up) — the contact tx failed after createUser
+  // committed; the orphaned invite was rolled back (SAGA compensation), so a
+  // retry is safe. Distinct from server_error (an unexpected fault) for parity
+  // with invitePortal — see invite-portal.ts `link_failed`.
+  | { type: 'link_failed' }
   | { type: 'server_error'; message: string };
 
 export type InviteColleagueDeps = {
@@ -62,6 +72,8 @@ export type InviteColleagueDeps = {
   readonly contactRepo: ContactRepo;
   readonly audit: AuditPort;
   readonly createUser: CreateUserPort;
+  /** SAGA compensation for the invite orphan window (go-live #12-13 follow-up). */
+  readonly deleteInvitedUser: DeleteInvitedUserPort;
   readonly idFactory: { contactId(): ContactId };
 };
 
@@ -194,19 +206,37 @@ export async function inviteColleague(
     logger.error(
       {
         contactId: newContactId,
-        userId: created.value.user.id,
+        // PII: hash the user id in logs (CLAUDE.md § Secrets) — consistent with
+        // invite-user-for-member + the shared invite-saga compensation log.
+        userIdHash: hashId(created.value.user.id),
         cause,
         requestId: input.requestId,
       },
-      'invite-colleague.tx_failed: contact + link + audit rolled back',
+      'invite-colleague.tx_failed: rolling back orphaned F1 user (SAGA compensation)',
     );
+    // go-live #12-13 (follow-up) — the contact tx rolled back, but F1 createUser
+    // already committed the pending user + invitation + queued email in its own
+    // tx. Leaving it = a PERMANENT orphan (active user, no contact -> broken
+    // member-portal resolution via findByLinkedUserId; redeem-invite never links
+    // a contact). Roll the invite back via the shared SAGA compensation (never
+    // throws → cannot mask the original failure).
+    await compensateInviteOrphan(deps.deleteInvitedUser, {
+      userId: created.value.user.id,
+      outboxRowId: created.value.outboxRowId,
+      actorUserId: input.actorUserId,
+      sourceIp: input.sourceIp,
+      requestId: input.requestId,
+      targetEmail: emailResult.value,
+      opLabel: 'invite-colleague',
+    });
     if (e instanceof UseCaseAbort) {
-      const re = e.error as RepoError;
-      return err({
-        type: 'server_error',
-        message: `invite-colleague tx: ${re.code}`,
-      });
+      // Controlled repo failure, orphan compensated → link_failed (retry safe),
+      // mirroring invitePortal's link_failed branch.
+      return err({ type: 'link_failed' });
     }
+    // Genuinely unexpected throw (e.g. PG connection lost). Orphan compensated,
+    // but it is an incident to investigate — keep server_error (parity with
+    // invitePortal, where an uncaught throw surfaces as a generic 500).
     return err({
       type: 'server_error',
       message: 'invite-colleague tx: unexpected',

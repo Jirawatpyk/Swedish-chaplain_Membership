@@ -210,8 +210,12 @@ function makeInviteColleagueDeps(options: {
       recordInTx: vi.fn().mockResolvedValue(options.auditResult),
     },
     createUser: vi.fn().mockResolvedValue(
-      ok({ user: { id: 'user-uuid-new' } }),
+      ok({ user: { id: 'user-uuid-new' }, outboxRowId: 'outbox-uuid-new' }),
     ) as unknown as InviteColleagueDeps['createUser'],
+    // go-live #12-13 (follow-up) — the rollback path now compensates the orphaned
+    // F1 user; stub the port so the catch branch can invoke it. Default ok:true;
+    // individual tests can override to assert the compensation-failure log path.
+    deleteInvitedUser: vi.fn().mockResolvedValue({ ok: true }) as unknown as InviteColleagueDeps['deleteInvitedUser'],
     idFactory: {
       contactId: () => asContactId('33333333-3333-4333-8333-333333333333'),
     },
@@ -263,6 +267,9 @@ describe('W1 — inviteColleague throw-to-rollback', () => {
     });
     const result = await inviteColleague(deps, inviteColleagueInput);
     expect(result.ok).toBe(false);
+    // go-live #12-13 follow-up — a controlled UseCaseAbort rollback returns the
+    // typed `link_failed` (orphan compensated, retry safe), NOT server_error.
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
     // Throw short-circuits the callback BEFORE audit.recordInTx runs.
     expect(deps.audit.recordInTx).not.toHaveBeenCalled();
     expect(runInTenantMock).toHaveBeenCalled();
@@ -293,6 +300,8 @@ describe('W1 — inviteColleague throw-to-rollback', () => {
     });
     const result = await inviteColleague(deps, inviteColleagueInput);
     expect(result.ok).toBe(false);
+    // go-live #12-13 follow-up — controlled UseCaseAbort rollback → `link_failed`.
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
     // Audit was attempted (so we exercised the failure branch) AND the
     // use case still surfaced err — which only happens if UseCaseAbort
     // was thrown + caught outside runInTenant. A `return err` pattern
