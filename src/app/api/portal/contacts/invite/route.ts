@@ -66,7 +66,12 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return { ok: false as const, error: { code: result.error.code as 'invalid-input' | 'email-taken' } };
     }
-    return { ok: true as const, value: { user: { id: result.value.user.id } } };
+    // outboxRowId required by CreateUserPort (invitePortal SAGA, go-live #12-13);
+    // inviteColleague does not compensate yet — tracked follow-up — but stays honest.
+    return {
+      ok: true as const,
+      value: { user: { id: result.value.user.id }, outboxRowId: result.value.outboxRowId },
+    };
   };
 
   const result = await inviteColleague(

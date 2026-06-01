@@ -59,6 +59,10 @@ export function InvitePortalButton({ memberId, contactId }: Props) {
         case 'not_found':
           toast.error(t('errors.notFound'));
           break;
+        case 'link_failed':
+          // go-live #12-13 — the invite was rolled back; the admin can retry.
+          toast.error(t('errors.linkFailed'));
+          break;
         default:
           toast.error(t('errors.serverError'));
       }

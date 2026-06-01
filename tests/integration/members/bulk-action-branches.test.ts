@@ -99,51 +99,11 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
   };
 }
 
-describe('integration: bulk send_portal_invite branch (round-2 review C-6)', () => {
-  it('emits audit event but does NOT increment updatedCount (no state change)', async () => {
-    const deps = stubDeps();
-    const result = await bulkAction(
-      {
-        action: 'send_portal_invite',
-        member_ids: ['11111111-2222-3333-4444-555555555555'],
-      },
-      meta,
-      deps,
-    );
-
-    // Round-3 T4: assertions MUST enforce result.ok === true so that a
-    // silently-failing runInTenant or repo stub doesn't mask the bug.
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.updatedCount).toBe(0); // no mutation counted
-      expect(result.value.auditEventCount).toBe(1); // audit still emitted
-    }
-  });
-
-  it('accepts multiple members in send_portal_invite batch', async () => {
-    const deps = stubDeps();
-    (deps.memberRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValue(ok(stubMember));
-
-    const result = await bulkAction(
-      {
-        action: 'send_portal_invite',
-        member_ids: [
-          '11111111-2222-3333-4444-555555555555',
-          '22222222-3333-4444-5555-666666666666',
-          '33333333-4444-5555-6666-777777777777',
-        ],
-      },
-      meta,
-      deps,
-    );
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.updatedCount).toBe(0);
-      expect(result.value.auditEventCount).toBe(3);
-    }
-  });
-});
+// NOTE: the former `send_portal_invite branch (C-6)` describe was REMOVED in
+// go-live P1-17 — send_portal_invite no longer routes through `bulkAction` (it
+// is a dedicated best-effort use case `bulkSendPortalInvite`). Real-dispatch
+// coverage lives in tests/integration/members/bulk-send-portal-invite.test.ts +
+// the unit/contract suites.
 
 describe('integration: bulk all-or-nothing rollback (round-2 review C-7 / FR-019)', () => {
   it('missing id in batched lookup → not_found, no writes (staff-review SB-1)', async () => {

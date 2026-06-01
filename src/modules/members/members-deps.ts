@@ -22,6 +22,8 @@ import { userEmailAdapter } from './infrastructure/adapters/user-email-adapter';
 import { emailChangeTokenAdapter } from './infrastructure/adapters/email-change-token-adapter';
 import { drizzleInvitationCascadePort } from './infrastructure/adapters/invitation-cascade-adapter';
 import { reissueInvitationAdapter } from './infrastructure/adapters/reissue-invitation-adapter';
+import { createUserPortAdapter } from './infrastructure/adapters/create-user-port-adapter';
+import { deleteInvitedUserPortAdapter } from './infrastructure/adapters/delete-invited-user-port-adapter';
 import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
 import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
@@ -35,6 +37,7 @@ import type { UserEmailPort } from './application/ports/user-email-port';
 import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
 import type { InvitationCascadePort } from './application/ports/invitation-cascade-port';
 import type { ReissueInvitationPort } from './application/ports/reissue-invitation-port';
+import type { CreateUserPort, DeleteInvitedUserPort } from './application/use-cases/invite-portal';
 import type { BroadcastsCascadePort } from './application/ports/broadcasts-cascade-port';
 import type { RenewalsCascadePort } from './application/ports/renewals-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
@@ -70,6 +73,14 @@ export type MembersDeps = {
    */
   renewalsCascade: RenewalsCascadePort;
   timeline: TimelinePort;
+  /** F1 createUser glue for the portal-invite use-cases (single + bulk). P1-17. */
+  createUser: CreateUserPort;
+  /**
+   * F1 deleteInvitedUser glue — SAGA compensation for the invite orphan window
+   * (go-live #12-13). Rolls back a just-created pending user when the contact
+   * link fails after createUser committed.
+   */
+  deleteInvitedUser: DeleteInvitedUserPort;
   clock: ClockPort;
   idFactory: {
     memberId(): MemberId;
@@ -120,6 +131,8 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     broadcastsCascade: f7BroadcastsCascadeAdapter,
     renewalsCascade: f8RenewalsCascadeAdapter,
     timeline: drizzleTimelineRepo,
+    createUser: createUserPortAdapter,
+    deleteInvitedUser: deleteInvitedUserPortAdapter,
     clock: systemClock,
     idFactory: systemIdFactory,
   };

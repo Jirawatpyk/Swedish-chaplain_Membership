@@ -24,7 +24,7 @@ import {
   hashRequestBody,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import { bulkAction } from '@/modules/members';
+import { bulkAction, bulkSendPortalInvite } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { rateLimiter } from '@/modules/auth';
 import {
@@ -186,6 +186,104 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 6. Execute bulk action use case (rate limit NOT passed — single-
   //    enforcement-point rule per round-2 review C-1).
   const deps = buildMembersDeps(tenant);
+
+  // 6a. send_portal_invite — go-live P1-17. A SEPARATE use case (not bulkAction):
+  //     invites are best-effort per member (a queued invite cannot be un-queued)
+  //     and the per-member createUser runs in F1's owner-role tx, which
+  //     chamber_app cannot join — so this must NOT share bulkAction's
+  //     all-or-nothing runInTenant. Returns a 200 with per-member buckets even
+  //     when some members are skipped/failed (partial-success is still 200).
+  if (
+    rawBody &&
+    typeof rawBody === 'object' &&
+    (rawBody as Record<string, unknown>).action === 'send_portal_invite'
+  ) {
+    const inviteResult = await bulkSendPortalInvite(
+      rawBody,
+      {
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp: ctx.sourceIp,
+      },
+      {
+        tenant: deps.tenant,
+        memberRepo: deps.memberRepo,
+        contactRepo: deps.contactRepo,
+        createUser: deps.createUser,
+        deleteInvitedUser: deps.deleteInvitedUser,
+      },
+    );
+
+    if (inviteResult.ok) {
+      const body = {
+        invited: inviteResult.value.invited.map((i) => ({
+          member_id: i.memberId,
+          contact_id: i.contactId,
+          user_id: i.userId,
+          email: i.email,
+        })),
+        skipped: inviteResult.value.skipped.map((s) => ({
+          member_id: s.memberId,
+          reason: s.reason,
+        })),
+        failed: inviteResult.value.failed.map((f) => ({
+          member_id: f.memberId,
+          code: f.code,
+        })),
+        counts: inviteResult.value.counts,
+      };
+      try {
+        await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+          status: 200,
+          body,
+        });
+      } catch (e) {
+        logger.warn(
+          { err: e, requestId: ctx.requestId },
+          'bulk-invite: rememberIdempotentResponse failed (non-fatal)',
+        );
+      }
+      return NextResponse.json(body, { status: 200 });
+    }
+
+    // go-live /code-review #33 — these validation errors still hold the
+    // idempotency reservation made above. Remember the response so a same-key +
+    // same-body retry replays this 400 deterministically instead of getting a
+    // stuck `idempotency_reservation_failed`. (A corrected body must use a new
+    // key — same key + different body is an idempotency_conflict by design.)
+    const errorResponse =
+      inviteResult.error.type === 'bulk_cap_exceeded'
+        ? {
+            status: 400 as const,
+            body: {
+              error: {
+                code: 'bulk_cap_exceeded' as const,
+                message: `Cannot exceed ${BULK_CAP} members per batch.`,
+                details: { count: inviteResult.error.count, max: BULK_CAP },
+              },
+            },
+          }
+        : {
+            status: 400 as const,
+            body: {
+              error: {
+                code: 'invalid_body' as const,
+                message: 'Body failed validation.',
+                details: { issues: inviteResult.error.issues },
+              },
+            },
+          };
+    try {
+      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, errorResponse);
+    } catch (e) {
+      logger.warn(
+        { err: e, requestId: ctx.requestId },
+        'bulk-invite: rememberIdempotentResponse (error path) failed (non-fatal)',
+      );
+    }
+    return NextResponse.json(errorResponse.body, { status: errorResponse.status });
+  }
+
   const result = await bulkAction(
     rawBody,
     {

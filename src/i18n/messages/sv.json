@@ -1246,6 +1246,7 @@
           "invalidEmail": "Kontaktens e-postadress är ogiltig.",
           "emailTaken": "Denna e-post tillhör redan ett annat konto.",
           "notFound": "Kontakten hittades inte.",
+          "linkFailed": "Det gick inte att koppla portalkontot. Ingen inbjudan skickades – försök igen.",
           "serverError": "Något gick fel. Försök igen."
         }
       },
@@ -1272,6 +1273,9 @@
         "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
         "confirmInviteAction": "Skicka inbjudningar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
+        "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
+        "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
+        "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "unknownError": "Något gick fel.",
         "networkError": "Nätverksfel. Kontrollera anslutningen.",

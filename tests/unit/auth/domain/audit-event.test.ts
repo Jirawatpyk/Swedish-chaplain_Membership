@@ -6,7 +6,7 @@ import {
 } from '@/modules/auth/domain/audit-event';
 
 describe('AUDIT_EVENT_TYPES', () => {
-  it('contains 30 event types (17 F1 + 10 F5 route-level + 3 F1 post-ship B5)', () => {
+  it('contains 31 event types (17 F1 + 10 F5 route-level + 3 F1 post-ship B5 + 1 go-live SAGA)', () => {
     // F5 route-level events live on F1's audit-repo because they fire
     // BEFORE a tenant tx is established (Group D Architect rationale).
     // Composition by migration:
@@ -23,12 +23,17 @@ describe('AUDIT_EVENT_TYPES', () => {
     //   0158 (B5)       : password_change_failed,
     //                     password_reset_email_failed,
     //                     password_malformed_hash_detected            (3)
+    //   0198 (#12-13)   : account_creation_compensated                (1)
     //                                                                 ──
-    //                                                                 13
+    //                                                                 14
     // Tenant-scoped payment lifecycle events (payment_initiated /
     // payment_succeeded etc.) do NOT go through this repo — they use
     // the F5 AuditPort with retention_years per data-model.md § 7.1.
-    expect(AUDIT_EVENT_TYPES).toHaveLength(30);
+    expect(AUDIT_EVENT_TYPES).toHaveLength(31);
+  });
+
+  it('includes the go-live SAGA compensation event (migration 0198, #12-13)', () => {
+    expect(AUDIT_EVENT_TYPES).toContain('account_creation_compensated');
   });
 
   it('includes expected F1 events', () => {

@@ -104,6 +104,14 @@ export interface CreateUserSuccess {
    * via the rendered email) and is NEVER returned to the inviter.
    */
   readonly invitationId: InvitationTokenHash;
+  /**
+   * The `notifications_outbox` row id for the queued invitation email
+   * (go-live #12-13). Returned so a caller that must roll back this
+   * just-created invite — the F3 `invitePortal` SAGA when the downstream
+   * contact-link step fails — can delete the queued email row via
+   * `deleteInvitedUser`, leaving no dead invite in flight.
+   */
+  readonly outboxRowId: string;
 }
 
 export type CreateUserError =
@@ -255,7 +263,11 @@ export async function createUser(
         requestId: input.requestId,
       });
 
-      return { user, invitationId: invitation.id };
+      return {
+        user,
+        invitationId: invitation.id,
+        outboxRowId: enqueueResult.value.outboxRowId,
+      };
       // ↑ `invitation.id` is the hash; safe for caller use (audit
       //   correlation + admin "Invitation #abcd" rendering). NEVER
       //   exposed via API responses or URLs.

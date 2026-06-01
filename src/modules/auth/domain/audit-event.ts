@@ -42,6 +42,9 @@ export const AUDIT_EVENT_TYPES = [
   'password_reset_failed',
   'password_changed',
   'account_created',
+  // go-live #12-13 — invitePortal SAGA compensation: a just-created pending user
+  // was deleted because the downstream contact-link step failed (no orphan).
+  'account_creation_compensated',
   'account_disabled',
   'account_reenabled',
   'role_changed',

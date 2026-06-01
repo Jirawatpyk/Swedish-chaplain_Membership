@@ -86,6 +86,7 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     createPending: vi.fn(),
     createPendingInTx: vi.fn().mockResolvedValue(PENDING_USER),
     deletePending: vi.fn(),
+    deleteInvitedPendingInTx: vi.fn(async () => ({ deleted: 0 })),
     setPasswordHash: vi.fn(),
     activate: vi.fn(),
     disable: vi.fn(),

@@ -85,6 +85,14 @@ export {
 } from './application/create-user';
 
 export {
+  deleteInvitedUser,
+  type DeleteInvitedUserInput,
+  type DeleteInvitedUserSuccess,
+  type DeleteInvitedUserError,
+  type DeleteInvitedUserDeps,
+} from './application/delete-invited-user';
+
+export {
   redeemInvite,
   type RedeemInviteInput,
   type RedeemInviteSuccess,

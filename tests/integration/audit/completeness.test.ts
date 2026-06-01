@@ -23,7 +23,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth/domain/audit-event';
 
-describe('integration: audit completeness — all 30 event types writable', () => {
+describe('integration: audit completeness — all 31 event types writable', () => {
   it.each(AUDIT_EVENT_TYPES)(
     'can append and read back a %s audit row',
     async (eventType) => {
@@ -55,7 +55,7 @@ describe('integration: audit completeness — all 30 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 30 entries', () => {
+  it('the full event-type list has exactly 31 entries', () => {
     // Regression guard against accidental removal or duplication.
     // Pass 5: 16 → 17 after splitting `password_reset_failed` out of
     //         `invitation_redemption_failed` (migration 0002).
@@ -68,8 +68,10 @@ describe('integration: audit completeness — all 30 event types writable', () =
     // F1 post-ship B5: 27 → 30 (migration 0158 — password_change_failed,
     //                  password_reset_email_failed,
     //                  password_malformed_hash_detected).
-    expect(AUDIT_EVENT_TYPES.length).toBe(30);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(30);
+    // go-live #12-13: 30 → 31 (migration 0198 — account_creation_compensated,
+    //                  SAGA rollback of an orphaned portal invite).
+    expect(AUDIT_EVENT_TYPES.length).toBe(31);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(31);
   });
 });
 
