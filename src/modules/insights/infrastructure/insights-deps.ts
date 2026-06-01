@@ -24,6 +24,8 @@ import { privateBlobAdapter } from './blob/private-blob-adapter';
 import { memberSourceAdapter } from './sources/member-source-adapter';
 import { memberPlanSourceAdapter } from './sources/member-plan-source-adapter';
 import { planSourceAdapter } from './sources/plan-source-adapter';
+import { memberEnumerationAdapter } from './sources/member-enumeration-adapter';
+import { benefitConsumptionAggregateAdapter } from './sources/benefit-consumption-aggregate-adapter';
 import { invoiceSourceAdapter } from './sources/invoice-source-adapter';
 import { broadcastSourceAdapter } from './sources/broadcast-source-adapter';
 import { eventSourceAdapter } from './sources/event-source-adapter';
@@ -72,6 +74,10 @@ export function makeComputeDashboardSnapshotDeps(
     memberSource: memberSourceAdapter,
     invoiceSource: invoiceSourceAdapter,
     broadcastSource: broadcastSourceAdapter,
+    // P1-4 / FR-004 — cross-member quota roll-up sources.
+    memberEnumeration: memberEnumerationAdapter,
+    consumptionAggregate: benefitConsumptionAggregateAdapter,
+    planSource: planSourceAdapter,
     snapshotRepo: makeDrizzleSnapshotRepo(tenantId),
     dismissalRepo: makeDrizzleInsightDismissalRepo(tenantId),
     clock: systemClock,

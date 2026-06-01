@@ -5,8 +5,12 @@
  * snapshot's membership counts, at-risk count, and the at_risk_followup insight
  * — plus that a dismissal suppresses the insight for the current cycle (FR-004).
  *
- * Increment 1 scope: counts + at-risk insight via MemberSource. Revenue /
- * overdue / broadcasts / under-delivered are 0 here (documented follow-ups).
+ * Counts + at-risk insight via MemberSource. Revenue / overdue / broadcasts are
+ * 0 here (covered by the I-5 describe below). Quota insights (P1-4 / FR-004) DO
+ * fire: the 6 active members hold the default matrix (eblast_per_year=1,
+ * cultural_tickets_per_year=0) with zero sends, so all 6 under-use E-Blast →
+ * `unused_eblast_quota`=6, `underDeliveredBenefitCount`=6; cultural is excluded
+ * (entitlement 0). Thorough quota scenarios live in `quota-insights-snapshot`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -115,8 +119,13 @@ describe('F9 computeDashboardSnapshot — integration (T022)', () => {
     expect(snap.counts.overdue).toBe(0);
     expect(snap.needsAttention.atRiskMembers).toBe(3);
     expect(snap.ytdPaidRevenueSatang).toBe('0');
-    expect(snap.underDeliveredBenefitCount).toBe(0);
-    expect(snap.topInsights).toEqual([{ key: 'at_risk_followup', count: 3 }]);
+    // P1-4 / FR-004 — all 6 active members under-use E-Blast (entitlement 1,
+    // 0 sent); cultural entitlement is 0 so it never fires. Union = 6.
+    expect(snap.underDeliveredBenefitCount).toBe(6);
+    expect(snap.topInsights).toEqual([
+      { key: 'at_risk_followup', count: 3 },
+      { key: 'unused_eblast_quota', count: 6 },
+    ]);
     expect(rows[0]!.stale).toBe(false);
     // FR-001a trend arrays — 12 month buckets; all 8 members joined "now"
     // (within the window) so the cumulative series ends at 8; no paid invoices
@@ -142,9 +151,13 @@ describe('F9 computeDashboardSnapshot — integration (T022)', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // Counts unchanged; the dismissed insight is suppressed for the cycle.
+      // Counts unchanged; the dismissed at-risk insight is suppressed for the
+      // cycle. The quota card (unused_eblast_quota=6) is a DIFFERENT key + cycle
+      // (membership_year), so it survives the at_risk_followup dismissal.
       expect(result.value.counts.atRisk).toBe(3);
-      expect(result.value.topInsights).toEqual([]);
+      expect(result.value.topInsights).toEqual([
+        { key: 'unused_eblast_quota', count: 6 },
+      ]);
     }
   });
 });

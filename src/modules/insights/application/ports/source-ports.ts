@@ -25,6 +25,7 @@
  */
 import type { TenantContext } from '@/modules/tenants';
 import type { RiskBand } from '../../domain/engagement-score';
+import type { MemberPlanRef } from '../../domain/quota-underuse';
 
 /** Membership counts by lifecycle status for the dashboard headline (FR-001). */
 export interface MemberStatusCounts {
@@ -65,6 +66,18 @@ export interface MemberSource {
     monthKeys: readonly string[],
     timeZone: string,
   ): Promise<MemberJoinDistribution>;
+}
+
+/**
+ * Enumerates the tenant's ACTIVE members with their plan ref (P1-4 / FR-004),
+ * for the cross-member quota-insight roll-up. ACTIVE-only because inactive /
+ * archived members no longer consume current-year quota. The implementation
+ * paginates the members barrel (`directorySearchWithCount`) — see the pageSize
+ * clamp gotcha in `member-source-adapter`. Distinct from `MemberPlanSource`
+ * (single-member lookup): this is the whole-tenant enumeration.
+ */
+export interface MemberEnumerationSource {
+  listActiveWithPlan(ctx: TenantContext): Promise<readonly MemberPlanRef[]>;
 }
 
 /**
@@ -144,6 +157,34 @@ export interface EventConsumptionSource {
     memberId: string,
     membershipYear: number,
   ): Promise<BenefitConsumption>;
+}
+
+/**
+ * Cross-member CONSUMPTION aggregate for the P1-4 / FR-004 quota cards. Unlike
+ * the per-member `BroadcastConsumptionSource` / `EventConsumptionSource`, each
+ * method returns ONE batched roll-up over all members of the tenant for the
+ * membership year — `memberId → count` — so the snapshot use-case never loops
+ * N members (avoids N+1; 2 fixed GROUP BY queries regardless of member count).
+ *
+ * Contract:
+ *   - A member ABSENT from the returned map sent/attended ZERO this year (the
+ *     caller reads `map.get(id) ?? 0`).
+ *   - FAIL-LOUD: a query error must REJECT (never resolve an empty map) so the
+ *     snapshot surfaces `compute_failed` rather than a false-zero under-use
+ *     count. Mirrors the per-member adapters' fail-loud contract.
+ *   - The filters MUST match the per-member sources exactly (E-Blast: sent +
+ *     quotaYearConsumed; cultural: isCulturalEvent + year window + not
+ *     pseudonymised/archived) — pinned by an equivalence integration test.
+ */
+export interface BenefitConsumptionAggregateSource {
+  eblastUsedByMember(
+    ctx: TenantContext,
+    membershipYear: number,
+  ): Promise<ReadonlyMap<string, number>>;
+  culturalUsedByMember(
+    ctx: TenantContext,
+    membershipYear: number,
+  ): Promise<ReadonlyMap<string, number>>;
 }
 
 export interface InvoiceSource {
