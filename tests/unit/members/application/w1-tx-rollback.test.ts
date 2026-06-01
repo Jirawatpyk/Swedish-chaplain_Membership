@@ -267,6 +267,9 @@ describe('W1 — inviteColleague throw-to-rollback', () => {
     });
     const result = await inviteColleague(deps, inviteColleagueInput);
     expect(result.ok).toBe(false);
+    // go-live #12-13 follow-up — a controlled UseCaseAbort rollback returns the
+    // typed `link_failed` (orphan compensated, retry safe), NOT server_error.
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
     // Throw short-circuits the callback BEFORE audit.recordInTx runs.
     expect(deps.audit.recordInTx).not.toHaveBeenCalled();
     expect(runInTenantMock).toHaveBeenCalled();
@@ -297,6 +300,8 @@ describe('W1 — inviteColleague throw-to-rollback', () => {
     });
     const result = await inviteColleague(deps, inviteColleagueInput);
     expect(result.ok).toBe(false);
+    // go-live #12-13 follow-up — controlled UseCaseAbort rollback → `link_failed`.
+    if (!result.ok) expect(result.error.type).toBe('link_failed');
     // Audit was attempted (so we exercised the failure branch) AND the
     // use case still surfaced err — which only happens if UseCaseAbort
     // was thrown + caught outside runInTenant. A `return err` pattern
