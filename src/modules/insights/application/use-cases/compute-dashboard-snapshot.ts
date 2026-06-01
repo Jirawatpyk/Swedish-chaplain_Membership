@@ -9,10 +9,13 @@
  * Computes membership counts + at-risk insight via `MemberSource`, YTD paid
  * revenue + overdue-invoice count via `InvoiceSource`, and
  * needsAttention.broadcastsAwaitingApproval via `BroadcastConsumptionSource`
- * (`countAwaitingApproval`). Still scoped follow-up (emitted as 0/empty with the
- * field present so the UI stays stable):
- *   - underDeliveredBenefitCount + the 2 quota insights
- *     → US4 benefit-usage aggregate (cross-member)
+ * (`countAwaitingApproval`). The cross-member quota roll-up (P1-4 / FR-004) —
+ * `underDeliveredBenefitCount` + the `unused_eblast_quota` /
+ * `underused_event_tickets` insight cards — is computed via
+ * `MemberEnumerationSource` + `BenefitConsumptionAggregateSource` (one batched
+ * GROUP BY per benefit, no N+1) + memoized `PlanSource` entitlements, joined by
+ * the pure `countUnderUsedQuota` domain rule. Threshold = "any shortfall"
+ * (`used < entitlement`), distinct from the FR-021 US4 25pt-gap member view.
  *
  * Application layer: orchestrates Domain + ports; `runInTenant` only wraps the
  * tenant-scoped dismissal-check + upsert (the MemberSource reads self-scope via
@@ -31,11 +34,19 @@ import type {
   RevenueTrendPoint,
 } from '../../domain/dashboard-snapshot';
 import type { SmartInsight } from '../../domain/smart-insight';
+import {
+  countUnderUsedQuota,
+  planKey,
+  type QuotaEntitlement,
+} from '../../domain/quota-underuse';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
 import type {
+  BenefitConsumptionAggregateSource,
   BroadcastConsumptionSource,
   InvoiceSource,
+  MemberEnumerationSource,
   MemberSource,
+  PlanSource,
 } from '../ports/source-ports';
 import type { SnapshotRepo } from '../ports/snapshot-repo';
 import type { ClockPort } from '../ports/clock-port';
@@ -45,6 +56,12 @@ export interface ComputeDashboardSnapshotDeps {
   readonly invoiceSource: InvoiceSource;
   /** Broadcasts awaiting approval (FR-002 / AS-2); only the count is needed at US1. */
   readonly broadcastSource: Pick<BroadcastConsumptionSource, 'countAwaitingApproval'>;
+  /** Active-member enumeration for the cross-member quota roll-up (P1-4 / FR-004). */
+  readonly memberEnumeration: MemberEnumerationSource;
+  /** Batched cross-member benefit consumption for the quota roll-up (P1-4 / FR-004). */
+  readonly consumptionAggregate: BenefitConsumptionAggregateSource;
+  /** Plan entitlements for the quota roll-up (P1-4 / FR-004 / FR-019). */
+  readonly planSource: PlanSource;
   readonly snapshotRepo: SnapshotRepo;
   readonly dismissalRepo: InsightDismissalRepo;
   readonly clock: ClockPort;
@@ -79,6 +96,9 @@ export async function computeDashboardSnapshot(
       broadcastsAwaitingApproval,
       monthlyRevenue,
       joinDist,
+      activeMembers,
+      eblastUsedByMember,
+      culturalUsedByMember,
     ] = await Promise.all([
       deps.memberSource.countByStatus(ctx),
       deps.memberSource.countAtRisk(ctx),
@@ -87,6 +107,12 @@ export async function computeDashboardSnapshot(
       deps.broadcastSource.countAwaitingApproval(ctx),
       deps.invoiceSource.getMonthlyPaidRevenueSatang(ctx, monthKeys, deps.tenantTimezone),
       deps.memberSource.joinDistribution(ctx, monthKeys, deps.tenantTimezone),
+      // P1-4 / FR-004 — cross-member quota roll-up inputs. The two consumption
+      // aggregates are ONE GROUP BY each (no N+1); entitlements are resolved
+      // below (memoized per distinct plan).
+      deps.memberEnumeration.listActiveWithPlan(ctx),
+      deps.consumptionAggregate.eblastUsedByMember(ctx, year),
+      deps.consumptionAggregate.culturalUsedByMember(ctx, year),
     ]);
     const total = statusCounts.active + statusCounts.inactive + statusCounts.archived;
 
@@ -101,8 +127,46 @@ export async function computeDashboardSnapshot(
       return { month, cumulative };
     });
 
-    // Candidate insights (Increment 1: at-risk follow-up only; quota insights → US4).
-    const candidates: SmartInsight[] = atRisk > 0 ? [{ key: 'at_risk_followup', count: atRisk }] : [];
+    // P1-4 / FR-004 — cross-member quota roll-up. Resolve entitlements ONCE per
+    // distinct (planId, planYear) the active members hold (≤ tier count, memoized;
+    // ≤9 for SweCham). A member whose plan/year is not found is omitted from the
+    // map and therefore excluded by `countUnderUsedQuota` (cannot assess under-use
+    // without an entitlement baseline). Threshold = "any shortfall" (used <
+    // entitlement) — intentionally distinct from the FR-021 US4 25pt-gap rule.
+    const distinctPlans = new Map<string, { planId: string; planYear: number }>();
+    for (const m of activeMembers) {
+      const key = planKey(m.planId, m.planYear);
+      if (!distinctPlans.has(key)) distinctPlans.set(key, m);
+    }
+    const entitlementByPlanKey = new Map<string, QuotaEntitlement>();
+    await Promise.all(
+      [...distinctPlans].map(async ([key, ref]) => {
+        const ent = await deps.planSource.getEntitlements(ctx, ref.planId, ref.planYear);
+        if (ent !== null) {
+          entitlementByPlanKey.set(key, {
+            eblastPerYear: ent.eblastPerYear,
+            culturalTicketsPerYear: ent.culturalTicketsPerYear,
+          });
+        }
+      }),
+    );
+    const quota = countUnderUsedQuota({
+      members: activeMembers,
+      eblastUsedByMember,
+      culturalUsedByMember,
+      entitlementByPlanKey,
+    });
+
+    // Candidate insights — at-risk follow-up + the 2 quota cards. A count=0 card
+    // is NOT emitted (parity with the at-risk gate); dismissals are filtered next.
+    const candidates: SmartInsight[] = [];
+    if (atRisk > 0) candidates.push({ key: 'at_risk_followup', count: atRisk });
+    if (quota.unusedEblastMembers > 0) {
+      candidates.push({ key: 'unused_eblast_quota', count: quota.unusedEblastMembers });
+    }
+    if (quota.underusedTicketMembers > 0) {
+      candidates.push({ key: 'underused_event_tickets', count: quota.underusedTicketMembers });
+    }
 
     const snapshot = await runInTenant(ctx, async (tx) => {
       // Suppress insights dismissed for the current cycle (FR-004).
@@ -122,7 +186,8 @@ export async function computeDashboardSnapshot(
       const snap: DashboardSnapshot = {
         counts: { total, active: statusCounts.active, atRisk, overdue: overdueInvoices },
         ytdPaidRevenueSatang: ytdPaidRevenueSatang.toString(),
-        underDeliveredBenefitCount: 0, // benefit aggregate lands with US4
+        // P1-4 / FR-004 — UNION of members under-using EITHER quota benefit.
+        underDeliveredBenefitCount: quota.underDeliveredEither,
         needsAttention: {
           broadcastsAwaitingApproval,
           overdueInvoices,
