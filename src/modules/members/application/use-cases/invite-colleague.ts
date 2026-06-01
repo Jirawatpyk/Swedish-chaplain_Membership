@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { type MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
@@ -205,7 +206,9 @@ export async function inviteColleague(
     logger.error(
       {
         contactId: newContactId,
-        userId: created.value.user.id,
+        // PII: hash the user id in logs (CLAUDE.md § Secrets) — consistent with
+        // invite-user-for-member + the shared invite-saga compensation log.
+        userIdHash: hashId(created.value.user.id),
         cause,
         requestId: input.requestId,
       },

@@ -18,7 +18,8 @@
  *   - its queued invite outbox row is GONE,
  *   - an `account_creation_compensated` audit row is appended alongside the
  *     original `account_created` row,
- *   - the use case returns a typed `server_error` (no silent ok()).
+ *   - the use case returns a typed `link_failed` (a controlled rollback; no
+ *     silent ok()). An unexpected throw would instead surface as `server_error`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';

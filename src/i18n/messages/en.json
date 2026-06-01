@@ -543,7 +543,8 @@
           "member-not-found": "That member record could not be found. It may belong to another tenant or have been archived.",
           "contact-already-linked": "This email already has portal access for this member. Ask them to use Forgot Password if they can't sign in.",
           "email-belongs-to-other-member": "This email is already a contact on another member. Each email can only be linked to one member at a time.",
-          "forbidden": "You don't have permission to invite users."
+          "forbidden": "You don't have permission to invite users.",
+          "link-failed": "Couldn't complete the invitation. No invitation was sent — please try again."
         },
         "linkMember": {
           "label": "Link to member company",
