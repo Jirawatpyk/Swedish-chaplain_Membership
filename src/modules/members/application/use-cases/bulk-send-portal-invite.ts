@@ -33,11 +33,11 @@
 import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asMemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { ContactRepo } from '../ports/contact-repo';
-import type { AuditPort } from '../ports/audit-port';
 import { invitePortal, type CreateUserPort } from './invite-portal';
 import { BULK_CAP } from './bulk-action';
 
@@ -99,7 +99,6 @@ export type BulkSendPortalInviteDeps = {
   readonly memberRepo: Pick<MemberRepo, 'findById'>;
   readonly contactRepo: ContactRepo;
   readonly createUser: CreateUserPort;
-  readonly audit: Pick<AuditPort, 'record'>;
 };
 
 export type BulkSendPortalInviteMeta = {
@@ -136,117 +135,117 @@ export async function bulkSendPortalInvite(
 
   for (const rawId of data.member_ids) {
     const memberId = asMemberId(rawId);
-
-    // 1. Resolve the member (RLS-scoped). A cross-tenant / missing id → skip.
-    const memberRes = await deps.memberRepo.findById(deps.tenant, memberId);
-    if (!memberRes.ok) {
-      if (memberRes.error.code === 'repo.not_found') {
-        skipped.push({ memberId: rawId, reason: 'member_not_found' });
-        continue;
-      }
-      logger.error(
-        { requestId: meta.requestId, memberId: rawId, err: memberRes.error.code },
-        'bulk-invite: member lookup failed',
-      );
-      failed.push({ memberId: rawId, code: 'server_error' });
-      continue;
-    }
-    if (memberRes.value.status === 'archived') {
-      skipped.push({ memberId: rawId, reason: 'member_archived' });
-      continue;
-    }
-
-    // 2. Find the primary live contact (the invite recipient). listByMember with
-    //    includeRemoved:false already excludes soft-deleted rows.
-    const contactsRes = await deps.contactRepo.listByMember(deps.tenant, memberId, {
-      includeRemoved: false,
-    });
-    if (!contactsRes.ok) {
-      logger.error(
-        { requestId: meta.requestId, memberId: rawId, err: contactsRes.error.code },
-        'bulk-invite: contact list failed',
-      );
-      failed.push({ memberId: rawId, code: 'server_error' });
-      continue;
-    }
-    const primary = contactsRes.value.find((c) => c.isPrimary);
-    if (!primary) {
-      skipped.push({ memberId: rawId, reason: 'no_invitable_contact' });
-      continue;
-    }
-
-    // 3. Reuse the proven single-invite path (one shared dispatch code path).
-    const res = await invitePortal(
-      {
-        tenant: deps.tenant,
-        contactRepo: deps.contactRepo,
-        createUser: deps.createUser,
-      },
-      {
-        contactId: primary.contactId,
-        actorUserId: meta.actorUserId,
-        sourceIp: meta.sourceIp,
-        requestId: meta.requestId,
-        ...(meta.locale !== undefined ? { locale: meta.locale } : {}),
-      },
-    );
-
-    if (res.ok) {
-      invited.push({
-        memberId: rawId,
-        contactId: primary.contactId as string,
-        userId: res.value.userId,
-        email: res.value.email,
-      });
-      // Best-effort bulk-correlation audit. The invite itself is already audited
-      // by F1 `account_created`; this row links the queued invite to the bulk
-      // operation (bulk_request_id) for the admin timeline. A failure here must
-      // NOT fail the invite — it is already queued + unrecallable.
-      const auditRes = await deps.audit.record(deps.tenant, {
-        type: 'member_portal_invite_queued',
-        actorUserId: meta.actorUserId,
-        requestId: meta.requestId,
-        summary: `bulk portal invite queued for member ${rawId}`,
-        payload: {
-          member_id: rawId,
-          contact_id: primary.contactId,
-          action: 'send_portal_invite',
-          bulk_request_id: meta.requestId,
-        },
-      });
-      if (!auditRes.ok) {
-        logger.warn(
-          { requestId: meta.requestId, memberId: rawId, err: auditRes.error.code },
-          'bulk-invite: correlation audit failed (invite already queued)',
-        );
-      }
-      continue;
-    }
-
-    switch (res.error.code) {
-      case 'already_linked':
-        skipped.push({ memberId: rawId, reason: 'already_linked' });
-        break;
-      case 'no_email':
-        skipped.push({ memberId: rawId, reason: 'no_email' });
-        break;
-      case 'not_found':
-        // The primary contact vanished between the list and the invite (race).
-        skipped.push({ memberId: rawId, reason: 'no_invitable_contact' });
-        break;
-      case 'invalid_email':
-        failed.push({ memberId: rawId, code: 'invalid_email' });
-        break;
-      case 'email_taken':
-        failed.push({ memberId: rawId, code: 'email_taken' });
-        break;
-      default:
+    // BEST-EFFORT: F1 `createUser` re-RAISES unexpected DB/network faults
+    // (create-user.ts: "re-raise so the route handler maps it to 500"), and
+    // invitePortal's `runInTenant(linkUserInTx)` can also throw. A thrown error
+    // must NOT abort the batch — bucket THIS member as failed + continue, so the
+    // members already queued (unrecallable) keep their result and the rest are
+    // still attempted. (bulkAction gets this via one top-level catch around its
+    // single tx; the per-member dispatch here needs a per-member catch.)
+    try {
+      // 1. Resolve the member (RLS-scoped). A cross-tenant / missing id → skip.
+      const memberRes = await deps.memberRepo.findById(deps.tenant, memberId);
+      if (!memberRes.ok) {
+        if (memberRes.error.code === 'repo.not_found') {
+          skipped.push({ memberId: rawId, reason: 'member_not_found' });
+          continue;
+        }
         logger.error(
-          { requestId: meta.requestId, memberId: rawId, err: res.error.code },
-          'bulk-invite: invitePortal server_error',
+          { requestId: meta.requestId, memberId: rawId, err: memberRes.error.code },
+          'bulk-invite: member lookup failed',
         );
         failed.push({ memberId: rawId, code: 'server_error' });
-        break;
+        continue;
+      }
+      if (memberRes.value.status === 'archived') {
+        skipped.push({ memberId: rawId, reason: 'member_archived' });
+        continue;
+      }
+
+      // 2. Find the primary live contact (the invite recipient). listByMember
+      //    with includeRemoved:false already excludes soft-deleted rows.
+      const contactsRes = await deps.contactRepo.listByMember(deps.tenant, memberId, {
+        includeRemoved: false,
+      });
+      if (!contactsRes.ok) {
+        logger.error(
+          { requestId: meta.requestId, memberId: rawId, err: contactsRes.error.code },
+          'bulk-invite: contact list failed',
+        );
+        failed.push({ memberId: rawId, code: 'server_error' });
+        continue;
+      }
+      const primary = contactsRes.value.find((c) => c.isPrimary);
+      if (!primary) {
+        skipped.push({ memberId: rawId, reason: 'no_invitable_contact' });
+        continue;
+      }
+
+      // 3. Reuse the proven single-invite path (one shared dispatch code path).
+      //    invitePortal → F1 createUser enqueues the notifications_outbox row;
+      //    the existing outbox-dispatch cron sends + throttles it. No dedicated
+      //    F3 audit is emitted here: the invite is recorded by F1 account_created
+      //    (exactly like the single-invite path), and a member-scoped F3 audit
+      //    would also bump members.last_activity_at via the migration-0009
+      //    trigger — falsely resetting the at-risk clock for bulk-invited members.
+      const res = await invitePortal(
+        {
+          tenant: deps.tenant,
+          contactRepo: deps.contactRepo,
+          createUser: deps.createUser,
+        },
+        {
+          contactId: primary.contactId,
+          actorUserId: meta.actorUserId,
+          sourceIp: meta.sourceIp,
+          requestId: meta.requestId,
+          ...(meta.locale !== undefined ? { locale: meta.locale } : {}),
+        },
+      );
+
+      if (res.ok) {
+        invited.push({
+          memberId: rawId,
+          contactId: primary.contactId as string,
+          userId: res.value.userId,
+          email: res.value.email,
+        });
+        continue;
+      }
+
+      switch (res.error.code) {
+        case 'already_linked':
+          skipped.push({ memberId: rawId, reason: 'already_linked' });
+          break;
+        case 'no_email':
+          skipped.push({ memberId: rawId, reason: 'no_email' });
+          break;
+        case 'not_found':
+          // The primary contact vanished between the list and the invite (race).
+          skipped.push({ memberId: rawId, reason: 'no_invitable_contact' });
+          break;
+        case 'invalid_email':
+          failed.push({ memberId: rawId, code: 'invalid_email' });
+          break;
+        case 'email_taken':
+          failed.push({ memberId: rawId, code: 'email_taken' });
+          break;
+        default:
+          logger.error(
+            { requestId: meta.requestId, memberId: rawId, err: res.error.code },
+            'bulk-invite: invitePortal server_error',
+          );
+          failed.push({ memberId: rawId, code: 'server_error' });
+          break;
+      }
+    } catch (e) {
+      // A genuinely-unexpected throw (createUser re-raise on connection
+      // loss/timeout, or linkUserInTx tx fault). Never abort the batch.
+      logger.error(
+        { requestId: meta.requestId, memberId: rawId, errKind: errKind(e) },
+        'bulk-invite: unexpected error — member bucketed as failed',
+      );
+      failed.push({ memberId: rawId, code: 'server_error' });
     }
   }
 

@@ -32,9 +32,6 @@ const CONTACTS: Record<string, Array<{ contactId: string; isPrimary: boolean }> 
 // invitePortal result keyed by contactId
 const INVITE: Record<string, { ok: true; value: { contactId: string; userId: string; email: string } } | { ok: false; error: { code: string } }> = {};
 
-type AuditResult = { ok: true; value: undefined } | { ok: false; error: { code: string } };
-const auditRecord = vi.fn(async (): Promise<AuditResult> => okR(undefined));
-
 function makeDeps(): BulkSendPortalInviteDeps {
   return {
     tenant,
@@ -54,7 +51,6 @@ function makeDeps(): BulkSendPortalInviteDeps {
       },
     } as unknown as BulkSendPortalInviteDeps['contactRepo'],
     createUser: (async () => okR({ user: { id: 'u' } })) as unknown as BulkSendPortalInviteDeps['createUser'],
-    audit: { record: auditRecord } as unknown as BulkSendPortalInviteDeps['audit'],
   };
 }
 
@@ -65,8 +61,6 @@ beforeEach(() => {
   for (const k of Object.keys(CONTACTS)) delete CONTACTS[k];
   for (const k of Object.keys(INVITE)) delete INVITE[k];
   invitePortalMock.mockReset();
-  auditRecord.mockReset();
-  auditRecord.mockResolvedValue(okR(undefined));
   // Default: invitePortal resolves from the INVITE map keyed by contactId.
   invitePortalMock.mockImplementation(async (_deps: unknown, input: { contactId: string }) => {
     return INVITE[input.contactId] ?? okR({ contactId: input.contactId, userId: `user-${input.contactId}`, email: `${input.contactId}@x.test` });
@@ -108,7 +102,6 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     if (!r.ok) return;
     expect(r.value.counts).toEqual({ invited: 3, skipped: 0, failed: 0 });
     expect(r.value.invited.map((i) => i.memberId)).toEqual([m1, m2, m3]);
-    expect(auditRecord).toHaveBeenCalledTimes(3); // member_portal_invite_queued per success
   });
 
   it('mixed batch maps each outcome to the right bucket; loop never aborts', async () => {
@@ -163,7 +156,7 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     expect(r.value.failed).toEqual([{ memberId: m, code: 'server_error' }]);
   });
 
-  it('idempotent: re-invite of an already-linked member → skipped(already_linked), no audit', async () => {
+  it('idempotent: re-invite of an already-linked member → skipped(already_linked)', async () => {
     const [m] = uuids(1);
     MEMBERS[m!] = { status: 'active' };
     CONTACTS[m!] = [{ contactId: 'cL', isPrimary: true }];
@@ -172,17 +165,32 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.skipped).toEqual([{ memberId: m, reason: 'already_linked' }]);
-    expect(auditRecord).not.toHaveBeenCalled();
   });
 
-  it('audit.record failure on success is best-effort — member still invited', async () => {
-    const [m] = uuids(1);
-    MEMBERS[m!] = { status: 'active' };
-    CONTACTS[m!] = [{ contactId: 'cOk', isPrimary: true }];
-    auditRecord.mockResolvedValue(errR({ code: 'repo.unexpected' }));
-    const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m!] }, meta, makeDeps());
-    expect(r.ok).toBe(true);
+  // go-live /code-review #1 (HIGH): F1 createUser RE-RAISES unexpected DB/network
+  // faults and invitePortal's runInTenant(linkUser) can throw. A throw must NOT
+  // abort the batch — the member is bucketed as failed(server_error) and the loop
+  // continues. (This path was previously uncovered because the mock only returned
+  // Results, never threw.)
+  it('a THROW from invitePortal → failed(server_error); the loop continues (best-effort)', async () => {
+    const [mThrow, mOk] = uuids(2);
+    MEMBERS[mThrow!] = { status: 'active' };
+    CONTACTS[mThrow!] = [{ contactId: 'cThrow', isPrimary: true }];
+    MEMBERS[mOk!] = { status: 'active' };
+    CONTACTS[mOk!] = [{ contactId: 'cOk', isPrimary: true }];
+    invitePortalMock.mockImplementation(async (_deps: unknown, input: { contactId: string }) => {
+      if (input.contactId === 'cThrow') throw new Error('neon connection lost mid-createUser');
+      return okR({ contactId: input.contactId, userId: `user-${input.contactId}`, email: `${input.contactId}@x.test` });
+    });
+    const r = await bulkSendPortalInvite(
+      { action: 'send_portal_invite', member_ids: [mThrow!, mOk!] },
+      meta,
+      makeDeps(),
+    );
+    expect(r.ok).toBe(true); // never throws out of the use case
     if (!r.ok) return;
-    expect(r.value.counts.invited).toBe(1);
+    expect(r.value.failed).toEqual([{ memberId: mThrow, code: 'server_error' }]);
+    expect(r.value.invited.map((i) => i.memberId)).toEqual([mOk]); // mOk still attempted
+    expect(r.value.counts).toEqual({ invited: 1, skipped: 0, failed: 1 });
   });
 });
