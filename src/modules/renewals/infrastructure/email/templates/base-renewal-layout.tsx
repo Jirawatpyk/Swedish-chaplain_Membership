@@ -20,11 +20,23 @@ import {
   Container,
   Head,
   Html,
+  Link,
   Preview,
   Section,
   Text,
 } from '@react-email/components';
 import type { RenewalEmailLocale } from './copy';
+
+/**
+ * S1-P1-3 — localised "manage reminder preferences" link label. Renewal
+ * reminders previously carried no opt-out path in the email body; this footer
+ * link points members at /portal/preferences/renewals (FR-016 opt-out page).
+ */
+const MANAGE_PREFS_LABEL: Record<RenewalEmailLocale, string> = {
+  en: 'Manage reminder preferences',
+  th: 'จัดการการแจ้งเตือนต่ออายุ',
+  sv: 'Hantera påminnelseinställningar',
+};
 
 export interface BaseRenewalLayoutProps {
   readonly locale: RenewalEmailLocale;
@@ -39,6 +51,12 @@ export interface BaseRenewalLayoutProps {
   readonly footer?: React.ReactNode;
   /** Footer brand line — tenant-hardcoded for MVP per OOS-17. */
   readonly footerBrand?: string;
+  /**
+   * S1-P1-3 — absolute URL to the renewal-reminder opt-out page
+   * (`/portal/preferences/renewals`). When set, a localised "manage
+   * preferences" link renders in the footer. Omitted → no link (back-compat).
+   */
+  readonly preferencesUrl?: string;
 }
 
 const FOOTER_BRAND_DEFAULT = 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)';
@@ -92,6 +110,7 @@ export function BaseRenewalLayout({
   ctaHref,
   footer,
   footerBrand = FOOTER_BRAND_DEFAULT,
+  preferencesUrl,
 }: BaseRenewalLayoutProps) {
   return (
     <Html lang={locale}>
@@ -107,6 +126,13 @@ export function BaseRenewalLayout({
             </Button>
           </Section>
           {footer ?? null}
+          {preferencesUrl ? (
+            <Text style={FOOTER_BRAND_STYLE}>
+              <Link href={preferencesUrl} style={{ color: '#6b7280' }}>
+                {MANAGE_PREFS_LABEL[locale]}
+              </Link>
+            </Text>
+          ) : null}
           <Text style={FOOTER_BRAND_STYLE}>{footerBrand}</Text>
         </Container>
       </Body>

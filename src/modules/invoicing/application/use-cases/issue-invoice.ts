@@ -100,6 +100,7 @@ export type IssueInvoiceError =
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
+  | { code: 'tax_id_required' }
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
@@ -206,6 +207,25 @@ export async function issueInvoice(
     );
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });
+
+    // S1-P1-16 — a Thai tax invoice for a COMPANY member must carry the buyer's
+    // tax_id (FR-009a / Revenue Code §86). Person tiers (memberTypeScope
+    // 'individual'/'both'/null) are exempt. Early-exit BEFORE allocateNext so a
+    // missing tax_id never burns a §87 sequence number. Defense-in-depth: the
+    // member importer already requires tax_id at company-member entry.
+    //
+    // KNOWN FUTURE-TENANT GAP: a `'both'`-scope plan admits BOTH company and
+    // person members, so a company entity on a 'both' plan would be exempted
+    // here. No SweCham 2026 plan uses 'both' (corporate tiers are 'company',
+    // partnership tiers 'individual'), so there is no live defect. A future
+    // tenant introducing a 'both' plan with company members must re-scope this
+    // gate to the member's entity type rather than the plan scope.
+    if (
+      member.memberTypeScope === 'company' &&
+      (member.snapshot.tax_id ?? '').trim() === ''
+    ) {
+      return err({ code: 'tax_id_required' });
+    }
 
     // Domain invariant — exactly one membership_fee line required
     // before issue (spec § invariant). Runs BEFORE allocateNext so a

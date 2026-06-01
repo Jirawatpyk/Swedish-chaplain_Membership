@@ -90,7 +90,14 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
         const body = await res.json().catch(() => ({}));
         const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
-          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
+          description:
+            // S1-P1-16 — surface a human-readable message for the company
+            // tax_id gate instead of the raw error code (FR-009a).
+            code === 'tax_id_required'
+              ? t('errors.tax_id_required')
+              : code
+                ? t('errors.codeFallback', { code })
+                : t('errors.unknown'),
         });
         return;
       }

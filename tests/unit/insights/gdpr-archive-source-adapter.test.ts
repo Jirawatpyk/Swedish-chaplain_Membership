@@ -59,6 +59,11 @@ function baseMember() {
     legalEntityType: null,
     country: 'TH',
     taxId: null,
+    addressLine1: '99 Sukhumvit',
+    addressLine2: 'Unit 5',
+    city: 'Bangkok',
+    province: 'Bangkok',
+    postalCode: '10110',
     website: null,
     description: null,
     foundedYear: null,
@@ -114,6 +119,22 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     expect(data!.invoices[0]!.record).toMatchObject({ documentNumber: 'INV-2026-0001' });
     // … but the PDF is dropped (not aborted), not a throw.
     expect(data!.invoices[0]!.pdf).toBeNull();
+  });
+
+  it('profile includes the member postal address (S1-P1-12 / GDPR Art.20 portability)', async () => {
+    listInvoicesByMemberMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [], total: 0 },
+    });
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    expect(data).not.toBeNull();
+    expect(data!.profile).toMatchObject({
+      addressLine1: '99 Sukhumvit',
+      addressLine2: 'Unit 5',
+      city: 'Bangkok',
+      province: 'Bangkok',
+      postalCode: '10110',
+    });
   });
 
   it('includes the PDF bytes when the fetch succeeds', async () => {

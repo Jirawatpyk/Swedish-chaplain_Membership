@@ -131,14 +131,20 @@ async function MembersDirectoryBody({
     statuses = ['active', 'inactive'];
   }
 
-  const riskBand =
-    query.risk_band && VALID_RISK_BANDS.has(query.risk_band)
-      ? (query.risk_band as
-          | 'healthy'
-          | 'warning'
-          | 'at-risk'
-          | 'critical')
-      : undefined;
+  // S1-P1-6: accept a comma-separated band list (the dashboard "needs
+  // attention" KPI drills into critical,at-risk,warning so the count matches
+  // the destination). Each value is validated; a single value stays scalar.
+  type RiskBandValue = 'healthy' | 'warning' | 'at-risk' | 'critical';
+  const riskBandList = (query.risk_band ?? '')
+    .split(',')
+    .map((b) => b.trim())
+    .filter((b): b is RiskBandValue => VALID_RISK_BANDS.has(b));
+  const riskBand: RiskBandValue | readonly RiskBandValue[] | undefined =
+    riskBandList.length === 0
+      ? undefined
+      : riskBandList.length === 1
+        ? riskBandList[0]
+        : riskBandList;
 
   const hasFilters =
     (query.q !== undefined && query.q.trim().length > 0) ||

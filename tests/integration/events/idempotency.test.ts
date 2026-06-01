@@ -282,5 +282,13 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
           registrationId,
     );
     expect(nonMemberRows.length).toBe(1);
+
+    // PDPA/GDPR data-minimisation (go-live audit S1-P0-1): the non_member
+    // audit payload must carry a SHA-256 hex prefix, NEVER the raw attendee
+    // email. Guards against regressing the hash back to a raw-email field.
+    const nmPayload = nonMemberRows[0]?.payload as Record<string, unknown>;
+    expect(nmPayload?.['attendeeEmailHash']).toMatch(/^[0-9a-f]{16}$/);
+    expect(nmPayload).not.toHaveProperty('attendeeEmail');
+    expect(JSON.stringify(nmPayload)).not.toContain('@');
   });
 });

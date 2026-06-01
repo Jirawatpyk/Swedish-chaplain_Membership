@@ -37,6 +37,7 @@ import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoi
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -136,6 +137,8 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.delete(invoiceLines).where(eq(invoiceLines.tenantId, tenant.ctx.slug));
       await tx.delete(invoices).where(eq(invoices.tenantId, tenant.ctx.slug));
+      // contacts FK → members: delete contacts BEFORE members.
+      await tx.delete(contacts).where(eq(contacts.tenantId, tenant.ctx.slug));
       await tx.delete(members).where(eq(members.tenantId, tenant.ctx.slug));
       await tx
         .delete(tenantDocumentSequences)
@@ -154,6 +157,9 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
         memberId,
         companyName: 'Race Co',
         country: 'TH',
+        // S1-P1-16: company member needs a valid TH tax_id to be issued a tax
+        // invoice (the real memberIdentityAdapter + issue gate run here).
+        taxId: '0105536000020',
         planId,
         planYear: 2026,
         // Archive BEFORE issue — simulates the terminal state the
@@ -229,5 +235,118 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
     expect(draftAfter?.status).toBe('draft');
     expect(draftAfter?.sequenceNumber).toBeNull();
     expect(draftAfter?.documentNumber).toBeNull();
+  }, 60_000);
+
+  // S1-P1-16 — the archive test above exits at `member_archived` BEFORE the
+  // tax_id gate, so it never exercises the gate through the REAL
+  // memberIdentityAdapter (whose LEFT JOIN populates memberTypeScope from the
+  // live `membership_plans` row). These two cases close that gap end-to-end on
+  // live Neon: the plan seeded in beforeAll has memberTypeScope = 'company'.
+  async function seedActiveCompanyDraft(
+    tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+    opts: { invoiceId: string; memberId: string; taxId: string | null },
+  ): Promise<void> {
+    await tx.insert(members).values({
+      tenantId: tenant.ctx.slug,
+      memberId: opts.memberId,
+      companyName: 'Gate Co',
+      country: 'TH',
+      taxId: opts.taxId,
+      planId,
+      planYear: 2026,
+      status: 'active',
+    });
+    // Primary contact — the real memberIdentityAdapter reads it to build the
+    // buyer snapshot (name + email). Without it, applyIssue rejects the snapshot
+    // at the repo boundary. Email is derived from memberId to stay unique under
+    // the per-tenant case-insensitive email index.
+    await tx.insert(contacts).values({
+      tenantId: tenant.ctx.slug,
+      contactId: randomUUID(),
+      memberId: opts.memberId,
+      firstName: 'Pat',
+      lastName: 'Buyer',
+      email: `pat-${opts.memberId.slice(0, 8)}@gateco.example`,
+      isPrimary: true,
+    });
+    await tx.insert(invoices).values({
+      tenantId: tenant.ctx.slug,
+      invoiceId: opts.invoiceId,
+      memberId: opts.memberId,
+      planYear: 2026,
+      planId,
+      draftByUserId: user.userId,
+      status: 'draft',
+      creditedTotalSatang: 0n,
+    });
+    await tx.insert(invoiceLines).values({
+      tenantId: tenant.ctx.slug,
+      lineId: randomUUID(),
+      invoiceId: opts.invoiceId,
+      kind: 'membership_fee',
+      descriptionTh: 'ค่าสมาชิก ปี 2026',
+      descriptionEn: 'Membership 2026',
+      unitPriceSatang: 100_000n,
+      totalSatang: 100_000n,
+      position: 1,
+    });
+  }
+
+  it('issue on ACTIVE company member with NO tax_id → tax_id_required, NO sequence consumed (real adapter join)', async () => {
+    const invoiceId = randomUUID();
+    const memberId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      seedActiveCompanyDraft(tx, { invoiceId, memberId, taxId: null }),
+    );
+
+    const r = await issueInvoice(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    // The real adapter's plan join must have resolved memberTypeScope='company'
+    // for the gate to fire — proving the join works against live data.
+    expect(r.error.code).toBe('tax_id_required');
+
+    // Gate runs BEFORE allocateNext, so no §87 sequence number is burned.
+    const seqRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tenantDocumentSequences)
+        .where(
+          and(
+            eq(tenantDocumentSequences.tenantId, tenant.ctx.slug),
+            eq(tenantDocumentSequences.documentType, 'invoice'),
+            eq(tenantDocumentSequences.fiscalYear, 2026),
+          ),
+        ),
+    );
+    expect(seqRows).toHaveLength(0);
+  }, 60_000);
+
+  it('issue on ACTIVE company member WITH valid tax_id → succeeds (gate allows; real adapter join)', async () => {
+    const invoiceId = randomUUID();
+    const memberId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      // Valid 13-digit TH TIN (checksum-correct) — gate must NOT block.
+      seedActiveCompanyDraft(tx, { invoiceId, memberId, taxId: '0105536000020' }),
+    );
+
+    const r = await issueInvoice(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+    });
+
+    // Past the gate AND through the full real issue path (sequence allocation,
+    // VAT, audit) — proves the gate does not false-positive on a company member
+    // that does carry a tax_id.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('issued');
+    expect(r.value.documentNumber).not.toBeNull();
   }, 60_000);
 });

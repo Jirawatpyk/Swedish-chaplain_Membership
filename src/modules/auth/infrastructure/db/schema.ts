@@ -303,6 +303,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'insights_cross_tenant_probe',
 ]);
 
+/**
+ * Canonical FULL set of audit-event-type codes. Every module writes to this one
+ * `audit_event_type` pg enum, so its values are the complete cross-module list
+ * (auth + F2..F9). Surfaced through the auth barrel for the audit-viewer filter
+ * (S1-P1-7) — which must list every type that can appear in `audit_log`, not
+ * just auth/payment codes. Sorted for a stable dropdown order.
+ */
+export const ALL_AUDIT_EVENT_TYPES: readonly string[] = [
+  ...auditEventTypeEnum.enumValues,
+].sort();
+
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
   'verification',
   'revert',

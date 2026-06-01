@@ -58,7 +58,17 @@ export const listInvoicesPagedSchema = z.object({
   offset: z.number().int().min(0).default(0),
   pageSize: z.number().int().min(1).max(100).default(50),
   status: z
-    .enum(['draft', 'issued', 'paid', 'void', 'credited', 'partially_credited', 'all'])
+    .enum([
+      'draft',
+      'issued',
+      'paid',
+      'void',
+      'credited',
+      'partially_credited',
+      'all',
+      // S1-P1-8: derived filter — repo translates to issued + past-due.
+      'overdue',
+    ])
     .optional(),
   fiscalYear: z.number().int().optional(),
   memberId: z.string().uuid().optional(),
@@ -81,7 +91,9 @@ export async function listInvoicesPaged(
   const { rows, total } = await deps.invoiceRepo.listPaged(input.tenantId, {
     offset: input.offset,
     pageSize: input.pageSize,
-    status: (input.status as InvoiceStatus | 'all' | undefined) ?? undefined,
+    status:
+      (input.status as InvoiceStatus | 'all' | 'overdue' | undefined) ??
+      undefined,
     fiscalYear: input.fiscalYear,
     memberId: input.memberId,
     search: input.search,

@@ -40,7 +40,6 @@ import type { TenantId, MemberId, ContactId } from '@/modules/members';
 import type {
   EventId,
   RegistrationId,
-  AttendeeEmail,
 } from '../../domain/branded-types';
 import type { MatchType } from '../../domain/value-objects/match-type';
 import type { ProcessingOutcome } from '../../domain/value-objects/webhook-outcome';
@@ -316,7 +315,9 @@ export interface AuditPayloads {
     readonly registrationId: RegistrationId;
     readonly matchedMemberId: MemberId;
     readonly matchedContactId: ContactId;
-    readonly matchedOnEmail: AttendeeEmail;
+    // PDPA/GDPR data-minimisation (S1-P1-11): store the email DOMAIN only, not
+    // the raw attendee email. Domain is enough to confirm match type.
+    readonly matchedOnEmailDomain: string;
   };
   attendee_matched_member_domain: {
     readonly severity: Severity;
@@ -332,7 +333,10 @@ export interface AuditPayloads {
   attendee_non_member: {
     readonly severity: Severity;
     readonly registrationId: RegistrationId;
-    readonly attendeeEmail: AttendeeEmail;
+    // PDPA/GDPR data-minimisation (S1-P0-1): store a SHA-256 hex prefix (16
+    // chars) of the attendee email, NOT the raw address. PII-safe correlator
+    // across events; no raw email ever lands in the audit_log payload.
+    readonly attendeeEmailHash: string;
   };
   attendee_unmatched: {
     readonly severity: Severity;

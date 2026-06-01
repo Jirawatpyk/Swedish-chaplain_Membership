@@ -131,7 +131,15 @@ export default async function AdminInvoicesPage({
     pageSize: PAGE_SIZE,
     includeDrafts,
     ...(statusFilter && statusFilter !== 'draft'
-      ? { status: statusFilter as 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited' }
+      ? {
+          status: statusFilter as
+            | 'issued'
+            | 'paid'
+            | 'void'
+            | 'credited'
+            | 'partially_credited'
+            | 'overdue',
+        }
       : {}),
     ...(qTrim ? { search: qTrim } : {}),
     ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),

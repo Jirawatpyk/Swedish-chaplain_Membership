@@ -86,7 +86,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       }
       const did = await runInTenant(tenant, (tx) => repo.markExpiredInTx(tx, jobId));
-      if (did) expired += 1;
+      if (did) {
+        expired += 1;
+        // S1-P1-15: emit the registered `data_export_expired` audit event — it
+        // was declared (5y retention) + listed in SC-004 completeness but never
+        // emitted, so an auditor saw exports created/delivered but never expired.
+        // Best-effort (timeline completeness only); never fails the tick.
+        await deps.audit
+          .record({
+            tenantId: tenant.slug,
+            requestId: null,
+            eventType: 'data_export_expired',
+            actorUserId: 'system:cron',
+            retentionYears: 5,
+            summary: `Data export artefact expired + swept (job ${jobId})`,
+            payload: { job_id: jobId },
+          })
+          .catch(() => {});
+      }
     }
 
     const durationMs = Date.now() - startedAt;

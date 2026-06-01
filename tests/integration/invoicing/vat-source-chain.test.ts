@@ -153,6 +153,7 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
           memberId: mid,
           isActive: true,
           isArchived: false,
+          memberTypeScope: 'company' as const, // S1-P1-16 (snapshot has tax_id → gate passes)
           registrationFeePaid: true,
           registrationDate: '2026-01-01',
           snapshot: {

@@ -44,20 +44,8 @@ export interface RateLimitResult {
   readonly fellBack: boolean;
 }
 
-/**
- * C3 (post-ship 2026-05-17) — derived `retryAfterSeconds` from one or
- * more rate-limit results. Six call sites previously duplicated the
- * `Math.max(Math.ceil((reset - Date.now()) / 1000), 1)` formula (with
- * the floor-at-1 invariant) — extracting it eliminates the silent-drift
- * risk where one caller's "1 second minimum" diverges from another's.
- */
-export function retryAfterSeconds(...results: RateLimitResult[]): number {
-  const now = Date.now();
-  return Math.max(
-    ...results.map((r) => Math.ceil((r.reset - now) / 1000)),
-    1,
-  );
-}
+// S1-P1-13: `retryAfterSeconds` moved to `application/rate-limit-retry.ts` so
+// the six auth use-cases no longer import an Infrastructure VALUE (Principle III).
 
 export interface RateLimiter {
   /**

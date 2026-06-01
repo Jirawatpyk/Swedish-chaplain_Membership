@@ -5,7 +5,7 @@
  * role via `runInTenant(ctx, fn)` so RLS policies enforce tenant
  * scoping even on paths that forget an explicit WHERE filter.
  */
-import { and, asc, desc, eq, gt, ne, sql, ilike } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, lt, ne, or, sql, ilike } from 'drizzle-orm';
 import type { InvoiceRepo } from '../../application/ports/invoice-repo';
 import {
   asInvoiceId,
@@ -357,7 +357,39 @@ export function makeDrizzleInvoiceRepo(
           filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
         }
         if (opts.cursor) {
-          filters.push(gt(invoices.invoiceId, opts.cursor));
+          // S1-P1-9b: composite (issueDate, invoiceId) keyset matching the
+          // ORDER BY desc(issueDate) [Postgres DESC = NULLS FIRST], desc(invoiceId).
+          // A single-column invoiceId keyset is wrong here — invoiceId is a
+          // random UUID, NOT aligned with issueDate — so across >1 page it
+          // skipped/duplicated rows, skewing the F9 insights paginated
+          // aggregation (revenue/overdue) once a tenant exceeds PAGE=100 rows.
+          // Cursor format: `${issueDate ?? ''}|${invoiceId}` — an empty
+          // issueDate-part means a NULL issueDate (a draft), which sorts FIRST.
+          const sep = opts.cursor.indexOf('|');
+          const cIssue = sep >= 0 ? opts.cursor.slice(0, sep) : '';
+          const cId = sep >= 0 ? opts.cursor.slice(sep + 1) : opts.cursor;
+          if (cIssue === '') {
+            // Cursor row had a NULL issueDate (draft): remaining = other null
+            // rows with a smaller invoiceId, OR every non-null row (which sort
+            // after the null group).
+            filters.push(
+              or(
+                and(isNull(invoices.issueDate), lt(invoices.invoiceId, cId)),
+                isNotNull(invoices.issueDate),
+              )!,
+            );
+          } else {
+            // Cursor row had a real issueDate — the null group already preceded it.
+            filters.push(
+              and(
+                isNotNull(invoices.issueDate),
+                or(
+                  lt(invoices.issueDate, cIssue),
+                  and(eq(invoices.issueDate, cIssue), lt(invoices.invoiceId, cId)),
+                ),
+              )!,
+            );
+          }
         }
 
         const rows = await tx
@@ -369,7 +401,13 @@ export function makeDrizzleInvoiceRepo(
 
         const hasMore = rows.length > opts.pageSize;
         const page = rows.slice(0, opts.pageSize) as InvoiceRow[];
-        const nextCursor = hasMore ? page[page.length - 1]!.invoiceId : null;
+        // S1-P1-9b: composite cursor — encode (issueDate, invoiceId) of the last
+        // row so the next page resumes the keyset correctly.
+        const lastRow = page[page.length - 1];
+        const nextCursor =
+          hasMore && lastRow
+            ? `${lastRow.issueDate ?? ''}|${lastRow.invoiceId}`
+            : null;
 
         // Load lines in a single follow-up query for each invoice on the page.
         const invoiceIds = page.map((r) => r.invoiceId);
@@ -409,7 +447,16 @@ export function makeDrizzleInvoiceRepo(
         if (!includeDrafts && !opts.status) {
           filters.push(sql`${invoices.status} != 'draft'`);
         }
-        if (opts.status && opts.status !== 'all') {
+        if (opts.status === 'overdue') {
+          // S1-P1-8: 'overdue' is a DERIVED view, not a stored status, so the
+          // old `eq(status,'overdue')` matched zero rows. Mirror the
+          // computeIsOverdue rule (status='issued' AND Bangkok-today > dueDate,
+          // strict) in SQL so this filter agrees with the per-row overdue badge.
+          filters.push(eq(invoices.status, 'issued'));
+          filters.push(
+            sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < (now() AT TIME ZONE 'Asia/Bangkok')::date`,
+          );
+        } else if (opts.status && opts.status !== 'all') {
           filters.push(eq(invoices.status, opts.status));
         }
         if (opts.fiscalYear !== undefined) {

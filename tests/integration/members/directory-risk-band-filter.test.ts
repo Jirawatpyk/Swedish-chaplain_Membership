@@ -225,6 +225,27 @@ describe('directorySearchWithCount riskBand filter (I1 round-10)', () => {
     expect(r.value.items[0]?.member.memberId).toBe(healthy1);
   });
 
+  it('riskBand: [critical, at-risk, warning] — multi-band "needs attention" set (S1-P1-6)', async () => {
+    // The dashboard at-risk KPI sums these three bands (countAtRisk); its
+    // drill-down must return the SAME set so the count matches the destination
+    // (previously the link filtered to 'at-risk' only, hiding critical+warning).
+    const deps = buildMembersDeps(tenant.ctx);
+    const r = await directorySearchWithCount(
+      { tenant: tenant.ctx, memberRepo: deps.memberRepo },
+      { limit: 100, offset: 0, riskBand: ['critical', 'at-risk', 'warning'] },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.total).toBe(4); // warning1 + atRisk1 + atRisk2 + critical1
+    const ids = new Set(r.value.items.map((it) => it.member.memberId as string));
+    expect(ids.has(critical1)).toBe(true);
+    expect(ids.has(atRisk1)).toBe(true);
+    expect(ids.has(atRisk2)).toBe(true);
+    expect(ids.has(warning1)).toBe(true);
+    expect(ids.has(healthy1)).toBe(false); // healthy excluded
+    expect(ids.has(nullBand1)).toBe(false); // null-band still excluded
+  });
+
   it('riskBand filter — null-band members are excluded (port contract)', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     // Sum across every band-specific filter should equal 5 (all

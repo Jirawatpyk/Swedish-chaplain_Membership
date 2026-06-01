@@ -84,6 +84,7 @@ import { applyQuotaEffect, buildQuotaLockKey } from '../apply-quota-effect';
 // cause sites + the `emitOrThrow` raw-throw wrap at L240/849/853) and
 // `import-csv.ts` continue to resolve via this module path.
 import { safeStringify } from './safe-stringify';
+import { hashAttendeeEmail } from './attendee-email-hash';
 
 // ---------------------------------------------------------------------------
 // TxStageError — shared between helper and webhook/CSV callers
@@ -417,13 +418,16 @@ async function emitMatchResolutionAudit(
       await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_matched_member_contact',
-        summary: `attendee matched to member via contact email (${attendeeEmail})`,
+        // PDPA/GDPR (S1-P1-11): no raw email in summary or payload — domain only.
+        summary: `attendee matched to member via contact email`,
         payload: {
           severity: 'info',
           registrationId,
           matchedMemberId: resolution.matchedMemberId,
           matchedContactId: resolution.matchedContactId,
-          matchedOnEmail: asAttendeeEmail(attendeeEmail),
+          // go-live #6 — normalise domain casing so audit payloads are
+          // deterministic (matching is case-insensitive).
+          matchedOnEmailDomain: (attendeeEmail.split('@')[1] ?? '').toLowerCase(),
         },
       });
       return;
@@ -436,7 +440,8 @@ async function emitMatchResolutionAudit(
           severity: 'info',
           registrationId,
           matchedMemberId: resolution.matchedMemberId,
-          emailDomain: attendeeEmail.split('@')[1] ?? '',
+          // go-live #6 — normalise domain casing (see matched_member_contact above).
+          emailDomain: (attendeeEmail.split('@')[1] ?? '').toLowerCase(),
         },
       });
       return;
@@ -464,7 +469,8 @@ async function emitMatchResolutionAudit(
         payload: {
           severity: 'info',
           registrationId,
-          attendeeEmail: asAttendeeEmail(attendeeEmail),
+          // PDPA/GDPR (S1-P0-1): hashed correlator, never the raw email.
+          attendeeEmailHash: hashAttendeeEmail(attendeeEmail),
         },
       });
       return;

@@ -28,7 +28,7 @@ import type { SessionToken } from '@/modules/auth/domain/branded';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
 import { defaultHeartbeatDeps } from '@/lib/auth-deps';
 import { sha256Hex } from '@/lib/crypto';
 

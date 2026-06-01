@@ -269,6 +269,26 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
       });
     }
 
+    // go-live #11 — every renewal email MUST carry a CTA url (a redeem-link for
+    // reminders within the token TTL, else the authenticated renewal page). An
+    // empty url renders a dead CTA button, so fail the send (classified permanent
+    // by isPermanentGatewayError → no pointless retries) instead of shipping a
+    // broken email. Defence-in-depth: dispatch + retry always set it via
+    // buildRenewalCtaUrl.
+    const renewalLinkUrl = String(
+      input.templateVariables.renewal_link_url ?? '',
+    );
+    if (renewalLinkUrl.trim() === '') {
+      logger.warn(
+        { stepId: input.stepId, tenantId: input.tenantId },
+        'resend.renewals.send.missing_renewal_link_url',
+      );
+      return err({
+        kind: 'template_variables_missing',
+        missing: ['renewal_link_url'],
+      });
+    }
+
     // 2. Build template props from gateway input + interpolation variables.
     const props: RenewalReminderEmailProps = {
       locale: input.recipient.preferredLocale,
@@ -286,7 +306,9 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
       daysUntilExpiry: Number(
         input.templateVariables.days_until_expiry ?? deriveDaysFromOffset(offset),
       ),
-      renewalLinkUrl: String(input.templateVariables.renewal_link_url ?? ''),
+      renewalLinkUrl,
+      // S1-P1-3 — opt-out link in the footer (empty → no link rendered).
+      preferencesUrl: String(input.templateVariables.preferences_url ?? ''),
     };
 
     // 3. Compute subject (interpolated; same formula as the template body).

@@ -1762,6 +1762,7 @@
         "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
         "errors": {
           "failed": "Kunde inte utfärda",
+          "tax_id_required": "Den här medlemmen är en företagsnivå men saknar skattenummer i registret. En thailändsk skattefaktura kräver köparens skattenummer — uppdatera medlemsposten innan du utfärdar.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
@@ -3647,7 +3648,8 @@
       "timeline": "Tidslinje",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering",
-      "benefits": "Förmåner"
+      "benefits": "Förmåner",
+      "renewalPrefs": "Förnyelsepåminnelser"
     }
   },
   "breadcrumb": {

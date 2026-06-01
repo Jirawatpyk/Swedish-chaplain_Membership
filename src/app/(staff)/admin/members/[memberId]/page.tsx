@@ -235,11 +235,14 @@ function ContactBlock({
   contact,
   memberId,
   pendingInvitation,
+  canWrite,
   t,
 }: {
   contact: Contact;
   memberId: string;
   pendingInvitation?: PendingInvitation | undefined;
+  /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
+  canWrite: boolean;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
 }) {
   // "Invite to portal" is only shown when the contact has an email and
@@ -321,34 +324,37 @@ function ContactBlock({
             )}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {canInvite && (
-            <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
-          )}
-          {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
-              invitation bounced AND the contact still has a linked (pending)
-              user. The button calls the resend-invite route, which re-issues
-              the invitation email (owner role) then clears the bounce flag. */}
-          {contact.inviteBouncedAt && contact.linkedUserId && (
-            <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
-          )}
-          <ContactActions
-            memberId={memberId}
-            isPrimary={contact.isPrimary}
-            contact={{
-              contactId: contact.contactId,
-              firstName: contact.firstName,
-              lastName: contact.lastName,
-              // `contact.email` is a non-null branded Email on the domain
-              // aggregate; pass it straight through (the dialog widens it to
-              // a plain string for the RHF form value).
-              email: contact.email,
-              phone: contact.phone ?? null,
-              roleTitle: contact.roleTitle ?? null,
-              preferredLanguage: contact.preferredLanguage,
-            }}
-          />
-        </div>
+        {/* S1-P1-10: write affordances hidden for the read-only manager. */}
+        {canWrite && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {canInvite && (
+              <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
+            )}
+            {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
+                invitation bounced AND the contact still has a linked (pending)
+                user. The button calls the resend-invite route, which re-issues
+                the invitation email (owner role) then clears the bounce flag. */}
+            {contact.inviteBouncedAt && contact.linkedUserId && (
+              <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
+            )}
+            <ContactActions
+              memberId={memberId}
+              isPrimary={contact.isPrimary}
+              contact={{
+                contactId: contact.contactId,
+                firstName: contact.firstName,
+                lastName: contact.lastName,
+                // `contact.email` is a non-null branded Email on the domain
+                // aggregate; pass it straight through (the dialog widens it to
+                // a plain string for the RHF form value).
+                email: contact.email,
+                phone: contact.phone ?? null,
+                roleTitle: contact.roleTitle ?? null,
+                preferredLanguage: contact.preferredLanguage,
+              }}
+            />
+          </div>
+        )}
       </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
         <Field
@@ -392,6 +398,10 @@ export default async function MemberDetailPage({
   if (!UUID_RE.test(memberId)) notFound();
 
   const session = await requireSession('staff');
+  // S1-P1-10: the read-only `manager` role must not see member write
+  // affordances (Edit/Archive/Add-Contact/Invite/Promote/Remove) — they
+  // dead-end at the API (route RBAC rejects). Only `admin` may mutate members.
+  const canWrite = session.user.role === 'admin';
   const h = await headers();
   // Pseudo-Request lets resolveTenantFromRequest honour the T115t
   // `x-tenant` header override used by throwaway-tenant E2E.
@@ -562,7 +572,7 @@ export default async function MemberDetailPage({
               <ClockIcon className="size-4" />
               {t('sections.audit')}
             </Link>
-            {member.status !== 'archived' && (
+            {canWrite && member.status !== 'archived' && (
               <>
                 {/* Destructive action sits LEFT of the primary — Fitts's
                     Law: rightmost button is easiest to click, so Edit
@@ -779,7 +789,7 @@ export default async function MemberDetailPage({
                 </p>
               </PopoverContent>
             </Popover>
-            {member.status !== 'archived' && (
+            {canWrite && member.status !== 'archived' && (
               <ContactFormDialog
                 memberId={member.memberId}
                 mode="add"
@@ -805,6 +815,7 @@ export default async function MemberDetailPage({
                 pendingInvitation={pendingInvitationsByContactId.get(
                   primary.contactId,
                 )}
+                canWrite={canWrite}
                 t={t}
               />
             ) : null}
@@ -824,6 +835,7 @@ export default async function MemberDetailPage({
                       pendingInvitation={pendingInvitationsByContactId.get(
                         c.contactId,
                       )}
+                      canWrite={canWrite}
                       t={t}
                     />
                   </div>

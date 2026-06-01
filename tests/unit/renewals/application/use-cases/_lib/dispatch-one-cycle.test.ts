@@ -221,6 +221,15 @@ function fakeDeps(opts: {
     renewalGateway: {
       sendRenewalEmail: gatewayMock,
     } as unknown as RenewalsDeps['renewalGateway'],
+    // S1-P0-4: the email CTA now signs a redeem-link token, so the
+    // dispatch path calls deps.tokenSigner.sign(). Stub it.
+    tokenSigner: {
+      sign: vi.fn((payload) => ({
+        token: 'stub-token',
+        payload,
+        tokenSha256: new Uint8Array(32),
+      })),
+    } as unknown as RenewalsDeps['tokenSigner'],
     atRiskOutreachReadRepo: {
       hasOutreachWithinDays: pauseRepoMock,
     } as unknown as RenewalsDeps['atRiskOutreachReadRepo'],

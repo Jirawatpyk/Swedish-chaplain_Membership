@@ -157,6 +157,14 @@ function fakeDeps(opts: {
     renewalGateway: {
       sendRenewalEmail: gatewayMock,
     } as unknown as RenewalsDeps['renewalGateway'],
+    // S1-P0-4: retry path signs a redeem-link token too.
+    tokenSigner: {
+      sign: vi.fn((payload) => ({
+        token: 'stub-token',
+        payload,
+        tokenSha256: new Uint8Array(32),
+      })),
+    } as unknown as RenewalsDeps['tokenSigner'],
     escalationTaskRepo: {
       insertIfAbsent: insertTaskMock,
     } as unknown as RenewalsDeps['escalationTaskRepo'],
