@@ -198,6 +198,22 @@ describe(
       expect(typeof body.error.message).toBe('string');
     });
 
+    it('500 link_failed — contact link rolled back (SAGA compensation, go-live #12-13)', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
+      invitePortalMock.mockResolvedValueOnce(err({ code: 'link_failed' }));
+
+      const { POST } = await import(
+        '@/app/api/members/[memberId]/contacts/[contactId]/invite-portal/route'
+      );
+      const res = await POST(makeRequest(), { params: resolvedParams });
+
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error.code).toBe('link_failed');
+      expect(typeof body.error.message).toBe('string');
+    });
+
     it('401 unauthenticated — requireAdminContext rejects the request', async () => {
       requireAdminContextMock.mockResolvedValueOnce({
         response: NextResponse.json(

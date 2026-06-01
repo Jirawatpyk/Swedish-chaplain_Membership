@@ -115,6 +115,15 @@ export interface UserRepo {
    * destroy an active account.
    */
   deletePending(id: UserId): Promise<void>;
+  /**
+   * In-tx variant of `deletePending` returning the deleted-row COUNT, for the
+   * F3 `invitePortal` SAGA compensation (go-live #12-13) which must atomically
+   * delete the just-created pending user + its queued outbox row + append a
+   * compensation audit in ONE owner-role tx. Same `status='pending'` guard:
+   * returns `{ deleted: 0 }` (a no-op) if the user was already redeemed/active —
+   * a redeemed account is NEVER destroyed.
+   */
+  deleteInvitedPendingInTx(tx: DbTx, id: UserId): Promise<{ deleted: number }>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   /** Tx-scoped variant of `setPasswordHash` (Path C — A3 / A4). */
   setPasswordHashInTx(
@@ -309,6 +318,17 @@ export const userRepo: UserRepo = {
     await db
       .delete(users)
       .where(and(eq(users.id, id), eq(users.status, 'pending')));
+  },
+
+  async deleteInvitedPendingInTx(tx, id) {
+    // Same `status='pending'` guard as deletePending — a redeemed/active
+    // account is never destroyed. RETURNING lets the SAGA distinguish a real
+    // rollback (deleted:1) from a race no-op (deleted:0, user already active).
+    const rows = await tx
+      .delete(users)
+      .where(and(eq(users.id, id), eq(users.status, 'pending')))
+      .returning({ id: users.id });
+    return { deleted: rows.length };
   },
 
   async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {

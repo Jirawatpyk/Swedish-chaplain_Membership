@@ -63,6 +63,7 @@ function oneAdminRepo(): UserRepo {
     createPending: (args) => userRepo.createPending(args),
     createPendingInTx: (tx, args) => userRepo.createPendingInTx(tx, args),
     deletePending: (id) => userRepo.deletePending(id),
+    deleteInvitedPendingInTx: (tx, id) => userRepo.deleteInvitedPendingInTx(tx, id),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),
     setPasswordHashInTx: (tx, id, hash, now) =>

@@ -149,6 +149,7 @@ describe('F3 bulkSendPortalInvite — integration (P1-17, live Neon)', () => {
       memberRepo: d.memberRepo,
       contactRepo: d.contactRepo,
       createUser: d.createUser,
+      deleteInvitedUser: d.deleteInvitedUser,
     };
   }
   const meta = (rid: string) => ({ actorUserId: admin.userId, requestId: rid, sourceIp: '203.0.113.9' });

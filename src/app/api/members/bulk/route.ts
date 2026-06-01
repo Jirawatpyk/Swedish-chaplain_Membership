@@ -210,6 +210,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         memberRepo: deps.memberRepo,
         contactRepo: deps.contactRepo,
         createUser: deps.createUser,
+        deleteInvitedUser: deps.deleteInvitedUser,
       },
     );
 

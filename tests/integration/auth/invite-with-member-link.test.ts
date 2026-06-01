@@ -80,7 +80,10 @@ const createUserPort: CreateUserPort = async (input) => {
     tenantId: input.tenantId,
   });
   if (result.ok) {
-    return { ok: true, value: { user: { id: result.value.user.id } } };
+    return {
+      ok: true,
+      value: { user: { id: result.value.user.id }, outboxRowId: result.value.outboxRowId },
+    };
   }
   return { ok: false, error: { code: result.error.code } };
 };

@@ -21,7 +21,9 @@
  *       already_linked · no_email · no_invitable_contact · member_archived ·
  *       member_not_found.
  *   - failed  — bad contact data or a transient fault:
- *       invalid_email · email_taken · server_error.
+ *       invalid_email · email_taken · link_failed · server_error.
+ *       (link_failed = the contact link faulted AFTER createUser committed; the
+ *        invite was rolled back by SAGA compensation so no orphan persists.)
  *
  * Idempotent: re-running on an already-invited member returns `already_linked`
  * → skipped (no duplicate user / outbox row). Tenant-scoped: every repo read is
@@ -38,7 +40,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { asMemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { ContactRepo } from '../ports/contact-repo';
-import { invitePortal, type CreateUserPort } from './invite-portal';
+import { invitePortal, type CreateUserPort, type DeleteInvitedUserPort } from './invite-portal';
 import { BULK_CAP } from './bulk-action';
 
 export const bulkSendPortalInviteSchema = z
@@ -71,7 +73,7 @@ export type InviteSkipReason =
   | 'member_archived'
   | 'member_not_found';
 
-export type InviteFailCode = 'invalid_email' | 'email_taken' | 'server_error';
+export type InviteFailCode = 'invalid_email' | 'email_taken' | 'link_failed' | 'server_error';
 
 export type BulkSendPortalInviteOutput = {
   readonly invited: ReadonlyArray<{
@@ -99,6 +101,8 @@ export type BulkSendPortalInviteDeps = {
   readonly memberRepo: Pick<MemberRepo, 'findById'>;
   readonly contactRepo: ContactRepo;
   readonly createUser: CreateUserPort;
+  /** SAGA compensation for the invite orphan window (go-live #12-13). */
+  readonly deleteInvitedUser: DeleteInvitedUserPort;
 };
 
 export type BulkSendPortalInviteMeta = {
@@ -193,6 +197,7 @@ export async function bulkSendPortalInvite(
           tenant: deps.tenant,
           contactRepo: deps.contactRepo,
           createUser: deps.createUser,
+          deleteInvitedUser: deps.deleteInvitedUser,
         },
         {
           contactId: primary.contactId,
@@ -229,6 +234,16 @@ export async function bulkSendPortalInvite(
           break;
         case 'email_taken':
           failed.push({ memberId: rawId, code: 'email_taken' });
+          break;
+        case 'link_failed':
+          // The invite was rolled back (SAGA compensation) — no orphan persists.
+          // Surfaced as its own failed code so the operator sees a link fault
+          // distinct from a generic server error and can re-invite cleanly.
+          logger.error(
+            { requestId: meta.requestId, memberId: rawId },
+            'bulk-invite: contact link failed — invite rolled back (compensated)',
+          );
+          failed.push({ memberId: rawId, code: 'link_failed' });
           break;
         default:
           logger.error(

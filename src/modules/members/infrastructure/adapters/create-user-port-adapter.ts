@@ -26,7 +26,15 @@ export const createUserPortAdapter: CreateUserPort = async (input) => {
     tenantId: input.tenantId,
   });
   if (result.ok) {
-    return { ok: true, value: { user: { id: result.value.user.id } } };
+    return {
+      ok: true,
+      value: {
+        user: { id: result.value.user.id },
+        // Thread the queued-invite outbox row id through so the SAGA
+        // compensation (go-live #12-13) can drop the dead invite on link failure.
+        outboxRowId: result.value.outboxRowId,
+      },
+    };
   }
   return { ok: false, error: { code: result.error.code } };
 };

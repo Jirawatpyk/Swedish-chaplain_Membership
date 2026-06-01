@@ -50,7 +50,10 @@ function makeDeps(): BulkSendPortalInviteDeps {
         return okR(c ?? []);
       },
     } as unknown as BulkSendPortalInviteDeps['contactRepo'],
-    createUser: (async () => okR({ user: { id: 'u' } })) as unknown as BulkSendPortalInviteDeps['createUser'],
+    createUser: (async () => okR({ user: { id: 'u' }, outboxRowId: 'outbox-u' })) as unknown as BulkSendPortalInviteDeps['createUser'],
+    // invitePortal is fully mocked here, so the SAGA compensation port is never
+    // invoked from this use case directly — a no-op stub keeps the type honest.
+    deleteInvitedUser: (async () => ({ ok: true })) as unknown as BulkSendPortalInviteDeps['deleteInvitedUser'],
   };
 }
 
@@ -165,6 +168,22 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.skipped).toEqual([{ memberId: m, reason: 'already_linked' }]);
+  });
+
+  // go-live #12-13: invitePortal returns link_failed when the contact link faulted
+  // after createUser committed and the invite was rolled back (SAGA compensation).
+  // It maps to its OWN failed code (distinct from server_error) so the operator
+  // sees a link fault and can re-invite — there is NO orphan to clean up.
+  it('invitePortal link_failed → failed(link_failed)', async () => {
+    const [m] = uuids(1);
+    MEMBERS[m!] = { status: 'active' };
+    CONTACTS[m!] = [{ contactId: 'cLink', isPrimary: true }];
+    INVITE['cLink'] = errR({ code: 'link_failed' });
+    const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m!] }, meta, makeDeps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.failed).toEqual([{ memberId: m, code: 'link_failed' }]);
+    expect(r.value.counts).toEqual({ invited: 0, skipped: 0, failed: 1 });
   });
 
   // go-live /code-review #1 (HIGH): F1 createUser RE-RAISES unexpected DB/network

@@ -46,6 +46,7 @@ import { checkPasswordPolicy } from '@/modules/auth/application/password-policy'
 // created without a tenant context); the outbox table has no RLS
 // (operational data — see migration 0011 header) so a direct insert
 // is the correct integration point.
+import { eq } from 'drizzle-orm';
 import type { DbTx } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { err, ok, type Result } from '@/lib/result';
@@ -74,6 +75,7 @@ import type { ForgotPasswordDeps } from '@/modules/auth/application/forgot-passw
 import type { ResetPasswordDeps } from '@/modules/auth/application/reset-password';
 import type { ChangePasswordDeps } from '@/modules/auth/application/change-password';
 import type { CreateUserDeps } from '@/modules/auth/application/create-user';
+import type { DeleteInvitedUserDeps } from '@/modules/auth/application/delete-invited-user';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
@@ -206,6 +208,21 @@ export const defaultCreateUserDeps: CreateUserDeps = {
   audit: auditRepo,
   enqueueInvitationInTx,
   now: wallClock,
+};
+
+/**
+ * Delete the queued `notifications_outbox` invite row by id — used by the
+ * `deleteInvitedUser` SAGA compensation (go-live #12-13) so a rolled-back
+ * orphan invite never dispatches a dead email. Owner-role (db.transaction).
+ */
+const deleteOutboxInTx = async (tx: DbTx, outboxRowId: string): Promise<void> => {
+  await tx.delete(notificationsOutbox).where(eq(notificationsOutbox.id, outboxRowId));
+};
+
+export const defaultDeleteInvitedUserDeps: DeleteInvitedUserDeps = {
+  users: userRepo,
+  deleteOutboxInTx,
+  audit: auditRepo,
 };
 
 /**

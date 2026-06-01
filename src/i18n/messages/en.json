@@ -1246,6 +1246,7 @@
           "invalidEmail": "The contact email is invalid.",
           "emailTaken": "This email already belongs to another account.",
           "notFound": "Contact not found.",
+          "linkFailed": "Couldn't link the portal account. No invitation was sent — please try again.",
           "serverError": "Something went wrong. Please try again."
         }
       },

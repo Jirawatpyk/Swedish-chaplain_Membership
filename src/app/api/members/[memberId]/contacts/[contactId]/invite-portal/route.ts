@@ -46,7 +46,12 @@ export async function POST(
   const deps = buildMembersDeps(tenant);
 
   const result = await invitePortal(
-    { tenant, contactRepo: deps.contactRepo, createUser: deps.createUser },
+    {
+      tenant,
+      contactRepo: deps.contactRepo,
+      createUser: deps.createUser,
+      deleteInvitedUser: deps.deleteInvitedUser,
+    },
     {
       contactId: parsed.data.contactId as ContactId,
       actorUserId: current.user.id,
@@ -81,6 +86,19 @@ export async function POST(
         return NextResponse.json(
           { error: { code: 'email_taken', message: 'Email already in use by another account.' } },
           { status: 409 },
+        );
+      case 'link_failed':
+        // go-live #12-13 — the contact link faulted after createUser committed;
+        // the invite was rolled back (SAGA compensation) so no orphan persists.
+        // Surface a real 500 so the admin retries (the pre-fix code falsely
+        // returned 200 + left a permanent orphan).
+        logger.error(
+          { requestId, contactId: parsed.data.contactId },
+          'members.invite_portal.link_failed',
+        );
+        return NextResponse.json(
+          { error: { code: 'link_failed', message: 'Could not link the portal account. Please try again.' } },
+          { status: 500 },
         );
       default:
         logger.error(

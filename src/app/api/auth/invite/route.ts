@@ -59,7 +59,13 @@ const createUserPort: CreateUserPort = async (input) => {
     tenantId: input.tenantId,
   });
   if (result.ok) {
-    return { ok: true, value: { user: { id: result.value.user.id } } };
+    // outboxRowId is required by CreateUserPort (consumed by invitePortal's SAGA
+    // compensation, go-live #12-13). inviteUserForMember does not compensate yet
+    // — its orphan window is a tracked follow-up PR — but the port stays honest.
+    return {
+      ok: true,
+      value: { user: { id: result.value.user.id }, outboxRowId: result.value.outboxRowId },
+    };
   }
   return { ok: false, error: { code: result.error.code } };
 };
