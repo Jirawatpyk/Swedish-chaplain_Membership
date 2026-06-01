@@ -43,7 +43,11 @@ import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { MemberRepo, RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
-import type { CreateUserPort, DeleteInvitedUserPort } from './invite-portal';
+import {
+  compensateInviteOrphan,
+  type CreateUserPort,
+  type DeleteInvitedUserPort,
+} from './_lib/invite-saga';
 import { UseCaseAbort } from '../tx-abort';
 
 // ---------------------------------------------------------------------------
@@ -339,25 +343,20 @@ export async function inviteUserForMember(
       'invite-user-for-member.tx_failed: rolling back orphaned F1 user (SAGA compensation)',
     );
     // go-live #12-13 (follow-up) — the contact tx rolled back, but F1 createUser
-    // already committed the pending user. Roll it back so no orphan persists.
-    // Correct for BOTH paths: the user is freshly created at step 4; deleting it
-    // leaves create_new clean (its new contact was rolled back) and link_existing
-    // clean (the pre-existing contact stays unlinked, its original state).
-    // deleteInvitedUser never throws (Result), so it cannot mask the failure.
-    const compensation = await deps.deleteInvitedUser({
+    // already committed the pending user. Roll it back via the shared SAGA
+    // compensation so no orphan persists. Correct for BOTH paths: the user is
+    // freshly created at step 4; deleting it leaves create_new clean (its new
+    // contact was rolled back) and link_existing clean (the pre-existing contact
+    // stays unlinked, its original state). Never throws → cannot mask the failure.
+    await compensateInviteOrphan(deps.deleteInvitedUser, {
       userId: created.value.user.id,
       outboxRowId: created.value.outboxRowId,
       actorUserId: input.actorUserId,
       sourceIp: input.sourceIp,
       requestId: input.requestId,
       targetEmail: emailResult.value,
+      opLabel: 'invite-user-for-member',
     });
-    if (!compensation.ok) {
-      logger.error(
-        { userIdHash: hashId(created.value.user.id), requestId: input.requestId },
-        'invite-user-for-member.compensation_failed: orphan persists — manual reconciliation needed',
-      );
-    }
     if (e instanceof UseCaseAbort) {
       // Controlled repo failure, orphan compensated → link_failed (retry safe),
       // mirroring invitePortal's link_failed branch.

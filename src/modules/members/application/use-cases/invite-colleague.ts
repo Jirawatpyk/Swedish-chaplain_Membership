@@ -21,7 +21,11 @@ import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
-import type { CreateUserPort, DeleteInvitedUserPort } from './invite-portal';
+import {
+  compensateInviteOrphan,
+  type CreateUserPort,
+  type DeleteInvitedUserPort,
+} from './_lib/invite-saga';
 import { UseCaseAbort } from '../tx-abort';
 
 // ---------------------------------------------------------------------------
@@ -211,23 +215,17 @@ export async function inviteColleague(
     // already committed the pending user + invitation + queued email in its own
     // tx. Leaving it = a PERMANENT orphan (active user, no contact -> broken
     // member-portal resolution via findByLinkedUserId; redeem-invite never links
-    // a contact). Roll the invite back so no orphan persists; the member
-    // re-invites the colleague cleanly. deleteInvitedUser never throws (Result),
-    // so it cannot mask the original failure.
-    const compensation = await deps.deleteInvitedUser({
+    // a contact). Roll the invite back via the shared SAGA compensation (never
+    // throws → cannot mask the original failure).
+    await compensateInviteOrphan(deps.deleteInvitedUser, {
       userId: created.value.user.id,
       outboxRowId: created.value.outboxRowId,
       actorUserId: input.actorUserId,
       sourceIp: input.sourceIp,
       requestId: input.requestId,
       targetEmail: emailResult.value,
+      opLabel: 'invite-colleague',
     });
-    if (!compensation.ok) {
-      logger.error(
-        { userId: created.value.user.id, requestId: input.requestId },
-        'invite-colleague.compensation_failed: orphan persists — manual reconciliation needed',
-      );
-    }
     if (e instanceof UseCaseAbort) {
       // Controlled repo failure, orphan compensated → link_failed (retry safe),
       // mirroring invitePortal's link_failed branch.
