@@ -109,10 +109,10 @@ describe('staffNavConfig', () => {
 });
 
 describe('memberNavConfig', () => {
-  it('has exactly 1 section with 7 items: Dashboard, Profile, Invoices, Benefits, Broadcasts, Timeline, Account (F9 US4 Benefits + US3 Timeline added)', () => {
+  it('has exactly 1 section with 8 items: Dashboard, Profile, Invoices, Benefits, Broadcasts, Timeline, Renewal reminders, Account (S1-P1-2 renewalPrefs added)', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(7);
+    expect(section.items).toHaveLength(8);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
     expect(section.items[1]!.titleKey).toBe('nav.member.profile');
     // R7-B3 — US3 member invoice self-service inserted between
@@ -125,7 +125,10 @@ describe('memberNavConfig', () => {
     expect(section.items[4]!.titleKey).toBe('nav.member.broadcasts');
     // F9 US3 — member's own unified activity timeline.
     expect(section.items[5]!.titleKey).toBe('nav.member.timeline');
-    expect(section.items[6]!.titleKey).toBe('nav.member.account');
+    // S1-P1-2 (commit 13670b63) — renewal-reminder opt-out page; the only
+    // in-app link to /portal/preferences/renewals.
+    expect(section.items[6]!.titleKey).toBe('nav.member.renewalPrefs');
+    expect(section.items[7]!.titleKey).toBe('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {

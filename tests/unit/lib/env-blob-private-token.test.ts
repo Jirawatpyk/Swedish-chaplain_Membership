@@ -61,6 +61,13 @@ describe('env.ts — BLOB_PRIVATE_READ_WRITE_TOKEN (F9 T101a)', () => {
 
   it('falls back to the public token when BLOB_PRIVATE_READ_WRITE_TOKEN is unset (dark-launch)', async () => {
     stubEnv({});
+    // Test isolation: tests/setup.ts loads .env.local before tests run, which on
+    // a developer machine may set a real BLOB_PRIVATE_READ_WRITE_TOKEN. The
+    // stubEnv helper above only stubs keys it knows about, so without this the
+    // env.local value survives and `?? raw.BLOB_READ_WRITE_TOKEN` never engages.
+    // Stub to `undefined` (NOT '') so vitest `delete`s the key — an empty string
+    // would fail the `.min(10)` schema rule and throw at boot.
+    vi.stubEnv('BLOB_PRIVATE_READ_WRITE_TOKEN', undefined);
     const mod = await import('@/lib/env');
     expect(mod.env.blob.privateReadWriteToken).toBe('vercel_blob_rw_public_store');
     expect(mod.env.blob.readWriteToken).toBe('vercel_blob_rw_public_store');
