@@ -210,8 +210,12 @@ function makeInviteColleagueDeps(options: {
       recordInTx: vi.fn().mockResolvedValue(options.auditResult),
     },
     createUser: vi.fn().mockResolvedValue(
-      ok({ user: { id: 'user-uuid-new' } }),
+      ok({ user: { id: 'user-uuid-new' }, outboxRowId: 'outbox-uuid-new' }),
     ) as unknown as InviteColleagueDeps['createUser'],
+    // go-live #12-13 (follow-up) — the rollback path now compensates the orphaned
+    // F1 user; stub the port so the catch branch can invoke it. Default ok:true;
+    // individual tests can override to assert the compensation-failure log path.
+    deleteInvitedUser: vi.fn().mockResolvedValue({ ok: true }) as unknown as InviteColleagueDeps['deleteInvitedUser'],
     idFactory: {
       contactId: () => asContactId('33333333-3333-4333-8333-333333333333'),
     },

@@ -4168,6 +4168,7 @@
       "sendSuccess": "Inbjudan har skickats.",
       "sendError": "Kunde inte skicka inbjudan. Försök igen.",
       "emailTaken": "Denna e-postadress är redan registrerad.",
+      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen.",
       "languageOptions": {
         "en": "English (engelska)",
         "th": "ไทย (thailändska)",

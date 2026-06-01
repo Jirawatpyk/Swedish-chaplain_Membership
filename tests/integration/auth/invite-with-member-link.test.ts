@@ -211,6 +211,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
         audit: depsA.audit,
         memberRepo: depsA.memberRepo,
         createUser: createUserPort,
+        deleteInvitedUser: depsA.deleteInvitedUser,
         idFactory: depsA.idFactory,
       },
       {
@@ -295,6 +296,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
         audit: depsA.audit,
         memberRepo: depsA.memberRepo,
         createUser: createUserPort,
+        deleteInvitedUser: depsA.deleteInvitedUser,
         idFactory: depsA.idFactory,
       },
       {
@@ -422,6 +424,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
         audit: depsA.audit,
         memberRepo: depsA.memberRepo,
         createUser: createUserPort,
+        deleteInvitedUser: depsA.deleteInvitedUser,
         idFactory: depsA.idFactory,
       },
       {
@@ -528,6 +531,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
         audit: depsA.audit,
         memberRepo: depsA.memberRepo,
         createUser: createUserPort,
+        deleteInvitedUser: depsA.deleteInvitedUser,
         idFactory: depsA.idFactory,
       },
       {
@@ -629,6 +633,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
         audit: depsA.audit,
         memberRepo: depsA.memberRepo,
         createUser: createUserPort,
+        deleteInvitedUser: depsA.deleteInvitedUser,
         idFactory: depsA.idFactory,
       },
       {

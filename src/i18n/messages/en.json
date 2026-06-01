@@ -4168,6 +4168,7 @@
       "sendSuccess": "Invitation sent successfully.",
       "sendError": "Could not send invitation. Please try again.",
       "emailTaken": "This email is already registered.",
+      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again.",
       "languageOptions": {
         "en": "English",
         "th": "ไทย (Thai)",

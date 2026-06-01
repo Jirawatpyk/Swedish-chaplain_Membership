@@ -61,6 +61,10 @@ vi.mock('@/modules/members/members-deps', () => ({
     contactRepo: {},
     memberRepo: {},
     audit: {},
+    // go-live #12-13 follow-up — the route now reads deps.deleteInvitedUser and
+    // threads it into inviteUserForMember; keep it in the mock bag so a future
+    // un-mocked variant never gets `undefined` here.
+    deleteInvitedUser: () => ({ ok: true }),
     idFactory: { contactId: () => 'contact-uuid-001' },
   }),
 }));

@@ -66,8 +66,10 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return { ok: false as const, error: { code: result.error.code as 'invalid-input' | 'email-taken' } };
     }
-    // outboxRowId required by CreateUserPort (invitePortal SAGA, go-live #12-13);
-    // inviteColleague does not compensate yet — tracked follow-up — but stays honest.
+    // outboxRowId required by CreateUserPort for SAGA compensation (go-live
+    // #12-13 + follow-up). inviteColleague NOW compensates: on a second-tx
+    // failure the orphaned pending user is rolled back via deleteInvitedUser
+    // (wired below) — see invite-colleague.ts catch block.
     return {
       ok: true as const,
       value: { user: { id: result.value.user.id }, outboxRowId: result.value.outboxRowId },
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
       contactRepo: deps.contactRepo,
       audit: deps.audit,
       createUser: createUserPort,
+      deleteInvitedUser: deps.deleteInvitedUser,
       idFactory: deps.idFactory,
     },
     {
@@ -113,6 +116,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: { code: 'validation_error', details: result.error.issues } },
           { status: 400 },
+        );
+      case 'link_failed':
+        // go-live #12-13 (follow-up) — the contact link faulted after createUser
+        // committed; the orphaned invite was rolled back (SAGA compensation), so
+        // a retry is safe. 500 (transient) with a distinct code the form maps to
+        // a retry-safe toast.
+        logger.error(
+          { requestId: ctx.requestId },
+          'portal.contacts.invite.link_failed',
+        );
+        return NextResponse.json(
+          { error: { code: 'link_failed' } },
+          { status: 500 },
         );
       default:
         logger.error(

@@ -82,6 +82,9 @@ export function InviteColleagueForm() {
           toast.error(t('emailTaken'));
         } else if (data?.error?.code === 'forbidden') {
           toast.error(t('notPrimary'));
+        } else if (data?.error?.code === 'link_failed') {
+          // go-live #12-13 (follow-up) — the invite was rolled back; retry is safe.
+          toast.error(t('linkFailed'));
         } else {
           toast.error(data?.error?.message ?? t('sendError'));
         }
