@@ -8,43 +8,20 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import {
-  invitePortal,
-  type ContactId,
-  type CreateUserPort,
-} from '@/modules/members';
+import { invitePortal, type ContactId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
-import { createUser as f1CreateUser } from '@/modules/auth';
 
 const paramsSchema = z.object({
   memberId: z.string().uuid(),
   contactId: z.string().uuid(),
 });
 
-// Adapt F1 createUser to the narrowed port the use case expects. The
-// port constrains `role` to `'member'` so admins cannot accidentally
-// invite staff via this endpoint.
-const createUserPort: CreateUserPort = async (input) => {
-  const result = await f1CreateUser({
-    email: input.email,
-    role: input.role,
-    displayName: input.displayName ?? null,
-    // F1 createUser takes a branded UserId; at the boundary we pass the
-    // raw session user id through. Safe because F1 itself re-brands.
-    actorUserId: input.actorUserId as never,
-    sourceIp: input.sourceIp,
-    requestId: input.requestId,
-    locale: input.locale,
-    tenantId: input.tenantId,
-  });
-  if (result.ok) {
-    return { ok: true, value: { user: { id: result.value.user.id } } };
-  }
-  return { ok: false, error: { code: result.error.code } };
-};
+// go-live P1-17: the F1-createUser glue now lives in `createUserPortAdapter`,
+// wired into `buildMembersDeps().createUser` — shared by this single-invite
+// route AND the bulk-invite route so there is no parallel adapter to drift.
 
 export async function POST(
   request: NextRequest,
@@ -69,7 +46,7 @@ export async function POST(
   const deps = buildMembersDeps(tenant);
 
   const result = await invitePortal(
-    { tenant, contactRepo: deps.contactRepo, createUser: createUserPort },
+    { tenant, contactRepo: deps.contactRepo, createUser: deps.createUser },
     {
       contactId: parsed.data.contactId as ContactId,
       actorUserId: current.user.id,

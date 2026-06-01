@@ -1,8 +1,11 @@
 /**
  * `bulk-action` use case (T104, US4 FR-018/019/019a/019b).
  *
- * Applies a bulk action (change_plan, archive, send_portal_invite) to
- * ≤100 members in a single all-or-nothing transaction. Per-actor rate
+ * Applies a bulk action (change_plan, archive) to ≤100 members in a
+ * single all-or-nothing transaction. (send_portal_invite moved to the
+ * dedicated `bulkSendPortalInvite` use case — go-live P1-17 — because
+ * invites are best-effort per member + run in F1's owner-role tx, which
+ * cannot join this all-or-nothing runInTenant.) Per-actor rate
  * limit of 10 ops / 10 min is enforced at the ROUTE HANDLER (not here
  * — use case is a single point of truth for business logic; rate limit
  * is a transport-layer concern that lives in Presentation — round-2
@@ -46,7 +49,7 @@ export const BULK_RATE_WINDOW_SECONDS = 600; // 10 minutes
 // `invalid_body` (400).
 export const bulkActionSchema = z
   .object({
-    action: z.enum(['change_plan', 'archive', 'send_portal_invite']),
+    action: z.enum(['change_plan', 'archive']),
     member_ids: z
       .array(z.string().uuid())
       .min(1, 'At least one member_id is required')
@@ -302,37 +305,6 @@ export async function bulkAction(
             break;
           }
 
-          case 'send_portal_invite': {
-            // Round-2 review C-3: send_portal_invite currently only
-            // queues an audit event. The actual invite dispatch is a
-            // forward-looking item (requires wiring invite-portal
-            // use case per-member post-commit). Do NOT increment
-            // `updatedCount` — no state change happened. `auditEventCount`
-            // still reflects the audit row written inside the txn.
-            // Round-3 review N-I3: use dedicated event type so security
-            // monitoring can distinguish portal-invite queueing from
-            // general member_updated events.
-            const auditResult = await deps.audit.recordInTx(
-              tx,
-              deps.tenant,
-              {
-                type: 'member_portal_invite_queued',
-                actorUserId: meta.actorUserId,
-                requestId: meta.requestId,
-                summary: `bulk portal invite queued for member ${memberId}`,
-                payload: {
-                  member_id: memberId,
-                  action: 'send_portal_invite',
-                  bulk_request_id: meta.requestId,
-                  note: 'invite dispatch deferred — audit only',
-                },
-              },
-            );
-            if (!auditResult.ok) throw new Error('audit_failed');
-            // updatedCount NOT incremented — no mutation occurred.
-            auditEventCount++;
-            break;
-          }
         }
       }
 

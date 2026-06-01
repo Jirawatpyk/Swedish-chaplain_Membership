@@ -263,6 +263,18 @@ export {
 } from './application/use-cases/bulk-action';
 
 export {
+  bulkSendPortalInvite,
+  bulkSendPortalInviteSchema,
+  type BulkSendPortalInviteInput,
+  type BulkSendPortalInviteOutput,
+  type BulkSendPortalInviteError,
+  type BulkSendPortalInviteDeps,
+  type BulkSendPortalInviteMeta,
+  type InviteSkipReason,
+  type InviteFailCode,
+} from './application/use-cases/bulk-send-portal-invite';
+
+export {
   inlineEdit,
   inlineEditSchema,
   INLINE_EDIT_FIELDS,

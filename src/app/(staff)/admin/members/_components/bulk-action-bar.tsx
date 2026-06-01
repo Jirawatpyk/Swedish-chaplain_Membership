@@ -84,12 +84,25 @@ export function BulkActionBar({
         const body = await res.json();
 
         if (res.ok) {
-          toast.success(
-            t('success', {
-              count: body.updated_count,
-              action: t(`actions.${action}`),
-            }),
-          );
+          if (action === 'send_portal_invite') {
+            // P1-17 — per-member buckets (queued / skipped / failed). Partial
+            // success is still 200; surface the breakdown + use an error toast
+            // only when at least one member failed (bad data / transient).
+            const c = body.counts ?? { invited: 0, skipped: 0, failed: 0 };
+            const parts = [t('inviteQueued', { invited: c.invited })];
+            if (c.skipped > 0) parts.push(t('inviteSkipped', { skipped: c.skipped }));
+            if (c.failed > 0) parts.push(t('inviteFailed', { failed: c.failed }));
+            const message = parts.join(' · ');
+            if (c.failed > 0) toast.error(message);
+            else toast.success(message);
+          } else {
+            toast.success(
+              t('success', {
+                count: body.updated_count,
+                action: t(`actions.${action}`),
+              }),
+            );
+          }
           onClear();
           router.refresh();
         } else if (res.status === 429) {
