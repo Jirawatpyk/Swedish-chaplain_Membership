@@ -14,7 +14,9 @@ import type { RowIssue, ValidationReport } from './validate';
 export interface CommitOutcome {
   readonly membersCreated: number;
   readonly contactsCreated: number;
-  readonly skippedExistingContacts: number;
+  /** Members skipped on re-run because an active contact email already exists (idempotency). */
+  readonly skippedExistingMembers: number;
+  /** Contacts skipped because their email matches a soft-deleted row (operator decision: skip+warn). */
   readonly skippedSoftDeletedContacts: number;
 }
 
@@ -74,7 +76,7 @@ export function renderReportText(doc: ReportDocument): string {
     lines.push('');
     lines.push(
       `Committed: ${doc.committed.membersCreated} members + ${doc.committed.contactsCreated} contacts; ` +
-        `skipped ${doc.committed.skippedExistingContacts} existing + ` +
+        `skipped ${doc.committed.skippedExistingMembers} already-imported members + ` +
         `${doc.committed.skippedSoftDeletedContacts} soft-deleted contacts`,
     );
   }
