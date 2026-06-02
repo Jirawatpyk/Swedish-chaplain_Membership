@@ -33,6 +33,7 @@ import { transition } from '../../domain/policies/broadcast-status-transitions';
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
 import type { BroadcastDeliveriesRepo } from '../ports/broadcast-deliveries-repo';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
@@ -192,6 +193,19 @@ export async function reconcileStuckSending(
 
     return await markSent(deps, broadcast, now, input.requestId);
   } catch (e) {
+    // A concurrent transition OUT of 'sending' (a webhook or admin moved the
+    // row first) makes markSent's guarded applyTransition return 0 rows →
+    // BroadcastConcurrentMutationError. That's a benign race — the broadcast
+    // is no longer stuck — NOT a server error. Mirror the sibling guard in
+    // dispatch-scheduled-broadcast.ts so it doesn't surface as
+    // reconcile.server_error → HTTP 500 → cron-job.org retry-storm.
+    if (e instanceof BroadcastConcurrentMutationError) {
+      return ok({
+        kind: 'not_stuck_yet' as const,
+        broadcastId: input.broadcastId,
+        observedStatus: e.observedStatus,
+      });
+    }
     return err({
       kind: 'reconcile.server_error',
       message: e instanceof Error ? e.message : 'unknown error',

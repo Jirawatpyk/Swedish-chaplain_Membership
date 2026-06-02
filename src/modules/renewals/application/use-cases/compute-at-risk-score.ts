@@ -193,7 +193,10 @@ export async function computeAtRiskScore(
         score: scoreResult.score,
         band: scoreResult.band,
         factors: factorsMap,
-        computedAt: new Date().toISOString(),
+        // Use the injected ClockPort (renewals-deps § clock) so test fixtures
+        // can pin computedAt — peer use-cases (cancel-cycle, supersede-pending-
+        // tier-upgrade, …) already do; this site missed the Round-5 migration.
+        computedAt: deps.clock.now().toISOString(),
       },
     );
 

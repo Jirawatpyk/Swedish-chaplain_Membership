@@ -17,17 +17,19 @@
  * Atomicity tradeoff: F3 use-case + F7 audit emit run in two phases (F3
  * first, F7 audit second) — F3's tx is closed before the F7 audit fires.
  * The F3 column change is the **legal source of truth** for consent.
- * If the audit emit fails AFTER the F3 column commits, we **swallow the
- * audit failure to a logger.error and still return ok** — surfacing the
- * audit-emit error to the route would force the client to display an
- * error banner for a successfully-recorded consent, AND a retry would
- * hit the F3 idempotent path which skips the audit emit, leaving the
- * audit row permanently missing. Best-effort audit + observability log
- * is the only consistent semantic; a future audit-row-backfill cron can
- * recover from logger entries if needed.
+ * If the audit emit fails AFTER the F3 column commits, we route it through
+ * `safeAuditEmit` (canonical `broadcasts.audit.emit_failed` log +
+ * `broadcasts_audit_emit_failed_total` metric) and **still return ok** —
+ * surfacing the audit-emit error to the route would force the client to
+ * display an error banner for a successfully-recorded consent, AND a retry
+ * would hit the F3 idempotent path which skips the audit emit, leaving the
+ * audit row permanently missing. The metric is what fires Alert F7-A1 so
+ * on-call runs the manual recovery in docs/runbooks/audit-emit-loss.md;
+ * best-effort audit + observability is the only consistent semantic.
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { AuditPort } from '../ports/audit-port';
@@ -135,12 +137,18 @@ export async function acknowledgeBroadcastsTerms(
 
   // Q15 audit emit (the F3 column change is the legal source of truth;
   // see header doc for the atomicity tradeoff). tx=null → adapter writes
-  // on auto-commit. Failure is logged as `ack.audit_emit_failed` so a
-  // future backfill cron can reconstruct missing audit rows from the
-  // logged correlationId + memberId, but the consent itself is
-  // already-and-permanently recorded.
-  try {
-    await deps.audit.emit(null, {
+  // on auto-commit. Routed through `safeAuditEmit` (NOT a bespoke try/catch)
+  // so a lost GDPR-consent audit row increments
+  // `broadcasts_audit_emit_failed_total{event_type=member_acknowledged_broadcasts_terms}`
+  // and logs the canonical `broadcasts.audit.emit_failed` key — this is what
+  // fires Alert F7-A1 (observability.md) so on-call is paged to run the manual
+  // recovery in docs/runbooks/audit-emit-loss.md. The consent itself is
+  // already-and-permanently recorded in the F3 column. extraContext carries the
+  // forensic fields needed to reconstruct the missing row.
+  await safeAuditEmit(
+    deps.audit,
+    null,
+    {
       tenantId: deps.tenant.slug,
       requestId: input.requestId,
       eventType: 'member_acknowledged_broadcasts_terms',
@@ -153,22 +161,13 @@ export async function acknowledgeBroadcastsTerms(
         bannerLocale: input.locale,
         retentionYears: f7RetentionFor('member_acknowledged_broadcasts_terms'),
       },
-    });
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: deps.tenant.slug,
-        memberId: input.memberId,
-        userId: input.actorUserId,
-        bannerLocale: input.locale,
-        acknowledgedAt: acknowledgedAt.toISOString(),
-        requestId: input.requestId,
-      },
-      'broadcasts.acknowledge.audit_emit_failed',
-    );
-    // Fall through to ok() — the F3 column already records consent.
-  }
+    },
+    {
+      memberId: input.memberId,
+      bannerLocale: input.locale,
+      acknowledgedAt: acknowledgedAt.toISOString(),
+    },
+  );
 
   return ok({ kind: 'fresh', acknowledgedAt });
 }
