@@ -53,7 +53,7 @@ export async function MemberEngagementSection({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {eng.score === null || eng.band === null ? (
+        {eng.score == null || eng.band == null ? (
           <p className="text-sm text-muted-foreground">—</p>
         ) : (
           <p className="flex items-center gap-2 text-sm">

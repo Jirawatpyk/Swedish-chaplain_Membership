@@ -31,7 +31,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { resolveEventLabel } from '@/lib/audit-event-label';
-import { dateFormatLocale } from '@/lib/intl-locale';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   listDashboard,
   activityFeedQuery,
@@ -145,7 +145,7 @@ export default async function StaffHomePage() {
 
   const { metrics, computedAt } = dashResult.value;
   const numberFmt = new Intl.NumberFormat(locale);
-  const asOf = new Intl.DateTimeFormat(dateFormatLocale(locale), {
+  const asOf = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
     // Render the "as of" instant in the tenant timezone — the Vercel runtime is
@@ -229,7 +229,7 @@ export default async function StaffHomePage() {
     ...(insight.scopeRef !== undefined ? { scopeRef: insight.scopeRef } : {}),
   }));
 
-  const timeFmt = new Intl.DateTimeFormat(dateFormatLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
+  const timeFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
   const tEvents = await getTranslations('admin.dashboard.activity.events');
   // Fallback to the timeline `audit.eventType` catalogue (EN/TH/SV) for codes
   // the feed namespace lacks → localised label instead of humanised English.
@@ -246,7 +246,7 @@ export default async function StaffHomePage() {
 
   // FR-001a trend charts — display-ready points (visible to all staff; the
   // empty state shows only when a tenant genuinely has no paid revenue yet).
-  const monthFmt = new Intl.DateTimeFormat(dateFormatLocale(locale), { month: 'short', year: 'numeric' });
+  const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const thbFmt = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: 'THB',

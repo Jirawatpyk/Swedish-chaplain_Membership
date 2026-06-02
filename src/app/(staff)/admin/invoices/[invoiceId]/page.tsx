@@ -26,7 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { dateFormatLocale } from '@/lib/intl-locale';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   getInvoice,
   makeGetInvoiceDeps,
@@ -109,11 +109,11 @@ function formatSatang(satang: bigint | null): string {
  */
 function formatDate(iso: string | null, locale: string): string {
   if (!iso) return '—';
-  // dateFormatLocale → Thai renders the Buddhist-Era year explicitly
+  // getDateFormatLocale → Thai renders the Buddhist-Era year explicitly
   // (`-u-ca-buddhist`), independent of the host ICU default for bare `th`.
   // These are operational/audit timestamps; the tax-document dual-calendar
   // (CE + พ.ศ.) treatment lives on the credit-note surfaces, not here.
-  return new Date(iso).toLocaleDateString(dateFormatLocale(locale), {
+  return new Date(iso).toLocaleDateString(getDateFormatLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -229,6 +229,20 @@ export default async function InvoiceDetailPage({
   const failedEmails = isDraft
     ? []
     : await findFailedAutoEmailsByInvoice(invoiceId, tenantCtx.slug);
+  // Resend the SAME document that failed: the `invoice_paid`/`receipt_pdf_resent`
+  // auto-emails are receipt copies → variant 'receipt'; everything else is the
+  // invoice copy. canResend is variant-aware (receipt needs the receipt PDF).
+  const failedEmail = failedEmails[0] ?? null;
+  const emailResendVariant: 'invoice' | 'receipt' =
+    failedEmail?.eventType === 'invoice_paid' ||
+    failedEmail?.eventType === 'receipt_pdf_resent'
+      ? 'receipt'
+      : 'invoice';
+  const emailResendable =
+    invoice.status !== 'void' &&
+    (emailResendVariant === 'receipt'
+      ? Boolean(invoice.receiptPdf)
+      : Boolean(invoice.pdf));
 
   // T109 — derive the presentation-only `overdue` variant + fire the
   // opportunistic `invoice_overdue_detected` audit on first detection
@@ -473,11 +487,12 @@ export default async function InvoiceDetailPage({
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* FR-026 — auto-email delivery-failure banner (admins only). */}
-          {isAdmin && failedEmails.length > 0 && (
+          {isAdmin && failedEmail && (
             <EmailFailureAlert
               invoiceId={invoice.invoiceId}
-              recipientEmail={failedEmails[0]!.recipientEmail}
-              canResend={invoice.status !== 'void' && Boolean(invoice.pdf)}
+              recipientEmail={failedEmail.recipientEmail}
+              variant={emailResendVariant}
+              canResend={emailResendable}
             />
           )}
           <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">

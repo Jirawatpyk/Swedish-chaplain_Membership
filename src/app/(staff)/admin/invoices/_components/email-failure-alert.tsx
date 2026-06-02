@@ -18,10 +18,13 @@ import { Button } from '@/components/ui/button';
 export function EmailFailureAlert({
   invoiceId,
   recipientEmail,
+  variant,
   canResend,
 }: {
   readonly invoiceId: string;
   readonly recipientEmail: string;
+  /** The document that failed — resend the SAME one (receipt vs invoice copy). */
+  readonly variant: 'invoice' | 'receipt';
   readonly canResend: boolean;
 }): React.ReactElement {
   const t = useTranslations('admin.invoices.detail');
@@ -37,7 +40,7 @@ export function EmailFailureAlert({
         res = await fetch(`/api/invoices/${invoiceId}/resend`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ variant: 'invoice' }),
+          body: JSON.stringify({ variant }),
         });
       } catch (err) {
         console.error('[email-failure-alert] resend network error', {
@@ -74,7 +77,11 @@ export function EmailFailureAlert({
       <AlertTitle>{t('deliveryFailure.title')}</AlertTitle>
       <AlertDescription className="flex flex-col gap-2">
         <span>{t('deliveryFailure.body', { recipient: recipientEmail })}</span>
-        <span>{t('deliveryFailure.editRecipientHint')}</span>
+        {/* The "…then resend" hint only makes sense when a resend is offered
+            (e.g. on a void invoice canResend is false → no button). */}
+        {canResend ? (
+          <span>{t('deliveryFailure.editRecipientHint')}</span>
+        ) : null}
         {canResend ? (
           <Button
             type="button"
