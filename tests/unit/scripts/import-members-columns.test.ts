@@ -1,0 +1,92 @@
+/**
+ * Stage-3 importer — columns unit tests (spec § 2 / § 8).
+ */
+import { describe, expect, it } from 'vitest';
+
+const { buildColumnMap, mapDataRows } = await import('@/../scripts/import-members/columns');
+
+const FULL_HEADERS = [
+  'Company Name', 'Country', 'Tax ID', 'Membership Tier', 'Turnover',
+  'Registration Date', 'City', 'Province', 'Postal Code',
+  'First Name', 'Last Name', 'Email', 'Phone', 'Role', 'Language', 'Primary',
+];
+
+describe('buildColumnMap (spec § 2)', () => {
+  it('resolves documented headers (case/spacing/punct-insensitive)', () => {
+    const m = buildColumnMap(FULL_HEADERS);
+    expect(m.missingRequired).toEqual([]);
+    expect(m.index.companyName).toBe(0);
+    expect(m.index.contactEmail).toBe(11);
+    expect(m.index.tier).toBe(3);
+    expect(m.unmappedHeaders).toEqual([]);
+  });
+
+  it('matches aliases ("Organisation"/"E-Mail"/"Plan"/"Surname")', () => {
+    const m = buildColumnMap(['Organisation', 'Country', 'Plan', 'Member Since', 'E-Mail', 'Surname', 'Given Name']);
+    expect(m.index.companyName).toBe(0);
+    expect(m.index.tier).toBe(2);
+    expect(m.index.registrationDate).toBe(3);
+    expect(m.index.contactEmail).toBe(4);
+    expect(m.index.contactLastName).toBe(5);
+    expect(m.index.contactFirstName).toBe(6);
+    expect(m.missingRequired).toEqual([]);
+  });
+
+  it('reports missingRequired when a required column is absent', () => {
+    const m = buildColumnMap(['Company Name', 'Country', 'First Name', 'Last Name', 'Email']);
+    expect(m.missingRequired).toContain('tier');
+    expect(m.missingRequired).toContain('registrationDate');
+  });
+
+  it('accepts a single Full Name column (no first/last) as the name source', () => {
+    const m = buildColumnMap(['Company', 'Country', 'Tier', 'Registration Date', 'Email', 'Full Name']);
+    expect(m.missingRequired).toEqual([]);
+    expect(m.fullNameIndex).toBe(5);
+  });
+
+  it('flags missing contactName when neither first/last nor full-name present', () => {
+    const m = buildColumnMap(['Company', 'Country', 'Tier', 'Registration Date', 'Email']);
+    expect(m.missingRequired).toContain('contactName');
+  });
+
+  it('lists unmapped headers (so the operator confirms the map)', () => {
+    const m = buildColumnMap([...FULL_HEADERS, 'Internal Notes XYZ']);
+    expect(m.unmappedHeaders).toEqual(['Internal Notes XYZ']);
+  });
+});
+
+describe('mapDataRows (spec § 2)', () => {
+  it('extracts RawRow fields + 1-based Excel rowIndex; converts Date cells to ISO', () => {
+    const map = buildColumnMap(FULL_HEADERS);
+    const rows = mapDataRows(
+      [['Acme', 'TH', '0105500000000', 'Premium', '1000000', new Date('2026-01-15T00:00:00Z'),
+        'Bangkok', 'BKK', '10110', 'Jane', 'Doe', 'jane@acme.test', '+66812345678', 'CEO', 'en', 'yes']],
+      map,
+      2, // header is Excel row 1; first data row = 2
+    );
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.rowIndex).toBe(2);
+    expect(r.companyName).toBe('Acme');
+    expect(r.registrationDate).toBe('2026-01-15');
+    expect(r.contactEmail).toBe('jane@acme.test');
+    expect(r.isPrimary).toBe('yes');
+  });
+
+  it('splits a Full Name column into first + rest-as-last', () => {
+    const map = buildColumnMap(['Company', 'Country', 'Tier', 'Registration Date', 'Email', 'Full Name']);
+    const rows = mapDataRows(
+      [['Acme', 'TH', 'Premium', '2026-01-01', 'a@b.test', 'Somchai Jaidee Junior']],
+      map,
+      2,
+    );
+    expect(rows[0]!.contactFirstName).toBe('Somchai');
+    expect(rows[0]!.contactLastName).toBe('Jaidee Junior');
+  });
+
+  it('skips entirely-blank rows', () => {
+    const map = buildColumnMap(FULL_HEADERS);
+    const rows = mapDataRows([['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']], map, 2);
+    expect(rows).toHaveLength(0);
+  });
+});
