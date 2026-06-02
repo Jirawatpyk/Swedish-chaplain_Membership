@@ -3,7 +3,7 @@
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 
 import { cn } from "@/lib/utils"
-import { CheckIcon } from "lucide-react"
+import { CheckIcon, MinusIcon } from "lucide-react"
 
 function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
   return (
@@ -17,10 +17,13 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
     >
       <CheckboxPrimitive.Indicator
         data-slot="checkbox-indicator"
-        className="grid place-content-center text-current transition-none [&>svg]:size-3.5"
+        className="group/cbi grid place-content-center text-current transition-none [&>svg]:size-3.5"
       >
-        <CheckIcon
-        />
+        {/* Indicator renders when checked OR indeterminate. Swap to a minus
+            glyph in the indeterminate (mixed) state so the visual matches the
+            aria-checked="mixed" semantics. */}
+        <CheckIcon className="group-data-[indeterminate]/cbi:hidden" />
+        <MinusIcon className="hidden group-data-[indeterminate]/cbi:block" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )

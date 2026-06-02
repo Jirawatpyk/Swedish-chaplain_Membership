@@ -208,7 +208,7 @@ export default async function AdminEventsListPage({
       <Card className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
         <CardContent className="flex flex-col gap-4">
           {!result || !result.ok ? (
-            <div className="py-12 text-center">
+            <div className="py-12 text-center" role="alert">
               <p className="text-muted-foreground">{t('errorState')}</p>
             </div>
           ) : (
@@ -429,7 +429,7 @@ async function EmptyState({
   if (hasFilters) {
     return (
       <div className="py-12 text-center">
-        <p className="text-muted-foreground">{t('filteredEmpty')}</p>
+        <h2 className="text-muted-foreground">{t('filteredEmpty')}</h2>
         <Link
           href="/admin/events"
           className={buttonVariants({ variant: 'outline', className: 'mt-4' })}

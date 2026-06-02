@@ -16,7 +16,7 @@
  *   - On `link-invalid`: swaps the form for a full error card with a
  *     "Request a new link" affordance.
  */
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -58,6 +58,11 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
+  // Managed focus on the invalid-link alert — see InviteRedeemForm for rationale.
+  const invalidRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (linkInvalid) invalidRef.current?.focus();
+  }, [linkInvalid]);
 
   const {
     control,
@@ -142,7 +147,9 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   if (linkInvalid) {
     return (
       <div
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
+        ref={invalidRef}
+        tabIndex={-1}
+        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         role="alert"
       >
         <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>

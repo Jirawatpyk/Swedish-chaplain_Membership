@@ -264,7 +264,9 @@ export function RefundForm({
           autoCorrect="off"
           spellCheck={false}
           placeholder={tForm('amount.placeholder')}
-          aria-describedby={`${amountId}-help`}
+          aria-describedby={
+            amountError ? `${amountId}-error ${amountId}-help` : `${amountId}-help`
+          }
           aria-required="true"
           aria-invalid={Boolean(amountError)}
           data-testid="refund-form-amount"
@@ -279,7 +281,7 @@ export function RefundForm({
           })}
         </p>
         {amountError && (
-          <p className="text-xs text-destructive" role="alert">
+          <p id={`${amountId}-error`} className="text-xs text-destructive" role="alert">
             {amountError === 'amountRange'
               ? tError('refund_exceeds_remaining', {
                   remaining: formatSatangThb(

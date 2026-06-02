@@ -13,7 +13,7 @@
  *   - On success: redirects to the `redirectTo` URL returned by the
  *     API (admin or member landing)
  */
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -66,6 +66,13 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
+  // Move keyboard focus to the invalid-link alert when it appears — `role=
+  // "alert"` announces for SR users, but without managed focus a keyboard
+  // user is left on the now-unmounted submit button.
+  const invalidRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (linkInvalid) invalidRef.current?.focus();
+  }, [linkInvalid]);
 
   const {
     control,
@@ -153,7 +160,9 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     // line rather than a clickable button.
     return (
       <div
-        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
+        ref={invalidRef}
+        tabIndex={-1}
+        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         role="alert"
       >
         <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
