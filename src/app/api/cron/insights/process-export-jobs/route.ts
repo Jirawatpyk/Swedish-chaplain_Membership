@@ -28,6 +28,15 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const CLAIM_BATCH = 25;
+/**
+ * P2 Wave-0 (PDPA) — grace window before terminal (`expired`/`failed`) export-job
+ * rows are hard-deleted by the retention purge. The Blob artefact is already
+ * removed at TTL sweep; the row's pseudonymous PII (subject_member_id,
+ * requested_by) must not persist indefinitely. 30 days keeps recent terminal
+ * rows visible (status UI / support) before purge; the `data_export_expired`
+ * audit row (5y) is the durable lifecycle record.
+ */
+const RETENTION_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const gate = await gateCronBearerOrRespond(request, {
@@ -50,6 +59,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let failed = 0;
     let reclaimed = 0;
     let expired = 0;
+    let purged = 0;
 
     // 1) Claim + build requested jobs.
     const requested = await repo.listRequestedIds(tenant, CLAIM_BATCH);
@@ -106,13 +116,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // 4) Retention purge (P2 Wave-0, PDPA data-minimization) — hard-delete
+    //    terminal expired/failed rows past the grace window so the pseudonymous
+    //    PII (subject_member_id, requested_by) is not retained indefinitely.
+    purged = await runInTenant(tenant, (tx) =>
+      repo.purgeRetiredInTx(tx, new Date(startedAt - RETENTION_GRACE_MS)),
+    );
+
     const durationMs = Date.now() - startedAt;
     logger.info(
-      { tenantId: tenant.slug, processed, failed, reclaimed, expired, durationMs },
+      { tenantId: tenant.slug, processed, failed, reclaimed, expired, purged, durationMs },
       'cron.insights.process_export_jobs.tick_complete',
     );
     return NextResponse.json(
-      { processed, failed, reclaimed, expired, durationMs },
+      { processed, failed, reclaimed, expired, purged, durationMs },
       { status: 200 },
     );
   } catch (e) {

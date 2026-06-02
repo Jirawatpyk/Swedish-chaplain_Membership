@@ -78,6 +78,7 @@ function stubRepo(jobRecord: ExportJobRecord | null): ExportJobRepo {
     markExpiredInTx: vi.fn(),
     listStuckProcessing: vi.fn(),
     reclaimStuckInTx: vi.fn(),
+    purgeRetiredInTx: vi.fn(async () => 0),
   };
 }
 

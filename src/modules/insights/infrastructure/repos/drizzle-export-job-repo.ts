@@ -293,6 +293,23 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       return updated.length > 0;
     },
 
+    async purgeRetiredInTx(tx, olderThan): Promise<number> {
+      // P2 Wave-0 — hard-delete terminal rows past the grace window so the
+      // pseudonymous PII (subject_member_id, requested_by) is not retained
+      // indefinitely. Tenant-scoped (RLS + explicit predicate, defence-in-depth).
+      const deleted = await tx
+        .delete(exportJobs)
+        .where(
+          and(
+            eq(exportJobs.tenantId, tenantId),
+            inArray(exportJobs.status, ['expired', 'failed']),
+            lt(exportJobs.updatedAt, olderThan),
+          ),
+        )
+        .returning({ id: exportJobs.id });
+      return deleted.length;
+    },
+
     async listStuckProcessing(ctx: TenantContext, timeoutMs: number) {
       const cutoff = new Date(Date.now() - timeoutMs);
       return runInTenant(ctx, async (tx) => {

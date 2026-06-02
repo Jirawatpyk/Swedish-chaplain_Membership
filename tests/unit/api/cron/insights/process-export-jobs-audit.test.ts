@@ -54,6 +54,8 @@ const repoMock = vi.hoisted(() => ({
   listSweepable: vi.fn(async () => [{ jobId: 'job-expired-1', blobKey: null }]),
   markExpiredInTx: vi.fn(async () => true),
   reclaimStuckInTx: vi.fn(async () => false),
+  // P2 Wave-0 — cron now runs a retention purge after the TTL sweep.
+  purgeRetiredInTx: vi.fn(async () => 0),
 }));
 vi.mock('@/modules/insights/infrastructure/repos/drizzle-export-job-repo', () => ({
   makeDrizzleExportJobRepo: () => repoMock,
