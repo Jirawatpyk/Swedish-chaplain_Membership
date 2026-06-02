@@ -273,7 +273,7 @@ export async function seedF7PlanChangedAudit(): Promise<{
         ${'E2E seed — plan changed for ' + member.member_id},
         ${'e2e-seed-' + Date.now()},
         ${TENANT_ID},
-        ${sql.json({ memberId: member.member_id, fromPlanCode: 'regular_corporate', toPlanCode: 'premium_corporate' })},
+        ${sql.json({ member_id: member.member_id, old_plan_id: 'regular_corporate', new_plan_id: 'premium_corporate' })},
         ${changedAt.toISOString()}
       )
       RETURNING id::text AS id
