@@ -220,9 +220,9 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
             the same banner there is reminder-noise. CSV affordance
             stays signal-tight at the exact decision point.
           */}
-          <Card size="sm" className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
+          <Card size="sm" className="border-info/30 bg-info-surface">
             <CardContent className="flex items-start gap-3 text-sm">
-              <InfoIcon className="size-4 shrink-0 text-blue-600 dark:text-blue-300" aria-hidden />
+              <InfoIcon className="size-4 shrink-0 text-info" aria-hidden />
               <div className="flex flex-col gap-1">
                 <p className="font-medium">{t('tierNotice.title')}</p>
                 <p className="text-muted-foreground">{t('tierNotice.body')}</p>
