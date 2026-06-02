@@ -141,6 +141,13 @@ function mapRepoLoadError(error: RepoError): MemberSelfUpdateError {
   return { type: 'server_error', message: error.code };
 }
 
+/**
+ * P2 Wave-0 — sentinel thrown when the in-tx FOR-UPDATE re-read finds the member
+ * archived (a concurrent archive raced the pre-tx ownership read). Caught in the
+ * outer catch and mapped to `forbidden`; rolls the (empty-so-far) tx back.
+ */
+class MemberArchivedAbort extends Error {}
+
 // ---------------------------------------------------------------------------
 // Use case
 // ---------------------------------------------------------------------------
@@ -285,6 +292,17 @@ export async function memberSelfUpdate(
   //    gap, surfaced only as a warn). Now it is all-or-nothing.
   try {
     const persisted = await runInTenant(deps.tenant, async (tx) => {
+      // P2 Wave-0 — re-read the member FOR UPDATE inside the tx and re-assert it
+      // is not archived. The ownership/IDOR reads above are PRE-tx; a concurrent
+      // archive between them and these writes would otherwise let a portal member
+      // mutate a now-archived member, bypassing the archived-immutability
+      // invariant that inline-edit enforces (inline-edit.ts § archived guard).
+      const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
+      if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
+      if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
+      // `member`/`contact` are the echoed return values; `updateFieldsInTx` /
+      // `updateInTx` overwrite them with the freshly-written rows below. The FOR
+      // UPDATE re-read above is the guard — we only need its status here.
       let member = memberResult.value;
       let contact = contactCheck.value;
 
@@ -341,6 +359,15 @@ export async function memberSelfUpdate(
 
     return ok({ member: persisted.member, contact: persisted.contact });
   } catch (e) {
+    if (e instanceof MemberArchivedAbort) {
+      // Concurrent archive won the race — refuse the self-update (the member is
+      // now immutable). 403 forbidden, consistent with the archived-immutability
+      // invariant.
+      return err({
+        type: 'forbidden',
+        reason: 'member is archived and can no longer be edited',
+      });
+    }
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
       return err({ type: 'server_error', message: `self update: ${re.code}` });

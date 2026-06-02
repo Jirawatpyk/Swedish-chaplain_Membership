@@ -371,7 +371,9 @@ function makeSelfUpdateDeps(options: {
     tenant,
     memberRepo: {
       findById: vi.fn().mockResolvedValue(ok(baseMember)),
-      findByIdInTx: vi.fn(),
+      // P2 Wave-0 — memberSelfUpdate now re-reads FOR UPDATE inside the tx and
+      // asserts not-archived before writing. Default to the active baseMember.
+      findByIdInTx: vi.fn().mockResolvedValue(ok(baseMember)),
       findManyByIdsInTx: vi.fn(),
       findByLinkedUserId: vi.fn().mockResolvedValue(ok(baseMember)),
       findSoftDuplicate: vi.fn(),
@@ -435,6 +437,35 @@ describe('W1 — memberSelfUpdate throw-to-rollback', () => {
     });
     expect(result.ok).toBe(false);
     expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('P2 wave-0 — forbidden when a concurrent archive wins (in-tx FOR UPDATE re-read sees archived)', async () => {
+    const deps = makeSelfUpdateDeps({
+      updateInTxResult: ok(makeBaseContact()),
+      auditResult: ok(undefined),
+    });
+    // Pre-tx findById saw an ACTIVE member (default mock), but the in-tx
+    // FOR-UPDATE re-read sees it archived — a concurrent archive raced the
+    // ownership read. The guard must refuse before any write/audit.
+    (deps.memberRepo.findByIdInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok({ ...makeBaseMember(), status: 'archived' }),
+    );
+    const result = await memberSelfUpdate(deps, {
+      memberId,
+      contactId,
+      rawBody: {
+        website: 'https://evil.example',
+        primary_contact: { firstName: 'Sneaky' },
+      },
+      actorUserId: 'user-self',
+      requestId: 'req-msu-archived-race',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('forbidden');
+    // Archived-immutability invariant held: no member/contact write, no audit.
+    expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
+    expect(deps.contactRepo.updateInTx).not.toHaveBeenCalled();
+    expect(deps.audit.recordInTx).not.toHaveBeenCalled();
   });
 });
 
