@@ -7,7 +7,7 @@
  * completion through a real polite live region so assistive-tech users get
  * feedback (the static list cannot provide it).
  */
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { RotateCwIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -22,13 +22,25 @@ export function ActivityFeedRefresh({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [announced, setAnnounced] = useState('');
+  const requestedRef = useRef(false);
+
+  // Announce ONLY after the refresh transition actually resolves (the
+  // `isPending` true→false edge) — a blind `setTimeout(…, 50)` fired the
+  // "refreshed" message before the server round-trip completed and could
+  // under-fire on NVDA. `onRefresh` already cleared `announced`, so the set on
+  // the next tick is a real '' → label mutation that re-triggers the polite
+  // region even on a repeat refresh (an identical string is no mutation → silent).
+  useEffect(() => {
+    if (isPending || !requestedRef.current) return undefined;
+    requestedRef.current = false;
+    const id = setTimeout(() => setAnnounced(refreshedLabel), 80);
+    return () => clearTimeout(id);
+  }, [isPending, refreshedLabel]);
 
   function onRefresh() {
-    startTransition(() => router.refresh());
-    // Clear then re-set so a SECOND refresh re-triggers the polite live region —
-    // setting the identical string produces no mutation and would stay silent.
+    requestedRef.current = true;
     setAnnounced('');
-    setTimeout(() => setAnnounced(refreshedLabel), 50);
+    startTransition(() => router.refresh());
   }
 
   return (
@@ -37,6 +49,7 @@ export function ActivityFeedRefresh({
         variant="ghost"
         size="sm"
         disabled={isPending}
+        aria-busy={isPending}
         onClick={onRefresh}
       >
         <RotateCwIcon

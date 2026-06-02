@@ -8,6 +8,7 @@
  * Calls POST /api/admin/broadcasts/[id]/approve.
  */
 import { useMemo, useState, useTransition } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -253,12 +254,20 @@ export function ApproveDialog({
           <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction
             disabled={submitDisabled}
+            aria-busy={pending}
             onClick={(e) => {
               e.preventDefault();
               onConfirm();
             }}
           >
-            {t('confirm')}
+            {pending ? (
+              <>
+                <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+                {t('confirm')}
+              </>
+            ) : (
+              t('confirm')
+            )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

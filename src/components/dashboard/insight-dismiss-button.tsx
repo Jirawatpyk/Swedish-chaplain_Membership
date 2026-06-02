@@ -62,6 +62,7 @@ export function InsightDismissButton({
       className="relative size-7 shrink-0 before:absolute before:-inset-2 before:content-['']"
       aria-label={label}
       disabled={isPending}
+      aria-busy={isPending}
       onClick={onDismiss}
     >
       <XIcon className="size-4" aria-hidden="true" />

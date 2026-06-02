@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 
@@ -104,10 +105,18 @@ export function EmailChangeRevertForm({ token }: { token: string }) {
         type="button"
         onClick={handleRevert}
         disabled={state.kind === 'submitting'}
+        aria-busy={state.kind === 'submitting'}
         variant="destructive"
         className="w-full"
       >
-        {state.kind === 'submitting' ? t('submitting') : t('revert')}
+        {state.kind === 'submitting' ? (
+          <>
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+            {t('submitting')}
+          </>
+        ) : (
+          t('revert')
+        )}
       </Button>
     </div>
   );

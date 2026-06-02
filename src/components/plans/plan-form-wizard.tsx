@@ -21,6 +21,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -539,8 +540,16 @@ export function PlanFormWizard({
               type="button"
               onClick={handleSubmit}
               disabled={!stepValid.review || submitting}
+              aria-busy={submitting}
             >
-              {submitting ? tButtons('saving') : tButtons('save')}
+              {submitting ? (
+                <>
+                  <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+                  {tButtons('saving')}
+                </>
+              ) : (
+                tButtons('save')
+              )}
             </Button>
           )}
         </div>

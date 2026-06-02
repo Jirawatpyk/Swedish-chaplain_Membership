@@ -29,6 +29,7 @@ import {
   ChevronDown,
   AlertCircle,
   CalendarPlus,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -750,9 +751,20 @@ export function ScheduleEditor({
                   <Button
                     type="button"
                     disabled={readOnly || pending || steps.length === 0}
+                    aria-busy={pending}
                     onClick={() => handleSave(b)}
                   >
-                    {pending ? t('actions.saving') : t('actions.save')}
+                    {pending ? (
+                      <>
+                        <Loader2
+                          aria-hidden="true"
+                          className="mr-1 h-4 w-4 motion-safe:animate-spin"
+                        />
+                        {t('actions.saving')}
+                      </>
+                    ) : (
+                      t('actions.save')
+                    )}
                   </Button>
                 </div>
               </div>
