@@ -28,6 +28,11 @@
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { authMetrics } from '@/lib/metrics';
+// Owner-role tx for the atomic stale-invalidate + fresh-token insert (P2
+// Wave-0). Same Path-C rationale as create-user.ts: password_reset_tokens is a
+// global (cross-tenant) F1 table written under BYPASSRLS, not a tenant-scoped
+// runInTenant write.
+import { db } from '@/lib/db';
 import { asEmailAddress } from '@/modules/auth/domain/branded';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
@@ -153,15 +158,18 @@ export async function forgotPassword(
 
   const now = deps.now();
 
-  // 4. Invalidate existing unconsumed tokens and create a fresh one.
-  //    E2 — `createReset` now returns `{ plaintext, token }`. The
-  //    plaintext is delivered in the email URL; the persisted row
-  //    stores `sha256(plaintext)` as id. We only log the hash via
-  //    `token.id` (safe for audit correlation).
-  await deps.tokens.invalidateAllUnconsumedForUser(user.id, now);
-  const { plaintext, token } = await deps.tokens.createReset({
-    userId: user.id,
-    now,
+  // 4. Invalidate existing unconsumed tokens and create a fresh one — ATOMICALLY
+  //    (P2 Wave-0). The invalidate + insert run in ONE owner-role tx so a crash
+  //    between them can't strand the user with every prior token invalidated and
+  //    none created (no live reset link AND no email). Email send + audit stay
+  //    POST-commit below — a transient send/audit failure must never roll back
+  //    the freshly-minted token.
+  //    E2 — `createResetInTx` returns `{ plaintext, token }`. The plaintext is
+  //    delivered in the email URL; the persisted row stores `sha256(plaintext)`
+  //    as id. We only log the hash via `token.id` (safe for audit correlation).
+  const { plaintext, token } = await db.transaction(async (tx) => {
+    await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, now);
+    return deps.tokens.createResetInTx(tx, { userId: user.id, now });
   });
   void token; // referenced by audit emit below; keep for clarity.
 
