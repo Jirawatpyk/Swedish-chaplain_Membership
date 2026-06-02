@@ -44,6 +44,9 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     memberRepo: {
       findById: vi.fn().mockResolvedValue(ok(stubMember)),
       findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
+      findRiskById: vi
+        .fn()
+        .mockResolvedValue(ok({ riskScore: null, riskScoreBand: null })),
       // Staff-review SB-1 + SW-1: batched lookup is the new default path
       // for bulk-action. Returns a Map<MemberId, Member> keyed by id.
       findManyByIdsInTx: vi.fn().mockImplementation(async (_tx, ids) => {

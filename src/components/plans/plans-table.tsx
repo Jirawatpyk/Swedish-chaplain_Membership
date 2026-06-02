@@ -164,13 +164,22 @@ export function PlansTable({
         });
       } else {
         const body = (await res.json().catch(() => null)) as {
-          error?: { code?: string; details?: { affected_member_count?: number } };
+          error?:
+            | string
+            | { code?: string; details?: { affected_member_count?: number } };
         } | null;
-        const code = body?.error?.code;
-        if (code === 'plan_has_active_members') {
+        // read-only-mode 503: flat string (proxy) OR nested code (route guard).
+        const errObj = body?.error;
+        const code = typeof errObj === 'string' ? errObj : errObj?.code;
+        if (code === 'read_only_mode' || code === 'read-only-mode') {
+          toast.error(tErrors('readOnlyMode'));
+        } else if (code === 'plan_has_active_members') {
           toast.error(
             tErrors('memberAttached', {
-              count: body?.error?.details?.affected_member_count ?? 0,
+              count:
+                (typeof errObj === 'object'
+                  ? errObj?.details?.affected_member_count
+                  : undefined) ?? 0,
             }),
           );
         } else if (code === 'not_found') {

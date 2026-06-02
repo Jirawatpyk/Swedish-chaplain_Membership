@@ -143,10 +143,15 @@ export function ForgotPasswordForm() {
 
       {submitted ? (
         <div
-          className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+          className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
           role="status"
         >
-          {t('submitted')}
+          <p>{t('submitted')}</p>
+          {/* FR-025 user-facing advisory — shown UNCONDITIONALLY (to matched
+              and unmatched submitters alike) so it never reveals whether the
+              email matched an account (preserves the FR-016 enumeration guard),
+              while still helping a real user whose mail was delayed/spam-filed. */}
+          <p className="text-muted-foreground">{t('deliveryHint')}</p>
         </div>
       ) : null}
 

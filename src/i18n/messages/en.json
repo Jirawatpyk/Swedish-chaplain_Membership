@@ -31,7 +31,8 @@
       "submit": "Send reset link",
       "submitted": "If that email matches an account, a reset link is on the way.",
       "resend": "Didn't get the email? Resend",
-      "resendCountdown": "Resend ({seconds}s)"
+      "resendCountdown": "Resend ({seconds}s)",
+      "deliveryHint": "Didn’t receive it after a minute? Check your spam folder, or contact support if it still doesn’t arrive."
     },
     "resetPassword": {
       "title": "Choose a new password",
@@ -94,24 +95,8 @@
     "memberPortal": {
       "title": "Member portal",
       "welcome": "Welcome, {name}",
-      "versionBadge": "v1.0 — more features coming soon",
+      "versionBadge": "v1.0",
       "intro": "You're signed in to the SweCham member portal. The full experience is being rolled out phase by phase.",
-      "roadmapHeading": "What's coming next",
-      "roadmapDescription": "Your upcoming member experience by phase.",
-      "roadmap": {
-        "invoices": {
-          "title": "Invoices & receipts",
-          "description": "Tax-compliant Thai invoices and payment history (F4)."
-        },
-        "events": {
-          "title": "Events & registration",
-          "description": "Browse chamber events and register online (F6)."
-        },
-        "renewal": {
-          "title": "Online renewal",
-          "description": "Renew your membership and pay with card (F5)."
-        }
-      },
       "contactHeading": "Need help?",
       "contactDescription": "Until self-service lands, email us and we'll help directly."
     },
@@ -813,7 +798,8 @@
         "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
         "idempotencyConflict": "This request was already handled with different data. Refresh and try again.",
         "targetYearPopulated": "{targetYear} already has plans. Delete them first or choose a different year.",
-        "sourceYearEmpty": "No plans found for {sourceYear}."
+        "sourceYearEmpty": "No plans found for {sourceYear}.",
+        "readOnlyMode": "The system is currently in read-only mode for maintenance. Please try again shortly."
       }
     },
     "membersPreferredLocale": {
@@ -1002,6 +988,7 @@
           "registrationFeePaidNo": "Unpaid",
           "status": "Status",
           "lastActivityAt": "Last activity",
+          "engagement": "Engagement",
           "archivedAt": "Archived at",
           "notes": "Internal notes",
           "firstName": "First name",
@@ -1176,6 +1163,12 @@
           "dateOfBirth": "Date of birth",
           "dateOfBirthHint": "Required for Thai Alumni plan",
           "phoneError": "Use international format, e.g. +66812345678",
+          "errors": {
+            "required": "This field is required.",
+            "countryCode": "Use the ISO 3166-1 alpha-2 code, e.g. TH, SE, US.",
+            "url": "Enter a valid URL, e.g. https://example.com.",
+            "planYear": "Enter a year between 2020 and 2100."
+          },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
           "notesHint": "Visible to chamber staff only. Not shown to members."
@@ -1752,6 +1745,19 @@
             "pdfAria": "Download credit note {number} as PDF",
             "view": "View",
             "viewAria": "View credit note {number}"
+          }
+        },
+        "deliveryFailure": {
+          "editRecipientHint": "Check the address, or update the member's primary contact email, then resend.",
+          "invoice": {
+            "title": "Invoice email delivery failed",
+            "body": "The automatic invoice email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The invoice itself is unaffected.",
+            "resend": "Resend invoice email"
+          },
+          "receipt": {
+            "title": "Receipt email delivery failed",
+            "body": "The automatic receipt email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The payment record itself is unaffected.",
+            "resend": "Resend receipt email"
           }
         }
       },
@@ -2545,7 +2551,13 @@
         "noActivityTitle": "No activity yet",
         "noActivityDescription": "Sent reminder emails and follow-up tasks will appear here once the renewal reminders begin for this cycle.",
         "reminders": {
-          "heading": "Reminder history"
+          "heading": "Reminder history",
+          "status": {
+            "pending": "Pending",
+            "sent": "Sent",
+            "skipped": "Skipped",
+            "failed": "Failed"
+          }
         },
         "escalations": {
           "heading": "Escalation tasks"
@@ -3104,6 +3116,7 @@
           "tryAgain": "Try again",
           "loading": "Erasing personal data…",
           "pageTitle": "Erase personal data — {attendeeName}",
+          "metaTitle": "Erase personal data",
           "pageBackToEventLabel": "Back to event detail",
           "pageHint": "This destructive action is logged. The confirmation dialog will open automatically."
         },
@@ -3962,6 +3975,8 @@
           "broadcast_audience_too_large": "Audience exceeds the 5,000 recipient limit.",
           "broadcast_custom_recipient_unknown": "Some custom recipients are not in your directory.",
           "broadcast_custom_recipient_invalid_format": "Some custom recipients are not valid email addresses.",
+          "broadcast_custom_recipient_empty": "Add at least one email to your custom recipient list.",
+          "broadcast_custom_recipient_too_many": "Your custom recipient list is limited to 100 entries.",
           "broadcast_member_missing_primary_contact_email": "Your profile is missing a primary contact email.",
           "broadcast_member_halted_pending_review": "Your broadcast privileges are paused pending admin review.",
           "broadcast_rate_limit_exceeded": "Too many submissions. Please try again later.",
@@ -4116,6 +4131,7 @@
         "country": "Country",
         "website": "Website",
         "description": "Description",
+        "planName": "Plan Name",
         "planYear": "Plan Year",
         "registrationDate": "Registration Date",
         "status": "Status"

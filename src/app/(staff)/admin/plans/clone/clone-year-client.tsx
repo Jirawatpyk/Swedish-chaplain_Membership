@@ -68,8 +68,14 @@ export function CloneYearClient({
         router.refresh();
         return;
       }
-      const errorCode = body?.error?.code ?? 'generic';
-      if (errorCode === 'target_year_populated') {
+      // read-only-mode 503 arrives as a flat string (proxy) OR nested code
+      // (route guard) — normalize both; branch FIRST so it isn't shadowed.
+      const errorObj = body?.error;
+      const errorCode =
+        typeof errorObj === 'string' ? errorObj : (errorObj?.code ?? 'generic');
+      if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
+        toast.error(t('errors.readOnlyMode'));
+      } else if (errorCode === 'target_year_populated') {
         toast.error(tClone('errors.targetYearPopulated', { year: targetYear }));
       } else if (errorCode === 'source_year_empty') {
         toast.error(tClone('errors.noPlans', { year: sourceYear }));

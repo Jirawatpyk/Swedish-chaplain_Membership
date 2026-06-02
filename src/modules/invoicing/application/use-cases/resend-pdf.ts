@@ -88,9 +88,10 @@ export type ResendPdfInput =
       /**
        * Which PDF to resend:
        *   - 'invoice': the tax invoice (available as soon as status=issued)
-       *   - 'receipt': the receipt PDF (only available once status=paid
-       *     AND the tenant uses separate-mode; combined-mode has no
-       *     distinct receipt so this variant is rejected)
+       *   - 'receipt': the receipt PDF — available once status=paid in BOTH
+       *     numbering modes (record-payment renders invoice.receiptPdf for
+       *     combined AND separate); rejected with `no_receipt_pdf` only when
+       *     no receipt PDF exists yet (i.e. not paid).
        */
       readonly variant: 'invoice' | 'receipt';
       readonly actor: ResendPdfActor;
@@ -339,7 +340,10 @@ async function resendCreditNote(
     requestId: input.actor.requestId,
     eventType: 'credit_note_pdf_resent',
     actorUserId: input.actor.userId,
-    summary: `Credit note ${cn.documentNumber.raw} PDF resent to ${recipientEmail}`,
+    // PDPA data-minimization (matches the invoice/receipt branches): the
+    // `summary` persists for the full 5–10y audit retention, so it must NOT
+    // carry plaintext PII — the hashed recipient lives in the payload.
+    summary: `Credit note ${cn.documentNumber.raw} PDF resent (recipient hashed in payload)`,
     payload: {
       credit_note_id: input.creditNoteId,
       original_invoice_id: cn.originalInvoiceId,

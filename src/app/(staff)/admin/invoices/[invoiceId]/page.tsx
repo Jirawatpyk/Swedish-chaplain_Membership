@@ -26,6 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   getInvoice,
   makeGetInvoiceDeps,
@@ -47,6 +48,12 @@ import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/re
 // directly.
  
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
+// Same documented escape-hatch as the two reads above: a tenant-scoped infra
+// read (FR-026 failed-auto-email surface), no Application use-case needed.
+import {
+  findFailedAutoEmailsByInvoice,
+  resendVariantForFailedEvent,
+} from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
@@ -77,6 +84,7 @@ import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
+import { EmailFailureAlert } from '../_components/email-failure-alert';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
@@ -104,7 +112,11 @@ function formatSatang(satang: bigint | null): string {
  */
 function formatDate(iso: string | null, locale: string): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale, {
+  // getDateFormatLocale → Thai renders the Buddhist-Era year explicitly
+  // (`-u-ca-buddhist`), independent of the host ICU default for bare `th`.
+  // These are operational/audit timestamps; the tax-document dual-calendar
+  // (CE + พ.ศ.) treatment lives on the credit-note surfaces, not here.
+  return new Date(iso).toLocaleDateString(getDateFormatLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -214,6 +226,48 @@ export default async function InvoiceDetailPage({
 
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
+
+  // Resend-eligibility gates — SHARED with InvoiceMoreMenu below so the
+  // failure banner + the action menu stay in lockstep (combined-mode rule,
+  // Thai RD §86/4): paid+combined hides invoice-resend (the combined receipt
+  // is the single legal document; the issue-time invoice PDF is a stale draft),
+  // and receipt-resend requires a paid invoice with a rendered receipt PDF.
+  const isPaidCombined =
+    invoice.status === 'paid' && invoice.receiptDocumentNumberRaw === null;
+  const hasReceiptPdf =
+    invoice.status === 'paid' && Boolean(invoice.receiptPdf);
+
+  // FR-026 — surface permanently-failed auto-email deliveries to admins.
+  // Drafts never auto-email, so skip the read for them.
+  const failedEmails = isDraft
+    ? []
+    : await findFailedAutoEmailsByInvoice(invoiceId, tenantCtx.slug);
+  // An invoice can have BOTH a failed invoice-copy AND a failed receipt-copy
+  // email (e.g. issue bounced, then the paid-receipt also bounced). Surface ONE
+  // banner per distinct document so neither stays hidden + un-resendable. Rows
+  // arrive newest-first, so the first per variant is the latest failure.
+  const failedEmailBanners: ReadonlyArray<{
+    readonly variant: 'invoice' | 'receipt';
+    readonly recipientEmail: string;
+    readonly canResend: boolean;
+  }> = (() => {
+    const byVariant = new Map<'invoice' | 'receipt', string>();
+    for (const e of failedEmails) {
+      const v = resendVariantForFailedEvent(e.eventType);
+      if (!byVariant.has(v)) byVariant.set(v, e.recipientEmail);
+    }
+    return [...byVariant.entries()].map(([variant, recipientEmail]) => ({
+      variant,
+      recipientEmail,
+      // Mirror InvoiceMoreMenu's showResendInvoice / showResendReceipt gates.
+      canResend:
+        variant === 'receipt'
+          ? hasReceiptPdf
+          : invoice.status !== 'void' &&
+            Boolean(invoice.pdf) &&
+            !isPaidCombined,
+    }));
+  })();
 
   // T109 — derive the presentation-only `overdue` variant + fire the
   // opportunistic `invoice_overdue_detected` audit on first detection
@@ -419,44 +473,46 @@ export default async function InvoiceDetailPage({
                 action row exposes only primary/destructive CTAs as
                 standalone buttons. Menu returns null when nothing to
                 show. T107 visibility rules preserved inside the menu. */}
-            {!isDraft && (() => {
-              // Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE
-              // legal document with dual function. Best-practice menu:
-              //   - paid+combined → hide the pre-payment invoice PDF +
-              //     pre-payment resend (both are stale drafts); show
-              //     only the final combined receipt PDF + resend.
-              //   - paid+separate → show all 4 items (2 distinct
-              //     legal documents, each with its own §87 number).
-              //   - issued / void → show invoice PDF only.
-              const isPaidCombined =
-                invoice.status === 'paid' &&
-                invoice.receiptDocumentNumberRaw === null;
-              const hasReceiptPdf =
-                invoice.status === 'paid' && Boolean(invoice.receiptPdf);
-
-              return (
-                <InvoiceMoreMenu
-                  invoiceId={invoice.invoiceId}
-                  documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
-                  showDownload={Boolean(invoice.pdf) && !isPaidCombined}
-                  showResendInvoice={
-                    isAdmin &&
-                    invoice.status !== 'void' &&
-                    Boolean(invoice.pdf) &&
-                    !isPaidCombined
-                  }
-                  showResendReceipt={isAdmin && hasReceiptPdf}
-                  showDownloadReceipt={hasReceiptPdf}
-                  // combinedModeReceipt is derived inside the menu
-                  // component from (showDownloadReceipt && !showDownload).
-                />
-              );
-            })()}
+            {/* Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE legal document
+                with dual function. paid+combined → hide the pre-payment invoice
+                PDF + resend (stale drafts), show only the combined receipt;
+                paid+separate → all 4 items; issued/void → invoice PDF only.
+                isPaidCombined + hasReceiptPdf are hoisted above (shared with the
+                FR-026 failure banner so both surfaces gate identically). */}
+            {!isDraft && (
+              <InvoiceMoreMenu
+                invoiceId={invoice.invoiceId}
+                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                showDownload={Boolean(invoice.pdf) && !isPaidCombined}
+                showResendInvoice={
+                  isAdmin &&
+                  invoice.status !== 'void' &&
+                  Boolean(invoice.pdf) &&
+                  !isPaidCombined
+                }
+                showResendReceipt={isAdmin && hasReceiptPdf}
+                showDownloadReceipt={hasReceiptPdf}
+                // combinedModeReceipt is derived inside the menu component
+                // from (showDownloadReceipt && !showDownload).
+              />
+            )}
           </>
         }
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
+          {/* FR-026 — one delivery-failure banner per failed document (admins
+              only); invoice + receipt copies can both fail independently. */}
+          {isAdmin &&
+            failedEmailBanners.map((b) => (
+              <EmailFailureAlert
+                key={b.variant}
+                invoiceId={invoice.invoiceId}
+                recipientEmail={b.recipientEmail}
+                variant={b.variant}
+                canResend={b.canResend}
+              />
+            ))}
           <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>

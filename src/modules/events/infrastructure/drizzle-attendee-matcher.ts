@@ -37,9 +37,23 @@ import { isPersonalEmail } from '../domain/personal-email-deny-list';
 import { normaliseCompanyName } from '../domain/normalise-company-name';
 import { levenshtein } from '../domain/levenshtein';
 import { wrapRepoError } from './sanitize-db-error';
+import { logger } from '@/lib/logger';
 import type { MemberId, ContactId } from '@/modules/members';
 
 const DEFAULT_FUZZY_THRESHOLD = 2;
+
+/**
+ * B10 — explicit upper bound on the in-memory fuzzy-match candidate set.
+ * The fuzzy rule loads tenant members into JS and computes Levenshtein per
+ * row (O(M) per attendee → O(N×M) per import). At/under the 5k design
+ * envelope this is fine (scripts/perf/eventcreate-attendee-fuzzy-match.ts,
+ * p95<50ms target). Beyond it we cap the scan and emit a structured
+ * `logger.warn` so the overrun is OBSERVABLE in Vercel runtime logs rather
+ * than silently degrading. Crossing this cap is the trigger to land the
+ * documented pg_trgm GIN + SQL-side similarity() fallback. Exported so tests
+ * can assert against it.
+ */
+export const FUZZY_MEMBER_SCAN_CAP = 5000;
 
 /**
  * Factory — returns the adapter bound to a Drizzle executor (either the
@@ -128,13 +142,38 @@ export function makeDrizzleAttendeeMatcher(
           const attendeeNormalised = normaliseCompanyName(input.attendeeCompany);
           const threshold = input.fuzzyDistanceThreshold ?? DEFAULT_FUZZY_THRESHOLD;
           if (attendeeNormalised.length > 0) {
-            const memberRows = await executor
+            const memberRowsRaw = await executor
               .select({
                 memberId: members.memberId,
                 companyName: members.companyName,
               })
               .from(members)
-              .where(eq(members.tenantId, input.tenantId));
+              .where(eq(members.tenantId, input.tenantId))
+              .limit(FUZZY_MEMBER_SCAN_CAP + 1);
+
+            const fuzzyScanTruncated =
+              memberRowsRaw.length > FUZZY_MEMBER_SCAN_CAP;
+            const memberRows = fuzzyScanTruncated
+              ? memberRowsRaw.slice(0, FUZZY_MEMBER_SCAN_CAP)
+              : memberRowsRaw;
+
+            if (fuzzyScanTruncated) {
+              // B10 — cap hit: scan exceeded the design envelope. The match
+              // result MAY be incomplete (a better fuzzy winner could exist
+              // beyond the cap). Surface it (no PII — tenantId + counts only)
+              // so operators can prioritise the pg_trgm migration; do NOT
+              // throw — the best-effort match continues on the capped set.
+              logger.warn(
+                {
+                  event: 'f6_fuzzy_member_scan_cap_hit',
+                  tenantId: input.tenantId,
+                  cap: FUZZY_MEMBER_SCAN_CAP,
+                  rowsScanned: memberRows.length,
+                  truncated: true,
+                },
+                `[F6] attendee fuzzy match scanned ${FUZZY_MEMBER_SCAN_CAP}+ members (tenant exceeded design envelope) — result may be incomplete; land pg_trgm SQL-side fuzzy match`,
+              );
+            }
 
             const scored: ReadonlyArray<{ memberId: MemberId; companyName: string; distance: number }> =
               memberRows

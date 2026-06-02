@@ -23,7 +23,7 @@
  *     confirmations + redirect.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -47,15 +47,22 @@ import {
 
 // --- Form shape --------------------------------------------------------------
 
-export const memberFormSchema = z.object({
-  company_name: z.string().trim().min(1, 'required').max(200),
+// A2 — schema is built per-render via this factory so zod validation messages
+// resolve through the active-locale translator (TH/SV previously saw hardcoded
+// English). `tf` is the `admin.members.create.fields` translator, widened to
+// (key) => string at the call site (next-intl's namespaced key typing doesn't
+// structurally match a plain string param). Mirrors the in-component schema
+// pattern in contact-form-dialog.tsx.
+function buildMemberFormSchema(tf: (key: string) => string) {
+  return z.object({
+  company_name: z.string().trim().min(1, tf('errors.required')).max(200),
   legal_entity_type: z.string().max(100).optional(),
   country: z
     .string()
-    .length(2, 'Use ISO 3166-1 alpha-2 code, e.g. TH, SE, US')
-    .regex(/^[A-Za-z]{2}$/, 'Use ISO 3166-1 alpha-2 code'),
+    .length(2, tf('errors.countryCode'))
+    .regex(/^[A-Za-z]{2}$/, tf('errors.countryCode')),
   tax_id: z.string().max(50).optional(),
-  website: z.string().max(200).url().optional().or(z.literal('')),
+  website: z.string().max(200).url(tf('errors.url')).optional().or(z.literal('')),
   description: z.string().max(2000).optional(),
   address_line1: z.string().max(200).optional(),
   address_line2: z.string().max(200).optional(),
@@ -70,8 +77,12 @@ export const memberFormSchema = z.object({
     .union([z.string(), z.number()])
     .optional()
     .transform((v) => (v === '' || v === undefined ? undefined : Number(v))),
-  plan_id: z.string().min(1, 'required'),
-  plan_year: z.coerce.number().int().min(2020).max(2100),
+  plan_id: z.string().min(1, tf('errors.required')),
+  plan_year: z.coerce
+    .number({ invalid_type_error: tf('errors.planYear') })
+    .int(tf('errors.planYear'))
+    .min(2020, tf('errors.planYear'))
+    .max(2100, tf('errors.planYear')),
   registration_date: z.string().optional(),
   // Round-3 N-I4 + round-4 R4-I3: accept `null` / `undefined` / `''` on
   // input and emit `null` on output. The edit form seeds defaults from
@@ -87,9 +98,9 @@ export const memberFormSchema = z.object({
       v === '' || v === undefined || v === null ? null : v,
     ),
   primary_contact: z.object({
-    first_name: z.string().trim().min(1, 'required').max(100),
-    last_name: z.string().trim().min(1, 'required').max(100),
-    email: z.string().trim().min(1, 'required').max(254),
+    first_name: z.string().trim().min(1, tf('errors.required')).max(100),
+    last_name: z.string().trim().min(1, tf('errors.required')).max(100),
+    email: z.string().trim().min(1, tf('errors.required')).max(254),
     // Phone must be E.164 (matches the `asPhone` domain value object used
     // by create-member + updateContactFields). Validating client-side
     // highlights the field inline instead of letting the server reject it
@@ -102,15 +113,18 @@ export const memberFormSchema = z.object({
       .max(20)
       .optional()
       .refine((v) => v === undefined || isAcceptablePhoneInput(v), {
-        message: 'phoneFormat',
+        message: tf('phoneError'),
       }),
     role_title: z.string().max(100).optional(),
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
   }),
-});
+  });
+}
 
-export type MemberFormValues = z.infer<typeof memberFormSchema>;
+export type MemberFormValues = z.infer<
+  ReturnType<typeof buildMemberFormSchema>
+>;
 
 // Language endonyms (shown in their own language) — full names so screen
 // readers announce "English" / "ภาษาไทย" / "Svenska" rather than spelling
@@ -189,6 +203,14 @@ export function MemberForm({
     mode === 'edit' ? tEdit('submitting') : t('submitting');
   const cancelLabel = mode === 'edit' ? tEdit('cancel') : t('cancel');
 
+  // Build the zod schema with the active-locale field-error translator. `tf`
+  // is stable per locale render (next-intl), so the memo only re-runs on a
+  // locale switch (which re-renders the page anyway).
+  const schema = useMemo(
+    () => buildMemberFormSchema(tf as (key: string) => string),
+    [tf],
+  );
+
   const {
     register,
     handleSubmit,
@@ -196,7 +218,7 @@ export function MemberForm({
     control,
     formState: { errors },
   } = useForm<MemberFormValues>({
-    resolver: zodResolver(memberFormSchema),
+    resolver: zodResolver(schema),
     defaultValues: {
       country: initialValues?.country ?? 'TH',
       plan_year: initialValues?.plan_year ?? defaultPlanYear,
@@ -606,13 +628,7 @@ export function MemberForm({
             />
             <FieldError
               id="contact_phone-error"
-              message={
-                errors.primary_contact?.phone
-                  ? errors.primary_contact.phone.message === 'phoneFormat'
-                    ? tf('phoneError')
-                    : errors.primary_contact.phone.message
-                  : undefined
-              }
+              message={errors.primary_contact?.phone?.message}
             />
           </div>
         </div>

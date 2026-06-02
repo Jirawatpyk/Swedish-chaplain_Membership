@@ -12,7 +12,21 @@ import type {
   F4OutboxEventType,
   F4OutboxLocale,
 } from '../../application/ports/email-outbox-port';
-import { db, type TenantTx } from '@/lib/db';
+import { db, runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
+
+/**
+ * FR-026 — a permanently-failed F4 auto-email row, surfaced on the invoice
+ * detail page so admins can retry / fix the recipient.
+ */
+export interface FailedAutoEmail {
+  readonly outboxRowId: string;
+  readonly recipientEmail: string;
+  readonly eventType: F4OutboxEventType | null;
+  readonly lastError: string | null;
+  /** ISO 8601 UTC (from updated_at). */
+  readonly failedAt: string;
+}
 
 export const resendEmailOutboxAdapter: EmailOutboxPort = {
   async enqueue(
@@ -80,3 +94,62 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
     `);
   },
 };
+
+/**
+ * B7 — which resend variant recovers a failed auto-email: the `invoice_paid`
+ * and `receipt_pdf_resent` copies ARE the receipt; everything else (issued,
+ * voided, credit-note, invoice-resent) is the invoice copy. Single source of
+ * truth for the inverse of resend-pdf's variant→PDF mapping, shared by the
+ * detail page (and any future resend-failure surface).
+ */
+export function resendVariantForFailedEvent(
+  eventType: F4OutboxEventType | null,
+): 'invoice' | 'receipt' {
+  return eventType === 'invoice_paid' || eventType === 'receipt_pdf_resent'
+    ? 'receipt'
+    : 'invoice';
+}
+
+/**
+ * FR-026 read (B7) — the permanently-failed `invoice_auto_email` rows for one
+ * invoice. Threads `runInTenant` so the FORCE-RLS policy on notifications_outbox
+ * (migration 0098) self-scopes the read (never the BYPASSRLS `db` singleton) —
+ * with an explicit `tenant_id` filter as belt-and-braces. `pending` rows are
+ * still mid-retry and intentionally excluded; `permanently_failed` is the only
+ * terminal failure state (bounce / rejection / provider outage all land there).
+ * Exported as a standalone read (the detail page imports it directly, the same
+ * escape-hatch it already uses for the tenant-settings + credit-note reads) so
+ * the EmailOutboxPort interface — and its many enqueue-only fakes — stay
+ * untouched.
+ */
+export async function findFailedAutoEmailsByInvoice(
+  invoiceId: string,
+  tenantId: string,
+): Promise<readonly FailedAutoEmail[]> {
+  return runInTenant(asTenantContext(tenantId), async (tx) => {
+    const rows = await tx.execute<{
+      id: string;
+      to_email: string;
+      last_error: string | null;
+      updated_at: string | Date;
+      event_type: string | null;
+    }>(sql`
+      SELECT id, to_email, last_error, updated_at,
+             context_data->>'event_type' AS event_type
+      FROM notifications_outbox
+      WHERE tenant_id = ${tenantId}
+        AND notification_type = 'invoice_auto_email'::notification_type
+        AND status = 'permanently_failed'::outbox_status
+        AND context_data->>'invoice_id' = ${invoiceId}
+      ORDER BY updated_at DESC
+      LIMIT 20
+    `);
+    return rows.map((r) => ({
+      outboxRowId: r.id,
+      recipientEmail: r.to_email,
+      eventType: r.event_type as F4OutboxEventType | null,
+      lastError: r.last_error,
+      failedAt: new Date(r.updated_at).toISOString(),
+    }));
+  });
+}

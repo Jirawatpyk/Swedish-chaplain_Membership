@@ -260,6 +260,31 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findRiskById(ctx, memberId) {
+    try {
+      // Narrow 2-column read (B18). Threads the runInTenant tx (RLS gotcha) —
+      // never the global db. Cross-tenant / absent → not_found via RLS.
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select({
+            riskScore: members.riskScore,
+            riskScoreBand: members.riskScoreBand,
+          })
+          .from(members)
+          .where(eq(members.memberId, memberId))
+          .limit(1),
+      );
+      const row = rows[0];
+      if (row === undefined) return err({ code: 'repo.not_found' });
+      return ok({
+        riskScore: row.riskScore ?? null,
+        riskScoreBand: (row.riskScoreBand as RiskBand | null) ?? null,
+      });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findManyByIdsInTx(tx, memberIds) {
     try {
       if (memberIds.length === 0) {

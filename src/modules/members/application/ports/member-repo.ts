@@ -92,6 +92,17 @@ export type RepoError =
   | { code: 'repo.unexpected'; cause?: unknown };
 
 /**
+ * Narrow single-member risk read (B18 / FR-007a). The F8 risk columns live on
+ * the members table but are NOT carried on the `Member` aggregate (only the
+ * directory LIST projection surfaces them), so the profile page resolves them
+ * via this dedicated read rather than widening `Member`.
+ */
+export type MemberRisk = {
+  readonly riskScore: number | null;
+  readonly riskScoreBand: RiskBand | null;
+};
+
+/**
  * Narrowed patch type for `updateFields` — only fields that are safe
  * to mutate via a partial update. Identity fields (`tenantId`, `memberId`,
  * `createdAt`, etc.) are intentionally excluded so callers cannot
@@ -125,6 +136,16 @@ export interface MemberRepo {
     ctx: TenantContext,
     memberId: MemberId,
   ): Promise<Result<Member, RepoError>>;
+
+  /**
+   * B18 — narrow read of the F8 risk score + band for one member (the
+   * engagement-score projection source on the profile page). Tenant-scoped via
+   * ctx/RLS; `repo.not_found` when the member is absent or cross-tenant.
+   */
+  findRiskById(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<MemberRisk, RepoError>>;
 
   /**
    * In-transaction variant of findById with row-level lock (SELECT ... FOR UPDATE).
