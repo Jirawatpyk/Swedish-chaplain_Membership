@@ -564,6 +564,7 @@
       "title": "Medlemspaket",
       "subtitle": "{total} paket år {year}",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
+      "tableCaption": "Lista över medlemspaket för det valda året.",
       "empty": {
         "title": "Inga paket för detta år",
         "description": "Skapa ett nytt från grunden, eller klona föregående års katalog.",
@@ -2596,6 +2597,7 @@
       "tier_upgrades": {
         "title": "Kö för medlemsnivåhöjning",
         "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
+        "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
         "breadcrumbs": {
           "renewals": "Förnyelser",
           "tier_upgrades": "Nivåhöjningar"

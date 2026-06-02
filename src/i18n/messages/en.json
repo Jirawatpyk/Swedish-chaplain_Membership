@@ -564,6 +564,7 @@
       "title": "Membership Plans",
       "subtitle": "{total} plans in {year}",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
+      "tableCaption": "List of membership plans for the selected year.",
       "empty": {
         "title": "No plans for this year",
         "description": "Create one from scratch, or clone the previous year’s catalogue.",
@@ -2596,6 +2597,7 @@
       "tier_upgrades": {
         "title": "Tier upgrade queue",
         "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
+        "tableCaption": "List of members eligible for a tier upgrade.",
         "breadcrumbs": {
           "renewals": "Renewals",
           "tier_upgrades": "Tier upgrades"

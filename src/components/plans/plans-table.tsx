@@ -50,6 +50,7 @@ import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -321,6 +322,7 @@ export function PlansTable({
       {/* Table — matches /admin/members style (uppercase muted header
           + hover row). No outer border: parent <Card> is the container. */}
       <Table>
+          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
