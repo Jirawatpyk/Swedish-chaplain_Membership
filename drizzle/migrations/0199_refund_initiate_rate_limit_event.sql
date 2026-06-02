@@ -1,0 +1,29 @@
+-- ---------------------------------------------------------------------------
+-- go-live P3 (n24) — audit_event_type enum extension: refund rate-limit
+--
+-- Adds `refund_initiate_rate_limited` so that 429 responses on
+-- /api/refunds/initiate leave a forensic trail in the append-only
+-- `audit_log` table (previously only a `logger.warn` line — audit parity
+-- with /api/payments/initiate, which emits `payment_initiate_rate_limited`).
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` so re-running is
+-- a no-op (matches migrations 0040/0043 precedent). Forward-only: enum
+-- values cannot be removed.
+--
+-- Retention: 5 years (Ops event, not a tax document) per data-model.md § 7.1.
+--
+-- Emit path: the F5 typed `f5AuditAdapter.emit` (casts to ::audit_event_type),
+-- so this value is registered in BOTH the shared enum (`auditEventTypeEnum` in
+-- src/modules/auth/infrastructure/db/schema.ts), the F1 registry
+-- (`AUDIT_EVENT_TYPES` in src/modules/auth/domain/audit-event.ts, 0043 sync
+-- convention), and the F5 typed port (`F5AuditEventType` union +
+-- `F5_AUDIT_RETENTION_YEARS` in src/modules/payments/application/ports/audit-port.ts;
+-- validated by tests/integration/payments/audit-event-type-parity.test.ts).
+--
+-- Scope note: this is a POST-009-spec go-live addition — it is intentionally
+-- NOT counted in the "20 F5 spec events" narrative tracked by
+-- scripts/check-audit-event-count.ts (F5_MIGRATIONS list) / the F5 spec prose
+-- / saq-a-attestation.md, all of which describe the original 009 feature set.
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'refund_initiate_rate_limited'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

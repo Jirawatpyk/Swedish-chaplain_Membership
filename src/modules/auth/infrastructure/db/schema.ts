@@ -152,6 +152,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // --- F5 rate-limit event types added by migration 0043 ---
   'payment_initiate_rate_limited',
   'payment_cancel_rate_limited',
+  // --- refund rate-limit event added by migration 0199 (go-live P3 n24) ---
+  'refund_initiate_rate_limited',
   // --- F5 webhook ops-visibility event types added by migration 0046 ---
   // (audit 2026-04-25 findings #10 + #13)
   'webhook_unknown_intent',

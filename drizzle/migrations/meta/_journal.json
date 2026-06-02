@@ -1394,6 +1394,13 @@
 			"when": 1798532700000,
 			"tag": "0198_account_creation_compensated_audit",
 			"breakpoints": true
+		},
+		{
+			"idx": 199,
+			"version": "7",
+			"when": 1798532800000,
+			"tag": "0199_refund_initiate_rate_limit_event",
+			"breakpoints": true
 		}
 	]
 }

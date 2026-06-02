@@ -68,6 +68,10 @@ export const AUDIT_EVENT_TYPES = [
   'webhook_api_version_mismatch',
   'payment_initiate_rate_limited',
   'payment_cancel_rate_limited',
+  // go-live P3 n24 (migration 0199) — refund initiate rate-limit forensic
+  // event. Parallels payment_*_rate_limited; emitted via the F5 typed
+  // adapter, registered here for registry completeness + 0043-convention sync.
+  'refund_initiate_rate_limited',
   // --- Webhook ops-visibility events added by migration 0046
   //     (audit 2026-04-25 findings #10 + #13).
   'webhook_unknown_intent',
