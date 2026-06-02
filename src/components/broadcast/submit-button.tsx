@@ -12,6 +12,7 @@
  * fire a toast hinting the request is taking longer than expected.
  */
 import { useEffect, useRef } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,14 @@ export function SubmitButton({
       disabled={disabled || submitting}
       aria-busy={submitting}
     >
-      {submitting ? t('toast.submitting') : t('button.submit')}
+      {submitting ? (
+        <>
+          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+          {t('toast.submitting')}
+        </>
+      ) : (
+        t('button.submit')
+      )}
     </Button>
   );
 }

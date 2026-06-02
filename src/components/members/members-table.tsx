@@ -573,6 +573,13 @@ export function MembersTable({
             header: ({ table }) => (
               <Checkbox
                 checked={table.getIsAllPageRowsSelected()}
+                // Base UI exposes indeterminate as its own prop (sets
+                // aria-checked="mixed") — show it when SOME but not ALL page
+                // rows are selected so the header reflects a partial selection.
+                indeterminate={
+                  table.getIsSomePageRowsSelected() &&
+                  !table.getIsAllPageRowsSelected()
+                }
                 onCheckedChange={(checked) =>
                   table.toggleAllPageRowsSelected(!!checked)
                 }

@@ -282,9 +282,14 @@ export function InviteUserDialog({
                   id="invite-link-member"
                   role="textbox"
                   aria-readonly="true"
+                  // A readonly textbox is still focusable — keep it in the tab
+                  // order (matching the focusable <MemberPicker> it swaps with,
+                  // so tab order is stable across the two modes) and honour the
+                  // role=textbox contract (an unfocusable textbox is invalid).
+                  tabIndex={0}
                   aria-labelledby="invite-link-member-label"
                   aria-describedby="invite-link-member-help"
-                  className="flex h-9 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground"
+                  className="flex h-9 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span className="truncate">
                     {lockedMemberLabel ?? tLink('lockedFallback')}

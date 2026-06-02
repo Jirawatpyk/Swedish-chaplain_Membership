@@ -116,6 +116,8 @@ export function CsvExportDialog(): React.JSX.Element {
                 value={from}
                 onChange={(e) => setFrom(e.currentTarget.value)}
                 required
+                aria-invalid={error !== null}
+                aria-describedby={error !== null ? 'csv-export-error-msg' : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -126,11 +128,14 @@ export function CsvExportDialog(): React.JSX.Element {
                 value={to}
                 onChange={(e) => setTo(e.currentTarget.value)}
                 required
+                aria-invalid={error !== null}
+                aria-describedby={error !== null ? 'csv-export-error-msg' : undefined}
               />
             </div>
           </div>
           {error !== null ? (
             <p
+              id="csv-export-error-msg"
               className="text-sm text-destructive"
               role="alert"
               data-testid="csv-export-error"

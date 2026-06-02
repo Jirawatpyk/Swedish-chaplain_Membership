@@ -87,9 +87,9 @@ function activeSegments(level: PasswordStrengthLevel): number {
 function barColour(level: PasswordStrengthLevel): string {
   switch (level) {
     case 'strong':
-      return 'bg-emerald-500';
+      return 'bg-success';
     case 'acceptable':
-      return 'bg-amber-500';
+      return 'bg-warning';
     case 'weak':
       return 'bg-destructive';
     case 'empty':

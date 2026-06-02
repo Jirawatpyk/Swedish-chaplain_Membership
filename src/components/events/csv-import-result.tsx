@@ -28,6 +28,7 @@
 import { useTranslations } from 'next-intl';
 import { Download, TriangleAlert } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { MatchStatusBadge } from './match-status-badge';
@@ -189,57 +190,48 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
         {result.recordId !== undefined ? (
           <div className="flex flex-col gap-2" data-testid="result-record-id-block">
             {result.historyPersisted === false ? (
-              <div
-                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+              <InlineAlert
+                tone="warning"
                 role="status"
                 data-testid="result-history-degraded"
               >
-                <TriangleAlert
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
-                />
-                <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
+                <TriangleAlert aria-hidden="true" className="shrink-0" />
+                <InlineAlertDescription className="font-medium opacity-100">
                   {t('historyDegraded')}
-                </p>
-              </div>
+                </InlineAlertDescription>
+              </InlineAlert>
             ) : null}
             {/* Audit-completion degraded chip — when false, the per- */}
             {/* import csv_import_completed audit row failed to emit. */}
             {/* Rows + history may still be safe; the gap is purely on */}
             {/* the audit trail. */}
             {result.auditCompletionEmitted === false ? (
-              <div
-                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+              <InlineAlert
+                tone="warning"
                 role="status"
                 data-testid="result-audit-degraded"
               >
-                <TriangleAlert
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
-                />
-                <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
+                <TriangleAlert aria-hidden="true" className="shrink-0" />
+                <InlineAlertDescription className="font-medium opacity-100">
                   {t('auditDegraded')}
-                </p>
-              </div>
+                </InlineAlertDescription>
+              </InlineAlert>
             ) : null}
             {/* R7.B1 / Staff R2 R030 — FR-019b safety-net fail-open chip */}
             {/* When true, the duplicate-protection query was unavailable */}
             {/* and the import proceeded without it. Admin should */}
             {/* manually verify the event selection. */}
             {result.safetyNetFailedOpen === true ? (
-              <div
-                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+              <InlineAlert
+                tone="warning"
                 role="status"
                 data-testid="result-safety-net-unavailable"
               >
-                <TriangleAlert
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
-                />
-                <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
+                <TriangleAlert aria-hidden="true" className="shrink-0" />
+                <InlineAlertDescription className="font-medium opacity-100">
                   {t('safetyNetUnavailable')}
-                </p>
-              </div>
+                </InlineAlertDescription>
+              </InlineAlert>
             ) : null}
             <p
               className="text-caption text-muted-foreground"
@@ -329,7 +321,7 @@ interface CounterProps {
 }
 
 const COUNTER_TONE_CLASSES = {
-  success: 'text-emerald-700 dark:text-emerald-300',
+  success: 'text-success',
   muted: 'text-muted-foreground',
 } as const;
 

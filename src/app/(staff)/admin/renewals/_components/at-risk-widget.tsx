@@ -288,7 +288,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
             // recovery next, not the full membership list.
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <ShieldCheck
-                className="h-8 w-8 text-emerald-500"
+                className="h-8 w-8 text-success"
                 aria-hidden="true"
               />
               <p className="text-sm text-muted-foreground">
