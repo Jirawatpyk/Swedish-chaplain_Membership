@@ -59,6 +59,7 @@ function baseMember() {
     legalEntityType: null,
     country: 'TH',
     taxId: null,
+    turnoverThb: 5_000_000,
     addressLine1: '99 Sukhumvit',
     addressLine2: 'Unit 5',
     city: 'Bangkok',
@@ -134,6 +135,36 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       city: 'Bangkok',
       province: 'Bangkok',
       postalCode: '10110',
+      // P2 Wave-0 — turnover is the member's own subject-provided data.
+      turnoverThb: 5_000_000,
+    });
+  });
+
+  it('contacts include dateOfBirth — material personal data (P2 Wave-0, GDPR Art.15/20)', async () => {
+    listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+    contactListByMemberMock.mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          contactId: 'c-1',
+          firstName: 'Dao',
+          lastName: 'Srisai',
+          email: 'dao@example.com',
+          phone: null,
+          dateOfBirth: new Date('1990-07-15T00:00:00Z'),
+          roleTitle: null,
+          preferredLanguage: 'th',
+          isPrimary: true,
+          removedAt: null,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ],
+    });
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    expect(data).not.toBeNull();
+    expect(data!.contacts[0]).toMatchObject({
+      contactId: 'c-1',
+      dateOfBirth: '1990-07-15T00:00:00.000Z',
     });
   });
 
