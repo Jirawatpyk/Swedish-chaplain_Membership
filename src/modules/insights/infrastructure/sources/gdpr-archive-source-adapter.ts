@@ -273,6 +273,9 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         legalEntityType: member.legalEntityType,
         country: member.country,
         taxId: member.taxId,
+        // P2 Wave-0 — the member's own annual turnover is subject-provided
+        // business data; part of Art. 20 portability completeness.
+        turnoverThb: member.turnoverThb,
         // S1-P1-12: postal address (migration 0195) — part of the data
         // subject's profile, required for GDPR Art. 20 portability completeness.
         addressLine1: member.addressLine1,
@@ -297,6 +300,9 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         lastName: c.lastName,
         email: String(c.email),
         phone: c.phone === null ? null : String(c.phone),
+        // P2 Wave-0 — a contact's date of birth is material personal data
+        // (Art. 15/20); was omitted from the export.
+        dateOfBirth: isoOrNull(c.dateOfBirth),
         roleTitle: c.roleTitle,
         preferredLanguage: c.preferredLanguage,
         isPrimary: c.isPrimary,
