@@ -212,11 +212,17 @@ describe('resendPdf', () => {
       mock: { calls: unknown[][] };
     }).mock.calls[0]![1] as {
       eventType: string;
+      summary: string;
       payload: Record<string, unknown>;
     };
     expect(auditCall.eventType).toBe('invoice_pdf_resent');
     expect(auditCall.payload.member_id).toBe('member-m1');
     expect(auditCall.payload.pdf_template_version).toBe(1);
+    // P2 Wave-0 (PDPA data-minimization) — the persisted `summary` must NOT
+    // carry the plaintext recipient email; the hashed recipient lives in the
+    // payload (recipient_email_sha256) for correlation.
+    expect(auditCall.summary).not.toContain('member@example.com');
+    expect(auditCall.payload.recipient_email_sha256).toBeTruthy();
   });
 
   it('receipt variant — enqueues receipt_pdf_resent + audit WITHOUT member_id', async () => {
