@@ -28,7 +28,8 @@ const deps = { sanitizer: dompurifySanitizer };
 // convention, cf. tests/integration/**/*-perf.test.ts). Under full-suite load
 // (600+ files + background tasks) the absolute timer measures host contention,
 // not a sanitiser regression — it flakes at ~314ms while passing in isolation
-// (B0-U1). The functional assertion (200KB input handled, no ReDoS hang) runs
+// (B0-U1). The functional assertion (200KB input handled within a coarse
+// load-tolerant ceiling — NOT a targeted ReDoS probe; see the in-test note) runs
 // every time; only the precise budget is asserted in the dedicated perf lane.
 const RUN_PERF = process.env.RUN_PERF === '1';
 

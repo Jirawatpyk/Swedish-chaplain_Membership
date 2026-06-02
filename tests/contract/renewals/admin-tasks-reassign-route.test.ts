@@ -193,6 +193,41 @@ describe('POST /api/admin/renewals/tasks/[taskId]/reassign — contract (R10 W2)
     expect(reassignEscalationTaskMock).not.toHaveBeenCalled();
   });
 
+  it('400 invalid_input when assignee is a DISABLED staff user (#42 guard — status branch)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    // Exists + correct role, but disabled — the guard rejects on status !== 'active'.
+    userRepoFindByIdMock.mockResolvedValueOnce({
+      id: TO_USER_UUID,
+      status: 'disabled',
+      role: 'admin',
+      email: 'disabled@b.co',
+      displayName: 'Disabled Admin',
+    });
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_input');
+    expect(reassignEscalationTaskMock).not.toHaveBeenCalled();
+  });
+
+  it('400 invalid_input when assignee is an active MEMBER, not staff (#42 guard — role branch)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    // Active, but role 'member' — not an admin/manager → the guard rejects (a
+    // renewal escalation task must never be assigned to a portal member).
+    userRepoFindByIdMock.mockResolvedValueOnce({
+      id: TO_USER_UUID,
+      status: 'active',
+      role: 'member',
+      email: 'member@b.co',
+      displayName: 'Portal Member',
+    });
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_input');
+    expect(reassignEscalationTaskMock).not.toHaveBeenCalled();
+  });
+
   it('400 invalid_body on malformed JSON', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     const POST = await loadHandler();
