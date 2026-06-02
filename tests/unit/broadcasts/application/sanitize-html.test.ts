@@ -294,8 +294,10 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
     const result = sanitizeHtml(deps, { rawHtml: oneEightyK });
     const elapsed = performance.now() - start;
     // Functional invariant — always asserted: a 180KB input is processed and
-    // returns ok (catches a real ReDoS / catastrophic-backtracking hang via the
-    // load-tolerant 5s ceiling regardless of host contention).
+    // returns ok. The load-tolerant 5s ceiling is a coarse guard against a gross
+    // processing regression / pathological slowdown (this flat input has no
+    // backtracking structure, so it is NOT a targeted ReDoS probe); the precise
+    // budget lives in the RUN_PERF lane below.
     expect(result.ok).toBe(true);
     expect(elapsed).toBeLessThan(5000);
     // Precise perf budget — perf lane only (RUN_PERF=1), see note at top.

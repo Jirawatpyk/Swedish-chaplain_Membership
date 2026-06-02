@@ -278,7 +278,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Safe error classifier only — a raw e.message from a NeonDbError /
+        // Stripe SDK error can carry SQL/schema fragments or endpoint URLs that
+        // must not reach the log sink (same log-hygiene rule as n43 + L174).
+        errKind: errKind(e),
         requestId,
         correlationId,
         tenantId: tenantCtx.slug,

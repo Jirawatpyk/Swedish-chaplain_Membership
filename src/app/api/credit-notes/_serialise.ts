@@ -17,7 +17,10 @@ export function serialiseCreditNote(cn: CreditNote) {
     credit_amount_satang: cn.creditAmount.satang.toString(),
     vat_satang: cn.vat.satang.toString(),
     total_satang: cn.total.satang.toString(),
-    pdf_blob_key: cn.pdf.blobKey,
+    // n20: the internal Vercel Blob object key (`invoicing/{tenantId}/{fy}/…`)
+    // is NOT surfaced — it exposes infra/tenant structure and is unused by the
+    // admin UI (PDFs are fetched via the dedicated PDF route). Mirrors the
+    // invoice serialiser; pdf_sha256 (content-integrity hash) is retained.
     pdf_sha256: cn.pdf.sha256,
     pdf_template_version: cn.pdf.templateVersion,
     created_at: cn.createdAt,

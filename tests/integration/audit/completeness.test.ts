@@ -55,7 +55,7 @@ describe('integration: audit completeness — all 31 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 31 entries', () => {
+  it('the full event-type list has exactly 32 entries', () => {
     // Regression guard against accidental removal or duplication.
     // Pass 5: 16 → 17 after splitting `password_reset_failed` out of
     //         `invitation_redemption_failed` (migration 0002).
@@ -70,8 +70,10 @@ describe('integration: audit completeness — all 31 event types writable', () =
     //                  password_malformed_hash_detected).
     // go-live #12-13: 30 → 31 (migration 0198 — account_creation_compensated,
     //                  SAGA rollback of an orphaned portal invite).
-    expect(AUDIT_EVENT_TYPES.length).toBe(31);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(31);
+    // go-live P3 n24: 31 → 32 (migration 0199 — refund_initiate_rate_limited,
+    //                  route-level forensic event for refund rate-limit hits).
+    expect(AUDIT_EVENT_TYPES.length).toBe(32);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(32);
   });
 });
 
