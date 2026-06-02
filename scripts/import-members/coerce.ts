@@ -9,7 +9,7 @@
  */
 import i18nIsoCountries from 'i18n-iso-countries';
 import enLocale from 'i18n-iso-countries/langs/en.json';
-import { err, type Result } from '@/lib/result';
+import { err, ok, type Result } from '@/lib/result';
 import {
   asIsoCountryCode,
   type IsoCountryCode,
@@ -35,6 +35,58 @@ function ensureEnLocale(): void {
  */
 export function isGregorianYear(year: number): boolean {
   return Number.isInteger(year) && year >= 1900 && year <= 2400;
+}
+
+export type DateParseError = {
+  readonly code: 'date.empty' | 'date.invalid' | 'date.be_leak';
+};
+
+/**
+ * Parse an Excel registration-date cell to a UTC `Date` (spec § 2/§3.5). Accepts
+ * a leading ISO `YYYY-MM-DD` (preferred — Excel cellDates / explicit ISO) or any
+ * `Date.parse`-able string. The resulting year MUST be Gregorian [1900,2400]; a
+ * year > 2400 returns `date.be_leak` (Buddhist-Era entered by mistake — we reject
+ * rather than silently subtract 543, per the CLAUDE.md off-by-543 ship blocker).
+ */
+export function parseGregorianDate(
+  raw: string,
+): Result<Date, DateParseError> {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return err({ code: 'date.empty' });
+
+  let d: Date;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (iso) {
+    d = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T00:00:00.000Z`);
+  } else {
+    const ms = Date.parse(trimmed);
+    if (Number.isNaN(ms)) return err({ code: 'date.invalid' });
+    d = new Date(ms);
+  }
+  if (Number.isNaN(d.getTime())) return err({ code: 'date.invalid' });
+
+  const year = d.getUTCFullYear();
+  if (!isGregorianYear(year)) {
+    return err({ code: year > 2400 ? 'date.be_leak' : 'date.invalid' });
+  }
+  return ok(d);
+}
+
+export type PreferredLanguage = 'en' | 'th' | 'sv';
+const LANGS: readonly string[] = ['en', 'th', 'sv'];
+
+/**
+ * Coerce an Excel language/locale cell to `en|th|sv`. Empty/absent → `null`
+ * (caller applies its own default — contacts default to `'en'`, member locale
+ * stays `null`, per spec § 2). An unknown non-empty value → `null` too, so the
+ * caller can warn (we never guess a wrong locale).
+ */
+export function coercePreferredLanguage(
+  raw: string | null | undefined,
+): PreferredLanguage | null {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === '') return null;
+  return LANGS.includes(v) ? (v as PreferredLanguage) : null;
 }
 
 export type CountryResolveError = {
