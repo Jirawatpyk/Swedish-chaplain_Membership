@@ -26,6 +26,13 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 vi.mock('@/lib/auth-deps', () => ({ defaultForgotPasswordDeps: {} }));
+// P2 Wave-0 — forgotPassword now wraps invalidate + create in db.transaction.
+// Mock it to invoke the callback with a dummy tx + return its result.
+vi.mock('@/lib/db', () => ({
+  db: {
+    transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({} as never)),
+  },
+}));
 
 import { forgotPassword } from '@/modules/auth/application/forgot-password';
 import type { ForgotPasswordDeps } from '@/modules/auth/application/forgot-password';
@@ -69,8 +76,10 @@ function makeDeps(
       findByEmail: vi.fn().mockResolvedValue(makeUser()),
     } as unknown as ForgotPasswordDeps['users'],
     tokens: {
-      invalidateAllUnconsumedForUser: vi.fn().mockResolvedValue(0),
-      createReset: vi.fn().mockResolvedValue({
+      // P2 Wave-0 — the use case now calls the tx-scoped variants inside
+      // db.transaction (atomic invalidate + create).
+      invalidateAllUnconsumedForUserInTx: vi.fn().mockResolvedValue(0),
+      createResetInTx: vi.fn().mockResolvedValue({
         plaintext: asResetTokenId('a'.repeat(64)),
         token: {
           id: asTokenId('b'.repeat(64)),

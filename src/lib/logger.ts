@@ -85,6 +85,12 @@ export const REDACT_PATHS = [
   '*.email',
   'toEmail',
   '*.toEmail',
+  // P2 Wave-0 — F6 attendee-import logs the lower-cased attendee email as
+  // `attendeeEmailLower` (a distinct key the `email`/`*.email` paths do NOT
+  // match, since pino redaction is exact-key). Redact it at depths 0–2.
+  'attendeeEmailLower',
+  '*.attendeeEmailLower',
+  '*.*.attendeeEmailLower',
   'phone',
   '*.phone',
   'date_of_birth',

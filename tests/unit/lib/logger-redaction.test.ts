@@ -65,6 +65,26 @@ describe('logger redaction (T158, T-14)', () => {
     expect(line).toContain('visible-123'); // non-secret fields stay
   });
 
+  it('redacts attendeeEmailLower (F6 attendee-import PII) at depths 0–2', () => {
+    // P2 Wave-0 — `attendeeEmailLower` is a distinct key from `email`, so the
+    // `email`/`*.email` paths do NOT cover it; it needs its own redact paths.
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        attendeeEmailLower: `${SENTINEL}-top`,
+        ctx: { attendeeEmailLower: `${SENTINEL}-d1` },
+        outer: { inner: { attendeeEmailLower: `${SENTINEL}-d2` } },
+        nonSecret: 'visible-attendee',
+      },
+      'test',
+    );
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-top`);
+    expect(line).not.toContain(`${SENTINEL}-d1`);
+    expect(line).not.toContain(`${SENTINEL}-d2`);
+    expect(line).toContain('visible-attendee');
+  });
+
   it('redacts newPassword / currentPassword / passwordHash', () => {
     const { logger, output } = makeCapturingLogger();
     logger.info(

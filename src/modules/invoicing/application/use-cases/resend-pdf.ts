@@ -242,11 +242,11 @@ async function resendInvoiceOrReceipt(
       requestId: input.actor.requestId,
       eventType: 'invoice_pdf_resent',
       actorUserId: input.actor.userId,
-      // Summary line is transient (shown on ops dashboards, not
-      // retained as a structured PII field). Keep the email plaintext
-      // here for operator readability; the PAYLOAD is what lives for
-      // 10 years and must carry only the hash.
-      summary: `Invoice ${documentNumber} PDF resent to ${recipientEmail}`,
+      // P2 Wave-0 (PDPA data-minimization): the `summary` column persists for
+      // the audit row's FULL retention (5–10y), exactly like the payload — it is
+      // NOT transient. So it must not carry plaintext PII. The hashed recipient
+      // lives in `payload.recipient_email_sha256` for correlation.
+      summary: `Invoice ${documentNumber} PDF resent (recipient hashed in payload)`,
       payload: {
         invoice_id: input.invoiceId,
         member_id: invoice.memberId,
@@ -262,7 +262,7 @@ async function resendInvoiceOrReceipt(
       requestId: input.actor.requestId,
       eventType: 'receipt_pdf_resent',
       actorUserId: input.actor.userId,
-      summary: `Receipt for invoice ${documentNumber} resent to ${recipientEmail}`,
+      summary: `Receipt for invoice ${documentNumber} resent (recipient hashed in payload)`,
       payload: {
         invoice_id: input.invoiceId,
         document_number: documentNumber,

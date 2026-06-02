@@ -127,6 +127,16 @@ export interface CreateInvitationResult {
 export interface TokenRepo {
   /** Mint a reset token. Returns plaintext (for email) + Domain entity. */
   createReset(args: { userId: UserId; now: Date }): Promise<CreateResetResult>;
+  /**
+   * Tx-scoped variant of `createReset` (P2 Wave-0). Used by `forgotPassword`
+   * so the stale-token invalidation + the fresh-token insert commit atomically
+   * — a crash between them would strand the user with no live reset link and
+   * no email.
+   */
+  createResetInTx(
+    tx: DbTx,
+    args: { userId: UserId; now: Date },
+  ): Promise<CreateResetResult>;
   /** Look up a reset token by its user-supplied plaintext id (hashed internally). */
   findResetById(plaintext: ResetTokenId): Promise<PasswordResetToken | null>;
   /** Tx-scoped variant of `findResetById` (Path C — A4). */
@@ -218,6 +228,27 @@ export const tokenRepo: TokenRepo = {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('token-repo.createReset: no row returned');
+    return {
+      plaintext: asResetTokenId(plaintext),
+      token: toDomainReset(row),
+    };
+  },
+
+  async createResetInTx(tx, args): Promise<CreateResetResult> {
+    const plaintext = generatePlaintextToken();
+    const hash = sha256Hex(plaintext);
+    const expiresAt = new Date(args.now.getTime() + RESET_TOKEN_TTL_MS);
+    const rows = await tx
+      .insert(passwordResetTokens)
+      .values({
+        id: hash,
+        userId: args.userId,
+        createdAt: args.now,
+        expiresAt,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error('token-repo.createResetInTx: no row returned');
     return {
       plaintext: asResetTokenId(plaintext),
       token: toDomainReset(row),
