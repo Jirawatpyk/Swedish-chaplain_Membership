@@ -19,8 +19,33 @@ import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructu
 import { vercelBlobImageStorage } from '@/modules/broadcasts/infrastructure/vercel-blob-image-storage';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+import { env } from '@/lib/env';
 
-const hasClamAV = !!process.env.CLAMAV_HOST;
+/**
+ * Reachability-aware gate (B0-I1..3). The scanner targets the HTTP wrapper at
+ * `env.clamav.scanUrl`, so `CLAMAV_HOST` presence alone is the wrong signal: a
+ * developer who pulled Vercel env into `.env.local` has the Fly.io URL set, but
+ * the `.internal` host is NOT routable from the laptop — which previously hung
+ * each test for the full 30s timeout. Probe `/healthz` with a short timeout and
+ * skip the whole suite when ClamAV is unconfigured OR unreachable; run it only
+ * where the daemon actually answers (a local Docker wrapper, or in-network CI).
+ */
+async function clamavReachable(): Promise<boolean> {
+  if (!env.clamav.scanUrl) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2000);
+  try {
+    const origin = new URL(env.clamav.scanUrl).origin;
+    const health = await fetch(`${origin}/healthz`, { signal: controller.signal });
+    return health.ok;
+  } catch {
+    return false; // ECONNREFUSED / ENOTFOUND / abort → unreachable
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const hasClamAV = await clamavReachable();
 const PNG_HEADER = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   Buffer.alloc(1024, 0x00),
@@ -32,7 +57,10 @@ const EICAR =
 describe.skipIf(!hasClamAV)(
   'image virus-scan flow — T066 (F7.1a US2 / SC-005)',
   () => {
-    const tenantId = 'tenant_t066_scan';
+    // Tenant slug MUST match SLUG_PATTERN `[a-z0-9-]{1,63}` — underscores are
+    // rejected by asTenantContext (this was a latent bug masked while the suite
+    // skipped; it would fail in any env where ClamAV is reachable).
+    const tenantId = 'tenant-t066-scan';
 
     it('EICAR signature → verdict=infected → reject upload + audit', async () => {
       const auditEvents: Array<{ eventType: string }> = [];

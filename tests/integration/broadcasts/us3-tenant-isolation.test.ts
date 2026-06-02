@@ -162,7 +162,11 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
         actorUserId: user.userId,
         summary: `seed plan-changed ${label}`,
         requestId: `iso-seed-${randomUUID()}`,
-        payload: { memberId: memberUuid, fromPlanCode: 'p1', toPlanCode: 'p2' },
+        // Production emitter (change-plan.ts:244) + query
+        // (drizzle-member-repo.ts:980 `payload ->> 'member_id'`) both use
+        // snake_case. The seed must match the production key or
+        // findLastPlanChangedAt finds 0 rows (B0-I4 seed-key fix).
+        payload: { member_id: memberUuid, fromPlanCode: 'p1', toPlanCode: 'p2' },
         timestamp: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       });
     }
