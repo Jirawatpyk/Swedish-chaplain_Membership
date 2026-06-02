@@ -8,7 +8,7 @@
  * pointing the admin at the member's primary-contact email (F4 has no per-
  * invoice recipient override). `<Alert>` carries role="alert".
  */
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Loader2Icon, MailWarningIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -32,6 +32,15 @@ export function EmailFailureAlert({
   // 5-min re-enable guard so a queued resend can't be hammered (mirrors
   // invoice-more-menu's recentlySent pattern).
   const [recentlySent, setRecentlySent] = useState(false);
+  // Track the re-enable timer so it's cleared on unmount (no setState on an
+  // unmounted component if the admin navigates away within the 5-min window).
+  const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    },
+    [],
+  );
 
   const handleResend = () => {
     startTransition(async () => {
@@ -58,7 +67,11 @@ export function EmailFailureAlert({
           recipientEmail?: string;
         };
         setRecentlySent(true);
-        setTimeout(() => setRecentlySent(false), 5 * 60_000);
+        if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+        unlockTimerRef.current = setTimeout(
+          () => setRecentlySent(false),
+          5 * 60_000,
+        );
         toast.success(
           t('toast.resendSuccess', {
             recipient: okBody.recipientEmail ?? recipientEmail,

@@ -340,7 +340,10 @@ async function resendCreditNote(
     requestId: input.actor.requestId,
     eventType: 'credit_note_pdf_resent',
     actorUserId: input.actor.userId,
-    summary: `Credit note ${cn.documentNumber.raw} PDF resent to ${recipientEmail}`,
+    // PDPA data-minimization (matches the invoice/receipt branches): the
+    // `summary` persists for the full 5–10y audit retention, so it must NOT
+    // carry plaintext PII — the hashed recipient lives in the payload.
+    summary: `Credit note ${cn.documentNumber.raw} PDF resent (recipient hashed in payload)`,
     payload: {
       credit_note_id: input.creditNoteId,
       original_invoice_id: cn.originalInvoiceId,
