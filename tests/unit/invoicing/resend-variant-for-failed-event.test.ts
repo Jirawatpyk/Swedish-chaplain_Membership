@@ -25,6 +25,7 @@ describe('resendVariantForFailedEvent (B7)', () => {
     ['invoice_issued', 'invoice'],
     ['invoice_voided', 'invoice'],
     ['credit_note_issued', 'invoice'],
+    ['credit_note_pdf_resent', 'invoice'],
     ['invoice_pdf_resent', 'invoice'],
   ] as const)('%s → %s', (eventType, expected) => {
     expect(resendVariantForFailedEvent(eventType)).toBe(expected);

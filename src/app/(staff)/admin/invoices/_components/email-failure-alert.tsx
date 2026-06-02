@@ -73,7 +73,13 @@ export function EmailFailureAlert({
       const body = (await res.json().catch(() => ({}))) as {
         error?: { code?: string };
       };
-      if (body.error?.code === 'not_issued') {
+      // Mirror InvoiceMoreMenu: a receipt resend can 409 with no_receipt_pdf
+      // (e.g. voided between render + click) — show the actionable warning,
+      // not the generic failure toast.
+      const code = body.error?.code;
+      if (code === 'no_receipt_pdf') {
+        toast.warning(t('toast.resendNoReceipt'));
+      } else if (code === 'not_issued') {
         toast.warning(t('toast.resendNotIssued'));
       } else {
         toast.error(t('toast.resendFailed'));

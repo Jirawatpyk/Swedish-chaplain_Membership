@@ -88,9 +88,10 @@ export type ResendPdfInput =
       /**
        * Which PDF to resend:
        *   - 'invoice': the tax invoice (available as soon as status=issued)
-       *   - 'receipt': the receipt PDF (only available once status=paid
-       *     AND the tenant uses separate-mode; combined-mode has no
-       *     distinct receipt so this variant is rejected)
+       *   - 'receipt': the receipt PDF — available once status=paid in BOTH
+       *     numbering modes (record-payment renders invoice.receiptPdf for
+       *     combined AND separate); rejected with `no_receipt_pdf` only when
+       *     no receipt PDF exists yet (i.e. not paid).
        */
       readonly variant: 'invoice' | 'receipt';
       readonly actor: ResendPdfActor;

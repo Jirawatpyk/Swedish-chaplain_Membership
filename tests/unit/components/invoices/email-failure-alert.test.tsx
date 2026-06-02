@@ -7,7 +7,7 @@
  * next-intl is mocked to echo `key {vals}` so assertions can read both the key
  * and the interpolated recipient.
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
 const toast = { success: vi.fn(), error: vi.fn(), warning: vi.fn() };
@@ -29,6 +29,8 @@ function resp(status: number, body: unknown) {
 
 describe('EmailFailureAlert (B7 / FR-026)', () => {
   beforeEach(() => vi.clearAllMocks());
+  // Restore the stubbed global fetch so it doesn't leak into other suites.
+  afterEach(() => vi.unstubAllGlobals());
 
   it('posts the RECEIPT variant + toasts the returned (current) recipient, not the stale prop', async () => {
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
@@ -81,6 +83,26 @@ describe('EmailFailureAlert (B7 / FR-026)', () => {
     expect(
       JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string),
     ).toEqual({ variant: 'invoice' });
+  });
+
+  it('shows the specific no_receipt_pdf warning on a 409, not the generic failure', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+      resp(409, { error: { code: 'no_receipt_pdf' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <EmailFailureAlert
+        invoiceId="inv-5"
+        recipientEmail="x@y.com"
+        variant="receipt"
+        canResend
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(toast.warning).toHaveBeenCalledWith('toast.resendNoReceipt');
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('renders variant-specific copy (receipt title/button), not invoice copy', () => {

@@ -227,6 +227,16 @@ export default async function InvoiceDetailPage({
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
 
+  // Resend-eligibility gates — SHARED with InvoiceMoreMenu below so the
+  // failure banner + the action menu stay in lockstep (combined-mode rule,
+  // Thai RD §86/4): paid+combined hides invoice-resend (the combined receipt
+  // is the single legal document; the issue-time invoice PDF is a stale draft),
+  // and receipt-resend requires a paid invoice with a rendered receipt PDF.
+  const isPaidCombined =
+    invoice.status === 'paid' && invoice.receiptDocumentNumberRaw === null;
+  const hasReceiptPdf =
+    invoice.status === 'paid' && Boolean(invoice.receiptPdf);
+
   // FR-026 — surface permanently-failed auto-email deliveries to admins.
   // Drafts never auto-email, so skip the read for them.
   const failedEmails = isDraft
@@ -249,12 +259,13 @@ export default async function InvoiceDetailPage({
     return [...byVariant.entries()].map(([variant, recipientEmail]) => ({
       variant,
       recipientEmail,
-      // canResend is variant-aware: a receipt resend needs the receipt PDF.
+      // Mirror InvoiceMoreMenu's showResendInvoice / showResendReceipt gates.
       canResend:
-        invoice.status !== 'void' &&
-        (variant === 'receipt'
-          ? Boolean(invoice.receiptPdf)
-          : Boolean(invoice.pdf)),
+        variant === 'receipt'
+          ? hasReceiptPdf
+          : invoice.status !== 'void' &&
+            Boolean(invoice.pdf) &&
+            !isPaidCombined,
     }));
   })();
 
@@ -462,39 +473,29 @@ export default async function InvoiceDetailPage({
                 action row exposes only primary/destructive CTAs as
                 standalone buttons. Menu returns null when nothing to
                 show. T107 visibility rules preserved inside the menu. */}
-            {!isDraft && (() => {
-              // Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE
-              // legal document with dual function. Best-practice menu:
-              //   - paid+combined → hide the pre-payment invoice PDF +
-              //     pre-payment resend (both are stale drafts); show
-              //     only the final combined receipt PDF + resend.
-              //   - paid+separate → show all 4 items (2 distinct
-              //     legal documents, each with its own §87 number).
-              //   - issued / void → show invoice PDF only.
-              const isPaidCombined =
-                invoice.status === 'paid' &&
-                invoice.receiptDocumentNumberRaw === null;
-              const hasReceiptPdf =
-                invoice.status === 'paid' && Boolean(invoice.receiptPdf);
-
-              return (
-                <InvoiceMoreMenu
-                  invoiceId={invoice.invoiceId}
-                  documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
-                  showDownload={Boolean(invoice.pdf) && !isPaidCombined}
-                  showResendInvoice={
-                    isAdmin &&
-                    invoice.status !== 'void' &&
-                    Boolean(invoice.pdf) &&
-                    !isPaidCombined
-                  }
-                  showResendReceipt={isAdmin && hasReceiptPdf}
-                  showDownloadReceipt={hasReceiptPdf}
-                  // combinedModeReceipt is derived inside the menu
-                  // component from (showDownloadReceipt && !showDownload).
-                />
-              );
-            })()}
+            {/* Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE legal document
+                with dual function. paid+combined → hide the pre-payment invoice
+                PDF + resend (stale drafts), show only the combined receipt;
+                paid+separate → all 4 items; issued/void → invoice PDF only.
+                isPaidCombined + hasReceiptPdf are hoisted above (shared with the
+                FR-026 failure banner so both surfaces gate identically). */}
+            {!isDraft && (
+              <InvoiceMoreMenu
+                invoiceId={invoice.invoiceId}
+                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                showDownload={Boolean(invoice.pdf) && !isPaidCombined}
+                showResendInvoice={
+                  isAdmin &&
+                  invoice.status !== 'void' &&
+                  Boolean(invoice.pdf) &&
+                  !isPaidCombined
+                }
+                showResendReceipt={isAdmin && hasReceiptPdf}
+                showDownloadReceipt={hasReceiptPdf}
+                // combinedModeReceipt is derived inside the menu component
+                // from (showDownloadReceipt && !showDownload).
+              />
+            )}
           </>
         }
       />
