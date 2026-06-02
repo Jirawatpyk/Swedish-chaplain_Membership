@@ -45,6 +45,7 @@ import {
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -139,6 +140,7 @@ export function TierUpgradeQueueClient({
     <>
       <div className="rounded-md border">
         <Table>
+          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead>{t('columns.member')}</TableHead>

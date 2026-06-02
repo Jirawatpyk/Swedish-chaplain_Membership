@@ -526,7 +526,8 @@ export default async function InvoiceDetailPage({
               on one screen. */}
           {invoice.status === 'paid' && (
             <section
-              className="mt-2 rounded-md border bg-muted/30 p-4"
+              id="payment"
+              className="mt-2 scroll-mt-20 rounded-md border bg-muted/30 p-4"
               aria-labelledby="payment-details-heading"
             >
               <h3

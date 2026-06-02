@@ -3,6 +3,7 @@
  * component: receives display-ready rows + localised labels. Listing status is
  * encoded with a text badge (not colour alone — WCAG 1.4.1).
  */
+import Link from 'next/link';
 import { CheckIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -73,7 +74,14 @@ export function DirectoryTable({
       <TableBody>
         {rows.map((row) => (
           <TableRow key={row.memberId}>
-            <TableCell className="font-medium">{row.companyName}</TableCell>
+            <TableCell className="font-medium">
+              <Link
+                href={`/admin/members/${row.memberId}`}
+                className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {row.companyName}
+              </Link>
+            </TableCell>
             <TableCell>{row.tier ?? DASH}</TableCell>
             <TableCell>{row.industry ?? DASH}</TableCell>
             <TableCell>{row.location ?? DASH}</TableCell>

@@ -564,6 +564,7 @@
       "title": "Membership Plans",
       "subtitle": "{total} plans in {year}",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
+      "tableCaption": "List of membership plans for the selected year.",
       "empty": {
         "title": "No plans for this year",
         "description": "Create one from scratch, or clone the previous year’s catalogue.",
@@ -805,7 +806,7 @@
         "forbidden": "You don’t have permission to do that.",
         "validation": "Please fix the highlighted fields.",
         "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
-        "feeConfigMissing": "Tenant fee configuration not yet initialised. Run the seed script.",
+        "feeConfigMissing": "Fee configuration hasn’t been set up yet. Please contact your system administrator.",
         "loadFailed": "Failed to load plans.",
         "backToList": "Back to plans",
         "duplicateKey": "A plan with this ID already exists for {year}.",
@@ -2596,6 +2597,7 @@
       "tier_upgrades": {
         "title": "Tier upgrade queue",
         "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
+        "tableCaption": "List of members eligible for a tier upgrade.",
         "breadcrumbs": {
           "renewals": "Renewals",
           "tier_upgrades": "Tier upgrades"

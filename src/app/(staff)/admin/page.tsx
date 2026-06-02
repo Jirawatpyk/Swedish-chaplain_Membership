@@ -191,7 +191,10 @@ export default async function StaffHomePage() {
         id: 'overdueInvoices',
         n: metrics.needsAttention.overdueInvoices,
         label: t('needsAttention.overdueInvoices'),
-        href: '/admin/invoices?status=issued',
+        // The metric counts OVERDUE invoices, so deep-link to the derived
+        // `overdue` filter (issued + Bangkok-today > dueDate), not `issued`
+        // (a superset that shows not-yet-due invoices too).
+        href: '/admin/invoices?status=overdue',
       },
       {
         id: 'atRisk',

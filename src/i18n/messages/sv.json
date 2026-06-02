@@ -564,6 +564,7 @@
       "title": "Medlemspaket",
       "subtitle": "{total} paket år {year}",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
+      "tableCaption": "Lista över medlemspaket för det valda året.",
       "empty": {
         "title": "Inga paket för detta år",
         "description": "Skapa ett nytt från grunden, eller klona föregående års katalog.",
@@ -805,7 +806,7 @@
         "forbidden": "Du har inte behörighet att göra det.",
         "validation": "Korrigera de markerade fälten.",
         "priorYearLocked": "Dessa fält är låsta på historiska paket: {fields}. Klona paketet till innevarande år för att redigera.",
-        "feeConfigMissing": "Konfigurationen för kammarens avgifter är inte initialiserad. Kör seed-skriptet.",
+        "feeConfigMissing": "Avgiftskonfigurationen har inte konfigurerats ännu. Kontakta din systemadministratör.",
         "loadFailed": "Det gick inte att läsa in paket.",
         "backToList": "Tillbaka till paket",
         "duplicateKey": "Ett paket med detta ID finns redan för {year}.",
@@ -2596,6 +2597,7 @@
       "tier_upgrades": {
         "title": "Kö för medlemsnivåhöjning",
         "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
+        "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
         "breadcrumbs": {
           "renewals": "Förnyelser",
           "tier_upgrades": "Nivåhöjningar"
