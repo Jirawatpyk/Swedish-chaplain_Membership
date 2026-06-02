@@ -33,6 +33,7 @@
  * caller surfaces 5xx).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -140,11 +141,15 @@ export async function exportPaidInvoicesCsv(
       }
       offset += PAGE_SIZE;
     } while (offset < total);
-  } catch {
-    // Constructor name preserved by the route's logger.error pattern.
-    // We intentionally drop the cause object here — `list_failed` is
-    // the contractual signal; the route side logs `e.constructor.name`
-    // separately so we don't widen this Result.err shape with `unknown`.
+  } catch (e) {
+    // P2 Wave-0 — the use-case RETURNS `list_failed` (does not re-throw), so the
+    // route never sees `e`; without this log a Neon transient during the paid-
+    // invoice scan is completely unobservable. Log the cause here, keep the
+    // contractual `list_failed` Result shape unchanged (route maps it to 500).
+    logger.error(
+      { tenantId: input.tenantId, err: e instanceof Error ? e.message : String(e) },
+      'exportPaidInvoicesCsv: paid-invoice scan failed',
+    );
     return err({ code: 'list_failed' });
   }
 
