@@ -12,6 +12,7 @@ import { ok, err } from '@/lib/result';
 
 const requireRenewalAdminContextMock = vi.fn();
 const reassignEscalationTaskMock = vi.fn();
+const userRepoFindByIdMock = vi.fn();
 const f8FeatureFlag = { value: true };
 
 vi.mock('@/lib/env', async () => {
@@ -44,6 +45,23 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+// Commit f4d0d114 (#42 P2-completion) added a server-side assignee staff-guard
+// to the route — `userRepo.findById` from @/lib/auth-deps. Mock it so the
+// contract tests that pass body-validation and reach the guard don't make a
+// real Neon query (which silently timed out the suite for 30s in the
+// non-blocking pre-push contract gate). importActual+spread preserves every
+// other auth-deps export (rateLimiter, hasher, …) used elsewhere in the graph.
+vi.mock('@/lib/auth-deps', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/lib/auth-deps')>('@/lib/auth-deps');
+  return {
+    ...actual,
+    userRepo: {
+      ...actual.userRepo,
+      findById: (...args: unknown[]) => userRepoFindByIdMock(...args),
+    },
+  };
+});
 vi.mock('@/modules/renewals', async () => {
   const actual = await vi.importActual<typeof import('@/modules/renewals')>(
     '@/modules/renewals',
@@ -95,6 +113,16 @@ async function loadHandler() {
 describe('POST /api/admin/renewals/tasks/[taskId]/reassign — contract (R10 W2)', () => {
   beforeEach(() => {
     f8FeatureFlag.value = true;
+    // Default: the reassign target is an active staff user, so the #42
+    // assignee guard passes and tests reach the (mocked) use-case. Individual
+    // tests override with mockResolvedValueOnce to exercise the reject path.
+    userRepoFindByIdMock.mockResolvedValue({
+      id: TO_USER_UUID,
+      status: 'active',
+      role: 'admin',
+      email: 'assignee@b.co',
+      displayName: 'Assignee',
+    });
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -151,6 +179,18 @@ describe('POST /api/admin/renewals/tasks/[taskId]/reassign — contract (R10 W2)
     const body = await res.json();
     expect(body.from_user_id).toBeNull();
     expect(body.to_user_id).toBe(TO_USER_UUID);
+  });
+
+  it('400 invalid_input when assignee is not an active staff user (#42 guard)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    // Unknown / non-staff target — userRepo.findById returns null.
+    userRepoFindByIdMock.mockResolvedValueOnce(null);
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_input');
+    // The tenant-scoped reassign use-case MUST NOT run when the guard rejects.
+    expect(reassignEscalationTaskMock).not.toHaveBeenCalled();
   });
 
   it('400 invalid_body on malformed JSON', async () => {
