@@ -330,4 +330,34 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
     expect((await repo().findById(tenant.ctx, recentExpired))?.status).toBe('expired');
     expect((await repo().findById(tenant.ctx, oldRequested))?.status).toBe('requested');
   });
+
+  it('setDownloadTokenInTx: refuses to mint for a ready job past expiresAt (P2 Wave-0 atomic mint)', async () => {
+    const jobId = (await runInTenant(tenant.ctx, (tx) =>
+      repo().createOrGetInTx(tx, {
+        kind: 'directory_ebook',
+        subjectMemberId: null,
+        requestedBy: requester,
+        requestedForPeriod: 'mint-expired',
+        requesterLocale: 'en',
+        idempotencyKey: exportJobIdempotencyInput({
+          tenantId: tenant.ctx.slug,
+          kind: 'directory_ebook',
+          subjectMemberId: null,
+          requestedForPeriod: 'mint-expired',
+        }),
+      }),
+    )).job.id;
+    await runInTenant(tenant.ctx, (tx) => repo().claimInTx(tx, jobId));
+    // ready, but already past TTL — the pre-sweep check→mint race window.
+    await runInTenant(tenant.ctx, (tx) =>
+      repo().markReadyInTx(tx, jobId, {
+        blobKey: `exports/${tenant.ctx.slug}/${jobId}.json`,
+        expiresAt: new Date(Date.now() - 60_000),
+      }),
+    );
+    const minted = await runInTenant(tenant.ctx, (tx) =>
+      repo().setDownloadTokenInTx(tx, jobId, 'hash-should-not-be-set'),
+    );
+    expect(minted).toBe(false); // expiry guard blocks the dead-token mint
+  });
 });
