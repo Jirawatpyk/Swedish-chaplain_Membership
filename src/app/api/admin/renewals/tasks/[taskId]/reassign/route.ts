@@ -27,6 +27,8 @@ import {
   reassignEscalationTask,
   makeRenewalsDeps,
 } from '@/modules/renewals';
+import { userRepo } from '@/lib/auth-deps';
+import { asUserId } from '@/modules/auth';
 
 const BodySchema = z.object({
   to_user_id: z.string().uuid(),
@@ -67,6 +69,45 @@ export async function POST(
       code: 'invalid_body',
       correlationId: ctx.correlationId,
       details: { fieldErrors: parsed.error.flatten().fieldErrors },
+    });
+  }
+
+  // B16 defence-in-depth — the reassign combobox only offers active admin/
+  // manager users, but a direct API caller could send any UUID (disabled,
+  // member-role, or non-existent). The F1 `users` table is global (no
+  // tenant_id column yet — saas-architecture.md MTA), so a true per-tenant
+  // membership check isn't implementable today; the strongest invariant
+  // available is "target is an active staff user". Reject anything else
+  // before the tenant-scoped write + audit. NOTE: keep this role allow-list
+  // in lockstep with /api/admin/users/staff-active.
+  let assignee: Awaited<ReturnType<typeof userRepo.findById>>;
+  try {
+    assignee = await userRepo.findById(asUserId(parsed.data.to_user_id));
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        correlationId: ctx.correlationId,
+        taskId,
+      },
+      'admin.renewals.tasks.reassign_assignee_lookup_failed',
+    );
+    return errorResponse({
+      status: 500,
+      code: 'server_error',
+      correlationId: ctx.correlationId,
+    });
+  }
+  if (
+    assignee === null ||
+    assignee.status !== 'active' ||
+    (assignee.role !== 'admin' && assignee.role !== 'manager')
+  ) {
+    return errorResponse({
+      status: 400,
+      code: 'invalid_input',
+      correlationId: ctx.correlationId,
+      details: { message: 'assignee must be an active staff user' },
     });
   }
 
