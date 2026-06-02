@@ -14,14 +14,21 @@ import type { RowIssue, ValidationReport } from './validate';
 export interface CommitOutcome {
   readonly membersCreated: number;
   readonly contactsCreated: number;
-  /** Members fully skipped: every contact email already exists ACTIVE (idempotent re-run). */
+  /** Members fully skipped: EVERY contact email already exists ACTIVE (idempotent re-run). */
   readonly skippedExistingMembers: number;
-  /** Individual contacts skipped: their email already exists ACTIVE (added to an existing member). */
-  readonly skippedExistingContacts: number;
+  /** Members skipped: SOME — not all — contact emails are already active. An ambiguous
+   *  partial overlap (which existing member? is its primary intact?) we never auto-resolve
+   *  (avoids wrong-member attach + zero-primary). Operator resolves via partialOverlapRows.
+   *  Never fires on a fresh first import (no active contacts). */
+  readonly skippedPartialOverlapMembers: number;
   /** Contacts skipped: email matches a SOFT-DELETED row (operator decision: skip+warn, not reactivate). */
   readonly skippedSoftDeletedContacts: number;
-  /** NEW members skipped: the primary contact email collides with an existing/soft-deleted contact, so a clean member can't be created — operator must resolve manually. */
+  /** NEW members skipped: the primary contact email collides with an existing/soft-deleted contact. */
   readonly skippedPrimaryCollisionMembers: number;
+  /** Excel head-row indices of partial-overlap-skipped members (operator cross-reference; no PII). */
+  readonly partialOverlapRows: readonly number[];
+  /** Excel head-row indices of primary-collision-skipped members. */
+  readonly primaryCollisionRows: readonly number[];
 }
 
 export interface ReportDocument {
@@ -82,10 +89,16 @@ export function renderReportText(doc: ReportDocument): string {
     lines.push(
       `Committed: ${c.membersCreated} members + ${c.contactsCreated} contacts. ` +
         `Skipped: ${c.skippedExistingMembers} already-imported members, ` +
-        `${c.skippedExistingContacts} existing contacts, ` +
+        `${c.skippedPartialOverlapMembers} partial-overlap members, ` +
         `${c.skippedSoftDeletedContacts} soft-deleted contacts, ` +
         `${c.skippedPrimaryCollisionMembers} primary-collision members`,
     );
+    if (c.partialOverlapRows.length > 0) {
+      lines.push(`  partial-overlap rows (resolve manually): ${c.partialOverlapRows.join(', ')}`);
+    }
+    if (c.primaryCollisionRows.length > 0) {
+      lines.push(`  primary-collision rows (resolve manually): ${c.primaryCollisionRows.join(', ')}`);
+    }
   }
   return lines.join('\n');
 }

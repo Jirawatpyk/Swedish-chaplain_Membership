@@ -145,6 +145,28 @@ describe('validateRows (spec § 3)', () => {
     expect(errCodes(r)).toContain('required'); // the blank-company row still errors
   });
 
+  it('member_field_mismatch warns on RESOLVED diffs, not equivalent spellings (items 3/9)', () => {
+    // Same company, equivalent country spelling ('TH' vs 'Thailand') → NO false warning.
+    const equiv = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Eq Co', tier: 'Thai Alumni', taxId: '', country: 'TH', contactEmail: 'a@eq.test' }),
+        row({ rowIndex: 3, companyName: 'Eq Co', tier: 'Thai Alumni', taxId: '', country: 'Thailand', contactEmail: 'b@eq.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(equiv.issues.some((i) => i.code === 'member_field_mismatch')).toBe(false);
+
+    // Same company name but genuinely different resolved country → warn (merge signal).
+    const diff = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Mix Co', tier: 'Thai Alumni', taxId: '', country: 'SE', contactEmail: 'a@mix.test' }),
+        row({ rowIndex: 3, companyName: 'Mix Co', tier: 'Thai Alumni', taxId: '', country: 'TH', contactEmail: 'b@mix.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(diff.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'country')).toBe(true);
+  });
+
   it('rule 7: multiple primaries → multiple_primary error', () => {
     const r = validateRows(
       [

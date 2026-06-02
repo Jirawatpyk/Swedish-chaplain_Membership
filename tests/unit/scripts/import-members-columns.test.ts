@@ -92,4 +92,17 @@ describe('mapDataRows (spec § 2)', () => {
     const rows = mapDataRows([['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']], map, 2);
     expect(rows).toHaveLength(0);
   });
+
+  it('keeps rowIndex aligned to the real Excel row across an interior blank gap (item 15)', () => {
+    const map = buildColumnMap(FULL_HEADERS);
+    const blank = Array(FULL_HEADERS.length).fill('');
+    const dataRow = (email: string) =>
+      ['Acme', 'SE', '', 'Premium', '', '2026-01-01', '', '', '', 'A', 'B', email, '', '', '', 'yes'];
+    // Excel: row1=header, row2=A, row3=BLANK, row4=B. With blankrows:true the blank
+    // slot is preserved, so B must report rowIndex 4 (not 3).
+    const rows = mapDataRows([dataRow('a@x.test'), blank, dataRow('b@x.test')], map, 2);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.rowIndex).toBe(2);
+    expect(rows[1]!.rowIndex).toBe(4); // NOT 3 — the blank row's slot is preserved
+  });
 });

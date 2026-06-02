@@ -119,9 +119,11 @@ export async function commitMembers(
     let membersCreated = 0;
     let contactsCreated = 0;
     let skippedExistingMembers = 0;
-    let skippedExistingContacts = 0;
+    let skippedPartialOverlapMembers = 0;
     let skippedSoftDeletedContacts = 0;
     let skippedPrimaryCollisionMembers = 0;
+    const partialOverlapRows: number[] = [];
+    const primaryCollisionRows: number[] = [];
 
     const insertContact = async (
       memberId: string,
@@ -153,11 +155,14 @@ export async function commitMembers(
     };
 
     for (const m of validMembers) {
+      const headRow = m.rowIndices[0] ?? 0;
       const emails = m.contacts.map((c) => c.email.toLowerCase());
+      if (emails.length === 0) continue; // defensive — validate guarantees ≥1 contact
 
-      // PER-CONTACT dedupe (spec § 5) — match the per-contact partial unique index.
+      // Email-based dedupe (spec § 5) — match the per-contact partial unique index
+      // (contacts_tenant_email_uniq ON (tenant_id, lower(email)) WHERE removed_at IS NULL).
       const activeRows = await tx
-        .select({ email: contacts.email, memberId: contacts.memberId })
+        .select({ email: contacts.email })
         .from(contacts)
         .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails), isNull(contacts.removedAt)));
       const softRows = await tx
@@ -166,7 +171,6 @@ export async function commitMembers(
         .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails), isNotNull(contacts.removedAt)));
       const activeEmails = new Set(activeRows.map((r) => r.email.toLowerCase()));
       const softEmails = new Set(softRows.map((r) => r.email.toLowerCase()));
-      const existingMemberId = activeRows[0]?.memberId ?? null;
 
       // Fully imported already (every contact email is active) → idempotent skip.
       if (emails.every((e) => activeEmails.has(e))) {
@@ -174,27 +178,26 @@ export async function commitMembers(
         continue;
       }
 
-      if (existingMemberId) {
-        // PARTIAL: the member exists (≥1 active contact). Add ONLY the genuinely
-        // new contacts to it, as NON-primary (the member already has its primary)
-        // — fixes the bug where new contacts were dropped when one email pre-existed.
-        for (const c of m.contacts) {
-          const e = c.email.toLowerCase();
-          if (activeEmails.has(e)) { skippedExistingContacts += 1; continue; }
-          if (softEmails.has(e)) { skippedSoftDeletedContacts += 1; continue; }
-          await insertContact(existingMemberId, c, false);
-        }
+      // PARTIAL OVERLAP: some — but not all — contact emails are already active. This
+      // is ambiguous (which existing member do the new contacts belong to? is that
+      // member's primary still intact?). We DO NOT auto-attach — doing so risks
+      // attaching to the wrong member or leaving a member with no active primary
+      // (R2 findings). Skip + record the row for the operator to resolve by hand.
+      // On a fresh first import this never fires (no active contacts exist yet).
+      if (activeEmails.size > 0) {
+        skippedPartialOverlapMembers += 1;
+        partialOverlapRows.push(headRow);
         continue;
       }
 
-      // NEW member. Its primary contact MUST be insertable — if the primary email
-      // collides with an existing/soft-deleted contact we cannot create a clean
-      // member (it would end up with no primary / orphaned), so skip + warn and
-      // let the operator resolve the collision manually.
+      // NEW member (no active overlap). Its primary contact MUST be insertable — if
+      // the primary email collides with a SOFT-DELETED contact we cannot create a
+      // clean member (it would have no active primary), so skip + record the row.
       const primary = m.contacts.find((c) => c.isPrimary);
       const primaryEmail = primary?.email.toLowerCase();
-      if (primaryEmail && (activeEmails.has(primaryEmail) || softEmails.has(primaryEmail))) {
+      if (primaryEmail && softEmails.has(primaryEmail)) {
         skippedPrimaryCollisionMembers += 1;
+        primaryCollisionRows.push(headRow);
         continue;
       }
 
@@ -226,10 +229,11 @@ export async function commitMembers(
       });
       membersCreated += 1;
 
+      // No active overlap reached here (activeEmails is empty for this member), so the
+      // only skip is a SECONDARY contact whose email matches a soft-deleted row; the
+      // primary was already guarded above, so the member always keeps its primary.
       for (const c of m.contacts) {
-        const e = c.email.toLowerCase();
-        if (activeEmails.has(e)) { skippedExistingContacts += 1; continue; }
-        if (softEmails.has(e)) { skippedSoftDeletedContacts += 1; continue; } // secondary only (primary guarded above)
+        if (softEmails.has(c.email.toLowerCase())) { skippedSoftDeletedContacts += 1; continue; }
         await insertContact(memberId, c, c.isPrimary);
       }
     }
@@ -238,9 +242,11 @@ export async function commitMembers(
       membersCreated,
       contactsCreated,
       skippedExistingMembers,
-      skippedExistingContacts,
+      skippedPartialOverlapMembers,
       skippedSoftDeletedContacts,
       skippedPrimaryCollisionMembers,
+      partialOverlapRows,
+      primaryCollisionRows,
     };
   });
 }

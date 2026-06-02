@@ -124,27 +124,25 @@ describe('commitMembers — integration (spec § 5)', () => {
     expect(await countMembers(tenantB.ctx.slug)).toBe(before); // tenantB unchanged
   });
 
-  it('partial member: adds NEW contacts to the existing member, skips the existing one (review item 1)', async () => {
+  it('partial overlap: a member sharing one active email + a new one is SKIPPED + flagged, never auto-attached (R2 fix — items 1/2/4/5/7/8)', async () => {
     const emailA = `partA-${randomUUID().slice(0, 8)}@imp.test`;
     const emailB = `partB-${randomUUID().slice(0, 8)}@imp.test`;
     const first = await commitMembers(tenantA.ctx, user.userId, [vm({ emails: [emailA] })], 2026);
     expect(first.membersCreated).toBe(1);
 
-    // Re-run lists the existing contact A AND a genuinely new contact B.
-    const second = await commitMembers(tenantA.ctx, user.userId, [vm({ emails: [emailA, emailB] })], 2026);
-    expect(second).toMatchObject({ membersCreated: 0, contactsCreated: 1, skippedExistingContacts: 1 });
+    // Re-run lists the existing contact A AND a genuinely new B — an ambiguous partial
+    // overlap. The importer must NOT auto-attach (avoids wrong-member attach + zero-primary):
+    // it skips the member + records the row for the operator.
+    const member2 = vm({ emails: [emailA, emailB] });
+    const second = await commitMembers(tenantA.ctx, user.userId, [member2], 2026);
+    expect(second).toMatchObject({ membersCreated: 0, contactsCreated: 0, skippedPartialOverlapMembers: 1 });
+    expect(second.partialOverlapRows).toContain(member2.rowIndices[0]);
 
-    // B was attached to A's member (NOT dropped, NOT a new member) and is NON-primary;
-    // the member still has exactly one primary (A).
-    const rows = await runInTenant(tenantA.ctx, async (tx) =>
-      tx
-        .select({ memberId: contacts.memberId, isPrimary: contacts.isPrimary })
-        .from(contacts)
-        .where(and(eq(contacts.tenantId, tenantA.ctx.slug), inArray(contacts.email, [emailA, emailB]))),
+    // B was NOT inserted anywhere (no silent wrong-member attach).
+    const bRows = await runInTenant(tenantA.ctx, async (tx) =>
+      tx.select({ id: contacts.contactId }).from(contacts).where(and(eq(contacts.tenantId, tenantA.ctx.slug), inArray(contacts.email, [emailB]))),
     );
-    expect(rows).toHaveLength(2);
-    expect(new Set(rows.map((r) => r.memberId)).size).toBe(1); // same member
-    expect(rows.filter((r) => r.isPrimary)).toHaveLength(1); // still exactly one primary
+    expect(bRows).toHaveLength(0);
   });
 
   it('new member whose PRIMARY email is soft-deleted is skipped, never created with no primary (review items 2/8)', async () => {

@@ -198,18 +198,22 @@ export function validateRows(
     }
 
     // Member-field consistency across the group. Rows of one company SHOULD share
-    // member-level values; a disagreement on country/taxId/tier is a strong signal
-    // that two DISTINCT companies share a display name and were wrongly merged into
-    // one member (only the head row's values survive). Warn so the operator can
-    // split them — we cannot auto-resolve without a stable member key (item 6).
-    const norm = (s: string): string => s.trim().toLowerCase();
+    // member-level values; a disagreement signals two DISTINCT companies wrongly
+    // merged under a shared display name (only the head row's values survive). Warn
+    // so the operator can split them — we cannot auto-resolve without a stable key.
+    // Compare RESOLVED values (plan_id / ISO country code), NOT raw cells, so
+    // equivalent spellings ("TH" vs "Thailand", "Premium" vs "Premium Corporate")
+    // do not false-warn (review items 3/9).
+    const headPlanId = tier.ok ? tier.value.planId : null;
+    const headCountry = country.ok ? country.value : null;
     for (const r of groupRows.slice(1)) {
-      for (const field of ['country', 'taxId', 'tier'] as const) {
-        const a = norm(head[field]);
-        const b = norm(r[field]);
-        if (b.length > 0 && a.length > 0 && a !== b) {
-          warn(r.rowIndex, field, 'member_field_mismatch');
-        }
+      if (r.tier.trim().length > 0 && headPlanId !== null) {
+        const rt = tierResolver.resolve(r.tier);
+        if (rt.ok && rt.value.planId !== headPlanId) warn(r.rowIndex, 'tier', 'member_field_mismatch');
+      }
+      if (r.country.trim().length > 0 && headCountry !== null) {
+        const rc = countryNameToCode(r.country);
+        if (rc.ok && rc.value !== headCountry) warn(r.rowIndex, 'country', 'member_field_mismatch');
       }
     }
 
