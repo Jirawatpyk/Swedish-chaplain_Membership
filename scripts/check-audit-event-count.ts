@@ -31,7 +31,15 @@ const ROOT = process.cwd();
  *   - 0043 — 2 rate-limit events (Threat F-09, Group F Review-Gate)
  *
  * Add any future F5-scoped `ALTER TYPE audit_event_type ADD VALUE`
- * migration to this list so the drift-check stays truthful.
+ * migration to this list so the drift-check stays truthful — EXCEPT
+ * post-009-spec go-live additions, which must NOT be counted here.
+ *
+ * Deliberately EXCLUDED: 0199 (`refund_initiate_rate_limited`, go-live P3 n24).
+ * This canonical count drives the "20 F5 spec events" narrative in the 009
+ * spec prose + saq-a-attestation.md, which describe the ORIGINAL feature set;
+ * a post-ship event would falsely bump those. Its enum↔TS correctness is fully
+ * covered by `tests/integration/payments/audit-event-type-parity.test.ts`
+ * (live pg_enum ↔ F5_AUDIT_RETENTION_YEARS, `refund_` prefix).
  */
 const F5_MIGRATIONS = [
   resolve(ROOT, 'drizzle/migrations/0040_audit_log_f5_extension.sql'),

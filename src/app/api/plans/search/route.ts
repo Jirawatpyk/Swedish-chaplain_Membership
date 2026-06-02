@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { searchPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { LocaleKey } from '@/modules/plans';
@@ -114,7 +115,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // Non-fatal — plans + registries already rendered. Log and
       // continue so a single-module outage doesn't blank the palette.
       logger.warn(
-        { requestId: ctx.requestId, err: e },
+        // errKind only — a raw thrown error (e.g. NeonDbError) serialises its
+        // .message/.stack with SQL/schema fragments into the log sink (n43 leak
+        // class — the same hardening the server_error path below already has).
+        { requestId: ctx.requestId, errKind: errKind(e) },
         'palette.members_search_failed',
       );
     }
@@ -255,7 +259,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           {
             errorId: 'F2.PALETTE.REFUNDABLE_SEARCH_THREW',
             requestId: ctx.requestId,
-            err: e,
+            // errKind only (n43 leak class) — never the raw thrown error.
+            errKind: errKind(e),
           },
           'palette.refundable_invoices_search_failed',
         );

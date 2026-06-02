@@ -166,7 +166,10 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
         // (drizzle-member-repo.ts:980 `payload ->> 'member_id'`) both use
         // snake_case. The seed must match the production key or
         // findLastPlanChangedAt finds 0 rows (B0-I4 seed-key fix).
-        payload: { member_id: memberUuid, fromPlanCode: 'p1', toPlanCode: 'p2' },
+        // Match the production emitter's payload shape (change-plan.ts:243-247,
+        // all snake_case). The query only filters on member_id, but keeping the
+        // rest faithful avoids a misleading seed.
+        payload: { member_id: memberUuid, old_plan_id: 'p1', new_plan_id: 'p2' },
         timestamp: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       });
     }
