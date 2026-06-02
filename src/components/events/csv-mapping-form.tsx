@@ -932,7 +932,7 @@ function PreviewPanel({
                   // content width and the table would silently fit the
                   // container with no scroll affordance.
                   const accentClass = isCanonical
-                    ? 'border-b-2 border-b-emerald-500 bg-emerald-50/70 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                    ? 'border-b-2 border-b-success bg-success-surface text-success'
                     : 'border-b border-border text-muted-foreground';
                   return (
                     <th
@@ -949,7 +949,8 @@ function PreviewPanel({
                           : `w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1.5 text-left font-medium ${accentClass}`
                       }
                     >
-                      {isCanonical ? '✓ ' : ''}{c}
+                      {isCanonical ? <span aria-hidden="true">✓ </span> : null}
+                      {c}
                     </th>
                   );
                 })}

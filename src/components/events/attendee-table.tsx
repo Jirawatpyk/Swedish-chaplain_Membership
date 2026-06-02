@@ -59,7 +59,12 @@ import {
   PAYMENT_STATUSES,
   isPaymentStatus,
 } from '@/modules/events/domain/value-objects/payment-status';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type {
@@ -711,9 +716,20 @@ export function AttendeeTable({
                         // fail). Default `Badge variant="outline"` text
                         // already clears 4.5:1; outline-only border
                         // preserves the de-emphasis intent.
-                        <Badge variant="outline" title={tQuotaTip('none')}>
-                          {tQuota('none')}
-                        </Badge>
+                        // P2 wave-1: native title= isn't keyboard/touch-
+                        // reachable nor reliably announced — use the same
+                        // Tooltip primitive the sibling QuotaEffectBadges use
+                        // (TooltipProvider is hoisted to the table root).
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={<span className="inline-flex rounded-md" />}
+                          >
+                            <Badge variant="outline" aria-label={tQuota('none')}>
+                              {tQuota('none')}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>{tQuotaTip('none')}</TooltipContent>
+                        </Tooltip>
                       )}
                   </div>
                 </TableCell>

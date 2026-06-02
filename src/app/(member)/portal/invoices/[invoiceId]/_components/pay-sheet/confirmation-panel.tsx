@@ -229,10 +229,11 @@ export function ConfirmationPanel({
         <button
           type="button"
           onClick={paused ? handleResume : handlePause}
-          // 24×24 minimum target (WCAG 2.5.8) — kept compact since
-          // this is a "soft" affordance next to the countdown text;
-          // primary keyboard targets remain Download / Close.
-          className="inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          // Visual stays compact (soft affordance beside the countdown text)
+          // but a `::before` overlay extends the tap target to ~44px tall to
+          // match the codebase 44px convention (WCAG 2.5.5) without adding
+          // vertical space; primary keyboard targets remain Download / Close.
+          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
         >
           {paused ? (
