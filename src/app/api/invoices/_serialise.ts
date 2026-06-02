@@ -44,7 +44,10 @@ export function serialiseInvoice(invoice: Invoice) {
     vat_satang: invoice.vat?.satang.toString() ?? null,
     total_satang: invoice.total?.satang.toString() ?? null,
     credited_total_satang: invoice.creditedTotal.satang.toString(),
-    pdf_blob_key: invoice.pdf?.blobKey ?? null,
+    // n20: internal Vercel Blob object keys (`invoicing/{tenantId}/{fy}/{uuid}`)
+    // are NOT surfaced — they expose infra/tenant structure and are unused by
+    // the admin UI (which fetches PDFs via the dedicated /api/invoices/[id]/pdf
+    // route). pdf_sha256 (content hash for integrity) is retained.
     pdf_sha256: invoice.pdf?.sha256 ?? null,
     pdf_template_version: invoice.pdf?.templateVersion ?? null,
     // Receipt-PDF surface (separate-mode keeps its own §87 sequence
@@ -52,7 +55,7 @@ export function serialiseInvoice(invoice: Invoice) {
     // invoice document number with `receipt_document_number_raw` = null).
     receipt_document_number_raw: invoice.receiptDocumentNumberRaw,
     receipt_pdf_status: invoice.receiptPdfStatus,
-    receipt_pdf_blob_key: invoice.receiptPdf?.blobKey ?? null,
+    // n20: receipt blob key withheld (same rationale as pdf_blob_key above).
     receipt_pdf_sha256: invoice.receiptPdf?.sha256 ?? null,
     receipt_pdf_template_version: invoice.receiptPdf?.templateVersion ?? null,
     auto_email_on_issue: invoice.autoEmailOnIssue,

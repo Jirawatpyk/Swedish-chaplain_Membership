@@ -221,6 +221,10 @@ describe('searchPlans — server_error', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.type).toBe('server_error');
     if (result.error.type !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('postgres timeout');
+    // n43 log-hygiene: the error carries only the SAFE `errKind` classifier
+    // (constructor name), NOT the raw DB message — which on a Postgres failure
+    // could leak SQL/schema fragments into the log sink.
+    expect(result.error.errKind).toBe('Error');
+    expect(JSON.stringify(result.error)).not.toContain('postgres timeout');
   });
 });
