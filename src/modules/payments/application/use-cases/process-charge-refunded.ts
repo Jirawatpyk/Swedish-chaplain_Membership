@@ -283,15 +283,24 @@ export async function processChargeRefunded(
           // maps cleanly to invoice-paid/refunded states") silently
           // breaks. Read the new succeededSum + payment row, derive
           // next status, update with `expectedCurrentStatus` race-guard.
-          const ctx = await deps.refundsRepo.getRefundContextForUpdate(
-            tx,
-            input.tenantId,
-            existing.paymentId,
-          );
+          // Acquire the payment-row FOR UPDATE lock BEFORE the refunds
+          // aggregate read — getRefundContextForUpdate is explicitly designed
+          // to run "inside the payment-row FOR UPDATE lock window"
+          // (drizzle-refunds-repo.ts § design), and the canonical sibling
+          // issue-refund.ts:278/292 locks first. Reading the succeededSum
+          // before the lock left a READ COMMITTED window where a concurrent
+          // refund could change the sum, deriving a stale 'refunded' vs
+          // 'partially_refunded' status (the expectedCurrentStatus guard below
+          // only protects the row write, not a status derived from a stale sum).
           const parent = await deps.paymentsRepo.lockForUpdate(
             tx,
             existing.paymentId,
             input.tenantId,
+          );
+          const ctx = await deps.refundsRepo.getRefundContextForUpdate(
+            tx,
+            input.tenantId,
+            existing.paymentId,
           );
           let parentRecoveredTo: 'partially_refunded' | 'refunded' | null = null;
           if (

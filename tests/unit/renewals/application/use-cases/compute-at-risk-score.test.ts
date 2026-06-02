@@ -19,6 +19,9 @@ import { computeAtRiskScore as domainCompute } from '@/modules/renewals/domain/a
 
 const TENANT_ID = 'tenantA';
 const MEMBER_UUID = '00000000-0000-0000-0000-00000000a154';
+// Pinned instant for the injected ClockPort — computeAtRiskScore now stamps
+// computedAt via deps.clock.now() (not wall-clock), so fixtures can assert it.
+const FIXED_NOW = new Date('2026-05-15T08:00:00.000Z');
 
 vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -60,6 +63,7 @@ function fakeDeps(opts: {
     atRiskScorer: { scoreMember: scorerMock },
     memberRenewalFlagsRepo: { setRiskScore: setMock },
     auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+    clock: { now: () => FIXED_NOW },
   } as unknown as RenewalsDeps;
   return { deps, scorerMock, setMock, emitMock, emitInTxMock };
 }
@@ -100,6 +104,8 @@ describe('computeAtRiskScore (T154)', () => {
     expect(setMock.mock.calls[0]?.[3]).toMatchObject({
       score: 60,
       band: 'at-risk',
+      // computedAt is stamped from the injected ClockPort, not wall-clock.
+      computedAt: FIXED_NOW.toISOString(),
     });
     expect(emitInTxMock).toHaveBeenCalledOnce();
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
@@ -345,6 +351,7 @@ describe('computeAtRiskScore (T154)', () => {
       },
       memberRenewalFlagsRepo: { setRiskScore: vi.fn() },
       auditEmitter: { emit: vi.fn(), emitInTx: vi.fn() },
+      clock: { now: () => FIXED_NOW },
     } as unknown as RenewalsDeps;
     const r = await computeAtRiskScore(deps, baseInput);
     expect(r.ok).toBe(false);

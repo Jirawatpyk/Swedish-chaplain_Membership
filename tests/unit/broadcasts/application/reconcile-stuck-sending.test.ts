@@ -30,7 +30,10 @@ import type {
   BroadcastsGatewayPort,
   RetrievedBroadcastResource,
 } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
-import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import {
+  BroadcastConcurrentMutationError,
+  type BroadcastsRepo,
+} from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type {
   EmailTransactionalPort,
   SendEmailInput,
@@ -352,6 +355,43 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(email.memberSends[0]!.payload['delivered']).toBe(5);
     expect(email.memberSends[0]!.payload['bounced']).toBe(1);
     expect(email.memberSends[0]!.payload['viaReconciliation']).toBe(true);
+  });
+
+  it('concurrent drift out of sending leaves a benign not_stuck_yet, NOT reconcile.server_error (P2 wave-2 #11)', async () => {
+    const repo = makeBroadcastsRepo({ current: baseBroadcast() });
+    // Simulate a concurrent transition OUT of 'sending' between the stuck-check
+    // and markSent: the guarded applyTransition matches 0 rows then throws
+    // BroadcastConcurrentMutationError. Pre-fix this fell to the outer catch as
+    // reconcile.server_error => HTTP 500 => cron retry-storm.
+    repo.port.applyTransition = async () => {
+      throw new BroadcastConcurrentMutationError(tenant.slug, broadcastId, 'sent');
+    };
+    const gateway = makeGateway({
+      retrieve: { id: 'rsb-stuck', status: 'sent', sentAt: '2026-06-14T03:00:00Z' },
+    });
+    const audit = makeAudit();
+    const result = await reconcileStuckSending(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gateway.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+        notification: {
+          emailTransactional: makeEmailTransactional().port,
+          membersBridge: makeMembersBridge(),
+          deliveriesRepo: makeDeliveriesRepo(),
+        },
+      },
+      { broadcastId, requestId: 'req-drift' },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.kind).toBe('not_stuck_yet');
+      if (result.value.kind === 'not_stuck_yet') {
+        expect(result.value.observedStatus).toBe('sent');
+      }
+    }
   });
 
   it('gateway error โ’ reconcile.gateway_error', async () => {

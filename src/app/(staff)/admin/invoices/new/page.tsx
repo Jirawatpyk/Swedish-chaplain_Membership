@@ -84,7 +84,11 @@ export default async function NewInvoiceDraftPage({
   const membersDeps = buildMembersDeps(tenantCtx);
   const membersResult = await directorySearch(membersDeps, {
     limit: 500,
-    status: ['active'] as const,
+    // Inactive members are billable — create-invoice-draft only rejects
+    // `archived` (member_archived), and the directory default itself is
+    // ['active','inactive']. Active-only here silently blocked invoicing a
+    // lapsed-but-not-archived member (incl. deep-links with their memberId).
+    status: ['active', 'inactive'] as const,
   });
   const members: readonly MemberOption[] = membersResult.ok
     ? membersResult.value.items.map((r) => {
