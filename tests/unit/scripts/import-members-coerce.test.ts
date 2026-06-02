@@ -79,6 +79,22 @@ describe('parseGregorianDate — date parse + BE-leak guard (spec § 3.5)', () =
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.error.code).toBe('date.invalid');
   });
+
+  it('rejects day/month overflow rather than silently rolling forward (2026-02-30)', () => {
+    const res = parseGregorianDate('2026-02-30'); // would roll to Mar 2
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe('date.invalid');
+    expect(parseGregorianDate('2026-13-01').ok).toBe(false); // month 13
+  });
+
+  it('STRICT ISO only — rejects ambiguous/locale/partial formats (no silent wrong date)', () => {
+    // These previously slipped through Date.parse and produced wrong dates.
+    for (const raw of ['01/13/2026', '13/01/2026', 'Jan 2026', '2026', '2026-1-5', '2026/01/05']) {
+      const res = parseGregorianDate(raw);
+      expect(res.ok, `"${raw}" must be rejected`).toBe(false);
+      if (!res.ok) expect(res.error.code).toBe('date.invalid');
+    }
+  });
 });
 
 describe('coercePreferredLanguage (spec § 2)', () => {

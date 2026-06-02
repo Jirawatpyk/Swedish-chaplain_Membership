@@ -14,7 +14,7 @@ type Field = keyof Omit<RawRow, 'rowIndex'>;
 const HEADER_ALIASES: Readonly<Record<Field, readonly string[]>> = {
   companyName: ['company name', 'company', 'organisation', 'organization', 'member', 'member name'],
   country: ['country', 'nation'],
-  taxId: ['tax id', 'tax number', 'tin', 'vat', 'taxpayer id', 'tax id no'],
+  taxId: ['tax id', 'tax number', 'tin', 'vat', 'taxpayer id', 'tax id no', 'tax id number', 'vat number'],
   tier: ['membership tier', 'tier', 'plan', 'membership', 'package', 'membership type', 'member type'],
   turnover: ['turnover', 'annual turnover', 'revenue', 'annual revenue'],
   registrationDate: ['registration date', 'registered', 'join date', 'member since', 'date joined', 'registered date'],
@@ -25,7 +25,7 @@ const HEADER_ALIASES: Readonly<Record<Field, readonly string[]>> = {
   contactFirstName: ['first name', 'firstname', 'given name', 'contact first name'],
   contactLastName: ['last name', 'lastname', 'surname', 'family name', 'contact last name'],
   contactEmail: ['email', 'e mail', 'email address', 'contact email'],
-  contactPhone: ['phone', 'mobile', 'tel', 'telephone', 'phone number', 'contact phone'],
+  contactPhone: ['phone', 'mobile', 'tel', 'telephone', 'phone number', 'contact phone', 'mobile no', 'mobile number', 'tel no'],
   contactRole: ['role', 'title', 'position', 'job title', 'designation'],
   contactLanguage: ['language', 'preferred language', 'contact language'],
   isPrimary: ['primary', 'primary contact', 'is primary', 'main contact'],
@@ -76,7 +76,16 @@ export function buildColumnMap(headers: readonly string[]): ColumnMap {
 
 function cellToString(v: unknown): string {
   if (v == null) return '';
-  if (v instanceof Date) return v.toISOString().slice(0, 10); // Excel cellDates → ISO
+  if (v instanceof Date) {
+    // SheetJS cellDates builds dates at LOCAL midnight. Use LOCAL components (NOT
+    // toISOString, which is UTC) so the date matches the spreadsheet's displayed
+    // value — under Asia/Bangkok (UTC+7) toISOString would shift to the previous
+    // day (off-by-one). parseGregorianDate then validates this strict local-ISO.
+    const y = v.getFullYear();
+    const mo = String(v.getMonth() + 1).padStart(2, '0');
+    const da = String(v.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${da}`;
+  }
   return String(v).trim();
 }
 

@@ -54,18 +54,24 @@ export function parseGregorianDate(
   const trimmed = raw.trim();
   if (trimmed.length === 0) return err({ code: 'date.empty' });
 
-  let d: Date;
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
-  if (iso) {
-    d = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T00:00:00.000Z`);
-  } else {
-    const ms = Date.parse(trimmed);
-    if (Number.isNaN(ms)) return err({ code: 'date.invalid' });
-    d = new Date(ms);
-  }
-  if (Number.isNaN(d.getTime())) return err({ code: 'date.invalid' });
+  // STRICT full-ISO `YYYY-MM-DD` only — NO Date.parse fallback. Ambiguous /
+  // locale / partial formats ("01/13/2026", "Jan 2026", "2026", "2026-1-5") are
+  // rejected as date.invalid so the operator fixes the cell, rather than silently
+  // storing a wrong (off-by-one / month-swapped / invented) registration date.
+  // Real Excel date cells arrive here already normalized to local-ISO by
+  // columns.ts cellToString (SheetJS cellDates → local-component YYYY-MM-DD).
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!m) return err({ code: 'date.invalid' });
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
 
-  const year = d.getUTCFullYear();
+  const d = new Date(Date.UTC(year, month - 1, day));
+  // Reject day/month overflow (JS rolls "2026-02-30" forward to Mar 2): require
+  // the constructed components to round-trip exactly.
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+    return err({ code: 'date.invalid' });
+  }
   if (!isGregorianYear(year)) {
     return err({ code: year > 2400 ? 'date.be_leak' : 'date.invalid' });
   }

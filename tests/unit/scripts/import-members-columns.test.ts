@@ -56,10 +56,13 @@ describe('buildColumnMap (spec § 2)', () => {
 });
 
 describe('mapDataRows (spec § 2)', () => {
-  it('extracts RawRow fields + 1-based Excel rowIndex; converts Date cells to ISO', () => {
+  it('extracts RawRow fields + 1-based rowIndex; Date cell → LOCAL-component ISO (no UTC off-by-one)', () => {
     const map = buildColumnMap(FULL_HEADERS);
+    // SheetJS cellDates builds dates at LOCAL midnight — mirror that with
+    // new Date(y, m, d) so the result is deterministic in any test TZ and proves
+    // we format from LOCAL components (toISOString would shift under UTC+7/-5).
     const rows = mapDataRows(
-      [['Acme', 'TH', '0105500000000', 'Premium', '1000000', new Date('2026-01-15T00:00:00Z'),
+      [['Acme', 'TH', '0105500000000', 'Premium', '1000000', new Date(2026, 0, 15),
         'Bangkok', 'BKK', '10110', 'Jane', 'Doe', 'jane@acme.test', '+66812345678', 'CEO', 'en', 'yes']],
       map,
       2, // header is Excel row 1; first data row = 2

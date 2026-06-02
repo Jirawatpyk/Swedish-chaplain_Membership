@@ -71,9 +71,13 @@ export function readWorkbook(file: string): { headers: string[]; dataRows: unkno
   const wb = XLSX.readFile(file, { cellDates: true });
   const sheetName = wb.SheetNames[0];
   if (!sheetName) throw new Error(`workbook has no sheets: ${file}`);
+  // blankrows: true KEEPS empty rows in the array so the array index stays aligned
+  // with the real Excel row number (mapDataRows drops blank rows but their slot is
+  // preserved, so report rowIndex always points at the true spreadsheet row even
+  // after a blank separator gap).
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName]!, {
     header: 1,
-    blankrows: false,
+    blankrows: true,
     defval: '',
   });
   const headers = (aoa[0] ?? []).map((h) => String(h ?? ''));
@@ -115,37 +119,84 @@ export async function commitMembers(
     let membersCreated = 0;
     let contactsCreated = 0;
     let skippedExistingMembers = 0;
+    let skippedExistingContacts = 0;
     let skippedSoftDeletedContacts = 0;
+    let skippedPrimaryCollisionMembers = 0;
+
+    const insertContact = async (
+      memberId: string,
+      c: ValidatedMember['contacts'][number],
+      isPrimary: boolean,
+    ): Promise<void> => {
+      const contactId = randomUUID();
+      await tx.insert(contacts).values({
+        tenantId: ctx.slug,
+        contactId,
+        memberId,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        email: c.email,
+        phone: c.phone,
+        roleTitle: c.roleTitle,
+        preferredLanguage: c.preferredLanguage,
+        isPrimary,
+      });
+      await tx.insert(auditLog).values({
+        eventType: 'contact_created',
+        actorUserId,
+        summary: 'import-members: created contact',
+        requestId: `import-members-${randomUUID()}`,
+        tenantId: ctx.slug,
+        payload: { member_id: memberId, contact_id: contactId, is_primary: isPrimary, source: 'import-members' },
+      });
+      contactsCreated += 1;
+    };
 
     for (const m of validMembers) {
       const emails = m.contacts.map((c) => c.email.toLowerCase());
 
+      // PER-CONTACT dedupe (spec § 5) — match the per-contact partial unique index.
       const activeRows = await tx
-        .select({ email: contacts.email })
+        .select({ email: contacts.email, memberId: contacts.memberId })
         .from(contacts)
-        .where(
-          and(
-            eq(contacts.tenantId, ctx.slug),
-            inArray(sql`lower(${contacts.email})`, emails),
-            isNull(contacts.removedAt),
-          ),
-        );
-      if (activeRows.length > 0) {
-        skippedExistingMembers += 1; // already imported — idempotent skip
-        continue;
-      }
-
+        .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails), isNull(contacts.removedAt)));
       const softRows = await tx
         .select({ email: contacts.email })
         .from(contacts)
-        .where(
-          and(
-            eq(contacts.tenantId, ctx.slug),
-            inArray(sql`lower(${contacts.email})`, emails),
-            isNotNull(contacts.removedAt),
-          ),
-        );
+        .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails), isNotNull(contacts.removedAt)));
+      const activeEmails = new Set(activeRows.map((r) => r.email.toLowerCase()));
       const softEmails = new Set(softRows.map((r) => r.email.toLowerCase()));
+      const existingMemberId = activeRows[0]?.memberId ?? null;
+
+      // Fully imported already (every contact email is active) → idempotent skip.
+      if (emails.every((e) => activeEmails.has(e))) {
+        skippedExistingMembers += 1;
+        continue;
+      }
+
+      if (existingMemberId) {
+        // PARTIAL: the member exists (≥1 active contact). Add ONLY the genuinely
+        // new contacts to it, as NON-primary (the member already has its primary)
+        // — fixes the bug where new contacts were dropped when one email pre-existed.
+        for (const c of m.contacts) {
+          const e = c.email.toLowerCase();
+          if (activeEmails.has(e)) { skippedExistingContacts += 1; continue; }
+          if (softEmails.has(e)) { skippedSoftDeletedContacts += 1; continue; }
+          await insertContact(existingMemberId, c, false);
+        }
+        continue;
+      }
+
+      // NEW member. Its primary contact MUST be insertable — if the primary email
+      // collides with an existing/soft-deleted contact we cannot create a clean
+      // member (it would end up with no primary / orphaned), so skip + warn and
+      // let the operator resolve the collision manually.
+      const primary = m.contacts.find((c) => c.isPrimary);
+      const primaryEmail = primary?.email.toLowerCase();
+      if (primaryEmail && (activeEmails.has(primaryEmail) || softEmails.has(primaryEmail))) {
+        skippedPrimaryCollisionMembers += 1;
+        continue;
+      }
 
       const memberId = randomUUID();
       await tx.insert(members).values({
@@ -176,36 +227,21 @@ export async function commitMembers(
       membersCreated += 1;
 
       for (const c of m.contacts) {
-        if (softEmails.has(c.email.toLowerCase())) {
-          skippedSoftDeletedContacts += 1; // skip+warn (do not reactivate)
-          continue;
-        }
-        const contactId = randomUUID();
-        await tx.insert(contacts).values({
-          tenantId: ctx.slug,
-          contactId,
-          memberId,
-          firstName: c.firstName,
-          lastName: c.lastName,
-          email: c.email,
-          phone: c.phone,
-          roleTitle: c.roleTitle,
-          preferredLanguage: c.preferredLanguage,
-          isPrimary: c.isPrimary,
-        });
-        await tx.insert(auditLog).values({
-          eventType: 'contact_created',
-          actorUserId,
-          summary: 'import-members: created contact',
-          requestId: `import-members-${randomUUID()}`,
-          tenantId: ctx.slug,
-          payload: { member_id: memberId, contact_id: contactId, is_primary: c.isPrimary, source: 'import-members' },
-        });
-        contactsCreated += 1;
+        const e = c.email.toLowerCase();
+        if (activeEmails.has(e)) { skippedExistingContacts += 1; continue; }
+        if (softEmails.has(e)) { skippedSoftDeletedContacts += 1; continue; } // secondary only (primary guarded above)
+        await insertContact(memberId, c, c.isPrimary);
       }
     }
 
-    return { membersCreated, contactsCreated, skippedExistingMembers, skippedSoftDeletedContacts };
+    return {
+      membersCreated,
+      contactsCreated,
+      skippedExistingMembers,
+      skippedExistingContacts,
+      skippedSoftDeletedContacts,
+      skippedPrimaryCollisionMembers,
+    };
   });
 }
 
@@ -222,6 +258,16 @@ async function main(): Promise<void> {
         `Fix the workbook headers (or the alias map) and re-run.`,
     );
     process.exit(2);
+  }
+  // Surface unmapped headers even when proceeding — an unmapped NON-required
+  // column (e.g. "Annual Revenue (THB)", "Mobile No.") is silently dropped to '',
+  // so the operator must see it + confirm the column map against the real Excel.
+  if (columnMap.unmappedHeaders.length > 0) {
+    console.warn(
+      `[import-members] WARNING — these headers did not map to any field and their ` +
+        `values are IGNORED: ${columnMap.unmappedHeaders.join(', ')}. ` +
+        `Confirm none of them is a column you meant to import (turnover/phone/role/locale/etc.).`,
+    );
   }
 
   const rows = mapDataRows(dataRows, columnMap, 2); // header is Excel row 1

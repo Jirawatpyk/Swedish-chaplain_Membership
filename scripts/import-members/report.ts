@@ -14,10 +14,14 @@ import type { RowIssue, ValidationReport } from './validate';
 export interface CommitOutcome {
   readonly membersCreated: number;
   readonly contactsCreated: number;
-  /** Members skipped on re-run because an active contact email already exists (idempotency). */
+  /** Members fully skipped: every contact email already exists ACTIVE (idempotent re-run). */
   readonly skippedExistingMembers: number;
-  /** Contacts skipped because their email matches a soft-deleted row (operator decision: skip+warn). */
+  /** Individual contacts skipped: their email already exists ACTIVE (added to an existing member). */
+  readonly skippedExistingContacts: number;
+  /** Contacts skipped: email matches a SOFT-DELETED row (operator decision: skip+warn, not reactivate). */
   readonly skippedSoftDeletedContacts: number;
+  /** NEW members skipped: the primary contact email collides with an existing/soft-deleted contact, so a clean member can't be created — operator must resolve manually. */
+  readonly skippedPrimaryCollisionMembers: number;
 }
 
 export interface ReportDocument {
@@ -74,10 +78,13 @@ export function renderReportText(doc: ReportDocument): string {
   }
   if (doc.committed) {
     lines.push('');
+    const c = doc.committed;
     lines.push(
-      `Committed: ${doc.committed.membersCreated} members + ${doc.committed.contactsCreated} contacts; ` +
-        `skipped ${doc.committed.skippedExistingMembers} already-imported members + ` +
-        `${doc.committed.skippedSoftDeletedContacts} soft-deleted contacts`,
+      `Committed: ${c.membersCreated} members + ${c.contactsCreated} contacts. ` +
+        `Skipped: ${c.skippedExistingMembers} already-imported members, ` +
+        `${c.skippedExistingContacts} existing contacts, ` +
+        `${c.skippedSoftDeletedContacts} soft-deleted contacts, ` +
+        `${c.skippedPrimaryCollisionMembers} primary-collision members`,
     );
   }
   return lines.join('\n');

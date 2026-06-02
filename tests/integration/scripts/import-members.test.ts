@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -122,6 +122,52 @@ describe('commitMembers — integration (spec § 5)', () => {
     const before = await countMembers(tenantB.ctx.slug);
     await commitMembers(tenantA.ctx, user.userId, [vm({ emails: [`iso-${randomUUID().slice(0, 8)}@imp.test`] })], 2026);
     expect(await countMembers(tenantB.ctx.slug)).toBe(before); // tenantB unchanged
+  });
+
+  it('partial member: adds NEW contacts to the existing member, skips the existing one (review item 1)', async () => {
+    const emailA = `partA-${randomUUID().slice(0, 8)}@imp.test`;
+    const emailB = `partB-${randomUUID().slice(0, 8)}@imp.test`;
+    const first = await commitMembers(tenantA.ctx, user.userId, [vm({ emails: [emailA] })], 2026);
+    expect(first.membersCreated).toBe(1);
+
+    // Re-run lists the existing contact A AND a genuinely new contact B.
+    const second = await commitMembers(tenantA.ctx, user.userId, [vm({ emails: [emailA, emailB] })], 2026);
+    expect(second).toMatchObject({ membersCreated: 0, contactsCreated: 1, skippedExistingContacts: 1 });
+
+    // B was attached to A's member (NOT dropped, NOT a new member) and is NON-primary;
+    // the member still has exactly one primary (A).
+    const rows = await runInTenant(tenantA.ctx, async (tx) =>
+      tx
+        .select({ memberId: contacts.memberId, isPrimary: contacts.isPrimary })
+        .from(contacts)
+        .where(and(eq(contacts.tenantId, tenantA.ctx.slug), inArray(contacts.email, [emailA, emailB]))),
+    );
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.memberId)).size).toBe(1); // same member
+    expect(rows.filter((r) => r.isPrimary)).toHaveLength(1); // still exactly one primary
+  });
+
+  it('new member whose PRIMARY email is soft-deleted is skipped, never created with no primary (review items 2/8)', async () => {
+    const email = `softP-${randomUUID().slice(0, 8)}@imp.test`;
+    const seededMemberId = randomUUID();
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenantA.ctx.slug, memberId: seededMemberId, companyName: `Soft Co ${randomUUID().slice(0, 6)}`,
+        country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01',
+        registrationFeePaid: true, status: 'active',
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenantA.ctx.slug, contactId: randomUUID(), memberId: seededMemberId,
+        firstName: 'S', lastName: 'D', email, preferredLanguage: 'en', isPrimary: true,
+      });
+      // Soft-delete it (domain invariant: is_primary=false when removed_at set).
+      await tx.update(contacts).set({ removedAt: new Date(), isPrimary: false }).where(eq(contacts.email, email));
+    });
+
+    const before = await countMembers(tenantA.ctx.slug);
+    const out = await commitMembers(tenantA.ctx, user.userId, [vm({ emails: [email] })], 2026);
+    expect(out).toMatchObject({ membersCreated: 0, skippedPrimaryCollisionMembers: 1 });
+    expect(await countMembers(tenantA.ctx.slug)).toBe(before); // no orphan member created
   });
 
   it('all-or-nothing: a mid-batch FK failure rolls back the whole import', async () => {

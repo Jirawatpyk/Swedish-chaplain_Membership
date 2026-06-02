@@ -129,8 +129,11 @@ export function validateRows(
   };
 
   // Rule 2 (cross-import email uniqueness): tally lowercased valid emails.
+  // Skip rows with a blank company name — they are errored + not grouped into a
+  // member, so they must not bump a real member's email count (false duplicate).
   const emailCounts = new Map<string, number>();
   for (const r of rows) {
+    if (normCompanyKey(r.companyName).length === 0) continue;
     const e = asEmail(r.contactEmail);
     if (e.ok) emailCounts.set(e.value, (emailCounts.get(e.value) ?? 0) + 1);
   }
@@ -194,10 +197,19 @@ export function validateRows(
       warn(head.rowIndex, 'memberLocale', 'unknown_language');
     }
 
-    // Member-field consistency across the group (rule: rows of one company agree).
+    // Member-field consistency across the group. Rows of one company SHOULD share
+    // member-level values; a disagreement on country/taxId/tier is a strong signal
+    // that two DISTINCT companies share a display name and were wrongly merged into
+    // one member (only the head row's values survive). Warn so the operator can
+    // split them — we cannot auto-resolve without a stable member key (item 6).
+    const norm = (s: string): string => s.trim().toLowerCase();
     for (const r of groupRows.slice(1)) {
-      if (r.tier.trim() && tierResolver.resolve(r.tier).ok !== tier.ok) {
-        warn(r.rowIndex, 'tier', 'member_field_mismatch');
+      for (const field of ['country', 'taxId', 'tier'] as const) {
+        const a = norm(head[field]);
+        const b = norm(r[field]);
+        if (b.length > 0 && a.length > 0 && a !== b) {
+          warn(r.rowIndex, field, 'member_field_mismatch');
+        }
       }
     }
 
@@ -220,7 +232,10 @@ export function validateRows(
       const rawPhone = r.contactPhone.trim();
       if (rawPhone.length > 0) {
         const p = asPhone(rawPhone);
-        if (!p.ok) err(r.rowIndex, 'contactPhone', 'invalid_e164');
+        // Spec § 3.6: "normalize to E.164 OR is empty (never store malformed)".
+        // A malformed phone (e.g. Thai local '0812345678' without +66) is dropped
+        // to null with a WARNING — it must NOT exclude an otherwise-valid member.
+        if (!p.ok) warn(r.rowIndex, 'contactPhone', 'dropped_invalid_e164');
         else phone = p.value;
       }
 

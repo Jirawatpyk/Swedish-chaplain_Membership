@@ -124,6 +124,27 @@ describe('validateRows (spec § 3)', () => {
     expect(r.members[0]!.contacts[0]!.isPrimary).toBe(true);
   });
 
+  it('rule 6: an invalid phone is DROPPED with a warning — member NOT excluded', () => {
+    const r = validateRows([row({ rowIndex: 2, contactPhone: '0812345678' })], RESOLVER); // Thai local, no +66
+    expect(r.stats.errorCount).toBe(0); // not an error
+    expect(r.members).toHaveLength(1); // member survives
+    expect(r.members[0]!.contacts[0]!.phone).toBeNull(); // malformed phone dropped
+    expect(r.issues.some((i) => i.field === 'contactPhone' && i.code === 'dropped_invalid_e164' && i.severity === 'warning')).toBe(true);
+  });
+
+  it('rule 2: a blank-company stray row does NOT false-flag a real member as duplicate', () => {
+    const r = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Real Co', contactEmail: 'shared@x.test' }),
+        row({ rowIndex: 3, companyName: '', contactEmail: 'shared@x.test' }), // stray blank-company row
+      ],
+      RESOLVER,
+    );
+    expect(r.members).toHaveLength(1); // Real Co is valid
+    expect(errCodes(r)).not.toContain('duplicate_in_import');
+    expect(errCodes(r)).toContain('required'); // the blank-company row still errors
+  });
+
   it('rule 7: multiple primaries → multiple_primary error', () => {
     const r = validateRows(
       [
