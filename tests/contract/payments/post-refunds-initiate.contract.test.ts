@@ -443,6 +443,30 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(emitted.eventType).toBe('refund_initiate_rate_limited');
   });
 
+  it('429 is best-effort: a thrown audit emit does NOT change the 429 response', async () => {
+    // Exercises the route's try/catch around f5AuditAdapter.emit — an audit-sink
+    // hiccup (e.g. Neon down) must never turn the rate-limit 429 into a 500.
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    const { rateLimiter } = await getMockedAuthDeps();
+    rateLimiter.check.mockResolvedValueOnce({
+      success: false,
+      reset: Date.now() + 90_000,
+    });
+    f5RateLimitEmitMock.mockClear();
+    f5RateLimitEmitMock.mockRejectedValueOnce(new Error('audit sink unavailable'));
+
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+
+    expect(res.status).toBe(429);
+    expect(
+      (((await res.json()) as Record<string, unknown>)['error'] as Record<string, unknown>)['code'],
+    ).toBe('rate_limited');
+    expect(res.headers.get('Retry-After')).not.toBeNull();
+    // It threw, but was awaited inside the catch — the 429 still returns.
+    expect(f5RateLimitEmitMock).toHaveBeenCalledTimes(1);
+  });
+
   it('502 processor_unavailable — refund row inserted with status=failed; no CN', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
