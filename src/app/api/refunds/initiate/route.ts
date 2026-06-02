@@ -39,6 +39,12 @@ import {
   buildUseCaseErrorTelemetry,
   errorResponse,
 } from '@/lib/payments-route-helpers';
+import {
+  f5AuditAdapter,
+  f5RetentionFor,
+  type ActorRef,
+} from '@/lib/stripe-webhook-deps';
+import { errKind } from '@/lib/log-id';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -149,6 +155,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { tenantId: tenantCtx.slug, userId: actorUserId, requestId, correlationId, reset: rl.reset },
       'refunds.initiate.rate_limited',
     );
+    // n24 — forensic trail for the 429 in the append-only audit_log, mirroring
+    // payments.initiate's `payment_initiate_rate_limited`. Fires before any
+    // tenant tx, so it uses the F5 typed adapter directly (not runInTenant).
+    // Best-effort: an audit hiccup must NOT change the 429 response.
+    try {
+      await f5AuditAdapter.emit(null, {
+        tenantId: tenantCtx.slug,
+        requestId,
+        eventType: 'refund_initiate_rate_limited',
+        actorUserId: actorUserId as ActorRef,
+        summary: `refunds.initiate rate-limited for tenant=${tenantCtx.slug}`,
+        payload: {},
+        retentionYears: f5RetentionFor('refund_initiate_rate_limited'),
+      });
+    } catch (e) {
+      logger.error(
+        { errKind: errKind(e), correlationId, tenantId: tenantCtx.slug },
+        'refunds.initiate.rate_limited_audit_failed',
+      );
+    }
     return errorResponse(429, 'rate_limited', correlationId, { retryAfterSeconds });
   }
 

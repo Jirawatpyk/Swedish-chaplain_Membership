@@ -101,6 +101,11 @@ export type F5AuditEventType =
   // drift surface caught by `tests/integration/payments/audit-event-type-parity.test.ts`.
   | 'payment_initiate_rate_limited'
   | 'payment_cancel_rate_limited'
+  // Migration 0199 (go-live P3 n24) — forensic trail for rate-limit hits
+  // on the refund initiate route. Parallels payment_initiate_rate_limited;
+  // emitted via the F5 typed `f5AuditAdapter.emit` path. Post-009-spec
+  // addition (NOT part of the original "20 F5 spec events" count).
+  | 'refund_initiate_rate_limited'
   // F5R2-SF-6 (migration 0151) — emitted by `processChargeRefunded`
   // when the local refund row's `amount_satang` exceeds Stripe's
   // confirmed charge total. Pre-fix these mismatches were bucketed
@@ -328,6 +333,8 @@ export interface F5AuditPayloadByType {
   // payload fields today (only summary + actorUserId + requestId).
   payment_initiate_rate_limited: Record<string, unknown>;
   payment_cancel_rate_limited: Record<string, unknown>;
+  // Migration 0199 (n24) — refund initiate rate-limit forensic event.
+  refund_initiate_rate_limited: Record<string, unknown>;
   // F5R2-SF-6 — typed payload to keep PII out (no member email, no
   // raw SQL, no Stripe charge object). Just the IDs + amounts needed
   // to reconcile the divergence in the SRE runbook.
@@ -442,6 +449,8 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // Migration 0043 — operational rate-limit events; 5y retention.
   payment_initiate_rate_limited: 5,
   payment_cancel_rate_limited: 5,
+  // Migration 0199 (n24) — refund initiate rate-limit; 5y retention.
+  refund_initiate_rate_limited: 5,
   // F5R2 — operational/audit class events; 5y per Constitution VIII.
   refund_amount_mismatch_detected: 5,
   webhook_dispatch_permanent_failure: 5,

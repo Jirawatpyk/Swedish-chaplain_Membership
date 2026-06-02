@@ -63,6 +63,17 @@ vi.mock('@/modules/tenants', () => ({
 }));
 
 /**
+ * n24 — the route now emits `refund_initiate_rate_limited` via the F5 typed
+ * adapter on the 429 branch (audit parity with payments.initiate). Mock the
+ * composition layer so the rate-limit branch doesn't reach live Postgres.
+ */
+const f5RateLimitEmitMock = vi.fn(async (..._args: unknown[]) => undefined);
+vi.mock('@/lib/stripe-webhook-deps', () => ({
+  f5AuditAdapter: { emit: f5RateLimitEmitMock },
+  f5RetentionFor: () => 5,
+}));
+
+/**
  * The barrel does NOT export `issueRefund` yet — Batch B T108. The
  * factory mock declaration is valid TS; the route import will fail
  * before any mock fires, marking each test RED at runtime.
@@ -418,12 +429,18 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
       reset: Date.now() + 90_000,
     });
 
+    f5RateLimitEmitMock.mockClear();
     const { POST } = await importRoute();
     const res = await POST(makeJsonRequest(VALID_BODY));
     expect(res.status).toBe(429);
     const body = (await res.json()) as Record<string, unknown>;
     expect((body['error'] as Record<string, unknown>)['code']).toBe('rate_limited');
     expect(res.headers.get('Retry-After')).not.toBeNull();
+    // n24 — the 429 leaves a forensic trail in audit_log (parity with
+    // payments.initiate). Assert the typed emit fired with the right event type.
+    expect(f5RateLimitEmitMock).toHaveBeenCalledTimes(1);
+    const emitted = f5RateLimitEmitMock.mock.calls[0]![1] as { eventType: string };
+    expect(emitted.eventType).toBe('refund_initiate_rate_limited');
   });
 
   it('502 processor_unavailable — refund row inserted with status=failed; no CN', async () => {
