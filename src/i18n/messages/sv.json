@@ -805,7 +805,7 @@
         "forbidden": "Du har inte behörighet att göra det.",
         "validation": "Korrigera de markerade fälten.",
         "priorYearLocked": "Dessa fält är låsta på historiska paket: {fields}. Klona paketet till innevarande år för att redigera.",
-        "feeConfigMissing": "Konfigurationen för kammarens avgifter är inte initialiserad. Kör seed-skriptet.",
+        "feeConfigMissing": "Avgiftskonfigurationen har inte konfigurerats ännu. Kontakta din systemadministratör.",
         "loadFailed": "Det gick inte att läsa in paket.",
         "backToList": "Tillbaka till paket",
         "duplicateKey": "Ett paket med detta ID finns redan för {year}.",

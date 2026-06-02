@@ -805,7 +805,7 @@
         "forbidden": "You don’t have permission to do that.",
         "validation": "Please fix the highlighted fields.",
         "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
-        "feeConfigMissing": "Tenant fee configuration not yet initialised. Run the seed script.",
+        "feeConfigMissing": "Fee configuration hasn’t been set up yet. Please contact your system administrator.",
         "loadFailed": "Failed to load plans.",
         "backToList": "Back to plans",
         "duplicateKey": "A plan with this ID already exists for {year}.",
