@@ -1745,6 +1745,12 @@
             "view": "Visa",
             "viewAria": "Visa kreditnota {number}"
           }
+        },
+        "deliveryFailure": {
+          "title": "E-postleverans misslyckades",
+          "body": "Det automatiska mejlet till {recipient} kunde inte levereras (det studsade, avvisades eller så var e-postleverantören otillgänglig). Fakturan påverkas inte.",
+          "editRecipientHint": "Kontrollera adressen, eller uppdatera medlemmens primära kontakt-e-post, och skicka sedan igen.",
+          "resend": "Skicka mejl igen"
         }
       },
       "issue": {

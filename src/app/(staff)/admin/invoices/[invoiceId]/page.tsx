@@ -48,6 +48,9 @@ import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/re
 // directly.
  
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
+// Same documented escape-hatch as the two reads above: a tenant-scoped infra
+// read (FR-026 failed-auto-email surface), no Application use-case needed.
+import { findFailedAutoEmailsByInvoice } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
@@ -78,6 +81,7 @@ import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
+import { EmailFailureAlert } from '../_components/email-failure-alert';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
@@ -219,6 +223,12 @@ export default async function InvoiceDetailPage({
 
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
+
+  // FR-026 — surface permanently-failed auto-email deliveries to admins.
+  // Drafts never auto-email, so skip the read for them.
+  const failedEmails = isDraft
+    ? []
+    : await findFailedAutoEmailsByInvoice(invoiceId, tenantCtx.slug);
 
   // T109 — derive the presentation-only `overdue` variant + fire the
   // opportunistic `invoice_overdue_detected` audit on first detection
@@ -462,6 +472,14 @@ export default async function InvoiceDetailPage({
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
+          {/* FR-026 — auto-email delivery-failure banner (admins only). */}
+          {isAdmin && failedEmails.length > 0 && (
+            <EmailFailureAlert
+              invoiceId={invoice.invoiceId}
+              recipientEmail={failedEmails[0]!.recipientEmail}
+              canResend={invoice.status !== 'void' && Boolean(invoice.pdf)}
+            />
+          )}
           <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>

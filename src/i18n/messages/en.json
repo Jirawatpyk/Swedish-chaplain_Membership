@@ -1745,6 +1745,12 @@
             "view": "View",
             "viewAria": "View credit note {number}"
           }
+        },
+        "deliveryFailure": {
+          "title": "Email delivery failed",
+          "body": "The automatic email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The invoice itself is unaffected.",
+          "editRecipientHint": "Check the address, or update the member's primary contact email, then resend.",
+          "resend": "Resend email"
         }
       },
       "issue": {
