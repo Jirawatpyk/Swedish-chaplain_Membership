@@ -147,11 +147,14 @@ export interface Invoice {
   } | null;
 
   /**
-   * Receipt PDF metadata — written by record-payment. Separate from
-   * `pdf` so the invoice's issue-time hash stays intact for audit.
-   * Null on draft/issued; non-null on paid (separate-mode) OR null
-   * on paid (combined-mode — no distinct receipt exists, `pdf` is
-   * the combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+   * Receipt PDF metadata — written by record-payment at payment time for BOTH
+   * numbering modes (separate from `pdf` so the invoice's issue-time hash stays
+   * intact for audit). Null on draft/issued; **non-null on paid in either mode**
+   * — combined-mode reuses the invoice document number, separate-mode allocates
+   * its own; the file header differs (ใบกำกับภาษี/ใบเสร็จรับเงิน vs ใบเสร็จรับเงิน /
+   * Official Receipt). See record-payment.ts § "Why two files…". (NB: code is the
+   * source of truth — the FR-026 resend-failure banner relies on this being
+   * non-null on paid to offer a receipt resend.)
    */
   readonly receiptPdf: {
     readonly blobKey: string;

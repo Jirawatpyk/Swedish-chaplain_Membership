@@ -50,7 +50,10 @@ import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/re
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 // Same documented escape-hatch as the two reads above: a tenant-scoped infra
 // read (FR-026 failed-auto-email surface), no Application use-case needed.
-import { findFailedAutoEmailsByInvoice } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import {
+  findFailedAutoEmailsByInvoice,
+  resendVariantForFailedEvent,
+} from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
@@ -229,20 +232,31 @@ export default async function InvoiceDetailPage({
   const failedEmails = isDraft
     ? []
     : await findFailedAutoEmailsByInvoice(invoiceId, tenantCtx.slug);
-  // Resend the SAME document that failed: the `invoice_paid`/`receipt_pdf_resent`
-  // auto-emails are receipt copies → variant 'receipt'; everything else is the
-  // invoice copy. canResend is variant-aware (receipt needs the receipt PDF).
-  const failedEmail = failedEmails[0] ?? null;
-  const emailResendVariant: 'invoice' | 'receipt' =
-    failedEmail?.eventType === 'invoice_paid' ||
-    failedEmail?.eventType === 'receipt_pdf_resent'
-      ? 'receipt'
-      : 'invoice';
-  const emailResendable =
-    invoice.status !== 'void' &&
-    (emailResendVariant === 'receipt'
-      ? Boolean(invoice.receiptPdf)
-      : Boolean(invoice.pdf));
+  // An invoice can have BOTH a failed invoice-copy AND a failed receipt-copy
+  // email (e.g. issue bounced, then the paid-receipt also bounced). Surface ONE
+  // banner per distinct document so neither stays hidden + un-resendable. Rows
+  // arrive newest-first, so the first per variant is the latest failure.
+  const failedEmailBanners: ReadonlyArray<{
+    readonly variant: 'invoice' | 'receipt';
+    readonly recipientEmail: string;
+    readonly canResend: boolean;
+  }> = (() => {
+    const byVariant = new Map<'invoice' | 'receipt', string>();
+    for (const e of failedEmails) {
+      const v = resendVariantForFailedEvent(e.eventType);
+      if (!byVariant.has(v)) byVariant.set(v, e.recipientEmail);
+    }
+    return [...byVariant.entries()].map(([variant, recipientEmail]) => ({
+      variant,
+      recipientEmail,
+      // canResend is variant-aware: a receipt resend needs the receipt PDF.
+      canResend:
+        invoice.status !== 'void' &&
+        (variant === 'receipt'
+          ? Boolean(invoice.receiptPdf)
+          : Boolean(invoice.pdf)),
+    }));
+  })();
 
   // T109 — derive the presentation-only `overdue` variant + fire the
   // opportunistic `invoice_overdue_detected` audit on first detection
@@ -486,15 +500,18 @@ export default async function InvoiceDetailPage({
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {/* FR-026 — auto-email delivery-failure banner (admins only). */}
-          {isAdmin && failedEmail && (
-            <EmailFailureAlert
-              invoiceId={invoice.invoiceId}
-              recipientEmail={failedEmail.recipientEmail}
-              variant={emailResendVariant}
-              canResend={emailResendable}
-            />
-          )}
+          {/* FR-026 — one delivery-failure banner per failed document (admins
+              only); invoice + receipt copies can both fail independently. */}
+          {isAdmin &&
+            failedEmailBanners.map((b) => (
+              <EmailFailureAlert
+                key={b.variant}
+                invoiceId={invoice.invoiceId}
+                recipientEmail={b.recipientEmail}
+                variant={b.variant}
+                canResend={b.canResend}
+              />
+            ))}
           <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>

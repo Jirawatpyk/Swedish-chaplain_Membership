@@ -51,9 +51,19 @@ export function EmailFailureAlert({
         return;
       }
       if (res.status === 202) {
+        // Use the recipient the resend actually sent to (the invoice's CURRENT
+        // primary-contact snapshot), not the historical failed address — the
+        // hint tells the admin to update the contact email first, so they differ.
+        const okBody = (await res.json().catch(() => ({}))) as {
+          recipientEmail?: string;
+        };
         setRecentlySent(true);
         setTimeout(() => setRecentlySent(false), 5 * 60_000);
-        toast.success(t('toast.resendSuccess', { recipient: recipientEmail }));
+        toast.success(
+          t('toast.resendSuccess', {
+            recipient: okBody.recipientEmail ?? recipientEmail,
+          }),
+        );
         return;
       }
       if (res.status === 429) {
@@ -74,32 +84,36 @@ export function EmailFailureAlert({
   return (
     <Alert variant="destructive">
       <MailWarningIcon className="size-4" aria-hidden="true" />
-      <AlertTitle>{t('deliveryFailure.title')}</AlertTitle>
+      {/* Copy varies by the failed document so a receipt failure doesn't read
+          as an invoice failure (and vice-versa). */}
+      <AlertTitle>{t(`deliveryFailure.${variant}.title`)}</AlertTitle>
       <AlertDescription className="flex flex-col gap-2">
-        <span>{t('deliveryFailure.body', { recipient: recipientEmail })}</span>
-        {/* The "…then resend" hint only makes sense when a resend is offered
-            (e.g. on a void invoice canResend is false → no button). */}
+        <span>
+          {t(`deliveryFailure.${variant}.body`, { recipient: recipientEmail })}
+        </span>
+        {/* The "…then resend" hint + button only make sense together, and only
+            when a resend is offered (e.g. a void invoice → canResend false). */}
         {canResend ? (
-          <span>{t('deliveryFailure.editRecipientHint')}</span>
-        ) : null}
-        {canResend ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-fit"
-            disabled={pending || recentlySent}
-            aria-busy={pending}
-            onClick={handleResend}
-          >
-            {pending ? (
-              <Loader2Icon
-                className="size-4 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-            ) : null}
-            {t('deliveryFailure.resend')}
-          </Button>
+          <>
+            <span>{t('deliveryFailure.editRecipientHint')}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-fit"
+              disabled={pending || recentlySent}
+              aria-busy={pending}
+              onClick={handleResend}
+            >
+              {pending ? (
+                <Loader2Icon
+                  className="size-4 motion-safe:animate-spin"
+                  aria-hidden="true"
+                />
+              ) : null}
+              {t(`deliveryFailure.${variant}.resend`)}
+            </Button>
+          </>
         ) : null}
       </AlertDescription>
     </Alert>

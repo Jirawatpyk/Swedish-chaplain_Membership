@@ -1747,10 +1747,17 @@
           }
         },
         "deliveryFailure": {
-          "title": "Email delivery failed",
-          "body": "The automatic email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The invoice itself is unaffected.",
           "editRecipientHint": "Check the address, or update the member's primary contact email, then resend.",
-          "resend": "Resend email"
+          "invoice": {
+            "title": "Invoice email delivery failed",
+            "body": "The automatic invoice email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The invoice itself is unaffected.",
+            "resend": "Resend invoice email"
+          },
+          "receipt": {
+            "title": "Receipt email delivery failed",
+            "body": "The automatic receipt email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The payment record itself is unaffected.",
+            "resend": "Resend receipt email"
+          }
         }
       },
       "issue": {

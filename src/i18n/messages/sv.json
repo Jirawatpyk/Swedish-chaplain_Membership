@@ -1747,10 +1747,17 @@
           }
         },
         "deliveryFailure": {
-          "title": "E-postleverans misslyckades",
-          "body": "Det automatiska mejlet till {recipient} kunde inte levereras (det studsade, avvisades eller så var e-postleverantören otillgänglig). Fakturan påverkas inte.",
           "editRecipientHint": "Kontrollera adressen, eller uppdatera medlemmens primära kontakt-e-post, och skicka sedan igen.",
-          "resend": "Skicka mejl igen"
+          "invoice": {
+            "title": "E-postleverans av faktura misslyckades",
+            "body": "Det automatiska fakturamejlet till {recipient} kunde inte levereras (det studsade, avvisades eller så var e-postleverantören otillgänglig). Fakturan påverkas inte.",
+            "resend": "Skicka fakturamejl igen"
+          },
+          "receipt": {
+            "title": "E-postleverans av kvitto misslyckades",
+            "body": "Det automatiska kvittomejlet till {recipient} kunde inte levereras (det studsade, avvisades eller så var e-postleverantören otillgänglig). Betalningsposten påverkas inte.",
+            "resend": "Skicka kvittomejl igen"
+          }
         }
       },
       "issue": {
