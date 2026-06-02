@@ -49,6 +49,9 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     memberRepo: {
       findById: vi.fn().mockResolvedValue(ok(stubMember)),
       findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
+      findRiskById: vi
+        .fn()
+        .mockResolvedValue(ok({ riskScore: null, riskScoreBand: null })),
       findManyByIdsInTx: vi.fn().mockResolvedValue(ok(new Map())),
       findSoftDuplicate: vi.fn(),
       findByLinkedUserId: vi.fn(),

@@ -987,6 +987,7 @@
           "registrationFeePaidNo": "Unpaid",
           "status": "Status",
           "lastActivityAt": "Last activity",
+          "engagement": "Engagement",
           "archivedAt": "Archived at",
           "notes": "Internal notes",
           "firstName": "First name",

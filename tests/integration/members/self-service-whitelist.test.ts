@@ -83,6 +83,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
   const memberRepo: MemberRepo = {
     findById: async () => ok(baseMember),
     findByIdInTx: async () => ok(baseMember),
+    findRiskById: async () => ok({ riskScore: null, riskScoreBand: null }),
     findManyByIdsInTx: async () => ok(new Map()),
     findByLinkedUserId: async () => ok(baseMember),
     findSoftDuplicate: async () => ok(null),

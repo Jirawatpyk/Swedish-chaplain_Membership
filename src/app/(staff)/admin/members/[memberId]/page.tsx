@@ -55,6 +55,7 @@ import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
 import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
+import { MemberEngagementSection } from './_components/member-engagement-section';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -882,6 +883,14 @@ export default async function MemberDetailPage({
         {env.features.f9Dashboard && session.user.role === 'admin' && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
             <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
+          </Suspense>
+        )}
+
+        {/* B18 / FR-007a — engagement score (staff-facing: admin + manager).
+            F9-gated; isolated Suspense so the risk read never blocks paint. */}
+        {env.features.f9Dashboard && (
+          <Suspense fallback={null}>
+            <MemberEngagementSection tenant={tenant} memberId={member.memberId} />
           </Suspense>
         )}
 

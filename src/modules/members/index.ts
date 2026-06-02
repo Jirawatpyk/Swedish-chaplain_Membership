@@ -115,6 +115,12 @@ export {
   type GetMemberError,
   type GetMemberDeps,
 } from './application/use-cases/get-member';
+export {
+  getMemberEngagement,
+  type GetMemberEngagementDeps,
+  type GetMemberEngagementError,
+} from './application/use-cases/get-member-engagement';
+export type { MemberRisk } from './application/ports/member-repo';
 
 export {
   directorySearch,

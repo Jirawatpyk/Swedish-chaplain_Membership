@@ -987,6 +987,7 @@
           "registrationFeePaidNo": "ยังไม่ชำระ",
           "status": "สถานะ",
           "lastActivityAt": "กิจกรรมล่าสุด",
+          "engagement": "การมีส่วนร่วม",
           "archivedAt": "วันที่เก็บถาวร",
           "notes": "หมายเหตุภายใน",
           "firstName": "ชื่อ",
