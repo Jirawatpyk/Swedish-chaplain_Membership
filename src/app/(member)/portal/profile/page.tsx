@@ -88,6 +88,12 @@ export default async function PortalProfilePage() {
   const isPrimary = ownContact?.isPrimary === true;
   const format = await getFormatter();
 
+  // B24 — resolve the plan/tier display name via the existing PlanLookupPort
+  // dep (mirrors admin/members/[memberId]/page.tsx). Falls back to the plan
+  // slug if the row is missing/inactive (defensive against data drift).
+  const planLookup = await deps.plans.getPlan(tenant, m.planId, m.planYear);
+  const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
+
   return (
     <DetailContainer>
       <PageHeader
@@ -188,6 +194,12 @@ export default async function PortalProfilePage() {
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-caption text-muted-foreground">
+                {t('fields.planName')}
+              </dt>
+              <dd className="text-body font-medium">{planDisplayName}</dd>
+            </div>
             <div>
               <dt className="text-caption text-muted-foreground">
                 {t('fields.planYear')}

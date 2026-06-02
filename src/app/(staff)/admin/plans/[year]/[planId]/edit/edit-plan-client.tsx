@@ -89,9 +89,15 @@ export function EditPlanClient({
         return;
       }
 
-      const errorCode = body?.error?.code ?? 'generic';
-      if (errorCode === 'prior_year_locked_fields') {
-        const fields = (body.error.details?.locked_fields ?? []).join(', ');
+      // read-only-mode 503 arrives as a flat string (proxy) OR nested code
+      // (route guard) — normalize both; branch FIRST so it isn't shadowed.
+      const errorObj = body?.error;
+      const errorCode =
+        typeof errorObj === 'string' ? errorObj : (errorObj?.code ?? 'generic');
+      if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
+        toast.error(t('errors.readOnlyMode'));
+      } else if (errorCode === 'prior_year_locked_fields') {
+        const fields = (errorObj?.details?.locked_fields ?? []).join(', ');
         toast.error(t('errors.priorYearLocked', { fields }));
       } else if (errorCode === 'not_found') {
         toast.error(t('errors.notFound'));

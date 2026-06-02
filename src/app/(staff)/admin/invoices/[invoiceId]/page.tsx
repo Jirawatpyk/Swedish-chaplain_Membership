@@ -26,6 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { dateFormatLocale } from '@/lib/intl-locale';
 import {
   getInvoice,
   makeGetInvoiceDeps,
@@ -104,7 +105,11 @@ function formatSatang(satang: bigint | null): string {
  */
 function formatDate(iso: string | null, locale: string): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale, {
+  // dateFormatLocale → Thai renders the Buddhist-Era year explicitly
+  // (`-u-ca-buddhist`), independent of the host ICU default for bare `th`.
+  // These are operational/audit timestamps; the tax-document dual-calendar
+  // (CE + พ.ศ.) treatment lives on the credit-note surfaces, not here.
+  return new Date(iso).toLocaleDateString(dateFormatLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

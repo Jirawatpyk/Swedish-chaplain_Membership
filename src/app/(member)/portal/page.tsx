@@ -16,7 +16,9 @@ import { InvoicesSummaryCard } from './invoices/_components/invoices-summary-car
 /**
  * Member portal landing — `/portal` (Dashboard).
  *
- * Renders the welcome + roadmap + contact cards that F1 shipped.
+ * Renders the welcome header, a live invoice summary, and a contact card.
+ * (The old F4/F5/F6 "coming soon" roadmap card was removed once those
+ * features shipped — they are live surfaces now, not roadmap items.)
  * F3 US5 briefly replaced this with a `redirect('/portal/profile')`
  * which broke the Dashboard nav entry (two buttons ending at Profile).
  * Restored so the Dashboard link lands on real content; Profile has
@@ -44,50 +46,6 @@ export default async function MemberPortalHomePage() {
 
       {/* US7 AS4 — compact invoice summary (latest 3 + view all). */}
       <InvoicesSummaryCard user={user} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('roadmapHeading')}</CardTitle>
-          <CardDescription>{t('roadmapDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="grid gap-3 text-body">
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
-                F4
-              </span>
-              <div>
-                <p className="font-medium">{t('roadmap.invoices.title')}</p>
-                <p className="text-caption text-muted-foreground">
-                  {t('roadmap.invoices.description')}
-                </p>
-              </div>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
-                F6
-              </span>
-              <div>
-                <p className="font-medium">{t('roadmap.events.title')}</p>
-                <p className="text-caption text-muted-foreground">
-                  {t('roadmap.events.description')}
-                </p>
-              </div>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
-                F5
-              </span>
-              <div>
-                <p className="font-medium">{t('roadmap.renewal.title')}</p>
-                <p className="text-caption text-muted-foreground">
-                  {t('roadmap.renewal.description')}
-                </p>
-              </div>
-            </li>
-          </ul>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

@@ -31,7 +31,8 @@
       "submit": "Skicka återställningslänk",
       "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
       "resend": "Fick du inget mejl? Skicka igen",
-      "resendCountdown": "Skicka igen ({seconds}s)"
+      "resendCountdown": "Skicka igen ({seconds}s)",
+      "deliveryHint": "Har du inte fått det efter en minut? Kontrollera din skräppostmapp, eller kontakta support om det fortfarande inte kommer fram."
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
@@ -94,24 +95,8 @@
     "memberPortal": {
       "title": "Medlemsportal",
       "welcome": "Välkommen, {name}",
-      "versionBadge": "v1.0 — fler funktioner kommer",
+      "versionBadge": "v1.0",
       "intro": "Du är inloggad i SweCham medlemsportal. Den fullständiga upplevelsen rullas ut fas för fas.",
-      "roadmapHeading": "Det som kommer härnäst",
-      "roadmapDescription": "Din kommande medlemsupplevelse per fas.",
-      "roadmap": {
-        "invoices": {
-          "title": "Fakturor & kvitton",
-          "description": "Thailändska skattekvalificerade fakturor och betalningshistorik (F4)."
-        },
-        "events": {
-          "title": "Evenemang & anmälan",
-          "description": "Bläddra i handelskammarevenemang och anmäl dig online (F6)."
-        },
-        "renewal": {
-          "title": "Online-förnyelse",
-          "description": "Förnya ditt medlemskap och betala med kort (F5)."
-        }
-      },
       "contactHeading": "Behöver du hjälp?",
       "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
     },
@@ -812,7 +797,8 @@
         "memberAttached": "{count} aktiva medlemmar använder detta paket. Flytta dem till ett annat paket före borttagning.",
         "idempotencyConflict": "Denna förfrågan har redan hanterats med andra data. Uppdatera och försök igen.",
         "targetYearPopulated": "{targetYear} har redan paket. Ta bort dem först eller välj ett annat år.",
-        "sourceYearEmpty": "Inga paket hittades för {sourceYear}."
+        "sourceYearEmpty": "Inga paket hittades för {sourceYear}.",
+        "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll. Försök igen om en liten stund."
       }
     },
     "membersPreferredLocale": {
@@ -1175,6 +1161,12 @@
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för Thai Alumni-planen",
           "phoneError": "Använd internationellt format, t.ex. +66812345678",
+          "errors": {
+            "required": "Detta fält är obligatoriskt.",
+            "countryCode": "Använd ISO 3166-1 alpha-2-koden, t.ex. TH, SE, US.",
+            "url": "Ange en giltig webbadress, t.ex. https://example.com.",
+            "planYear": "Ange ett år mellan 2020 och 2100."
+          },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
           "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
@@ -2544,7 +2536,13 @@
         "noActivityTitle": "Ingen aktivitet än",
         "noActivityDescription": "Skickade påminnelsemail och uppföljningsärenden visas här när förnyelsepåminnelserna börjar för denna cykel.",
         "reminders": {
-          "heading": "Påminnelsehistorik"
+          "heading": "Påminnelsehistorik",
+          "status": {
+            "pending": "Väntar",
+            "sent": "Skickad",
+            "skipped": "Hoppad",
+            "failed": "Misslyckad"
+          }
         },
         "escalations": {
           "heading": "Eskaleringsärenden"
@@ -3102,6 +3100,7 @@
           "tryAgain": "Försök igen",
           "loading": "Raderar personuppgifter…",
           "pageTitle": "Radera personuppgifter — {attendeeName}",
+          "metaTitle": "Radera personuppgifter",
           "pageBackToEventLabel": "Tillbaka till evenemangsdetaljer",
           "pageHint": "Denna destruktiva åtgärd loggas. Bekräftelsedialogen öppnas automatiskt."
         },
@@ -3960,6 +3959,8 @@
           "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på 5 000.",
           "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
           "broadcast_custom_recipient_invalid_format": "Vissa anpassade mottagare är inte giltiga e-postadresser.",
+          "broadcast_custom_recipient_empty": "Lägg till minst en e-postadress i din anpassade mottagarlista.",
+          "broadcast_custom_recipient_too_many": "Din anpassade mottagarlista är begränsad till 100 poster.",
           "broadcast_member_missing_primary_contact_email": "Din profil saknar en primär kontakt-e-post.",
           "broadcast_member_halted_pending_review": "Dina utskicksbehörigheter är pausade i väntan på administratörsgranskning.",
           "broadcast_rate_limit_exceeded": "För många inskickningar. Försök igen senare.",
@@ -4114,6 +4115,7 @@
         "country": "Land",
         "website": "Webbplats",
         "description": "Beskrivning",
+        "planName": "Paketnamn",
         "planYear": "Paketår",
         "registrationDate": "Registreringsdatum",
         "status": "Status"

@@ -30,25 +30,6 @@ export default async function Loading() {
         />
         <Card>
           <CardHeader>
-            <CardTitle>{tPortal('roadmapHeading')}</CardTitle>
-            <CardDescription>{tPortal('roadmapDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <SkeletonBlock className="size-6 shrink-0 rounded-full" />
-                  <div className="flex flex-col gap-1.5">
-                    <SkeletonBlock className="h-4 w-40" />
-                    <SkeletonBlock className="h-3 w-64" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
             <CardTitle>{tPortal('contactHeading')}</CardTitle>
             <CardDescription>{tPortal('contactDescription')}</CardDescription>
           </CardHeader>

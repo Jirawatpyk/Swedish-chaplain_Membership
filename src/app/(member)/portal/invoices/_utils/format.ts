@@ -23,11 +23,17 @@
 // portal callers don't break — staged migration; portal imports
 // will update to the canonical lib path in a follow-up.
 export { formatSatangThb } from '@/lib/format-thb';
+import { dateFormatLocale } from '@/lib/intl-locale';
 
-/** Medium-style date formatter tolerant of null inputs. */
+/**
+ * Medium-style date formatter tolerant of null inputs. Routes the locale
+ * through `dateFormatLocale` so Thai renders the Buddhist-Era year explicitly
+ * (`-u-ca-buddhist`) rather than depending on the host ICU build's default
+ * calendar for the bare `th` locale (display-only; storage is UTC Gregorian).
+ */
 export function formatDate(iso: string | null, locale: string): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale, {
+  return new Date(iso).toLocaleDateString(dateFormatLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

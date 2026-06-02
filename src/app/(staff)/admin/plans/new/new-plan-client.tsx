@@ -50,11 +50,21 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
         router.refresh();
         return;
       }
-      const errorCode = body?.error?.code ?? 'generic';
-      const message = errorCode in (t.raw('errors') as Record<string, string>)
-        ? t(`errors.${errorCode}` as 'generic')
-        : t('errors.generic');
-      toast.error(message);
+      // read-only-mode (503) comes back in TWO shapes: the prod proxy emits
+      // a flat hyphenated string `error: "read-only-mode"`; the route guard
+      // emits a nested underscored `error.code: "read_only_mode"`. Normalize
+      // both, and branch FIRST so neither is shadowed by the generic fallback.
+      const errorObj = body?.error;
+      const errorCode =
+        typeof errorObj === 'string' ? errorObj : (errorObj?.code ?? 'generic');
+      if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
+        toast.error(t('errors.readOnlyMode'));
+      } else {
+        const message = errorCode in (t.raw('errors') as Record<string, string>)
+          ? t(`errors.${errorCode}` as 'generic')
+          : t('errors.generic');
+        toast.error(message);
+      }
     } catch (err) {
       // Surface client-side throws (network, AbortError, TypeError from
       // crypto.randomUUID undefined, JSON serialise) to browser DevTools

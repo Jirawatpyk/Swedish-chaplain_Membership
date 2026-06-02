@@ -37,15 +37,14 @@ import { ErasePiiDialog } from '@/components/events/erase-pii-dialog';
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ eventId: string; registrationId: string }>;
-}): Promise<Metadata> {
-  const { eventId } = await params;
+export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.events.detail.erase');
+  // Name-free document title: the old code passed eventId.slice(0,8) as the
+  // attendeeName (a misleading id fragment), and putting the real attendee
+  // name in <title> would leak PII into browser history/bookmarks. The
+  // visible PageHeader still shows the real name as on-page body content.
   return {
-    title: t('pageTitle', { attendeeName: eventId.slice(0, 8) }),
+    title: t('metaTitle'),
   };
 }
 

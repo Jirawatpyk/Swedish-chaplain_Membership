@@ -88,6 +88,14 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   const tInvoiceStatus = await getTranslations(
     'admin.invoices.list.statuses',
   );
+  // A4 — localize reminder + escalation enums in the activity section.
+  // reminder.status is a new key set; channel/escalation status/role/taskType
+  // reuse the existing tasks + schedule-stepCard maps.
+  const tReminder = await getTranslations('admin.renewals.cycleDetail.reminders');
+  const tTasks = await getTranslations('admin.renewals.tasks');
+  const tChannel = await getTranslations(
+    'admin.renewals.settings.schedules.stepCard',
+  );
   const formatter = await getFormatter();
   const locale = await getLocale();
   const dateLocale = bcp47For(locale);
@@ -690,7 +698,9 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                         >
                           <span className="font-medium">{r.stepId}</span>
                           <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                            {r.status}
+                            {tReminder.has(`status.${r.status}`)
+                              ? tReminder(`status.${r.status}`)
+                              : `${r.status} (untranslated)`}
                           </span>
                           {r.dispatchedAt !== null && (
                             <span className="text-muted-foreground">
@@ -698,7 +708,9 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                             </span>
                           )}
                           <span className="text-xs text-muted-foreground">
-                            {r.channel}
+                            {tChannel.has(`channel.${r.channel}`)
+                              ? tChannel(`channel.${r.channel}`)
+                              : `${r.channel} (untranslated)`}
                           </span>
                         </li>
                       ))}
@@ -721,9 +733,15 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                             key={task.taskId}
                             className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                           >
-                            <span className="font-medium">{task.taskType}</span>
+                            <span className="font-medium">
+                              {tTasks.has(`taskType.${task.taskType}`)
+                                ? tTasks(`taskType.${task.taskType}`)
+                                : task.taskType}
+                            </span>
                             <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                              {task.status}
+                              {tTasks.has(`status.${task.status}`)
+                                ? tTasks(`status.${task.status}`)
+                                : `${task.status} (untranslated)`}
                             </span>
                             <span className="text-muted-foreground">
                               {fmtDate(task.dueAt)}
@@ -737,7 +755,9 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                                 task. Render the role unconditionally so
                                 admins always see the assignment target. */}
                             <span className="text-xs text-muted-foreground">
-                              {task.assignedToRole}
+                              {tTasks.has(`assigneeRole.${task.assignedToRole}`)
+                                ? tTasks(`assigneeRole.${task.assignedToRole}`)
+                                : `${task.assignedToRole} (untranslated)`}
                             </span>
                           </li>
                         ))}

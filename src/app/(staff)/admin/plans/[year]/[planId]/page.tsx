@@ -224,15 +224,33 @@ export default async function PlanDetailPage({
               <KV label={tM('eblastPerYear')} value={String(plan.benefit_matrix.eblast_per_year)} raw />
               <KV
                 label={tM('websitePageType')}
-                value={plan.benefit_matrix.website_page_type ?? '—'}
+                value={
+                  plan.benefit_matrix.website_page_type
+                    ? tOptions(
+                        `websitePageType.${plan.benefit_matrix.website_page_type}`,
+                      )
+                    : '—'
+                }
               />
               <KV
                 label={tM('homepageLogo')}
-                value={plan.benefit_matrix.homepage_logo_category ?? '—'}
+                value={
+                  plan.benefit_matrix.homepage_logo_category
+                    ? tOptions(
+                        `homepageLogoCategory.${plan.benefit_matrix.homepage_logo_category}`,
+                      )
+                    : '—'
+                }
               />
               <KV
                 label={tM('directoryListing')}
-                value={plan.benefit_matrix.directory_listing_size ?? '—'}
+                value={
+                  plan.benefit_matrix.directory_listing_size
+                    ? tOptions(
+                        `directoryListingSize.${plan.benefit_matrix.directory_listing_size}`,
+                      )
+                    : '—'
+                }
               />
             </dl>
           </section>
@@ -242,7 +260,12 @@ export default async function PlanDetailPage({
               {tM('section.events')}
             </h2>
             <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
-              <KV label={tM('discountScope')} value={plan.benefit_matrix.event_discount_scope} />
+              <KV
+                label={tM('discountScope')}
+                value={tOptions(
+                  `eventDiscountScope.${plan.benefit_matrix.event_discount_scope}`,
+                )}
+              />
               <KV
                 label={tM('coBrandedAccess')}
                 value={tCommon(
@@ -287,7 +310,9 @@ export default async function PlanDetailPage({
                   />
                   <KV
                     label={tM('directoryAd')}
-                    value={plan.benefit_matrix.partnership.directory_ad_position}
+                    value={tOptions(
+                      `directoryAdPosition.${plan.benefit_matrix.partnership.directory_ad_position}`,
+                    )}
                   />
                 </dl>
               </section>
@@ -299,17 +324,16 @@ export default async function PlanDetailPage({
   );
 }
 
-function humanize(s: string): string {
-  return s
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function KV({ label, value, raw = false }: { label: string; value: string; raw?: boolean }) {
+// `value` is always a final display string — numbers are stringified at the
+// call site and enum values are localized via `tOptions(...)`. (The former
+// `humanize()` fallback produced English-only Title-Case for enum slugs, which
+// broke TH/SV — removed; `raw` is kept as an accepted no-op for the existing
+// call sites that already passed pre-formatted strings.)
+function KV({ label, value }: { label: string; value: string; raw?: boolean }) {
   return (
     <div className="flex justify-between border-b border-border/50 py-1 last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{raw ? value : humanize(value)}</dd>
+      <dd className="font-medium">{value}</dd>
     </div>
   );
 }
