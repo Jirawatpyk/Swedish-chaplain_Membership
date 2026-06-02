@@ -290,4 +290,74 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
       await other.cleanup().catch(() => {});
     }
   });
+
+  it('purgeRetiredInTx: hard-deletes terminal rows past the grace cutoff; keeps recent + non-terminal (P2 Wave-0 PDPA)', async () => {
+    const mk = async (period: string): Promise<string> => {
+      const created = await runInTenant(tenant.ctx, (tx) =>
+        repo().createOrGetInTx(tx, {
+          kind: 'directory_ebook',
+          subjectMemberId: null,
+          requestedBy: requester,
+          requestedForPeriod: period,
+          requesterLocale: 'en',
+          idempotencyKey: exportJobIdempotencyInput({
+            tenantId: tenant.ctx.slug,
+            kind: 'directory_ebook',
+            subjectMemberId: null,
+            requestedForPeriod: period,
+          }),
+        }),
+      );
+      return created.job.id;
+    };
+    const oldExpired = await mk('purge-old-expired');
+    const recentExpired = await mk('purge-recent-expired');
+    const oldRequested = await mk('purge-old-requested');
+
+    const old = new Date('2020-01-01T00:00:00Z');
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.update(exportJobs).set({ status: 'expired', updatedAt: old }).where(eq(exportJobs.id, oldExpired));
+      await tx.update(exportJobs).set({ status: 'expired', updatedAt: new Date() }).where(eq(exportJobs.id, recentExpired));
+      // Non-terminal (requested) — must be kept regardless of age.
+      await tx.update(exportJobs).set({ status: 'requested', updatedAt: old }).where(eq(exportJobs.id, oldRequested));
+    });
+
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const deleted = await runInTenant(tenant.ctx, (tx) => repo().purgeRetiredInTx(tx, cutoff));
+
+    expect(deleted).toBe(1); // only the old terminal row
+    expect(await repo().findById(tenant.ctx, oldExpired)).toBeNull();
+    expect((await repo().findById(tenant.ctx, recentExpired))?.status).toBe('expired');
+    expect((await repo().findById(tenant.ctx, oldRequested))?.status).toBe('requested');
+  });
+
+  it('setDownloadTokenInTx: refuses to mint for a ready job past expiresAt (P2 Wave-0 atomic mint)', async () => {
+    const jobId = (await runInTenant(tenant.ctx, (tx) =>
+      repo().createOrGetInTx(tx, {
+        kind: 'directory_ebook',
+        subjectMemberId: null,
+        requestedBy: requester,
+        requestedForPeriod: 'mint-expired',
+        requesterLocale: 'en',
+        idempotencyKey: exportJobIdempotencyInput({
+          tenantId: tenant.ctx.slug,
+          kind: 'directory_ebook',
+          subjectMemberId: null,
+          requestedForPeriod: 'mint-expired',
+        }),
+      }),
+    )).job.id;
+    await runInTenant(tenant.ctx, (tx) => repo().claimInTx(tx, jobId));
+    // ready, but already past TTL — the pre-sweep check→mint race window.
+    await runInTenant(tenant.ctx, (tx) =>
+      repo().markReadyInTx(tx, jobId, {
+        blobKey: `exports/${tenant.ctx.slug}/${jobId}.json`,
+        expiresAt: new Date(Date.now() - 60_000),
+      }),
+    );
+    const minted = await runInTenant(tenant.ctx, (tx) =>
+      repo().setDownloadTokenInTx(tx, jobId, 'hash-should-not-be-set'),
+    );
+    expect(minted).toBe(false); // expiry guard blocks the dead-token mint
+  });
 });

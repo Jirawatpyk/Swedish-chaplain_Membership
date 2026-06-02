@@ -6,7 +6,7 @@
  * (`WHERE id = $id AND status = $from`) so a concurrent writer cannot corrupt
  * the row — the guard returns 0 rows and the caller learns the transition lost.
  */
-import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { isLocale } from '@/i18n/config';
 import type { TenantContext } from '@/modules/tenants';
@@ -231,6 +231,13 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
             eq(exportJobs.tenantId, tenantId),
             eq(exportJobs.id, jobId),
             inArray(exportJobs.status, ['ready', 'delivered']),
+            // P2 Wave-0 — make the mint atomic w.r.t. expiry. prepareExportDownload
+            // checks isExpired on a pre-tx snapshot; without this guard a token
+            // could be minted for a job that crossed expiresAt in the check→mint
+            // window (status still ready, pre-sweep). Downstream downloadExport
+            // re-checks expiry so no expired DATA leaks, but a 0-row update here
+            // surfaces the race as `not_ready` instead of issuing a dead token.
+            or(isNull(exportJobs.expiresAt), gt(exportJobs.expiresAt, new Date())),
           ),
         )
         .returning({ id: exportJobs.id });
@@ -291,6 +298,23 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
         )
         .returning({ id: exportJobs.id });
       return updated.length > 0;
+    },
+
+    async purgeRetiredInTx(tx, olderThan): Promise<number> {
+      // P2 Wave-0 — hard-delete terminal rows past the grace window so the
+      // pseudonymous PII (subject_member_id, requested_by) is not retained
+      // indefinitely. Tenant-scoped (RLS + explicit predicate, defence-in-depth).
+      const deleted = await tx
+        .delete(exportJobs)
+        .where(
+          and(
+            eq(exportJobs.tenantId, tenantId),
+            inArray(exportJobs.status, ['expired', 'failed']),
+            lt(exportJobs.updatedAt, olderThan),
+          ),
+        )
+        .returning({ id: exportJobs.id });
+      return deleted.length;
     },
 
     async listStuckProcessing(ctx: TenantContext, timeoutMs: number) {

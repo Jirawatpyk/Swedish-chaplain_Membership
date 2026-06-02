@@ -138,4 +138,15 @@ export interface ExportJobRepo {
     timeoutMs: number,
   ): Promise<readonly string[]>;
   reclaimStuckInTx(tx: TenantTx, jobId: string, errorCode: string): Promise<boolean>;
+
+  /**
+   * P2 Wave-0 (PDPA data-minimization) — hard-delete terminal `expired`/`failed`
+   * job rows whose `updatedAt` is older than `olderThan`. The TTL sweep already
+   * removed the private-Blob artefact (the real archive PII), but the job ROW
+   * still carries pseudonymous personal data (`subjectMemberId`, `requestedBy`)
+   * indefinitely. A grace window keeps recent terminal rows visible (status UI /
+   * support), then they are purged — the `data_export_expired` audit row (5y) is
+   * the durable lifecycle record. Returns the number of rows deleted.
+   */
+  purgeRetiredInTx(tx: TenantTx, olderThan: Date): Promise<number>;
 }
