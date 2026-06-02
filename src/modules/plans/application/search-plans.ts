@@ -13,6 +13,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 // Type-only import from the deep domain path. Importing from the
 // `@/modules/auth` barrel here would chain-pull the heartbeat use case
 // → auth-deps → `@node-rs/argon2` into the client bundle the moment
@@ -63,7 +64,11 @@ export type SearchPlansSuccess = {
 };
 
 export type SearchPlansError =
-  | { readonly type: 'server_error'; readonly message: string };
+  // `errKind` is a SAFE error classifier (constructor name, e.g.
+  // 'NeonDbError') — never the raw `e.message`, which on a Postgres
+  // failure can carry SQL fragments / table + column names that must
+  // not reach the log sink (log-hygiene; n43 / Wave-0 leak fix).
+  | { readonly type: 'server_error'; readonly errKind: string };
 
 export type SearchPlansDeps = {
   readonly tenant: TenantContext;
@@ -363,7 +368,7 @@ export async function searchPlans(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      errKind: errKind(e),
     });
   }
 

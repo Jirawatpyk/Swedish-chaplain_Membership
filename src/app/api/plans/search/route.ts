@@ -270,9 +270,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // server_error from use case (e.g. DB connection failure)
+  // server_error from use case (e.g. DB connection failure). Log only the
+  // safe `errKind` classifier — never the raw error object, whose message
+  // could carry SQL/schema fragments from a Postgres failure (n43 log-hygiene).
   logger.error(
-    { requestId: ctx.requestId, err: result.error },
+    { requestId: ctx.requestId, errKind: result.error.errKind },
     'search-plans: server error',
   );
   return NextResponse.json(
