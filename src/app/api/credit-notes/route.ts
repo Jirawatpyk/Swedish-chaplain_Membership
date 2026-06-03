@@ -17,6 +17,7 @@ import {
   makeIssueCreditNoteDeps,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 import { stripReason } from '../invoices/_serialise';
 import { serialiseCreditNote } from './_serialise';
@@ -62,13 +63,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { requestId, tenantId: tenantCtx.slug, userId: ctx.current.user.id, reset: rl.reset },
       'POST /api/credit-notes rate-limited',
     );
-    return NextResponse.json(
-      { error: { code: 'rate_limited', retryAfterMs: rl.reset - Date.now() } },
-      {
-        status: 429,
-        headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) },
-      },
-    );
+    return rateLimitedJson(rl);
   }
 
   let body: unknown;

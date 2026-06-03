@@ -120,12 +120,13 @@ export async function disableUser(
     });
   }
 
-  const updated = await deps.users.findById(target.id);
-  // W2-01: a null read-after-write must surface as not-found, NOT fall back to the
-  // stale pre-update `target` (which would report the old `active` row). Mirrors change-role.
-  if (!updated) return err({ code: 'not-found' });
+  // code-review #9 — an `active`/`disabled` user is NEVER hard-deleted (the repo
+  // only deletes `pending` rows), so a null read-after-write here is a
+  // should-never-happen; surfacing it as a 404 (the prior W2-01 choice)
+  // contradicts the `account_disabled` audit row we JUST committed. Return the
+  // mutated state directly — mirrors userRepo.disable's SET (status only).
   return ok({
-    user: updated,
+    user: { ...target, status: 'disabled' },
     sessionsRevoked,
   });
 }

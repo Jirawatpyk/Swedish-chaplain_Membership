@@ -68,10 +68,14 @@ export async function enableUser(
     requestId: input.requestId,
   });
 
-  const updated = await deps.users.findById(target.id);
-  // W2-01: a null read-after-write must surface as not-found, NOT fall back to the
-  // stale pre-update `target` (which would report success while returning the old
-  // `disabled` row). Mirrors the hardened change-role.ts:124-127.
-  if (!updated) return err({ code: 'not-found' });
-  return ok({ user: updated });
+  // code-review #9 — an `active`/`disabled` user is NEVER hard-deleted (the repo
+  // only deletes `pending` rows: deletePending / deleteInvitedPendingInTx), so a
+  // null read-after-write here would be a should-never-happen. Surfacing it as a
+  // 404 (the prior W2-01 choice) self-contradicts the `account_reenabled` audit
+  // row we JUST committed. Return the mutated state directly — it mirrors
+  // userRepo.enable's SET exactly (status + cleared failed-count/lockout).
+  // Genuine not-found is already handled by the pre-mutation guards above.
+  return ok({
+    user: { ...target, status: 'active', failedSignInCount: 0, lockedUntil: null },
+  });
 }

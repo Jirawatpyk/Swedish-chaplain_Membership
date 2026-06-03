@@ -16,7 +16,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { resendPdf, makeResendPdfDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
-import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 
 const variantSchema = z
   .object({ variant: z.enum(['invoice', 'receipt']).default('invoice') })
@@ -68,20 +68,7 @@ export async function POST(
       },
       'POST /api/invoices/[id]/resend rate-limited',
     );
-    return NextResponse.json(
-      {
-        error: {
-          code: 'rate_limited',
-          retryAfterMs: rl.reset - Date.now(),
-        },
-      },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(retryAfterSecondsFromRl(rl)),
-        },
-      },
-    );
+    return rateLimitedJson(rl);
   }
 
   const result = await resendPdf(makeResendPdfDeps(tenantCtx.slug), {
