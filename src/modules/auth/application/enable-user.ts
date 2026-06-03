@@ -69,5 +69,9 @@ export async function enableUser(
   });
 
   const updated = await deps.users.findById(target.id);
-  return ok({ user: updated ?? target });
+  // W2-01: a null read-after-write must surface as not-found, NOT fall back to the
+  // stale pre-update `target` (which would report success while returning the old
+  // `disabled` row). Mirrors the hardened change-role.ts:124-127.
+  if (!updated) return err({ code: 'not-found' });
+  return ok({ user: updated });
 }

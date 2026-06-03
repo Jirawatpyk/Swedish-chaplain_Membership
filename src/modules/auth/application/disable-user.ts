@@ -121,8 +121,11 @@ export async function disableUser(
   }
 
   const updated = await deps.users.findById(target.id);
+  // W2-01: a null read-after-write must surface as not-found, NOT fall back to the
+  // stale pre-update `target` (which would report the old `active` row). Mirrors change-role.
+  if (!updated) return err({ code: 'not-found' });
   return ok({
-    user: updated ?? target,
+    user: updated,
     sessionsRevoked,
   });
 }

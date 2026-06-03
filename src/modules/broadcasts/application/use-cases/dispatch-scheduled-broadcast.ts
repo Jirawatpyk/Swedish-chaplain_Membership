@@ -456,10 +456,24 @@ export async function dispatchScheduledBroadcast(
   // Step 2: re-resolve recipients (segment may have changed since submit)
   const segment = buildSegmentFromBroadcast(broadcast);
   const requestingMember = broadcast.requestedByMemberId;
-  const requestingPrimary = await deps.membersBridge.getMemberPrimaryContact(
-    deps.tenant,
-    requestingMember,
-  );
+  // W2-05: a bridge throw here (Neon/RLS/timeout) must map to the typed
+  // dispatch.server_error like Step 1 (L442-447), not escape the use-case past
+  // failDispatchAndAudit. The broadcast is still 'approved' at this point, so the
+  // next cron tick retries it cleanly.
+  let requestingPrimary: Awaited<
+    ReturnType<typeof deps.membersBridge.getMemberPrimaryContact>
+  >;
+  try {
+    requestingPrimary = await deps.membersBridge.getMemberPrimaryContact(
+      deps.tenant,
+      requestingMember,
+    );
+  } catch (e) {
+    return err({
+      kind: 'dispatch.server_error',
+      message: e instanceof Error ? e.message : 'unknown error',
+    });
+  }
 
   const resolvedResult = await resolveSegmentRecipients(
     {

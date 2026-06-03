@@ -644,6 +644,57 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     ).toBeDefined();
   });
 
+  // ---- Bridge throw on requesting-member primary lookup (W2-05) ------
+
+  it('getMemberPrimaryContact throws โ’ dispatch.server_error, no transition, no audit (retried next tick)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    // W2-05: a Neon/RLS/timeout throw from the requesting-member primary
+    // lookup (use-case L467-470) must be caught and mapped to the typed
+    // dispatch.server_error โ€” NOT escape the use-case. The broadcast must
+    // stay 'approved' (no transition, no audit) so the next cron tick
+    // retries it cleanly. Mock-only happy-path tests missed this throw path.
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: {
+          ...makeMembersBridge({
+            recipients: [recipient('m-1', 'one@example.com')],
+            primaryContact: 'sender@example.com',
+          }),
+          async getMemberPrimaryContact() {
+            throw new Error('neon connection reset');
+          },
+        },
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('dispatch.server_error');
+    }
+    // No createAudience call, no state transition, no audit โ€” the broadcast
+    // is untouched at 'approved' for a clean retry on the next tick.
+    expect(gw.audienceCalls).toHaveLength(0);
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+  });
+
   // ---- Gateway retryable failures -----------------------------------
 
   it('gateway retryable on createAudience โ’ kind=gateway_retryable, no transition, no audit', async () => {
