@@ -13,6 +13,17 @@
  * Invocation:
  *   pnpm test:perf
  *
+ * RTT note — these budgets are calibrated for the DEPLOYMENT topology (Vercel sin1 ↔
+ * Neon ap-southeast-1, co-located, ~1-5ms RTT). Running from a high-RTT location (e.g.
+ * a Bangkok dev box → Neon SG ≈ 25ms RTT × many round-trips) inflates wall-clock and a
+ * few tight-budget suites WILL miss locally while passing on the preview. As of
+ * 2026-06-03 the known RTT-sensitive trio is `members/timeline-perf` (300ms),
+ * `broadcasts/snapshot-template-perf` (500ms), and `perf/csv-import-perf` (per-row
+ * inserts × RTT). Treat the AUTHORITATIVE run as `pnpm test:perf` on the preview's Neon
+ * (`docs/go-live-readiness.md` § 7), not a high-RTT local run. (The 2026-06-03 triage
+ * confirmed these three are RTT-only — not regressions — while fixing two genuine
+ * test-robustness bugs in pipeline-perf + benefits-page-perf.)
+ *
  * CI wiring: add a nightly job that exports DATABASE_URL (live Neon
  * Singapore) + the other env vars from `.env.local.example`, then
  * `pnpm install && pnpm test:perf`. Exit code propagates so a missed

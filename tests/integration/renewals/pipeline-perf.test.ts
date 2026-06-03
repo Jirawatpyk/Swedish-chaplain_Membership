@@ -75,6 +75,14 @@ async function seedBulkCycles(
       // Remainder fall outside the visible window so the summary
       // aggregation has both visible + lapsed-bucket coverage.
       const inWindow = idx < visibleCount;
+      // Remainder (outside the 90-day visible window) are seeded as REAL terminal
+      // `lapsed` cycles. The pipeline's 'lapsed' tab filters on `status='lapsed'`
+      // (drizzle-renewal-cycle-repo.ts § baseFilters), so an 'upcoming' past-expiry
+      // row — even though URGENCY_CASE labels it 'lapsed' for display — would NEVER
+      // populate that tab, and the per-tab `>0` assertion below would always fail on
+      // the lapsed sample. Terminal rows need closed_at + closed_reason per the
+      // `renewal_cycles_closed_at_iff_terminal_check` constraint.
+      const isLapsed = !inWindow;
       const offsetDays = inWindow ? 5 + (idx % 80) : -45 - (idx % 30);
       const expires = new Date(NOW_MS + offsetDays * MS_PER_DAY);
       memberRows.push({
@@ -99,12 +107,16 @@ async function seedBulkCycles(
         tenantId: tenant.ctx.slug,
         cycleId,
         memberId,
-        // All seeded rows are 'upcoming' (non-terminal). Past-expiry
-        // upcoming rows are surfaced as 'grace' or 'lapsed' urgency by
-        // the dashboard's DB-side derivation. Terminal-state seeds
-        // would require closed_at + closed_reason per the
-        // `renewal_cycles_closed_at_iff_terminal_check` CHECK.
-        status: 'upcoming' as const,
+        // In-window rows are 'upcoming' (non-terminal) → derived t-90/t-30/t-7
+        // urgency by URGENCY_CASE. Remainder are terminal 'lapsed' (see above) so the
+        // 'lapsed' tab is non-empty; closed_at must be set iff terminal.
+        status: isLapsed ? ('lapsed' as const) : ('upcoming' as const),
+        ...(isLapsed
+          ? {
+              closedAt: new Date(expires.getTime() + 30 * MS_PER_DAY),
+              closedReason: 'grace_expired',
+            }
+          : {}),
         periodFrom: new Date(expires.getTime() - 365 * MS_PER_DAY),
         periodTo: expires,
         expiresAt: expires,
@@ -202,12 +214,12 @@ describe.skipIf(!RUN_PERF)(
         });
         const elapsed = performance.now() - t0;
         expect(r.ok).toBe(true);
-        // Staff-R005 fix: tighten from tautology `>= 0` to `> 0` so a
-        // bench-seed regression (e.g. cycles seeded outside the
-        // urgency window OR query filter mismatch) cannot silently
-        // pass. Seed at line 76-94 produces VISIBLE_RATIO×count cycles
-        // in 90-day window across 4 urgency tabs — every measured
-        // tab MUST return at least 1 row.
+        // Staff-R005 fix: tighten from tautology `>= 0` to `> 0` so a bench-seed
+        // regression (cycles seeded outside the urgency window OR a query-filter
+        // mismatch) cannot silently pass. The seed populates all 4 measured tabs:
+        // in-window 'upcoming' rows span t-90/t-30/t-7 (offsetDays 5..84), and the
+        // remainder are REAL terminal 'lapsed' rows for the status-filtered lapsed
+        // tab — so every measured tab MUST return ≥1 row.
         if (r.ok) expect(r.value.rows.length).toBeGreaterThan(0);
         samples.push(elapsed);
       }

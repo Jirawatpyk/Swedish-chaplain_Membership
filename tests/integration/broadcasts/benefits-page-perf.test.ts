@@ -294,11 +294,19 @@ describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () 
 
     const planJson = JSON.stringify(result);
     console.log('[perf] EXPLAIN plan:', planJson.slice(0, 500));
-    // Assert the plan touches the covering index OR a tighter index
-    // (catch fallback to seq scan / generic tenant_id index regression).
-    const hits =
-      planJson.includes('broadcasts_tenant_member_created_at_idx') ||
-      planJson.includes('broadcasts_tenant_status_member_idx');
-    expect(hits).toBe(true);
+    // The query MUST be served by a MEMBER-specific index — never a Seq Scan and
+    // never a generic tenant-only index (both scan beyond this member's rows, the
+    // regression this test guards). Several member-leading indexes are valid here and
+    // the planner may legitimately pick any of them at this row count: the F7 covering
+    // index `broadcasts_tenant_member_created_at_idx`, the legacy
+    // `broadcasts_tenant_status_member_idx`, and the F9 timeline indexes
+    // `broadcasts_tenant_member_sent_idx` / `…_text_sent_idx` (migrations 0189/0196).
+    // So assert "any member-leading index, no seq scan" rather than hard-coding two
+    // names (which silently broke when F9 added newer member indexes the planner prefers).
+    expect(planJson).not.toContain('Seq Scan');
+    const usesMemberIndex = /broadcasts_tenant_(member|status_member)[a-z_]*_idx/.test(
+      planJson,
+    );
+    expect(usesMemberIndex).toBe(true);
   });
 });
