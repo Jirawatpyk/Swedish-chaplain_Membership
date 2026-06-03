@@ -56,6 +56,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     route: '/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator',
     metricsCounter: () =>
       renewalsMetrics.coordinatorAuditEmitFailed('lapse'),
+    // Upstash fail-open counter — parity with dispatch-coordinator (see
+    // at-risk-recompute-coordinator for rationale).
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
   });
   if (authResponse) return authResponse;
 

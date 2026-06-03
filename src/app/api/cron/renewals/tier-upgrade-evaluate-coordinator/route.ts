@@ -127,6 +127,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     route: '/api/cron/renewals/tier-upgrade-evaluate-coordinator',
     metricsCounter: () =>
       renewalsMetrics.coordinatorAuditEmitFailed('tier_upgrade_evaluate'),
+    // Upstash fail-open counter — parity with dispatch-coordinator (see
+    // at-risk-recompute-coordinator for rationale).
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
   });
   if (authResponse) return authResponse;
 

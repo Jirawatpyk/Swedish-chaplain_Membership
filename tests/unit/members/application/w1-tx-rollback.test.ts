@@ -508,6 +508,7 @@ function makeCreateMemberDeps(options: {
           maxTurnoverThb: null,
           maxDurationYears: null,
           includesCorporatePlanId: null,
+          isSoftDeleted: false,
           annualFeeMinorUnits: 1_000_000,
           isActive: true,
         }),

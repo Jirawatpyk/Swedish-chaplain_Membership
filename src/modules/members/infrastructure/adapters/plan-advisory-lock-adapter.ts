@@ -14,8 +14,11 @@
  * performs an `as unknown as TenantTx` double-cast — the identical escape
  * hatch documented in `src/lib/db.ts:113-130`.
  */
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { unbrandTx } from '@/lib/db';
+// `membershipPlans` is a PUBLIC barrel export of the plans module
+// (`@/modules/plans` → schema), NOT a deep import — Principle III ok.
+import { membershipPlans } from '@/modules/plans';
 import type { PlanAdvisoryLockPort } from '../../application/ports/plan-advisory-lock-port';
 
 export const drizzlePlanAdvisoryLockAdapter: PlanAdvisoryLockPort = {
@@ -24,5 +27,27 @@ export const drizzlePlanAdvisoryLockAdapter: PlanAdvisoryLockPort = {
     await typedTx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
     );
+  },
+
+  async isPlanSoftDeletedInTx(
+    tx: unknown,
+    planId: string,
+    planYear: number,
+  ): Promise<boolean> {
+    const typedTx = unbrandTx(tx);
+    const rows = await typedTx
+      .select({ deletedAt: membershipPlans.deletedAt })
+      .from(membershipPlans)
+      .where(
+        and(
+          eq(membershipPlans.planId, planId),
+          eq(membershipPlans.planYear, planYear),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    // Row gone (anomalous — plans are soft-, not hard-deleted) → treat as
+    // not-assignable. Present row → assignable iff deleted_at IS NULL.
+    return row ? row.deletedAt !== null : true;
   },
 };

@@ -34,4 +34,25 @@ export interface PlanAdvisoryLockPort {
    *   `plans:softdelete:swecham:gold:2027`.
    */
   acquire(tx: unknown, lockKey: string): Promise<void>;
+
+  /**
+   * W0-02 completion (code-review #1) — read the NEW plan's soft-delete
+   * state WITHIN the caller's tx, AFTER `acquire`. The pre-tx `getPlan`
+   * snapshot can go stale if a concurrent `softDeleteGuarded` wins the lock
+   * and deletes the (0-member) plan between the snapshot read and the FK
+   * write. Because `softDeleteGuarded` holds the SAME advisory key, any such
+   * delete has committed and is visible by the time we hold the lock — so
+   * this read inside the lock is authoritative. `changePlan` aborts the tx
+   * (→ `plan_not_found`) when this returns `true`, so a member is never
+   * attached to a soft-deleted plan.
+   *
+   * @param tx - ambient `TenantTx` (typed `unknown` to keep the port pure;
+   *   adapter casts via `unbrandTx`). RLS scopes the read to the tenant.
+   * @returns `true` when `deleted_at IS NOT NULL` (or the row is gone).
+   */
+  isPlanSoftDeletedInTx(
+    tx: unknown,
+    planId: string,
+    planYear: number,
+  ): Promise<boolean>;
 }

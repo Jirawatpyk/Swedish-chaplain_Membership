@@ -153,7 +153,6 @@ function makePlanRepo(overrides?: {
       return updateResult === UPDATE_RESULT_NOT_SET ? UPDATED_PLAN : updateResult;
     }),
     setActive: vi.fn(),
-    softDelete: vi.fn(),
     softDeleteGuarded: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),

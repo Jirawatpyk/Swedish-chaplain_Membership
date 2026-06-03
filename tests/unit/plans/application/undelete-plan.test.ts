@@ -77,7 +77,6 @@ function makeDeps(overrides: DepsOverrides = {}): UndeletePlanDeps {
     insert: vi.fn(),
     update: vi.fn(),
     setActive: vi.fn(),
-    softDelete: vi.fn(),
     cloneYear: vi.fn(),
   };
 

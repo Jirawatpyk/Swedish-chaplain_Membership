@@ -101,6 +101,52 @@ describe('validateRows (spec § 3)', () => {
     expect(errCodes(r).filter((c) => c === 'duplicate_in_import')).toHaveLength(2);
   });
 
+  it('rule 2 (code-review #2): same email twice in ONE company → warn + dedupe, member still imports', () => {
+    const r = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Acme Co', contactEmail: 'dup@acme.test', isPrimary: 'yes' }),
+        row({ rowIndex: 3, companyName: 'Acme Co', contactEmail: 'dup@acme.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    // Intra-member duplicate is NOT a cross-member collision.
+    expect(errCodes(r)).not.toContain('duplicate_in_import');
+    expect(r.issues.some((i) => i.code === 'duplicate_contact_in_member' && i.severity === 'warning')).toBe(true);
+    // The legitimate single-company member still imports, with the dup deduped.
+    expect(r.members).toHaveLength(1);
+    expect(r.members[0]!.contacts).toHaveLength(1);
+  });
+
+  it('rule 6 (code-review #4): mononym (last name blank, first name present) → warn, member still imports', () => {
+    const r = validateRows([row({ rowIndex: 2, contactLastName: '' })], RESOLVER);
+    expect(r.stats.errorCount).toBe(0);
+    expect(r.members).toHaveLength(1);
+    expect(r.issues.some((i) => i.field === 'contactName' && i.code === 'mononym_single_name')).toBe(true);
+    expect(r.members[0]!.contacts[0]!.lastName).toBe('');
+  });
+
+  it('rule 6 (code-review #4): fully-nameless contact → contactName required error, member excluded', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, contactFirstName: '', contactLastName: '' })],
+      RESOLVER,
+    );
+    expect(r.issues.some((i) => i.field === 'contactName' && i.code === 'required' && i.severity === 'error')).toBe(true);
+    expect(r.members).toHaveLength(0);
+  });
+
+  it('code-review #5: differing tax IDs under one display name → distinct_company_merged error, not silently merged', () => {
+    const r = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Nordic Trading', taxId: 'SE1111111111', contactEmail: 'a@nordic.test' }),
+        row({ rowIndex: 3, companyName: 'Nordic Trading', taxId: 'SE2222222222', contactEmail: 'b@nordic.test' }),
+      ],
+      RESOLVER,
+    );
+    expect(r.issues.some((i) => i.field === 'taxId' && i.code === 'distinct_company_merged' && i.severity === 'error')).toBe(true);
+    // The ambiguous merge is refused — operator must disambiguate.
+    expect(r.members).toHaveLength(0);
+  });
+
   it('rule 5: Buddhist-Era registration date → date.be_leak error', () => {
     const r = validateRows([row({ rowIndex: 2, registrationDate: '2569-01-15' })], RESOLVER);
     expect(errCodes(r)).toContain('date.be_leak');

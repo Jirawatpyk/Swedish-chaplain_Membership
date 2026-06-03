@@ -69,6 +69,10 @@ export const plansBarrelAdapter: PlanLookupPort = {
         includesCorporatePlanId: plan.includes_corporate_plan_id
           ? asPlanId(plan.includes_corporate_plan_id)
           : null,
+        // W0-02 (code-review #1) — `findOne` returns soft-deleted plans;
+        // surface the flag so `changePlan` can refuse to assign a member to
+        // a soft-deleted plan (pre-tx fast-fail).
+        isSoftDeleted: plan.deleted_at !== null,
       };
       return ok(summary);
     } catch (e) {

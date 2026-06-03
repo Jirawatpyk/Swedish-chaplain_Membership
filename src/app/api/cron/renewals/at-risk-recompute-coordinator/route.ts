@@ -145,6 +145,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     route: '/api/cron/renewals/at-risk-recompute-coordinator',
     metricsCounter: () =>
       renewalsMetrics.coordinatorAuditEmitFailed('at_risk_recompute'),
+    // Surface Upstash fail-open on this coordinator too (parity with
+    // dispatch-coordinator) so the F8 counter-bound alert fires on sustained
+    // rate-limiter degradation — pino fail-open logs alone roll off in ~30d.
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
   });
   if (authResponse) return authResponse;
 
