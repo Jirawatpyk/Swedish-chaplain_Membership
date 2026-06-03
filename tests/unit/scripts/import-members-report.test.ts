@@ -104,6 +104,11 @@ describe('report builder (spec § 7 — no PII)', () => {
     });
     const text = renderReportText(committedDoc);
     expect(text).toContain('Committed: 5 members + 8 contacts');
+    // R4 #12: the 4-count Skipped: summary line must carry every bucket, correctly labelled,
+    // so a regression that drops or mislabels a count is caught.
+    expect(text).toContain(
+      'Skipped: 2 already-imported members, 1 partial-overlap members, 1 soft-deleted contacts, 1 primary-collision members',
+    );
     expect(text).toContain('partial-overlap rows (resolve manually): 7, 12');
     expect(text).toContain('primary-collision rows (resolve manually): 19');
     expect(text).not.toContain('Secret Holdings'); // still no PII

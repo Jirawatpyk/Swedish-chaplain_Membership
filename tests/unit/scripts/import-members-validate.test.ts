@@ -185,6 +185,42 @@ describe('validateRows (spec § 3)', () => {
       RESOLVER,
     );
     expect(unresolvable.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'country')).toBe(true);
+
+    // R4 #4: symmetric TIER under-warn — head resolves, sibling tier is unresolvable-but-different
+    // ('Bronze'). Must warn on the sibling tier (the country branch above is not enough).
+    const tierUnresolvable = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Garb Tier', tier: 'Premium', country: 'SE', contactEmail: 'a@gt.test' }),
+        row({ rowIndex: 3, companyName: 'Garb Tier', tier: 'Bronze', country: 'SE', contactEmail: 'b@gt.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(tierUnresolvable.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'tier')).toBe(true);
+  });
+
+  it('R4 #3/#8/#9/#11: when the HEAD value is unresolvable the member is excluded — siblings get NO spurious mismatch warning', () => {
+    // Head tier 'Bronze' (unmapped → member excluded). A sibling that RESOLVES ('Premium')
+    // must NOT be accused of being a wrongly-merged company — the only real issue is the head.
+    const headBadTier = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'BadHead Co', tier: 'Bronze', country: 'SE', contactEmail: 'a@bh.test' }),
+        row({ rowIndex: 3, companyName: 'BadHead Co', tier: 'Premium', country: 'SE', contactEmail: 'b@bh.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(errCodes(headBadTier)).toContain('unmapped'); // the real, actionable error
+    expect(headBadTier.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'tier')).toBe(false);
+    expect(headBadTier.members).toHaveLength(0);
+
+    // Head country blank/unresolvable → a resolvable sibling country must NOT warn either.
+    const headBadCountry = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'BadCty Co', tier: 'Premium', country: 'Narnia', contactEmail: 'a@bc.test' }),
+        row({ rowIndex: 3, companyName: 'BadCty Co', tier: 'Premium', country: 'Sweden', contactEmail: 'b@bc.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(headBadCountry.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'country')).toBe(false);
   });
 
   it('rule 7: multiple primaries → multiple_primary error', () => {

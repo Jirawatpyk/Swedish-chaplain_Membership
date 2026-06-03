@@ -68,6 +68,31 @@ const countMembers = (slug: string): Promise<number> =>
     tx.select({ id: members.memberId }).from(members).where(eq(members.tenantId, slug)),
   ).then((r) => r.length);
 
+// Seed one existing member that owns `email` as its ACTIVE primary contact. Returns its id.
+async function seedActiveContact(t: TestTenant, email: string): Promise<string> {
+  const memberId = randomUUID();
+  await runInTenant(t.ctx, async (tx) => {
+    await tx.insert(members).values({
+      tenantId: t.ctx.slug, memberId, companyName: `Seed ${randomUUID().slice(0, 6)}`,
+      country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01',
+      registrationFeePaid: true, status: 'active',
+    });
+    await tx.insert(contacts).values({
+      tenantId: t.ctx.slug, contactId: randomUUID(), memberId,
+      firstName: 'S', lastName: 'A', email, preferredLanguage: 'en', isPrimary: true,
+    });
+  });
+  return memberId;
+}
+
+// Seed `email` as a SOFT-DELETED contact (domain invariant: is_primary=false once removed).
+async function seedSoftContact(t: TestTenant, email: string): Promise<void> {
+  await seedActiveContact(t, email);
+  await runInTenant(t.ctx, async (tx) => {
+    await tx.update(contacts).set({ removedAt: new Date(), isPrimary: false }).where(eq(contacts.email, email));
+  });
+}
+
 describe('commitMembers — integration (spec § 5)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
@@ -197,8 +222,76 @@ describe('commitMembers — integration (spec § 5)', () => {
     // RE-RUN: P now active, S still soft-deleted → nothing genuinely new → idempotent
     // skip, NOT a phantom partial-overlap (the R3 idempotency bug).
     const second = await commitMembers(tenantC.ctx, user.userId, [vm({ emails: [pEmail, sEmail] })], 2026);
-    expect(second).toMatchObject({ membersCreated: 0, skippedExistingMembers: 1, skippedPartialOverlapMembers: 0 });
+    // The still-soft secondary the operator listed is reported, not silently dropped (R4 #2).
+    expect(second).toMatchObject({
+      membersCreated: 0, skippedExistingMembers: 1, skippedPartialOverlapMembers: 0, skippedSoftDeletedContacts: 1,
+    });
     expect(second.partialOverlapRows).toHaveLength(0);
+  });
+
+  it('cross-member collision: active emails spanning TWO existing members is FLAGGED, never silently counted as already-imported (R4 #1/#7)', async () => {
+    const aEmail = `xmA-${randomUUID().slice(0, 8)}@imp.test`;
+    const bEmail = `xmB-${randomUUID().slice(0, 8)}@imp.test`;
+    await seedActiveContact(tenantC, aEmail); // belongs to member M1
+    await seedActiveContact(tenantC, bEmail); // belongs to a DIFFERENT member M2
+    const before = await countMembers(tenantC.ctx.slug);
+    // A workbook "company" listing a@ + b@ (no genuinely-new email) matches no SINGLE existing
+    // member — it must be flagged for the operator, not silently bucketed as "already imported".
+    const member = vm({ emails: [aEmail, bEmail] });
+    const out = await commitMembers(tenantC.ctx, user.userId, [member], 2026);
+    expect(out).toMatchObject({ membersCreated: 0, skippedExistingMembers: 0, skippedPartialOverlapMembers: 1 });
+    expect(out.partialOverlapRows).toContain(member.rowIndices[0]);
+    expect(await countMembers(tenantC.ctx.slug)).toBe(before);
+  });
+
+  it('mixed active+soft+new emails → partial overlap (a genuinely-new email wins over the soft set) (R4 #5)', async () => {
+    const aEmail = `mxA-${randomUUID().slice(0, 8)}@imp.test`;
+    const sEmail = `mxS-${randomUUID().slice(0, 8)}@imp.test`;
+    const nEmail = `mxN-${randomUUID().slice(0, 8)}@imp.test`;
+    await seedActiveContact(tenantC, aEmail); // A active
+    await seedSoftContact(tenantC, sEmail); // S soft-deleted
+    const before = await countMembers(tenantC.ctx.slug);
+    const member = vm({ emails: [aEmail, sEmail, nEmail] }); // A active + S soft + N new
+    const out = await commitMembers(tenantC.ctx, user.userId, [member], 2026);
+    expect(out).toMatchObject({ membersCreated: 0, contactsCreated: 0, skippedPartialOverlapMembers: 1 });
+    expect(out.partialOverlapRows).toContain(member.rowIndices[0]);
+    expect(await countMembers(tenantC.ctx.slug)).toBe(before);
+    const nRows = await runInTenant(tenantC.ctx, async (tx) =>
+      tx.select({ id: contacts.contactId }).from(contacts).where(and(eq(contacts.tenantId, tenantC.ctx.slug), inArray(contacts.email, [nEmail]))),
+    );
+    expect(nRows).toHaveLength(0); // N never silently attached
+  });
+
+  it('NEW member whose every email is soft-deleted → primary-collision skip, idempotent on re-run (R4 #14/#15)', async () => {
+    const pEmail = `asP-${randomUUID().slice(0, 8)}@imp.test`;
+    const sEmail = `asS-${randomUUID().slice(0, 8)}@imp.test`;
+    await seedSoftContact(tenantC, pEmail);
+    await seedSoftContact(tenantC, sEmail);
+    const before = await countMembers(tenantC.ctx.slug);
+    const member = vm({ emails: [pEmail, sEmail] }); // primary + secondary both soft-deleted
+    const first = await commitMembers(tenantC.ctx, user.userId, [member], 2026);
+    expect(first).toMatchObject({ membersCreated: 0, skippedPrimaryCollisionMembers: 1 });
+    expect(first.primaryCollisionRows).toContain(member.rowIndices[0]);
+    expect(await countMembers(tenantC.ctx.slug)).toBe(before); // no zero-primary member created
+    // Re-run: primary still soft, still no active contact → identical primary-collision skip.
+    const second = await commitMembers(tenantC.ctx, user.userId, [vm({ emails: [pEmail, sEmail] })], 2026);
+    expect(second).toMatchObject({ membersCreated: 0, skippedPrimaryCollisionMembers: 1, skippedExistingMembers: 0 });
+  });
+
+  it('NEW member with multiple secondaries, only one soft-deleted → primary + good secondary inserted, soft one skipped+counted (R4 #10)', async () => {
+    const pEmail = `msP-${randomUUID().slice(0, 8)}@imp.test`;
+    const s1Email = `msS1-${randomUUID().slice(0, 8)}@imp.test`;
+    const s2Email = `msS2-${randomUUID().slice(0, 8)}@imp.test`;
+    await seedSoftContact(tenantC, s2Email); // S2 already soft-deleted
+    const member = vm({ emails: [pEmail, s1Email, s2Email] }); // P new primary, S1 new, S2 soft
+    const out = await commitMembers(tenantC.ctx, user.userId, [member], 2026);
+    expect(out).toMatchObject({ membersCreated: 1, contactsCreated: 2, skippedSoftDeletedContacts: 1 });
+    const rows = await runInTenant(tenantC.ctx, async (tx) =>
+      tx.select({ email: contacts.email, isPrimary: contacts.isPrimary }).from(contacts)
+        .where(and(eq(contacts.tenantId, tenantC.ctx.slug), inArray(contacts.email, [pEmail, s1Email]))),
+    );
+    expect(rows).toHaveLength(2); // exactly P + S1 active
+    expect(rows.filter((r) => r.isPrimary)).toHaveLength(1); // member keeps exactly one primary
   });
 
   it('all-or-nothing: a mid-batch FK failure rolls back the whole import', async () => {

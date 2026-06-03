@@ -14,7 +14,9 @@ import type { RowIssue, ValidationReport } from './validate';
 export interface CommitOutcome {
   readonly membersCreated: number;
   readonly contactsCreated: number;
-  /** Members fully skipped: EVERY contact email already exists ACTIVE (idempotent re-run). */
+  /** Members fully skipped: every listed email already exists (ACTIVE or SOFT-DELETED) under
+   *  a SINGLE existing member — an idempotent re-run. (Active emails spanning DIFFERENT members
+   *  are reported under skippedPartialOverlapMembers, not here.) */
   readonly skippedExistingMembers: number;
   /** Members skipped: SOME — not all — contact emails are already active. An ambiguous
    *  partial overlap (which existing member? is its primary intact?) we never auto-resolve

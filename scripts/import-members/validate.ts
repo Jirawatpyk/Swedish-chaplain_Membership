@@ -207,21 +207,25 @@ export function validateRows(
     const headPlanId = tier.ok ? tier.value.planId : null;
     const headCountry = country.ok ? country.value : null;
     const norm = (s: string): string => s.trim().toLowerCase();
+    // Only emit mismatch warnings when the HEAD value RESOLVED. If the head's tier/
+    // country is blank/unresolvable, the member is already excluded by its own head-row
+    // error (headPlanId/headCountry null), so a sibling "mismatch" is pure noise — and
+    // worse, it would accuse the sibling that may hold the CORRECT value rather than the
+    // bad head (R4 #3/#8/#9). When the head DID resolve, warn on a sibling whose raw cell
+    // differs and is not PROVABLY equivalent (same resolved value): equivalent spellings
+    // ("TH"≡"Thailand", "Premium"≡"Premium Corporate") stay silent; a genuinely-different
+    // value — INCLUDING an unresolvable/garbage one ("Narnia"/"Bronze") — still warns
+    // (R3 fix preserved). This mismatch warning is the only signal for a wrongly-merged
+    // company, since siblings are never independently resolution-error-checked.
     for (const r of groupRows.slice(1)) {
-      // Warn when the raw cells DIFFER and are not PROVABLY equivalent (same resolved
-      // value). Equivalent spellings ("TH"≡"Thailand", "Premium"≡"Premium Corporate")
-      // don't warn; a genuinely-different value — INCLUDING an unresolvable/garbage one
-      // like "Narnia"/"Bronze" — does warn (R3 fix: the unresolvable-different case was
-      // silently dropped). Siblings are never independently resolution-error-checked,
-      // so this mismatch warning is the only signal for a wrongly-merged company.
-      if (r.tier.trim().length > 0 && norm(r.tier) !== norm(head.tier)) {
+      if (headPlanId !== null && r.tier.trim().length > 0 && norm(r.tier) !== norm(head.tier)) {
         const rt = tierResolver.resolve(r.tier);
-        const equivalent = rt.ok && headPlanId !== null && rt.value.planId === headPlanId;
+        const equivalent = rt.ok && rt.value.planId === headPlanId;
         if (!equivalent) warn(r.rowIndex, 'tier', 'member_field_mismatch');
       }
-      if (r.country.trim().length > 0 && norm(r.country) !== norm(head.country)) {
+      if (headCountry !== null && r.country.trim().length > 0 && norm(r.country) !== norm(head.country)) {
         const rc = countryNameToCode(r.country);
-        const equivalent = rc.ok && headCountry !== null && rc.value === headCountry;
+        const equivalent = rc.ok && rc.value === headCountry;
         if (!equivalent) warn(r.rowIndex, 'country', 'member_field_mismatch');
       }
     }

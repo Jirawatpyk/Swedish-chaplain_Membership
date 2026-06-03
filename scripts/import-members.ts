@@ -105,9 +105,11 @@ async function loadTierResolver(ctx: TenantContext, planYear: number) {
 /**
  * Insert all valid members + contacts + audit in ONE transaction (spec § 5 —
  * atomic; a mid-batch failure rolls back the whole import). Idempotent: a member
- * whose contact email already exists as an ACTIVE contact is skipped (re-run
- * safe). A contact whose email matches a SOFT-DELETED row is skipped+counted
- * (operator decision: skip+warn, not reactivate).
+ * whose listed emails all already exist (ACTIVE or already SOFT-DELETED) under a
+ * SINGLE existing member is skipped (re-run safe); if those active emails span
+ * DIFFERENT members it is flagged as a partial overlap, never silently swallowed.
+ * A contact whose email matches a SOFT-DELETED row is skipped+counted on BOTH the
+ * new-member and existing-member paths (operator decision: skip+warn, not reactivate).
  */
 export async function commitMembers(
   ctx: TenantContext,
@@ -161,22 +163,39 @@ export async function commitMembers(
 
       // Email-based dedupe (spec § 5) — match the per-contact partial unique index
       // (contacts_tenant_email_uniq ON (tenant_id, lower(email)) WHERE removed_at IS NULL).
-      // ONE query partitioned in JS by removed_at (halves per-member round-trips).
+      // ONE query partitioned in JS by removed_at (halves per-member round-trips); we also
+      // carry member_id so an "already exists" skip can tell a true single-member re-run
+      // apart from a collision whose active emails are spread across DIFFERENT members
+      // (R4 #1/#7 — never silently swallow a workbook member that matches no single member).
       const existing = await tx
-        .select({ email: contacts.email, removedAt: contacts.removedAt })
+        .select({ email: contacts.email, removedAt: contacts.removedAt, memberId: contacts.memberId })
         .from(contacts)
         .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails)));
-      const activeEmails = new Set(existing.filter((r) => r.removedAt === null).map((r) => r.email.toLowerCase()));
+      const activeRows = existing.filter((r) => r.removedAt === null);
+      const activeEmails = new Set(activeRows.map((r) => r.email.toLowerCase()));
       const softEmails = new Set(existing.filter((r) => r.removedAt !== null).map((r) => r.email.toLowerCase()));
       // "Genuinely new" = neither active nor already soft-deleted in the DB.
       const hasNewEmail = emails.some((e) => !activeEmails.has(e) && !softEmails.has(e));
 
       // Member already exists (≥1 active contact).
       if (activeEmails.size > 0) {
-        // Nothing genuinely new (every email is active or already soft-deleted) →
-        // idempotent skip. This correctly covers a clean re-run of a member that has
-        // a soft-deleted secondary (R3 fix: such a member is NOT a partial overlap).
+        // Nothing genuinely new (every listed email is active or already soft-deleted).
         if (!hasNewEmail) {
+          // If the active matches all belong to ONE existing member, this is a clean
+          // idempotent re-run → silent skip (R3 fix: a member with a soft-deleted
+          // secondary is NOT a partial overlap). If they are spread across DIFFERENT
+          // members, this workbook "member" matches no single member — flag it for the
+          // operator instead of silently counting it as already-imported (R4 #1/#7).
+          const activeOwnerIds = new Set(activeRows.map((r) => r.memberId));
+          if (activeOwnerIds.size > 1) {
+            skippedPartialOverlapMembers += 1;
+            partialOverlapRows.push(headRow);
+            continue;
+          }
+          // Report any soft-deleted contact the operator explicitly listed but we are NOT
+          // reactivating, so this path accounts for it exactly like the new-member path
+          // below (R4 #2/#6 — consistent reporting, not a silent drop).
+          skippedSoftDeletedContacts += emails.filter((e) => softEmails.has(e)).length;
           skippedExistingMembers += 1;
           continue;
         }
@@ -189,12 +208,16 @@ export async function commitMembers(
         continue;
       }
 
-      // NEW member (no active overlap). Its primary contact MUST be insertable — if
-      // the primary email collides with a SOFT-DELETED contact we cannot create a
-      // clean member (it would have no active primary), so skip + record the row.
+      // NEW member (no active overlap). Its primary contact MUST be insertable — if the
+      // primary email collides with a SOFT-DELETED contact, OR validate somehow failed to
+      // mark a primary at all, we cannot create a clean member (it would have no active
+      // primary), so skip + record the row. The missing-primary arm is defence-in-depth:
+      // validate guarantees exactly one primary, but commitMembers is exported + tested
+      // directly and contacts_one_primary_per_member silently ALLOWS a zero-primary member
+      // (R4 #17 / SWEEP#2).
       const primary = m.contacts.find((c) => c.isPrimary);
       const primaryEmail = primary?.email.toLowerCase();
-      if (primaryEmail && softEmails.has(primaryEmail)) {
+      if (!primaryEmail || softEmails.has(primaryEmail)) {
         skippedPrimaryCollisionMembers += 1;
         primaryCollisionRows.push(headRow);
         continue;
