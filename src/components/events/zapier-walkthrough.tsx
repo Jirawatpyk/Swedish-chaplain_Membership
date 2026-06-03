@@ -68,9 +68,9 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
         CardContent no longer needs the `py-3` override that
         previously stacked on top of Card root's default 24px py.
       */}
-      <Card size="sm" className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
+      <Card size="sm" className="border-info/30 bg-info-surface">
         <CardContent className="flex items-start gap-3 text-sm">
-          <InfoIcon className="size-4 shrink-0 text-blue-600 dark:text-blue-300" aria-hidden />
+          <InfoIcon className="size-4 shrink-0 text-info" aria-hidden />
           <p>{t('englishOnlyNotice')}</p>
         </CardContent>
       </Card>

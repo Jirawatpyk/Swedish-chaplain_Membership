@@ -176,6 +176,8 @@ export function CreditNoteForm({
           maxLength={500}
           required
           aria-describedby="cn-reason-help"
+          // W1-10 (a11y): surface validity to AT like the amount/confirm fields.
+          aria-invalid={reason.length > 0 && !reasonValid}
         />
         <p id="cn-reason-help" className="text-xs text-muted-foreground">
           {t('reasonHelp')} ({reason.length}/500)
