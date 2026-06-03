@@ -13,7 +13,16 @@ function Dialog({ ...props }: DialogPrimitive.Root.Props) {
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+  // No `data-slot` here ON PURPOSE. Triggers are rendered via `render={<Button/>}`
+  // (csv-export-dialog, contact-form-dialog, …). base-ui merges a trigger `data-slot`
+  // into the rendered Button NON-DETERMINISTICALLY across SSR vs hydration, producing a
+  // `data-slot="dialog-trigger"` (server) ⇄ `data-slot="button"` (client) hydration
+  // mismatch. Pinning the slot at the Button layer (button.tsx) does not defeat it
+  // because base-ui resolves the trigger's slot last on the server. The trigger slot is
+  // targeted by nothing in the codebase (verified — only the unrelated `refund-dialog-
+  // trigger` test id matches that substring), so omitting it removes the conflict at the
+  // source: the rendered element keeps only the Button's deterministic `data-slot="button"`.
+  return <DialogPrimitive.Trigger {...props} />
 }
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
@@ -21,7 +30,13 @@ function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
 }
 
 function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
+  // No `data-slot` — same base-ui render-prop hydration mismatch as DialogTrigger:
+  // DialogClose is used with `render={<Button/>}` (e.g. invite-user-dialog), where a
+  // trigger/close `data-slot` merges into the Button non-deterministically SSR vs CSR.
+  // The slot is targeted by nothing, so omit it (the rendered Button keeps "button").
+  // The built-in close (the X in DialogContent below) is a separate element that renders
+  // its own icon, not a Button, so it keeps its `data-slot="dialog-close"` — no conflict.
+  return <DialogPrimitive.Close {...props} />
 }
 
 function DialogOverlay({

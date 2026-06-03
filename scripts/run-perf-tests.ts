@@ -54,7 +54,7 @@ const perfSuites = [
 ];
 
 const child = spawn(
-  process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+  'pnpm',
   [
     'exec',
     'vitest',
@@ -68,6 +68,13 @@ const child = spawn(
     cwd: repoRoot,
     env: { ...process.env, RUN_PERF: '1' },
     stdio: 'inherit',
+    // `shell: true` is REQUIRED on Windows: Node ≥ 18.20/20.12/22 refuses to
+    // spawn a `.cmd`/`.bat` (`pnpm.cmd`) directly without a shell (CVE-2024-27980
+    // mitigation) — `spawn('pnpm.cmd', …)` throws `EINVAL` on Node 22. Routing
+    // through the shell lets it resolve `pnpm` via PATHEXT on win32 and via
+    // `/bin/sh` on posix. Our argv is fixed (no spaces / no interpolation) so
+    // shell quoting is not a concern.
+    shell: true,
   },
 );
 

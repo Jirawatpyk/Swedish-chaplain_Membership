@@ -11,9 +11,12 @@ function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
 }
 
 function AlertDialogTrigger({ ...props }: AlertDialogPrimitive.Trigger.Props) {
-  return (
-    <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />
-  )
+  // No `data-slot` here ON PURPOSE — same base-ui render-prop hydration mismatch as
+  // DialogTrigger (see dialog.tsx). AlertDialog triggers are rendered via
+  // `render={<Button/>}` (clear-halt-dialog, archive/void buttons, …); a trigger
+  // `data-slot` merges into the Button non-deterministically SSR vs CSR. The slot is
+  // targeted by nothing, so omitting it leaves only the Button's `data-slot="button"`.
+  return <AlertDialogPrimitive.Trigger {...props} />
 }
 
 function AlertDialogPortal({ ...props }: AlertDialogPrimitive.Portal.Props) {
@@ -169,8 +172,10 @@ function AlertDialogCancel({
 }: AlertDialogPrimitive.Close.Props &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
+    // No `data-slot` — same base-ui render-prop hydration mismatch as the triggers:
+    // `render={<Button/>}` + an element `data-slot` merge non-deterministically across
+    // SSR vs CSR. The slot is targeted by nothing, so omit it (Button keeps "button").
     <AlertDialogPrimitive.Close
-      data-slot="alert-dialog-cancel"
       className={cn(className)}
       render={<Button variant={variant} size={size} />}
       {...props}
