@@ -112,6 +112,8 @@ describe('M1 — changePlan surfaces not_found when the in-tx locked read misses
         getPlan: vi.fn().mockResolvedValue(ok(corporatePlan)),
       } as unknown as ChangePlanDeps['plans'],
       audit: { record: vi.fn(), recordInTx: vi.fn() },
+      // W0-02: changePlan now acquires the soft-delete advisory lock at tx start.
+      planAdvisoryLock: { acquire: vi.fn().mockResolvedValue(undefined) },
     } as unknown as ChangePlanDeps;
 
     const result = await changePlan(

@@ -10,6 +10,13 @@
  * sync: a perf suite that exists but is absent from this list is a coverage hole
  * (the 2026-06-03 Stage-5 audit found 13 such un-wired suites across F3/F7/F8/F9).
  *
+ * STRICT-vs-soft caveat: several renewals suites gate their numeric p95 assertion
+ * behind a SECOND env var `PERF_SLO_STRICT=1` (e.g. pipeline-perf asserts only
+ * `p95 > 0` without it, `p95 < 500ms` with it). So a PLAIN `pnpm test:perf` does
+ * NOT fail those on a budget miss — it proves the path runs + collects samples. For
+ * the TRUE go/no-go budget gate run `PERF_SLO_STRICT=1 pnpm test:perf` on the
+ * deployment-topology Neon; the soft mode is for the local/RTT-sensitive dev run.
+ *
  * Invocation:
  *   pnpm test:perf
  *

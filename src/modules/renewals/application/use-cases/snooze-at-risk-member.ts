@@ -66,7 +66,7 @@ export async function snoozeAtRiskMember(
     Date.now() + input.durationDays * 24 * 60 * 60 * 1000,
   ).toISOString();
 
-  return runInTenant(deps.tenant, async (tx) => {
+  const txResult = await runInTenant(deps.tenant, async (tx) => {
     const result = await deps.memberRenewalFlagsRepo.setRiskSnoozedUntil(
       tx,
       input.tenantId,
@@ -105,12 +105,15 @@ export async function snoozeAtRiskMember(
       );
       throw e;
     }
-    // W0-09: § 23.1.2 snooze counter — emitted AFTER tx commit so the
-    // counter only increments on durable state changes (audit row committed
-    // atomically with the UPDATE). Emitted outside the tx block because
-    // OTel counters are process-level; the tx is already committed at
-    // this point via runInTenant's commit-on-return semantics.
-    renewalsMetrics.atRiskSnooze(input.tenantId, input.actorRole);
     return ok({ snoozedUntil });
   });
+  // W0-09: § 23.1.2 snooze counter — emitted genuinely AFTER the tx has committed
+  // (runInTenant has returned here) and ONLY on a durable success. A member_not_found
+  // (Result err) or a rolled-back audit-emit failure (throw → the await above rejects)
+  // must NOT increment it. The earlier in-callback emit over-counted on any
+  // post-emit commit failure and its "after commit" comment was inaccurate.
+  if (txResult.ok) {
+    renewalsMetrics.atRiskSnooze(input.tenantId, input.actorRole);
+  }
+  return txResult;
 }

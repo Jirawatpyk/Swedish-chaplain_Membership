@@ -111,6 +111,11 @@ export async function gateCronBearerOrRespond(
       60,
     );
     if (!rl.success) {
+      // NB: deliberately do NOT emit cron_bearer_auth_rejected on this 429 branch.
+      // The F8-A3 alert threshold (≥5/min) trips far below the 60/min rate-limit cap,
+      // so the alert already fires from the pre-429 rejections; counting 429s here would
+      // add no alert value AND would diverge the counter from the audit_log (the 429
+      // returns before the audit-emit block below), so counter > audit rows. (R2 review.)
       return NextResponse.json(
         { error: { code: 'rate_limited' } },
         {

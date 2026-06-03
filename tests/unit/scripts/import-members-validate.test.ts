@@ -233,4 +233,37 @@ describe('validateRows (spec § 3)', () => {
     );
     expect(errCodes(r)).toContain('multiple_primary');
   });
+
+  it('turnover: a FRACTIONAL value degrades to a warning (member still imports), an integer passes (code-review fix)', () => {
+    // turnover_thb is a bigint (whole baht); a fractional cell flowing into --commit would
+    // crash the INSERT and roll back the WHOLE import. parseTurnover must reject non-integers
+    // as a clean per-row not_a_number warning (turnover → null) instead of an opaque DB abort.
+    const frac = validateRows([row({ rowIndex: 2, turnover: '5000000.50' })], RESOLVER);
+    expect(frac.stats.errorCount).toBe(0); // not an error — member survives
+    expect(frac.members).toHaveLength(1);
+    expect(frac.members[0]!.turnoverThb).toBeNull();
+    expect(
+      frac.issues.some(
+        (i) => i.field === 'turnover' && i.code === 'not_a_number' && i.severity === 'warning',
+      ),
+    ).toBe(true);
+    // a whole-baht integer passes through unchanged.
+    const whole = validateRows([row({ rowIndex: 2, turnover: '5000000' })], RESOLVER);
+    expect(whole.members[0]!.turnoverThb).toBe(5000000);
+
+    // R2 review: a NEGATIVE integer (would violate the members_turnover_non_negative
+    // CHECK) and an OVER-RANGE value (> MAX_SAFE_INTEGER → bigint overflow) must ALSO
+    // degrade to the warning, not crash --commit.
+    for (const bad of ['-5000000', '99999999999999999999']) {
+      const r = validateRows([row({ rowIndex: 2, turnover: bad })], RESOLVER);
+      expect(r.stats.errorCount).toBe(0);
+      expect(r.members).toHaveLength(1);
+      expect(r.members[0]!.turnoverThb).toBeNull();
+      expect(
+        r.issues.some(
+          (i) => i.field === 'turnover' && i.code === 'not_a_number' && i.severity === 'warning',
+        ),
+      ).toBe(true);
+    }
+  });
 });
