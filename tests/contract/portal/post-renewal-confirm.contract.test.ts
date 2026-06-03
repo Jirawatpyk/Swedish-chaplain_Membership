@@ -51,7 +51,9 @@ vi.mock('@/lib/renewals-route-helpers', () => ({
   }) =>
     NextResponse.json(
       { error: { code: opts.code }, correlationId: opts.correlationId },
-      { status: opts.status, headers: opts.headers },
+      // Spread headers only when present — `exactOptionalPropertyTypes` rejects
+      // `headers: undefined` in ResponseInit.
+      { status: opts.status, ...(opts.headers ? { headers: opts.headers } : {}) },
     ),
   successResponse: (body: unknown, _cid: string, status = 200) =>
     NextResponse.json(body, { status }),
