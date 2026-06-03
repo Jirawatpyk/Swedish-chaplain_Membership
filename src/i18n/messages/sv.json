@@ -4346,6 +4346,7 @@
         "errorCycleNotPayable": "Den här förnyelsecykeln har redan behandlats.",
         "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
         "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
+        "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
         "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen."
       },
       "planChange": {

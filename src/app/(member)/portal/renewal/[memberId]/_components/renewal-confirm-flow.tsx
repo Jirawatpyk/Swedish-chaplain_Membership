@@ -43,7 +43,7 @@ import { Label } from '@/components/ui/label';
  * Codes match the route handler (`confirm/route.ts`) error envelope:
  *   feature_disabled, invalid_body, invalid_input, cycle_not_found,
  *   cycle_not_payable, plan_not_found, plan_inactive,
- *   invoice_creation_failed, server_error
+ *   invoice_creation_failed, rate_limited, server_error
  *   (+ client-side: network_error, missing_pay_url, http_<status>)
  */
 const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
@@ -52,6 +52,9 @@ const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
   plan_not_found: 'errorPlanUnavailable',
   plan_inactive: 'errorPlanUnavailable',
   invoice_creation_failed: 'errorInvoiceFailed',
+  // W0-17 — the confirm endpoint now rate-limits (10/1h); surface a clear
+  // "too many attempts" message instead of the generic server-error fallback.
+  rate_limited: 'errorRateLimited',
   network_error: 'errorNetwork',
 };
 

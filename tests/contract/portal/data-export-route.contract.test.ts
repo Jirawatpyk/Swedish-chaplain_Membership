@@ -21,6 +21,7 @@ let memberLookup: { ok: boolean; value?: { memberId: string }; error?: { code: s
 };
 let adminCtx: unknown;
 let memberIdValid = true;
+let rlSuccess = true;
 const requestDataExportMock = vi.fn();
 
 vi.mock('@/lib/env', () => ({
@@ -56,6 +57,12 @@ vi.mock('@/lib/log-id', () => ({
   errKind: () => 'MockError',
   rootCause: (e: unknown) => (e as { cause?: unknown } | null | undefined)?.cause,
 }));
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: {
+    check: () => Promise.resolve({ success: rlSuccess, reset: 9_999_999_999_999, limit: 3, remaining: 0 }),
+  },
+}));
+vi.mock('@/lib/rate-limit-helpers', () => ({ retryAfterSecondsFromRl: () => 3600 }));
 
 function memberReq() {
   return new NextRequest('http://localhost/api/portal/account/data-export', {
@@ -72,6 +79,7 @@ beforeEach(() => {
   sessionResult = { user: { id: 'u-member', role: 'member' } };
   memberLookup = { ok: true, value: { memberId: 'mem-self' } };
   memberIdValid = true;
+  rlSuccess = true;
   adminCtx = { current: { user: { id: 'u-admin', role: 'admin' } }, requestId: 'rq-1' };
   requestDataExportMock.mockResolvedValue(ok({ jobId: 'job-1', status: 'requested', created: true }));
 });
@@ -130,6 +138,16 @@ describe('POST /api/portal/account/data-export (member self-service)', () => {
     expect(body.ok).toBe(true);
     expect(body.jobId).toBe('job-1');
   });
+
+  it('rate-limited → 429 with Retry-After, no job enqueued (W0-18)', async () => {
+    rlSuccess = false;
+    const res = await (await route()).POST(memberReq());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('3600');
+    const body = await res.json();
+    expect(body.error.code).toBe('rate_limited');
+    expect(requestDataExportMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/admin/members/[id]/data-export (admin on-behalf)', () => {
@@ -161,5 +179,13 @@ describe('POST /api/admin/members/[id]/data-export (admin on-behalf)', () => {
     const meta = requestDataExportMock.mock.calls[0]![1] as { actorRole: string; actorMemberId: null };
     expect(meta.actorRole).toBe('admin');
     expect(meta.actorMemberId).toBeNull();
+  });
+
+  it('rate-limited → 429, no job enqueued (W0-18 admin on-behalf)', async () => {
+    rlSuccess = false;
+    const res = await (await route()).POST(memberReq(), ctx);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('3600');
+    expect(requestDataExportMock).not.toHaveBeenCalled();
   });
 });
