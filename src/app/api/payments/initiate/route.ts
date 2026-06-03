@@ -32,6 +32,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { randomUUID } from 'node:crypto';
 import { initiatePayment, makeInitiatePaymentDeps } from '@/modules/payments';
 import type { PaymentMethod } from '@/modules/payments';
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return errorResponse(401, 'unauthorized', correlationId);
     }
     logger.error(
-      { err: e instanceof Error ? e.message : String(e), requestId, correlationId },
+      { errKind: errKind(e), requestId, correlationId },
       'payments.initiate.member_context_throw',
     );
     return errorResponse(500, 'internal_error', correlationId);
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (e) {
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          errKind: errKind(e),
           correlationId,
           tenantId: tenantCtx.slug,
         },
@@ -329,7 +330,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        errKind: errKind(e),
         requestId,
         correlationId,
         tenantId: tenantCtx.slug,

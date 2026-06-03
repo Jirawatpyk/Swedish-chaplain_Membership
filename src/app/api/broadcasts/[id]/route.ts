@@ -84,7 +84,11 @@ export async function GET(
         bodySource: broadcast.bodySource,
         segmentType: broadcast.segmentType,
         segmentParams: broadcast.segmentParams,
-        customRecipientEmails: broadcast.customRecipientEmails,
+        // PII-minimisation (W0-15): return only the count, never the raw recipient
+        // email list, on this read-back endpoint. The list is owner-gated above, but
+        // echoing the full PII batch is needless — a future IDOR/session-compromise
+        // would leak it. Compose-form keeps its own client-side copy while editing.
+        customRecipientCount: broadcast.customRecipientEmails?.length ?? null,
         estimatedRecipientCount: broadcast.estimatedRecipientCount,
         scheduledFor: broadcast.scheduledFor?.toISOString() ?? null,
         submittedAt: broadcast.submittedAt?.toISOString() ?? null,
