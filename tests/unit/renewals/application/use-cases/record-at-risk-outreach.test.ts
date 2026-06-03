@@ -7,9 +7,18 @@
  * endpoint manager can invoke) + migration 0090 channel-template
  * discriminant CHECK mirror.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { recordAtRiskOutreach } from '@/modules/renewals/application/use-cases/record-at-risk-outreach';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
+
+// W0-09: capture atRiskOutreachRecorded calls.
+// vi.hoisted required because vi.mock is hoisted to top of file.
+const atRiskOutreachRecordedMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: {
+    atRiskOutreachRecorded: atRiskOutreachRecordedMock,
+  },
+}));
 
 const TENANT_ID = 'tenantA';
 const MEMBER_UUID = '00000000-0000-0000-0000-00000000a156';
@@ -62,6 +71,10 @@ const baseInput = {
 };
 
 describe('recordAtRiskOutreach (T156)', () => {
+  beforeEach(() => {
+    atRiskOutreachRecordedMock.mockReset();
+  });
+
   it('happy path — admin email outreach inserts + emits audit', async () => {
     const { deps, insertMock, emitInTxMock } = fakeDeps();
     const r = await recordAtRiskOutreach(deps, baseInput);
@@ -184,5 +197,50 @@ describe('recordAtRiskOutreach (T156)', () => {
     await expect(recordAtRiskOutreach(deps, baseInput)).rejects.toThrow(
       auditError,
     );
+  });
+
+  // W0-09: § 23.1.2 metric emission
+  it('emits atRiskOutreachRecorded on success with tenantId + channel + templateId', async () => {
+    const { deps } = fakeDeps();
+    const r = await recordAtRiskOutreach(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(atRiskOutreachRecordedMock).toHaveBeenCalledOnce();
+    expect(atRiskOutreachRecordedMock).toHaveBeenCalledWith(
+      TENANT_ID,
+      'email',
+      'at_risk.outreach.event_drought',
+    );
+  });
+
+  it('emits atRiskOutreachRecorded with undefined templateId for phone channel', async () => {
+    const { deps } = fakeDeps();
+    const r = await recordAtRiskOutreach(deps, {
+      ...baseInput,
+      channel: 'phone',
+      templateId: undefined,
+    });
+    expect(r.ok).toBe(true);
+    expect(atRiskOutreachRecordedMock).toHaveBeenCalledWith(
+      TENANT_ID,
+      'phone',
+      undefined,
+    );
+  });
+
+  it('does NOT emit atRiskOutreachRecorded when repo throws (server_error)', async () => {
+    const { deps } = fakeDeps({
+      insertImpl: async () => { throw new Error('FK violation'); },
+    });
+    const r = await recordAtRiskOutreach(deps, baseInput);
+    expect(r.ok).toBe(false);
+    expect(atRiskOutreachRecordedMock).not.toHaveBeenCalled();
+  });
+
+  it('does NOT emit atRiskOutreachRecorded when audit throws (tx rolled back)', async () => {
+    const { deps } = fakeDeps({
+      emitImpl: async () => { throw new Error('audit failed'); },
+    });
+    await expect(recordAtRiskOutreach(deps, baseInput)).rejects.toThrow();
+    expect(atRiskOutreachRecordedMock).not.toHaveBeenCalled();
   });
 });

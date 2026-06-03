@@ -21,6 +21,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
@@ -112,6 +113,12 @@ export default async function RenewalsPipelinePage({
       ? (query.urgency as UrgencyBucket)
       : DEFAULT_URGENCY;
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
+
+  // W0-09: § 23.1.1 lapsed_tab_visit counter — emitted before the data
+  // fetch so the visit is recorded even when loadPipeline errors.
+  if (urgency === 'lapsed') {
+    renewalsMetrics.pipelineLapsedTabVisit(tenantCtx.slug);
+  }
 
   const deps = makeRenewalsDeps(tenantCtx.slug);
   const result = await loadPipeline(deps, {

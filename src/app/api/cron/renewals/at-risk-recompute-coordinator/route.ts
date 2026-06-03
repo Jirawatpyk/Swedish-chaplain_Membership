@@ -35,6 +35,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
@@ -176,8 +177,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const correlationId = uuidv7();
   const startedAt = Date.now();
 
+  return withActiveSpan(
+    renewalsTracer(),
+    'cron_renewal_at_risk_recompute_coordinator',
+    { 'cron.endpoint': 'at-risk-recompute-coordinator' },
+    async (span) => {
   // Resolve active tenants. MVP single-tenant = [env.tenant.slug].
   const activeTenants: ReadonlyArray<string> = [env.tenant.slug];
+  span.setAttribute('renewals.tenants_enqueued', activeTenants.length);
 
   // Edge case: zero-tenant cron pass — emit one audit with
   // tenants_enqueued=0 + return 200 (matches dispatch-coordinator
@@ -191,6 +198,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       duration_ms: Date.now() - startedAt,
     };
     await emitOrchestratedAudit(env.tenant.slug, summary, [], correlationId);
+    renewalsMetrics.coordinatorTenantsEnqueued('at_risk_recompute', 0);
+    renewalsMetrics.coordinatorTenantsSucceeded('at_risk_recompute', 0);
+    renewalsMetrics.coordinatorDurationMs('at_risk_recompute', summary.duration_ms);
     return NextResponse.json({
       skipped: false,
       ...summary,
@@ -312,12 +322,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     duration_ms: Date.now() - startedAt,
   };
 
+  span.setAttribute('renewals.tenants_succeeded', tenantsSucceeded);
+  span.setAttribute('renewals.tenants_failed', tenantsFailed);
+  span.setAttribute('renewals.duration_ms', summary.duration_ms);
+
   await emitOrchestratedAudit(
     env.tenant.slug,
     summary,
     perTenantResults,
     correlationId,
   );
+
+  // W0-09: § 23.1.3 coordinator-level metrics.
+  renewalsMetrics.coordinatorTenantsEnqueued('at_risk_recompute', summary.tenants_enqueued);
+  renewalsMetrics.coordinatorTenantsSucceeded('at_risk_recompute', summary.tenants_succeeded);
+  if (summary.tenants_failed > 0) {
+    renewalsMetrics.coordinatorTenantsFailed('at_risk_recompute', summary.tenants_failed);
+  }
+  renewalsMetrics.coordinatorDurationMs('at_risk_recompute', summary.duration_ms);
 
   logger.info(
     { correlationId, ...summary },
@@ -329,4 +351,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     ...summary,
     per_tenant_results: perTenantResults,
   });
+  }); // end withActiveSpan
 }

@@ -21,6 +21,7 @@
 import { z } from 'zod';
 import { ok, type Result } from '@/lib/result';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
   PipelineQueryResult,
@@ -113,6 +114,17 @@ export async function loadPipeline(
         bucketCount(r.summary.lapsedCount),
       );
       span.setAttribute('renewals.page_size', r.rows.length);
+
+      // W0-09: § 23.1.1 pipeline.row_count gauge. Uses the active
+      // urgency filter as the urgency_band label (or 'all' when
+      // no filter is applied). The gauge reports the most-recent
+      // page-load value per (tenant, urgency_band).
+      renewalsMetrics.pipelineRowCount(
+        input.tenantId,
+        input.urgency ?? 'all',
+        r.summary.totalInWindow,
+      );
+
       return r;
     },
   );

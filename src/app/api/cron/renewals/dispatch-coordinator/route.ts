@@ -471,6 +471,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         correlationId,
       );
 
+      // W0-09: § 23.1.3 coordinator-level metrics. Emit AFTER audit so a
+      // failed audit emit does not suppress the metrics (the audit failure is
+      // already counted by coordinatorAuditEmitFailed; the counters below
+      // reflect the actual fan-out outcome regardless of audit health).
+      renewalsMetrics.coordinatorTenantsEnqueued('dispatch', summary.tenants_enqueued);
+      renewalsMetrics.coordinatorTenantsSucceeded('dispatch', summary.tenants_succeeded);
+      // tenants_failed_total is F8-A1 — must fire whenever tenantsFailed > 0.
+      if (summary.tenants_failed > 0) {
+        renewalsMetrics.coordinatorTenantsFailed('dispatch', summary.tenants_failed);
+      }
+      renewalsMetrics.coordinatorDurationMs('dispatch', summary.duration_ms);
+
       // Phase 9 / Cycle-state observable gauge wire-up. Run once per
       // successful tenant after the per-tenant fan-out completes; the
       // helper is best-effort + never blocks the coordinator.

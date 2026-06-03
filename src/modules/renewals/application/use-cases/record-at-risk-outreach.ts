@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
@@ -162,6 +163,14 @@ export async function recordAtRiskOutreach(
       );
       throw e;
     }
+    // W0-09: § 23.1.2 outreach counter — emitted AFTER tx commit (same
+    // rationale as atRiskSnooze: durable state only). `template_id` is
+    // forwarded as-is from the input (undefined when channel is not email).
+    renewalsMetrics.atRiskOutreachRecorded(
+      input.tenantId,
+      input.channel,
+      input.templateId,
+    );
     return ok(inserted);
   });
 }

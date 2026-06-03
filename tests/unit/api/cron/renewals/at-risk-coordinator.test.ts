@@ -50,6 +50,33 @@ vi.mock('@/lib/rate-limit-helpers', () => ({
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
+// withActiveSpan added (W0-09) — mock so coordinator body executes cleanly.
+vi.mock('@/lib/otel-tracer', () => ({
+  renewalsTracer: () => ({}),
+  withActiveSpan: async (
+    _tracer: unknown,
+    _name: string,
+    _attrs: unknown,
+    fn: (span: { setAttribute: (k: string, v: unknown) => void }) => unknown,
+  ) => fn({ setAttribute: () => {} }),
+}));
+
+// W0-09: cron-auth.ts now calls renewalsMetrics.cronBearerAuthRejected on
+// every 401 path. Mock the whole renewalsMetrics object so the tests do not
+// require a live OTel SDK (safeMetric swallows, but mocking is cleaner).
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: {
+    cronBearerAuthRejected: vi.fn(),
+    coordinatorAuditEmitFailed: vi.fn(),
+    redisFallback: vi.fn(),
+    coordinatorSkippedReadOnly: vi.fn(),
+    coordinatorTenantsEnqueued: vi.fn(),
+    coordinatorTenantsSucceeded: vi.fn(),
+    coordinatorTenantsFailed: vi.fn(),
+    coordinatorDurationMs: vi.fn(),
+  },
+}));
+
 import { POST } from '@/app/api/cron/renewals/at-risk-recompute-coordinator/route';
 
 function makeRequest(headers: Record<string, string> = {}): NextRequest {

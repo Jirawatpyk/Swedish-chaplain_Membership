@@ -2698,6 +2698,258 @@ export const renewalsMetrics = {
       ).add(1, { tenant, event_type });
     });
   },
+
+  // ==========================================================================
+  // W0-09 — Missing instruments from docs/observability.md § 23.1 go-live
+  // finding. All names below MUST match the catalogue EXACTLY because alert
+  // rules (F8-A1, F8-A3) and dashboards bind by name.
+  // ==========================================================================
+
+  /**
+   * `renewals.cron_bearer_auth_rejected_total{route}` — F8-A3 alert.
+   *
+   * Incremented by `gateCronBearerOrRespond` (src/lib/cron-auth.ts) on
+   * every Bearer-check failure BEFORE the 401 is returned. The audit event
+   * `cron_bearer_auth_rejected` is already emitted at the same site; this
+   * OTel counter is the companion that Vercel alert rules (which bind to
+   * OTel counters, not log strings) use to fire F8-A3 (≥ 5 in 1 min →
+   * alarm + audit-log review).
+   *
+   * `route` is the cron endpoint discriminator (bounded cardinality — the
+   * set of F8 cron routes is small and static).
+   */
+  cronBearerAuthRejected(route: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals.cron_bearer_auth_rejected_total',
+        'F8 cron Bearer auth rejection — F8-A3 alert trigger (≥5 in 1 min)',
+      ).add(1, { route });
+    });
+  },
+
+  /**
+   * `renewals.coordinator.tenants_enqueued_total{cron_kind}` — § 23.1.3.
+   *
+   * Incremented once per coordinator invocation with the count of tenants
+   * that entered the fan-out. The `cron_kind` label is mandatory per the
+   * § 23.1.3 PromQL guard: always filter on `cron_kind` to avoid
+   * double-counting when coordinators fire in overlapping windows.
+   *
+   * NOTE: deliberately uses `.add(count, ...)` not `.add(1, ...)` because
+   * in a single SaaS coordinator invocation "enqueued" is the tenant-count,
+   * not the invocation count.
+   */
+  coordinatorTenantsEnqueued(cronKind: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals.coordinator.tenants_enqueued_total',
+        'F8 cron coordinator — number of tenants enqueued for fan-out per pass (§ 23.1.3)',
+      ).add(count, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals.coordinator.tenants_succeeded_total{cron_kind}` — § 23.1.3.
+   *
+   * Incremented by the count of tenants whose per-tenant route returned
+   * 200 OK + parseable JSON (non-skipped) on this coordinator pass.
+   */
+  coordinatorTenantsSucceeded(cronKind: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals.coordinator.tenants_succeeded_total',
+        'F8 cron coordinator — tenants that completed successfully on this pass (§ 23.1.3)',
+      ).add(count, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals.coordinator.tenants_failed_total{cron_kind}` — F8-A1.
+   *
+   * Incremented by the count of tenants that returned 4xx/5xx, a network
+   * error, or a JSON parse failure on this coordinator pass. F8-A1 alert
+   * fires when this counter ≥ 1 in any 5-min window per any `cron_kind`.
+   *
+   * DISTINCT from `coordinatorTenantFailed(tenantId, kind)` which is the
+   * per-tenant failure counter used for "which tenant broke" triage; this
+   * is the coordinator-level aggregate used by F8-A1 and SLO dashboards.
+   */
+  coordinatorTenantsFailed(cronKind: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals.coordinator.tenants_failed_total',
+        'F8 cron coordinator — tenants that failed on this pass (F8-A1 alert trigger)',
+      ).add(count, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals.coordinator.duration_ms{cron_kind}` — § 23.1.3.
+   *
+   * Histogram of total coordinator wall-clock duration. Distinct from the
+   * per-tenant OTel span which measures a single tenant's work; this
+   * histogram captures the full fan-out round-trip. Used by the F8 cron-
+   * dispatch SLO (p95 < 30 s per tenant per § 23.2) and the lapse /
+   * reconcile / at-risk coordinator latency panels.
+   */
+  coordinatorDurationMs(cronKind: string, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'renewals.coordinator.duration_ms',
+        'F8 cron coordinator end-to-end duration per pass (§ 23.1.3, dispatch SLO p95 < 30 s)',
+        'ms',
+      ).record(ms, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals.at_risk.recompute_members_succeeded_total{tenant_id, band}` —
+   * § 23.1.2.
+   *
+   * Incremented once per member that was successfully recomputed (score
+   * written + audit emitted) on the weekly at-risk cron pass. `band` is the
+   * NEW risk band after recompute (bounded 4-value RiskBand enum: healthy /
+   * warning / at-risk / critical). Cardinality: 4 bands × small tenant count.
+   *
+   * DISTINCT from the existing `atRiskScoresRecomputed(tenant)` counter
+   * (§ 23.1.1.b, `at_risk_scores_recomputed_total`) which is the aggregate
+   * member-count business-volume counter. This metric adds the `band`
+   * dimension required by § 23.1.2 so SRE can see the band distribution.
+   */
+  atRiskRecomputeMembersSucceeded(tenantId: string, band: string, count = 1): void {
+    safeMetric(() => {
+      counter(
+        'renewals.at_risk.recompute_members_succeeded_total',
+        'F8 per-member at-risk score recomputed successfully — labelled by new band (§ 23.1.2)',
+      ).add(count, { tenant_id: tenantId, band });
+    });
+  },
+
+  /**
+   * `renewals.at_risk.recompute_members_failed_total{tenant_id}` — § 23.1.2.
+   *
+   * Incremented once per member where Domain compute OR the bulk-UPDATE OR
+   * the bulk-audit INSERT threw during the weekly recompute pass. The cron
+   * continues with the next member (per-member fault isolation); this counter
+   * aggregates the failure count so SRE can alert on a cron-wide degradation
+   * (complements `at_risk_compute_partial_failure` audit and
+   * `atRiskAuditEmitFailed` metric for different failure classes).
+   */
+  atRiskRecomputeMembersFailed(tenantId: string, count = 1): void {
+    safeMetric(() => {
+      counter(
+        'renewals.at_risk.recompute_members_failed_total',
+        'F8 per-member at-risk recompute failure during cron pass (§ 23.1.2)',
+      ).add(count, { tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * `renewals.at_risk.snooze_total{tenant_id, actor_role}` — § 23.1.2.
+   *
+   * Incremented on every successful `snoozeAtRiskMember` call. `actor_role`
+   * is always 'admin' (the use-case zod literal rejects other roles); the
+   * label is included per § 23.1.2 to allow future manager-exception audit
+   * without breaking the dashboard query. Cardinality: 1 role × small
+   * tenant count.
+   */
+  atRiskSnooze(tenantId: string, actorRole: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals.at_risk.snooze_total',
+        'F8 admin snoozed an at-risk member (§ 23.1.2)',
+      ).add(1, { tenant_id: tenantId, actor_role: actorRole });
+    });
+  },
+
+  /**
+   * `renewals.at_risk.outreach_recorded_total{tenant_id, channel, template_id}`
+   * — § 23.1.2.
+   *
+   * Incremented on every successful `recordAtRiskOutreach` call. `channel`
+   * is from the OUTREACH_CHANNELS enum (email | phone | meeting — bounded).
+   * `template_id` is included per § 23.1.2; when the channel is not email
+   * (and thus templateId is undefined), the label value is 'none'. This
+   * preserves § 23.1.2's label contract while avoiding unbounded cardinality
+   * (template IDs are admin-configured strings, bounded by the template
+   * library size, acceptable per § 23.1 cardinality note).
+   */
+  atRiskOutreachRecorded(
+    tenantId: string,
+    channel: string,
+    templateId: string | undefined,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals.at_risk.outreach_recorded_total',
+        'F8 outreach recorded against an at-risk member (§ 23.1.2)',
+      ).add(1, {
+        tenant_id: tenantId,
+        channel,
+        template_id: templateId ?? 'none',
+      });
+    });
+  },
+
+  /**
+   * `renewals.pipeline.row_count{tenant_id, urgency_band}` — § 23.1.1 gauge.
+   *
+   * Emitted once per `loadPipeline` call with the number of rows returned
+   * for the current page. `urgency_band` is the active urgency filter (from
+   * the UrgencyBucket enum, bounded) or 'all' when no filter is applied.
+   * Powers the pipeline volume panel and the SC-003 SLO row-count axis.
+   *
+   * Implemented as an observable gauge via the existing `observeGauge`
+   * helper (consistent with `renewals_cycles_active` etc.) so the scraper
+   * always sees the most-recent page-load value per (tenant, urgency_band).
+   * The process-level accumulator pattern is the same as
+   * `observeCycleStateGauge`.
+   */
+  pipelineRowCount(tenantId: string, urgencyBand: string, rowCount: number): void {
+    safeMetric(() => {
+      const gaugeName = 'renewals.pipeline.row_count';
+      const stateBucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+      // Key by tenant+urgency_band so different filters don't overwrite each other.
+      const key = `${tenantId}:${urgencyBand}`;
+      stateBucket.set(key, rowCount);
+      gaugeValues.set(gaugeName, stateBucket);
+
+      if (!observableGauges.has(gaugeName)) {
+        const gauge = meter().createObservableGauge(gaugeName, {
+          description:
+            'F8 pipeline page row count per load — last observed value per (tenant, urgency_band) (§ 23.1.1)',
+        });
+        observableGauges.set(gaugeName, gauge);
+        gauge.addCallback((result) => {
+          const bucket = gaugeValues.get(gaugeName);
+          if (!bucket) return;
+          for (const [compositeKey, count] of bucket.entries()) {
+            const colonIdx = compositeKey.indexOf(':');
+            const tid = compositeKey.slice(0, colonIdx);
+            const band = compositeKey.slice(colonIdx + 1);
+            result.observe(count, { tenant_id: tid, urgency_band: band });
+          }
+        });
+      }
+    });
+  },
+
+  /**
+   * `renewals.pipeline.lapsed_tab_visit_total{tenant_id}` — § 23.1.1.
+   *
+   * Incremented when the admin visits the pipeline page with `urgency=lapsed`
+   * (the Lapsed tab). Emitted from the route handler (page.tsx server
+   * component) where the `urgency` search param is known. Powers the lapsed-
+   * tab engagement panel in the SLO dashboard.
+   */
+  pipelineLapsedTabVisit(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals.pipeline.lapsed_tab_visit_total',
+        'F8 admin visited the pipeline Lapsed tab (§ 23.1.1)',
+      ).add(1, { tenant_id: tenantId });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
