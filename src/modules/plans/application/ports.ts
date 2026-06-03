@@ -109,6 +109,39 @@ export interface PlanRepo {
   ): Promise<Plan | undefined>;
 
   /**
+   * W0-02 — Atomic soft-delete under a Postgres advisory lock.
+   *
+   * In ONE `runInTenant` transaction:
+   *   1. Acquires `pg_advisory_xact_lock(hashtextextended(<key>, 0))` where
+   *      `key = planSoftDeleteLockKey(tenant.slug, planId, year)`.
+   *   2. Counts active (non-archived) members for (tenant, planId, year).
+   *   3. If count > 0 → returns `{ kind: 'has_active_members', count }` WITHOUT
+   *      writing (soft-delete refused per FR-010).
+   *   4. Runs the soft-delete UPDATE (mirrors `softDelete`, incl.
+   *      `WHERE deleted_at IS NULL` semantics) → returns `{ kind: 'deleted', plan }`
+   *      on success or `{ kind: 'not_found' }` when the row vanished.
+   *
+   * The advisory lock is the SAME key that `changePlan` (members module)
+   * acquires before assigning a member to a plan, serialising the two
+   * paths and closing the TOCTOU window.
+   *
+   * The Application layer (`soft-delete-plan.ts`) still calls `planRepo.findOne`
+   * upfront for the idempotent already-deleted short-circuit and the initial
+   * not_found check — those are read-only and safe outside the lock.
+   */
+  softDeleteGuarded(
+    tenant: TenantContext,
+    planId: PlanSlug,
+    year: PlanYear,
+    deletedAt: Date,
+    updatedBy: string,
+  ): Promise<
+    | { readonly kind: 'deleted'; readonly plan: Plan }
+    | { readonly kind: 'has_active_members'; readonly count: number }
+    | { readonly kind: 'not_found' }
+  >;
+
+  /**
    * Clear `deleted_at` and force `is_active = false` (US4 AS4: undelete
    * returns plans to inactive, never directly to active).
    */

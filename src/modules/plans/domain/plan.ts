@@ -68,6 +68,39 @@ export function isMemberTypeScope(value: unknown): value is MemberTypeScope {
   );
 }
 
+// --- Advisory-lock key builders -----------------------------------------------
+
+/**
+ * Build the shared Postgres advisory-lock key used by BOTH sides of the
+ * soft-delete / member-assign TOCTOU race (W0-02).
+ *
+ * Lock key format: `plans:softdelete:<tenantSlug>:<planId>:<planYear>`
+ *
+ * Namespace `plans:softdelete:` is deliberately distinct from:
+ *   - `plans:clone:`        — cloneYear in plan-repo.ts
+ *   - `invoicing:`          — F4 sequential numbering
+ *   - `payments:`           — F5 concurrent-initiate guard
+ *   - `broadcasts:`         — F7 broadcast dispatch
+ *   - `broadcasts-batch:`   — F7 batch dispatch
+ *   - `renewals:`           — F8 renewal-cycle locking
+ *   - `eventcreate-quota:`  — F6 seat allocation
+ *
+ * This function lives in Domain (pure — no drizzle/ORM/framework imports)
+ * so it can be imported by both:
+ *   - The plans module's infrastructure (soft-delete-guarded repo method)
+ *   - The members module (changePlan advisory-lock acquirer)
+ * via the plans public barrel `@/modules/plans`.
+ *
+ * The FORMAT is the single source of truth — NO string literals elsewhere.
+ */
+export function planSoftDeleteLockKey(
+  tenantSlug: string,
+  planId: string,
+  planYear: number,
+): string {
+  return `plans:softdelete:${tenantSlug}:${planId}:${planYear}`;
+}
+
 // --- Plan entity --------------------------------------------------------------
 
 /**

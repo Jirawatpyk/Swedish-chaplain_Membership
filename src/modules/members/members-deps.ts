@@ -26,6 +26,7 @@ import { createUserPortAdapter } from './infrastructure/adapters/create-user-por
 import { deleteInvitedUserPortAdapter } from './infrastructure/adapters/delete-invited-user-port-adapter';
 import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
 import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
+import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
 import type { ContactRepo } from './application/ports/contact-repo';
 import type { AuditPort } from './application/ports/audit-port';
@@ -41,6 +42,7 @@ import type { CreateUserPort, DeleteInvitedUserPort } from './application/use-ca
 import type { BroadcastsCascadePort } from './application/ports/broadcasts-cascade-port';
 import type { RenewalsCascadePort } from './application/ports/renewals-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
+import type { PlanAdvisoryLockPort } from './application/ports/plan-advisory-lock-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
 
@@ -61,6 +63,12 @@ export type MembersDeps = {
    * Self-contained owner-role op; mints + enqueues in F1's own tx.
    */
   reissueInvitation: ReissueInvitationPort;
+  /**
+   * W0-02 — Shared advisory-lock acquirer for the soft-delete TOCTOU fix.
+   * Acquired inside `changePlan`'s `runInTenant` tx on the NEW plan before
+   * writing the FK update, serialising with `softDeleteGuarded` Side A.
+   */
+  planAdvisoryLock: PlanAdvisoryLockPort;
   /** F7 in-flight broadcasts cascade (T178a / Coverage Gap C2). */
   broadcastsCascade: BroadcastsCascadePort;
   /**
@@ -122,6 +130,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     contactRepo: drizzleContactRepo,
     audit: drizzleAuditAdapter,
     plans: plansBarrelAdapter,
+    planAdvisoryLock: drizzlePlanAdvisoryLockAdapter,
     emails: resendEmailPort,
     sessions: authSessionRevocationPort,
     userEmails: userEmailAdapter,

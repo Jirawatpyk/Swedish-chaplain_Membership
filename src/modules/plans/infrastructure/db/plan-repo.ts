@@ -39,10 +39,14 @@ import {
   asPlanSlug,
   asPlanYear,
   asTenantSlug,
+  planSoftDeleteLockKey,
   type Plan,
   type PlanSlug,
   type PlanYear,
 } from '../../domain/plan';
+// W0-02 — tx-bound member-count for softDeleteGuarded (exported from
+// members barrel, Constitution Principle III barrel-only cross-module).
+import { countActiveMembersOnPlanInTx } from '@/modules/members';
 import { asBenefitMatrix, type BenefitMatrix } from '../../domain/benefit-matrix';
 import { asLocaleText, type LocaleText } from '../../domain/locale-text';
 import { detectLockedFieldChanges } from '../../domain/locked-field-rule';
@@ -334,6 +338,52 @@ export const planRepo: PlanRepo = {
         .returning();
       const row = updated[0];
       return row ? rowToPlan(row) : undefined;
+    });
+  },
+
+  // -- softDeleteGuarded (W0-02 TOCTOU fix) ------------------------------------
+  //
+  // Advisory-lock + count + delete in ONE tx.
+  // Lock key: `plans:softdelete:<tenantSlug>:<planId>:<planYear>`.
+  // The same key is acquired by `changePlan` (members module) BEFORE
+  // assigning a member to the plan, serialising the two competing paths.
+  async softDeleteGuarded(tenant, planId, year, deletedAt, updatedBy) {
+    return runInTenant(tenant, async (tx) => {
+      // 1. Acquire Postgres transaction-scoped advisory lock.
+      const lockKey = planSoftDeleteLockKey(tenant.slug, planId as string, year as number);
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+
+      // 2. Count active + inactive members on this plan WITHIN the same tx
+      //    so the count is serialised under the lock.
+      const memberCount = await countActiveMembersOnPlanInTx(tx, planId as string, year as number);
+      if (memberCount > 0) {
+        return { kind: 'has_active_members' as const, count: memberCount };
+      }
+
+      // 3. Soft-delete UPDATE — mirrors `softDelete` above, incl.
+      //    `WHERE deleted_at IS NULL` semantics (the `softDelete` method
+      //    relies on RLS for scoping; we add an explicit `IS NULL` check
+      //    here so a concurrent soft-delete on the same plan by another
+      //    request doesn't overwrite the first one and instead returns
+      //    not_found which the Application layer already handles).
+      const updated = await tx
+        .update(membershipPlans)
+        .set({ deletedAt, updatedBy, updatedAt: new Date() })
+        .where(
+          and(
+            eq(membershipPlans.planId, planId),
+            eq(membershipPlans.planYear, year),
+            sql`${membershipPlans.deletedAt} IS NULL`,
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        return { kind: 'not_found' as const };
+      }
+      return { kind: 'deleted' as const, plan: rowToPlan(row) };
     });
   },
 

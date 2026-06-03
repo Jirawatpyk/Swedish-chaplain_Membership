@@ -1,13 +1,22 @@
 /**
  * Unit tests for `softDeletePlan` use case (T129, US4 FR-010).
  *
+ * W0-02 update: the former two-step pattern (separate `members.countActivePlanMembers`
+ * + `planRepo.softDelete`) has been replaced by a single atomic
+ * `planRepo.softDeleteGuarded` call that acquires the advisory lock, counts,
+ * and deletes in one tx. These unit tests mock `softDeleteGuarded` returning
+ * the discriminated union `{kind:'deleted'|'has_active_members'|'not_found'}`.
+ *
+ * The `members` dep and `MemberAttachmentChecker` port are no longer called
+ * by this use case — `SoftDeletePlanDeps` no longer carries `members`.
+ *
  * Covers all error paths + the happy path at 100% line/branch/function coverage.
  * Audit port is stubbed directly via `audit.record` mock — the
  * `recordAuditEvent` wrapper calls `audit.record` internally and its own
  * zod validation is exercised implicitly.
  *
  * Live cascade / RLS coverage is handled by
- * `tests/integration/plans/soft-delete-plan.test.ts`.
+ * `tests/integration/plans/soft-delete-toctou-advisory-lock.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
@@ -72,12 +81,21 @@ function makePlan(overrides: Partial<{
 
 // ---------------------------------------------------------------------------
 // Dependency factory
+//
+// W0-02: `members` dep removed from SoftDeletePlanDeps — the use case
+// now calls `planRepo.softDeleteGuarded` which encapsulates both count
+// and delete atomically under the advisory lock.
 // ---------------------------------------------------------------------------
+
+type GuardedResult =
+  | { kind: 'deleted'; plan: Plan }
+  | { kind: 'has_active_members'; count: number }
+  | { kind: 'not_found' }
+  | Error; // throw
 
 type DepsOverrides = {
   findOneResult?: Plan | undefined | Error;
-  countActivePlanMembersResult?: number | Error;
-  softDeleteResult?: Plan | undefined | Error;
+  softDeleteGuardedResult?: GuardedResult;
   auditResult?: 'ok' | 'persist_failed';
 };
 
@@ -88,23 +106,20 @@ function makeDeps(overrides: DepsOverrides = {}): SoftDeletePlanDeps {
       if (r instanceof Error) throw r;
       return r;
     }),
-    softDelete: vi.fn(async () => {
-      const r = overrides.softDeleteResult;
+    softDeleteGuarded: vi.fn(async () => {
+      const r = overrides.softDeleteGuardedResult;
       if (r instanceof Error) throw r;
-      return r;
+      // default: deleted with a plan that has deleted_at = NOW
+      return r ?? { kind: 'deleted' as const, plan: makePlan({ deleted_at: NOW }) };
     }),
+    // Unused by softDeletePlan but satisfy PlanRepo shape for type safety
+    softDelete: vi.fn(),
     findByTenantAndYear: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
     setActive: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),
-  };
-
-  const feeConfigRepo = {
-    findByTenant: vi.fn(),
-    update: vi.fn(),
-    upsert: vi.fn(),
   };
 
   const auditFailure = overrides.auditResult === 'persist_failed';
@@ -122,21 +137,11 @@ function makeDeps(overrides: DepsOverrides = {}): SoftDeletePlanDeps {
     currentYear: vi.fn(() => 2026),
   };
 
-  const members = {
-    countActivePlanMembers: vi.fn(async () => {
-      const r = overrides.countActivePlanMembersResult;
-      if (r instanceof Error) throw r;
-      return r ?? 0;
-    }),
-  };
-
   return {
     tenant,
     planRepo,
-    feeConfigRepo,
     audit,
     clock,
-    members,
   } as unknown as SoftDeletePlanDeps;
 }
 
@@ -162,12 +167,13 @@ describe('softDeletePlan use case', () => {
         expect(result.error.message).toBe('DB connection lost');
       }
     }
-    expect(deps.members.countActivePlanMembers).not.toHaveBeenCalled();
+    expect(deps.planRepo.softDeleteGuarded).not.toHaveBeenCalled();
   });
 
   it('returns server_error with string coercion when planRepo.findOne throws non-Error', async () => {
     const planRepo = {
       findOne: vi.fn(async () => { throw 'string error'; }),
+      softDeleteGuarded: vi.fn(),
       softDelete: vi.fn(),
       findByTenantAndYear: vi.fn(),
       insert: vi.fn(),
@@ -200,12 +206,12 @@ describe('softDeletePlan use case', () => {
     if (!result.ok) {
       expect(result.error.type).toBe('not_found');
     }
-    expect(deps.members.countActivePlanMembers).not.toHaveBeenCalled();
+    expect(deps.planRepo.softDeleteGuarded).not.toHaveBeenCalled();
   });
 
   // ---- Step 2: idempotent no-op when already deleted ----------------------
 
-  it('returns ok(existing) without calling softDelete when plan is already deleted', async () => {
+  it('returns ok(existing) without calling softDeleteGuarded when plan is already deleted', async () => {
     const alreadyDeleted = makePlan({ deleted_at: new Date('2026-03-01T00:00:00.000Z') });
     const deps = makeDeps({ findOneResult: alreadyDeleted });
     const result = await softDeletePlan(baseInput, deps);
@@ -215,81 +221,16 @@ describe('softDeletePlan use case', () => {
       expect(result.value).toBe(alreadyDeleted);
       expect(result.value.deleted_at).toEqual(new Date('2026-03-01T00:00:00.000Z'));
     }
-    expect(deps.members.countActivePlanMembers).not.toHaveBeenCalled();
-    expect(deps.planRepo.softDelete).not.toHaveBeenCalled();
+    expect(deps.planRepo.softDeleteGuarded).not.toHaveBeenCalled();
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
-  // ---- Step 3: MemberAttachmentChecker error paths ------------------------
+  // ---- Step 3: softDeleteGuarded discriminated-union outcomes -------------
 
-  it('returns server_error when members.countActivePlanMembers throws', async () => {
+  it('returns server_error when planRepo.softDeleteGuarded throws', async () => {
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: new Error('Members DB offline'),
-    });
-    const result = await softDeletePlan(baseInput, deps);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('server_error');
-      if (result.error.type === 'server_error') {
-        expect(result.error.message).toBe('Members DB offline');
-      }
-    }
-    expect(deps.planRepo.softDelete).not.toHaveBeenCalled();
-  });
-
-  it('returns server_error with string coercion when countActivePlanMembers throws non-Error', async () => {
-    const members = {
-      countActivePlanMembers: vi.fn(async () => { throw 42; }),
-    };
-    const deps = { ...makeDeps({ findOneResult: makePlan() }), members } as unknown as SoftDeletePlanDeps;
-    const result = await softDeletePlan(baseInput, deps);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('server_error');
-      if (result.error.type === 'server_error') {
-        expect(result.error.message).toBe('42');
-      }
-    }
-  });
-
-  it('returns has_active_members with count when countActivePlanMembers > 0', async () => {
-    const deps = makeDeps({
-      findOneResult: makePlan(),
-      countActivePlanMembersResult: 7,
-    });
-    const result = await softDeletePlan(baseInput, deps);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('has_active_members');
-      if (result.error.type === 'has_active_members') {
-        expect(result.error.count).toBe(7);
-      }
-    }
-    expect(deps.planRepo.softDelete).not.toHaveBeenCalled();
-  });
-
-  it('passes tenant + planId + year correctly to countActivePlanMembers', async () => {
-    const deps = makeDeps({
-      findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: makePlan({ deleted_at: NOW }),
-    });
-    await softDeletePlan(baseInput, deps);
-
-    expect(deps.members.countActivePlanMembers).toHaveBeenCalledWith(tenant, planId, year);
-  });
-
-  // ---- Step 4: planRepo.softDelete error paths ----------------------------
-
-  it('returns server_error when planRepo.softDelete throws', async () => {
-    const deps = makeDeps({
-      findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: new Error('Soft-delete constraint violation'),
+      softDeleteGuardedResult: new Error('Soft-delete constraint violation'),
     });
     const result = await softDeletePlan(baseInput, deps);
 
@@ -303,10 +244,11 @@ describe('softDeletePlan use case', () => {
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
-  it('returns server_error with string coercion when planRepo.softDelete throws non-Error', async () => {
+  it('returns server_error with string coercion when softDeleteGuarded throws non-Error', async () => {
     const planRepo = {
       findOne: vi.fn(async () => makePlan()),
-      softDelete: vi.fn(async () => { throw { code: 'PG_CONSTRAINT' }; }),
+      softDeleteGuarded: vi.fn(async () => { throw { code: 'PG_CONSTRAINT' }; }),
+      softDelete: vi.fn(),
       findByTenantAndYear: vi.fn(),
       insert: vi.fn(),
       update: vi.fn(),
@@ -314,8 +256,7 @@ describe('softDeletePlan use case', () => {
       undelete: vi.fn(),
       cloneYear: vi.fn(),
     };
-    const members = { countActivePlanMembers: vi.fn(async () => 0) };
-    const deps = { ...makeDeps(), planRepo, members } as unknown as SoftDeletePlanDeps;
+    const deps = { ...makeDeps(), planRepo } as unknown as SoftDeletePlanDeps;
     const result = await softDeletePlan(baseInput, deps);
 
     expect(result.ok).toBe(false);
@@ -327,11 +268,27 @@ describe('softDeletePlan use case', () => {
     }
   });
 
-  it('returns not_found when planRepo.softDelete returns undefined (row vanished)', async () => {
+  it('returns has_active_members when softDeleteGuarded returns kind=has_active_members', async () => {
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: undefined,
+      softDeleteGuardedResult: { kind: 'has_active_members', count: 7 },
+    });
+    const result = await softDeletePlan(baseInput, deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('has_active_members');
+      if (result.error.type === 'has_active_members') {
+        expect(result.error.count).toBe(7);
+      }
+    }
+    expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('returns not_found when softDeleteGuarded returns kind=not_found (row vanished)', async () => {
+    const deps = makeDeps({
+      findOneResult: makePlan(),
+      softDeleteGuardedResult: { kind: 'not_found' },
     });
     const result = await softDeletePlan(baseInput, deps);
 
@@ -342,16 +299,15 @@ describe('softDeletePlan use case', () => {
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
-  it('calls planRepo.softDelete with tenant, planId, year, clock.now(), actorUserId', async () => {
+  it('calls planRepo.softDeleteGuarded with tenant, planId, year, clock.now(), actorUserId', async () => {
     const updatedPlan = makePlan({ deleted_at: NOW });
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: updatedPlan,
+      softDeleteGuardedResult: { kind: 'deleted', plan: updatedPlan },
     });
     await softDeletePlan(baseInput, deps);
 
-    expect(deps.planRepo.softDelete).toHaveBeenCalledWith(
+    expect(deps.planRepo.softDeleteGuarded).toHaveBeenCalledWith(
       tenant,
       planId,
       year,
@@ -360,14 +316,13 @@ describe('softDeletePlan use case', () => {
     );
   });
 
-  // ---- Step 5: audit failure ----------------------------------------------
+  // ---- Step 4: audit failure ----------------------------------------------
 
   it('returns audit_failed when audit.record returns persist_failed', async () => {
     const updatedPlan = makePlan({ deleted_at: NOW });
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: updatedPlan,
+      softDeleteGuardedResult: { kind: 'deleted', plan: updatedPlan },
       auditResult: 'persist_failed',
     });
     const result = await softDeletePlan(baseInput, deps);
@@ -394,8 +349,7 @@ describe('softDeletePlan use case', () => {
     };
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: updatedPlan,
+      softDeleteGuardedResult: { kind: 'deleted', plan: updatedPlan },
     });
     // Override the audit port with the invalid_payload one
     const depsWithBadAudit = { ...deps, audit } as unknown as SoftDeletePlanDeps;
@@ -417,8 +371,7 @@ describe('softDeletePlan use case', () => {
     const updatedPlan = makePlan({ deleted_at: NOW });
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: updatedPlan,
+      softDeleteGuardedResult: { kind: 'deleted', plan: updatedPlan },
     });
     const result = await softDeletePlan(baseInput, deps);
 
@@ -448,8 +401,7 @@ describe('softDeletePlan use case', () => {
     const updatedPlan = makePlan({ deleted_at: NOW });
     const deps = makeDeps({
       findOneResult: makePlan(),
-      countActivePlanMembersResult: 0,
-      softDeleteResult: updatedPlan,
+      softDeleteGuardedResult: { kind: 'deleted', plan: updatedPlan },
     });
     const inputNullIp: SoftDeletePlanInput = { ...baseInput, sourceIp: null };
     const result = await softDeletePlan(inputNullIp, deps);
