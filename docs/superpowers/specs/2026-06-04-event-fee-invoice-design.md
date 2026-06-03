@@ -1,7 +1,9 @@
 # Event-Fee Invoices & Receipts — Design Spec (v2)
 
-**Date:** 2026-06-04 · **Revised:** 2026-06-04 (v2 after 6-specialist panel review)
-**Status:** Draft — incorporates the panel review (`docs/Bug/event-invoice-spec-review.md`); pending re-review.
+**Date:** 2026-06-04 · **Revised:** 2026-06-04 (v5)
+**Status:** Draft — v2 panel review + v3 re-review gaps closed + v4 Open-Q resolution
++ **v5: scope refined — v1 = standard 7% VAT only; VAT-exempt §81 = fast-follow (§9).**
+Ready for writing-plans.
 **Area:** F4 Invoicing (`src/modules/invoicing/**`) × F6 Events (`src/modules/events/**`)
 **Approach:** A — generalise the existing invoice (single table + `invoice_subject` discriminator).
 
@@ -35,17 +37,16 @@ transactional email) — with the membership-specific couplings made subject-awa
 5. **Matched member:** auto-fill the full buyer identity from F3 incl. `tax_id`
    + composed address, read-only (snapshot at issue). Company member without a
    TIN is **rejected** at draft (`tax_id_required`, §86/4) — see §3.
-6. **VAT (Q2 — RESOLVED, per-invoice VAT mode):** the create form has a **VAT-mode
-   selector**:
-   - **Standard (7% inclusive)** — `ticket_price_thb` is VAT-inclusive; back-calc
-     with **half-away-from-zero** (matching `money.ts`, §3). Doc-type per tax-id
-     (tax invoice if tax-id present, else receipt).
-   - **VAT-exempt (RC §81)** — for cultural/educational/charitable events;
-     `vat_rate_snapshot = 0`, no VAT line, `subtotal = total`, `vat = 0`. **A
-     VAT-exempt (§81) sale CANNOT be a tax invoice** — the document is **always a
-     plain receipt (ใบเสร็จรับเงิน)** regardless of tax-id, with a "VAT-exempt per
-     Revenue Code §81" note. *(Flag for the /speckit.plan thai-tax auditor: confirm
-     the exempt-sale documentary rules.)*
+6. **VAT (Q2 — RESOLVED; v1 = standard 7% only):** v1 issues **standard
+   7%-inclusive** event invoices only — `ticket_price_thb` is VAT-inclusive,
+   back-calc **half-away-from-zero** (matching `money.ts`, §3); doc-type per
+   tax-id (tax invoice if tax-id present, else receipt). **VAT-exempt (RC §81)** is
+   a documented **fast-follow (§9)** — the data model already supports it
+   (`vat_rate_snapshot=0`, no later schema change), but the mode-selector +
+   exempt rendering + receipt-only doc-type ship in v1.1.
+   ⚠️ **Operational caveat (until exempt ships):** do NOT issue event invoices
+   through the system for §81-exempt events (would wrongly charge 7%) — handle
+   those manually/externally in the interim.
 
 ---
 
@@ -151,17 +152,15 @@ vat      = totalSatang - subtotal                                               
   `vat_inclusive` records provenance only; it does not change stored amounts.
 - **AS-VAT-01:** `ticket_price_thb=1070` → line `1,000.00` / VAT `70.00` / total
   `1,070.00` (encoded in the golden PDF test).
-- **Exempt mode (Q2):** `vat_rate_snapshot = 0` → `subtotal = total`, `vat = 0`
-  (the existing 0%-rate path; no inclusive back-calc). No new column — exempt is
-  signalled by `invoice_subject='event' AND vat_rate_snapshot=0`; the PDF adds the
-  §81 note + forces the receipt doc-type. **AS-VAT-02:** exempt `ticket_price=1000`
-  → line `1,000.00` / no VAT line / total `1,000.00`.
+- **Exempt mode = fast-follow (§9), NOT v1.** v1 always uses the tenant `vat_rate`
+  (7%) inclusive. The data model already accommodates exempt (`vat_rate_snapshot=0`)
+  so the fast-follow needs no schema change.
 
 ### (d) Use cases & ports
-- **`createEventInvoiceDraft({ eventRegistrationId, buyer?, amountOverride?, vatMode })`:**
-  (`vatMode: 'standard' | 'exempt'` — standard → `vat_rate_snapshot` = tenant
-  `vat_rate` + `vat_inclusive=true`; exempt → `vat_rate_snapshot=0` +
-  doc-type forced to receipt).
+- **`createEventInvoiceDraft({ eventRegistrationId, buyer?, amountOverride? })`:**
+  v1 always sets `vat_rate_snapshot` = tenant `vat_rate` (7%) + `vat_inclusive=true`.
+  (The fast-follow adds a `vatMode: 'standard' | 'exempt'` param; exempt →
+  `vat_rate_snapshot=0` + receipt-only doc-type — §9.)
   1. Read registration via **`EventRegistrationLookupPort.findById(tx, tenantId, id)`**
      (tx-threaded, mirrors `MemberIdentityPort`) — see §H1.
   2. Guards → typed errors: `no_fee_free_event` / `no_fee_comp_ticket`
@@ -242,9 +241,8 @@ Membership, back-compat). **Progressive disclosure, no stepper.**
 [Buyer]    matched member → read-only F3 auto-fill "ออกในนามสมาชิก: <company>" (incl. tax_id + address)
            non-member     → freeform: legal name(pre-fill) · address textarea(required) · tax-id(optional, ^\d{13}$) · contact name+email(pre-fill)
 [Amount]   ticket_price pre-filled (editable, bounded) · live VAT-inclusive preview: total X / subtotal Y / VAT 7% Z
-           VAT mode (Q2):  ● คิด VAT 7% (standard)   ○ ยกเว้น VAT §81 (exempt)
-           🏷️ doc-type:  exempt → "ใบเสร็จรับเงิน" ALWAYS (§81 sale ≠ tax invoice) ;
-                          standard + tax-id → "ใบกำกับภาษี/ใบเสร็จ" ; standard, no tax-id → "ใบเสร็จรับเงิน"
+           VAT: 7% inclusive (v1 fixed — no selector; the exempt §81 selector is the §9 fast-follow)
+           🏷️ doc-type:  tax-id present → "ใบกำกับภาษี/ใบเสร็จ" ; absent → "ใบเสร็จรับเงิน"
 [Create]   → existing invoice detail → preview PDF → issue → pay / credit-note
 ```
 
@@ -293,11 +291,9 @@ Reuse `invoice-template.tsx`:
 - Buyer/seller blocks, §86/§87, doc-type label, amount-in-words — existing logic
   (buyer snapshot generic; §86 address + L-01/L-03 already shipped).
 - Membership-only fields guarded by `invoice_subject`.
-- **VAT-exempt (§81) rendering (Q2):** when `vat_rate_snapshot=0` on an event
-  invoice — omit the VAT line, title the document **ใบเสร็จรับเงิน / Receipt**
-  (NOT ใบกำกับภาษี, even with a buyer tax-id), and print a "ได้รับยกเว้นภาษีมูลค่า
-  เพิ่มตามประมวลรัษฎากร มาตรา 81 / VAT-exempt (Revenue Code §81)" note. Standard
-  (7%) event invoices render the normal ใบกำกับภาษี/ใบเสร็จ per buyer tax-id.
+- v1 event invoices are standard 7% → render the normal ใบกำกับภาษี/ใบเสร็จ per
+  buyer tax-id (same as membership). (VAT-exempt §81 rendering — receipt-only +
+  §81 note + no VAT line — is the §9 fast-follow.)
 - Auto-email: **F4 transactional Resend path** (`RESEND_API_KEY`) — **never** the
   F7 broadcasts path (a marketing unsubscribe must not suppress a tax document);
   recipient = matched member's contact OR non-member `attendeeEmail`; **guard
@@ -374,8 +370,7 @@ tax-id format (block) · cross-tenant registration (RLS + probe) · concurrency
 - **Unit:** `splitVatInclusive` (fast-check `subtotal+vat===total` + boundary
   satang) · `enforceOneSubjectLine` · `createEventInvoiceDraft` (matched→F3,
   non-member→manual, free/comp→error, no-address→error, bad-tax-id→error,
-  amountOverride 0/neg/MAX+1→`invalid_amount`, duplicate→warn, company-no-tin→error,
-  **vatMode='standard'→rate=tenant/inclusive, vatMode='exempt'→rate=0/vat=0/doc-type=receipt-even-with-tax-id**).
+  amountOverride 0/neg/MAX+1→`invalid_amount`, duplicate→warn, company-no-tin→error).
 - **Integration (live Neon):** create event invoice (matched + non-member) → issue
   → PDF; **shared INV continuity across interleaved membership+event at the
   Asia/Bangkok fiscal-year boundary** (injected UTC clock, no gap/reset, §87);
@@ -400,20 +395,25 @@ deviations recorded in `plan.md` Complexity Tracking.
 **Resolved (was Open Questions):**
 - **Q1 — granularity → RESOLVED:** v1 = 1:1 (one invoice per registration);
   group/company-pay = v2 fast-follow (§9).
-- **Q2 — VAT (RC §81) → RESOLVED:** per-invoice VAT-mode selector — Standard (7%
-  inclusive) or VAT-exempt (§81, 0%, receipt-only). No hardcode. The /speckit.plan
-  thai-tax auditor must confirm the §81 exempt-sale documentary rules
-  (exempt sale ≠ ใบกำกับภาษี).
+- **Q2 — VAT (RC §81) → RESOLVED:** **v1 = standard 7% inclusive only**; VAT-exempt
+  §81 (mode selector + 0% + receipt-only) = fast-follow (§9). Operational caveat:
+  no system event invoices for §81-exempt events until the fast-follow ships.
 
 ---
 
 ## 9. Out of Scope (YAGNI) & Acknowledged Deferrals
 
+- **VAT-exempt §81 mode (Q2 fast-follow — first follow-up):** per-invoice VAT-mode
+  selector (Standard 7% / Exempt §81); exempt → `vat_rate_snapshot=0`,
+  `subtotal=total`, `vat=0`, **document is ALWAYS ใบเสร็จรับเงิน (never ใบกำกับภาษี,
+  even with a buyer tax-id) + a "VAT-exempt RC §81" note + no VAT line**. Signalled
+  by `invoice_subject='event' AND vat_rate_snapshot=0` (no schema change — the v1
+  data model already supports it). Adds a `vatMode` param to `createEventInvoiceDraft`,
+  AS-VAT-02 golden, exempt unit cases. The thai-tax auditor confirms §81
+  exempt-sale documentary rules at that fast-follow's /speckit.plan.
 - **Group / company-pays-for-many-attendees (Q1 v2 fast-follow):** one invoice
-  over multiple registrations of one payer (multiple `event_fee` lines; the
-  partial-unique dedup becomes per-registration-still-once; buyer = the paying
-  company, not an attendee). Acknowledged real B2B need — scoped as the immediate
-  v2 follow-up, not v1.
+  over multiple registrations of one payer (multiple `event_fee` lines; buyer =
+  the paying company, not an attendee). Acknowledged real B2B need — v2, not v1.
 - Batch invoicing + **batch credit-note on event cancellation** (acknowledged
   operational cost; deferred).
 - A standalone "event customer" entity (non-member buyer is a per-invoice snapshot).
