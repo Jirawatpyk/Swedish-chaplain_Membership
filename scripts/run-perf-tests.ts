@@ -1,12 +1,14 @@
 /**
- * Run the F4 perf-gated integration suites with RUN_PERF=1 so the
- * `it.skipIf(!RUN_PERF)` branches actually execute. Cross-platform
- * wrapper (no cross-env dep) — spawns vitest with the env flag set.
+ * Run EVERY `RUN_PERF=1`-gated integration suite (the `describe.skipIf(!RUN_PERF)`
+ * / `it.skipIf(!RUN_PERF)` branches only execute when this env flag is set).
+ * Cross-platform wrapper (no cross-env dep) — spawns vitest with the env flag set.
  *
- * Included suites (Phase 10):
- *   - T110  pdf-render-benchmark.test.ts        (p95 < 800 ms budget)
- *   - T110a invoice-list-perf.test.ts           (p95 < 500 ms @ 5k×2 rows)
- *   - T111  seq-number-atomicity.test.ts        (50-writer concurrent seq, < 30 s)
+ * This is the go/no-go perf gate (`docs/go-live-readiness.md` § 7): a missed SLO
+ * budget here fails the pipeline (exit code propagates). The list below is the
+ * single registry of perf suites — every suite carrying a numeric p95/wall-clock
+ * SLO CP MUST appear here, or its budget is silently never enforced. Keep it in
+ * sync: a perf suite that exists but is absent from this list is a coverage hole
+ * (the 2026-06-03 Stage-5 audit found 13 such un-wired suites across F3/F7/F8/F9).
  *
  * Invocation:
  *   pnpm test:perf
@@ -24,13 +26,31 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolvePath(__dirname, '..');
 
 const perfSuites = [
-  'tests/integration/invoicing/pdf-render-benchmark.test.ts',
-  'tests/integration/invoicing/invoice-list-perf.test.ts',
-  'tests/integration/invoicing/seq-number-atomicity.test.ts',
-  // F8 Phase 3 verify-run C1 — renewal pipeline p95 < 500ms (SC-003 / FR-046)
-  'tests/integration/perf/renewals-pipeline-perf.test.ts',
-  // F6 Phase 7 SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB
-  'tests/integration/perf/csv-import-perf.test.ts',
+  // --- F4 Invoicing (Phase 10) ---
+  'tests/integration/invoicing/pdf-render-benchmark.test.ts', // T110  p95 < 800 ms
+  'tests/integration/invoicing/invoice-list-perf.test.ts', //     T110a p95 < 500 ms @ 5k×2 rows
+  'tests/integration/invoicing/seq-number-atomicity.test.ts', //  T111  50-writer concurrent seq < 30 s
+  // --- F3 Members ---
+  'tests/integration/members/search-perf.test.ts', //            SC-002 member search p95
+  'tests/integration/members/timeline-perf.test.ts', //          member timeline p95
+  // --- F5 async receipt PDF ---
+  'tests/integration/perf/webhook-async-pdf-benchmark.test.ts', // webhook p95 (async receipt path)
+  // --- F6 EventCreate ---
+  'tests/integration/perf/csv-import-perf.test.ts', //           SC-006 CSV import 1k rows < 60 s + heap < 500 MiB
+  // --- F7 Broadcasts ---
+  'tests/integration/broadcasts/benefits-page-perf.test.ts', //  benefits page compose p95
+  'tests/integration/broadcasts/snapshot-template-perf.test.ts', // template snapshot p95
+  // --- F8 Renewals ---
+  'tests/integration/perf/renewals-pipeline-perf.test.ts', //    SC-003 / FR-046 pipeline p95 < 500 ms
+  'tests/integration/perf/renewals-cron-5k.test.ts', //          cron dispatch @ 5k members
+  'tests/integration/renewals/pipeline-perf.test.ts', //         pipeline component p95
+  'tests/integration/renewals/at-risk-recompute-perf.test.ts', // FR-036 / SC-005 at-risk recompute ≤ 60 s @ 5k
+  'tests/integration/renewals/cron-dispatch-perf.test.ts', //    dispatch coordinator p95
+  'tests/integration/renewals/renewal-confirm-perf.test.ts', //  member renewal-confirm p95
+  'tests/integration/renewals/tier-upgrade-evaluate-perf.test.ts', // FR-057 tier-upgrade evaluate ≤ 30 s @ 5k
+  // --- F9 Insights (Stage-5 audit 2026-06-03 — was missing, the documented gap) ---
+  'tests/integration/insights/dashboard-perf.test.ts', //        SC-002 dashboard render p95 < 1.5 s @ 5k members
+  'tests/integration/insights/audit-perf.test.ts', //            audit viewer p95 < 1 s @ 50k events
 ];
 
 const child = spawn(

@@ -281,9 +281,9 @@ Members reference plan tiers + tenant_id, so 1–2 must precede 5 or the import 
 Ship only when ALL are true:
 - [ ] `main` contains merged F1–F9; full CI pipeline green
 - [ ] All P0 + P1 audit findings closed
-- [ ] Golden-path E2E green on preview/staging across all platforms (`--workers=1`) — ⚠️ **journey specs (`tests/e2e/*-journey.spec.ts`) don't exist yet**; create in Stage 1b/5 or map to existing per-feature E2E tags
+- [ ] Golden-path E2E green on preview/staging across all platforms (`--workers=1`) — ✅ **journey specs authored 2026-06-03**: `tests/e2e/{admin,manager,member}-journey.spec.ts` (tag `@journey`), each walking its persona across module seams with per-step feature-flag gating. Verified GREEN locally on chromium (all flags on). **Stage-5-exec**: run `pnpm test:e2e --grep @journey --workers=1` on the preview across all 3 browser projects
 - [ ] `@a11y` + `@i18n` E2E suites green (WCAG 2.1 AA; EN/TH/SV parity)
-- [ ] `RUN_PERF=1` perf gates within SLO (`docs/observability.md`) — ⚠️ F9 suites (`dashboard-perf`, `audit-perf`) **not yet wired into `scripts/run-perf-tests.ts`**; wire or run manually
+- [ ] `RUN_PERF=1` perf gates within SLO (`docs/observability.md`) — ✅ **wired 2026-06-03**: `scripts/run-perf-tests.ts` now runs all 18 RUN_PERF-gated suites (was 5; the F9 `dashboard-perf`/`audit-perf` gap + 11 un-wired F3/F7/F8 suites all added). **Stage-5-exec**: run `pnpm test:perf` against the preview's Neon and confirm every budget passes
 - [ ] § 6 operator gates fully checked in production
 - [ ] Member data imported; row counts reconciled against source; spot-check 5 members in admin UI
 - [ ] Bootstrap admin can sign in; one real member invited + can sign in to `/portal`
