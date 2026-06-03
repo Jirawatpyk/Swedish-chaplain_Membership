@@ -1,44 +1,31 @@
 /**
  * T125 — Integration: soft-delete plan with attached members (US4 FR-010).
  *
- * Scenarios 1 + 2 — stub-based contract coverage of the
- * `MemberAttachmentChecker` port: a fake checker returns configurable
- * counts so both branches of `softDeletePlan` are exercised
- * independently of F3 wiring.
+ * W0-02 update: the former two-step `MemberAttachmentChecker` + `softDelete`
+ * pattern has been replaced by the atomic `planRepo.softDeleteGuarded` method.
+ * `SoftDeletePlanDeps` no longer carries `members`.
  *
- *   Scenario 1 — stub returns 3 → refuses with
- *                `{type: 'has_active_members', count: 3}`.
- *   Scenario 2 — stub returns 0 → soft-delete succeeds.
+ * Scenarios exercise the `softDeletePlan` use case with a real Neon DB
+ * (the advisory-lock + count + delete atomicity is tested by the dedicated
+ * `soft-delete-toctou-advisory-lock.test.ts` integration test).
  *
- * Scenarios 3 + 4 (post-ship R6 C1, 2026-05-19) — real F3-backed
- * checker. F3 has shipped a `members` table; the stub-only world is
- * obsolete (closes I6 too). The Drizzle-backed
- * `drizzleMemberAttachmentChecker` queries the real F3 schema via the
- * `@/modules/members` public-barrel free function
- * `countActiveMembersOnPlan(ctx, planId, planYear)` (Constitution
- * Principle III — no deep cross-module imports).
- *
- *   Scenario 3 — 2 real F3 members (1 active, 1 inactive) attached
- *                to the plan → refuses with count=2 (archived rows
- *                deliberately excluded — they're tombstoned).
- *   Scenario 4 — 1 F3 member with status='archived' → soft-delete
- *                succeeds (archived members don't block).
+ *   Scenario 1 — 1 active F3 member attached → refuses with has_active_members.
+ *   Scenario 2 — 0 members attached → soft-delete succeeds.
+ *   Scenario 3 — 2 real F3 members (1 active, 1 inactive) attached → refuses
+ *                with count=2 (archived rows deliberately excluded).
+ *   Scenario 4 — 1 F3 member with status='archived' → soft-delete succeeds
+ *                (archived members don't block).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
-import { drizzleMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/drizzle-member-attachment-checker';
 import { softDeletePlan } from '@/modules/plans/application/soft-delete-plan';
 import { asPlanSlug, asPlanYear } from '@/modules/plans/domain/plan';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
-import type {
-  ClockPort,
-  MemberAttachmentChecker,
-  PlanDraftInput,
-} from '@/modules/plans/application/ports';
+import type { ClockPort, PlanDraftInput } from '@/modules/plans/application/ports';
 import { createActiveTestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
@@ -84,14 +71,6 @@ function seed(userId: string): PlanDraftInput {
   } as PlanDraftInput;
 }
 
-function makeFakeChecker(count: number): MemberAttachmentChecker {
-  return {
-    async countActivePlanMembers() {
-      return count;
-    },
-  };
-}
-
 
 describe('Integration: soft-delete with attached members (T125)', () => {
   let tenant: TestTenant;
@@ -100,87 +79,7 @@ describe('Integration: soft-delete with attached members (T125)', () => {
     if (tenant) await tenant.cleanup().catch(() => {});
   });
 
-  it('Scenario 1 — stub checker returns 3 → refuses with has_active_members', async () => {
-    const user = await createActiveTestUser('admin');
-    tenant = await createTestTenant('test-swecham');
-    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
-    await planRepo.insert(tenant.ctx, seed(user.userId));
-
-    const result = await softDeletePlan(
-      {
-        planId: asPlanSlug('premium'),
-        year: asPlanYear(2027),
-        actorUserId: user.userId,
-        requestId: 'req-del-1',
-        sourceIp: null,
-        idempotencyKey: 'idem-del-1',
-      },
-      {
-        tenant: tenant.ctx,
-        planRepo,
-        audit: planAuditAdapter,
-        clock: currentYearClock,
-        members: makeFakeChecker(3),
-      },
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('expected err');
-    expect(result.error.type).toBe('has_active_members');
-    if (result.error.type === 'has_active_members') {
-      expect(result.error.count).toBe(3);
-    }
-
-    // Confirm the plan was NOT deleted
-    const reloaded = await planRepo.findOne(
-      tenant.ctx,
-      asPlanSlug('premium'),
-      asPlanYear(2027),
-    );
-    expect(reloaded?.deleted_at).toBeNull();
-  });
-
-  it('Scenario 2 — stub checker returns 0 → soft-delete succeeds', async () => {
-    const user = await createActiveTestUser('admin');
-    tenant = await createTestTenant('test-swecham');
-    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
-    await planRepo.insert(tenant.ctx, seed(user.userId));
-
-    const result = await softDeletePlan(
-      {
-        planId: asPlanSlug('premium'),
-        year: asPlanYear(2027),
-        actorUserId: user.userId,
-        requestId: 'req-del-2',
-        sourceIp: null,
-        idempotencyKey: 'idem-del-2',
-      },
-      {
-        tenant: tenant.ctx,
-        planRepo,
-        audit: planAuditAdapter,
-        clock: currentYearClock,
-        members: makeFakeChecker(0),
-      },
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('expected ok');
-    expect(result.value.deleted_at).not.toBeNull();
-
-    // Row now soft-deleted
-    const reloaded = await planRepo.findOne(
-      tenant.ctx,
-      asPlanSlug('premium'),
-      asPlanYear(2027),
-    );
-    expect(reloaded?.deleted_at).not.toBeNull();
-  });
-
-  // -------------------------------------------------------------------
-  // Scenarios 3 + 4 — real F3 members (post-ship R6 C1, closes I6)
-  // -------------------------------------------------------------------
-
+  // Helper to seed an F3 member row directly
   async function seedMember(
     tenantSlug: string,
     planId: string,
@@ -208,6 +107,86 @@ describe('Integration: soft-delete with attached members (T125)', () => {
     });
   }
 
+  it('Scenario 1 — 1 active member → refuses with has_active_members', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+    await planRepo.insert(tenant.ctx, seed(user.userId));
+    await seedMember(tenant.ctx.slug, 'premium', 2027, 'active');
+
+    const result = await softDeletePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-del-1',
+        sourceIp: null,
+        idempotencyKey: 'idem-del-1',
+      },
+      {
+        tenant: tenant.ctx,
+        planRepo,
+        audit: planAuditAdapter,
+        clock: currentYearClock,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected err');
+    expect(result.error.type).toBe('has_active_members');
+    if (result.error.type === 'has_active_members') {
+      expect(result.error.count).toBeGreaterThanOrEqual(1);
+    }
+
+    // Confirm the plan was NOT deleted
+    const reloaded = await planRepo.findOne(
+      tenant.ctx,
+      asPlanSlug('premium'),
+      asPlanYear(2027),
+    );
+    expect(reloaded?.deleted_at).toBeNull();
+  });
+
+  it('Scenario 2 — 0 members attached → soft-delete succeeds', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
+    await planRepo.insert(tenant.ctx, seed(user.userId));
+
+    const result = await softDeletePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-del-2',
+        sourceIp: null,
+        idempotencyKey: 'idem-del-2',
+      },
+      {
+        tenant: tenant.ctx,
+        planRepo,
+        audit: planAuditAdapter,
+        clock: currentYearClock,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.deleted_at).not.toBeNull();
+
+    // Row now soft-deleted
+    const reloaded = await planRepo.findOne(
+      tenant.ctx,
+      asPlanSlug('premium'),
+      asPlanYear(2027),
+    );
+    expect(reloaded?.deleted_at).not.toBeNull();
+  });
+
+  // -------------------------------------------------------------------
+  // Scenarios 3 + 4 — real F3 members (post-ship R6 C1, closes I6)
+  // -------------------------------------------------------------------
+
   it('Scenario 3 — 2 real F3 members (active + inactive) → refuses with count=2', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
@@ -230,7 +209,6 @@ describe('Integration: soft-delete with attached members (T125)', () => {
         planRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
-        members: drizzleMemberAttachmentChecker,
       },
     );
 
@@ -263,7 +241,6 @@ describe('Integration: soft-delete with attached members (T125)', () => {
         planRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
-        members: drizzleMemberAttachmentChecker,
       },
     );
 

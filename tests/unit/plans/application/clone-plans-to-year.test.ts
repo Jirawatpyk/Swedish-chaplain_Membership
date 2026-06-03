@@ -77,6 +77,7 @@ function makeDeps(overrides: Partial<ClonePlansToYearDeps> = {}): ClonePlansToYe
     update: vi.fn(),
     setActive: vi.fn(),
     softDelete: vi.fn(),
+    softDeleteGuarded: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(async () => ok(CLONE_SUMMARY)),
   };
@@ -123,6 +124,7 @@ describe('clonePlansToYear', () => {
         update: vi.fn(),
         setActive: vi.fn(),
         softDelete: vi.fn(),
+        softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () => { throw new Error('Postgres connection lost'); }),
       };
@@ -146,6 +148,7 @@ describe('clonePlansToYear', () => {
         update: vi.fn(),
         setActive: vi.fn(),
         softDelete: vi.fn(),
+        softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () => { throw 'raw string error'; }),
       };
@@ -170,6 +173,7 @@ describe('clonePlansToYear', () => {
         update: vi.fn(),
         setActive: vi.fn(),
         softDelete: vi.fn(),
+        softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () =>
           err({ type: 'target_year_populated' as const, existingCount: 7 }),
@@ -198,6 +202,7 @@ describe('clonePlansToYear', () => {
         update: vi.fn(),
         setActive: vi.fn(),
         softDelete: vi.fn(),
+        softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () => err({ type: 'source_year_empty' as const })),
       };
@@ -221,6 +226,7 @@ describe('clonePlansToYear', () => {
         update: vi.fn(),
         setActive: vi.fn(),
         softDelete: vi.fn(),
+        softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         // Simulate a future repo error type not handled in the use case
         cloneYear: vi.fn(async () =>
@@ -340,6 +346,7 @@ describe('clonePlansToYear', () => {
         update: vi.fn(),
         setActive: vi.fn(),
         softDelete: vi.fn(),
+        softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         cloneYear: vi.fn(async () =>
           ok({ sourceYear: SOURCE_YEAR, targetYear: TARGET_YEAR, clonedPlanIds: ordered, count: 3 }),

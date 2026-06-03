@@ -54,6 +54,10 @@ export {
   MEMBER_TYPE_SCOPES,
 } from './domain/plan';
 
+export {
+  planSoftDeleteLockKey,
+} from './domain/plan';
+
 export type {
   BenefitMatrix,
   // Discriminated variants of `BenefitMatrix` by `partnership` field.

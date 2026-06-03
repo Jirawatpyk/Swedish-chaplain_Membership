@@ -76,6 +76,10 @@ import type {
   ManualPlanChangeEvent,
   ManualPlanChangeListener as ManualPlanChangeListenerCanonical,
 } from '@/modules/renewals';
+import type { PlanAdvisoryLockPort } from '../ports/plan-advisory-lock-port';
+// W0-02 — shared lock-key builder from plans Domain (pure, no drizzle).
+// Cross-module import through plans public barrel (Constitution Principle III).
+import { planSoftDeleteLockKey } from '@/modules/plans';
 
 export type ManualPlanChangeListenerEvent = ManualPlanChangeEvent;
 export type ManualPlanChangeListener = ManualPlanChangeListenerCanonical;
@@ -85,6 +89,19 @@ export type ChangePlanDeps = {
   memberRepo: MemberRepo;
   plans: PlanLookupPort;
   audit: AuditPort;
+  /**
+   * W0-02 — Advisory-lock acquirer for the soft-delete TOCTOU fix.
+   *
+   * `changePlan` acquires `plans:softdelete:<tenantSlug>:<planId>:<planYear>`
+   * on the NEW plan at the start of the write tx, serialising with
+   * `softDeleteGuarded` (Side A) which acquires the SAME key before
+   * deleting. This prevents a plan from being soft-deleted while a member
+   * is concurrently being assigned to it.
+   *
+   * The implementation (`drizzlePlanAdvisoryLockAdapter`) is a thin
+   * wrapper over `tx.execute(sql\`SELECT pg_advisory_xact_lock(...)\`)`.
+   */
+  planAdvisoryLock: PlanAdvisoryLockPort;
   /**
    * F8 Phase 7 T188 — listener array invoked atomically inside the
    * change-plan tx after the `member_plan_manually_changed` audit
@@ -211,6 +228,19 @@ export async function changePlan(
   // AuditFailed sentinels caught below and mapped to server_error.
   try {
     const updatedMember = await runInTenant(deps.tenant, async (tx) => {
+      // W0-02 — acquire the shared soft-delete advisory lock on the NEW plan
+      // as the FIRST statement in this tx. This serialises with
+      // `softDeleteGuarded` (Side A in plans module) which acquires the
+      // SAME key before performing the member count + delete. The lock is
+      // auto-released at tx COMMIT or ROLLBACK.
+      // We lock the NEW plan (assigning TO a plan is the dangerous direction).
+      const lockKey = planSoftDeleteLockKey(
+        deps.tenant.slug,
+        newPlan.value.planId as string,
+        data.new_plan_year,
+      );
+      await deps.planAdvisoryLock.acquire(tx, lockKey);
+
       // M1: re-read + LOCK the row inside the tx (FOR UPDATE) so the audit's
       // old_plan_* values reflect the row actually being overwritten, closing
       // the TOCTOU window between the pre-tx validation read and this write.

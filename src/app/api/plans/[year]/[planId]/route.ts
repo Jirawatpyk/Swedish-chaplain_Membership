@@ -450,7 +450,6 @@ export async function DELETE(
       planRepo: deps.planRepo,
       audit: deps.audit,
       clock: deps.clock,
-      members: deps.members,
     },
   );
 

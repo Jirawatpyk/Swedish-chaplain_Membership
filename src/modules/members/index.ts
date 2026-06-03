@@ -175,6 +175,9 @@ export {
 // calls this free function via the public barrel so the soft-delete
 // FR-010 guard counts real members instead of always returning 0.
 export { countActiveMembersOnPlan } from './infrastructure/db/count-active-members-on-plan';
+// W0-02 — tx-bound variant for use inside an existing runInTenant tx
+// (plan-repo `softDeleteGuarded` uses this to count within the advisory-lock tx).
+export { countActiveMembersOnPlanInTx } from './infrastructure/db/count-active-members-on-plan';
 
 // --- US1 invite-portal use case ---------------------------------------------
 
