@@ -111,6 +111,11 @@ export async function gateCronBearerOrRespond(
       60,
     );
     if (!rl.success) {
+      // W0-09 follow-up: a 429 here is still a Bearer-auth rejection (the bucket
+      // `f8:cron:bearer-rejected:<ip>` is filled ONLY by rejected requests), so
+      // count it on F8-A3 too — otherwise a sustained probe stops incrementing
+      // the counter once rate-limited, under-reporting the attack volume.
+      renewalsMetrics.cronBearerAuthRejected(options.route);
       return NextResponse.json(
         { error: { code: 'rate_limited' } },
         {

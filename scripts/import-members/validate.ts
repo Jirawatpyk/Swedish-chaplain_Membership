@@ -112,7 +112,12 @@ function parseTurnover(raw: string): number | null {
   const t = raw.replace(/[,\s]/g, '');
   if (t.length === 0) return null;
   const n = Number(t);
-  return Number.isFinite(n) ? n : null;
+  // turnover_thb is a bigint (whole baht). A FRACTIONAL value (e.g. "5000000.50")
+  // is finite but would crash the `--commit` INSERT with `invalid input syntax for
+  // type bigint`, rolling back the whole all-or-nothing import. Reject non-integers
+  // here so they surface as a clean per-row `not_a_number` warning (turnover → null,
+  // member still imports) instead of an opaque DB abort.
+  return Number.isInteger(n) ? n : null;
 }
 
 /** Validate all rows; group by member; apply spec § 3 rules 1-8. */

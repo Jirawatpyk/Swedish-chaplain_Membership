@@ -115,14 +115,16 @@ export async function loadPipeline(
       );
       span.setAttribute('renewals.page_size', r.rows.length);
 
-      // W0-09: § 23.1.1 pipeline.row_count gauge. Uses the active
-      // urgency filter as the urgency_band label (or 'all' when
-      // no filter is applied). The gauge reports the most-recent
-      // page-load value per (tenant, urgency_band).
+      // W0-09: § 23.1.1 pipeline.row_count gauge = rows returned for the CURRENT
+      // page (bounded ≤ page-size 50), matching the instrument name + doc. MUST be
+      // r.rows.length, NOT r.summary.totalInWindow — emitting the raw in-window total
+      // as a metric value (with the tenant_id label) would re-introduce the per-tenant
+      // membership-scale leak the span deliberately BUCKETS above
+      // (renewals.total_in_window_bucket, LINDDUN W-R8-4). Label = active urgency filter.
       renewalsMetrics.pipelineRowCount(
         input.tenantId,
         input.urgency ?? 'all',
-        r.summary.totalInWindow,
+        r.rows.length,
       );
 
       return r;

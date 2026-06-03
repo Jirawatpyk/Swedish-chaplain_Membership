@@ -2808,8 +2808,12 @@ export const renewalsMetrics = {
    *
    * Incremented once per member that was successfully recomputed (score
    * written + audit emitted) on the weekly at-risk cron pass. `band` is the
-   * NEW risk band after recompute (bounded 4-value RiskBand enum: healthy /
-   * warning / at-risk / critical). Cardinality: 4 bands × small tenant count.
+   * NEW risk band after recompute — the RiskBand enum (healthy / warning /
+   * at-risk / critical) PLUS a `'batch'` sentinel emitted by the bulk recompute
+   * path (the set-based SQL UPDATE returns no per-row band, so it reports the
+   * aggregate succeeded count under `band='batch'`). Cardinality: up to 5 labels
+   * (4 bands + 'batch') × small tenant count. An SRE building a band-distribution
+   * panel should EXCLUDE `'batch'` (it is the bulk total, not a per-band split).
    *
    * DISTINCT from the existing `atRiskScoresRecomputed(tenant)` counter
    * (§ 23.1.1.b, `at_risk_scores_recomputed_total`) which is the aggregate

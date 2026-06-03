@@ -34,8 +34,8 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
   // DialogClose is used with `render={<Button/>}` (e.g. invite-user-dialog), where a
   // trigger/close `data-slot` merges into the Button non-deterministically SSR vs CSR.
   // The slot is targeted by nothing, so omit it (the rendered Button keeps "button").
-  // The built-in close (the X in DialogContent below) is a separate element that renders
-  // its own icon, not a Button, so it keeps its `data-slot="dialog-close"` — no conflict.
+  // The built-in close in DialogContent below ALSO renders via `render={<Button/>}`, so it
+  // likewise omits `data-slot` for the same SSR/CSR-merge reason (not because it isn't a Button).
   return <DialogPrimitive.Close {...props} />
 }
 
@@ -86,7 +86,9 @@ function DialogContent({
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
-            data-slot="dialog-close"
+            // No `data-slot` — this built-in close uses `render={<Button/>}`, the same
+            // base-ui render-prop path that mismatches `data-slot` SSR vs CSR (see the
+            // DialogClose wrapper above). The Button keeps its deterministic "button" slot.
             render={
               <Button
                 variant="ghost"
