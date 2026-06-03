@@ -44,12 +44,18 @@ export const memberIdentitySnapshotSchema = z.object({
     .min(1, 'tax_id must be null (not empty string) when absent')
     .nullable(),
   address: z.string().min(1, 'address must be a non-empty string'),
-  primary_contact_name: z
-    .string()
-    .min(1, 'primary_contact_name must be a non-empty string'),
-  primary_contact_email: z
-    .string()
-    .email('primary_contact_email must be a valid email'),
+  // code-review L-03 — the buyer CONTACT is supplementary: Thai Revenue Code
+  // §86/4 requires the buyer's name + address + TIN, NOT a contact. A member
+  // legitimately may have no resolvable primary contact at issue time (the
+  // adapter then snapshots empty strings), so an EMPTY string is accepted for
+  // both contact fields. The field must still be PRESENT, though — a MISSING
+  // (undefined) field is a malformed snapshot and is still rejected (the
+  // original T082 guard). A NON-EMPTY email must be a valid address.
+  primary_contact_name: z.string(),
+  primary_contact_email: z.union([
+    z.string().email('primary_contact_email, when present, must be a valid email'),
+    z.literal(''),
+  ]),
 });
 
 export class MalformedSnapshotError extends Error {
@@ -65,6 +71,39 @@ export class MalformedSnapshotError extends Error {
   }
 }
 
+/**
+ * Thrown by `makeMemberIdentitySnapshot` when the parts fail schema
+ * validation. Distinct from `MalformedSnapshotError` (the READ-boundary
+ * error, which carries an `invoiceId`) — at creation time there is no
+ * invoice id yet, so this surfaces the raw zod issues only.
+ */
+export class InvalidMemberIdentitySnapshotError extends Error {
+  readonly kind = 'invalid_member_identity_snapshot' as const;
+  readonly issues: readonly z.ZodIssue[];
+  constructor(issues: readonly z.ZodIssue[]) {
+    super(
+      `member_identity_snapshot failed validation at creation (${issues.length} issue${issues.length === 1 ? '' : 's'})`,
+    );
+    this.issues = issues;
+  }
+}
+
+/**
+ * Build a validated, frozen member-identity snapshot.
+ *
+ * code-review L-03 — validate at CREATION (defense-in-depth) so a corrupt
+ * snapshot fails fast at issue / credit-note time with the exact zod issues,
+ * instead of being written silently and only rejected later at the read
+ * boundary (`parseMemberIdentitySnapshot` in DrizzleInvoiceRepo). On real data
+ * this never throws: F3 guarantees a valid primary contact (the
+ * exactly-one-primary invariant — `contacts_one_primary_per_member` partial
+ * unique index + `removeContact` refusing a primary) plus a non-empty legal
+ * name and a composed address.
+ */
 export function makeMemberIdentitySnapshot(parts: MemberIdentitySnapshot): MemberIdentitySnapshot {
-  return Object.freeze({ ...parts });
+  const result = memberIdentitySnapshotSchema.safeParse(parts);
+  if (!result.success) {
+    throw new InvalidMemberIdentitySnapshotError(result.error.issues);
+  }
+  return Object.freeze({ ...result.data });
 }

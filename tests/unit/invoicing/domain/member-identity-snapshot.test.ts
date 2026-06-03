@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   memberIdentitySnapshotSchema,
   MalformedSnapshotError,
+  InvalidMemberIdentitySnapshotError,
   makeMemberIdentitySnapshot,
   type MemberIdentitySnapshot,
 } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
@@ -145,5 +146,63 @@ describe('makeMemberIdentitySnapshot', () => {
   it('freezes the returned object (FR-038 immutability at Domain layer)', () => {
     const snap = makeMemberIdentitySnapshot(validSnapshot);
     expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  // code-review L-03 — validate at creation (defense-in-depth).
+  it('throws InvalidMemberIdentitySnapshotError on an empty address', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({ ...validSnapshot, address: '' }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('throws on a malformed primary_contact_email', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        primary_contact_email: 'not-an-email',
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('throws on an empty legal_name', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({ ...validSnapshot, legal_name: '' }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('throws on an empty-string tax_id (must be null when absent, not "")', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({ ...validSnapshot, tax_id: '' }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('accepts a valid snapshot with null tax_id (individual member)', () => {
+    const snap = makeMemberIdentitySnapshot({ ...validSnapshot, tax_id: null });
+    expect(snap.tax_id).toBeNull();
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('accepts a CONTACTLESS member (empty name + empty email) — §86/4 needs no buyer contact', () => {
+    const snap = makeMemberIdentitySnapshot({
+      ...validSnapshot,
+      primary_contact_name: '',
+      primary_contact_email: '',
+    });
+    expect(snap.primary_contact_name).toBe('');
+    expect(snap.primary_contact_email).toBe('');
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('surfaces the zod issues on the thrown error', () => {
+    try {
+      makeMemberIdentitySnapshot({ ...validSnapshot, address: '' });
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(InvalidMemberIdentitySnapshotError);
+      if (e instanceof InvalidMemberIdentitySnapshotError) {
+        expect(e.issues.length).toBeGreaterThan(0);
+        expect(e.kind).toBe('invalid_member_identity_snapshot');
+      }
+    }
   });
 });
