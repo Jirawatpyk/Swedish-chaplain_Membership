@@ -94,7 +94,9 @@ describe('F4 member-identity adapter — composes the full buyer address (§86/�
     expect(address).toContain('99/1 Rama IV Road');
     expect(address).toContain('Unit 12B');
     expect(address).toContain('Khlong Toei Bangkok 10110');
-    expect(address).toContain('TH');
+    // L-01: the redundant trailing "TH" line is suppressed for a domestic
+    // Thai address — the jurisdiction is implicit in the Thai locality.
+    expect(address.split('\n')).not.toContain('TH');
     // Not the pre-fix bare-country stub.
     expect(address).not.toBe('TH');
     expect(address.split('\n').length).toBeGreaterThan(1);
