@@ -14,6 +14,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { randomUUID } from 'node:crypto';
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import {
   cancelPayment,
   makeCancelPaymentDeps,
@@ -79,7 +80,7 @@ export async function POST(
       return errorResponse(401, 'unauthorized', correlationId);
     }
     logger.error(
-      { err: e instanceof Error ? e.message : String(e), requestId, correlationId },
+      { errKind: errKind(e), requestId, correlationId },
       'payments.cancel.member_context_throw',
     );
     return errorResponse(500, 'internal_error', correlationId);
@@ -133,7 +134,7 @@ export async function POST(
     } catch (e) {
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          errKind: errKind(e),
           correlationId,
           tenantId: tenantCtx.slug,
         },
@@ -213,7 +214,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        errKind: errKind(e),
         requestId,
         correlationId,
         tenantId: tenantCtx.slug,

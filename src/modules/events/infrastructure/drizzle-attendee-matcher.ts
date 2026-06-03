@@ -24,7 +24,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
-import { db, type TenantTx } from '@/lib/db';
+import { type TenantTx } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import type {
@@ -56,13 +56,15 @@ const DEFAULT_FUZZY_THRESHOLD = 2;
 export const FUZZY_MEMBER_SCAN_CAP = 5000;
 
 /**
- * Factory — returns the adapter bound to a Drizzle executor (either the
- * root `db` for read-only probes OR a transaction handle when called
- * inside `runInTenant`). The route handler will pass `tx` so the SELECT
- * runs under the tenant-scoped RLS context.
+ * Factory — returns the adapter bound to a tenant-scoped Drizzle transaction
+ * handle. Callers MUST pass the `tx` from `runInTenant` so the member/contact
+ * SELECT runs under the tenant RLS context. There is deliberately NO root-`db`
+ * default and NO pre-built singleton: defaulting to the BYPASSRLS pool `db`
+ * would let a SELECT silently read across tenants (Gotchas — RLS bypass via the
+ * pool-global `db`). Requiring an explicit `tx` makes that mistake a compile error.
  */
 export function makeDrizzleAttendeeMatcher(
-  executor: TenantTx | typeof db = db,
+  executor: TenantTx,
 ): AttendeeMatcher {
   return {
     async match(
@@ -257,10 +259,3 @@ export function makeDrizzleAttendeeMatcher(
     },
   };
 }
-
-/**
- * Default singleton bound to root `db` — for use OUTSIDE a tx context.
- * Inside a runInTenant tx, callers should construct a tx-bound matcher
- * via `makeDrizzleAttendeeMatcher(tx)` so the RLS context is honoured.
- */
-export const drizzleAttendeeMatcher: AttendeeMatcher = makeDrizzleAttendeeMatcher();
