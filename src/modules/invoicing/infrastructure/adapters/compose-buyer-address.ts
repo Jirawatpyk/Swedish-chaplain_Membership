@@ -52,7 +52,16 @@ export function composeBuyerAddress(parts: BuyerAddressParts): string {
   if (locality.length > 0) lines.push(locality);
 
   const country = clean(parts.country);
-  if (country.length > 0) lines.push(country);
+  // A domestic Thai tax invoice carries the jurisdiction implicitly in the
+  // Thai locality, so a trailing "TH" line is redundant (standard Thai tax-doc
+  // convention). Suppress it ONLY when the country is TH AND we already have at
+  // least one street/locality line. Foreign members keep their country line, and
+  // an address-less member still falls back to the bare country (non-empty
+  // invariant). (code-review L-01.)
+  const hasStreetParts = lines.length > 0;
+  const suppressDomesticCountry =
+    country.toUpperCase() === 'TH' && hasStreetParts;
+  if (country.length > 0 && !suppressDomesticCountry) lines.push(country);
 
   // Always non-empty: `country` is required, so at minimum the bare country
   // code survives (matches the pre-fix behaviour for address-less members).

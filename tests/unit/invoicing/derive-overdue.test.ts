@@ -84,7 +84,9 @@ function issuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
       tax_id: null,
       address: 'x',
       primary_contact_name: 'x',
-      primary_contact_email: 'x@x.x',
+      // L-03 — makeMemberIdentitySnapshot now validates; 'x@x.x' fails zod
+      // `.email()` (TLD must be ≥2 chars). Use a valid e-mail.
+      primary_contact_email: 'contact@example.com',
     }),
     paymentMethod: null,
     paymentReference: null,
