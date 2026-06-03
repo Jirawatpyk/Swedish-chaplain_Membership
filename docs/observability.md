@@ -1114,7 +1114,7 @@ F8 ships dark behind `FEATURE_F8_RENEWALS=false` until F9 admin shell lands. All
 | Metric | Type | Labels | Source | SLO ref |
 |---|---|---|---|---|
 | `renewals.pipeline.load_duration_ms` | histogram | `tenant_id`, `tier_filter`, `urgency_filter` | OTel span `admin_pipeline_load` | SC-003 |
-| `renewals.pipeline.row_count` | gauge | `tenant_id`, `urgency_band` | per-load summary | — |
+| `renewals.pipeline.row_count` | gauge | `tenant_id`, `urgency_band` | rows on the CURRENT page (≤ page-size 50) per load — NOT the in-window total (that is bucketed on the span to avoid a per-tenant scale leak) | — |
 | `renewals.pipeline.lapsed_tab_visit_total` | counter | `tenant_id` | route handler | — |
 
 #### 23.1.1.b Phase 9 / T231 — business-volume counters

@@ -112,12 +112,17 @@ function parseTurnover(raw: string): number | null {
   const t = raw.replace(/[,\s]/g, '');
   if (t.length === 0) return null;
   const n = Number(t);
-  // turnover_thb is a bigint (whole baht). A FRACTIONAL value (e.g. "5000000.50")
-  // is finite but would crash the `--commit` INSERT with `invalid input syntax for
-  // type bigint`, rolling back the whole all-or-nothing import. Reject non-integers
-  // here so they surface as a clean per-row `not_a_number` warning (turnover → null,
-  // member still imports) instead of an opaque DB abort.
-  return Number.isInteger(n) ? n : null;
+  // turnover_thb is a NON-NEGATIVE bigint (whole baht, DB CHECK turnover_thb >= 0).
+  // Anything that is not a whole, non-negative, in-range integer would crash the
+  // `--commit` INSERT and roll back the whole all-or-nothing import with an opaque
+  // DB error. Reject all such values here so they degrade to a clean per-row
+  // `not_a_number` warning (turnover → null, member still imports):
+  //   - FRACTIONAL ("5000000.50")        → `invalid input syntax for type bigint`
+  //   - NEGATIVE ("-5000000")            → violates the members_turnover_non_negative CHECK
+  //   - OVER-RANGE (> MAX_SAFE_INTEGER)  → JS precision loss + Postgres `bigint out of range`
+  // (MAX_SAFE_INTEGER ≈ 9.0e15 is well above any real annual turnover and safely
+  // below bigint max 9.2e18, so this bound never rejects a legitimate value.)
+  return Number.isInteger(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? n : null;
 }
 
 /** Validate all rows; group by member; apply spec § 3 rules 1-8. */
