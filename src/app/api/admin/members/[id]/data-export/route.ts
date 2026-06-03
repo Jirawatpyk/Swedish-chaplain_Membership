@@ -13,6 +13,8 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireAdminContext } from '@/lib/admin-context';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { isLocale } from '@/i18n/config';
 import { tryMemberId } from '@/modules/members';
@@ -37,6 +39,25 @@ export async function POST(
   }
 
   const tenant = resolveTenantFromRequest(request);
+
+  // Rate-limit per admin actor (W0-18): the on-behalf export drives the same
+  // ZIP+PDF+Neon archive build as the self-service path. 20/hour bounds a runaway
+  // script while leaving ample headroom for an admin processing a batch of DSARs.
+  const rl = await rateLimiter.check(
+    `gdpr-export-admin:${tenant.slug}:${ctx.current.user.id}`,
+    20,
+    3600,
+  );
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: { code: 'rate_limited' } },
+      {
+        status: 429,
+        headers: { 'Retry-After': retryAfterSecondsFromRl({ reset: rl.reset }).toString() },
+      },
+    );
+  }
+
   const activeLocale = await getLocale();
   const requesterLocale = isLocale(activeLocale) ? activeLocale : 'en';
 

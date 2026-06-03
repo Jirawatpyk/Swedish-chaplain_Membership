@@ -14,6 +14,8 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { isLocale } from '@/i18n/config';
 import { requestDataExport, makeRequestDataExportDeps } from '@/modules/insights';
@@ -71,6 +73,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
   const memberId = memberResult.value.memberId;
+
+  // Rate-limit per member (W0-18): each accepted request enqueues a job that drives a
+  // ZIP + react-pdf invoice render + full GDPR archive read against Neon. The use-case
+  // only dedupes within a single UTC minute, so without this a member could queue ~60
+  // archive builds/hour — a resource-exhaustion vector. 3/hour is ample for legitimate
+  // self-service. Runs AFTER own-member resolution so the key is the data subject.
+  const rl = await rateLimiter.check(`gdpr-export-request:${tenant.slug}:${memberId}`, 3, 3600);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: { code: 'rate_limited' }, correlationId },
+      {
+        status: 429,
+        headers: { 'Retry-After': retryAfterSecondsFromRl({ reset: rl.reset }).toString() },
+      },
+    );
+  }
+
   const activeLocale = await getLocale();
   const requesterLocale = isLocale(activeLocale) ? activeLocale : 'en';
 

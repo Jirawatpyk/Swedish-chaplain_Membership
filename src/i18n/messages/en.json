@@ -4346,6 +4346,7 @@
         "errorCycleNotPayable": "This renewal cycle has already been processed.",
         "errorPlanUnavailable": "The selected plan is no longer available.",
         "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
+        "errorRateLimited": "Too many renewal attempts. Please wait a few minutes and try again.",
         "errorNetwork": "Connection issue. Please check your internet and try again."
       },
       "planChange": {

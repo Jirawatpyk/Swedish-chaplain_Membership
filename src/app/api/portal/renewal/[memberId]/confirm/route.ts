@@ -12,9 +12,10 @@
  * `renewal_cross_member_probe` audit (handled inside the use-case) and
  * return 404 (no oracle per FR-027 generic-error policy).
  *
- * Rate-limit: 10/1h per member per FR-027 (deferred — wired alongside
- * existing rate-limit infra in a follow-on; the portal page rate-
- * limits the verify-token path which is the actual abuse vector).
+ * Rate-limit (W0-17, FR-027): 10/1h per member. This endpoint composes F4
+ * invoice draft + issuance, so an unbounded confirm loop is an invoice-spam /
+ * DoS vector on a money path. The check runs right after the session-vs-URL
+ * guard and BEFORE any body parse or invoice work.
  */
 import { type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
@@ -24,6 +25,8 @@ import { logger } from '@/lib/logger';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
 import { requireMemberContext } from '@/lib/member-context';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { errorResponse, successResponse } from '@/lib/renewals-route-helpers';
 import {
   confirmRenewal,
@@ -69,6 +72,19 @@ export async function POST(
       status: 404,
       code: 'cycle_not_found',
       correlationId,
+    });
+  }
+
+  // Rate-limit (W0-17): bound the money path BEFORE any body parse / invoice work.
+  // 10/1h per member — generous for a legitimate confirm-then-retry, but stops an
+  // unbounded loop from spamming F4 invoice issuance.
+  const rl = await rateLimiter.check(`renewal-confirm:${ctx.tenant.slug}:${ctx.memberId}`, 10, 3600);
+  if (!rl.success) {
+    return errorResponse({
+      status: 429,
+      code: 'rate_limited',
+      correlationId,
+      headers: { 'Retry-After': retryAfterSecondsFromRl({ reset: rl.reset }).toString() },
     });
   }
 
