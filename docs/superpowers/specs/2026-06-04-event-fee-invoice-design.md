@@ -78,9 +78,13 @@ No fabricated UUIDs/empty-strings (type lie). Per F4-R8: migration applied +
   `event_id`/`event_registration_id` + `vat_inclusive` + CHECK + partial index +
   backfill (`membership`/`vat_inclusive=false`).
 
-### Line kind
-Add `'event_fee'` to `INVOICE_LINE_KINDS` (domain const) + DB enum. Event invoices
-carry exactly one `event_fee` line (no pro-rate).
+### Line kind (NF-D)
+Add `'event_fee'` to **both** `INVOICE_LINE_KINDS` (domain const,
+`invoice-line.ts:12` — currently `['membership_fee','registration_fee']`) **and**
+the DB enum, landing **atomically** (the domain `as const` and the pgEnum `ADD
+VALUE` must ship in the same change as `enforceOneSubjectLine`, else the
+`'event_fee'` comparison is a TS2367 always-false / a DB enum error — F4-R8
+pattern). Event invoices carry exactly one `event_fee` line (no pro-rate).
 
 ### `tenant_invoice_settings` — NO new columns
 Reuses `vat_rate`, `currency_code`, seller identity, `invoice_number_prefix`
@@ -113,8 +117,14 @@ must be made subject-aware (log as a Complexity-Tracking deviation):
 `issue-credit-note.ts` puts `member_id: loaded.memberId` into a
 `F4MemberTimelineAuditEventType` payload (`member_id: string` required) and
 auto-emails `primary_contact_email`. For event/non-member invoices:
-- `credit_note_issued` payload → `member_id: string | null` + `event_registration_id`
-  when null (see §audit B6).
+- **Audit routing (NF-A):** when `member_id` is null, emit `credit_note_issued`
+  through the **non-timeline** branch `Exclude<F4AuditEventType,
+  F4MemberTimelineAuditEventType>` (`payload: Record<string, unknown>` with
+  `event_registration_id`) — do **NOT** widen `MemberTimelineAuditPayload`
+  (audit-port.ts:186-188 stays `member_id: string`; widening would silently
+  weaken the F3 timeline guarantee for the 5 membership events). A matched-member
+  event credit note (member_id present) stays on the timeline branch. The
+  use-case call-site switches branch on `member_id === null`.
 - Auto-email guarded: `if (recipientEmail) …` (skip + warn + audit otherwise).
 
 ### (c) VAT-inclusive split (B3 — half-away-from-zero, bigint)
@@ -145,8 +155,11 @@ vat      = totalSatang - subtotal                                               
      `duplicate`, not a 500), `invalid_amount`, `tax_id_required`,
      `invalid_buyer_snapshot`.
   3. Amount: `total = amountOverride ?? ticket_price_thb`; `amountOverride` is
-     **VAT-inclusive**, zod `.int().min(1).max(<ceiling, e.g. 1_000_000_00>)`
-     (route-handler zod too — defense-in-depth) → `invalid_amount` on violation.
+     **VAT-inclusive**, zod `.int().min(1).max(MAX_EVENT_INVOICE_SATANG)` where
+     **`MAX_EVENT_INVOICE_SATANG = 100_000_000`** (= 1,000,000.00 THB) is a named
+     domain constant shared by the use-case + the route-handler zod
+     (defense-in-depth) → `invalid_amount` on violation. (NF-C — concrete value,
+     not a placeholder.)
   4. Buyer snapshot (always populated; reject `invalid_buyer_snapshot` pre-persist):
      - matched member → `memberIdentityAdapter.getForIssue` (auto incl. tax_id +
        composed address); if `memberTypeScope==='company' && !tax_id` →
@@ -161,26 +174,42 @@ vat      = totalSatang - subtotal                                               
 - `issueInvoice` reused **with the §3a changes**; status machine, credit notes,
   payments (F5) reused keyed by `invoice_id`.
 
-### (e) Clean Architecture & tenant isolation (H1)
+### (e) Clean Architecture & tenant isolation (H1 + NF-E)
 `EventRegistrationLookupPort.findById(tx, tenantId, …)` lives in
-invoicing/application; the adapter (invoicing/infrastructure) calls a **tx-threaded
-`findById`** on F6's repo via the public barrel (extend F6's repo with a tx-threaded
-method if absent — a port extension, not a barrel leak; threads the invoice
-`runInTenant` tx so RLS holds + no TOCTOU on a fresh pool connection). Add the five
-Principle-I sub-clauses (app-layer + db-layer + integration test + audit +
-super-admin) and a cross-tenant integration test (`Result.err` +
-`registration_cross_tenant_probe` audit) — Review-Gate blocker.
+invoicing/application; the adapter (invoicing/infrastructure) calls F6's
+**`findByIdInTx(tx, tenantId, registrationId)`** via the public barrel — **F6's
+`RegistrationsRepository.findById` (registrations-repository.ts:161) takes no
+`tx`, so add a tx-threaded `findByIdInTx`** mirroring `InvoiceRepo.findByIdInTx`
+(port extension on F6, not a barrel leak; the F6 Drizzle adapter implements it).
+Threading the invoice `runInTenant` `tx` keeps RLS valid + closes the TOCTOU on a
+fresh pool connection.
+**Principle-I (all five sub-clauses):** (1) app-layer tenant filter; (2) db-layer
+RLS via the threaded `tx`; (3) cross-tenant integration test asserting
+`Result.err` + a `registration_cross_tenant_probe` audit event; (4) audit on the
+probe; (5) **no super-admin bypass exists** for `EventRegistrationLookupPort` —
+all reads are tenant-scoped through `runInTenant`; if a future super-admin path is
+added it must be gated + logged + covered. Review-Gate blocker.
 
-### (f) Audit taxonomy & retention (B6 — decided now)
+### (f) Audit taxonomy & retention (B6 + NF-A — decided now)
 **Reuse** `invoice_draft_created` / `invoice_issued` / `invoice_paid` /
 `invoice_voided` / `invoice_pdf_resent` with `invoice_subject` in the payload (no
-new enum migration). Payload variant: `member_id: string | null`,
-`event_registration_id` required when `member_id` null. The issued/paid/voided/
-pdf-resent set keeps **10-year** retention in `F4_AUDIT_RETENTION_YEARS` (Thai RD
-§87/3) — verified by `check:audit-counts`. Any buyer email in a payload is
-`sha256Hex(email).slice(0,16)`, never raw (consistent with F6 import-csv:387).
-4-place update (domain const + pgEnum + audit-event.test + completeness.test)
-captured for /speckit.tasks.
+new audit enum value).
+- **Routing (NF-A — committed):** the `member_id`-null (non-member) variants emit
+  through the **non-timeline** `Exclude<F4AuditEventType,
+  F4MemberTimelineAuditEventType>` branch (`payload: Record<string, unknown>` with
+  `event_registration_id`). **`MemberTimelineAuditPayload` is NOT changed** —
+  `audit-port.ts:186-188` stays `member_id: string`; the audit-port type needs no
+  edit. Matched-member event invoices (member_id present) emit on the timeline
+  branch (so they appear in the member's F3 timeline). The use-case call-site
+  switches branch on `member_id === null`. Add a **TS compile-test assertion**
+  (tasks) that a non-member emit does not type-check against the timeline payload.
+- **Email field:** buyer email in any payload is a named field
+  `contact_email_sha256 = sha256Hex(email).slice(0,16)` (never raw; consistent
+  with F6 import-csv:387), **omitted when the email is empty**.
+- **Retention:** issued/paid/voided/pdf-resent stay **10-year** in
+  `F4_AUDIT_RETENTION_YEARS` (Thai RD §87/3) — verified by `check:audit-counts`.
+- No new enum value here, so no 4-place enum churn for audit; only the payload
+  shape + the call-site branch change (captured for /speckit.tasks).
 
 ---
 
@@ -219,8 +248,13 @@ Command palette: add "New event fee invoice" → `?type=event`.
   in `invoice-filters.tsx`.
 
 ### States, forms & a11y (B8, per `docs/ux-standards.md` + WCAG 2.1 AA)
-- `EventAttendeePickerSkeleton` (column-matched) + `loading.tsx` under
-  `/admin/invoices/new` + `useMinDelay(300)` (no CLS).
+- **Loading (B8 — committed):** `loading.tsx` under `/admin/invoices/new` is a
+  **shape-neutral** page skeleton (header + form-card outline, type-agnostic) — it
+  is an RSC and cannot read `?type`, so it must NOT render a membership-specific
+  shape (would flash the wrong skeleton on the event path → CLS, ux-standards
+  §2.1). The type-specific `EventAttendeePickerSkeleton` (column-matched) renders
+  inside a **client-side Suspense boundary** that mounts only when `Event` is
+  selected + the event is chosen, with `useMinDelay(300)`.
 - Three attendee-picker empty states: no-registrations / all-already-invoiced /
   all-erased (icon + title + CTA, EN/TH/SV).
 - Buyer address = freeform textarea; per-field inline error copy (EN/TH/SV);
@@ -262,14 +296,45 @@ Non-member buyer identity (legal_name, address, tax_id, contact name/email) is a
   event-admin legitimate interest) is a new purpose → rely on the §86/§87 legal
   obligation as the compatible secondary basis **and** update the F6 privacy
   notice (EN/TH/SV) to add the tax-receipt purpose.
-- **Retention/erasure:** a **10-year-from-issue scheduled redaction job**
-  tombstones `member_identity_snapshot` PII on `member_id IS NULL` event invoices
-  (preserving `*_satang` + `document_number`) — added to §2, §7, and the retention
-  table. (Non-member snapshots have no F3 archive cascade.)
+- **Retention/erasure — scheduled redaction job (fully specified):**
+  Non-member (`member_id IS NULL`) snapshots have no F3 archive cascade, so a
+  dedicated job enforces §87/3 + Art. 5(1)(e):
+  - **Endpoint:** `POST /api/cron/invoicing/redact-expired-event-buyers` (Bearer
+    `CRON_SECRET`, retry-OFF, cron-job.org — same pattern as F8/F9 crons).
+  - **Predicate:** `invoice_subject='event' AND member_id IS NULL AND status<>'draft'
+    AND issue_date < now() − interval '10 years'`.
+  - **Action (tombstone, preserve tax record):** overwrite
+    `member_identity_snapshot` →
+    `{ legal_name:'[REDACTED]', tax_id:null, address:'[REDACTED]',
+       primary_contact_name:'', primary_contact_email:'' }`; **keep** `*_satang`,
+    `document_number`, `vat_*`, dates (the financial/tax record survives; only PII
+    is erased).
+  - **Audit:** emit `event_buyer_pii_redacted` per row — this is the **one new
+    audit event type** the feature adds (the invoice_* events are reused, §3f), so
+    it needs the 4-place update (domain const + pgEnum + audit-event.test +
+    completeness.test) + **10y** retention in `F4_AUDIT_RETENTION_YEARS`
+    (/speckit.tasks).
+  - **Runbook:** add to `docs/runbooks/cron-jobs.md`.
+- **Retention table (added):**
+
+  | Data | Retention | Basis |
+  |------|-----------|-------|
+  | Event invoice financial record (`*_satang`, `document_number`, dates, audit issued/paid/voided) | **10y** from issue | RD §87/3 |
+  | Non-member buyer PII (snapshot identity fields) | **10y** from issue, then redaction job tombstones | RD §87/3 ceiling + PDPA §19 / Art. 5(1)(e) storage-limitation |
+  | Matched-member buyer PII | follows the F3 member lifecycle (archive cascade) | existing |
+
 - **DSR:** refuse erasure during §87/3 retention (Art. 17(3)(b)); offer Art. 18
   restriction on contact fields; manual Art. 15/20 for accountless non-members.
-- **RoPA:** `docs/.../processing-records.md` updated before /speckit.ship.
-- **Redaction:** confirm `primary_contact_email` is in the invoicing pino
+- **Privacy notices (named):** (a) update the F6 attendee privacy notice
+  (`src/i18n/messages/{en,th,sv}.json` namespace `events.privacyNotice.*`) to add
+  the tax-receipt secondary purpose; (b) conditional invoice-email footer for
+  `invoice_subject='event' AND member_id IS NULL`, keys
+  `admin.invoices.emailFooter.eventNonMember.*` (EN/TH/SV).
+- **RoPA:** `docs/compliance/processing-records.md` (currently says F4 out of
+  scope, :17) — add an event-fee-invoice processing entry (purpose, categories,
+  basis, retention, recipients) before /speckit.ship; content skeleton in the
+  tasks list.
+- **Redaction (logs):** add `primary_contact_email` to the invoicing pino
   `REDACT_PATHS`.
 
 ---
@@ -327,10 +392,17 @@ deviations recorded in `plan.md` Complexity Tracking.
 - Separate event invoice prefix (shares INV).
 - Per-tenant "event invoicing enabled" setting (gated by the F4 feature flag).
 - Editable buyer identity for a matched member (auto + read-only; override = future).
-- **F5 self-pay (Decision 7):** matched members CAN self-pay event invoices via
-  the existing subject-agnostic `getInvoiceForPayment` + see them in
-  `/portal/invoices`; **non-members cannot** (no portal account → admin records
-  payment manually; guest-payment-link = future).
+- **F5 self-pay (Decision 7 + NF-B):** matched members CAN self-pay event invoices
+  + see them in `/portal/invoices`; **non-members cannot** (no portal account →
+  admin records payment manually; guest-payment-link = future). **Code reality:**
+  `getInvoiceForPayment`'s DTO `InvoiceForPayment.memberId` is `string` (non-null,
+  get-invoice-for-payment.ts:65) → a non-member (DB `member_id IS NULL`) row
+  cannot be mapped → the "subject-agnostic reuse" claim is FALSE as-was. **Fix
+  (committed):** widen `InvoiceForPayment.memberId: string | null`; `initiate-payment`
+  skips the F3 member-ownership check when null (non-member payments are
+  tenant-linked, not member-linked) — this keeps the admin record-payment path
+  working for non-member event invoices while self-pay stays members-only at the
+  portal layer.
 - `member_identity_snapshot` → `BuyerIdentitySnapshot` rename (decide at
   /speckit.plan; if not renamed, the clarifying comment + retention-sweep
   inclusion are mandatory).
