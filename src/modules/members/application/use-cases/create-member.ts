@@ -194,6 +194,12 @@ export async function createMember(
   );
   if (!planResult.ok) return err({ type: 'plan_not_found' });
   const plan = planResult.value;
+  // code-review #9-#14 follow-up — `getPlan`/`findOne` deliberately returns
+  // soft-deleted plans, so a `planResult.ok` plan may still be soft-deleted.
+  // A member must never be created onto a soft-deleted plan (the same
+  // integrity rule changePlan enforces, W0-02 #1). Reuse `plan_not_found` so
+  // the create path is consistent with the change path.
+  if (plan.isSoftDeleted) return err({ type: 'plan_not_found' });
 
   const regDate = data.registration_date
     ? new Date(data.registration_date)
