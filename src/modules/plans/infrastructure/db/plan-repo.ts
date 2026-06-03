@@ -18,7 +18,7 @@
  * vitest.config.ts:
  *   - `cloneYear`     — target-year-populated check + atomicity
  *   - `update`        — secondary locked-field guard (defence in depth)
- *   - `softDelete`    — member-attachment refusal (via Application layer)
+ *   - `softDeleteGuarded` — advisory-lock + member-count refusal (W0-02)
  *   - None of the simple CRUD helpers carry branch-level risk by themselves,
  *     but the use-case-level threshold covers them transitively.
  */
@@ -323,24 +323,6 @@ export const planRepo: PlanRepo = {
     });
   },
 
-  // -- softDelete (US4) ------------------------------------------------------
-  async softDelete(tenant, planId, year, deletedAt, updatedBy) {
-    return runInTenant(tenant, async (tx) => {
-      const updated = await tx
-        .update(membershipPlans)
-        .set({ deletedAt, updatedBy, updatedAt: new Date() })
-        .where(
-          and(
-            eq(membershipPlans.planId, planId),
-            eq(membershipPlans.planYear, year),
-          ),
-        )
-        .returning();
-      const row = updated[0];
-      return row ? rowToPlan(row) : undefined;
-    });
-  },
-
   // -- softDeleteGuarded (W0-02 TOCTOU fix) ------------------------------------
   //
   // Advisory-lock + count + delete in ONE tx.
@@ -362,12 +344,11 @@ export const planRepo: PlanRepo = {
         return { kind: 'has_active_members' as const, count: memberCount };
       }
 
-      // 3. Soft-delete UPDATE — mirrors `softDelete` above, incl.
-      //    `WHERE deleted_at IS NULL` semantics (the `softDelete` method
-      //    relies on RLS for scoping; we add an explicit `IS NULL` check
-      //    here so a concurrent soft-delete on the same plan by another
-      //    request doesn't overwrite the first one and instead returns
-      //    not_found which the Application layer already handles).
+      // 3. Soft-delete UPDATE under the lock. RLS scopes the row to the
+      //    tenant; the explicit `WHERE deleted_at IS NULL` makes a concurrent
+      //    soft-delete of the same plan a no-op (returns not_found, which the
+      //    Application layer already handles) rather than overwriting the
+      //    first delete's deletedAt/updatedBy.
       const updated = await tx
         .update(membershipPlans)
         .set({ deletedAt, updatedBy, updatedAt: new Date() })

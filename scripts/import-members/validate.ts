@@ -138,14 +138,24 @@ export function validateRows(
     issues.push({ rowIndex, field, code, severity: 'warning' });
   };
 
-  // Rule 2 (cross-import email uniqueness): tally lowercased valid emails.
-  // Skip rows with a blank company name — they are errored + not grouped into a
-  // member, so they must not bump a real member's email count (false duplicate).
-  const emailCounts = new Map<string, number>();
+  // Rule 2 (cross-import email uniqueness) — code-review #2: scope by COMPANY.
+  // Map each lowercased valid email → the set of DISTINCT company keys it
+  // appears under. An email under ≥2 distinct companies is a genuine
+  // cross-member collision (error). The same email repeated WITHIN one company
+  // group is an intra-member data-entry duplicate (paste error) — handled in
+  // the per-group contacts loop below as a warn + dedupe, NOT an error that
+  // drops the whole legitimate member. Blank-company rows are skipped (they
+  // error on `companyName` + are not grouped, so must not bump a real count).
+  const emailCompanies = new Map<string, Set<string>>();
   for (const r of rows) {
-    if (normCompanyKey(r.companyName).length === 0) continue;
+    const ck = normCompanyKey(r.companyName);
+    if (ck.length === 0) continue;
     const e = asEmail(r.contactEmail);
-    if (e.ok) emailCounts.set(e.value, (emailCounts.get(e.value) ?? 0) + 1);
+    if (e.ok) {
+      const set = emailCompanies.get(e.value) ?? new Set<string>();
+      set.add(ck);
+      emailCompanies.set(e.value, set);
+    }
   }
 
   // Group rows into members by normalized company name.
@@ -238,22 +248,60 @@ export function validateRows(
         const equivalent = rc.ok && rc.value === headCountry;
         if (!equivalent) warn(r.rowIndex, 'country', 'member_field_mismatch');
       }
+      // code-review #5 — differing NON-BLANK tax IDs within one company group
+      // are a strong "two DISTINCT legal entities merged under a shared display
+      // name" signal (tier/country can legitimately coincide; a tax ID is
+      // unique per entity). Escalate to an ERROR so the operator disambiguates
+      // (e.g. suffix one company name) rather than silently importing the head
+      // row + losing the sibling company's tax_id/contacts. Compares raw cells
+      // (not validated TaxId) so the divergence is caught even when one side is
+      // malformed — any genuine difference is enough to refuse the merge.
+      if (
+        head.taxId.trim().length > 0 &&
+        r.taxId.trim().length > 0 &&
+        norm(r.taxId) !== norm(head.taxId)
+      ) {
+        err(r.rowIndex, 'taxId', 'distinct_company_merged');
+      }
     }
 
     // --- Contacts (rules 1,2,6,7) — one per row ---
     const contacts: ValidatedContact[] = [];
     let primaryCount = 0;
+    const seenEmailsInMember = new Set<string>();
     for (const r of groupRows) {
       const email = asEmail(r.contactEmail);
       if (!email.ok) {
         err(r.rowIndex, 'contactEmail', email.error.code);
         continue;
       }
-      if ((emailCounts.get(email.value) ?? 0) > 1) {
+      // code-review #2 — cross-member collision: the same email belongs to ≥2
+      // DISTINCT companies; we cannot decide which member owns it → error.
+      const companies = emailCompanies.get(email.value);
+      if (companies && companies.size > 1) {
         err(r.rowIndex, 'contactEmail', 'duplicate_in_import');
       }
-      if (blankToNull(r.contactFirstName) === null) err(r.rowIndex, 'contactFirstName', 'required');
-      if (blankToNull(r.contactLastName) === null) err(r.rowIndex, 'contactLastName', 'required');
+      // code-review #2 — intra-member duplicate: the same email repeated WITHIN
+      // this one company group (paste/data-entry dup). Warn + dedupe (skip the
+      // duplicate contact) so a legitimate single-company member still imports
+      // rather than being dropped wholesale.
+      if (seenEmailsInMember.has(email.value)) {
+        warn(r.rowIndex, 'contactEmail', 'duplicate_contact_in_member');
+        continue;
+      }
+      seenEmailsInMember.add(email.value);
+      // code-review #4 — a contact needs AT LEAST ONE name part. A mononym
+      // (Thai given-name-only entry, single-display-name company) is legitimate:
+      // import it (the missing part stored as '' — `last_name` is NOT NULL but
+      // '' is allowed) with a warning, so a real member is never silently
+      // dropped. Only a fully-nameless contact errors.
+      const hasFirst = blankToNull(r.contactFirstName) !== null;
+      const hasLast = blankToNull(r.contactLastName) !== null;
+      if (!hasFirst && !hasLast) {
+        err(r.rowIndex, 'contactName', 'required');
+      } else if (!hasFirst || !hasLast) {
+        warn(r.rowIndex, 'contactName', 'mononym_single_name');
+      }
 
       let phone: Phone | null = null;
       const rawPhone = r.contactPhone.trim();

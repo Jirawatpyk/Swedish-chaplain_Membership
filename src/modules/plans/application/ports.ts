@@ -96,19 +96,6 @@ export interface PlanRepo {
   ): Promise<Plan | undefined>;
 
   /**
-   * Set `deleted_at = deletedAt`, keeping `is_active` unchanged.
-   * Application layer checks member-attachment via MemberAttachmentChecker
-   * before calling this — the repo just writes.
-   */
-  softDelete(
-    tenant: TenantContext,
-    planId: PlanSlug,
-    year: PlanYear,
-    deletedAt: Date,
-    updatedBy: string,
-  ): Promise<Plan | undefined>;
-
-  /**
    * W0-02 — Atomic soft-delete under a Postgres advisory lock.
    *
    * In ONE `runInTenant` transaction:
@@ -117,8 +104,8 @@ export interface PlanRepo {
    *   2. Counts active (non-archived) members for (tenant, planId, year).
    *   3. If count > 0 → returns `{ kind: 'has_active_members', count }` WITHOUT
    *      writing (soft-delete refused per FR-010).
-   *   4. Runs the soft-delete UPDATE (mirrors `softDelete`, incl.
-   *      `WHERE deleted_at IS NULL` semantics) → returns `{ kind: 'deleted', plan }`
+   *   4. Runs the soft-delete UPDATE with `WHERE deleted_at IS NULL` (a
+   *      concurrent soft-delete is a no-op) → returns `{ kind: 'deleted', plan }`
    *      on success or `{ kind: 'not_found' }` when the row vanished.
    *
    * The advisory lock is the SAME key that `changePlan` (members module)

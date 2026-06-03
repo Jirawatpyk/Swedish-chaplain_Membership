@@ -79,7 +79,6 @@ function makeDeps(overrides: DepsOverrides = {}): ActivatePlanDeps {
     findByTenantAndYear: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
-    softDelete: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),
   };

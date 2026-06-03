@@ -49,6 +49,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     route: '/api/cron/renewals/reconcile-pending-reactivations-coordinator',
     metricsCounter: () =>
       renewalsMetrics.coordinatorAuditEmitFailed('reconcile'),
+    // Upstash fail-open counter — parity with dispatch-coordinator (see
+    // at-risk-recompute-coordinator for rationale).
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
   });
   if (authResponse) return authResponse;
 

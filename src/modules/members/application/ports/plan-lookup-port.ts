@@ -34,6 +34,14 @@ export type PlanSummary = {
   readonly maxMemberAge: number | null;
   /** For partnership tiers, the corporate tier it bundles. */
   readonly includesCorporatePlanId: PlanId | null;
+  /**
+   * W0-02 (code-review #1) — `deleted_at IS NOT NULL` on the plan row.
+   * `findOne` deliberately returns soft-deleted plans, so assignment paths
+   * (`changePlan`) MUST reject when this is true: a member must never be
+   * attached to a soft-deleted plan. This is the pre-tx fast-fail; the
+   * in-tx re-check under the advisory lock closes the concurrent race.
+   */
+  readonly isSoftDeleted: boolean;
 };
 
 export interface PlanLookupPort {

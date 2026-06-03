@@ -174,6 +174,12 @@ export async function changePlan(
     deps.plans.getPlan(deps.tenant, asPlanId(data.new_plan_id), data.new_plan_year),
   ]);
   if (!newPlan.ok) return err({ type: 'plan_not_found' });
+  // W0-02 (code-review #1) — `getPlan`/`findOne` deliberately returns
+  // soft-deleted plans, so a `newPlan.ok` row may still be soft-deleted. A
+  // member must never be assigned to a soft-deleted plan. Pre-tx fast-fail;
+  // the in-tx re-check under the advisory lock (below) closes the race where
+  // the plan is soft-deleted after this snapshot but before the FK write.
+  if (newPlan.value.isSoftDeleted) return err({ type: 'plan_not_found' });
 
   // Bundle-change detection (FR-010): only fires on Partnership tiers
   // where the bundled corporate plan_id differs between old and new.
@@ -240,6 +246,23 @@ export async function changePlan(
         data.new_plan_year,
       );
       await deps.planAdvisoryLock.acquire(tx, lockKey);
+
+      // W0-02 completion (code-review #1) — re-read the NEW plan's deletion
+      // state UNDER the lock. The pre-tx `isSoftDeleted` snapshot can go stale
+      // if a concurrent `softDeleteGuarded` (Side A) won this same lock first,
+      // deleted the (0-member) plan, and committed in the window between our
+      // snapshot read and here. Since we now hold the SAME key, any such delete
+      // is committed + visible. Without this the member FK would land on a
+      // soft-deleted plan — the exact integrity violation W0-02 targets.
+      const newPlanSoftDeleted =
+        await deps.planAdvisoryLock.isPlanSoftDeletedInTx(
+          tx,
+          newPlan.value.planId as string,
+          data.new_plan_year,
+        );
+      if (newPlanSoftDeleted) {
+        throw new TxAbort({ type: 'plan_not_found' });
+      }
 
       // M1: re-read + LOCK the row inside the tx (FOR UPDATE) so the audit's
       // old_plan_* values reflect the row actually being overwritten, closing
@@ -389,6 +412,9 @@ export async function changePlan(
       if (e.detail.type === 'not_found') {
         return err({ type: 'not_found' });
       }
+      if (e.detail.type === 'plan_not_found') {
+        return err({ type: 'plan_not_found' });
+      }
       if (e.detail.type === 'update_failed') {
         return err({
           type: 'server_error',
@@ -414,7 +440,8 @@ class TxAbort extends Error {
     public readonly detail:
       | { type: 'update_failed'; code: string }
       | { type: 'audit_failed' }
-      | { type: 'not_found' },
+      | { type: 'not_found' }
+      | { type: 'plan_not_found' },
   ) {
     super(`tx-abort: ${detail.type}`);
   }

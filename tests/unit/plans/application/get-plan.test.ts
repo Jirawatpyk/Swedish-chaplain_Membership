@@ -62,7 +62,6 @@ function makeDeps(overrides: {
       insert: vi.fn(),
       update: vi.fn(),
       setActive: vi.fn(),
-      softDelete: vi.fn(),
       undelete: vi.fn(),
       cloneYear: vi.fn(),
     },

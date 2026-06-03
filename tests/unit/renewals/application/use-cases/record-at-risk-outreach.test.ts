@@ -25,9 +25,16 @@ const MEMBER_UUID = '00000000-0000-0000-0000-00000000a156';
 const OUTREACH_UUID = '00000000-0000-0000-0000-00000000bb01';
 const CREATED_AT_ISO = '2026-05-08T10:30:00.000Z';
 
-vi.mock('@/lib/db', () => ({
-  runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
+// Reconfigurable so a test can simulate a COMMIT failure AFTER the callback
+// resolves (insert + audit succeed inside the tx, then COMMIT rejects). The
+// default impl just runs the callback and returns its Result.
+const runInTenantMock = vi.hoisted(() =>
+  vi.fn(async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) =>
     fn({} as unknown),
+  ),
+);
+vi.mock('@/lib/db', () => ({
+  runInTenant: runInTenantMock,
 }));
 
 function fakeDeps(opts?: {
@@ -73,6 +80,12 @@ const baseInput = {
 describe('recordAtRiskOutreach (T156)', () => {
   beforeEach(() => {
     atRiskOutreachRecordedMock.mockReset();
+    runInTenantMock.mockReset();
+    // Default: run the callback and return its Result (commit succeeds).
+    runInTenantMock.mockImplementation(
+      async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) =>
+        fn({} as unknown),
+    );
   });
 
   it('happy path — admin email outreach inserts + emits audit', async () => {
@@ -241,6 +254,30 @@ describe('recordAtRiskOutreach (T156)', () => {
       emitImpl: async () => { throw new Error('audit failed'); },
     });
     await expect(recordAtRiskOutreach(deps, baseInput)).rejects.toThrow();
+    expect(atRiskOutreachRecordedMock).not.toHaveBeenCalled();
+  });
+
+  // W0-09 emit-after-commit lock (code-review #3/#8): the metric must fire
+  // ONLY after the tx commits, not from inside the runInTenant callback. This
+  // test simulates the callback succeeding fully (insert + audit) and the
+  // COMMIT then failing (runInTenant rejects after fn resolves). The earlier
+  // in-callback emit would have already fired here → over-count; the gated
+  // emit-after-commit must NOT fire. FAILS against the pre-fix code, passes now.
+  it('does NOT emit atRiskOutreachRecorded when the COMMIT fails after a successful callback', async () => {
+    const { deps, insertMock, emitInTxMock } = fakeDeps();
+    runInTenantMock.mockImplementationOnce(
+      async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => {
+        await fn({} as unknown); // insert + audit succeed inside the tx
+        throw new Error('commit failed: serialization_failure'); // COMMIT rejects
+      },
+    );
+    await expect(recordAtRiskOutreach(deps, baseInput)).rejects.toThrow(
+      /commit failed/,
+    );
+    // Proves the callback ran to completion (insert + audit both fired) yet the
+    // durable-success metric did NOT — it is gated on the committed Result.
+    expect(insertMock).toHaveBeenCalledOnce();
+    expect(emitInTxMock).toHaveBeenCalledOnce();
     expect(atRiskOutreachRecordedMock).not.toHaveBeenCalled();
   });
 });

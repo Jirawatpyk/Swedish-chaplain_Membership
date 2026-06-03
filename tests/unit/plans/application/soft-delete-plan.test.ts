@@ -113,7 +113,6 @@ function makeDeps(overrides: DepsOverrides = {}): SoftDeletePlanDeps {
       return r ?? { kind: 'deleted' as const, plan: makePlan({ deleted_at: NOW }) };
     }),
     // Unused by softDeletePlan but satisfy PlanRepo shape for type safety
-    softDelete: vi.fn(),
     findByTenantAndYear: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -174,7 +173,6 @@ describe('softDeletePlan use case', () => {
     const planRepo = {
       findOne: vi.fn(async () => { throw 'string error'; }),
       softDeleteGuarded: vi.fn(),
-      softDelete: vi.fn(),
       findByTenantAndYear: vi.fn(),
       insert: vi.fn(),
       update: vi.fn(),
@@ -248,7 +246,6 @@ describe('softDeletePlan use case', () => {
     const planRepo = {
       findOne: vi.fn(async () => makePlan()),
       softDeleteGuarded: vi.fn(async () => { throw { code: 'PG_CONSTRAINT' }; }),
-      softDelete: vi.fn(),
       findByTenantAndYear: vi.fn(),
       insert: vi.fn(),
       update: vi.fn(),

@@ -96,7 +96,7 @@ export async function recordAtRiskOutreach(
   if (!inputResult.ok) return err(inputResult.error);
   const input = inputResult.value;
 
-  return runInTenant(deps.tenant, async (tx) => {
+  const txResult = await runInTenant(deps.tenant, async (tx) => {
     let inserted: { outreachId: string; createdAt: string };
     try {
       const writeInput: Parameters<
@@ -163,14 +163,22 @@ export async function recordAtRiskOutreach(
       );
       throw e;
     }
-    // W0-09: § 23.1.2 outreach counter — emitted AFTER tx commit (same
-    // rationale as atRiskSnooze: durable state only). `template_id` is
-    // forwarded as-is from the input (undefined when channel is not email).
+    return ok(inserted);
+  });
+  // W0-09: § 23.1.2 outreach counter — emitted genuinely AFTER the tx has
+  // committed (runInTenant has returned here) and ONLY on a durable success.
+  // A server_error (Result err) or a rolled-back audit-emit failure (throw →
+  // the await above rejects) must NOT increment it. The earlier in-callback
+  // emit fired BEFORE COMMIT and over-counted on any post-emit commit failure
+  // (its "after commit" comment was inaccurate) — this mirrors the sibling
+  // snooze-at-risk-member.ts fix. `template_id` is forwarded as-is (undefined
+  // when channel is not email).
+  if (txResult.ok) {
     renewalsMetrics.atRiskOutreachRecorded(
       input.tenantId,
       input.channel,
       input.templateId,
     );
-    return ok(inserted);
-  });
+  }
+  return txResult;
 }
