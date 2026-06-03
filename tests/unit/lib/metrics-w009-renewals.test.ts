@@ -95,6 +95,7 @@ vi.mock('@opentelemetry/api', async () => {
 import {
   renewalsMetrics,
   __test__readGaugeValues,
+  __test__clearGaugeValues,
 } from '@/lib/metrics';
 
 describe('W0-09 — renewalsMetrics missing § 23.1 instruments', () => {
@@ -102,6 +103,10 @@ describe('W0-09 — renewalsMetrics missing § 23.1 instruments', () => {
     counterAddsByName.clear();
     histogramRecordsByName.clear();
     observableGaugesCreated.clear();
+    // code-review #9-#14 Finding 2 — drop the process-level gauge accumulator
+    // so a test reusing a tenant+band pair can't read a value bled in from an
+    // earlier case (pipelineRowCount persists last-observed values per label).
+    __test__clearGaugeValues();
   });
 
   // -----------------------------------------------------------------------
@@ -376,33 +381,41 @@ describe('W0-09 — renewalsMetrics missing § 23.1 instruments', () => {
   // 11. renewals.pipeline.row_count (ObservableGauge accumulator)
   // -----------------------------------------------------------------------
   describe('pipelineRowCount (§ 23.1.1 gauge)', () => {
-    it('writes to gaugeValues accumulator with composite tenant:urgency_band key', () => {
+    // code-review #10 — pipelineRowCount now routes through the generic
+    // `observeGauge` helper, whose inner-map key is the stable JSON of the
+    // sorted labels ({tenant_id, urgency_band}) rather than the old
+    // `tenant:band` colon composite. OTel scrape output is identical; only
+    // this internal accumulator key changed.
+    const gaugeKey = (tenantId: string, urgencyBand: string): string =>
+      JSON.stringify({ tenant_id: tenantId, urgency_band: urgencyBand });
+
+    it('writes to gaugeValues accumulator keyed by sorted-label JSON', () => {
       renewalsMetrics.pipelineRowCount('tenant-rg', 't-30', 42);
       const bucket = __test__readGaugeValues('renewals.pipeline.row_count');
       expect(bucket).toBeDefined();
-      expect(bucket!.get('tenant-rg:t-30')).toBe(42);
+      expect(bucket!.get(gaugeKey('tenant-rg', 't-30'))).toBe(42);
     });
 
     it('overwrites on re-observe — accumulator reports most-recent value', () => {
       renewalsMetrics.pipelineRowCount('tenant-rg2', 'all', 10);
       renewalsMetrics.pipelineRowCount('tenant-rg2', 'all', 75);
       const bucket = __test__readGaugeValues('renewals.pipeline.row_count')!;
-      expect(bucket.get('tenant-rg2:all')).toBe(75);
+      expect(bucket.get(gaugeKey('tenant-rg2', 'all'))).toBe(75);
     });
 
     it('different urgency_band values produce independent keys', () => {
       renewalsMetrics.pipelineRowCount('tenant-rg3', 't-30', 100);
       renewalsMetrics.pipelineRowCount('tenant-rg3', 'lapsed', 5);
       const bucket = __test__readGaugeValues('renewals.pipeline.row_count')!;
-      expect(bucket.get('tenant-rg3:t-30')).toBe(100);
-      expect(bucket.get('tenant-rg3:lapsed')).toBe(5);
+      expect(bucket.get(gaugeKey('tenant-rg3', 't-30'))).toBe(100);
+      expect(bucket.get(gaugeKey('tenant-rg3', 'lapsed'))).toBe(5);
     });
 
     it('zero row count is observable', () => {
       renewalsMetrics.pipelineRowCount('tenant-rg4', 'grace', 0);
       const bucket = __test__readGaugeValues('renewals.pipeline.row_count')!;
-      expect(bucket.has('tenant-rg4:grace')).toBe(true);
-      expect(bucket.get('tenant-rg4:grace')).toBe(0);
+      expect(bucket.has(gaugeKey('tenant-rg4', 'grace'))).toBe(true);
+      expect(bucket.get(gaugeKey('tenant-rg4', 'grace'))).toBe(0);
     });
 
     it('never throws — safeMetric swallow contract holds', () => {

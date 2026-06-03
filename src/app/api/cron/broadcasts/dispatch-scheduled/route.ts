@@ -196,6 +196,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           continue;
         }
         switch (result.error.kind) {
+          case 'dispatch.server_error':
+            // code-review #11 — a typed, TRANSIENT infra failure (members-bridge
+            // / Neon / RLS throw, mapped in dispatch-scheduled-broadcast.ts). The
+            // broadcast stays 'approved' for a clean next-tick retry — identical
+            // lifecycle to gateway_retryable. Bucket it as retryable (log-only, no
+            // counter) so it neither raises the page-now `uncaught_error` alert nor
+            // pollutes `unknown_error` (an enum-drift "should be 0" signal that
+            // would page on-call for a routine transient DB blip).
+            summary.retryable++;
+            logger.warn(
+              {
+                tenantId: tenant.slug,
+                broadcastId: row.broadcast_id,
+                reason: result.error.message,
+              },
+              'cron.broadcasts.dispatch.server_error',
+            );
+            break;
           case 'gateway_retryable':
             summary.retryable++;
             logger.warn(

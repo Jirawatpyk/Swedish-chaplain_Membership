@@ -77,6 +77,18 @@ export function __test__readGaugeValues(
   return gaugeValues.get(gaugeName);
 }
 
+/**
+ * Test-only — drop the accumulated last-observed gauge values so a fresh
+ * `beforeEach` doesn't read a value bled in from an earlier test that reused
+ * the same gauge + label set (code-review #9-#14 Finding 2). No-op effect on
+ * production: the observable-gauge callbacks read this map lazily, and tests
+ * call this only between cases. Does NOT unregister the `observableGauges`
+ * instruments (those are process-singletons by design).
+ */
+export function __test__clearGaugeValues(): void {
+  gaugeValues.clear();
+}
+
 function counter(name: string, description: string, unit?: string): Counter {
   let instr = counters.get(name);
   if (!instr) {
@@ -2910,31 +2922,18 @@ export const renewalsMetrics = {
    * `observeCycleStateGauge`.
    */
   pipelineRowCount(tenantId: string, urgencyBand: string, rowCount: number): void {
+    // code-review #10 — use the generic `observeGauge` helper instead of
+    // hand-rolling a third copy of the accumulator + a manual `tenant:band`
+    // key split. Identical OTel output (same instrument name, {tenant_id,
+    // urgency_band} labels, value); the helper keys its inner map by a stable
+    // JSON of the sorted labels, removing the colon-split entirely.
     safeMetric(() => {
-      const gaugeName = 'renewals.pipeline.row_count';
-      const stateBucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
-      // Key by tenant+urgency_band so different filters don't overwrite each other.
-      const key = `${tenantId}:${urgencyBand}`;
-      stateBucket.set(key, rowCount);
-      gaugeValues.set(gaugeName, stateBucket);
-
-      if (!observableGauges.has(gaugeName)) {
-        const gauge = meter().createObservableGauge(gaugeName, {
-          description:
-            'F8 pipeline page row count per load — last observed value per (tenant, urgency_band) (§ 23.1.1)',
-        });
-        observableGauges.set(gaugeName, gauge);
-        gauge.addCallback((result) => {
-          const bucket = gaugeValues.get(gaugeName);
-          if (!bucket) return;
-          for (const [compositeKey, count] of bucket.entries()) {
-            const colonIdx = compositeKey.indexOf(':');
-            const tid = compositeKey.slice(0, colonIdx);
-            const band = compositeKey.slice(colonIdx + 1);
-            result.observe(count, { tenant_id: tid, urgency_band: band });
-          }
-        });
-      }
+      observeGauge(
+        'renewals.pipeline.row_count',
+        'F8 pipeline page row count per load — last observed value per (tenant, urgency_band) (§ 23.1.1)',
+        { tenant_id: tenantId, urgency_band: urgencyBand },
+        rowCount,
+      );
     });
   },
 

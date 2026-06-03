@@ -44,6 +44,7 @@ import {
  
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
+import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { env } from '@/lib/env';
 import { buildLogoBlobPrefix } from '@/lib/logo-blob-key';
 import { makeF4AuditPort } from '@/modules/invoicing';
@@ -283,13 +284,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       { requestId, tenantId: tenantCtx.slug, userId: ctx.current.user.id, reset: rl.reset },
       'PATCH /api/tenant-invoice-settings rate-limited',
     );
-    return NextResponse.json(
-      { error: { code: 'rate_limited', retryAfterMs: rl.reset - Date.now() } },
-      {
-        status: 429,
-        headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) },
-      },
-    );
+    return rateLimitedJson(rl);
   }
 
   let body: unknown;

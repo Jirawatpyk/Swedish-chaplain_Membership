@@ -11,7 +11,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { resendPdf, makeResendPdfDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
-import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -37,20 +37,7 @@ export async function POST(
       { requestId, tenantId: tenantCtx.slug, creditNoteId, reset: rl.reset },
       'POST /api/credit-notes/[id]/resend rate-limited',
     );
-    return NextResponse.json(
-      {
-        error: {
-          code: 'rate_limited',
-          retryAfterMs: rl.reset - Date.now(),
-        },
-      },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(retryAfterSecondsFromRl(rl)),
-        },
-      },
-    );
+    return rateLimitedJson(rl);
   }
 
   const result = await resendPdf(makeResendPdfDeps(tenantCtx.slug), {

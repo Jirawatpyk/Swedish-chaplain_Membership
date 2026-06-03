@@ -27,6 +27,7 @@ import { uploadTenantLogo } from '@/modules/invoicing';
 // Constitution III's no-restricted-imports ESLint rule.
 import { makeUploadTenantLogoDeps } from '@/modules/invoicing/upload-tenant-logo-deps';
 import { logger } from '@/lib/logger';
+import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { asTenantContext } from '@/modules/tenants';
 import {
   parseIdempotencyKey,
@@ -60,13 +61,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { requestId, tenantId: tenantCtx.slug, userId: ctx.current.user.id, reset: rl.reset },
       'POST /api/tenant-invoice-settings/logo rate-limited',
     );
-    return NextResponse.json(
-      { error: { code: 'rate_limited', retryAfterMs: rl.reset - Date.now() } },
-      {
-        status: 429,
-        headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) },
-      },
-    );
+    return rateLimitedJson(rl);
   }
 
   let formData: FormData;

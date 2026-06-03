@@ -73,6 +73,26 @@ export interface UseInlineEditField<E extends HTMLElement> {
   readonly handleKeyDown: (e: KeyboardEvent<HTMLElement>) => void;
 }
 
+/**
+ * Enter/Space activation for a control whose only mouse affordance is
+ * double-click (e.g. an inline-edit `<button>` in a dense grid). A native
+ * button with only `onDoubleClick` is keyboard-dead — Enter/Space fire
+ * `click`, not `dblclick` (WCAG 2.1 SC 2.1.1). Returns the `onKeyDown`
+ * handler so both inline cells share one definition (code-review #14). This
+ * is DISPLAY-mode activation only — distinct from the hook's edit-mode
+ * `handleKeyDown` (Enter-submit / Escape-cancel).
+ */
+export function activateOnEnterSpace(
+  activate: () => void,
+): (e: KeyboardEvent<HTMLElement>) => void {
+  return (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      activate();
+    }
+  };
+}
+
 export function useInlineEditField<
   T,
   E extends HTMLInputElement | HTMLTextAreaElement = HTMLInputElement,
