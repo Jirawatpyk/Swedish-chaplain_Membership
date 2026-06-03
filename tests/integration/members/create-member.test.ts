@@ -145,6 +145,64 @@ describe('create-member integration (T041, US1)', () => {
     expect(eventTypes).toContain('contact_created');
   });
 
+  it('rejects creating a member onto a SOFT-DELETED plan → plan_not_found (code-review #9-#14 follow-up)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const deletedPlanId = `test-deleted-${randomUUID().slice(0, 8)}`;
+    // Seed a fresh plan (0 members → a legitimate soft-delete) then soft-delete
+    // it. `getPlan`/`findOne` still returns the row (deleted_at NOT NULL), so the
+    // create path must reject it via the isSoftDeleted guard — never attach a new
+    // member to a deleted plan (same rule changePlan enforces).
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId: deletedPlanId,
+        planYear: 2026,
+        planName: { en: 'To Be Deleted' },
+        description: { en: 'd' },
+        sortOrder: 20,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx
+        .update(membershipPlans)
+        .set({ deletedAt: new Date(), updatedBy: user.userId })
+        .where(
+          and(
+            eq(membershipPlans.planId, deletedPlanId),
+            eq(membershipPlans.planYear, 2026),
+          ),
+        );
+    });
+
+    const input = goodInput(deletedPlanId);
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-sd` },
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('plan_not_found');
+
+    // No member row was created for this company.
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(members)
+        .where(eq(members.companyName, input.company_name)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
   it('soft-duplicate: repeating (company_name, country) without confirm rejects', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const shared = goodInput(planId);
