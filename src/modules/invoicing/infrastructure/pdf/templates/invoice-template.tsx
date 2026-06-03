@@ -54,6 +54,12 @@ const styles = StyleSheet.create({
   // fontkit cannot wrap reliably. Three lines gives room for even a
   // long normal company name to render in full.
   value: { fontSize: 10, maxWidth: '100%', maxLines: 3, textOverflow: 'ellipsis' },
+  // Buyer-address lines (code-review M-01): a tax invoice must show the buyer's
+  // COMPLETE address (§86/4), so these get a higher per-line cap than `value`'s
+  // 3 — a real Thai address component (street / locality) fits well within 5,
+  // while the ellipsis still guards against a pathologically long single field
+  // that @react-pdf/fontkit cannot wrap.
+  addrLine: { fontSize: 10, maxWidth: '100%', maxLines: 5, textOverflow: 'ellipsis' },
   section: { marginBottom: 12, width: '100%' },
   table: { marginTop: 8, marginBottom: 8, borderTop: '1 solid #ccc' },
   tr: { flexDirection: 'row', borderBottom: '1 solid #eee', paddingVertical: 4 },
@@ -265,7 +271,11 @@ export function InvoiceTemplate(input: PdfRenderInput) {
           {input.member.tax_id && (
             <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
           )}
-          <Text style={styles.value}>{shapeThai(input.member.address)}</Text>
+          {input.member.address.split('\n').map((line, i) => (
+            <Text key={`buyer-addr-${i}`} style={styles.addrLine}>
+              {shapeThai(line)}
+            </Text>
+          ))}
           {input.member.primary_contact_name && (
             <Text style={styles.label}>
               {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}
