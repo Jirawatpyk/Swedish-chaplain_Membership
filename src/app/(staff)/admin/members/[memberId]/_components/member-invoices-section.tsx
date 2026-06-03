@@ -385,7 +385,11 @@ export async function MemberInvoicesSection({
                               {canRecordPayment &&
                                 (canMutate ? (
                                   <Link
-                                    href={`/admin/invoices/${inv.invoiceId}#payment`}
+                                    // W1-44: target the RecordPaymentDialog trigger
+                                    // (id="record-payment") that renders for ISSUED invoices.
+                                    // The old #payment anchor only exists on PAID invoices, so
+                                    // the link from this issued-invoice CTA resolved to nothing.
+                                    href={`/admin/invoices/${inv.invoiceId}#record-payment`}
                                     className={buttonVariants({
                                       variant: 'outline',
                                       size: 'sm',

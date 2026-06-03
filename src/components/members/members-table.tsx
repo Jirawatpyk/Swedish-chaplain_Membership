@@ -384,6 +384,16 @@ function InlineCountryCell({
       <button
         type="button"
         onDoubleClick={startEdit}
+        // W1-06 (a11y SC 2.1.1): a native button with only onDoubleClick is
+        // keyboard-dead (Enter/Space fire `click`, not `dblclick`). Activate edit
+        // on Enter/Space too, while keeping double-click for mouse (single mouse
+        // click intentionally does nothing in this dense grid).
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            startEdit();
+          }
+        }}
         title={t('editCountryHint')}
         className="group inline-flex min-h-[28px] min-w-[40px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editCountry')}
@@ -498,6 +508,13 @@ function InlineNotesCell({
       <button
         type="button"
         onDoubleClick={startEdit}
+        // W1-06 (a11y SC 2.1.1): keyboard activation (see InlineCountryCell).
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            startEdit();
+          }
+        }}
         title={notes ?? t('editNotesHint')}
         className="group inline-flex min-h-[28px] max-w-[260px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editNotes')}
