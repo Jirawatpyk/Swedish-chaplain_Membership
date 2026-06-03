@@ -124,6 +124,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
       renewalsMetrics.coordinatorAuditEmitFailed('lapse');
     }
+    renewalsMetrics.coordinatorTenantsEnqueued('lapse', 0);
+    renewalsMetrics.coordinatorTenantsSucceeded('lapse', 0);
+    renewalsMetrics.coordinatorDurationMs('lapse', summary.duration_ms);
     return NextResponse.json({ ...summary, per_tenant_results: [] });
   }
 
@@ -282,6 +285,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     renewalsMetrics.coordinatorAuditEmitFailed('lapse');
   }
+
+  // W0-09: § 23.1.3 coordinator-level metrics.
+  renewalsMetrics.coordinatorTenantsEnqueued('lapse', summary.tenants_enqueued);
+  renewalsMetrics.coordinatorTenantsSucceeded('lapse', summary.tenants_succeeded);
+  if (summary.tenants_failed > 0) {
+    renewalsMetrics.coordinatorTenantsFailed('lapse', summary.tenants_failed);
+  }
+  renewalsMetrics.coordinatorDurationMs('lapse', summary.duration_ms);
 
   logger.info(
     {

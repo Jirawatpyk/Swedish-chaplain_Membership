@@ -48,6 +48,7 @@ import { uuidv7 } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
+import { renewalsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import {
   recomputeAtRiskScoresBatch,
@@ -231,6 +232,7 @@ export async function POST(
       );
     }
 
+    const durationMs = Date.now() - startedAt;
     const responseBody = {
       skipped: false as const,
       tenant_id: tenantId,
@@ -239,8 +241,34 @@ export async function POST(
       members_skipped_below_tenure: txResult.value.membersSkippedBelowTenure,
       members_not_found: memberNotFound,
       members_failed: txResult.value.membersFailed,
-      duration_ms: Date.now() - startedAt,
+      duration_ms: durationMs,
     };
+
+    // W0-09: § 23.1.2 per-member at-risk recompute counters.
+    //
+    // The batch path (`recomputeAtRiskScoresBatch`) performs a bulk
+    // UPDATE so individual per-member new-band values are not surfaced
+    // in the aggregate result. We use `band='batch'` as a discriminator
+    // sentinel so dashboards can distinguish "batch cron recompute" from
+    // a hypothetical future per-member admin-triggered recompute (which
+    // would emit with a real band label). `count=membersRecomputed` so
+    // the counter accurately reflects the number of members processed,
+    // not just 1 per cron invocation.
+    //
+    // The existing `atRiskScoresRecomputed(tenant)` counter (§ 23.1.1.b)
+    // inside compute-at-risk-score.ts handles the per-member single-
+    // recompute path; the two counters are complementary, not duplicates.
+    if (txResult.value.membersRecomputed > 0) {
+      renewalsMetrics.atRiskRecomputeMembersSucceeded(
+        tenantId,
+        'batch',
+        txResult.value.membersRecomputed,
+      );
+    }
+    if (txResult.value.membersFailed > 0) {
+      renewalsMetrics.atRiskRecomputeMembersFailed(tenantId, txResult.value.membersFailed);
+    }
+
     logger.info(
       { tenantId, correlationId, ...responseBody },
       'cron.renewals.at_risk.complete',

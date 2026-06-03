@@ -70,6 +70,8 @@ const rowsPrunedMock = vi.hoisted(() => vi.fn());
 const skippedReadOnlyMock = vi.hoisted(() => vi.fn());
 const auditEmitFailedMock = vi.hoisted(() => vi.fn());
 const redisFallbackMock = vi.hoisted(() => vi.fn());
+// W0-09: new F8-A3 counter wired in cron-auth.ts; must be in mock.
+const cronBearerAuthRejectedMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
@@ -78,6 +80,7 @@ vi.mock('@/lib/metrics', () => ({
     coordinatorSkippedReadOnly: skippedReadOnlyMock,
     coordinatorAuditEmitFailed: auditEmitFailedMock,
     redisFallback: redisFallbackMock,
+    cronBearerAuthRejected: cronBearerAuthRejectedMock,
   },
 }));
 

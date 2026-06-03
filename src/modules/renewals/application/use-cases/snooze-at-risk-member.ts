@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 // Type-only import keeps Application layer free of cross-module runtime
@@ -104,6 +105,12 @@ export async function snoozeAtRiskMember(
       );
       throw e;
     }
+    // W0-09: § 23.1.2 snooze counter — emitted AFTER tx commit so the
+    // counter only increments on durable state changes (audit row committed
+    // atomically with the UPDATE). Emitted outside the tx block because
+    // OTel counters are process-level; the tx is already committed at
+    // this point via runInTenant's commit-on-return semantics.
+    renewalsMetrics.atRiskSnooze(input.tenantId, input.actorRole);
     return ok({ snoozedUntil });
   });
 }

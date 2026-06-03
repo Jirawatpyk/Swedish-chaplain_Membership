@@ -19,6 +19,7 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
 import { uuidv7 } from '@/lib/request-id';
 import { env } from '@/lib/env';
+import { renewalsMetrics } from '@/lib/metrics';
 // `@/lib/auth-deps` + `@/modules/renewals` are imported lazily inside
 // `gateCronBearerOrRespond` so that the lightweight `verifyCronBearer`
 // callers (8 cron routes that only need the bearer check) don't drag
@@ -150,6 +151,13 @@ export async function gateCronBearerOrRespond(
     );
     options.metricsCounter?.();
   }
+
+  // W0-09: F8-A3 counter — fires AFTER audit emit (or audit-emit failure)
+  // so the counter always increments on any 401 path regardless of whether
+  // the audit row landed. Vercel alert rule binds to this OTel counter; the
+  // audit event alone is insufficient because alert rules cannot query
+  // audit_log directly.
+  renewalsMetrics.cronBearerAuthRejected(options.route);
 
   return NextResponse.json(
     { error: { code: 'unauthorized' } },

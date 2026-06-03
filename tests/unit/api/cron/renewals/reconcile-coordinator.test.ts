@@ -60,6 +60,21 @@ vi.mock('@/lib/otel-tracer', () => ({
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
+// W0-09: cron-auth.ts now calls renewalsMetrics.cronBearerAuthRejected on
+// every 401 path.
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: {
+    cronBearerAuthRejected: vi.fn(),
+    coordinatorAuditEmitFailed: vi.fn(),
+    redisFallback: vi.fn(),
+    coordinatorSkippedReadOnly: vi.fn(),
+    coordinatorTenantsEnqueued: vi.fn(),
+    coordinatorTenantsSucceeded: vi.fn(),
+    coordinatorTenantsFailed: vi.fn(),
+    coordinatorDurationMs: vi.fn(),
+  },
+}));
+
 import { POST } from '@/app/api/cron/renewals/reconcile-pending-reactivations-coordinator/route';
 
 function makeRequest(headers: Record<string, string> = {}): NextRequest {

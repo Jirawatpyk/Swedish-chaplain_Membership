@@ -76,6 +76,12 @@ vi.mock('@/lib/rate-limit-helpers', () => ({
 const redisFallbackMock = vi.hoisted(() => vi.fn());
 const coordinatorAuditEmitFailedMock = vi.hoisted(() => vi.fn());
 const unknownResendErrorNameMock = vi.hoisted(() => vi.fn());
+// W0-09: capture § 23.1.3 coordinator-level metrics.
+const coordinatorTenantsEnqueuedMock = vi.hoisted(() => vi.fn());
+const coordinatorTenantsSucceededMock = vi.hoisted(() => vi.fn());
+const coordinatorTenantsFailedMock = vi.hoisted(() => vi.fn());
+const coordinatorDurationMsMock = vi.hoisted(() => vi.fn());
+const cronBearerAuthRejectedMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
     redisFallback: redisFallbackMock,
@@ -89,6 +95,12 @@ vi.mock('@/lib/metrics', () => ({
     coordinatorSkippedReadOnly: vi.fn(),
     cascadeOutcome: vi.fn(),
     observeCycleStateGauge: vi.fn(),
+    // W0-09 additions:
+    coordinatorTenantsEnqueued: coordinatorTenantsEnqueuedMock,
+    coordinatorTenantsSucceeded: coordinatorTenantsSucceededMock,
+    coordinatorTenantsFailed: coordinatorTenantsFailedMock,
+    coordinatorDurationMs: coordinatorDurationMsMock,
+    cronBearerAuthRejected: cronBearerAuthRejectedMock,
   },
 }));
 
@@ -318,6 +330,53 @@ describe('cron dispatch-coordinator route (T103)', () => {
     // Audit emit still fires so the orchestration row records the
     // failure (Principle VIII compliance trail).
     expect(auditEmitMock).toHaveBeenCalledTimes(1);
+  });
+
+  // W0-09: § 23.1.3 F8-A1 coordinator metrics
+  it('W0-09: coordinatorTenantsFailed emitted when tenant fetch fails (F8-A1)', async () => {
+    fetchMock.mockRejectedValue(new Error('connection refused'));
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_failed).toBe(1);
+    // F8-A1: this counter MUST be incremented so the alert can fire.
+    expect(coordinatorTenantsFailedMock).toHaveBeenCalledOnce();
+    expect(coordinatorTenantsFailedMock).toHaveBeenCalledWith('dispatch', 1);
+  });
+
+  it('W0-09: coordinatorTenantsEnqueued + coordinatorTenantsSucceeded + coordinatorDurationMs emitted on happy path', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        skipped: false,
+        tenant_id: TENANT_SLUG,
+        reminders_dispatched: 5,
+        tasks_created: 0,
+        duration_ms: 800,
+      }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    expect(coordinatorTenantsEnqueuedMock).toHaveBeenCalledOnce();
+    expect(coordinatorTenantsEnqueuedMock).toHaveBeenCalledWith('dispatch', 1);
+    expect(coordinatorTenantsSucceededMock).toHaveBeenCalledOnce();
+    expect(coordinatorTenantsSucceededMock).toHaveBeenCalledWith('dispatch', 1);
+    // When no failures, coordinatorTenantsFailed must NOT be called.
+    expect(coordinatorTenantsFailedMock).not.toHaveBeenCalled();
+    // Duration histogram always emitted.
+    expect(coordinatorDurationMsMock).toHaveBeenCalledOnce();
+    expect(coordinatorDurationMsMock.mock.calls[0]![0]).toBe('dispatch');
+    expect(typeof coordinatorDurationMsMock.mock.calls[0]![1]).toBe('number');
+  });
+
+  it('W0-09: cronBearerAuthRejected emitted on 401 (F8-A3 instrument)', async () => {
+    const res = await POST(makeRequest({}));
+    expect(res.status).toBe(401);
+    expect(cronBearerAuthRejectedMock).toHaveBeenCalledOnce();
+    expect(cronBearerAuthRejectedMock).toHaveBeenCalledWith(
+      '/api/cron/renewals/dispatch-coordinator',
+    );
   });
 
   it('audit emit failure swallowed (does not break response)', async () => {

@@ -118,6 +118,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
       renewalsMetrics.coordinatorAuditEmitFailed('reconcile');
     }
+    renewalsMetrics.coordinatorTenantsEnqueued('reconcile', 0);
+    renewalsMetrics.coordinatorTenantsSucceeded('reconcile', 0);
+    renewalsMetrics.coordinatorDurationMs('reconcile', summary.duration_ms);
     return NextResponse.json({ ...summary, per_tenant_results: [] });
   }
 
@@ -256,6 +259,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     renewalsMetrics.coordinatorAuditEmitFailed('reconcile');
   }
+
+  // W0-09: § 23.1.3 coordinator-level metrics.
+  renewalsMetrics.coordinatorTenantsEnqueued('reconcile', summary.tenants_enqueued);
+  renewalsMetrics.coordinatorTenantsSucceeded('reconcile', summary.tenants_succeeded);
+  if (summary.tenants_failed > 0) {
+    renewalsMetrics.coordinatorTenantsFailed('reconcile', summary.tenants_failed);
+  }
+  renewalsMetrics.coordinatorDurationMs('reconcile', summary.duration_ms);
 
   logger.info(
     {

@@ -9,9 +9,18 @@
  *   - manager-role rejected at the use-case zod gate (defence-in-depth)
  *   - invalid duration rejected
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { snoozeAtRiskMember } from '@/modules/renewals/application/use-cases/snooze-at-risk-member';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
+
+// W0-09: capture atRiskSnooze calls so the metric emission path is covered.
+// vi.hoisted required because vi.mock is hoisted to top of file.
+const atRiskSnoozeMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: {
+    atRiskSnooze: atRiskSnoozeMock,
+  },
+}));
 
 const TENANT_ID = 'tenantA';
 const MEMBER_UUID = '00000000-0000-0000-0000-00000000a155';
@@ -54,6 +63,10 @@ const baseInput = {
 };
 
 describe('snoozeAtRiskMember (T155)', () => {
+  beforeEach(() => {
+    atRiskSnoozeMock.mockReset();
+  });
+
   it('happy path — 30d snooze sets flag + emits audit in tx', async () => {
     // R4-S5 (staff-review-2026-05-09): use vi.useFakeTimers instead of
     // ±1000 ms wall-clock tolerance. Windows CI runners under load can
@@ -166,5 +179,31 @@ describe('snoozeAtRiskMember (T155)', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+  });
+
+  // W0-09: § 23.1.2 metric emission
+  it('emits renewalsMetrics.atRiskSnooze on success with tenantId + actorRole', async () => {
+    const { deps } = fakeDeps({ previousValue: false, affectedRows: 1 });
+    const r = await snoozeAtRiskMember(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(atRiskSnoozeMock).toHaveBeenCalledOnce();
+    expect(atRiskSnoozeMock).toHaveBeenCalledWith(TENANT_ID, 'admin');
+  });
+
+  it('does NOT emit atRiskSnooze when member_not_found (affectedRows=0)', async () => {
+    const { deps } = fakeDeps({ previousValue: false, affectedRows: 0 });
+    const r = await snoozeAtRiskMember(deps, baseInput);
+    expect(r.ok).toBe(false);
+    expect(atRiskSnoozeMock).not.toHaveBeenCalled();
+  });
+
+  it('does NOT emit atRiskSnooze when audit emit throws (tx rolled back)', async () => {
+    const auditError = new Error('audit_log: insert failed');
+    const { deps } = fakeDeps(
+      { previousValue: false, affectedRows: 1 },
+      async () => { throw auditError; },
+    );
+    await expect(snoozeAtRiskMember(deps, baseInput)).rejects.toThrow(auditError);
+    expect(atRiskSnoozeMock).not.toHaveBeenCalled();
   });
 });
