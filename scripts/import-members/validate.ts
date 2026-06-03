@@ -206,14 +206,23 @@ export function validateRows(
     // do not false-warn (review items 3/9).
     const headPlanId = tier.ok ? tier.value.planId : null;
     const headCountry = country.ok ? country.value : null;
+    const norm = (s: string): string => s.trim().toLowerCase();
     for (const r of groupRows.slice(1)) {
-      if (r.tier.trim().length > 0 && headPlanId !== null) {
+      // Warn when the raw cells DIFFER and are not PROVABLY equivalent (same resolved
+      // value). Equivalent spellings ("TH"≡"Thailand", "Premium"≡"Premium Corporate")
+      // don't warn; a genuinely-different value — INCLUDING an unresolvable/garbage one
+      // like "Narnia"/"Bronze" — does warn (R3 fix: the unresolvable-different case was
+      // silently dropped). Siblings are never independently resolution-error-checked,
+      // so this mismatch warning is the only signal for a wrongly-merged company.
+      if (r.tier.trim().length > 0 && norm(r.tier) !== norm(head.tier)) {
         const rt = tierResolver.resolve(r.tier);
-        if (rt.ok && rt.value.planId !== headPlanId) warn(r.rowIndex, 'tier', 'member_field_mismatch');
+        const equivalent = rt.ok && headPlanId !== null && rt.value.planId === headPlanId;
+        if (!equivalent) warn(r.rowIndex, 'tier', 'member_field_mismatch');
       }
-      if (r.country.trim().length > 0 && headCountry !== null) {
+      if (r.country.trim().length > 0 && norm(r.country) !== norm(head.country)) {
         const rc = countryNameToCode(r.country);
-        if (rc.ok && rc.value !== headCountry) warn(r.rowIndex, 'country', 'member_field_mismatch');
+        const equivalent = rc.ok && headCountry !== null && rc.value === headCountry;
+        if (!equivalent) warn(r.rowIndex, 'country', 'member_field_mismatch');
       }
     }
 

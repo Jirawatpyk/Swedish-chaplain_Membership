@@ -18,7 +18,7 @@
  */
 import * as XLSX from 'xlsx';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -161,30 +161,29 @@ export async function commitMembers(
 
       // Email-based dedupe (spec § 5) — match the per-contact partial unique index
       // (contacts_tenant_email_uniq ON (tenant_id, lower(email)) WHERE removed_at IS NULL).
-      const activeRows = await tx
-        .select({ email: contacts.email })
+      // ONE query partitioned in JS by removed_at (halves per-member round-trips).
+      const existing = await tx
+        .select({ email: contacts.email, removedAt: contacts.removedAt })
         .from(contacts)
-        .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails), isNull(contacts.removedAt)));
-      const softRows = await tx
-        .select({ email: contacts.email })
-        .from(contacts)
-        .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails), isNotNull(contacts.removedAt)));
-      const activeEmails = new Set(activeRows.map((r) => r.email.toLowerCase()));
-      const softEmails = new Set(softRows.map((r) => r.email.toLowerCase()));
+        .where(and(eq(contacts.tenantId, ctx.slug), inArray(sql`lower(${contacts.email})`, emails)));
+      const activeEmails = new Set(existing.filter((r) => r.removedAt === null).map((r) => r.email.toLowerCase()));
+      const softEmails = new Set(existing.filter((r) => r.removedAt !== null).map((r) => r.email.toLowerCase()));
+      // "Genuinely new" = neither active nor already soft-deleted in the DB.
+      const hasNewEmail = emails.some((e) => !activeEmails.has(e) && !softEmails.has(e));
 
-      // Fully imported already (every contact email is active) → idempotent skip.
-      if (emails.every((e) => activeEmails.has(e))) {
-        skippedExistingMembers += 1;
-        continue;
-      }
-
-      // PARTIAL OVERLAP: some — but not all — contact emails are already active. This
-      // is ambiguous (which existing member do the new contacts belong to? is that
-      // member's primary still intact?). We DO NOT auto-attach — doing so risks
-      // attaching to the wrong member or leaving a member with no active primary
-      // (R2 findings). Skip + record the row for the operator to resolve by hand.
-      // On a fresh first import this never fires (no active contacts exist yet).
+      // Member already exists (≥1 active contact).
       if (activeEmails.size > 0) {
+        // Nothing genuinely new (every email is active or already soft-deleted) →
+        // idempotent skip. This correctly covers a clean re-run of a member that has
+        // a soft-deleted secondary (R3 fix: such a member is NOT a partial overlap).
+        if (!hasNewEmail) {
+          skippedExistingMembers += 1;
+          continue;
+        }
+        // Some active + a GENUINELY NEW contact → ambiguous partial overlap (which
+        // existing member? is its primary intact?). We DO NOT auto-attach (R2 findings:
+        // risks wrong-member attach / no active primary). Skip + record the row for the
+        // operator. On a fresh first import this never fires (no active contacts exist).
         skippedPartialOverlapMembers += 1;
         partialOverlapRows.push(headRow);
         continue;

@@ -165,6 +165,26 @@ describe('validateRows (spec § 3)', () => {
       RESOLVER,
     );
     expect(diff.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'country')).toBe(true);
+
+    // Different resolved TIER on a sibling → warn (positive tier-branch coverage).
+    const tierDiff = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Tier Co', tier: 'Premium', country: 'SE', contactEmail: 'a@tier.test' }),
+        row({ rowIndex: 3, companyName: 'Tier Co', tier: 'Thai Alumni', taxId: '', country: 'SE', contactEmail: 'b@tier.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(tierDiff.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'tier')).toBe(true);
+
+    // R3 bug 2: a sibling with an UNRESOLVABLE-but-different value still warns (was silently dropped).
+    const unresolvable = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'Garbage Co', tier: 'Thai Alumni', taxId: '', country: 'SE', contactEmail: 'a@g.test' }),
+        row({ rowIndex: 3, companyName: 'Garbage Co', tier: 'Thai Alumni', taxId: '', country: 'Narnia', contactEmail: 'b@g.test', isPrimary: '' }),
+      ],
+      RESOLVER,
+    );
+    expect(unresolvable.issues.some((i) => i.code === 'member_field_mismatch' && i.field === 'country')).toBe(true);
   });
 
   it('rule 7: multiple primaries → multiple_primary error', () => {

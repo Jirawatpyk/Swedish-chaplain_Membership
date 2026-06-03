@@ -84,4 +84,29 @@ describe('report builder (spec § 7 — no PII)', () => {
     expect(text).not.toContain('Secret Holdings');
     expect(text).not.toContain('@secret-holdings');
   });
+
+  it('renders a committed outcome with the skip-row lists (rowIndex only, no PII)', () => {
+    const committedDoc = buildReportDocument({
+      report,
+      mode: 'commit',
+      planYear: 2026,
+      generatedAt: '2026-06-03T00:00:00.000Z',
+      committed: {
+        membersCreated: 5,
+        contactsCreated: 8,
+        skippedExistingMembers: 2,
+        skippedPartialOverlapMembers: 1,
+        skippedSoftDeletedContacts: 1,
+        skippedPrimaryCollisionMembers: 1,
+        partialOverlapRows: [7, 12],
+        primaryCollisionRows: [19],
+      },
+    });
+    const text = renderReportText(committedDoc);
+    expect(text).toContain('Committed: 5 members + 8 contacts');
+    expect(text).toContain('partial-overlap rows (resolve manually): 7, 12');
+    expect(text).toContain('primary-collision rows (resolve manually): 19');
+    expect(text).not.toContain('Secret Holdings'); // still no PII
+    expect(JSON.stringify(committedDoc)).not.toContain('Secret Holdings');
+  });
 });

@@ -168,6 +168,39 @@ describe('commitMembers — integration (spec § 5)', () => {
     expect(await countMembers(tenantA.ctx.slug)).toBe(before); // no orphan member created
   });
 
+  it('new member with a soft-deleted SECONDARY: created with its primary, secondary skipped; re-run idempotent (R3 items 1/10)', async () => {
+    const pEmail = `r3p-${randomUUID().slice(0, 8)}@imp.test`;
+    const sEmail = `r3s-${randomUUID().slice(0, 8)}@imp.test`;
+    // Pre-seed sEmail as a soft-deleted contact (on an unrelated member).
+    await runInTenant(tenantC.ctx, async (tx) => {
+      const oldMember = randomUUID();
+      await tx.insert(members).values({
+        tenantId: tenantC.ctx.slug, memberId: oldMember, companyName: `Old ${randomUUID().slice(0, 6)}`,
+        country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01', registrationFeePaid: true, status: 'active',
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenantC.ctx.slug, contactId: randomUUID(), memberId: oldMember,
+        firstName: 'X', lastName: 'Y', email: sEmail, preferredLanguage: 'en', isPrimary: true,
+      });
+      await tx.update(contacts).set({ removedAt: new Date(), isPrimary: false }).where(eq(contacts.email, sEmail));
+    });
+
+    // Import a NEW member: primary P (new) + secondary S (email matches the soft-deleted row).
+    const first = await commitMembers(tenantC.ctx, user.userId, [vm({ emails: [pEmail, sEmail] })], 2026);
+    expect(first).toMatchObject({ membersCreated: 1, contactsCreated: 1, skippedSoftDeletedContacts: 1 });
+    const pContact = await runInTenant(tenantC.ctx, async (tx) =>
+      tx.select({ isPrimary: contacts.isPrimary }).from(contacts).where(and(eq(contacts.tenantId, tenantC.ctx.slug), inArray(contacts.email, [pEmail]))),
+    );
+    expect(pContact).toHaveLength(1);
+    expect(pContact[0]!.isPrimary).toBe(true); // member kept its primary (P)
+
+    // RE-RUN: P now active, S still soft-deleted → nothing genuinely new → idempotent
+    // skip, NOT a phantom partial-overlap (the R3 idempotency bug).
+    const second = await commitMembers(tenantC.ctx, user.userId, [vm({ emails: [pEmail, sEmail] })], 2026);
+    expect(second).toMatchObject({ membersCreated: 0, skippedExistingMembers: 1, skippedPartialOverlapMembers: 0 });
+    expect(second.partialOverlapRows).toHaveLength(0);
+  });
+
   it('all-or-nothing: a mid-batch FK failure rolls back the whole import', async () => {
     const good = vm({ emails: [`rb-good-${randomUUID().slice(0, 8)}@imp.test`] });
     const ghost = vm({ planId: 'ghost-plan-not-seeded', emails: [`rb-ghost-${randomUUID().slice(0, 8)}@imp.test`] });
