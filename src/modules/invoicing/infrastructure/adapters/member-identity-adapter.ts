@@ -6,10 +6,12 @@
  * `FOR UPDATE` row lock that Drizzle's select builder does not expose
  * directly (FR-037 archive-race guard).
  *
- * NOTE: F3 `members` table has no dedicated `address` column — we
- * populate the snapshot's `address` field from ISO country code until
- * a full-address extension lands in Phase 10. The primary contact's
- * first/last name + email come from `contacts`.
+ * The snapshot's `address` is composed from the F3 `members` structured
+ * postal columns (`address_line1/2`, `city`, `province`, `postal_code`,
+ * `country`) via `composeBuyerAddress`, so the buyer block satisfies the
+ * Thai Revenue Code §86/§87 full-address requirement (not just a country
+ * code — the prior stub). The primary contact's first/last name + email
+ * come from `contacts`.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import type {
@@ -19,6 +21,7 @@ import type {
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import type { TenantTx } from '@/lib/db';
 import { makeMemberIdentitySnapshot } from '../../domain/value-objects/member-identity-snapshot';
+import { composeBuyerAddress } from './compose-buyer-address';
 
 export const memberIdentityAdapter: MemberIdentityPort = {
   async getForIssue(
@@ -41,6 +44,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       forUpdate
         ? sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
+                   m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    mp.member_type_scope
               FROM members m
@@ -53,6 +57,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
           `
         : sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
+                   m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    mp.member_type_scope
               FROM members m
@@ -67,6 +72,11 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       company_name: string;
       tax_id: string | null;
       country: string;
+      address_line1: string | null;
+      address_line2: string | null;
+      city: string | null;
+      province: string | null;
+      postal_code: string | null;
       status: string;
       archived_at: Date | null;
       registration_date: Date | string;
@@ -104,7 +114,14 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       snapshot: makeMemberIdentitySnapshot({
         legal_name: m.company_name,
         tax_id: m.tax_id,
-        address: m.country,
+        address: composeBuyerAddress({
+          addressLine1: m.address_line1,
+          addressLine2: m.address_line2,
+          city: m.city,
+          province: m.province,
+          postalCode: m.postal_code,
+          country: m.country,
+        }),
         primary_contact_name: primaryContact
           ? `${primaryContact.firstName} ${primaryContact.lastName}`
           : '',
