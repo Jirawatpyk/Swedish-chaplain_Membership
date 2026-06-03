@@ -58,8 +58,8 @@ the system safely and completely — across the readiness dimensions below
 | **0. Baseline** ✅ | Run full CI gate suite on current branch; capture deterministic failures | Claude | **DONE 2026-05-31** → `docs/Bug/stage0-baseline.md`. 13/13 static+schema gates green; 6 test reds all root-caused as test-quality/env, **0 product regressions** |
 | **1. Readiness Audit** ✅ | Multi-agent fan-out across all dimensions (incl. UI + UX separately) × modules → prioritized findings (P0=launch blocker) | Claude (workflow) | **DONE 2026-05-31** → `docs/Bug/go-live-findings.md` (199 agents). 4 real P0 + 21 real P1 + 211 P2/P3 backlog; F4 Thai-tax = PASS. 3 escalations pending operator |
 | **2. Fix P0/P1** ✅ (main batch) | Remediate launch blockers in gated batches | Claude | **P0 4/4 + P1 16/19 DONE** (16 commits, each gated). Remaining deferred to focused tasks (none blocks golden path): P1-9b (P2 cursor), P1-16 (tax_id → importer enforces), P1-4/P1-5/P1-17 (Heavy, feature-sized — see `docs/Bug/go-live-findings.md`) |
-| **3. Data importer** | Build member/contact importer (validate → dry-run → import → rollback); PII-safe | Claude builds / operator runs | Dry-run clean on real Excel; row counts match |
-| **4. Operator gates** | Provision Vercel env, register crons, deploy ClamAV, flag-flip | Claude writes runbook / **operator runs** | All gates in § 6 checked |
+| **3. Data importer** ✅ | Build member/contact importer (validate → dry-run → import → rollback); PII-safe | Claude builds / operator runs | **DONE 2026-06-03** → PR #52 merged to `main` (`scripts/import-members/**`). 4 review rounds (R1 15 bugs · R2 regression · R3 2 bugs · R4 1 R3-regression + cross-member flag); 62 tests (51 unit + 11 integration). Operator runs §9 of the gates runbook on the real Excel |
+| **4. Operator gates** ✅ (runbook) | Provision Vercel env, register crons, deploy ClamAV, flag-flip | Claude writes runbook / **operator runs** | **Runbook DONE 2026-06-03** → `docs/runbooks/go-live-operator-gates.md` (executable, derived from `src/lib/env.ts` + `cron-jobs.md`). Operator executes; all gates in § 6 checked |
 | **5. QA + Go/No-Go** | Full golden-path E2E on preview/staging deploy + final decision | Both | All § 7 criteria PASS |
 
 **Reality check**: this is a **multi-session effort**. P2/P3 (nice-to-have)
@@ -197,6 +197,19 @@ F9 is code-complete (109/110). Before merge:
 Authoritative sources: `src/lib/env.ts` (env schema — app refuses to boot if a
 required var is missing/invalid) and `docs/runbooks/cron-jobs.md` (cron
 catalogue). This is the consolidated launch view.
+
+> **▶ Executable runbook: `docs/runbooks/go-live-operator-gates.md`** — the step-by-step,
+> command-by-command version of this checklist (secret generation, `vercel env add` lines, cron
+> table, flag-flip order). Run that top-to-bottom; this § 6 is the summary index.
+>
+> **Correction (2026-06-03, re-verified against `src/lib/env.ts`)**: the **F5 Stripe block**
+> (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`,
+> `STRIPE_API_VERSION`, `STRIPE_ACCOUNT_ID_SWECHAM`), the **F7 Broadcasts block**
+> (`RESEND_BROADCASTS_API_KEY`, `RESEND_BROADCASTS_WEBHOOK_SECRET`, `BROADCASTS_FROM_EMAIL`,
+> `UNSUBSCRIBE_TOKEN_SECRET`), and `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` are **non-optional in the
+> schema → required to BOOT**, even when F5/F7/F8 are dark. The "Feature-specific" grouping below
+> is about *when you'd naturally set them*, not about boot-optionality — for a members+invoicing-only
+> launch you still must set valid **test-mode** Stripe keys + the F7 secrets + the renewal primary.
 
 ### 6.1 Vercel environment variables (production)
 > Authoritative list = `src/lib/env.ts` (boot-time zod). Verified against it 2026-05-30.
