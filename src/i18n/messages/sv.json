@@ -4621,7 +4621,11 @@
   },
   "email": {
     "invoiceIssued": {
-      "payOnlineCta": "Betala online"
+      "payOnlineCta": "Betala online",
+      "eventNonMemberFooter": {
+        "title": "Integritetsmeddelande",
+        "notice": "Ditt namn och din adress registrerades enbart för att utfärda detta skattedokument och sparas i 10 år enligt thailändska skattelagen §87/3."
+      }
     },
     "refundConfirmation": {
       "subject": "Bekräftelse av återbetalning"

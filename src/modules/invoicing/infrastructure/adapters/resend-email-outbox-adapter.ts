@@ -44,6 +44,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly voidReason?: string;
       readonly expectedPdfSha256?: string;
       readonly dependsOnReceiptPdf?: boolean;
+      readonly privacyFooterKind?: 'event_non_member';
     },
   ): Promise<void> {
     // T107 — `null` tx = "enqueue standalone" (used by resend-pdf,
@@ -73,6 +74,10 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       // re-queues the row (without bumping attempts) when the gate is
       // set + the underlying invoice's receipt is still 'pending'.
       depends_on_receipt_pdf: input.dependsOnReceiptPdf ?? false,
+      // Task 14 — PDPA privacy-footer discriminator for non-member event
+      // invoices. Persisted so a later resend reproduces the same §87/3
+      // notice; `null` for membership + matched-member event invoices.
+      privacy_footer_kind: input.privacyFooterKind ?? null,
     };
     // R7-S2 — use caller-supplied locale (member's primary-contact
     // preferred_locale when known). Defaults to 'en' for callers

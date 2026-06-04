@@ -35,6 +35,19 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
+import { logger } from '@/lib/logger';
+
+// Task 14 — spy on the structured logger so the empty-recipient skip path
+// can assert the `invoice_auto_email_skipped_no_recipient` warn fires with
+// ids only (no email/PII). `vi.importActual` keeps every other logger method
+// real (PAN regex, child loggers) — we only stub `warn`.
+vi.mock('@/lib/logger', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger');
+  return {
+    ...actual,
+    logger: { ...actual.logger, warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+  };
+});
 
 // ---- Fixtures ---------------------------------------------------------------
 
@@ -799,6 +812,163 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'invoice', vatInclusive: false }),
     );
+  });
+
+  // --- 054-event-fee-invoices (Task 14) — auto-email hardening -----------------
+  //   (A) empty-recipient guard: a non-member event buyer with an empty
+  //       contact email → SKIP enqueue + warn (ids only), invoice still issues.
+  //   (B) non-member event privacy footer: enqueue carries
+  //       privacyFooterKind:'event_non_member'.
+  //   regression: membership invoice enqueue carries NO footer flag.
+
+  /** Non-member event draft with a chosen buyer contact email (tax_id pinned). */
+  function makeNonMemberEventDraftWithEmail(contactEmail: string): Invoice {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(107000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(107000n),
+      position: 1,
+    };
+    return makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-14',
+      eventRegistrationId: 'reg-uuid-14',
+      memberIdentitySnapshot: Object.freeze({
+        legal_name: 'Walk-in Guest',
+        tax_id: '9876543210123',
+        address: '50 Sukhumvit Road, Bangkok 10110',
+        primary_contact_name: 'Buyer',
+        primary_contact_email: contactEmail,
+      }),
+      lines: [eventLine],
+    });
+  }
+
+  it('(A) non-member event, auto-email ON, EMPTY buyer email → no enqueue, warn fires, invoice still issues', async () => {
+    const deps = makeDeps(
+      makeNonMemberEventDraftWithEmail(''),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueInvoice(deps, input);
+    // Invoice still issues successfully — email is best-effort, not a tx invariant.
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    // No enqueue to the empty address.
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Skip warn fires with ids only (no email/PII).
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'invoice_auto_email_skipped_no_recipient',
+        tenantId: input.tenantId,
+        invoiceSubject: 'event',
+      }),
+      expect.any(String),
+    );
+    // Defence-in-depth: the buyer's (empty) email never appears in the log
+    // call arg — assert no field on the warn payload carries an email value.
+    const warnArgs = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(warnArgs).toBeDefined();
+    expect(JSON.stringify(warnArgs)).not.toContain('primary_contact_email');
+    expect(JSON.stringify(warnArgs)).not.toContain('@');
+  });
+
+  it('(A) whitespace-only buyer email → treated as empty → no enqueue, warn fires', async () => {
+    const deps = makeDeps(
+      makeNonMemberEventDraftWithEmail('   '),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'invoice_auto_email_skipped_no_recipient' }),
+      expect.any(String),
+    );
+  });
+
+  it('(B) non-member event, auto-email ON, buyer HAS email → enqueues with privacyFooterKind:event_non_member', async () => {
+    const deps = makeDeps(
+      makeNonMemberEventDraftWithEmail('buyer@walkin.example'),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'invoice_issued',
+        recipientEmail: 'buyer@walkin.example',
+        privacyFooterKind: 'event_non_member',
+      }),
+    );
+    // Skip warn must NOT fire on the happy enqueue path.
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'invoice_auto_email_skipped_no_recipient' }),
+      expect.anything(),
+    );
+  });
+
+  it('(regression) membership invoice, auto-email ON → enqueues WITHOUT the event-non-member footer flag', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice({ autoEmailOnIssue: null }),
+      makeSettings({ autoEmailEnabled: true }),
+      makeMember(),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    const enqueueArg = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as Record<string, unknown>;
+    expect(enqueueArg.recipientEmail).toBe('john@acme.example');
+    // No footer flag for a membership invoice (the buyer is a known member).
+    expect(enqueueArg.privacyFooterKind).toBeUndefined();
+  });
+
+  it('(regression) matched-member EVENT invoice → enqueues WITHOUT the footer flag (member, not walk-in)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน',
+      descriptionEn: 'Event',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-14b',
+      eventRegistrationId: 'reg-uuid-14b',
+      memberIdentitySnapshot: null, // pinned at issue from the member row
+      lines: [eventLine],
+    });
+    const deps = makeDeps(matchedEventDraft, makeSettings({ autoEmailEnabled: true }), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    const enqueueArg = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as Record<string, unknown>;
+    // memberId is non-null → the footer is for NON-member buyers only.
+    expect(enqueueArg.privacyFooterKind).toBeUndefined();
   });
 });
 

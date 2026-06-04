@@ -51,7 +51,7 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
 import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
 import {
@@ -153,6 +153,8 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
   let regWithTinId: string; // non-member WITH tin, 100.04 THB (VAT-exact case)
   let regNoTinId: string; // non-member WITHOUT tin, 250 THB (receipt doc-type)
   let regMatchedId: string; // matched company member WITH tin, 2,000 THB
+  let regFooterEmailId: string; // Task 14 — non-member WITH contact email
+  let regFooterNoEmailId: string; // Task 14 — non-member with EMPTY contact email
   let memberId: string;
 
   beforeAll(async () => {
@@ -163,6 +165,8 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     regWithTinId = randomUUID();
     regNoTinId = randomUUID();
     regMatchedId = randomUUID();
+    regFooterEmailId = randomUUID();
+    regFooterNoEmailId = randomUUID();
     memberId = randomUUID();
 
     await runInTenant(tenant.ctx, async (tx) => {
@@ -282,6 +286,40 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
         matchedMemberId: memberId,
         ticketType: 'Standard',
         ticketPriceThb: 2000,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+
+      // Task 14 — non-member registration WITH a contact email (auto-email
+      // enqueues a privacy-footer row).
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regFooterEmailId,
+        eventId,
+        externalId: 'att_footer_email',
+        attendeeEmail: 'footer-buyer@example.com',
+        attendeeName: 'Footer Buyer',
+        attendeeCompany: null,
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 500,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+
+      // Task 14 — non-member registration whose buyer has NO contact email
+      // (empty-recipient guard: auto-email is skipped, invoice still issues).
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regFooterNoEmailId,
+        eventId,
+        externalId: 'att_footer_no_email',
+        attendeeEmail: 'placeholder-no-email@example.com',
+        attendeeName: 'No-Email Buyer',
+        attendeeCompany: null,
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 500,
         paymentStatus: 'paid',
         registeredAt: new Date('2026-09-01T03:00:00Z'),
       } satisfies NewEventRegistrationRow);
@@ -506,5 +544,110 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
       );
     const payload = auditRow!.payload as Record<string, unknown>;
     expect(payload.member_id).toBe(memberId);
+  }, 60_000);
+
+  // --- Task 14 — auto-email hardening on the issue path (live Neon) -----------
+  // The tenant settings seeded above leave `auto_email_enabled` at its
+  // DEFAULT true, and `createEventInvoiceDraft` sets `autoEmailOnIssue: null`,
+  // so an event invoice auto-emails via the tenant default. Uses the REAL
+  // `resendEmailOutboxAdapter` so the assertion lands on a live
+  // `notifications_outbox` row.
+
+  it('(Task 14 / B) non-member event WITH buyer email → enqueues outbox row carrying privacy_footer_kind:event_non_member', async () => {
+    const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+    const draft = await createEventInvoiceDraft(draftDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-draft-footer-email-${regFooterEmailId}`,
+      eventRegistrationId: regFooterEmailId,
+      buyer: {
+        legal_name: 'Footer Buyer Ltd',
+        tax_id: '9876543210123',
+        address: '1 Footer Road, Bangkok 10110',
+        primary_contact_name: 'Footer Buyer',
+        primary_contact_email: 'footer-buyer@example.com',
+      },
+    });
+    expect(draft.ok, draft.ok ? 'ok' : `draft err: ${draft.error.code}`).toBe(true);
+    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
+    const invoiceId = draft.value.invoiceId;
+
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-issue-footer-email-${invoiceId}`,
+      invoiceId,
+    });
+    expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
+
+    const [row] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'invoice_auto_email'),
+        ),
+      )
+      .then((rows) =>
+        rows.filter(
+          (r) => (r.contextData as Record<string, unknown>).invoice_id === invoiceId,
+        ),
+      );
+    expect(row, 'expected an invoice_auto_email outbox row for this invoice').toBeDefined();
+    expect(row!.toEmail).toBe('footer-buyer@example.com');
+    const ctx = row!.contextData as Record<string, unknown>;
+    expect(ctx.event_type).toBe('invoice_issued');
+    expect(ctx.privacy_footer_kind).toBe('event_non_member');
+  }, 60_000);
+
+  it('(Task 14 / A) non-member event with EMPTY buyer email → NO outbox row, invoice still issues', async () => {
+    const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+    const draft = await createEventInvoiceDraft(draftDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-draft-footer-noemail-${regFooterNoEmailId}`,
+      eventRegistrationId: regFooterNoEmailId,
+      buyer: {
+        legal_name: 'No-Email Buyer Ltd',
+        tax_id: '9876543210123',
+        address: '2 No-Email Road, Bangkok 10110',
+        primary_contact_name: 'No-Email Buyer',
+        // Empty contact email — the snapshot contract accepts '' (§86/4: a
+        // buyer contact is supplementary, not required).
+        primary_contact_email: '',
+      },
+    });
+    expect(draft.ok, draft.ok ? 'ok' : `draft err: ${draft.error.code}`).toBe(true);
+    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
+    const invoiceId = draft.value.invoiceId;
+
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-issue-footer-noemail-${invoiceId}`,
+      invoiceId,
+    });
+    // Invoice issues successfully — the auto-email is best-effort.
+    expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
+    const row = await readInvoiceRow(invoiceId);
+    expect(row!.status).toBe('issued');
+
+    // No outbox row was enqueued for this invoice (empty-recipient guard).
+    const rows = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'invoice_auto_email'),
+        ),
+      )
+      .then((all) =>
+        all.filter(
+          (r) => (r.contextData as Record<string, unknown>).invoice_id === invoiceId,
+        ),
+      );
+    expect(rows).toHaveLength(0);
   }, 60_000);
 });

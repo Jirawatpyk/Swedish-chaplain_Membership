@@ -500,17 +500,54 @@ export async function issueInvoice(
     }
 
     // L. Outbox (if auto-email enabled — per-invoice override trumps tenant default)
+    //
+    // Task 14 — auto-email is BEST-EFFORT and NOT part of the issue tx
+    // invariant: the §87 sequence number + PDF + audit are already committed
+    // above; the enqueue is a single row insert and a skip here leaves the
+    // issued invoice fully valid (admins can manually resend from the detail
+    // page). Two Task-14 hardenings on this path:
+    //
+    //   (A) Empty-recipient guard — a NON-MEMBER event buyer may have an
+    //       empty `primary_contact_email` (the buyer snapshot accepts ''
+    //       per §86/4: a contact is supplementary, not required). Enqueuing
+    //       to '' would queue an undeliverable row. Skip + warn (ids only,
+    //       NO email/PII per CLAUDE.md § Secrets) instead.
+    //
+    //   (B) Non-member event privacy footer — when the buyer is a non-member
+    //       on an EVENT invoice, thread `privacyFooterKind = 'event_non_member'`
+    //       so the auto-email carries the §87/3 PDPA transparency notice.
     const shouldAutoEmail =
       draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
     if (shouldAutoEmail) {
-      await deps.outbox.enqueue(tx, {
-        tenantId: input.tenantId,
-        eventType: 'invoice_issued',
-        recipientEmail: memberSnap.primary_contact_email,
-        invoiceId,
-        pdfBlobKey: blobKey,
-        pdfTemplateVersion: deps.currentTemplateVersion,
-      });
+      const recipientEmail = (memberSnap.primary_contact_email ?? '').trim();
+      if (recipientEmail === '') {
+        // (A) — no deliverable address. Skip the enqueue; the invoice still
+        // issues successfully. Log ids only (no email / buyer PII).
+        logger.warn(
+          {
+            event: 'invoice_auto_email_skipped_no_recipient',
+            tenantId: input.tenantId,
+            invoiceId,
+            invoiceSubject: draft.invoiceSubject,
+          },
+          'issueInvoice: auto-email skipped — buyer has no contact email',
+        );
+      } else {
+        // (B) — non-member event buyer → PDPA privacy footer.
+        const privacyFooterKind =
+          draft.invoiceSubject === 'event' && draft.memberId === null
+            ? ('event_non_member' as const)
+            : undefined;
+        await deps.outbox.enqueue(tx, {
+          tenantId: input.tenantId,
+          eventType: 'invoice_issued',
+          recipientEmail,
+          invoiceId,
+          pdfBlobKey: blobKey,
+          pdfTemplateVersion: deps.currentTemplateVersion,
+          ...(privacyFooterKind ? { privacyFooterKind } : {}),
+        });
+      }
     }
 
     // T113 — happy-path emit. Count + duration fire together so

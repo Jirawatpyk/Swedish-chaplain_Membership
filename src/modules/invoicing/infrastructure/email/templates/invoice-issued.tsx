@@ -43,6 +43,15 @@ export interface InvoiceIssuedEmailProps {
   readonly payOnlineUrl?: string;
   /** F5 FR-027 — localised CTA label (from `PAY_ONLINE_CTA[locale]`). */
   readonly payOnlineCtaLabel?: string;
+  /**
+   * 054-event-fee-invoices (Task 14) — PDPA privacy-notice footer for a
+   * NON-MEMBER event invoice. Both fields MUST be supplied together
+   * (from `EVENT_NON_MEMBER_FOOTER[locale]`); omitting either renders no
+   * notice. Membership invoices never pass these — the buyer is a known
+   * member whose data is processed under the membership relationship.
+   */
+  readonly privacyNoticeTitle?: string;
+  readonly privacyNoticeBody?: string;
 }
 
 export function InvoiceIssuedEmail(props: InvoiceIssuedEmailProps) {
@@ -52,6 +61,12 @@ export function InvoiceIssuedEmail(props: InvoiceIssuedEmailProps) {
     props.payOnlineUrl.length > 0 &&
     typeof props.payOnlineCtaLabel === 'string' &&
     props.payOnlineCtaLabel.length > 0;
+
+  const showPrivacyNotice =
+    typeof props.privacyNoticeTitle === 'string' &&
+    props.privacyNoticeTitle.length > 0 &&
+    typeof props.privacyNoticeBody === 'string' &&
+    props.privacyNoticeBody.length > 0;
 
   return (
     <BaseEmailLayout
@@ -65,6 +80,12 @@ export function InvoiceIssuedEmail(props: InvoiceIssuedEmailProps) {
         ? {
             primaryCtaLabel: props.payOnlineCtaLabel,
             primaryCtaHref: props.payOnlineUrl,
+          }
+        : {})}
+      {...(showPrivacyNotice
+        ? {
+            privacyNoticeTitle: props.privacyNoticeTitle,
+            privacyNoticeBody: props.privacyNoticeBody,
           }
         : {})}
     />

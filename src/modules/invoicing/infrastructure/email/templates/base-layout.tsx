@@ -54,6 +54,15 @@ export interface BaseEmailLayoutProps {
    */
   readonly primaryCtaLabel?: string;
   readonly primaryCtaHref?: string;
+  /**
+   * 054-event-fee-invoices (Task 14) — optional PDPA privacy-notice block
+   * rendered ABOVE the footer brand line. Both `title` and `notice` MUST be
+   * provided together; omitting either renders the layout with no notice
+   * (pre-Task-14 behaviour preserved). Used by the non-member event-invoice
+   * auto-email to explain why the buyer's identity was recorded.
+   */
+  readonly privacyNoticeTitle?: string;
+  readonly privacyNoticeBody?: string;
 }
 
 const FOOTER_BRAND_DEFAULT = 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)';
@@ -126,6 +135,41 @@ const FOOTER_STYLE: React.CSSProperties = {
 };
 
 /**
+ * 054-event-fee-invoices (Task 14) — PDPA privacy-notice block. Visually
+ * distinct from the brand footer (slightly darker text + its own top border)
+ * so a non-member buyer's eye lands on the transparency notice rather than
+ * skipping it as boilerplate. Kept inline-literal (email clients do not
+ * resolve CSS variables) and WCAG-AA contrast on the white body.
+ */
+const PRIVACY_NOTICE_STYLE: React.CSSProperties = {
+  fontSize: '12px',
+  color: '#555',
+  lineHeight: '1.5',
+  margin: '24px 0 0',
+  borderTop: '1px solid #eee',
+  paddingTop: '16px',
+};
+
+const PRIVACY_NOTICE_TITLE_STYLE: React.CSSProperties = {
+  fontSize: '12px',
+  color: '#555',
+  lineHeight: '1.5',
+  margin: '0 0 4px',
+  fontWeight: 600,
+};
+
+/**
+ * Footer brand line WITHOUT its own top border — used when a privacy
+ * notice block immediately precedes it (the notice already drew the rule).
+ */
+const FOOTER_STYLE_NO_BORDER: React.CSSProperties = {
+  fontSize: '12px',
+  color: '#888',
+  lineHeight: '1.5',
+  margin: '16px 0 0',
+};
+
+/**
  * Base layout component — identical chrome across every F4 auto-email.
  * Templates compose a `bodyContent` node + heading + CTA + pass them
  * through here.
@@ -136,6 +180,11 @@ export function BaseEmailLayout(props: BaseEmailLayoutProps) {
     props.primaryCtaLabel.length > 0 &&
     typeof props.primaryCtaHref === 'string' &&
     props.primaryCtaHref.length > 0;
+  const hasPrivacyNotice =
+    typeof props.privacyNoticeTitle === 'string' &&
+    props.privacyNoticeTitle.length > 0 &&
+    typeof props.privacyNoticeBody === 'string' &&
+    props.privacyNoticeBody.length > 0;
   return (
     <Html lang={props.locale}>
       <Head />
@@ -170,7 +219,24 @@ export function BaseEmailLayout(props: BaseEmailLayoutProps) {
               {props.ctaHref}
             </a>
           </Text>
-          <Text style={FOOTER_STYLE}>{props.footerBrand ?? FOOTER_BRAND_DEFAULT}</Text>
+          {hasPrivacyNotice ? (
+            <Section data-testid="event-non-member-privacy-footer">
+              <Text style={PRIVACY_NOTICE_TITLE_STYLE}>
+                {props.privacyNoticeTitle}
+              </Text>
+              <Text style={PRIVACY_NOTICE_STYLE}>{props.privacyNoticeBody}</Text>
+            </Section>
+          ) : null}
+          <Text
+            style={
+              // When the privacy notice already drew the section divider,
+              // drop the brand line's own top border so the two blocks
+              // share one rule instead of stacking two adjacent lines.
+              hasPrivacyNotice ? FOOTER_STYLE_NO_BORDER : FOOTER_STYLE
+            }
+          >
+            {props.footerBrand ?? FOOTER_BRAND_DEFAULT}
+          </Text>
         </Container>
       </Body>
     </Html>

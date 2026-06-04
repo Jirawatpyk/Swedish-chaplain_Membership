@@ -4621,7 +4621,11 @@
   },
   "email": {
     "invoiceIssued": {
-      "payOnlineCta": "Pay online now"
+      "payOnlineCta": "Pay online now",
+      "eventNonMemberFooter": {
+        "title": "Privacy notice",
+        "notice": "Your name and address were recorded solely to issue this tax document, retained for 10 years per Thai Revenue Code §87/3."
+      }
     },
     "refundConfirmation": {
       "subject": "Refund confirmation"

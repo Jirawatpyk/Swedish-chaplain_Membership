@@ -383,3 +383,133 @@ describe('buildInvoiceAutoEmail — F5 FR-027 "Pay online" CTA', () => {
     }
   });
 });
+
+/**
+ * Task 14 (054-event-fee-invoices) — PDPA privacy-notice footer for the
+ * auto-email of a NON-MEMBER event invoice. The footer is additive and
+ * renders ONLY when the caller passes `privacyFooterKind:'event_non_member'`
+ * AND the event type is in the `invoice_issued` template family. Membership
+ * + matched-member invoices never pass the flag → no footer (regression
+ * guard for the F4 default email shape).
+ */
+describe('buildInvoiceAutoEmail — Task 14 non-member event privacy footer', () => {
+  // Sentinels from EVENT_NON_MEMBER_FOOTER in copy.ts — bit-consistent
+  // source of truth, mirrored under email.invoiceIssued.eventNonMemberFooter
+  // in the i18n message catalogues for `pnpm check:i18n` parity.
+  const FOOTER_EN = 'recorded solely to issue this tax document';
+  const FOOTER_TH = 'เพื่อออกเอกสารภาษีฉบับนี้เท่านั้น';
+  const FOOTER_SV = 'enbart för att utfärda detta';
+
+  it('EN: invoice_issued + event_non_member → footer notice present (with §87/3 retention)', async () => {
+    const out = await buildInvoiceAutoEmail({
+      toEmail: 'buyer@example.com',
+      eventType: 'invoice_issued',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'en',
+      privacyFooterKind: 'event_non_member',
+    });
+    expect(out.html).toContain(FOOTER_EN);
+    expect(out.html).toContain('§87/3');
+    expect(out.html).toContain('Privacy notice');
+    // Renders inside the dedicated footer section, not the brand line.
+    expect(out.html).toContain('event-non-member-privacy-footer');
+  });
+
+  it('TH: invoice_issued + event_non_member → Thai footer notice present', async () => {
+    const out = await buildInvoiceAutoEmail({
+      toEmail: 'buyer@example.com',
+      eventType: 'invoice_issued',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'th',
+      privacyFooterKind: 'event_non_member',
+    });
+    expect(out.html).toContain(FOOTER_TH);
+    expect(out.html).toContain('มาตรา 87/3');
+    expect(out.html).toContain('ประกาศความเป็นส่วนตัว');
+  });
+
+  it('SV: invoice_issued + event_non_member → Swedish footer notice present', async () => {
+    const out = await buildInvoiceAutoEmail({
+      toEmail: 'buyer@example.com',
+      eventType: 'invoice_issued',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'sv',
+      privacyFooterKind: 'event_non_member',
+    });
+    expect(out.html).toContain(FOOTER_SV);
+    expect(out.html).toContain('§87/3');
+    expect(out.html).toContain('Integritetsmeddelande');
+  });
+
+  it('invoice_pdf_resent (same template family) also renders the footer', async () => {
+    const out = await buildInvoiceAutoEmail({
+      toEmail: 'buyer@example.com',
+      eventType: 'invoice_pdf_resent',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'en',
+      privacyFooterKind: 'event_non_member',
+    });
+    expect(out.html).toContain(FOOTER_EN);
+    expect(out.html).toContain('event-non-member-privacy-footer');
+  });
+
+  it('privacyFooterKind omitted → NO footer (membership / matched-member default)', async () => {
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      const out = await buildInvoiceAutoEmail({
+        toEmail: 'member@example.com',
+        eventType: 'invoice_issued',
+        downloadUrl: DOWNLOAD_URL,
+        locale,
+        // privacyFooterKind deliberately omitted
+      });
+      expect(out.html).not.toContain(FOOTER_EN);
+      expect(out.html).not.toContain(FOOTER_TH);
+      expect(out.html).not.toContain(FOOTER_SV);
+      expect(out.html).not.toContain('event-non-member-privacy-footer');
+      // Existing download CTA still present — email shape unchanged.
+      expect(out.html).toContain(DOWNLOAD_URL);
+    }
+  });
+
+  it('footer + pay-online CTA coexist (both additive blocks render together)', async () => {
+    const payUrl = buildPayOnlineUrl(
+      'https://swecham.zyncdata.app',
+      'inv_01HQRWXYZ123456789ABCDEFG',
+    );
+    const out = await buildInvoiceAutoEmail({
+      toEmail: 'buyer@example.com',
+      eventType: 'invoice_issued',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'en',
+      tenantOnlinePaymentEnabled: true,
+      payOnlineUrl: payUrl,
+      privacyFooterKind: 'event_non_member',
+    });
+    expect(out.html).toContain('Pay online now');
+    expect(out.html).toContain(FOOTER_EN);
+  });
+
+  it('footer does NOT render on non-issued template families even if flag passed', async () => {
+    // The flag is only wired into the InvoiceIssuedEmail family; the issue
+    // use-case never sets it for paid/void/credit-note, but assert the
+    // template-level containment so a future caller mistake is caught.
+    for (const eventType of [
+      'invoice_paid',
+      'invoice_voided',
+      'credit_note_issued',
+      'receipt_pdf_resent',
+      'credit_note_pdf_resent',
+    ] as const) {
+      const out = await buildInvoiceAutoEmail({
+        toEmail: 'buyer@example.com',
+        eventType,
+        downloadUrl: DOWNLOAD_URL,
+        locale: 'en',
+        documentNumber: DOC_NUMBER,
+        privacyFooterKind: 'event_non_member',
+      });
+      expect(out.html).not.toContain(FOOTER_EN);
+      expect(out.html).not.toContain('event-non-member-privacy-footer');
+    }
+  });
+});

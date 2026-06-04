@@ -43,9 +43,11 @@ import { InvoiceVoidedEmail } from './templates/invoice-voided';
 import { CreditNoteEmail } from './templates/credit-note';
 import {
   PAY_ONLINE_CTA,
+  EVENT_NON_MEMBER_FOOTER,
   resolveCopy,
   type InvoiceAutoEmailEventType,
   type InvoiceAutoEmailLocale,
+  type PrivacyFooterKind,
 } from './templates/copy';
 
 /**
@@ -72,6 +74,7 @@ export function buildPayOnlineUrl(
 export type {
   InvoiceAutoEmailEventType,
   InvoiceAutoEmailLocale,
+  PrivacyFooterKind,
 } from './templates/copy';
 
 export interface InvoiceAutoEmailInput {
@@ -114,6 +117,15 @@ export interface InvoiceAutoEmailInput {
    * string prop so this module doesn't need to know about env resolution.
    */
   readonly payOnlineUrl?: string;
+  /**
+   * 054-event-fee-invoices (Task 14) — PDPA privacy-footer discriminator.
+   * `'event_non_member'` renders the §87/3 transparency notice for a
+   * non-member event-invoice buyer; omitted/undefined renders no notice
+   * (membership + matched-member event invoices). Only the `invoice_issued`
+   * / `invoice_pdf_resent` template family renders it (the issue + resend
+   * paths for the document whose PII was recorded).
+   */
+  readonly privacyFooterKind?: PrivacyFooterKind;
 }
 
 export interface BuiltPayload {
@@ -133,6 +145,14 @@ export async function buildInvoiceAutoEmail(
     voidReason: input.voidReason,
   });
 
+  // Task 14 — resolve the localised PDPA footer once when the caller asked
+  // for the non-member event notice. Kept in the builder (not the template)
+  // so the copy source-of-truth stays in `copy.ts` alongside PAY_ONLINE_CTA.
+  const privacyFooter =
+    input.privacyFooterKind === 'event_non_member'
+      ? EVENT_NON_MEMBER_FOOTER[input.locale]
+      : undefined;
+
   const element = pickTemplate(input.eventType, {
     locale: input.locale,
     subject: copy.subject,
@@ -142,6 +162,12 @@ export async function buildInvoiceAutoEmail(
     tenantOnlinePaymentEnabled: input.tenantOnlinePaymentEnabled === true,
     ...(typeof input.payOnlineUrl === 'string' && input.payOnlineUrl.length > 0
       ? { payOnlineUrl: input.payOnlineUrl }
+      : {}),
+    ...(privacyFooter
+      ? {
+          privacyNoticeTitle: privacyFooter.title,
+          privacyNoticeBody: privacyFooter.notice,
+        }
       : {}),
   });
 
@@ -166,6 +192,9 @@ interface TemplateProps {
   readonly tenantOnlinePaymentEnabled?: boolean;
   /** F5 FR-027 — only consumed by `InvoiceIssuedEmail`. */
   readonly payOnlineUrl?: string;
+  /** Task 14 — PDPA footer; only consumed by `InvoiceIssuedEmail`. */
+  readonly privacyNoticeTitle?: string;
+  readonly privacyNoticeBody?: string;
 }
 
 function pickTemplate(
@@ -190,6 +219,15 @@ function pickTemplate(
           {...(typeof props.payOnlineUrl === 'string' &&
           props.payOnlineUrl.length > 0
             ? { payOnlineUrl: props.payOnlineUrl }
+            : {})}
+          {...(typeof props.privacyNoticeTitle === 'string' &&
+          props.privacyNoticeTitle.length > 0 &&
+          typeof props.privacyNoticeBody === 'string' &&
+          props.privacyNoticeBody.length > 0
+            ? {
+                privacyNoticeTitle: props.privacyNoticeTitle,
+                privacyNoticeBody: props.privacyNoticeBody,
+              }
             : {})}
         />
       );

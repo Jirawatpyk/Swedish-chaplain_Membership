@@ -188,6 +188,14 @@ async function buildPayload(
       // B-1 / FR-036 — void reason for invoice_voided body copy.
       const voidReason =
         typeof ctx.void_reason === 'string' ? ctx.void_reason : undefined;
+      // Task 14 — PDPA privacy footer for non-member event invoices. The
+      // ONLY accepted value is the closed-enum 'event_non_member'; any
+      // other value (incl. null/absent on every pre-Task-14 row) renders
+      // no footer, so old outbox rows are unaffected.
+      const privacyFooterKind =
+        ctx.privacy_footer_kind === 'event_non_member'
+          ? ('event_non_member' as const)
+          : undefined;
       if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
       // R-2 — external HTTP work (Blob head + fetch) happens BEFORE
       // the FOR UPDATE SKIP LOCKED tx wraps this buildPayload call.
@@ -205,6 +213,7 @@ async function buildPayload(
           locale,
           ...(documentNumber ? { documentNumber } : {}),
           ...(voidReason ? { voidReason } : {}),
+          ...(privacyFooterKind ? { privacyFooterKind } : {}),
           // PG-2 — copy adapts based on whether the bytes are actually
           // shipped. `prefetchedBytes` is only populated when the
           // FEATURE_F4_VOID_ATTACHMENT flag is on.
