@@ -95,6 +95,8 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'invoice_pdf_downloaded',
   // Phase 3 — CSV export of paid invoices (added 2026-05-16).
   'invoices_csv_exported',
+  // 054-event-fee-invoices (Task 15) — non-member event-buyer PII redaction.
+  'event_buyer_pii_redacted',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -216,7 +218,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     }
   }, 30_000);
 
-  it('F4AuditEventType TS union documents all 23 registered types', async () => {
+  it('F4AuditEventType TS union documents all 25 registered types', async () => {
     // This asserts the compile-time union matches what the DB enum
     // ships. Read the DB enum at runtime + check every value is
     // assignable to F4AuditEventType via `as` cast (which would
@@ -230,11 +232,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     `);
     const dbEnum = new Set(rows.map((r) => r.enumlabel));
 
-    // The full 24 F4 types — taken from F4AuditEventType union.
+    // The full 25 F4 types — taken from F4AuditEventType union.
     // Growth: 16 → 17 (`invoice_pdf_regenerated` 2026-04-20) → 22
     // (T166 async worker + receipt downloads + tenant_receipt_prefix_changed
     // 2026-04-25/05-10) → 23 (R8 `invoice_pdf_downloaded` 2026-05-15) →
-    // 24 (Phase 3 `invoices_csv_exported` 2026-05-16).
+    // 24 (Phase 3 `invoices_csv_exported` 2026-05-16) → 25 (Task 15
+    // `event_buyer_pii_redacted` 2026-06-04).
     const allF4Types: ReadonlyArray<F4AuditEventType> = [
       'invoice_draft_created',
       'invoice_draft_updated',
@@ -260,8 +263,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'tenant_receipt_prefix_changed',
       'invoice_pdf_downloaded',
       'invoices_csv_exported',
+      // 054-event-fee-invoices (Task 15) — non-member event-buyer PII redaction.
+      'event_buyer_pii_redacted',
     ] as const;
-    expect(allF4Types).toHaveLength(24);
+    expect(allF4Types).toHaveLength(25);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -659,6 +664,16 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/unit/invoicing/export-paid-invoices-csv.test.ts (audit emit on success with from/to/row_count payload) + this file (enum probe)',
         since: '2026-05-16',
       },
+      // 054-event-fee-invoices (Task 15) — non-member event-buyer PII
+      // redaction record (10y retention; NO PII in payload). Emitted by the
+      // redact-expired-event-buyers retention cron after tombstoning a
+      // >10y-old non-member event invoice's member_identity_snapshot.
+      event_buyer_pii_redacted: {
+        status: 'covered',
+        where:
+          'tests/integration/invoicing/redact-expired-event-buyers.test.ts (cron tombstones eligible row + emits 10y audit with redacted_fields names only; idempotent; trigger still blocks normal + financial changes) + this file (enum probe + insert probe)',
+        since: '2026-06-04',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -693,6 +708,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoice_pdf_downloaded',
       // Phase 3 — CSV export of paid invoices (added 2026-05-16).
       'invoices_csv_exported',
+      // 054-event-fee-invoices (Task 15) — non-member event-buyer PII redaction.
+      'event_buyer_pii_redacted',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -747,6 +764,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // but the rot-check needs it registered to resolve.
       'tests/unit/invoicing/export-paid-invoices-csv.test.ts':
         'tests/unit/invoicing/export-paid-invoices-csv.test.ts',
+      // 054-event-fee-invoices (Task 15) — redaction-cron integration test
+      // needle for the `event_buyer_pii_redacted` 'where' entry.
+      'tests/integration/invoicing/redact-expired-event-buyers.test.ts':
+        'tests/integration/invoicing/redact-expired-event-buyers.test.ts',
     };
 
     for (const t of declared) {
@@ -790,11 +811,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // 054-event-fee-invoices (Task 6b) — bumped 24 → 25 for
     // `registration_cross_tenant_probe` (emitted by createEventInvoiceDraft on
     // an ok(null) event-registration lookup; migration 0202).
-    expect(coveredCount + deferredCount).toBe(25);
-    // Behavioral coverage target: 22/25. Remaining 3 are post-MVP
+    // 054-event-fee-invoices (Task 15) — bumped 25 → 26 for
+    // `event_buyer_pii_redacted` (emitted by the redact-expired-event-buyers
+    // retention cron; migration 0204).
+    expect(coveredCount + deferredCount).toBe(26);
+    // Behavioral coverage target: 23/26. Remaining 3 are post-MVP
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
     // receipt-PDF worker — integration coverage lands with T166-06).
-    expect(coveredCount).toBeGreaterThanOrEqual(22);
+    expect(coveredCount).toBeGreaterThanOrEqual(23);
   });
 });

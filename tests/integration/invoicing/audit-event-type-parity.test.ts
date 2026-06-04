@@ -60,6 +60,12 @@ describe('F4 audit_event_type ↔ F4AuditEventType parity', () => {
         // ok(null) event-registration lookup. Owned by F4 invoicing
         // (audit-port.ts F4AuditEventType + F4_AUDIT_RETENTION_YEARS).
         'registration_cross_tenant_probe',
+        // 054-event-fee-invoices (Task 15) — starts with `event_` (not an F4
+        // prefix); emitted by the redact-expired-event-buyers retention cron
+        // after tombstoning a non-member event invoice's buyer PII. Owned by
+        // F4 invoicing (audit-port.ts F4AuditEventType + F4_AUDIT_RETENTION_YEARS,
+        // 10y retention).
+        'event_buyer_pii_redacted',
       ],
     });
 

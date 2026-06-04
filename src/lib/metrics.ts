@@ -569,6 +569,24 @@ export const invoicingMetrics = {
       ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
     });
   },
+
+  /**
+   * 054-event-fee-invoices (Task 15) — non-member event-buyer PII
+   * redaction sweep. Fires ONCE PER REDACTED ROW (label `outcome`
+   * 'redacted') and once with `outcome='swept_zero'` per tenant pass
+   * that found nothing eligible, so SRE can distinguish "ran, nothing
+   * due" from "cron never fired". A sustained `outcome='error'` rate
+   * signals the GUC/trigger path or audit_log is failing — the §87/3 +
+   * GDPR Art.17 erasure obligation is then NOT being met.
+   */
+  eventBuyerPiiRedacted(outcome: 'redacted' | 'swept_zero' | 'error', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_event_buyer_pii_redacted_total',
+        'Non-member event-invoice buyer PII tombstones (10y retention sweep) by outcome + tenant',
+      ).add(1, { outcome, tenant: tenantId });
+    });
+  },
 } as const;
 
 // --- F5 payments metrics -----------------------------------------------------

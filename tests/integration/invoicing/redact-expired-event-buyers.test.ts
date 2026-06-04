@@ -397,7 +397,12 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     );
     expect(forOldInvoice).toHaveLength(1);
     const auditRow = forOldInvoice[0]!;
-    expect(auditRow.retentionYears).toBe(10);
+    // `retention_years` is not in the Drizzle auditLog select shape (migration
+    // 0039 added it at DB level only) — read it via raw SQL. 10y per §87/3.
+    const retRows = (await db.execute(sql`
+      SELECT retention_years FROM audit_log WHERE id = ${auditRow.id}
+    `)) as unknown as Array<{ retention_years: number }>;
+    expect(retRows[0]!.retention_years).toBe(10);
     const payload = auditRow.payload as Record<string, unknown>;
     expect(payload.invoice_id).toBe(oldEventInvoiceId);
     expect(typeof payload.redacted_at).toBe('string');
