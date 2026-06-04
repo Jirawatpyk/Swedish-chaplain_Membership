@@ -803,6 +803,13 @@ surfaces).
   `docs/runbooks/cron-jobs.md § F4 redact-expired-event-buyers`,
   including the blob-delete-failure manual-cleanup alert bound to the
   `…{outcome=error}` metric.
+- **PDPA §23 / GDPR Art. 13/14 privacy-notice footer** — the optional
+  auto-email that delivers the non-member buyer's invoice copy includes
+  a multilingual footer (`EventNonMemberFooter`, `copy.ts` Task 14) in
+  EN + TH + SV. The footer discloses that the buyer's PII was processed
+  solely to issue the §86/4 / §105 tax document and will be retained
+  for 10 years per §87/3, satisfying the Art. 13/14 "at time of
+  collection" transparency obligation.
 - **Solo-maintainer substitute** (Constitution v1.4.0 Principle IX +
   Governance) governs the review workflow when no second human reviewer
   is available.
@@ -815,10 +822,10 @@ manually by the DPO (there is no self-service surface for a non-member).
 | Right (GDPR / PDPA equivalent) | Procedure |
 |---|---|
 | **Right to access (Art. 15 / §30)** | Manual DSR to the DPO; SQL query on `invoices WHERE invoice_subject='event' AND member_id IS NULL` for the buyer's email/name returns the stored `member_identity_snapshot`. |
-| **Right to rectification (Art. 16 / §31)** | An issued tax document is **immutable by law** (§86/4 + immutability trigger). A correction is handled the §82/10 way — issue a credit note / corrected document, not an in-place edit. |
+| **Right to rectification (Art. 16 / §31)** | An issued tax document is **immutable by law** (§86/4 + immutability trigger). A correction is handled the §86/10 way — issue a credit note / corrected document, not an in-place edit. |
 | **Right to erasure (Art. 17 / §32)** | The **automated storage-limitation erasure** is the daily redaction cron at the 10-year boundary (tombstone + blob purge, above). **Before** that boundary, erasure is constrained by the §87/3 legal-retention obligation (GDPR Art. 17(3)(b) — retention required for compliance with a legal obligation overrides erasure until the statutory window elapses); the DPO documents this lawful-basis-to-retain in any pre-window erasure request. |
-| **Right to restrict processing (Art. 18 / §33)** | `FEATURE_F4_INVOICING=false` kill-switch halts all new event-invoice issuance tenant-wide. |
-| **Right to object (Art. 21 / §32)** | Limited — processing rests on a legal obligation (Art. 6(1)(c)), not legitimate interest, so the Art. 21 objection right does not apply to the statutory retention; the auto-email copy can be declined (the chamber simply does not enable it / does not send). |
+| **Right to restrict processing (Art. 18 / §33)** | Art. 18 requests for an individual buyer are handled via a manual DPO procedure (no self-service surface). The §87/3 legal-obligation basis means restriction can apply to **optional downstream uses** (e.g. the auto-email copy) but **NOT** the core 10-year tax retention — the chamber cannot restrict what Thai law mandates it keep. The `FEATURE_F4_INVOICING=false` kill-switch halts all new event-invoice issuance tenant-wide; it is an **emergency operational control**, not a per-subject restriction mechanism. |
+| **Right to object (Art. 21 / §32)** | Limited — processing rests on a legal obligation (Art. 6(1)(c)), not legitimate interest, so the Art. 21 objection right does not apply to the statutory retention; the auto-email copy can be declined (the chamber simply does not enable it / does not send). *(Note: Thai PDPA §32 covers both the erasure right [Art. 17, row above] and the objection right [Art. 21, this row] — the §32 citation appearing in both rows is correct.)* |
 
 ### DPO contact
 
