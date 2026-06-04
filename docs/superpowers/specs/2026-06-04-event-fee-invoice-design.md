@@ -146,12 +146,26 @@ vat      = totalSatang - subtotal                                               
   `multiplyByFraction` can't drift ±1 satang).
 - **Invariant (fast-check):** `subtotal + vat === total` for all totals/rates,
   with boundary cases (107, 214, 321 satang where rounding modes diverge).
-- **Storage:** the single `event_fee` line `unitPrice/total` = the **ex-VAT
-  subtotal**; the invoice stores `subtotal` + `vat` (=`total−subtotal`) + `total`
-  → the existing line→subtotal→VAT→total PDF table reconciles exactly.
-  `vat_inclusive` records provenance only; it does not change stored amounts.
-- **AS-VAT-01:** `ticket_price_thb=1070` → line `1,000.00` / VAT `70.00` / total
-  `1,070.00` (encoded in the golden PDF test).
+- **Storage (CORRECTED — Model B, replaces the original ex-VAT-line design):**
+  the single `event_fee` line `unitPrice/total` = the **VAT-INCLUSIVE total**
+  (the all-in ticket price the attendee paid), `quantity=1` → `sum(lines)` = the
+  inclusive total. The invoice `subtotal`/`vat`/`total` stay **null at draft**
+  (identical to the membership path) and are computed **at issue** by a
+  `vat_inclusive` branch: `total = sum(lines)`, then
+  `{subtotal, vat} = splitVatInclusive(total, rateBps)`. This guarantees
+  `total === inclusive ticket price` EXACTLY for every amount.
+  > **Why the original ex-VAT-line design was a tax bug:** storing the line as
+  > the ex-VAT subtotal and re-deriving `vat = round(subtotal × rate)` at issue
+  > does NOT reconstruct the inclusive total — an empirical scan of 2,000,000
+  > satang amounts found **130,841 (≈6.5%) off-by-1-satang mismatches**, e.g.
+  > `100.04 THB` inclusive → split `subtotal 93.50 / vat 6.54 / total 100.04`
+  > but recompute gives `vat 6.55 → total 100.05`. The inclusive total is NOT
+  > recoverable from the ex-VAT subtotal, so the line MUST carry the inclusive
+  > amount and the split MUST be the authoritative issue-time computation.
+- **AS-VAT-01:** `ticket_price_thb=1070` → `event_fee` line stores `1,070.00`;
+  at issue → subtotal `1,000.00` / VAT `70.00` / total `1,070.00` (the PDF shows
+  the net/VAT/gross breakdown; the line is the gross all-in price, standard for a
+  Thai VAT-inclusive tax invoice). Encoded in the golden PDF test.
 - **Exempt mode = fast-follow (§9), NOT v1.** v1 always uses the tenant `vat_rate`
   (7%) inclusive. The data model already accommodates exempt (`vat_rate_snapshot=0`)
   so the fast-follow needs no schema change.
