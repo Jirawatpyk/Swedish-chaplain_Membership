@@ -1,4 +1,10 @@
 /**
+ * DEMO seed — uses a SIMULATED member only; NEVER references a real member
+ * (per 2026-06-04 maintainer instruction). The membership + matched-member
+ * cases CREATE + USE a clearly-fake demo member (`DEMO Buyer Co., Ltd.
+ * (seed)`); the two non-member cases use placeholder buyers. No real-member
+ * PII ever enters a demo invoice.
+ *
  * DEMO seed — Event-fee vs Membership invoices for an admin list-distinction
  * UX review (054-event-fee-invoices).
  *
@@ -11,11 +17,16 @@
  * VAT-inclusive split, §87 sequence allocation, and the real bilingual PDF
  * render all run end-to-end:
  *
- *   1. MEMBERSHIP invoice — real `createInvoiceDraft` for an existing member
+ *   0. CLEANUP — an EARLIER revision of this seed wrongly used a REAL dev member
+ *      for cases 1 + 2 (issued SC-2026-000015 + SC-2026-000016). Those are now
+ *      VOIDED by document_number at the top of the run (issued invoices are
+ *      immutable + §87-numbered, so VOID is the only removal path). The step is
+ *      idempotent: a re-run after the void simply finds nothing to void.
+ *   1. MEMBERSHIP invoice — `createInvoiceDraft` for the SIMULATED member
  *      WITH a 13-digit tax_id → real `issueInvoice` → full ใบกำกับภาษี.
  *   2. EVENT invoice, MATCHED MEMBER — event draft keyed to a registration
- *      matched to that same member (ticket 1,070 THB) → `issueInvoice` resolves
- *      the buyer from F3 → full tax invoice.
+ *      matched to that SAME simulated member (ticket 1,070 THB) → `issueInvoice`
+ *      resolves the buyer from F3 → full tax invoice.
  *   3. EVENT invoice, NON-MEMBER WITH a TIN — buyer snapshot incl. a 13-digit
  *      tax_id → `issueInvoice` renders a full ใบกำกับภาษี.
  *   4. EVENT invoice, NON-MEMBER WITHOUT a TIN — buyer snapshot tax_id null →
@@ -54,12 +65,13 @@
  * Usage:
  *   pnpm tsx --env-file=.env.local scripts/seed-event-invoices-demo.ts
  */
-import { and, eq, sql, isNull } from 'drizzle-orm';
+import { and, eq, sql, isNull, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import {
   events,
@@ -81,6 +93,10 @@ import {
   issueInvoice,
   type IssueInvoiceDeps,
 } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import {
+  voidInvoice,
+  type VoidInvoiceDeps,
+} from '@/modules/invoicing/application/use-cases/void-invoice';
 import { systemClock } from '@/modules/invoicing/application/ports/clock-port';
 import {
   makeDrizzleInvoiceRepo,
@@ -136,9 +152,51 @@ function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
   };
 }
 
+function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+  };
+}
+
 // --- Constants ---------------------------------------------------------------
 
 const TENANT_SLUG = process.env.TENANT_SLUG ?? 'swecham';
+
+// CLEANUP — the exact two demo invoices a PRIOR revision of this seed wrongly
+// issued against a REAL member. Voided by document_number at the top of the
+// run. The list is precise on purpose: only these two are touched; the
+// non-member fakes (SC-2026-000017 / SC-2026-000018) and every real invoice
+// are left strictly alone. Idempotent — a doc number not present is skipped.
+const REAL_MEMBER_DEMO_DOC_NUMBERS = [
+  'SC-2026-000015', // membership, real member
+  'SC-2026-000016', // matched-member event, real member
+] as const;
+const VOID_CLEANUP_REASON =
+  'Demo data cleanup — replacing real-member reference with a simulated member (054 seed fix)';
+
+// SIMULATED demo member — clearly fake (no real person/company). Inserted
+// directly (mirroring the F4 integration-test seeds) so it sidesteps the F3
+// `asTaxId` checksum validator AND the `@/modules/members` barrel require-cycle
+// a standalone tsx run would trip. `companyName` doubles as the idempotency
+// marker (skip-if-exists). The placeholder tax_id is 13 digits so the §86/4
+// membership require-TIN gate passes; it is NOT a real Thai TIN.
+const SIM_MEMBER = {
+  legalName: 'DEMO Buyer Co., Ltd. (seed)',
+  taxId: '0000000000000', // 13-digit placeholder; NOT a real / checksum-valid TIN
+  country: 'TH' as const,
+  addressLine1: 'DEMO — 1 Seed Road',
+  city: 'Bangkok',
+  postalCode: '10110',
+  contactFirstName: 'Demo',
+  contactLastName: 'Contact',
+  contactEmail: 'demo-buyer@seed.invalid',
+} as const;
 
 // Stable external ids so a re-run reuses the SAME demo event + registrations
 // (the `events_tenant_source_external_unique` +
@@ -187,14 +245,78 @@ interface DemoMember {
 }
 
 /**
- * Find an existing ACTIVE member that has a 13-digit tax_id AND whose plan
- * exists for its plan_year — required so both the MEMBERSHIP draft and the
- * MATCHED-member event draft can issue (membership require-TIN gate + the
- * plan-fee lookup). Returns null when no such member exists.
+ * STEP 0 — Void the two demo invoices a prior revision wrongly issued against a
+ * REAL member, targeted PRECISELY by document_number. Issued invoices are
+ * immutable + §87-numbered, so VOID is the only removal path; the voided rows
+ * keep their numbers (no §87 gap, never reused). Idempotent: a doc number that
+ * is absent (already cleaned, or never created) is skipped; a doc number whose
+ * invoice is already `void`/`paid`/etc. is logged and skipped (voidInvoice only
+ * acts on `issued`). Returns the document numbers it actually voided.
  */
-async function findMemberWithTin(ctx: TenantContext): Promise<DemoMember | null> {
+async function voidRealMemberDemoInvoices(
+  ctx: TenantContext,
+  adminUserId: string,
+): Promise<string[]> {
+  // Resolve invoiceId for each target document_number (precise; no fuzzy match).
+  const targets = await runInTenant(ctx, async (tx) =>
+    tx
+      .select({
+        invoiceId: invoices.invoiceId,
+        documentNumber: invoices.documentNumber,
+        status: invoices.status,
+        memberId: invoices.memberId,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, ctx.slug),
+          inArray(invoices.documentNumber, [...REAL_MEMBER_DEMO_DOC_NUMBERS]),
+        ),
+      ),
+  );
+
+  const voided: string[] = [];
+  for (const docNumber of REAL_MEMBER_DEMO_DOC_NUMBERS) {
+    const row = targets.find((t) => t.documentNumber === docNumber);
+    if (!row) {
+      console.log(`  [cleanup] ${docNumber} not found — already clean, skip`);
+      continue;
+    }
+    if (row.status !== 'issued') {
+      console.log(`  [cleanup] ${docNumber} status=${row.status} (not issued) — skip`);
+      continue;
+    }
+    const result = await voidInvoice(makeVoidInvoiceDeps(ctx.slug), {
+      tenantId: ctx.slug,
+      actorUserId: adminUserId,
+      requestId: `demo-cleanup-void-${row.invoiceId}`,
+      invoiceId: row.invoiceId,
+      voidReason: VOID_CLEANUP_REASON,
+    });
+    if (!result.ok) {
+      console.warn(`  [cleanup][warn] could not void ${docNumber}: ${result.error.code}`);
+      continue;
+    }
+    console.log(`  [cleanup] voided ${docNumber} (${row.invoiceId})`);
+    voided.push(docNumber);
+  }
+  return voided;
+}
+
+/**
+ * STEP 2 — Ensure the SIMULATED demo member exists (idempotent). Inserts the
+ * member + a primary contact directly via SQL inside `runInTenant` (mirrors the
+ * F4 integration-test member seeds) — this bypasses the F3 `asTaxId` checksum
+ * validator (the placeholder TIN is intentionally not checksum-valid) AND the
+ * `@/modules/members` barrel require-cycle a standalone tsx run would otherwise
+ * trip. Reuses an EXISTING active company-scope plan for the year so the
+ * membership invoice can issue without minting a new plan. Idempotent: keyed on
+ * `company_name == SIM_MEMBER.legalName`.
+ */
+async function ensureSimulatedMember(ctx: TenantContext): Promise<DemoMember> {
   return runInTenant(ctx, async (tx) => {
-    const rows = await tx
+    // Already present? Reuse it.
+    const existing = await tx
       .select({
         memberId: members.memberId,
         companyName: members.companyName,
@@ -203,36 +325,80 @@ async function findMemberWithTin(ctx: TenantContext): Promise<DemoMember | null>
         planYear: members.planYear,
       })
       .from(members)
-      .innerJoin(
-        membershipPlans,
-        and(
-          eq(membershipPlans.tenantId, members.tenantId),
-          eq(membershipPlans.planId, members.planId),
-          eq(membershipPlans.planYear, members.planYear),
-          eq(membershipPlans.isActive, true),
-        ),
-      )
       .where(
         and(
           eq(members.tenantId, ctx.slug),
-          eq(members.status, 'active'),
+          eq(members.companyName, SIM_MEMBER.legalName),
           isNull(members.archivedAt),
-          sql`${members.taxId} IS NOT NULL`,
-          sql`char_length(${members.taxId}) = 13`,
-          sql`${members.planId} IS NOT NULL`,
-          sql`${members.planYear} IS NOT NULL`,
         ),
       )
-      .orderBy(members.companyName)
       .limit(1);
-    const m = rows[0];
-    if (!m || m.taxId === null || m.planId === null || m.planYear === null) return null;
+    const found = existing[0];
+    if (found && found.taxId !== null) {
+      console.log(`  simulated member already present (${found.memberId}) — reuse`);
+      return {
+        memberId: found.memberId,
+        companyName: found.companyName,
+        taxId: found.taxId,
+        planId: found.planId,
+        planYear: found.planYear,
+      };
+    }
+
+    // Pick an existing active, NON-soft-deleted, company-scope plan for a year.
+    // Company scope so the §86/4 membership require-TIN gate applies cleanly.
+    const planRows = await tx
+      .select({ planId: membershipPlans.planId, planYear: membershipPlans.planYear })
+      .from(membershipPlans)
+      .where(
+        and(
+          eq(membershipPlans.tenantId, ctx.slug),
+          eq(membershipPlans.isActive, true),
+          eq(membershipPlans.memberTypeScope, 'company'),
+          isNull(membershipPlans.deletedAt),
+        ),
+      )
+      .orderBy(membershipPlans.planYear, membershipPlans.sortOrder)
+      .limit(1);
+    const plan = planRows[0];
+    if (!plan) {
+      throw new Error(
+        'seed-event-invoices-demo: no active company-scope plan found in the dev tenant — cannot bind the simulated member. Seed plans first.',
+      );
+    }
+
+    const memberId = randomUUID();
+    await tx.insert(members).values({
+      tenantId: ctx.slug,
+      memberId,
+      companyName: SIM_MEMBER.legalName,
+      country: SIM_MEMBER.country,
+      taxId: SIM_MEMBER.taxId,
+      addressLine1: SIM_MEMBER.addressLine1,
+      city: SIM_MEMBER.city,
+      postalCode: SIM_MEMBER.postalCode,
+      planId: plan.planId,
+      planYear: plan.planYear,
+      status: 'active',
+    });
+    await tx.insert(contacts).values({
+      tenantId: ctx.slug,
+      contactId: randomUUID(),
+      memberId,
+      firstName: SIM_MEMBER.contactFirstName,
+      lastName: SIM_MEMBER.contactLastName,
+      email: SIM_MEMBER.contactEmail,
+      isPrimary: true,
+    });
+    console.log(
+      `  created simulated member "${SIM_MEMBER.legalName}" (${memberId}) plan=${plan.planId}/${plan.planYear}`,
+    );
     return {
-      memberId: m.memberId,
-      companyName: m.companyName,
-      taxId: m.taxId,
-      planId: m.planId,
-      planYear: m.planYear,
+      memberId,
+      companyName: SIM_MEMBER.legalName,
+      taxId: SIM_MEMBER.taxId,
+      planId: plan.planId,
+      planYear: plan.planYear,
     };
   });
 }
@@ -345,10 +511,33 @@ async function upsertDemoRegistration(
       .limit(1);
     if (existing.length > 0) {
       const r = existing[0]!;
+      // Self-heal: an EARLIER revision matched this demo registration to a REAL
+      // member. If the stored matchedMemberId has drifted from the desired
+      // (simulated) one, rewrite it so NO real-member reference lingers in the
+      // demo event registration. No-op once aligned. attendeeCompany is also
+      // refreshed to the simulated company name for display consistency.
+      if (r.matchedMemberId !== args.matchedMemberId) {
+        await tx
+          .update(eventRegistrations)
+          .set({
+            matchedMemberId: args.matchedMemberId,
+            attendeeCompany: args.attendeeCompany,
+            matchType: args.matchType,
+          })
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, ctx.slug),
+              eq(eventRegistrations.registrationId, r.registrationId),
+            ),
+          );
+        console.log(
+          `  refreshed demo registration ${args.externalId} matchedMemberId → ${args.matchedMemberId ?? 'null'}`,
+        );
+      }
       return {
         registrationId: r.registrationId,
         ticketPriceThb: r.ticketPriceThb ?? args.ticketPriceThb,
-        matchedMemberId: r.matchedMemberId,
+        matchedMemberId: args.matchedMemberId,
       };
     }
 
@@ -568,14 +757,15 @@ async function main(): Promise<void> {
   const adminUserId = await resolveAdminUserId();
   console.log(`  tenant=${ctx.slug}  admin=${adminUserId}`);
 
-  const member = await findMemberWithTin(ctx);
-  if (!member) {
-    throw new Error(
-      'seed-event-invoices-demo: no active member with a 13-digit tax_id + an active plan found in the dev tenant — cannot seed the membership / matched-member cases. Seed members + plans first.',
-    );
-  }
+  // --- Step 0: CLEANUP — void the two real-member demo invoices a prior
+  // revision wrongly issued (precise; by document_number only). ---------------
+  const voidedDocNumbers = await voidRealMemberDemoInvoices(ctx, adminUserId);
+
+  // --- Step 2: ensure the SIMULATED demo member (idempotent). The membership +
+  // matched-member cases below use ONLY this fake member — never a real one. ---
+  const member = await ensureSimulatedMember(ctx);
   console.log(
-    `  using member "${member.companyName}" (${member.memberId}) plan=${member.planId}/${member.planYear}`,
+    `  using simulated member "${member.companyName}" (${member.memberId}) plan=${member.planId}/${member.planYear}`,
   );
 
   const seeded: SeededInvoice[] = [];
@@ -692,6 +882,12 @@ async function main(): Promise<void> {
   // --- Report -----------------------------------------------------------------
   const anyDraft = seeded.some((s) => s.state === 'draft');
   console.log('\n----------------------------------------');
+  if (voidedDocNumbers.length > 0) {
+    console.log(`Cleanup — voided real-member demo invoices: ${voidedDocNumbers.join(', ')}`);
+  } else {
+    console.log('Cleanup — no real-member demo invoices to void (already clean).');
+  }
+  console.log('----------------------------------------');
   console.log('DEMO invoices seeded (dev tenant "swecham"):');
   for (const s of seeded) {
     console.log(
