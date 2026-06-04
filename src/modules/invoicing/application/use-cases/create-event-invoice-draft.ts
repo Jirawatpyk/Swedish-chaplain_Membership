@@ -37,6 +37,7 @@
  * RBAC: admin only — enforced at the route handler.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { EventRegistrationLookupPort } from '../ports/event-registration-lookup-port';
@@ -59,6 +60,7 @@ import {
   type InvoiceLine,
 } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
   makeMemberIdentitySnapshot,
   InvalidMemberIdentitySnapshotError,
@@ -66,12 +68,13 @@ import {
 } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 
 /**
- * Postgres unique-violation SQLSTATE — raised by the partial unique index
- * `invoices_event_registration_uniq` when a non-void event invoice already
- * exists for `(tenant_id, event_registration_id)`. We translate it to the
- * typed `duplicate` error (a 409 at the route) rather than a 500.
+ * The partial unique index on `invoices` that prevents two non-void event
+ * invoices for the same `(tenant_id, event_registration_id)` pair. Named
+ * here so the outer catch can narrow a generic 23505 to THIS index only —
+ * a future unique constraint on a different column also raising 23505 inside
+ * `insertDraft` would otherwise be mislabeled as `duplicate`.
  */
-const PG_UNIQUE_VIOLATION = '23505';
+const EVENT_REGISTRATION_UNIQ_INDEX = 'invoices_event_registration_uniq';
 
 export const createEventInvoiceDraftSchema = z.object({
   tenantId: z.string().min(1),
@@ -116,8 +119,7 @@ export type CreateEventInvoiceDraftError =
   | { code: 'invalid_buyer_snapshot' }
   | { code: 'tax_id_required' }
   | { code: 'event_not_found' }
-  | { code: 'duplicate' }
-  | { code: 'invalid_line'; reason: string };
+  | { code: 'duplicate' };
 
 export interface CreateEventInvoiceDraftDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -126,32 +128,6 @@ export interface CreateEventInvoiceDraftDeps {
   readonly memberIdentity: MemberIdentityPort;
   readonly audit: AuditPort;
   readonly newUuid: () => string;
-}
-
-/**
- * Narrow an unknown thrown value to a Postgres unique-violation (SQLSTATE
- * 23505). Drizzle wraps the driver error in a `DrizzleQueryError` whose
- * `.code` is undefined — the real `PostgresError` (with `.code === '23505'`)
- * lives on `.cause`. So we check the value AND its `.cause` chain (one hop is
- * enough for the Drizzle → postgres-js wrapping; we walk a small bounded depth
- * defensively).
- */
-function isPgUniqueViolation(e: unknown): boolean {
-  let cur: unknown = e;
-  for (let depth = 0; depth < 5 && cur !== null && cur !== undefined; depth++) {
-    if (
-      typeof cur === 'object' &&
-      'code' in cur &&
-      (cur as { code?: unknown }).code === PG_UNIQUE_VIOLATION
-    ) {
-      return true;
-    }
-    cur =
-      typeof cur === 'object' && 'cause' in cur
-        ? (cur as { cause?: unknown }).cause
-        : undefined;
-  }
-  return false;
 }
 
 /**
@@ -189,10 +165,7 @@ async function emitNonTimelineDraftCreated(
     // no-member event variant we deliberately emit it on the non-timeline
     // branch (see docstring). The runtime adapter is event-type-agnostic;
     // only the compile-time payload contract differs.
-    eventType: 'invoice_draft_created' as Exclude<
-      F4AuditEventType,
-      F4MemberTimelineAuditEventType
-    >,
+    eventType: 'invoice_draft_created' as Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>,
     actorUserId: event.actorUserId,
     summary: event.summary,
     payload: event.payload,
@@ -246,6 +219,7 @@ export async function createEventInvoiceDraft(
       // the all-in price; no VAT split at draft). `ticketPriceThb` is integer
       // whole THB → × 100. zod already bounds an explicit override; we
       // defensively bound the ticket-price-derived value too.
+      // ticketPriceThb is whole THB (integer stored by F6); × 100 → satang.
       const inclusiveSatang =
         input.amountOverride ?? (reg.ticketPriceThb === null ? null : reg.ticketPriceThb * 100);
       if (inclusiveSatang === null || inclusiveSatang <= 0) {
@@ -260,9 +234,12 @@ export async function createEventInvoiceDraft(
       if (!eventResult.ok) return err({ code: 'lookup_failed' });
       if (eventResult.value === null) return err({ code: 'event_not_found' });
       const event = eventResult.value;
-      // CE date (BE is display-only, converted at the renderer) — slice the
-      // ISO-8601 UTC start to YYYY-MM-DD.
-      const ceDate = event.startDateIso.slice(0, 10);
+      // CE date in Asia/Bangkok local time (BE is display-only — the renderer
+      // converts at presentation). Using bangkokLocalDate avoids the UTC-vs-
+      // Bangkok off-by-one on a tax document: an event at 23:00 UTC = 06:00
+      // Bangkok next day would render the wrong calendar date on the PDF if
+      // we sliced the raw ISO string.
+      const ceDate = bangkokLocalDate(event.startDateIso);
 
       // 5. Resolve the buyer.
       //    - matched member → buyer is the F3 member; snapshot pinned at ISSUE
@@ -331,7 +308,12 @@ export async function createEventInvoiceDraft(
         position: 1,
       });
       if (!lineResult.ok) {
-        return err({ code: 'invalid_line', reason: JSON.stringify(lineResult.error) });
+        // Unreachable: the event_fee line construction cannot fail for this
+        // fixed input (non-empty localised descriptions, quantity '1.0000',
+        // positive unitPrice, no membership pro-rate rule). If we ever reach
+        // here a Domain invariant has drifted — throw rather than surfacing
+        // an internal error shape through the typed error union.
+        throw new Error('createEventInvoiceDraft: event_fee line construction failed unexpectedly');
       }
       const lines: InvoiceLine[] = [lineResult.value];
 
@@ -405,10 +387,13 @@ export async function createEventInvoiceDraft(
       return ok(invoice);
     });
   } catch (e) {
-    // Translate the partial-unique-index violation to the typed `duplicate`
-    // error (a 409 at the route). Any other throw is a genuine fault — let it
-    // propagate so the route surfaces a structured 500.
-    if (isPgUniqueViolation(e)) return err({ code: 'duplicate' });
+    // Translate the `invoices_event_registration_uniq` violation to the typed
+    // `duplicate` error (a 409 at the route). The constraint-name check ensures
+    // we only swallow THIS index's 23505 — a future unique constraint on a
+    // different column would still propagate as an unexpected 500.
+    if (isUniqueViolation(e) && errorChainMessage(e).includes(EVENT_REGISTRATION_UNIQ_INDEX)) {
+      return err({ code: 'duplicate' });
+    }
     throw e;
   }
 }
