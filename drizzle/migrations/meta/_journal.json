@@ -1415,6 +1415,13 @@
 			"when": 1798533000000,
 			"tag": "0201_event_fee_invoices_generalise",
 			"breakpoints": true
+		},
+		{
+			"idx": 202,
+			"version": "7",
+			"when": 1798533100000,
+			"tag": "0202_event_fee_registration_probe_audit",
+			"breakpoints": true
 		}
 	]
 }

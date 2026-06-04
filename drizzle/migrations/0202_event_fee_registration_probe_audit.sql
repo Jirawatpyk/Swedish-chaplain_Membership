@@ -1,0 +1,24 @@
+-- 054-event-fee-invoices (Task 6b) — add the `registration_cross_tenant_probe`
+-- value to the shared `audit_event_type` enum.
+--
+-- WHY ITS OWN MIGRATION (split from any schema/code migration):
+--   `ALTER TYPE ... ADD VALUE` adds a label to an existing enum. On PostgreSQL
+--   the newly-added enum value MUST NOT be referenced by any statement in the
+--   SAME transaction that adds it (the catalog change is not yet visible to
+--   that transaction). The drizzle-orm migrator wraps each migration file's
+--   statements in one transaction, so the ADD VALUE lives in this standalone
+--   file; the `createEventInvoiceDraft` use-case that emits this event runs in
+--   a separate, later transaction at runtime — never in this migration.
+--
+-- Emitted by `createEventInvoiceDraft` (invoicing) when the F6 event-
+-- registration lookup returns ok(null): the registration genuinely does not
+-- exist OR is RLS-hidden because it belongs to another tenant (indistinguish-
+-- able at the data layer). Audited as a probe per Constitution Principle I
+-- clause 4. Written to the shared `audit_log` via the F4 audit adapter with
+-- 5-year retention (no tax-document touch). Kept in lockstep with the TS
+-- `F4AuditEventType` union + `F4_AUDIT_RETENTION_YEARS` map (invoicing audit
+-- port) — the F4 enum↔retention parity integration test enforces it.
+--
+-- Idempotent: `ADD VALUE IF NOT EXISTS` is a no-op if the label already exists
+-- (safe to re-apply after a manual partial run).
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'registration_cross_tenant_probe';

@@ -9,6 +9,7 @@
 // --- Domain branded types ---------------------------------------------------
 export {
   INVOICE_STATUSES,
+  MAX_EVENT_INVOICE_SATANG,
   asInvoiceId,
   parseInvoiceId,
   isTerminal,
@@ -124,6 +125,14 @@ export {
   type CreateInvoiceDraftInput,
   type CreateInvoiceDraftError,
 } from './application/use-cases/create-invoice-draft';
+
+export {
+  createEventInvoiceDraft,
+  createEventInvoiceDraftSchema,
+  type CreateEventInvoiceDraftInput,
+  type CreateEventInvoiceDraftError,
+  type CreateEventInvoiceDraftDeps,
+} from './application/use-cases/create-event-invoice-draft';
 
 export {
   issueInvoice,
@@ -329,6 +338,7 @@ export type {
 // tenant-scoped dependency graph.
 export {
   makeCreateInvoiceDraftDeps,
+  makeCreateEventInvoiceDraftDeps,
   makeIssueInvoiceDeps,
   makeListInvoicesDeps,
   makeListInvoicesByMemberDeps,

@@ -31,6 +31,17 @@ export type F4AuditEventType =
   | 'invoice_cross_tenant_probe'
   | 'credit_note_cross_tenant_probe'
   | 'tenant_invoice_settings_cross_tenant_probe'
+  /**
+   * 054-event-fee-invoices (Task 6b) — emitted by `createEventInvoiceDraft`
+   * when `EventRegistrationLookupPort.findById` returns `ok(null)`: the F6
+   * registration either genuinely does not exist OR is RLS-hidden because it
+   * belongs to another tenant. Indistinguishable at the data layer, so we
+   * audit either case as a probe (Constitution Principle I clause 4). NON-
+   * timeline (no `member_id` available — the read fires BEFORE the buyer is
+   * resolved). Operational/probe class → 5y retention. Payload carries the
+   * attempted `event_registration_id` + route.
+   */
+  | 'registration_cross_tenant_probe'
   | 'pdf_render_failed'
   | 'auto_email_delivery_failed'
   /**
@@ -124,6 +135,8 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   invoice_cross_tenant_probe: 5,
   credit_note_cross_tenant_probe: 5,
   tenant_invoice_settings_cross_tenant_probe: 5,
+  // 054-event-fee-invoices — probe/operational event; 5y (no tax-doc touch).
+  registration_cross_tenant_probe: 5,
   pdf_render_failed: 5,
   auto_email_delivery_failed: 5,
   // T166: tax-doc-touching (receipt sha256 lands on this row); 10y.

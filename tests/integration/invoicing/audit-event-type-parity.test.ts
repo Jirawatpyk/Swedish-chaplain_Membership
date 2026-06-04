@@ -55,6 +55,11 @@ describe('F4 audit_event_type ↔ F4AuditEventType parity', () => {
         'auto_email_delivery_failed',
         'tenant_receipt_prefix_changed',
         'invoices_csv_exported',
+        // 054-event-fee-invoices (Task 6b) — starts with `registration_`
+        // (not an F4 prefix); emitted by `createEventInvoiceDraft` on an
+        // ok(null) event-registration lookup. Owned by F4 invoicing
+        // (audit-port.ts F4AuditEventType + F4_AUDIT_RETENTION_YEARS).
+        'registration_cross_tenant_probe',
       ],
     });
 

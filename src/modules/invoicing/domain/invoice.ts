@@ -40,6 +40,20 @@ export const INVOICE_STATUSES = [
 ] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+/**
+ * 054-event-fee-invoices (NF-C) — upper bound on an event-fee invoice
+ * amount, in satang. `100_000_000` satang = 1,000,000.00 THB. A single
+ * event ticket fee above one million baht is almost certainly an
+ * operator typo (an extra trailing zero) rather than a real charge, so
+ * we reject it as `invalid_amount` rather than persist it.
+ *
+ * Shared (defense-in-depth) by `createEventInvoiceDraft`'s zod schema
+ * (`amountOverride.max(...)`), its defensive in-body re-check of the
+ * ticket-price-derived amount, and the route-handler zod. Exported via
+ * the invoicing barrel so the route + form layers bound the same value.
+ */
+export const MAX_EVENT_INVOICE_SATANG = 100_000_000;
+
 declare const InvoiceIdBrand: unique symbol;
 export type InvoiceId = string & { readonly [InvoiceIdBrand]: true };
 

@@ -32,9 +32,7 @@ const REG_ID = '00000000-0000-0000-0000-0000000000re';
 const EVENT_ID = '00000000-0000-0000-0000-0000000000ev';
 const MEMBER_ID = '00000000-0000-0000-0000-00000000aaaa';
 
-function makeRegistration(
-  overrides: Partial<EventRegistrationView> = {},
-): EventRegistrationView {
+function makeRegistration(overrides: Partial<EventRegistrationView> = {}): EventRegistrationView {
   return {
     registrationId: REG_ID,
     eventId: EVENT_ID,
@@ -59,9 +57,7 @@ function makeEvent(overrides: Partial<EventDetailsView> = {}): EventDetailsView 
   };
 }
 
-function makeMember(
-  overrides: Partial<MemberIdentityView> = {},
-): MemberIdentityView {
+function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentityView {
   return {
     memberId: MEMBER_ID,
     isActive: true,
@@ -81,9 +77,7 @@ function makeMember(
 }
 
 interface MakeDepsOptions {
-  registration?:
-    | { kind: 'ok'; value: EventRegistrationView | null }
-    | { kind: 'err' };
+  registration?: { kind: 'ok'; value: EventRegistrationView | null } | { kind: 'err' };
   event?: { kind: 'ok'; value: EventDetailsView | null } | { kind: 'err' };
   member?: MemberIdentityView | null;
 }
@@ -137,8 +131,7 @@ function makeDeps(opts: MakeDepsOptions = {}): CreateEventInvoiceDraftDeps & {
           proRatePolicy: null,
           netDays: null,
           tenantIdentitySnapshot: null,
-          memberIdentitySnapshot:
-            (args.memberIdentitySnapshot as unknown) ?? null,
+          memberIdentitySnapshot: (args.memberIdentitySnapshot as unknown) ?? null,
           paymentMethod: null,
           paymentReference: null,
           paymentNotes: null,
@@ -161,9 +154,7 @@ function makeDeps(opts: MakeDepsOptions = {}): CreateEventInvoiceDraftDeps & {
     },
     eventRegistrationLookup: {
       findById: vi.fn(async () =>
-        regResult.kind === 'err'
-          ? err({ kind: 'lookup_failed' as const })
-          : ok(regResult.value),
+        regResult.kind === 'err' ? err({ kind: 'lookup_failed' as const }) : ok(regResult.value),
       ),
     },
     eventDetailsLookup: {

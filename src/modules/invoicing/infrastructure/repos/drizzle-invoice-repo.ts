@@ -287,6 +287,11 @@ export function makeDrizzleInvoiceRepo(
           status: 'draft',
           draftByUserId: input.draftByUserId,
           autoEmailOnIssue: input.autoEmailOnIssue,
+          // 054-event-fee-invoices (Task 6b) — pin the BUYER snapshot at draft
+          // for NON-MEMBER event attendees (no member row to re-read at issue).
+          // `undefined` (membership + matched-member callers) → DB null; the
+          // snapshot is then populated at ISSUE for those subjects (FR-038).
+          memberIdentitySnapshot: input.memberIdentitySnapshot ?? null,
         })
         .returning();
       if (!insertedInvoice) throw new Error('insertDraft: no row returned');

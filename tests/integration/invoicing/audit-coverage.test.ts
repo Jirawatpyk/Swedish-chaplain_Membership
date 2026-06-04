@@ -580,6 +580,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tenant-invoice-settings-probe.test.ts (T120 live-Neon host/deployed slug mismatch)',
         since: '2026-04-21',
       },
+      registration_cross_tenant_probe: {
+        status: 'covered',
+        where:
+          'create-event-invoice-draft.test.ts (unit, ok(null) lookup) + create-event-invoice-draft.test.ts (integration, cross-tenant registration → registration_not_found + probe)',
+        since: '2026-06-04',
+      },
       pdf_render_failed: {
         status: 'covered',
         where:
@@ -781,11 +787,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     ).length;
     // F5R3 (2026-05-16) — bumped from 23 → 24 to include the F4 Phase 3
     // `invoices_csv_exported` event added in `0149_audit_invoices_csv_exported`.
-    expect(coveredCount + deferredCount).toBe(24);
-    // Behavioral coverage target: 21/24. Remaining 3 are post-MVP
+    // 054-event-fee-invoices (Task 6b) — bumped 24 → 25 for
+    // `registration_cross_tenant_probe` (emitted by createEventInvoiceDraft on
+    // an ok(null) event-registration lookup; migration 0202).
+    expect(coveredCount + deferredCount).toBe(25);
+    // Behavioral coverage target: 22/25. Remaining 3 are post-MVP
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
     // receipt-PDF worker — integration coverage lands with T166-06).
-    expect(coveredCount).toBeGreaterThanOrEqual(21);
+    expect(coveredCount).toBeGreaterThanOrEqual(22);
   });
 });

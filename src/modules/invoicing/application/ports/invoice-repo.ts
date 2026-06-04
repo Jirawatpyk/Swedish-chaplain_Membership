@@ -5,6 +5,7 @@
 import type { Satang } from '@/lib/money';
 import type { Invoice, InvoiceId, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 export interface InvoiceRepo {
@@ -20,6 +21,16 @@ export interface InvoiceRepo {
    * required. The `invoices_subject_fields_ck` DB CHECK rejects an
    * identity-incoherent combination (e.g. subject='event' with no
    * event_registration_id), so callers MUST pass a consistent shape.
+   *
+   * `memberIdentitySnapshot` (054-event-fee-invoices Task 6b — OPTIONAL):
+   *   The pinned BUYER snapshot. For the MEMBERSHIP path and the MATCHED-
+   *   MEMBER event path it is omitted / `null` — the buyer is an F3 member
+   *   re-read and snapshotted at ISSUE time (FR-038), so the draft carries
+   *   no snapshot. For a NON-MEMBER event attendee there is NO member row
+   *   to re-read at issue, so the manually-entered buyer identity MUST be
+   *   captured here and persisted into `member_identity_snapshot` at draft.
+   *   The `invoices_enforce_immutability` trigger only locks the snapshot
+   *   once `status != 'draft'`, so writing it at draft-insert is permitted.
    */
   insertDraft(
     tx: unknown,
@@ -35,6 +46,7 @@ export interface InvoiceRepo {
       readonly vatInclusive: boolean;
       readonly draftByUserId: string;
       readonly autoEmailOnIssue: boolean | null;
+      readonly memberIdentitySnapshot?: MemberIdentitySnapshot | null;
       readonly lines: readonly InvoiceLine[];
     },
   ): Promise<Invoice>;
