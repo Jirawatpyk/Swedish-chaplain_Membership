@@ -27,7 +27,7 @@ import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditPort, F4NonTimelineEventType } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
@@ -261,15 +261,24 @@ export async function recordPayment(
     ) {
       return err({ code: 'no_snapshot_on_invoice' });
     }
-    // 054-event-fee-invoices — record-payment is MEMBERSHIP-only today.
-    // `invoices_subject_fields_ck` guarantees member_id IS NOT NULL for
-    // `invoice_subject='membership'`; an issued membership invoice always
-    // carries it. Bind a narrowed local for the audit payload + member
-    // timeline + registration-fee flip below. (Treat a null as the same
-    // class as a missing snapshot — an event invoice should never reach
-    // this MEMBERSHIP path.)
+    // 054-event-fee-invoices (final-review HIGH 2) — record-payment now
+    // supports NON-member EVENT invoices (spec §9 NF-B / Decision 7). A null
+    // `member_id` is VALID for `invoice_subject='event'`: the buyer was pinned
+    // into `member_identity_snapshot` at draft (createEventInvoiceDraft) and is
+    // the payer identity — the snapshot-completeness guard above
+    // (`!loaded.memberIdentitySnapshot` → no_snapshot_on_invoice) already
+    // ensures that buyer block is present, so the receipt render below has a
+    // valid `member` to render WITHOUT dereferencing a null F3 member.
+    //
+    // A MEMBERSHIP invoice with a null member, by contrast, IS a real data
+    // error — `invoices_subject_fields_ck` guarantees member_id IS NOT NULL for
+    // `invoice_subject='membership'`, so reaching here with one implies a
+    // corrupted row. Keep rejecting that case (same class as a missing
+    // snapshot). `memberId` (string | null) drives the audit-branch
+    // (timeline vs non-timeline), registration-fee flip, and onPaid-callback
+    // gates below.
     const memberId = loaded.memberId;
-    if (memberId === null) {
+    if (memberId === null && loaded.invoiceSubject !== 'event') {
       return err({ code: 'no_snapshot_on_invoice' });
     }
 
@@ -278,18 +287,22 @@ export async function recordPayment(
     // single "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; separate mode
     // allocates its own receipt sequence number.
     //
-    // 054-event-fee-invoices (Task 9, Action E) — §86/4 doc-type consistency:
-    // a `receipt_combined` carries the "ใบกำกับภาษี" (tax-invoice) label, which
-    // a buyer with NO 13-digit TIN must NEVER receive (the ship-blocker this
-    // task closes). When the issue-time buyer snapshot lacks a TIN we FORCE the
-    // plain `receipt_separate` (ใบเสร็จรับเงิน) + a separate receipt number,
-    // overriding the tenant's `receiptNumberingMode='combined'` setting. This is
-    // defence-in-depth: record-payment is MEMBERSHIP-only in v1 and the
-    // issue-invoice gate guarantees every membership buyer has a TIN, so this
-    // override is a no-op today — but it future-proofs the path the moment a
-    // matched-member EVENT invoice (which CAN be issued TIN-less as a receipt)
-    // is allowed through record-payment. (TIN check trims whitespace, matching
-    // the issue-invoice gate.)
+    // 054-event-fee-invoices (Task 9, Action E + final-review HIGH 2) — §86/4
+    // doc-type consistency: a `receipt_combined` carries the "ใบกำกับภาษี"
+    // (tax-invoice) label, which a buyer with NO 13-digit TIN must NEVER receive
+    // (the ship-blocker this gate closes). When the issue-time BUYER snapshot
+    // lacks a TIN we FORCE the plain `receipt_separate` (ใบเสร็จรับเงิน) + a
+    // separate receipt number, overriding the tenant's
+    // `receiptNumberingMode='combined'` setting.
+    //
+    // For MEMBERSHIP invoices the issue-invoice gate guarantees every buyer has
+    // a TIN, so this override is a no-op there. For NON-member (and matched-
+    // member) EVENT invoices — now reachable on this path (HIGH 2) — a TIN-less
+    // buyer was issued as `receipt_separate` and the payment-time receipt MUST
+    // stay `receipt_separate` too. The `member` rendered below is the BUYER
+    // snapshot (`loaded.memberIdentitySnapshot`, non-null per the guard above) —
+    // it is NEVER a deref of `member_id`, so a null-member event invoice renders
+    // correctly. (TIN check trims whitespace, matching the issue-invoice gate.)
     const buyerHasTin =
       (loaded.memberIdentitySnapshot.tax_id ?? '').trim() !== '';
     const combinedMode =
@@ -495,34 +508,72 @@ export async function recordPayment(
     const paymentReferenceSha256 = input.paymentReference
       ? sha256Hex(input.paymentReference)
       : null;
-    await deps.audit.emit(tx, {
-      tenantId: input.tenantId,
-      requestId: input.requestId ?? null,
-      eventType: 'invoice_paid',
-      actorUserId: input.actorUserId,
-      summary: `Invoice ${loaded.documentNumber?.raw} marked paid`,
-      payload: {
-        invoice_id: invoiceId,
-        // US7 — surfaces this event in the F3 member timeline, which
-        // queries `payload->>'member_id'`. Required for the timeline
-        // contract even though invoices.member_id is derivable.
-        member_id: memberId,
-        payment_method: input.paymentMethod,
-        payment_reference_sha256: paymentReferenceSha256,
-        payment_date: input.paymentDate,
-        recorded_by_user_id: input.actorUserId,
-        receipt_document_number: receiptDocNumRaw,
-        // T166-03: sha256 is null when async render is in flight; the
-        // worker emits a separate `receipt_rendered` audit event
-        // carrying the sha256 once the bytes land.
-        receipt_pdf_sha256: rendered ? rendered.sha256 : null,
-        // R1-S3 — forensic flag so audit consumers can distinguish
-        // "sha256 is intentionally null because async path took over"
-        // from "sha256 is null because of a bug". Pairs with the
-        // separate `receipt_rendered` audit row that lands later.
-        receipt_pdf_async: deps.asyncReceiptPdf === true,
-      },
-    });
+    // Common (subject-agnostic) fields for the `invoice_paid` audit payload.
+    // The branch below adds EITHER `member_id` (membership / matched member →
+    // F3 timeline) OR `event_registration_id` (non-member event → non-timeline).
+    const invoicePaidSummary = `Invoice ${loaded.documentNumber?.raw} marked paid`;
+    const invoicePaidPayloadBase: Record<string, unknown> = {
+      invoice_id: invoiceId,
+      payment_method: input.paymentMethod,
+      payment_reference_sha256: paymentReferenceSha256,
+      payment_date: input.paymentDate,
+      recorded_by_user_id: input.actorUserId,
+      receipt_document_number: receiptDocNumRaw,
+      // T166-03: sha256 is null when async render is in flight; the
+      // worker emits a separate `receipt_rendered` audit event
+      // carrying the sha256 once the bytes land.
+      receipt_pdf_sha256: rendered ? rendered.sha256 : null,
+      // R1-S3 — forensic flag so audit consumers can distinguish
+      // "sha256 is intentionally null because async path took over"
+      // from "sha256 is null because of a bug". Pairs with the
+      // separate `receipt_rendered` audit row that lands later.
+      receipt_pdf_async: deps.asyncReceiptPdf === true,
+    };
+    // 054-event-fee-invoices (final-review HIGH 2) — branch on buyer kind, exactly
+    // as issue-invoice.ts + issue-credit-note.ts do for the `invoice_paid` peer
+    // events:
+    //
+    //   MEMBERSHIP / matched-member (memberId non-null) → TIMELINE branch: payload
+    //   carries `member_id` so the F3 member timeline filter
+    //   (`payload->>'member_id'`) surfaces the payment (US7). UNCHANGED F4 behaviour.
+    //
+    //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is not an
+    //   F3 member, so the timeline filter MUST NOT surface it. We do NOT widen
+    //   `MemberTimelineAuditPayload` to make `member_id` optional (that would weaken
+    //   the F3 `member_id` guarantee for the 6 membership-timeline events); instead
+    //   we narrow `invoice_paid` to the non-timeline `F4AuditEvent` branch at THIS
+    //   one site, carrying `event_registration_id` and omitting `member_id` entirely.
+    //   The `as unknown as F4NonTimelineEventType` makes the bypass explicit (a plain
+    //   `as Exclude<…>` would silently skip the payload check since `invoice_paid` IS
+    //   in F4MemberTimelineAuditEventType and Exclude resolves to `never` for it).
+    if (memberId !== null) {
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_paid',
+        actorUserId: input.actorUserId,
+        summary: invoicePaidSummary,
+        payload: {
+          // US7 — surfaces this event in the F3 member timeline, which
+          // queries `payload->>'member_id'`. Required for the timeline
+          // contract even though invoices.member_id is derivable.
+          member_id: memberId,
+          ...invoicePaidPayloadBase,
+        },
+      });
+    } else {
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_paid' as unknown as F4NonTimelineEventType,
+        actorUserId: input.actorUserId,
+        summary: invoicePaidSummary,
+        payload: {
+          event_registration_id: loaded.eventRegistrationId,
+          ...invoicePaidPayloadBase,
+        },
+      });
+    }
 
     // Defensive guard (T082 empirical 2026-04-24): the Domain type
     // `MemberIdentitySnapshot.primary_contact_email` is declared
@@ -602,10 +653,19 @@ export async function recordPayment(
     // applyPayment so a rollback unwinds both writes atomically.
     // Idempotent — the adapter's WHERE registration_fee_paid=FALSE
     // makes replay on an already-true row a no-op.
+    //
+    // 054-event-fee-invoices — registration-fee is a MEMBERSHIP concept (the
+    // one-off joining fee on a member's first invoice). A non-member EVENT
+    // invoice (memberId null) carries only an `event_fee` line — never a
+    // `registration_fee` — and there is no F3 member row to flip, so the
+    // `memberId !== null` guard both skips the no-op flip AND satisfies the
+    // `markRegistrationFeePaid(tx, tenantId, memberId: string)` non-null
+    // contract for the membership path. (The `hasRegistrationFee` check stays
+    // first so a membership invoice without the line still short-circuits.)
     const hasRegistrationFee = loaded.lines.some(
       (l) => l.kind === 'registration_fee',
     );
-    if (hasRegistrationFee) {
+    if (hasRegistrationFee && memberId !== null) {
       await deps.memberIdentity.markRegistrationFeePaid(
         tx,
         input.tenantId,
@@ -636,8 +696,17 @@ export async function recordPayment(
     // `loaded.total` is null (line ~204), and `applyPayment` always
     // populates `paid_at` on a successful issued→paid UPDATE (RETURNING
     // contract). A failed adapter would have thrown before this point.
+    //
+    // 054-event-fee-invoices (final-review HIGH 2) — the `memberId !== null`
+    // guard: `F4InvoicePaidEvent.memberId` is a non-null `string` (the
+    // cross-module contract — F8 renewal-cycle completion keys off the member).
+    // A NON-member EVENT invoice has no member, no renewal cycle, and nothing
+    // for any registered on-paid listener to correlate against, so it correctly
+    // fires NO callbacks. (Matched-member event invoices DO carry a memberId and
+    // still fire callbacks — though F8 only completes a cycle when one is linked
+    // to the invoice, so a member's event-fee payment is a benign no-op there.)
     const callbacks = deps.onPaidCallbacks;
-    if (callbacks && callbacks.length > 0) {
+    if (callbacks && callbacks.length > 0 && memberId !== null) {
       // `processorMethod` overrides `paymentMethod` in the event for F5
       // rails — see field doc on the input schema. `triggeredBy` defaults
       // to `'admin_manual'` for back-compat with existing F4 admin paths.

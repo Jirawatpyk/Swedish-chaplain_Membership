@@ -58,6 +58,10 @@ function makeIssuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
     memberId: 'member-1',
     planId: 'corporate-regular',
     planYear: 2026,
+    invoiceSubject: 'membership',
+    vatInclusive: false,
+    eventId: null,
+    eventRegistrationId: null,
     status: 'issued',
     draftByUserId: 'actor-user',
     fiscalYear: 2026 as never,
@@ -459,6 +463,174 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);
     expect(deps.memberIdentity.markRegistrationFeePaid).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 054-event-fee-invoices (final-review HIGH 2) — NON-member EVENT invoice
+  // support on the admin manual mark-paid path (spec §9 NF-B / Decision 7).
+  // The relaxed null-member guard + the non-timeline audit branch + the
+  // registration-fee / onPaid-callback null-member guards are NEW
+  // security-critical branches → covered here.
+  // ---------------------------------------------------------------------------
+
+  /** A NON-member EVENT invoice: member_id NULL, subject 'event', VAT-inclusive,
+   *  buyer pinned in the snapshot, single event_fee line. */
+  function makeNonMemberEventInvoice(overrides: Partial<Invoice> = {}): Invoice {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('evt-line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน',
+      descriptionEn: 'Event ticket',
+      unitPrice: Money.fromTHB(250),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromTHB(250),
+      position: 1,
+    };
+    return makeIssuedInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-77',
+      eventRegistrationId: 'reg-88',
+      proRatePolicy: null,
+      lines: [eventLine],
+      memberIdentitySnapshot: {
+        legal_name: 'Walk-in Buyer Co',
+        tax_id: '9876543210123',
+        address: '50 Sukhumvit Road',
+        primary_contact_name: 'Jane',
+        primary_contact_email: 'jane@buyer.example',
+      },
+      ...overrides,
+    });
+  }
+
+  it('non-member EVENT invoice (member_id NULL) → recordPayment succeeds (relaxed guard, spec §9 NF-B)', async () => {
+    const invoice = makeNonMemberEventInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ receiptNumberingMode: 'separate' }));
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    // The receipt render uses the BUYER snapshot as `member`, never a deref of
+    // a null member, and threads the event Model-B VAT-inclusive flag.
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'receipt_separate',
+        vatInclusive: true,
+        member: expect.objectContaining({ legal_name: 'Walk-in Buyer Co' }),
+      }),
+    );
+  });
+
+  it('non-member EVENT invoice → invoice_paid audit uses NON-timeline branch (no member_id, has event_registration_id)', async () => {
+    const invoice = makeNonMemberEventInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ receiptNumberingMode: 'separate' }));
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+
+    const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect(paidEmit, 'expected an invoice_paid audit emit').toBeDefined();
+    const payload = (paidEmit![1] as { payload: Record<string, unknown> }).payload;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe('reg-88');
+    expect(payload.invoice_id).toBe(INVOICE_ID);
+  });
+
+  it('non-member EVENT invoice → does NOT flip registration_fee_paid (no F3 member) even with a registration_fee line', async () => {
+    // Defensive: even if a malformed event draft somehow carried a
+    // registration_fee line, the null-member guard must skip the member flip
+    // (markRegistrationFeePaid requires a non-null memberId).
+    const regFeeLine: InvoiceLine = {
+      lineId: asInvoiceLineId('evt-regfee'),
+      kind: 'registration_fee',
+      descriptionTh: 'ค่าลงทะเบียน',
+      descriptionEn: 'Registration fee',
+      unitPrice: Money.fromTHB(5000),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromTHB(5000),
+      position: 2,
+    };
+    const invoice = makeNonMemberEventInvoice({
+      lines: [makeNonMemberEventInvoice().lines[0]!, regFeeLine],
+    });
+    const deps = makeDeps(true, invoice, makeSettings({ receiptNumberingMode: 'separate' }));
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.memberIdentity.markRegistrationFeePaid).not.toHaveBeenCalled();
+  });
+
+  it('non-member EVENT invoice → registered onPaid callbacks do NOT fire (no member, no renewal cycle)', async () => {
+    const invoice = makeNonMemberEventInvoice();
+    const onPaid = vi.fn(async () => {});
+    const deps = makeDeps(true, invoice, makeSettings({ receiptNumberingMode: 'separate' }), {
+      onPaidCallbacks: [onPaid],
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(onPaid).not.toHaveBeenCalled();
+  });
+
+  it('matched-member EVENT invoice (member_id present) → onPaid callbacks DO fire + TIMELINE audit (member_id present)', async () => {
+    // A matched-member event invoice carries a real member_id, so it takes the
+    // timeline audit branch AND fires onPaid callbacks (parity with membership).
+    const matched = makeNonMemberEventInvoice({ memberId: 'member-matched-1' });
+    const onPaid = vi.fn(async () => {});
+    const deps = makeDeps(true, matched, makeSettings({ receiptNumberingMode: 'separate' }), {
+      onPaidCallbacks: [onPaid],
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? matched
+        : makeNonMemberEventInvoice({ memberId: 'member-matched-1', status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(onPaid).toHaveBeenCalledTimes(1);
+
+    const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    const payload = (paidEmit![1] as { payload: Record<string, unknown> }).payload;
+    expect(payload.member_id).toBe('member-matched-1');
+    expect('event_registration_id' in payload).toBe(false);
+  });
+
+  it('MEMBERSHIP invoice with member_id NULL → still rejected as no_snapshot_on_invoice (data-error guard preserved)', async () => {
+    // A membership invoice with a null member is a corrupted row
+    // (invoices_subject_fields_ck guarantees member_id NOT NULL for membership).
+    // The relaxed guard only exempts subject='event'; membership must still fail.
+    const broken = makeIssuedInvoice({ memberId: null, invoiceSubject: 'membership' });
+    const deps = makeDeps(true, broken, makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_snapshot_on_invoice');
   });
 });
 

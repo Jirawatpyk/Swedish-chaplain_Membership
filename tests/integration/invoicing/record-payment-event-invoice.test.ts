@@ -147,14 +147,26 @@ function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
  * assert the §86/4 doc-type `kind` + the pre-pinned buyer snapshot threaded
  * as `member`. Everything else (real Drizzle invoice repo on the test tenant,
  * real §87 receipt allocator, real F4 audit adapter, real outbox) stays live.
+ *
+ * `asyncReceiptPdf: false` override (+ drop the enqueue port): the shared
+ * `tests/integration-setup.ts` forces `FEATURE_F5_ASYNC_RECEIPT_PDF=true`,
+ * which makes `recordPayment` SKIP the synchronous receipt render and enqueue
+ * an async render task instead — there'd be no inline render to capture. The
+ * SYNCHRONOUS render is the path the F4 admin manual mark-paid route uses in
+ * production (env flag default false), so we pin it here to assert the receipt
+ * render args (kind + buyer snapshot) directly. The async enqueue path's
+ * rollback semantics are already covered by record-payment-rollback.test.ts.
  */
 function makeRecordPaymentDepsWithCapture(
   tenantSlug: string,
   captured: PdfRenderInput[],
 ): RecordPaymentDeps {
   const real = makeRecordPaymentDeps(tenantSlug);
+  const { receiptPdfRenderEnqueue: _omitEnqueue, ...rest } = real;
+  void _omitEnqueue;
   return {
-    ...real,
+    ...rest,
+    asyncReceiptPdf: false,
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
         captured.push(renderInput);
