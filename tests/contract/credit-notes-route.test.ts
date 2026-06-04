@@ -218,6 +218,9 @@ describe('POST /api/credit-notes — contract', () => {
     ['concurrent_state_change', 409],
     ['settings_missing', 422],
     ['no_snapshot_on_invoice', 422],
+    // §86/10 ruling (final-review HIGH 1) — crediting a §105 receipt_separate
+    // is a legally-invalid request → 422 Unprocessable Entity.
+    ['receipt_not_creditable', 422],
     ['pdf_render_failed', 500],
     ['blob_upload_failed', 500],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {

@@ -101,9 +101,16 @@ export function CreditNoteForm({
           error?: { code?: string };
         };
         const code = body.error?.code;
-        toast.error(t('errors.failed'), {
-          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
-        });
+        // §86/10 ruling (final-review HIGH 1) — a §105 ใบเสร็จรับเงิน
+        // (receipt_separate) cannot be credited. Surface the actionable
+        // guidance (refund / void) rather than a bare error code.
+        const description =
+          code === 'receipt_not_creditable'
+            ? t('errors.receiptNotCreditable')
+            : code
+              ? t('errors.codeFallback', { code })
+              : t('errors.unknown');
+        toast.error(t('errors.failed'), { description });
         return;
       }
       toast.success(t('success'));

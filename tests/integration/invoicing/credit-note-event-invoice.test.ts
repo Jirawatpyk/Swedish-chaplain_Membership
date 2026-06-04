@@ -5,8 +5,16 @@
  * End-to-end through the REAL use-cases:
  *   createEventInvoiceDraft (non-member, pins buyer snapshot at DRAFT)
  *     → issueInvoice (Model B VAT-inclusive split stored at ISSUE)
- *     → raw UPDATE issued → paid (so the credit-note status guard passes)
+ *     → recordPayment (issued → paid; works for non-member event invoices after
+ *       final-review HIGH 2 — replaces the prior raw-SQL 'paid' workaround)
  *     → issueCreditNote (full credit)
+ *
+ * The buyer here carries a 13-digit TIN, so `issueInvoice` resolves kind
+ * 'invoice' (ใบกำกับภาษี / §86/4 tax invoice) — NOT a §105 receipt_separate.
+ * That makes this the REGRESSION case for final-review HIGH 1: a TIN-bearing
+ * event invoice is a genuine §86/4 tax invoice and MUST stay creditable (only
+ * the no-TIN receipt_separate path is blocked by `receipt_not_creditable`,
+ * covered in credit-note-receipt-separate-blocked.test.ts).
  *
  * Asserts (per Task 8 spec):
  *   1. The credit note PERSISTS (creditNotes row) for a non-member event
@@ -49,6 +57,11 @@ import {
   issueInvoice,
   type IssueInvoiceDeps,
 } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import {
+  recordPayment,
+  type RecordPaymentDeps,
+} from '@/modules/invoicing/application/use-cases/record-payment';
+import { makeRecordPaymentDeps } from '@/modules/invoicing/application/invoicing-deps';
 import {
   issueCreditNote,
   type IssueCreditNoteDeps,
@@ -129,6 +142,33 @@ function makeCreditNoteDeps(tenantSlug: string): {
   return { deps, outboxEnqueue };
 }
 
+/**
+ * Real recordPayment composition root with PDF/Blob mocked + the async-receipt
+ * flag forced OFF (the shared integration setup forces it ON, which skips the
+ * inline receipt render). We only need the invoice to reach `paid` so the
+ * credit-note status guard passes — no assertions on the receipt itself here.
+ */
+function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
+  const real = makeRecordPaymentDeps(tenantSlug);
+  const { receiptPdfRenderEnqueue: _omitEnqueue, ...rest } = real;
+  void _omitEnqueue;
+  return {
+    ...rest,
+    asyncReceiptPdf: false,
+    pdfRender: {
+      render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe('d'.repeat(64)) })),
+    },
+    blob: {
+      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({ key, url: `https://blob.test/${key}` })),
+      uploadLogo: vi.fn(),
+      signDownloadUrl: vi.fn(),
+      downloadBytes: vi.fn(async () => PDF_BYTES),
+      delete: vi.fn(),
+      list: vi.fn(async () => []),
+    } as unknown as RecordPaymentDeps['blob'],
+  };
+}
+
 describe('issueCreditNote — NON-member EVENT invoice (Task 8, live Neon)', () => {
   let tenant: TestTenant;
   let user: TestUser;
@@ -207,24 +247,25 @@ describe('issueCreditNote — NON-member EVENT invoice (Task 8, live Neon)', () 
     });
     if (!issued.ok) throw new Error(`issue failed: ${JSON.stringify(issued)}`);
 
-    // 3) Flip issued → paid (raw, owner role). The credit-note status guard
-    // requires `paid` or `partially_credited`. Satisfy invoices_paid_has_payment
-    // + the receipt_pdf_status CHECK exactly as seedInvoiceInStatus('paid') does.
-    await runInTenant(tenant.ctx, async (tx) => {
-      await tx
-        .update(invoices)
-        .set({
-          status: 'paid',
-          receiptPdfStatus: 'rendered',
-          paymentMethod: 'bank_transfer',
-          paymentReference: 'seed-ref',
-          paymentRecordedByUserId: user.userId,
-          paymentDate: '2026-04-19',
-          paidAt: new Date('2026-04-19T03:00:00Z'),
-        })
-        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
-    });
-  }, 90_000);
+    // 3) issued → paid via the REAL recordPayment use-case. Works for
+    // non-member event invoices after final-review HIGH 2 (replaces the prior
+    // raw-SQL 'paid' workaround) — exercises the genuine §86/4 receipt path so
+    // the credit-note status guard sees a real paid invoice. The buyer's TIN
+    // means issue resolved kind 'invoice', so this stays a creditable §86/4
+    // document (the HIGH 1 block applies only to the no-TIN receipt_separate).
+    const paid = await runInTenant(tenant.ctx, async () =>
+      recordPayment(makeRecordPaymentDepsForPay(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-cn-pay-${invoiceId}`,
+        invoiceId,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'seed-ref',
+        paymentDate: '2026-04-19',
+      }),
+    );
+    if (!paid.ok) throw new Error(`pay failed: ${JSON.stringify(paid)}`);
+  }, 120_000);
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});

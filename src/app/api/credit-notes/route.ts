@@ -34,6 +34,10 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   credit_exceeds_remainder: 409,
   settings_missing: 422,
   no_snapshot_on_invoice: 422,
+  // §86/10 ruling (final-review HIGH 1) — crediting a §105 ใบเสร็จรับเงิน
+  // (receipt_separate) is a legally-invalid request, not a transient conflict.
+  // 422 Unprocessable Entity: the request is well-formed but cannot be acted on.
+  receipt_not_creditable: 422,
   overflow: 422,
   pdf_render_failed: 500,
   blob_upload_failed: 500,

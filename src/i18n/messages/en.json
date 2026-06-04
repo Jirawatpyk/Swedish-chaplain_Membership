@@ -1464,6 +1464,7 @@
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
+          "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
           "codeFallback": "Error code: {code}"
         }
       },

@@ -73,13 +73,34 @@ const BUYER_SNAP_WITH_EMAIL: MemberIdentitySnapshot = Object.freeze({
   primary_contact_email: 'jane@beta.example',
 });
 
-/** Non-member buyer snapshot with an EMPTY contact email (walk-in guest). */
+/**
+ * Non-member buyer snapshot with an EMPTY contact email but a 13-digit TIN.
+ * The TIN means `issueInvoice` resolved kind='invoice' (§86/4 tax invoice),
+ * so the §86/10 `receipt_not_creditable` guard does NOT fire — this fixture
+ * isolates the empty-email auto-email-skip branch from the receipt_separate
+ * block. (A no-TIN event buyer would be a §105 receipt_separate and is covered
+ * by BUYER_SNAP_NO_TIN below.)
+ */
 const BUYER_SNAP_NO_EMAIL: MemberIdentitySnapshot = Object.freeze({
+  legal_name: 'Corp Without Email Co., Ltd.',
+  tax_id: '1112223334445',
+  address: '99 Charoen Krung Road, Bangkok 10500',
+  primary_contact_name: 'Procurement Desk',
+  primary_contact_email: '',
+});
+
+/**
+ * Non-member buyer snapshot WITHOUT a TIN (walk-in guest). `issueInvoice`
+ * resolves this to kind='receipt_separate' (§105 ใบเสร็จรับเงิน). A §86/10
+ * credit note cannot reference a §105 receipt → issueCreditNote must reject it
+ * with `receipt_not_creditable` (final-review HIGH 1).
+ */
+const BUYER_SNAP_NO_TIN: MemberIdentitySnapshot = Object.freeze({
   legal_name: 'Walk-in Guest',
   tax_id: null,
   address: '99 Charoen Krung Road, Bangkok 10500',
   primary_contact_name: 'Walk-in Guest',
-  primary_contact_email: '',
+  primary_contact_email: 'walkin@example.com',
 });
 
 /**
@@ -449,5 +470,97 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     // The OLD bug returned no_snapshot_on_invoice on memberId===null.
     expect(r.ok).toBe(true);
     if (!r.ok) expect(r.error.code).not.toBe('no_snapshot_on_invoice');
+  });
+
+  // ---- §86/10 doc-type gate (final-review HIGH 1) -------------------------
+
+  it('BLOCKS a §105 receipt_separate (no-TIN event invoice) with receipt_not_creditable', async () => {
+    // No-TIN event buyer → issued as receipt_separate (§105 ใบเสร็จรับเงิน).
+    const invoice = makeIssuedEventInvoice({ memberIdentitySnapshot: BUYER_SNAP_NO_TIN });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-receipt-block',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected receipt_not_creditable, got ok');
+    expect(r.error.code).toBe('receipt_not_creditable');
+  });
+
+  it('the receipt_not_creditable guard fires BEFORE allocateNext + PDF render + CN insert (no §87 number burned, no render, no rollup)', async () => {
+    const invoice = makeIssuedEventInvoice({ memberIdentitySnapshot: BUYER_SNAP_NO_TIN });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-receipt-order',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(false);
+    // Guard runs before the POST-SEQUENCE zone — no side effects whatsoever.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyCreditNoteRollup).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('treats a WHITESPACE-only TIN as no-TIN (trim) → receipt_separate is still blocked', async () => {
+    // Mirrors the issue-invoice / record-payment `.trim() !== ''` gate so the
+    // three sites stay in lockstep: a snapshot persisting '   ' must NOT be
+    // treated as a valid TIN.
+    const invoice = makeIssuedEventInvoice({
+      memberIdentitySnapshot: { ...BUYER_SNAP_NO_TIN, tax_id: '   ' },
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-receipt-ws',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected receipt_not_creditable, got ok');
+    expect(r.error.code).toBe('receipt_not_creditable');
+  });
+
+  it('does NOT block a MEMBERSHIP invoice with no TIN (subject gate — the guard is event-only)', async () => {
+    // A membership invoice can never legitimately be no-TIN (issue-invoice
+    // blocks it with tax_id_required), but if such a row existed the §86/10
+    // guard MUST NOT fire on it — the block is scoped to invoiceSubject==='event'
+    // so membership behaviour is unchanged. We assert the guard is bypassed by
+    // observing that the flow proceeds past it to allocateNext.
+    const invoice = makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-99',
+      planId: 'plan-x',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+      memberIdentitySnapshot: { ...BUYER_SNAP_NO_TIN, tax_id: null },
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-membership-notin',
+      creditTotalSatang: 25_000n,
+      reason: 'membership refund',
+    });
+
+    // The membership invoice is NOT receipt_separate → guard skipped → flow
+    // proceeds (succeeds end-to-end through the mocked happy path).
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalled();
   });
 });

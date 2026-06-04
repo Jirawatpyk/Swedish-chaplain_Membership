@@ -99,6 +99,17 @@ export type IssueCreditNoteError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  /**
+   * final-review HIGH 1 / §86/10 ruling — the parent is a §105 ใบเสร็จรับเงิน
+   * (a `receipt_separate` event invoice issued to a buyer WITHOUT a 13-digit
+   * TIN). A credit note (ใบลดหนี้, §86/10) can ONLY legally adjust a §86/4 tax
+   * invoice (ใบกำกับภาษี). It can never reference a §105 receipt — the buyer
+   * never received an input-VAT-claimable tax invoice, so there is nothing to
+   * credit. The correct remedy is a direct refund or a void. Returned BEFORE
+   * `allocateNext` so a blocked attempt never burns a §87 credit-note sequence
+   * number.
+   */
+  | { code: 'receipt_not_creditable' }
   | { code: 'settings_missing' }
   | {
       // F5R3v4 M-5 (2026-05-16) — fields are `UntrustedSatang`
@@ -226,6 +237,32 @@ export async function issueCreditNote(
       // return on it (removing the prior bug guard that wrongly blocked
       // crediting non-member event invoices).
       const memberId = loaded.memberId;
+
+      // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
+      // ใบเสร็จรับเงิน (`receipt_separate`). A credit note can only adjust a
+      // §86/4 tax invoice (ใบกำกับภาษี, kind='invoice'); a buyer who never
+      // received a TIN-bearing tax invoice has no input VAT to reverse, so a
+      // §86/10 ใบลดหนี้ against their §105 receipt is legally void.
+      //
+      // DETECTION — there is NO persisted `pdf_kind`/`pdf_doc_kind` column on
+      // `invoices` (the resolved doc-type is computed at render time only). So
+      // we RECONSTRUCT `receipt_separate` from the persisted `invoiceSubject` +
+      // the BUYER snapshot's TIN, mirroring issue-invoice.ts EXACTLY (lines
+      // ~273-280) so the issue-time gate and this credit-time gate stay in
+      // lockstep. The snapshot-completeness guard above guarantees
+      // `memberIdentitySnapshot` is non-null here; the `?.` is defensive parity
+      // with the issue-invoice expression. (TIN check trims whitespace, matching
+      // the issue-invoice + record-payment gates.)
+      //
+      // Runs BEFORE `allocateNext` (POST-SEQUENCE zone), so a blocked attempt
+      // never burns a §87 credit-note sequence number — the §87 CN stream stays
+      // gap-free. Mirrors the issue-invoice rule that the doc-type gate precedes
+      // sequence allocation.
+      const buyerHasTin = (loaded.memberIdentitySnapshot?.tax_id ?? '').trim() !== '';
+      const isReceiptSeparate = loaded.invoiceSubject === 'event' && !buyerHasTin;
+      if (isReceiptSeparate) {
+        return err({ code: 'receipt_not_creditable' });
+      }
 
       if (!settings) return err({ code: 'settings_missing' });
 
@@ -492,6 +529,12 @@ export async function issueCreditNote(
           { pdfRender: deps.pdfRender, blob: deps.blob },
           {
             renderInput: {
+              // §86/10 doc-type gate (final-review HIGH 1): a §105 receipt_separate
+              // parent is rejected by the `receipt_not_creditable` guard above
+              // BEFORE this point is ever reached, so ONLY kind='invoice' (§86/4
+              // ใบกำกับภาษี) parents arrive here. Hardcoding 'invoice' is therefore
+              // tax-correct — the CREDITED overlay can only ever stamp a genuine
+              // tax invoice, never a §105 ใบเสร็จรับเงิน.
               kind: 'invoice',
               templateVersion: loaded.pdf.templateVersion,
               documentNumber: loaded.documentNumber,
