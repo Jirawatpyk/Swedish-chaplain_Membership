@@ -91,6 +91,14 @@ describe('enforceOneSubjectLine — subject-aware exactly-one invariant', () => 
       expect(r.ok).toBe(true);
     });
 
+    it('accepts one event_fee + one registration_fee', () => {
+      const r = enforceOneSubjectLine('event', [
+        mkLine('event_fee', 1),
+        mkLine('registration_fee', 2),
+      ]);
+      expect(r.ok).toBe(true);
+    });
+
     it('rejects zero event_fee lines (a membership_fee line) → no_event_fee_line', () => {
       const r = enforceOneSubjectLine('event', [mkLine('membership_fee')]);
       expect(r.ok).toBe(false);
