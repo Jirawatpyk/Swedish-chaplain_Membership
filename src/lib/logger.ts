@@ -106,6 +106,20 @@ export const REDACT_PATHS = [
   // signed-URL tokens that grant 60s access to private PDFs, or raw
   // PDF bytes themselves (huge + contains PII). Tests assert redaction
   // via `tests/unit/lib/logger-pii.test.ts`.
+  //
+  // F054 — non-member buyer snapshot top-level keys. The BuyerSnapshot
+  // shape has bare `legal_name` and `address` fields at the object root
+  // (distinct from the `member_legal_name_snapshot` / `member_address_snapshot`
+  // member-copy keys already covered below). No code currently logs the
+  // snapshot directly, but defence-in-depth ensures a future accidental
+  // log auto-redacts. Mirroring the depth-0/1/2 convention used for
+  // `tax_id` / `attendee_email` above.
+  'legal_name',
+  '*.legal_name',
+  '*.*.legal_name',
+  'address',
+  '*.address',
+  '*.*.address',
   'member_legal_name_snapshot',
   '*.member_legal_name_snapshot',
   'memberLegalNameSnapshot',
