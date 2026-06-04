@@ -163,14 +163,12 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
   }, 60_000);
 
   it('(3) partial unique index — one non-void event invoice per registration; void is excluded', async () => {
-    const { eventId, registrationId } = await seedRegistration(tenant);
+    // --- Sub-test A: uniqueness enforcement ---
+    // Use one registration for the rejection proof.
+    const { eventId: eventIdA, registrationId: registrationIdA } =
+      await seedRegistration(tenant);
 
-    // Insert a `draft` event invoice. Drafts ARE indexed by the partial
-    // index (predicate `status <> 'void'`) and bypass the lifecycle
-    // snapshot/number CHECKs, so this is the lean way to exercise the
-    // uniqueness rule without reconstructing a full issued/void row (which
-    // would need sequence_number + snapshots + pdf — out of scope here).
-    async function insertDraftEventInvoice(): Promise<string> {
+    async function insertDraft(regId: string, eid: string): Promise<string> {
       const invoiceId = randomUUID();
       await runInTenant(tenant.ctx, (tx) =>
         tx.insert(invoices).values({
@@ -180,8 +178,8 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
           planId: null,
           planYear: null,
           invoiceSubject: 'event',
-          eventId,
-          eventRegistrationId: registrationId,
+          eventId: eid,
+          eventRegistrationId: regId,
           status: 'draft',
           draftByUserId: user.userId,
         }),
@@ -189,12 +187,12 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
       return invoiceId;
     }
 
-    // First non-void (draft) event invoice — OK.
-    const firstId = await insertDraftEventInvoice();
+    // First non-void (draft) event invoice for registration A — OK.
+    await insertDraft(registrationIdA, eventIdA);
 
     // Second non-void event invoice for the SAME registration — rejected by
     // the partial unique index (23505).
-    await expectPgError(() => insertDraftEventInvoice(), '23505');
+    await expectPgError(() => insertDraft(registrationIdA, eventIdA), '23505');
 
     // The index DDL's partial predicate MUST exclude voided invoices — this
     // is the "a voided event invoice frees the registration for re-issue"
@@ -214,17 +212,80 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
     // Negative guard: the broken `'voided'` literal must NOT appear.
     expect(indexdef).not.toContain(`'voided'`);
 
-    // Free the slot by deleting the conflicting draft, then a fresh non-void
-    // event invoice for the same registration is allowed again.
-    await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .delete(invoices)
-        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, firstId))),
-    );
-    const secondId = await insertDraftEventInvoice();
-    expect(secondId).not.toBe(firstId);
+    // --- Sub-test B: void frees the registration slot ---
+    // Use a FRESH registration so the still-live draft from sub-test A
+    // cannot interfere with the void-allows proof.
+    //
+    // Approach (Option B): insert the voided invoice directly with
+    // `status='void'` + all fields required by the non-draft lifecycle
+    // CHECK constraints, then assert a non-void draft for the SAME
+    // registration coexists without a 23505.
+    //
+    // Why not draft→void UPDATE (Option A): a draft row has no
+    // `sequence_number`, and `invoices_draft_has_no_number` requires
+    // `status='draft' OR sequence_number IS NOT NULL` — flipping a
+    // bare draft to void would violate that CHECK. Inserting the row
+    // directly as void with all required fields is the schema-valid path
+    // that correctly represents a real invoice that went through the
+    // full issue→void lifecycle.
+    const { eventId: eventIdB, registrationId: registrationIdB } =
+      await seedRegistration(tenant);
 
-    // Sanity: exactly one non-void event invoice for this registration.
+    const VOID_MEMBER_SNAPSHOT = {
+      legal_name: 'Event Buyer Co',
+      address: 'Bangkok',
+      primary_contact_name: 'Test Attendee',
+      primary_contact_email: 'attendee@void-test.example',
+    };
+    const voidInvoiceId = randomUUID();
+
+    // Insert a fully-coherent voided event invoice (all non-draft CHECKs met).
+    // `invoices_non_draft_has_snapshots` (live DB definition, confirmed via
+    // `pg_get_constraintdef`) requires: subtotal_satang, vat_rate_snapshot,
+    // vat_satang, total_satang, fiscal_year, sequence_number, document_number,
+    // issue_date, due_date, pro_rate_policy_snapshot, net_days_snapshot,
+    // tenant_identity_snapshot, member_identity_snapshot, pdf_blob_key,
+    // pdf_sha256, pdf_template_version — all non-null.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: voidInvoiceId,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        invoiceSubject: 'event',
+        eventId: eventIdB,
+        eventRegistrationId: registrationIdB,
+        status: 'void',
+        draftByUserId: user.userId,
+        fiscalYear: 2099,
+        sequenceNumber: 99001,
+        documentNumber: 'EVT-2099-099001',
+        subtotalSatang: 100000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7000n,
+        totalSatang: 107000n,
+        issueDate: '2026-06-01',
+        dueDate: '2026-07-01',
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legal_name_en: 'Test Chamber', tax_id: '0000000000000' },
+        memberIdentitySnapshot: VOID_MEMBER_SNAPSHOT,
+        pdfBlobKey: `event-invoices/${voidInvoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+        voidedAt: new Date(),
+        voidReason: 'voided to release registration slot (test)',
+        voidedByUserId: user.userId,
+      }),
+    );
+
+    // A non-void draft for the SAME registration MUST succeed — the void row is
+    // excluded from the partial unique index (predicate: `status <> 'void'`).
+    const afterVoidId = await insertDraft(registrationIdB, eventIdB);
+    expect(afterVoidId).not.toBe(voidInvoiceId);
+
+    // Sanity: exactly one non-void event invoice for registration B.
     const live = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select({ n: sql<number>`count(*)::int` })
@@ -232,7 +293,7 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
         .where(
           and(
             eq(invoices.tenantId, tenant.ctx.slug),
-            eq(invoices.eventRegistrationId, registrationId),
+            eq(invoices.eventRegistrationId, registrationIdB),
             sql`status <> 'void'`,
           ),
         ),
