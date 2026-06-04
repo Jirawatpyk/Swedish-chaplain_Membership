@@ -50,7 +50,7 @@ import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditPort, F4NonTimelineEventType } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
@@ -215,12 +215,17 @@ export async function issueCreditNote(
       ) {
         return err({ code: 'no_snapshot_on_invoice' });
       }
-      // 054-event-fee-invoices — credit-note issuance is MEMBERSHIP-only
-      // today. `invoices_subject_fields_ck` guarantees member_id for
-      // `invoice_subject='membership'`; treat null (an event invoice that
-      // should never reach this path) as a missing snapshot.
+      // 054-event-fee-invoices (Task 8) — `memberId` is nullable. Membership
+      // invoices always carry one (`invoices_subject_fields_ck`); NON-member
+      // EVENT invoices have `member_id IS NULL` but DO carry a complete pinned
+      // buyer snapshot (set at draft by createEventInvoiceDraft). The snapshot
+      // completeness guard above (memberIdentitySnapshot/subtotal/vat/vatRate
+      // non-null) already protects the credit-note math + render, so a null
+      // memberId is NOT a missing-snapshot condition. We keep `memberId` only
+      // to branch the audit (timeline vs non-timeline) below — do NOT early-
+      // return on it (removing the prior bug guard that wrongly blocked
+      // crediting non-member event invoices).
       const memberId = loaded.memberId;
-      if (memberId === null) return err({ code: 'no_snapshot_on_invoice' });
 
       if (!settings) return err({ code: 'settings_missing' });
 
@@ -548,27 +553,69 @@ export async function issueCreditNote(
         });
       }
 
-      // K. Audit.
-      await deps.audit.emit(tx, {
-        tenantId: input.tenantId,
-        requestId: input.requestId ?? null,
-        eventType: 'credit_note_issued',
-        actorUserId: input.actorUserId,
-        summary: `Credit note ${docNum.value.raw} issued against ${loaded.documentNumber.raw}`,
-        payload: {
-          credit_note_id: creditNoteId,
-          original_invoice_id: invoiceId,
-          // US7 — surfaces in the F3 member timeline (filter is on
-          // `payload->>'member_id'`).
-          member_id: memberId,
-          credit_amount_satang: creditAmount.satang.toString(),
-          vat_satang: vat.satang.toString(),
-          total_satang: total.satang.toString(),
-          reason: input.reason,
-          document_number: docNum.value.raw,
-          pdf_sha256: rendered.sha256,
-        },
-      });
+      // K. Audit `credit_note_issued` — branch on buyer kind (054-event-fee-
+      // invoices Task 8).
+      //
+      //   MEMBERSHIP / matched-member (memberId non-null) → TIMELINE branch:
+      //   the payload carries `member_id` so the F3 member timeline filter
+      //   (`payload->>'member_id'`) surfaces the credit note (US7). UNCHANGED
+      //   F4 behaviour.
+      //
+      //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is
+      //   not an F3 member, so the timeline filter MUST NOT surface it. We do
+      //   NOT widen `MemberTimelineAuditPayload` to make `member_id` optional
+      //   (that would weaken the F3 `member_id` guarantee for the 6 timeline
+      //   events); instead we narrow `credit_note_issued` to the non-timeline
+      //   `F4AuditEvent` branch at THIS one site, carrying `event_registration_id`
+      //   and omitting `member_id` entirely. Mirrors the `emitNonTimelineDraftCreated`
+      //   precedent in create-event-invoice-draft.ts + the issue-invoice.ts
+      //   non-member branch.
+      const creditNoteSummary = `Credit note ${docNum.value.raw} issued against ${loaded.documentNumber.raw}`;
+      const creditNotePayloadBase: Record<string, unknown> = {
+        credit_note_id: creditNoteId,
+        original_invoice_id: invoiceId,
+        credit_amount_satang: creditAmount.satang.toString(),
+        vat_satang: vat.satang.toString(),
+        total_satang: total.satang.toString(),
+        reason: input.reason,
+        document_number: docNum.value.raw,
+        pdf_sha256: rendered.sha256,
+      };
+      if (memberId !== null) {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'credit_note_issued',
+          actorUserId: input.actorUserId,
+          summary: creditNoteSummary,
+          payload: {
+            // US7 — surfaces in the F3 member timeline (filter is on
+            // `payload->>'member_id'`).
+            member_id: memberId,
+            ...creditNotePayloadBase,
+          },
+        });
+      } else {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          // deliberate: emit a timeline-typed event through the non-timeline
+          // payload branch for non-member events (no member_id);
+          // MemberTimelineAuditPayload intentionally NOT widened. The runtime
+          // adapter is event-type-agnostic; only the compile-time payload
+          // contract differs. `as unknown as F4NonTimelineEventType` makes the
+          // bypass explicit (a plain `as Exclude<…>` would silently skip the
+          // payload check since credit_note_issued IS in
+          // F4MemberTimelineAuditEventType and Exclude resolves to `never`).
+          eventType: 'credit_note_issued' as unknown as F4NonTimelineEventType,
+          actorUserId: input.actorUserId,
+          summary: creditNoteSummary,
+          payload: {
+            event_registration_id: loaded.eventRegistrationId,
+            ...creditNotePayloadBase,
+          },
+        });
+      }
 
       // L. Outbox (auto-email). The `autoEmailOnIssue` flag name comes
       // from the invoice-issue flow but the per-invoice override
@@ -579,15 +626,33 @@ export async function issueCreditNote(
       // email-toggle rule is the tenant `autoEmailEnabled` setting;
       // keeping both here for clarity).
       const shouldAutoEmail = loaded.autoEmailOnIssue ?? settings.autoEmailEnabled;
-      if (shouldAutoEmail) {
+      // 054-event-fee-invoices (Task 8) — a NON-member event buyer snapshot may
+      // carry an EMPTY `primary_contact_email` (`makeMemberIdentitySnapshot`
+      // accepts ''); membership/matched-member snapshots always have a real
+      // contact email. Guard the enqueue on a non-empty recipient so we never
+      // queue an outbox row addressed to '' (the Resend adapter would reject it
+      // downstream + the row would dead-letter). Skip + a no-PII pino.warn
+      // (ids only) when there is no contact email to send to.
+      const creditNoteRecipient = loaded.memberIdentitySnapshot.primary_contact_email;
+      if (shouldAutoEmail && creditNoteRecipient.trim() !== '') {
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'credit_note_issued',
-          recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email,
+          recipientEmail: creditNoteRecipient,
           creditNoteId,
           pdfBlobKey: blobKey,
           pdfTemplateVersion: deps.currentTemplateVersion,
         });
+      } else if (shouldAutoEmail) {
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            creditNoteId,
+            invoiceSubject: loaded.invoiceSubject,
+          },
+          'issueCreditNote: auto-email enabled but buyer snapshot has no contact email — skipping credit-note email',
+        );
       }
 
       return ok(cn);

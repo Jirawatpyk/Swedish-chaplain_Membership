@@ -107,4 +107,27 @@ describe('getInvoiceForPayment — payability error paths', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('not_found');
   });
+
+  // 054-event-fee-invoices (Task 8) — a NON-member EVENT invoice has
+  // `memberId === null` but a payable `total`. The F5 → F4 payment bridge
+  // binds a payment to a member for RLS (`payments.member_id` is NOT NULL),
+  // so a null-member invoice is NOT yet online-payable. The use-case MUST
+  // surface a typed `not_payable` at the boundary — NEVER pass a null
+  // memberId downstream (that would be a DB NOT NULL crash, not a typed
+  // error). This locks the access decision so F5 can never receive a null
+  // memberId in the `ok` DTO.
+  it('returns not_payable for a non-member EVENT invoice (memberId null) even when total > 0', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: null,
+      total: Money.fromSatangUnsafe(25_000n),
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not_payable');
+  });
 });

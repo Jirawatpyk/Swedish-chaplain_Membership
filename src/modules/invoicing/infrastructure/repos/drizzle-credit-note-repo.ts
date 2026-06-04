@@ -38,7 +38,9 @@ import { asTenantContext } from '@/modules/tenants';
 
 function rowToCreditNote(
   row: CreditNoteRow,
-  originalInvoiceMemberId: string,
+  // 054-event-fee-invoices (Task 8) — null for credit notes against a
+  // NON-member event invoice (the original invoice's member_id is NULL).
+  originalInvoiceMemberId: string | null,
 ): CreditNote {
   const fy = asFiscalYearUnsafe(row.fiscalYear);
   // The document_number in the DB is the canonical value emitted by
@@ -141,6 +143,12 @@ function selectByOriginalInvoice(
     .select({
       creditNote: creditNotes,
       originalInvoiceMemberId: invoices.memberId,
+      // 054-event-fee-invoices (Task 8) — see findById: distinguish a genuine
+      // orphan (joined invoice id null) from a valid event CN (member id null,
+      // invoice id present). Every row here filters on a known
+      // `originalInvoiceId`, so a null `originalInvoiceId` means the invoice was
+      // hard-deleted (orphan) — those are dropped; a null member_id is kept.
+      originalInvoiceId: invoices.invoiceId,
     })
     .from(creditNotes)
     .leftJoin(
@@ -213,16 +221,14 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           'drizzle-credit-note-repo: insertCreditNote — original invoice not found for JOIN',
         );
       }
-      // 054-event-fee-invoices — credit notes are issued only against
-      // MEMBERSHIP invoices today, which always carry a member_id
-      // (`invoices_subject_fields_ck`). A null here means the caller
-      // somehow credited an event-fee invoice — a contract violation the
-      // use-case (issue-credit-note) guards upstream; throw defensively.
-      if (joinRow.memberId === null) {
-        throw new Error(
-          'drizzle-credit-note-repo: insertCreditNote — original invoice has no member_id (event-fee invoice not creditable via this path)',
-        );
-      }
+      // 054-event-fee-invoices (Task 8) — credit notes are now issued against
+      // BOTH membership invoices (member_id non-null, `invoices_subject_fields_ck`)
+      // AND non-member EVENT invoices (member_id NULL). A null member_id here is
+      // a VALID event-fee CN (the buyer is a non-member attendee), NOT a contract
+      // violation — pass it through. `joinRow` being absent above already covers
+      // the genuine "original invoice missing" error. The CN row carries its own
+      // pinned buyer snapshot; `originalInvoiceMemberId === null` simply means no
+      // F3 member owns it (so member-role ownership checks correctly deny).
       return rowToCreditNote(inserted as CreditNoteRow, joinRow.memberId);
     },
 
@@ -232,6 +238,12 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           .select({
             creditNote: creditNotes,
             originalInvoiceMemberId: invoices.memberId,
+            // 054-event-fee-invoices (Task 8) — project the joined invoice id
+            // so we can distinguish a genuine ORPHAN (no matching invoice row →
+            // this is null) from a VALID event-fee CN (invoice row exists but
+            // its member_id is null). The old `!originalInvoiceMemberId` check
+            // conflated the two and dropped valid event CNs.
+            originalInvoiceId: invoices.invoiceId,
           })
           .from(creditNotes)
           .leftJoin(
@@ -251,7 +263,10 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         return rows[0] ?? null;
       });
       if (!result) return null;
-      if (!result.originalInvoiceMemberId) {
+      // Orphan = the LEFT JOIN matched no invoice row at all (FK should make
+      // this impossible, but defend). A null member_id WITH a matched invoice
+      // is a valid non-member event CN — pass it through.
+      if (!result.originalInvoiceId) {
         logger.error(
           { creditNoteId, tenantId: tenantIdArg },
           'drizzle-credit-note-repo: findById — CN row has no matching invoice (orphan)',
@@ -271,8 +286,10 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       const rows = await runInTenant(ctx, async (tx) =>
         selectByOriginalInvoice(tx, originalInvoiceId, tenantIdArg),
       );
+      // 054-event-fee-invoices (Task 8) — drop only genuine orphans (no joined
+      // invoice id); keep event CNs (null member_id, invoice present).
       return rows.flatMap((r) =>
-        r.originalInvoiceMemberId
+        r.originalInvoiceId
           ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
           : [],
       );
@@ -298,6 +315,11 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         .select({
           creditNote: creditNotes,
           originalInvoiceMemberId: invoices.memberId,
+          // 054-event-fee-invoices (Task 8) — orphan-vs-event discriminator
+          // (see findById). The annotation callsite in issueCreditNote MUST
+          // see the just-inserted event CN (member_id null), so the skip below
+          // keys on the joined invoice id, not the member id.
+          originalInvoiceId: invoices.invoiceId,
         })
         .from(creditNotes)
         .leftJoin(
@@ -316,7 +338,7 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         .orderBy(asc(creditNotes.sequenceNumber))
         .limit(20);
       return rows.flatMap((r) =>
-        r.originalInvoiceMemberId
+        r.originalInvoiceId
           ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
           : [],
       );

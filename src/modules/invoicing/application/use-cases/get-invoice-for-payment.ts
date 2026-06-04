@@ -53,7 +53,17 @@ export interface GetInvoiceForPaymentInput {
  * to:
  *   - decide if the invoice is in a payable status (`issued`)
  *   - resolve the amount to charge (`totalSatang`)
- *   - bind the payment to a member (`memberId`, `tenantId`) for RLS
+ *   - bind the payment to its tenant + invoice (`tenantId`, `id`)
+ *
+ * `memberId` is `string | null` (054-event-fee-invoices Task 8). A payment
+ * binds primarily to (tenant, invoice); the member binding is OPTIONAL — it
+ * is null for NON-member event-fee invoices (`invoice_subject='event'` with
+ * `member_id IS NULL`). Online self-pay through F5 currently requires a
+ * member binding (F5's `payments.member_id` is NOT NULL), so the use-case
+ * below rejects null-member invoices with a typed `not_payable` BEFORE
+ * constructing an `ok` DTO — i.e. on the `ok` path this field is always a
+ * real id, but the TYPE is honest so other readers (admin / credit-note /
+ * future buyer-binding payment flows) are not misled by a non-null lie.
  *
  * Intentionally excludes lines/snapshots/VAT breakdown — those are
  * F4 internals; F5 never renders or mutates them.
@@ -62,7 +72,7 @@ export interface InvoiceForPayment {
   readonly id: string;
   readonly status: InvoiceStatus;
   readonly totalSatang: Satang;
-  readonly memberId: string;
+  readonly memberId: string | null;
   readonly tenantId: string;
 }
 
@@ -97,12 +107,18 @@ export async function getInvoiceForPayment(
     return err({ code: 'not_payable', status: invoice.status });
   }
 
-  // 054-event-fee-invoices — the F5 → F4 payment bridge binds a payment
-  // to a member for RLS, so it requires a non-null member_id. Membership
-  // invoices always carry one (`invoices_subject_fields_ck`). Event-fee
-  // invoices (member_id NULL) are not yet payable online — they need a
-  // dedicated F5 buyer-binding path (future task), so surface them as
-  // `not_payable` rather than corrupting the RLS binding.
+  // 054-event-fee-invoices (Task 8) — the F5 → F4 payment bridge binds a
+  // payment to a member for RLS, and F5's `payments.member_id` column is NOT
+  // NULL. Membership invoices always carry a member_id
+  // (`invoices_subject_fields_ck`). NON-member event-fee invoices have
+  // `member_id IS NULL`; they are not yet self-payable online — they need a
+  // dedicated F5 buyer-binding path (future task) and are settled by
+  // admin-record / payment-link in the meantime. Surface them as a typed
+  // `not_payable` here rather than letting a null memberId flow downstream
+  // (which would be a `payments.member_id` NOT-NULL crash, not a clean error).
+  // This guard ALSO narrows `invoice.memberId` to `string` for the mapping
+  // below, so the `ok` DTO carries a real id with no `!` assertion despite the
+  // field type being the honest `string | null` (see the DTO doc above).
   if (invoice.memberId === null) {
     return err({ code: 'not_payable', status: invoice.status });
   }
