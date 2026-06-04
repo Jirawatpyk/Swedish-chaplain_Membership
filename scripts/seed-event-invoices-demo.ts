@@ -5,6 +5,18 @@
  * (seed)`); the two non-member cases use placeholder buyers. No real-member
  * PII ever enters a demo invoice.
  *
+ * DEMO seed — `autoEmailOnIssue: false` on ALL issues so issuing (and the
+ * cleanup VOID, which reads the same persisted column) never emails anyone —
+ * real or simulated. `issueInvoice`/`voidInvoice` resolve
+ * `wantsEmail = autoEmailOnIssue ?? settings.autoEmailEnabled`; pinning the
+ * column to `false` forces wantsEmail=FALSE regardless of the tenant's
+ * `autoEmailEnabled`, so no outbox row is ever enqueued.
+ * Incident 2026-06-04: a prior version of this seed issued with auto-email ON
+ * and the outbox-dispatch cron SENT 4 demo invoice emails (issued + voided ×2)
+ * to a REAL member before the guard was added. The fake `@seed.invalid` /
+ * placeholder buyer emails remain as defence-in-depth, but autoEmailOnIssue
+ * is the real guard.
+ *
  * DEMO seed — Event-fee vs Membership invoices for an admin list-distinction
  * UX review (054-event-fee-invoices).
  *
@@ -615,7 +627,12 @@ async function insertEventDraft(
       eventRegistrationId: args.registrationId,
       vatInclusive: true,
       draftByUserId: adminUserId,
-      autoEmailOnIssue: null,
+      // DEMO seed — autoEmailOnIssue:false on ALL issues so issuing never
+      // emails anyone (real or simulated). Incident 2026-06-04: a prior
+      // version emailed a real member. issueInvoice/voidInvoice read
+      // wantsEmail = autoEmailOnIssue ?? settings.autoEmailEnabled, so false
+      // here forces NO outbox enqueue regardless of the tenant setting.
+      autoEmailOnIssue: false,
       memberIdentitySnapshot: args.buyerSnapshot,
       lines,
     });
@@ -798,6 +815,12 @@ async function main(): Promise<void> {
         memberId: member.memberId,
         planId: member.planId,
         planYear: member.planYear,
+        // DEMO seed — autoEmailOnIssue:false on ALL issues so issuing never
+        // emails anyone (real or simulated). Incident 2026-06-04: a prior
+        // version emailed a real member. issueInvoice/voidInvoice read
+        // wantsEmail = autoEmailOnIssue ?? settings.autoEmailEnabled, so false
+        // here forces NO outbox enqueue regardless of the tenant setting.
+        autoEmailOnIssue: false,
       });
       if (!draft.ok) {
         throw new Error(`seed-event-invoices-demo: membership draft failed: ${draft.error.code}`);
