@@ -47,6 +47,9 @@ const messages = {
           event: 'Event',
           eventAria: 'Event-fee invoice',
         },
+        buyerSubtitle: {
+          membership: 'Membership {year}',
+        },
         creditedSuffix: '+{count} CN',
         creditedTooltip: '{count} credit notes · {amount} THB credited',
         creditedAria: '{count} credit notes, {amount} credited',
@@ -102,6 +105,7 @@ function baseRow(overrides: Partial<InvoicesTableRow>): InvoicesTableRow {
     receiptDocumentNumberRaw: null,
     hasReceiptPdf: false,
     receiptPdfStatus: null,
+    buyerSubtitle: null,
     ...overrides,
   };
 }
@@ -167,6 +171,43 @@ describe('<InvoicesTable> buyer column', () => {
     expect(chips).toHaveLength(1);
     const chip = chips[0]!;
     expect(chip).toHaveAttribute('aria-label', 'Event-fee invoice');
+  });
+
+  it('renders the membership-year subtitle under the buyer name', () => {
+    renderTable([
+      baseRow({
+        invoiceSubject: 'membership',
+        memberName: 'Acme Co., Ltd.',
+        buyerSubtitle: 'Membership 2026',
+      }),
+    ]);
+    // The buyer name and its muted subtitle are distinct text nodes.
+    expect(screen.getByText('Acme Co., Ltd.')).toBeInTheDocument();
+    expect(screen.getByText('Membership 2026')).toBeInTheDocument();
+  });
+
+  it('renders the event-name subtitle under an event buyer name', () => {
+    renderTable([
+      baseRow({
+        invoiceId: 'inv-evt',
+        invoiceSubject: 'event',
+        buyerHasMemberLink: false,
+        memberId: '',
+        memberName: 'Walk-in Guest Co.',
+        buyerSubtitle: 'TSCC Gala Dinner · 2026-06-15',
+      }),
+    ]);
+    expect(screen.getByText('Walk-in Guest Co.')).toBeInTheDocument();
+    expect(
+      screen.getByText('TSCC Gala Dinner · 2026-06-15'),
+    ).toBeInTheDocument();
+  });
+
+  it('omits the subtitle line when buyerSubtitle is null', () => {
+    renderTable([baseRow({ memberName: 'No Subtitle Co.', buyerSubtitle: null })]);
+    expect(screen.getByText('No Subtitle Co.')).toBeInTheDocument();
+    // No "Membership …" text leaks when the row carries no subtitle.
+    expect(screen.queryByText(/^Membership /)).not.toBeInTheDocument();
   });
 
   it('matched-member event invoice still links (buyerHasMemberLink=true)', () => {
