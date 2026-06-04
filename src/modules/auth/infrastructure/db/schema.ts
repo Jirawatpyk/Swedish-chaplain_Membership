@@ -311,6 +311,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     in lockstep with `F4_AUDIT_RETENTION_YEARS` (invoicing audit port) —
   //     the F4 enum↔retention parity test enforces it. ---
   'registration_cross_tenant_probe',
+  // --- 054-event-fee-invoices (Task 15, migration 0204) — F4 event-fee
+  //     buyer PII erasure record. Emitted by the
+  //     `/api/cron/invoicing/redact-expired-event-buyers` retention
+  //     sweeper after tombstoning a non-member event invoice's
+  //     `member_identity_snapshot` (issued >10y ago). 10y retention
+  //     (the underlying §86/4 tax document's forensic window covers the
+  //     erasure event too). Payload carries field NAMES only — never the
+  //     erased PII values. Keep in lockstep with `F4_AUDIT_RETENTION_YEARS`
+  //     (invoicing audit port) — the F4 enum↔retention parity test
+  //     enforces it. ---
+  'event_buyer_pii_redacted',
 ]);
 
 /**

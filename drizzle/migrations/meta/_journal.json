@@ -1429,6 +1429,20 @@
 			"when": 1798533200000,
 			"tag": "0203_event_invoice_non_draft_snapshots_relax",
 			"breakpoints": true
+		},
+		{
+			"idx": 204,
+			"version": "7",
+			"when": 1798533300000,
+			"tag": "0204_event_buyer_pii_redacted_audit",
+			"breakpoints": true
+		},
+		{
+			"idx": 205,
+			"version": "7",
+			"when": 1798533400000,
+			"tag": "0205_invoices_immutability_pii_redaction_exemption",
+			"breakpoints": true
 		}
 	]
 }

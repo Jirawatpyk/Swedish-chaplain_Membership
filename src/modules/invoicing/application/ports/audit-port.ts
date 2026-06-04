@@ -101,7 +101,25 @@ export type F4AuditEventType =
    * invoice/receipt rows already carry their own 10y events.
    * Payload: `from`, `to`, `row_count`, `actor_user_id`, `route`.
    */
-  | 'invoices_csv_exported';
+  | 'invoices_csv_exported'
+  /**
+   * 054-event-fee-invoices (Task 15) — emitted by the
+   * `/api/cron/invoicing/redact-expired-event-buyers` retention sweeper
+   * once a non-member EVENT-fee invoice issued >10 years ago has its
+   * buyer PII tombstoned in `member_identity_snapshot` (Thai RD §87/3 +
+   * §86/10 statutory retention satisfied → GDPR Art. 5(1)(e) /
+   * Art. 17 minimisation requires erasure). NON-timeline (the row has
+   * `member_id IS NULL` — there is no member to surface on the F3
+   * timeline). The payload carries `invoice_id`, `redacted_at`, and the
+   * list of `redacted_fields` (field NAMES only, NEVER the PII values)
+   * so a future RD/forensic SELECT can prove WHICH columns were erased
+   * WHEN, without re-introducing the erased PII into the audit trail.
+   * 10-year retention so the §87/3 forensic window still covers the
+   * erasure record itself (the financial/numbering fields on the
+   * invoice row are PRESERVED untouched — only the buyer identity is
+   * tombstoned).
+   */
+  | 'event_buyer_pii_redacted';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -154,6 +172,11 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   // Phase 3 — derivative export, not a §86/§87 tax document; 5y
   // operational retention per Constitution VIII.
   invoices_csv_exported: 5,
+  // 054-event-fee-invoices (Task 15) — erasure record for a non-member
+  // event-invoice buyer's PII. The underlying invoice is a §86/4 tax
+  // document, so the erasure event itself keeps the 10y forensic window
+  // (the RD must be able to see WHICH columns were minimised WHEN).
+  event_buyer_pii_redacted: 10,
 };
 
 /** Single-source helper — call at every F4 emit site. */
