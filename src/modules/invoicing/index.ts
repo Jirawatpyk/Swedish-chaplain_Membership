@@ -13,10 +13,12 @@ export {
   parseInvoiceId,
   isTerminal,
   canTransition,
+  enforceOneSubjectLine,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
   type InvoiceIdError,
+  type InvoiceTransitionError,
 } from './domain/invoice';
 export {
   INVOICE_LINE_KINDS,

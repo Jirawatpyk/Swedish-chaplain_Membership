@@ -9,7 +9,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { Money } from './value-objects/money';
 import { Money as MoneyClass } from './value-objects/money';
 
-export const INVOICE_LINE_KINDS = ['membership_fee', 'registration_fee'] as const;
+export const INVOICE_LINE_KINDS = ['membership_fee', 'registration_fee', 'event_fee'] as const;
 export type InvoiceLineKind = (typeof INVOICE_LINE_KINDS)[number];
 
 declare const InvoiceLineIdBrand: unique symbol;

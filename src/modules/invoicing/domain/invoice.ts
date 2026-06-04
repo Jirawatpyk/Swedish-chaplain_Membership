@@ -194,21 +194,52 @@ export type InvoiceTransitionError =
   | { code: 'terminal_state'; status: InvoiceStatus }
   | { code: 'missing_snapshot'; field: string }
   | { code: 'no_membership_line' }
-  | { code: 'multiple_membership_lines'; count: number };
+  | { code: 'multiple_membership_lines'; count: number }
+  | { code: 'no_event_fee_line' }
+  | { code: 'multiple_event_fee_lines'; count: number };
 
 export function isTerminal(status: InvoiceStatus): boolean {
   return status === 'void' || status === 'credited';
 }
 
 /**
- * Draft invariant: exactly one `membership_fee` line required before
- * issue. Enforced at Application layer on transition to `issued`.
+ * Draft invariant: exactly one subject-defining line required before
+ * issue — `membership_fee` for a `'membership'` invoice, `event_fee`
+ * for an `'event'` invoice. Enforced at Application layer on transition
+ * to `issued`.
+ *
+ * The `'membership'` branch returns the IDENTICAL Result + error codes
+ * as the legacy `enforceOneMembershipLine` (which now delegates here),
+ * so wiring a caller from the old function to this one is
+ * behaviour-preserving. The `'event'` branch mirrors the same shape for
+ * `event_fee` lines.
  */
-export function enforceOneMembershipLine(lines: readonly InvoiceLine[]): Result<void, InvoiceTransitionError> {
+export function enforceOneSubjectLine(
+  subject: 'membership' | 'event',
+  lines: readonly InvoiceLine[],
+): Result<void, InvoiceTransitionError> {
+  if (subject === 'event') {
+    const count = lines.filter((l) => l.kind === 'event_fee').length;
+    if (count === 0) return err({ code: 'no_event_fee_line' });
+    if (count > 1) return err({ code: 'multiple_event_fee_lines', count });
+    return ok(undefined);
+  }
   const count = lines.filter((l) => l.kind === 'membership_fee').length;
   if (count === 0) return err({ code: 'no_membership_line' });
   if (count > 1) return err({ code: 'multiple_membership_lines', count });
   return ok(undefined);
+}
+
+/**
+ * Draft invariant: exactly one `membership_fee` line required before
+ * issue. Enforced at Application layer on transition to `issued`.
+ *
+ * Thin delegate to `enforceOneSubjectLine('membership', lines)` — kept
+ * as a named export so existing callers (`issue-invoice.ts`) compile
+ * unchanged until they migrate to the subject-aware function (Task 7).
+ */
+export function enforceOneMembershipLine(lines: readonly InvoiceLine[]): Result<void, InvoiceTransitionError> {
+  return enforceOneSubjectLine('membership', lines);
 }
 
 /**
