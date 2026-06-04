@@ -2,7 +2,7 @@
 
 **Status**: REVIEW-READY — chamber DPO action required pre-flag-flip
 **Owner**: Chamber DPO + legal counsel
-**Last reviewed**: 2026-05-16 (staff-review R3 — Path A CSV-direct + Art. 13(2)(d)/(f) additions per H-6 + M-NEW-2/3)
+**Last reviewed**: 2026-06-04 (event-fee secondary-use clause added to EN+TH+SV — an attendee's data may be used to issue a tax invoice / receipt for their event-ticket fee, retained 10y per Thai RD §87/3; branch `054-event-fee-invoices`). Prior: 2026-05-16 (staff-review R3 — Path A CSV-direct + Art. 13(2)(d)/(f) additions per H-6 + M-NEW-2/3)
 
 ## Purpose
 
@@ -52,6 +52,13 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 >   and benefit accounting.
 > - **Audit trail**: A record of your registration is retained for
 >   compliance with the Chamber's governance obligations.
+> - **Tax document / receipt** (where you pay an event fee): if the
+>   event has a ticket fee, your name, company affiliation, billing
+>   address, and (where you supply one) tax identification number may
+>   be used to issue you a Thai tax invoice or official receipt for that
+>   fee, as required by the Thai Revenue Code. Such tax documents are
+>   retained for **ten (10) years** to satisfy that statutory tax
+>   obligation, after which the identifying details on them are erased.
 >
 > **Data retention**:
 >
@@ -153,6 +160,13 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 >   คำนวณสิทธิประโยชน์
 > - **บันทึกการตรวจสอบ**: บันทึกการลงทะเบียนของท่านจะถูกเก็บไว้
 >   ตามภาระผูกพันด้านธรรมาภิบาลของหอการค้า
+> - **เอกสารภาษี / ใบเสร็จรับเงิน** (กรณีท่านชำระค่าเข้าร่วมงาน): หาก
+>   งานมีค่าบัตรเข้าร่วม ชื่อ-นามสกุล บริษัทต้นสังกัด ที่อยู่สำหรับ
+>   ออกเอกสาร และเลขประจำตัวผู้เสียภาษี (หากท่านแจ้ง) ของท่านอาจถูก
+>   นำไปใช้เพื่อออกใบกำกับภาษีหรือใบเสร็จรับเงินสำหรับค่าใช้จ่ายนั้น
+>   ตามที่ประมวลรัษฎากรของไทยกำหนด เอกสารภาษีดังกล่าวจะถูกเก็บรักษา
+>   ไว้เป็นเวลา **สิบ (10) ปี** เพื่อปฏิบัติตามภาระหน้าที่ทางภาษีตาม
+>   กฎหมาย หลังจากนั้นข้อมูลที่ระบุตัวตนบนเอกสารจะถูกลบทิ้ง
 >
 > **ระยะเวลาเก็บข้อมูล**:
 >
@@ -257,6 +271,15 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 >   förmånsadministration.
 > - **Granskningsspår**: En registrering av din anmälan bevaras i
 >   enlighet med Handelskammarens styrningsskyldigheter.
+> - **Skattedokument / kvitto** (om du betalar en evenemangsavgift): om
+>   evenemanget har en biljettavgift kan ditt namn, din
+>   företagstillhörighet, din faktureringsadress och (om du uppger ett)
+>   skatteregistreringsnummer användas för att utfärda en thailändsk
+>   skattefaktura eller ett officiellt kvitto för den avgiften, i
+>   enlighet med den thailändska skattelagen (Revenue Code). Sådana
+>   skattedokument bevaras i **tio (10) år** för att uppfylla denna
+>   lagstadgade skatteskyldighet, varefter de identifierande
+>   uppgifterna på dem raderas.
 >
 > **Lagringstid**:
 >
@@ -351,6 +374,7 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 |---|---|---|
 | 2026-05-12 | (pending) Chamber DPO | Initial review |
 | (pending) | Chamber legal counsel | EN + TH + SV wording sign-off |
+| 2026-06-04 | (pending) Chamber DPO | Re-review needed: event-fee tax-document/receipt secondary-use clause added to all three locales (10y retention per Thai RD §87/3) |
 
 ## Phase 5 wiring plan
 
