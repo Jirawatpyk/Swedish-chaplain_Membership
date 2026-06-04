@@ -199,10 +199,17 @@ export async function issueInvoice(
     if (!draft) return err({ code: 'invoice_not_found' });
 
     // B. Member lock (FR-037 archive-race)
+    // 054-event-fee-invoices — issue-invoice is a MEMBERSHIP-only path today;
+    // the `invoices_subject_fields_ck` DB CHECK guarantees member_id IS NOT
+    // NULL for `invoice_subject='membership'`. Event-fee issuing is a future
+    // task with its own buyer-resolution flow. Narrow here (mirrors the
+    // `loaded.total!` idiom used elsewhere in this module).
+    const memberId = draft.memberId;
+    if (memberId === null) return err({ code: 'member_not_found' });
     const member = await deps.memberIdentity.getForIssue(
       tx,
       input.tenantId,
-      draft.memberId,
+      memberId,
       { forUpdate: true },
     );
     if (!member) return err({ code: 'member_not_found' });
@@ -361,7 +368,7 @@ export async function issueInvoice(
       summary: `Invoice ${docNum.value.raw} issued`,
       payload: {
         invoice_id: invoiceId,
-        member_id: draft.memberId,
+        member_id: memberId,
         fiscal_year: fy,
         sequence_number: seq,
         document_number: docNum.value.raw,

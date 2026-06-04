@@ -215,6 +215,12 @@ export async function issueCreditNote(
       ) {
         return err({ code: 'no_snapshot_on_invoice' });
       }
+      // 054-event-fee-invoices — credit-note issuance is MEMBERSHIP-only
+      // today. `invoices_subject_fields_ck` guarantees member_id for
+      // `invoice_subject='membership'`; treat null (an event invoice that
+      // should never reach this path) as a missing snapshot.
+      const memberId = loaded.memberId;
+      if (memberId === null) return err({ code: 'no_snapshot_on_invoice' });
 
       if (!settings) return err({ code: 'settings_missing' });
 
@@ -554,7 +560,7 @@ export async function issueCreditNote(
           original_invoice_id: invoiceId,
           // US7 — surfaces in the F3 member timeline (filter is on
           // `payload->>'member_id'`).
-          member_id: loaded.memberId,
+          member_id: memberId,
           credit_amount_satang: creditAmount.satang.toString(),
           vat_satang: vat.satang.toString(),
           total_satang: total.satang.toString(),

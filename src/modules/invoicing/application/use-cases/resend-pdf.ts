@@ -238,6 +238,12 @@ async function resendInvoiceOrReceipt(
   // on the timeline alongside invoice_paid).
   const recipientHash = hashRecipientEmail(recipientEmail);
   if (outboxEventType === 'invoice_pdf_resent') {
+    // 054-event-fee-invoices — `invoice_pdf_resent` is a member-timeline
+    // event requiring a non-null member_id. Membership invoices always
+    // carry one (`invoices_subject_fields_ck`). Resend is MEMBERSHIP-only
+    // today; coalesce null defensively so the type narrows (an event-fee
+    // invoice resend would need its own audit shape in a future task).
+    const memberId = invoice.memberId ?? '';
     await deps.audit.emit(null, {
       tenantId: input.tenantId,
       requestId: input.actor.requestId,
@@ -250,7 +256,7 @@ async function resendInvoiceOrReceipt(
       summary: `Invoice ${documentNumber} PDF resent (recipient hashed in payload)`,
       payload: {
         invoice_id: input.invoiceId,
-        member_id: invoice.memberId,
+        member_id: memberId,
         document_number: documentNumber,
         recipient_email_sha256: recipientHash,
         actor_role: input.actor.role,

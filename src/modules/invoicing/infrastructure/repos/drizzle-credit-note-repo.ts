@@ -213,6 +213,16 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           'drizzle-credit-note-repo: insertCreditNote — original invoice not found for JOIN',
         );
       }
+      // 054-event-fee-invoices — credit notes are issued only against
+      // MEMBERSHIP invoices today, which always carry a member_id
+      // (`invoices_subject_fields_ck`). A null here means the caller
+      // somehow credited an event-fee invoice — a contract violation the
+      // use-case (issue-credit-note) guards upstream; throw defensively.
+      if (joinRow.memberId === null) {
+        throw new Error(
+          'drizzle-credit-note-repo: insertCreditNote — original invoice has no member_id (event-fee invoice not creditable via this path)',
+        );
+      }
       return rowToCreditNote(inserted as CreditNoteRow, joinRow.memberId);
     },
 

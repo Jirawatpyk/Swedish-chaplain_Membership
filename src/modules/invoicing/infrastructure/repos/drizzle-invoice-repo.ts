@@ -136,9 +136,14 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
   return {
     tenantId: row.tenantId,
     invoiceId: asInvoiceId(row.invoiceId),
-    memberId: row.memberId,
-    planId: row.planId,
-    planYear: row.planYear,
+    memberId: row.memberId ?? null,
+    planId: row.planId ?? null,
+    planYear: row.planYear ?? null,
+    // 054-event-fee-invoices — subject discriminator + event linkage.
+    invoiceSubject: row.invoiceSubject,
+    vatInclusive: row.vatInclusive,
+    eventId: row.eventId ?? null,
+    eventRegistrationId: row.eventRegistrationId ?? null,
     status: row.status as InvoiceStatus,
     draftByUserId: row.draftByUserId,
 
@@ -274,6 +279,11 @@ export function makeDrizzleInvoiceRepo(
           memberId: input.memberId,
           planId: input.planId,
           planYear: input.planYear,
+          // 054-event-fee-invoices — subject discriminator + event linkage.
+          invoiceSubject: input.invoiceSubject,
+          eventId: input.eventId,
+          eventRegistrationId: input.eventRegistrationId,
+          vatInclusive: input.vatInclusive,
           status: 'draft',
           draftByUserId: input.draftByUserId,
           autoEmailOnIssue: input.autoEmailOnIssue,

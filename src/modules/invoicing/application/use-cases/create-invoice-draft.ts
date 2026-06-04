@@ -226,6 +226,12 @@ export async function createInvoiceDraft(
       memberId: input.memberId,
       planId: input.planId,
       planYear: input.planYear,
+      // 054-event-fee-invoices — this is the classic membership invoice
+      // path: subject='membership', no event linkage, VAT-EXCLUSIVE.
+      invoiceSubject: 'membership',
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
       draftByUserId: input.actorUserId,
       autoEmailOnIssue: input.autoEmailOnIssue ?? null,
       lines,

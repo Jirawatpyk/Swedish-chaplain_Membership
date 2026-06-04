@@ -11,15 +11,28 @@ export interface InvoiceRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
   withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
 
-  /** Insert a new DRAFT invoice + its lines. Returns the persisted row. */
+  /**
+   * Insert a new DRAFT invoice + its lines. Returns the persisted row.
+   *
+   * 054-event-fee-invoices — `memberId`/`planId`/`planYear` are nullable
+   * (membership invoices set them; event invoices pass null) and the
+   * subject discriminator + event linkage + VAT-inclusive flag are
+   * required. The `invoices_subject_fields_ck` DB CHECK rejects an
+   * identity-incoherent combination (e.g. subject='event' with no
+   * event_registration_id), so callers MUST pass a consistent shape.
+   */
   insertDraft(
     tx: unknown,
     input: {
       readonly tenantId: string;
       readonly invoiceId: InvoiceId;
-      readonly memberId: string;
-      readonly planId: string;
-      readonly planYear: number;
+      readonly memberId: string | null;
+      readonly planId: string | null;
+      readonly planYear: number | null;
+      readonly invoiceSubject: 'membership' | 'event';
+      readonly eventId: string | null;
+      readonly eventRegistrationId: string | null;
+      readonly vatInclusive: boolean;
       readonly draftByUserId: string;
       readonly autoEmailOnIssue: boolean | null;
       readonly lines: readonly InvoiceLine[];

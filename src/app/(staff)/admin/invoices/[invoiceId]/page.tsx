@@ -178,19 +178,27 @@ export default async function InvoiceDetailPage({
   const foundPlan = plansResult.ok
     ? plansResult.value.data.find((p) => p.plan_id === invoice.planId)
     : undefined;
-  const planDisplayName = foundPlan
+  // 054-event-fee-invoices — plan_id is non-null on membership invoices
+  // (`invoices_subject_fields_ck`); coalesce to '—' so the display string
+  // narrows for event-fee invoices (no plan) reaching this membership view.
+  const planDisplayName: string = foundPlan
     ? (typeof foundPlan.plan_name === 'object' && foundPlan.plan_name !== null
-        ? ((foundPlan.plan_name as { en?: string }).en ?? invoice.planId)
-        : String(foundPlan.plan_name ?? invoice.planId))
-    : invoice.planId;
+        ? ((foundPlan.plan_name as { en?: string }).en ?? invoice.planId ?? '—')
+        : String(foundPlan.plan_name ?? invoice.planId ?? '—'))
+    : (invoice.planId ?? '—');
 
   // Prefer the frozen snapshot on issued/paid/void invoices (FR-038);
   // fall back to a live member lookup only for drafts (which have no
   // snapshot yet). getMember emits `member_cross_tenant_probe` on 404
   // with the signed-in admin's user id as actor.
   const snapshotName = (invoice.memberIdentitySnapshot as { legal_name?: string } | null)?.legal_name;
-  let memberDisplayName = snapshotName ?? invoice.memberId;
-  if (!snapshotName) {
+  // 054-event-fee-invoices — this detail page is the MEMBERSHIP invoice
+  // view; member_id is non-null for membership invoices
+  // (`invoices_subject_fields_ck`). Coalesce defensively so the type
+  // narrows (an event-fee invoice gets its own detail surface in a future
+  // task and never reaches this branch with a null member_id in practice).
+  let memberDisplayName = snapshotName ?? invoice.memberId ?? '—';
+  if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
       { actorUserId: currentUser.id, requestId },
@@ -381,7 +389,9 @@ export default async function InvoiceDetailPage({
                   summary={{
                     memberName: memberDisplayName,
                     planDisplayName,
-                    planYear: invoice.planYear,
+                    // 054-event-fee-invoices — membership invoices always carry
+                    // plan_year (`invoices_subject_fields_ck`); coalesce for type.
+                    planYear: invoice.planYear ?? 0,
                     subtotalText: formatSatang(displaySubtotalSatang),
                     vatText: formatSatang(displayVatSatang),
                     vatPercent: displayVatPercent ?? '',

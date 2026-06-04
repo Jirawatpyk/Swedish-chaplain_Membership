@@ -97,6 +97,16 @@ export async function getInvoiceForPayment(
     return err({ code: 'not_payable', status: invoice.status });
   }
 
+  // 054-event-fee-invoices — the F5 → F4 payment bridge binds a payment
+  // to a member for RLS, so it requires a non-null member_id. Membership
+  // invoices always carry one (`invoices_subject_fields_ck`). Event-fee
+  // invoices (member_id NULL) are not yet payable online — they need a
+  // dedicated F5 buyer-binding path (future task), so surface them as
+  // `not_payable` rather than corrupting the RLS binding.
+  if (invoice.memberId === null) {
+    return err({ code: 'not_payable', status: invoice.status });
+  }
+
   return ok({
     id: invoice.invoiceId,
     status: invoice.status,

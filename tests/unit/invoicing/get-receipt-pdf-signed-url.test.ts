@@ -230,7 +230,9 @@ describe('getReceiptPdfSignedUrl — happy paths', () => {
       tenantId: 't',
       actorUserId: 'u-member',
       actorRole: 'member',
-      actorMemberId: invoice.memberId,
+      // 054-event-fee-invoices — fixture is a membership invoice with a
+      // known non-null memberId; assert for the optional `string` input.
+      actorMemberId: invoice.memberId as string,
       invoiceId: 'i',
     });
 
@@ -375,7 +377,9 @@ describe('getReceiptPdfSignedUrl — async + failed states', () => {
       tenantId: 't',
       actorUserId: 'u-member',
       actorRole: 'member',
-      actorMemberId: invoice.memberId,
+      // 054-event-fee-invoices — fixture is a membership invoice with a
+      // known non-null memberId; assert for the optional `string` input.
+      actorMemberId: invoice.memberId as string,
       invoiceId: 'i',
     });
 

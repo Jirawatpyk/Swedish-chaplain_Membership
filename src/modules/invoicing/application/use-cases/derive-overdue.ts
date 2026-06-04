@@ -97,6 +97,11 @@ export async function maybeEmitOverdueDetected(
   actor: { readonly userId: string; readonly requestId: string | null },
 ): Promise<boolean> {
   if (!computeIsOverdue(invoice, nowUtcIso)) return false;
+  // 054-event-fee-invoices — the overdue-detected audit event is a member-
+  // timeline surface keyed on a non-null member_id. Membership invoices
+  // always carry one (`invoices_subject_fields_ck`); an event-fee invoice
+  // (member_id NULL) is not a member-timeline subject, so skip the emit.
+  if (invoice.memberId === null) return false;
   return audit.emitOverdueOnce({
     tenantId: invoice.tenantId,
     requestId: actor.requestId,

@@ -24,6 +24,8 @@ import {
   jsonb,
   pgEnum,
   primaryKey,
+  check,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 export const invoiceStatusEnum = pgEnum('invoice_status', [
@@ -34,6 +36,14 @@ export const invoiceStatusEnum = pgEnum('invoice_status', [
   'credited',
   'partially_credited',
 ]);
+
+// 054-event-fee-invoices — discriminator distinguishing the F4 membership
+// invoice (member_id/plan_id/plan_year identity) from the new event-fee
+// invoice (event_id/event_registration_id identity). Default 'membership'
+// backfills every pre-existing row at migration time; the
+// `invoices_subject_fields_ck` CHECK then guarantees each subject carries
+// its required identity columns. See migration 0201 § invoice_subject.
+export const invoiceSubjectEnum = pgEnum('invoice_subject', ['membership', 'event']);
 
 // T166 — async receipt PDF state machine. Migration 0056.
 export const receiptPdfStatusEnum = pgEnum('receipt_pdf_status_t', [
@@ -47,9 +57,26 @@ export const invoices = pgTable(
   {
     tenantId: text('tenant_id').notNull(),
     invoiceId: uuid('invoice_id').notNull().defaultRandom(),
-    memberId: uuid('member_id').notNull(),
-    planYear: smallint('plan_year').notNull(),
-    planId: text('plan_id').notNull(),
+    // 054-event-fee-invoices — member/plan identity is now NULLABLE: it is
+    // populated for `invoice_subject='membership'` rows and NULL for
+    // `invoice_subject='event'` rows. The `invoices_subject_fields_ck`
+    // CHECK enforces presence-per-subject. The immutability trigger still
+    // locks these three columns once status != 'draft' (NULL stays NULL
+    // for event invoices across the lifecycle → no false trip).
+    memberId: uuid('member_id'),
+    planYear: smallint('plan_year'),
+    planId: text('plan_id'),
+
+    // 054-event-fee-invoices — invoice subject discriminator + event linkage.
+    // `invoiceSubject` defaults to 'membership' so existing rows backfill
+    // cleanly; new event invoices set 'event' + the two event_* columns.
+    invoiceSubject: invoiceSubjectEnum('invoice_subject').notNull().default('membership'),
+    eventId: uuid('event_id'),
+    eventRegistrationId: uuid('event_registration_id'),
+    // VAT treatment: membership invoices are VAT-EXCLUSIVE (false); event
+    // invoices may price VAT-inclusive (true) when the ticket price already
+    // includes the 7% component. Defaults false to keep F4 behaviour intact.
+    vatInclusive: boolean('vat_inclusive').notNull().default(false),
 
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
@@ -129,6 +156,46 @@ export const invoices = pgTable(
   },
   (table) => [
     primaryKey({ name: 'invoices_pkey', columns: [table.tenantId, table.invoiceId] }),
+    // 054-event-fee-invoices — subject-discriminated identity invariant.
+    // A membership invoice MUST carry member_id + plan_id + plan_year; an
+    // event invoice MUST carry event_id + event_registration_id. Defence-
+    // in-depth on top of the Application-layer use-case validation so a
+    // direct/regressed write can never persist an identity-less row.
+    check(
+      'invoices_subject_fields_ck',
+      sql`(
+        (invoice_subject = 'membership' AND member_id IS NOT NULL AND plan_id IS NOT NULL AND plan_year IS NOT NULL)
+        OR
+        (invoice_subject = 'event' AND event_registration_id IS NOT NULL AND event_id IS NOT NULL)
+      )`,
+    ),
+    // 054-event-fee-invoices — one non-void event invoice per registration.
+    // Predicate uses `status <> 'void'` because the void status value is
+    // literally 'void' in `invoiceStatusEnum` (there is NO 'voided' value).
+    // A voided event invoice frees the registration so a corrected invoice
+    // can be re-issued. Membership invoices have NULL event_registration_id
+    // so the partial WHERE never indexes them.
+    uniqueIndex('invoices_event_registration_uniq')
+      .on(table.tenantId, table.eventRegistrationId)
+      .where(sql`invoice_subject = 'event' AND status <> 'void'`),
+    // FK DECISION (054-event-fee-invoices, Task 3+4):
+    //   `(tenant_id, event_registration_id)` → `event_registrations
+    //   (tenant_id, registration_id) ON DELETE RESTRICT` — a tenant-aware
+    //   COMPOSITE FK (the F6 PK is exactly `(tenant_id, registration_id)`,
+    //   so the composite cannot reference a cross-tenant registration:
+    //   defence-in-depth on top of RLS). The constraint is HAND-AUTHORED
+    //   in the migration SQL (idempotent DO-block, mirroring 0125) rather
+    //   than declared here as a `foreignKey()` builder, because:
+    //     (1) the F6 `event_registrations` table lives in the events
+    //         bounded context and is NOT in `drizzle.config.ts`'s schema
+    //         list — drizzle-kit cannot introspect it, so a builder-level
+    //         FK would either be dropped from generation or force an
+    //         Infrastructure cross-context import (Principle III smell);
+    //     (2) the project already hand-authors all cross-module / RLS /
+    //         CHECK DDL the same way (see drizzle.config.ts F9 note + 0125).
+    //   The cross-tenant integration test (Task 5) + RLS remain the
+    //   primary isolation guarantees; this FK is referential-integrity
+    //   defence-in-depth.
   ],
 );
 

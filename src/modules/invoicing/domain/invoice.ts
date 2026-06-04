@@ -81,9 +81,33 @@ export function parseInvoiceId(
 export interface Invoice {
   readonly tenantId: string;
   readonly invoiceId: InvoiceId;
-  readonly memberId: string;
-  readonly planId: string;
-  readonly planYear: number;
+  /**
+   * 054-event-fee-invoices — member/plan identity is populated for
+   * `invoiceSubject === 'membership'` and NULL for `'event'` invoices.
+   * The `invoices_subject_fields_ck` DB CHECK guarantees presence per
+   * subject; callers MUST narrow on `invoiceSubject` before relying on
+   * these being non-null.
+   */
+  readonly memberId: string | null;
+  readonly planId: string | null;
+  readonly planYear: number | null;
+
+  /**
+   * 054-event-fee-invoices — subject discriminator. `'membership'` is the
+   * classic F4 plan-fee invoice; `'event'` is the event-fee invoice keyed
+   * to an F6 `event_registrations` row.
+   */
+  readonly invoiceSubject: 'membership' | 'event';
+  /**
+   * VAT treatment. Membership invoices are VAT-EXCLUSIVE (`false`); event
+   * invoices may be VAT-INCLUSIVE (`true`) when the ticket price already
+   * embeds the 7% component.
+   */
+  readonly vatInclusive: boolean;
+  /** F6 event id — non-null iff `invoiceSubject === 'event'`. */
+  readonly eventId: string | null;
+  /** F6 event_registrations id — non-null iff `invoiceSubject === 'event'`. */
+  readonly eventRegistrationId: string | null;
 
   readonly status: InvoiceStatus;
   readonly draftByUserId: string;
@@ -110,6 +134,13 @@ export interface Invoice {
   readonly netDays: number | null;
 
   readonly tenantIdentitySnapshot: TenantIdentitySnapshot | null;
+  /**
+   * BUYER identity snapshot, frozen at issue time. For
+   * `invoiceSubject === 'membership'` this is the member; for `'event'`
+   * it is the registrant/attendee billed for the ticket. The shape is
+   * identical (legal name / tax id / address) so the type is unchanged —
+   * only the semantic source differs by subject.
+   */
   readonly memberIdentitySnapshot: MemberIdentitySnapshot | null;
 
   // Payment (null unless paid)

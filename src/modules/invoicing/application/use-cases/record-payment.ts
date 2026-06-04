@@ -261,6 +261,17 @@ export async function recordPayment(
     ) {
       return err({ code: 'no_snapshot_on_invoice' });
     }
+    // 054-event-fee-invoices — record-payment is MEMBERSHIP-only today.
+    // `invoices_subject_fields_ck` guarantees member_id IS NOT NULL for
+    // `invoice_subject='membership'`; an issued membership invoice always
+    // carries it. Bind a narrowed local for the audit payload + member
+    // timeline + registration-fee flip below. (Treat a null as the same
+    // class as a missing snapshot — an event invoice should never reach
+    // this MEMBERSHIP path.)
+    const memberId = loaded.memberId;
+    if (memberId === null) {
+      return err({ code: 'no_snapshot_on_invoice' });
+    }
 
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a
@@ -473,7 +484,7 @@ export async function recordPayment(
         // US7 — surfaces this event in the F3 member timeline, which
         // queries `payload->>'member_id'`. Required for the timeline
         // contract even though invoices.member_id is derivable.
-        member_id: loaded.memberId,
+        member_id: memberId,
         payment_method: input.paymentMethod,
         payment_reference_sha256: paymentReferenceSha256,
         payment_date: input.paymentDate,
@@ -576,7 +587,7 @@ export async function recordPayment(
       await deps.memberIdentity.markRegistrationFeePaid(
         tx,
         input.tenantId,
-        loaded.memberId,
+        memberId,
       );
     }
 
@@ -615,7 +626,7 @@ export async function recordPayment(
       const evt: F4InvoicePaidEvent = {
         tenantId: input.tenantId,
         invoiceId,
-        memberId: loaded.memberId,
+        memberId,
         paidAt: updated.paidAt ?? deps.clock.nowIso(),
         // F5R3 H-5 (2026-05-16) — brand at Money escape into the
         // F4InvoicePaidEvent payload broadcast to F8 onPaid callbacks.

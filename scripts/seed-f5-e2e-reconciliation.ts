@@ -115,7 +115,7 @@ const TARGETS: readonly SeedTarget[] = [
 async function findInvoiceByDocNumber(
   ctx: TenantContext,
   docNumber: string,
-): Promise<{ invoiceId: string; memberId: string; totalSatang: bigint; paidAt: Date | null } | null> {
+): Promise<{ invoiceId: string; memberId: string | null; totalSatang: bigint; paidAt: Date | null } | null> {
   return runInTenant(ctx, async (tx) => {
     const rows = await tx
       .select({
@@ -172,6 +172,15 @@ async function upsertSucceededPayment(
   if (!invoice) {
     throw new Error(
       `seed-f5-e2e-reconciliation: invoice ${target.invoiceDocNumber} not found. Run seed-e2e-portal-invoices first.`,
+    );
+  }
+  // 054-event-fee-invoices — this E2E fixture seeds payments against
+  // MEMBERSHIP invoices, which always carry a member_id
+  // (`invoices_subject_fields_ck`). Guard so the NewPaymentRow.memberId
+  // (NOT NULL) assignment type-checks.
+  if (invoice.memberId === null) {
+    throw new Error(
+      `seed-f5-e2e-reconciliation: invoice ${target.invoiceDocNumber} has no member_id (event-fee invoice cannot seed a membership payment fixture).`,
     );
   }
 

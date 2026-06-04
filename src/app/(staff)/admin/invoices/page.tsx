@@ -274,10 +274,15 @@ export default async function AdminInvoicesPage({
         invoiceId: r.invoiceId,
         documentNumber: r.documentNumber?.raw ?? '—',
         status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
-        memberId: r.memberId,
+        // 054-event-fee-invoices — the table row's `memberId` is the F3
+        // member link target; membership invoices always carry one
+        // (`invoices_subject_fields_ck`). Coalesce for the type (an
+        // event-fee invoice gets event-aware row rendering in a future
+        // task; until then it would render with an empty member link).
+        memberId: r.memberId ?? '',
         memberName:
           r.memberIdentitySnapshot?.legal_name ??
-          memberNameById.get(r.memberId) ??
+          (r.memberId !== null ? memberNameById.get(r.memberId) : undefined) ??
           '—',
         issueDate: r.issueDate,
         dueDate: r.dueDate,
