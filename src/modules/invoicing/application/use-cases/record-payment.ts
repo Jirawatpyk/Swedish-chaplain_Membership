@@ -277,7 +277,23 @@ export async function recordPayment(
     // kind differs based on tenant setting; combined mode renders a
     // single "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; separate mode
     // allocates its own receipt sequence number.
-    const combinedMode = settings.receiptNumberingMode === 'combined';
+    //
+    // 054-event-fee-invoices (Task 9, Action E) — §86/4 doc-type consistency:
+    // a `receipt_combined` carries the "ใบกำกับภาษี" (tax-invoice) label, which
+    // a buyer with NO 13-digit TIN must NEVER receive (the ship-blocker this
+    // task closes). When the issue-time buyer snapshot lacks a TIN we FORCE the
+    // plain `receipt_separate` (ใบเสร็จรับเงิน) + a separate receipt number,
+    // overriding the tenant's `receiptNumberingMode='combined'` setting. This is
+    // defence-in-depth: record-payment is MEMBERSHIP-only in v1 and the
+    // issue-invoice gate guarantees every membership buyer has a TIN, so this
+    // override is a no-op today — but it future-proofs the path the moment a
+    // matched-member EVENT invoice (which CAN be issued TIN-less as a receipt)
+    // is allowed through record-payment. (TIN check trims whitespace, matching
+    // the issue-invoice gate.)
+    const buyerHasTin =
+      (loaded.memberIdentitySnapshot.tax_id ?? '').trim() !== '';
+    const combinedMode =
+      settings.receiptNumberingMode === 'combined' && buyerHasTin;
     let receiptDocNumRaw: string | null = null;
     let receiptDocNum: DocumentNumber | null = null;
     if (!combinedMode) {

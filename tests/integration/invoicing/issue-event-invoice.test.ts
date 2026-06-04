@@ -19,11 +19,13 @@
  *      total === 10004 (NOT 10005), subtotal + vat === total, vat = total −
  *      subtotal per `splitVatInclusive`. 100.04 is a known mismatch case under a
  *      naive store-subtotal-then-recompute-VAT path.
- *   4. Doc-type drivers: the persisted BUYER snapshot `tax_id` is present for a
- *      non-member who supplied a 13-digit TIN (→ §86/4 tax invoice downstream)
- *      and NULL for a non-member without one (→ receipt downstream). The matched
- *      member carries their own tax_id. (The rendered title switch is Task 9's
- *      golden-render scope; issue always emits `kind:'invoice'`.)
+ *   4. Doc-type drivers (054 Task 9): the PDF render `kind` is chosen at issue
+ *      from invoiceSubject + buyer TIN — a non-member who supplied a 13-digit
+ *      TIN renders `kind:'invoice'` (§86/4 full tax invoice) while a non-member
+ *      without one renders `kind:'receipt_separate'` (§105 receipt, NO block).
+ *      The persisted BUYER snapshot `tax_id` mirrors this (present vs NULL). The
+ *      matched member carries their own tax_id. (The rendered title switch is
+ *      Task 9's golden-render scope — see event-invoice-pdf-golden.test.ts.)
  *   5. Audit branch: the non-member issue (memberId NULL) emits `invoice_issued`
  *      via the NON-timeline branch — persisted payload has NO `member_id` key but
  *      carries `event_registration_id`; the matched member emits via the timeline
@@ -56,6 +58,7 @@ import {
   issueInvoice,
   type IssueInvoiceDeps,
 } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
@@ -100,8 +103,13 @@ const BUYER_NO_TIN = {
   primary_contact_email: 'walkin@example.com',
 } as const;
 
-/** Mocked PDF/Blob deps mirroring the membership vat-source-chain pin. */
-function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
+/** Mocked PDF/Blob deps mirroring the membership vat-source-chain pin. The
+ *  optional `captured` array records every render input so a test can assert
+ *  the §86/4 doc-type `kind` chosen at issue (Task 9). */
+function makeIssueDepsWithMocks(
+  tenantSlug: string,
+  captured?: PdfRenderInput[],
+): IssueInvoiceDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
@@ -110,10 +118,13 @@ function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
     memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
-      render: vi.fn(async () => ({
-        bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
-        sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
-      })),
+      render: vi.fn(async (renderInput: PdfRenderInput) => {
+        captured?.push(renderInput);
+        return {
+          bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+          sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
+        };
+      }),
     },
     blob: {
       uploadPdf: vi.fn(async ({ key }: { key: string }) => ({
@@ -305,7 +316,8 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     const invoiceId = draft.value.invoiceId;
 
     const issueReqId = `int-evt-issue-withtin-${invoiceId}`;
-    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+    const captured: PdfRenderInput[] = [];
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug, captured), {
       tenantId: tenant.ctx.slug,
       actorUserId: user.userId,
       requestId: issueReqId,
@@ -313,6 +325,11 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     });
     expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
     if (!result.ok) throw new Error(`issue failed`);
+
+    // §86/4 doc-type: event + buyer TIN → full tax invoice (ใบกำกับภาษี).
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.kind).toBe('invoice');
+    expect(captured[0]!.vatInclusive).toBe(true);
 
     const row = await readInvoiceRow(invoiceId);
     expect(row).toBeDefined();
@@ -388,7 +405,8 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     const invoiceId = draft.value.invoiceId;
 
     const issueReqId = `int-evt-issue-notin-${invoiceId}`;
-    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+    const captured: PdfRenderInput[] = [];
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug, captured), {
       tenantId: tenant.ctx.slug,
       actorUserId: user.userId,
       requestId: issueReqId,
@@ -396,6 +414,12 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     });
     expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
     if (!result.ok) throw new Error('issue failed');
+
+    // §86/4 doc-type: event + NO buyer TIN → §105 receipt (ใบเสร็จรับเงิน), NOT
+    // blocked. The §87 invoice sequence is still consumed (single stream).
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.kind).toBe('receipt_separate');
+    expect(captured[0]!.vatInclusive).toBe(true);
 
     const row = await readInvoiceRow(invoiceId);
     expect(row!.status).toBe('issued');
@@ -442,7 +466,8 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     const invoiceId = draft.value.invoiceId;
 
     const issueReqId = `int-evt-issue-matched-${invoiceId}`;
-    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+    const captured: PdfRenderInput[] = [];
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug, captured), {
       tenantId: tenant.ctx.slug,
       actorUserId: user.userId,
       requestId: issueReqId,
@@ -450,6 +475,9 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     });
     expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
     if (!result.ok) throw new Error('issue failed');
+
+    // §86/4 doc-type: matched member carries a TIN → full tax invoice.
+    expect(captured[0]!.kind).toBe('invoice');
 
     const row = await readInvoiceRow(invoiceId);
     expect(row!.status).toBe('issued');

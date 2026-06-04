@@ -167,6 +167,13 @@ export async function createThrowawayTenant(
         memberId,
         companyName: 'E2E Throwaway Co',
         country: 'TH',
+        // 054-event-fee-invoices (Task 9) — every MEMBERSHIP buyer must carry a
+        // 13-digit TIN: issue-invoice's §86/4 gate now blocks any TIN-less
+        // membership invoice (subject-based, not tier-based). Seed a valid Thai
+        // TIN so the issue flows in invoice-draft-issue / invoice-pay /
+        // payment-card-happy-path specs reach `issued` instead of 422
+        // tax_id_required.
+        taxId: '0105536000020',
         planId: 'regular',
         planYear: 2026,
       });

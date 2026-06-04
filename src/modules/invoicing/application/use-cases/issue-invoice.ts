@@ -63,7 +63,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
-import type { PdfRenderPort } from '../ports/pdf-render-port';
+import type { PdfDocKind, PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type {
   AuditPort,
@@ -238,29 +238,6 @@ export async function issueInvoice(
       );
       if (!member) return err({ code: 'member_not_found' });
       if (member.isArchived) return err({ code: 'member_archived' });
-
-      // S1-P1-16 — a Thai tax invoice for a COMPANY member must carry the buyer's
-      // tax_id (FR-009a / Revenue Code §86). Person tiers (memberTypeScope
-      // 'individual'/'both'/null) are exempt. Early-exit BEFORE allocateNext so a
-      // missing tax_id never burns a §87 sequence number. Defense-in-depth: the
-      // member importer already requires tax_id at company-member entry.
-      //
-      // KNOWN FUTURE-TENANT GAP: a `'both'`-scope plan admits BOTH company and
-      // person members, so a company entity on a 'both' plan would be exempted
-      // here. No SweCham 2026 plan uses 'both' (corporate tiers are 'company',
-      // partnership tiers 'individual'), so there is no live defect. A future
-      // tenant introducing a 'both' plan with company members must re-scope this
-      // gate to the member's entity type rather than the plan scope.
-      //
-      // For matched-member EVENT invoices the same gate also ran at DRAFT
-      // (createEventInvoiceDraft) so it cannot be bypassed by going straight to
-      // issue; re-running it here on the freshly-locked member is harmless.
-      if (
-        member.memberTypeScope === 'company' &&
-        (member.snapshot.tax_id ?? '').trim() === ''
-      ) {
-        return err({ code: 'tax_id_required' });
-      }
       memberSnap = member.snapshot;
     } else {
       // Non-member event buyer — the snapshot was pinned at draft. Validate it
@@ -270,6 +247,37 @@ export async function issueInvoice(
       }
       memberSnap = draft.memberIdentitySnapshot;
     }
+
+    // §86/4 doc-type gate (054-event-fee-invoices Task 9) — subject-based, NOT
+    // tier-based. The PDF document kind is chosen at ISSUE from
+    // `invoiceSubject` + whether the resolved BUYER snapshot carries a 13-digit
+    // TIN:
+    //
+    //   MEMBERSHIP + TIN     → kind 'invoice' (ใบกำกับภาษี / full tax invoice)
+    //   MEMBERSHIP + no TIN  → BLOCK `tax_id_required` (a chamber cannot issue a
+    //                          §105 receipt pre-payment, nor a §86/6 abbreviated
+    //                          tax invoice without RD approval). Every membership
+    //                          buyer must have a TIN — Thai individuals have a
+    //                          national-ID-as-TIN, so it is always obtainable.
+    //   EVENT + TIN          → kind 'invoice' (buyer can claim input VAT)
+    //   EVENT + no TIN       → kind 'receipt_separate' (ใบเสร็จรับเงิน / §105
+    //                          receipt — VALID, the ticket was already paid; NO
+    //                          block).
+    //
+    // Supersedes the prior tier-based S1-P1-16 company-only gate: the rule is now
+    // "every MEMBERSHIP invoice requires a buyer TIN" regardless of plan
+    // memberTypeScope (individual buyers have a national-ID TIN). This closes the
+    // ship-blocker where a TIN-less buyer could receive an illegal full
+    // ใบกำกับภาษี. Runs BEFORE allocateNext so a blocked membership invoice never
+    // burns a §87 sequence number.
+    const buyerHasTin = (memberSnap.tax_id ?? '').trim() !== '';
+    if (draft.invoiceSubject === 'membership' && !buyerHasTin) {
+      return err({ code: 'tax_id_required' });
+    }
+    const pdfKind: PdfDocKind =
+      draft.invoiceSubject === 'event' && !buyerHasTin
+        ? 'receipt_separate'
+        : 'invoice';
 
     // Domain invariant — exactly one subject-defining line required before issue
     // (`membership_fee` for membership, `event_fee` for event). Runs BEFORE
@@ -363,7 +371,7 @@ export async function issueInvoice(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {
         renderInput: {
-          kind: 'invoice',
+          kind: pdfKind,
           templateVersion: deps.currentTemplateVersion,
           documentNumber: docNum.value,
           issueDate,
@@ -376,6 +384,10 @@ export async function issueInvoice(
           vatRate: settings.vatRate,
           vat,
           total,
+          // 054-event-fee-invoices — VAT-inclusive flag drives the "VAT included"
+          // annotation on event Model-B documents (gross line + net subtotal +
+          // VAT + total read coherently). Membership invoices are VAT-exclusive.
+          vatInclusive: draft.vatInclusive,
         },
         blobKey,
       },

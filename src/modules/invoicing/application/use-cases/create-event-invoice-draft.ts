@@ -116,7 +116,6 @@ export type CreateEventInvoiceDraftError =
   | { code: 'buyer_required' }
   | { code: 'invalid_tax_id_format' }
   | { code: 'invalid_buyer_snapshot' }
-  | { code: 'tax_id_required' }
   | { code: 'event_not_found' }
   | { code: 'duplicate' };
 
@@ -245,8 +244,19 @@ export async function createEventInvoiceDraft(
 
       // 5. Resolve the buyer.
       //    - matched member → buyer is the F3 member; snapshot pinned at ISSUE
-      //      (null here). Run the §86/4 company tax-id gate on the live member.
+      //      (null here).
       //    - non-member → manual buyer; snapshot pinned at DRAFT.
+      //
+      // 054-event-fee-invoices Task 9 — EVENTS do NOT block on a missing buyer
+      // TIN. The §86/4 doc-type model resolves a TIN-less event buyer to a §105
+      // ใบเสร็จรับเงิน (receipt) at ISSUE rather than a full ใบกำกับภาษี — the
+      // event ticket was already paid, so a receipt is legally valid. The old
+      // matched-company-null-tax_id `tax_id_required` gate is therefore REMOVED
+      // here (it only applied to MEMBERSHIP invoices, where issue-invoice still
+      // enforces it). A matched company member with no TIN is a rare data
+      // anomaly that now yields a receipt rather than blocking — acceptable per
+      // the ruling. (`invalid_tax_id_format` below is a DIFFERENT guard — it
+      // rejects a malformed non-null manual tax_id, not an absent one.)
       let memberId: string | null;
       let buyerSnapshot: MemberIdentitySnapshot | null;
 
@@ -260,14 +270,6 @@ export async function createEventInvoiceDraft(
         // dangling match) — treat as a not-found path. The error union carries
         // no `member_not_found`; the registration is effectively un-billable.
         if (!member) return err({ code: 'registration_not_found' });
-
-        // S1-P1-16 / §86/4 — a Thai tax invoice for a COMPANY member must carry
-        // the buyer's tax_id (FR-009a / Revenue Code §86). Person tiers
-        // ('individual'/'both'/null) are exempt. Replicated from
-        // issue-invoice's gate so it can't be bypassed on the event path.
-        if (member.memberTypeScope === 'company' && (member.snapshot.tax_id ?? '').trim() === '') {
-          return err({ code: 'tax_id_required' });
-        }
 
         memberId = reg.matchedMemberId;
         buyerSnapshot = null; // pinned at issue

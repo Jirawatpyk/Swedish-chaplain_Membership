@@ -505,6 +505,11 @@ export async function issueCreditNote(
               vatRate: loaded.vatRate,
               vat: loaded.vat,
               total: loaded.total,
+              // 054-event-fee-invoices — preserve the VAT-inclusive annotation
+              // when re-annotating a credited EVENT invoice (Model B). Membership
+              // invoices carry `false` so the re-render stays byte-equivalent to
+              // the original (modulo the CREDITED overlay) per SC-003 intent.
+              vatInclusive: loaded.vatInclusive,
               creditedAnnotation: {
                 fullyCredited,
                 references: annotationRefs,

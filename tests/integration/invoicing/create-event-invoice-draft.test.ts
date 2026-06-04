@@ -16,8 +16,10 @@
  *     (`ticketPriceThb × 100`); subtotal/vat/total stay null at draft (Model B);
  *   - the duplicate guard: a second draft for the same registration → `duplicate`
  *     (partial unique index `invoices_event_registration_uniq`);
- *   - the matched-member §86/4 gate: a company member with null tax_id →
- *     `tax_id_required`.
+ *   - the §86/4 doc-type model (054 Task 9): a matched company member with null
+ *     tax_id is NOT blocked at draft — it succeeds and is issued later as a
+ *     §105 receipt (only MEMBERSHIP invoices require a buyer TIN, enforced in
+ *     issue-invoice).
  *
  * Lives in tests/integration/** → hits live Neon. Migration 0202 (+0200/0201)
  * MUST be applied first (`pnpm db:migrate`).
@@ -321,7 +323,11 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
     if (!result.ok) expect(result.error.code).toBe('duplicate');
   }, 30_000);
 
-  it('§86/4 gate: matched company member with null tax_id → tax_id_required', async () => {
+  it('§86/4 doc-type model: matched company member with null tax_id → succeeds as a draft (events do NOT block; issued later as a §105 receipt — 054 Task 9)', async () => {
+    // The old tax_id_required gate is REMOVED from create-event-invoice-draft.
+    // A TIN-less EVENT buyer is not blocked at draft — issue-invoice resolves it
+    // to a ใบเสร็จรับเงิน (receipt) since the ticket was already paid. Only
+    // MEMBERSHIP invoices require a buyer TIN (enforced in issue-invoice).
     const deps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
     const result = await createEventInvoiceDraft(deps, {
       tenantId: tenant.ctx.slug,
@@ -329,8 +335,10 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       requestId: `int-notin-${companyNoTinRegId}`,
       eventRegistrationId: companyNoTinRegId,
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('tax_id_required');
+    expect(result.ok, result.ok ? 'ok' : `unexpected err: ${result.error.code}`).toBe(true);
+    if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
+    expect(result.value.memberId).toBe(companyNoTinMemberId);
+    expect(result.value.invoiceSubject).toBe('event');
   }, 30_000);
 
   it('cross-tenant: tenant B drafting against tenant A registration → registration_not_found + registration_cross_tenant_probe audit (Principle I — REVIEW-GATE BLOCKER)', async () => {

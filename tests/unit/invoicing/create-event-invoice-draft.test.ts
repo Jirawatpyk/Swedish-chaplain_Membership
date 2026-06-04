@@ -424,7 +424,14 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
       if (!r.ok) expect(r.error.code).toBe('invalid_buyer_snapshot');
     });
 
-    it('tax_id_required — matched company member with null tax_id (§86/4)', async () => {
+    it('matched company member with null tax_id → succeeds as a draft (054 Task 9 — events do NOT block on missing TIN; issued later as a §105 receipt)', async () => {
+      // Per the §86/4 doc-type model, a TIN-less EVENT buyer is NOT blocked at
+      // draft — issue-invoice resolves it to a ใบเสร็จรับเงิน (receipt) because
+      // the ticket was already paid. The old matched-company-null-tax_id gate
+      // was removed from create-event-invoice-draft (it only governs MEMBERSHIP
+      // invoices, where issue-invoice still enforces a buyer TIN). A matched
+      // company member with no TIN is a rare data anomaly that now yields a
+      // receipt rather than blocking.
       const deps = makeDeps({
         registration: {
           kind: 'ok',
@@ -442,8 +449,13 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
         }),
       });
       const r = await createEventInvoiceDraft(deps, baseInput);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+      expect(r.ok, r.ok ? 'ok' : `unexpected err: ${r.error.code}`).toBe(true);
+      if (!r.ok) throw new Error(`expected ok, got ${r.error.code}`);
+      // The draft is a matched-member event draft — memberId set, snapshot
+      // pinned at issue (null at draft).
+      const call = deps._insertDraftCalls()[0]!;
+      expect(call.memberId).toBe(MEMBER_ID);
+      expect(call.invoiceSubject).toBe('event');
     });
 
     it('member_not_found — matched member id but member row absent (treated as registration_not_found path? no — member_not_found)', async () => {

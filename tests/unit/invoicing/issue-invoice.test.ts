@@ -319,7 +319,15 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('member_archived');
   });
 
-  it('tax_id_required — COMPANY member with no tax_id → err (S1-P1-16 / FR-009a)', async () => {
+  // --- 054-event-fee-invoices (Task 9) — §86/4 SUBJECT-BASED require-TIN gate.
+  //
+  // The gate is now subject-based, NOT tier-based: EVERY membership invoice
+  // whose buyer snapshot lacks a 13-digit TIN is blocked, regardless of plan
+  // memberTypeScope (company/individual/both/null). This closes the
+  // ship-blocker where a TIN-less buyer received an illegal full ใบกำกับภาษี.
+  // Thai individuals have a national-ID-as-TIN, so a TIN is always obtainable.
+
+  it('tax_id_required — COMPANY-scope membership member with no tax_id → err (§86/4)', async () => {
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -337,9 +345,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+    // Gate runs BEFORE allocateNext → no §87 sequence number burned.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
   });
 
-  it('tax_id_required — COMPANY member with whitespace-only tax_id → err (S1-P1-16 trim branch)', async () => {
+  it('tax_id_required — membership member with whitespace-only tax_id → err (trim branch)', async () => {
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -361,7 +371,10 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('tax_id_required');
   });
 
-  it('tax_id NOT required for an INDIVIDUAL-tier member without tax_id (S1-P1-16)', async () => {
+  it('tax_id_required — INDIVIDUAL-tier membership member without tax_id → err (now subject-based, Task 9)', async () => {
+    // BEHAVIOUR CHANGE: under the old tier-based S1-P1-16 gate an individual
+    // member was exempt. Now the gate is subject-based — a membership invoice
+    // ALWAYS requires a buyer TIN (Thai individuals use their national ID).
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -377,15 +390,14 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    // Gate is exempt for individuals: the result is NEVER tax_id_required,
-    // whether the issue ultimately succeeds or fails downstream. Asserting on
-    // `blockedByGate` (rather than a bare `if (!r.ok)`) keeps this non-vacuous
-    // even when the issue happens to succeed.
-    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
-    expect(blockedByGate).toBe(false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
   });
 
-  it('tax_id NOT required when memberTypeScope is null (plan row missing → fail-open exemption, S1-P1-16)', async () => {
+  it('tax_id_required — membership member with null memberTypeScope and no tax_id → err (subject-based, no longer fail-open, Task 9)', async () => {
+    // BEHAVIOUR CHANGE: a null scope used to fail open. The subject-based gate
+    // keys on `invoiceSubject==='membership'` + missing buyer TIN, so a null
+    // scope no longer exempts a TIN-less membership buyer.
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -401,33 +413,32 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    // Gate fires ONLY on an explicit 'company' scope. A null scope (plan row
-    // could not be joined) must not block issuance — fail-open by design.
-    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
-    expect(blockedByGate).toBe(false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
   });
 
-  it("tax_id NOT required for a 'both'-scope plan member without tax_id (S1-P1-16)", async () => {
+  it('membership member WITH a valid tax_id (any tier) → NOT blocked, renders kind:invoice', async () => {
+    // An individual-tier member that DOES carry a TIN must pass the gate and
+    // render a full tax invoice — proves the gate keys on the TIN, not the tier.
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
       makeMember({
-        memberTypeScope: 'both',
+        memberTypeScope: 'individual',
         snapshot: {
-          legal_name: 'Mixed-Scope Co',
-          tax_id: null,
+          legal_name: 'Solo Person',
+          tax_id: '1234567890123',
           address: '123 Road, Bangkok',
-          primary_contact_name: 'Alex',
-          primary_contact_email: 'alex@example.com',
+          primary_contact_name: 'Jane',
+          primary_contact_email: 'jane@example.com',
         },
       }),
     );
     const r = await issueInvoice(deps, input);
-    // 'both'-scope plans admit person-tier members, so the gate exempts them.
-    // No SweCham 2026 plan uses 'both'; documented as a known future-tenant
-    // gap in issue-invoice.ts (not a live defect).
-    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
-    expect(blockedByGate).toBe(false);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
   });
 
   it('overflow — seq > 999_999 → err (FR-035)', async () => {
@@ -632,6 +643,162 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     const payload = (issuedCall![1] as Record<string, unknown>).payload as Record<string, unknown>;
     expect('member_id' in payload).toBe(false);
     expect(payload.event_registration_id).toBe('reg-uuid-2');
+  });
+
+  // --- 054-event-fee-invoices (Task 9) — §86/4 doc-type kind selection --------
+  //
+  //   EVENT + buyer TIN     → kind 'invoice' (ใบกำกับภาษี — buyer can claim VAT)
+  //   EVENT + no buyer TIN  → kind 'receipt_separate' (ใบเสร็จรับเงิน — §105
+  //                           receipt, ticket already paid; NO block)
+  // and the render input must carry vatInclusive:true for the Model-B annotation.
+
+  /** Build a non-member event draft with a chosen buyer tax_id. */
+  function makeEventDraft(taxId: string | null): Invoice {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(107000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(107000n),
+      position: 1,
+    };
+    return makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-9',
+      eventRegistrationId: 'reg-uuid-9',
+      memberIdentitySnapshot: Object.freeze({
+        legal_name: taxId ? 'Beta Imports Ltd' : 'Walk-in Guest',
+        tax_id: taxId,
+        address: '50 Sukhumvit Road, Bangkok 10110',
+        primary_contact_name: 'Buyer',
+        primary_contact_email: 'buyer@example.com',
+      }),
+      lines: [eventLine],
+    });
+  }
+
+  it("event + buyer TIN → renders kind:'invoice' (full tax invoice) with vatInclusive:true", async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
+    );
+    // Non-member event → never enters the member-lock branch.
+    expect(deps.memberIdentity.getForIssue).not.toHaveBeenCalled();
+  });
+
+  it("event + NO buyer TIN → renders kind:'receipt_separate' (§105 receipt), NOT blocked, vatInclusive:true", async () => {
+    const deps = makeDeps(makeEventDraft(null), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    // No block: a TIN-less event buyer is valid (ticket already paid).
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate', vatInclusive: true }),
+    );
+  });
+
+  it('event + whitespace-only buyer tax_id → treated as no-TIN → receipt_separate (trim branch)', async () => {
+    const deps = makeDeps(makeEventDraft('   '), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate' }),
+    );
+  });
+
+  it('matched-member event + member carries a TIN → kind:invoice (member branch, snapshot pinned at issue)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-10',
+      eventRegistrationId: 'reg-uuid-10',
+      memberIdentitySnapshot: null, // pinned at issue for matched member
+      lines: [eventLine],
+    });
+    // Member carries a TIN (makeMember default) → resolves to a full tax invoice.
+    const deps = makeDeps(matchedEventDraft, makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
+    );
+  });
+
+  it('matched-member event + member has NO TIN → receipt_separate (events never block, even matched)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-11',
+      eventRegistrationId: 'reg-uuid-11',
+      memberIdentitySnapshot: null,
+      lines: [eventLine],
+    });
+    const deps = makeDeps(
+      matchedEventDraft,
+      makeSettings(),
+      makeMember({
+        memberTypeScope: 'company',
+        snapshot: {
+          legal_name: 'No-Tax Co',
+          tax_id: null,
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'John Doe',
+          primary_contact_email: 'john@acme.example',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    // A matched company member with no TIN is a rare data anomaly → receipt,
+    // NOT a block (per the §86/4 ruling). NEVER tax_id_required for an event.
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate' }),
+    );
+  });
+
+  it('membership → always renders kind:invoice (gate guarantees a TIN was present)', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice', vatInclusive: false }),
+    );
   });
 });
 
