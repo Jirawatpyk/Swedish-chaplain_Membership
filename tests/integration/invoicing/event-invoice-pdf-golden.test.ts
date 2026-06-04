@@ -168,12 +168,25 @@ describe('054 Task 9 — event-invoice PDF golden (§86/4 doc-type render)', () 
     expect(text).toMatch(/VAT included/i);
 
     // NO buyer Tax ID line — the buyer supplied no TIN, so the template's
-    // `input.member.tax_id && (...)` conditional omits it. Assert the buyer's
-    // legal name IS present (proves we read the right block) while no "Tax ID:"
-    // label appears for the BUYER. The SELLER tax id is rendered with the
-    // "เลขประจำตัวผู้เสียภาษี / Tax ID:" seller label; the buyer block uses a
-    // bare "Tax ID:" — so a bare buyer "Tax ID:" must be absent.
-    expect(text).toContain('Walk-in Guest');
+    // `input.member.tax_id && (...)` conditional omits it. Prove it two ways:
+    //
+    //   1. Positive: the buyer legal name IS present (confirms the buyer
+    //      section rendered at all, making the negative conclusive).
+    //
+    //   2. Negative: the bare "Tax ID: …" buyer label MUST NOT appear.
+    //      The seller's TIN is rendered with a Thai prefix:
+    //        "เลขประจำตัวผู้เสียภาษี / Tax ID: 0000000000000"
+    //      so a multiline `^Tax ID:` (line-start anchor) is buyer-specific
+    //      — the seller line never starts with "Tax ID:" because the Thai
+    //      prefix sits before it on the same text node. See invoice-template.tsx
+    //      line 244 (seller) vs line 276 (buyer) for the two patterns.
+    expect(text, 'buyer legal name must be present in the rendered receipt').toContain(
+      'Walk-in Guest',
+    );
+    expect(
+      text,
+      'buyer Tax ID block MUST NOT render when tax_id is null (§86/4 receipt path)',
+    ).not.toMatch(/^Tax ID:/m);
   }, 60_000);
 
   it('membership-style VAT-EXCLUSIVE invoice → NO VAT-included annotation (regression guard)', async () => {

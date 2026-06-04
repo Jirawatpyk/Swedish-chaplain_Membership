@@ -395,6 +395,12 @@ export async function recordPayment(
                 vatRate: loaded.vatRate,
                 vat: loaded.vat,
                 total: loaded.total,
+                // 054-event-fee-invoices (Task 9, Fix 2) — thread vatInclusive so
+                // a matched-member EVENT invoice issued as receipt_separate carries
+                // its "VAT included" annotation consistently in the payment-time
+                // receipt PDF. Membership invoices carry false (VAT-exclusive) so
+                // the annotation is suppressed there, matching existing behaviour.
+                vatInclusive: loaded.vatInclusive,
               },
               blobKey: receiptBlobKey,
             },
