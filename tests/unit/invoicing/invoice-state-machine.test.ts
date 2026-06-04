@@ -7,7 +7,7 @@ import {
   asInvoiceId,
   assertSnapshotsSet,
   canTransition,
-  enforceOneMembershipLine,
+  enforceOneSubjectLine,
   isTerminal,
   type Invoice,
   type InvoiceStatus,
@@ -74,7 +74,7 @@ describe('Invoice state machine', () => {
     });
   });
 
-  describe('enforceOneMembershipLine', () => {
+  describe("enforceOneSubjectLine('membership')", () => {
     const mkLine = (kind: 'membership_fee' | 'registration_fee', pos = 1): InvoiceLine => {
       const r = makeInvoiceLine({
         lineId: asInvoiceLineId(`line-${pos}-${kind}`),
@@ -91,23 +91,23 @@ describe('Invoice state machine', () => {
     };
 
     it('accepts exactly 1 membership line', () => {
-      const r = enforceOneMembershipLine([mkLine('membership_fee')]);
+      const r = enforceOneSubjectLine('membership', [mkLine('membership_fee')]);
       expect(r.ok).toBe(true);
     });
 
     it('accepts 1 membership + 1 registration', () => {
-      const r = enforceOneMembershipLine([mkLine('membership_fee', 1), mkLine('registration_fee', 2)]);
+      const r = enforceOneSubjectLine('membership', [mkLine('membership_fee', 1), mkLine('registration_fee', 2)]);
       expect(r.ok).toBe(true);
     });
 
     it('rejects 0 membership', () => {
-      const r = enforceOneMembershipLine([mkLine('registration_fee')]);
+      const r = enforceOneSubjectLine('membership', [mkLine('registration_fee')]);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('no_membership_line');
     });
 
     it('rejects multiple membership', () => {
-      const r = enforceOneMembershipLine([mkLine('membership_fee', 1), mkLine('membership_fee', 2)]);
+      const r = enforceOneSubjectLine('membership', [mkLine('membership_fee', 1), mkLine('membership_fee', 2)]);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('multiple_membership_lines');
     });

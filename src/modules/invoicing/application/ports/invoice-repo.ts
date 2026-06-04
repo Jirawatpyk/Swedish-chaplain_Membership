@@ -128,7 +128,13 @@ export interface InvoiceRepo {
       readonly vatRate: string;
       readonly vatSatang: Satang;
       readonly totalSatang: Satang;
-      readonly proRatePolicySnapshot: string;
+      /**
+       * 054-event-fee-invoices — NULL for `invoice_subject='event'` (pro-rating
+       * is membership-only). Required (non-null) for membership invoices; the
+       * relaxed `invoices_non_draft_has_snapshots` CHECK (migration 0203) enforces
+       * `pro_rate_policy_snapshot IS NOT NULL OR invoice_subject='event'`.
+       */
+      readonly proRatePolicySnapshot: string | null;
       readonly netDaysSnapshot: number;
       readonly tenantIdentitySnapshot: unknown;
       readonly memberIdentitySnapshot: unknown;

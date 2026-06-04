@@ -137,7 +137,7 @@ async function insertDraft(
       status: 'draft',
     });
     // R8-T1 — seed one membership_fee line so `issueInvoice`'s
-    // `enforceOneMembershipLine(draft.lines)` invariant check passes
+    // `enforceOneSubjectLine(draft.invoiceSubject, draft.lines)` invariant check passes
     // and the test reaches the mocked PDF/Blob/audit failure points
     // it actually wants to exercise. Without this, scenarios (a),
     // (b), (g), (h-replay) short-circuit to `invalid_lines` before
