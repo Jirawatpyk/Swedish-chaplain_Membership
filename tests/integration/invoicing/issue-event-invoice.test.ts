@@ -1,0 +1,482 @@
+/**
+ * Task 7 (054-event-fee-invoices) — issueInvoice for EVENT-fee invoices
+ * (live Neon Singapore via .env.local).
+ *
+ * Exercises the REAL `issueInvoice` use-case (real Drizzle invoice repo + real
+ * tenant-settings repo + real §87 sequence allocator + real F4 audit adapter;
+ * PDF render + Blob upload are mocked to stay fast, exactly like the membership
+ * `vat-source-chain.test.ts` pin). Drafts are created through the REAL
+ * `createEventInvoiceDraft` so the buyer-snapshot pinning (non-member at DRAFT,
+ * matched member at ISSUE) is end-to-end.
+ *
+ * Asserts (per Task 7 spec):
+ *   1. Issue succeeds for BOTH a non-member event draft (member_id NULL) and a
+ *      matched-member event draft — does NOT crash on the member-lock branch and
+ *      does NOT trip the relaxed `invoices_non_draft_has_snapshots` CHECK
+ *      (proves migration 0203 + the null `pro_rate_policy_snapshot` on event).
+ *   2. Each allocates the next INV §87 sequence number + sets `pdf_*` metadata.
+ *   3. VAT EXACT (Model B): an inclusive ticket of 10004 satang (100.04 THB) →
+ *      total === 10004 (NOT 10005), subtotal + vat === total, vat = total −
+ *      subtotal per `splitVatInclusive`. 100.04 is a known mismatch case under a
+ *      naive store-subtotal-then-recompute-VAT path.
+ *   4. Doc-type drivers: the persisted BUYER snapshot `tax_id` is present for a
+ *      non-member who supplied a 13-digit TIN (→ §86/4 tax invoice downstream)
+ *      and NULL for a non-member without one (→ receipt downstream). The matched
+ *      member carries their own tax_id. (The rendered title switch is Task 9's
+ *      golden-render scope; issue always emits `kind:'invoice'`.)
+ *   5. Audit branch: the non-member issue (memberId NULL) emits `invoice_issued`
+ *      via the NON-timeline branch — persisted payload has NO `member_id` key but
+ *      carries `event_registration_id`; the matched member emits via the timeline
+ *      branch (payload HAS `member_id`).
+ *   6. The non-member buyer snapshot persisted at ISSUE is the one PRE-PINNED at
+ *      DRAFT — issue does not null it nor re-resolve a member.
+ *
+ * Lives in tests/integration/** → hits live Neon. Migrations 0200–0203 MUST be
+ * applied first (`pnpm db:migrate`).
+ */
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { db, runInTenant } from '@/lib/db';
+import {
+  events,
+  eventRegistrations,
+  type NewEventRow,
+  type NewEventRegistrationRow,
+} from '@/modules/events/infrastructure/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
+import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
+import {
+  issueInvoice,
+  type IssueInvoiceDeps,
+} from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
+import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { splitVatInclusive } from '@/modules/invoicing';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+
+const MATRIX: BenefitMatrix = {
+  eblast_per_year: 1,
+  website_page_type: 'member_news_update',
+  homepage_logo_category: 'regular',
+  directory_listing_size: 'half_page',
+  event_discount_scope: 'all_employees',
+  events_cobranded_access: false,
+  cultural_tickets_per_year: 0,
+  m2m_benefits_access: true,
+  business_referrals: true,
+  tailor_made_services: false,
+  partnership: null,
+};
+
+// Non-member buyer WITH a Thai TIN → §86/4 tax-invoice doc-type downstream.
+const BUYER_WITH_TIN = {
+  legal_name: 'Beta Imports Ltd',
+  tax_id: '9876543210123',
+  address: '50 Sukhumvit Road, Bangkok 10110',
+  primary_contact_name: 'Jane Doe',
+  primary_contact_email: 'jane@beta.example',
+} as const;
+
+// Non-member buyer WITHOUT a TIN (individual) → receipt doc-type downstream.
+const BUYER_NO_TIN = {
+  legal_name: 'Walk-in Guest',
+  tax_id: null,
+  address: '99 Charoen Krung Road, Bangkok 10500',
+  primary_contact_name: 'Walk-in Guest',
+  primary_contact_email: 'walkin@example.com',
+} as const;
+
+/** Mocked PDF/Blob deps mirroring the membership vat-source-chain pin. */
+function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    // Real member-identity adapter — the matched-member branch re-reads the live
+    // member at issue (snapshot pinned at issue). Non-member branch never calls it.
+    memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: {
+      render: vi.fn(async () => ({
+        bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+        sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
+      })),
+    },
+    blob: {
+      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({
+        key,
+        url: `https://blob.test/${key}`,
+      })),
+      uploadLogo: vi.fn(),
+      signDownloadUrl: vi.fn(),
+      downloadBytes: vi.fn(),
+      delete: vi.fn(),
+      list: vi.fn(),
+    },
+    audit: f4AuditAdapter,
+    clock: { nowIso: () => '2026-04-18T10:00:00Z' },
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: 1,
+  };
+}
+
+describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-member)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  const planId = 'event-issue-plan';
+
+  let eventId: string;
+  let regWithTinId: string; // non-member WITH tin, 100.04 THB (VAT-exact case)
+  let regNoTinId: string; // non-member WITHOUT tin, 250 THB (receipt doc-type)
+  let regMatchedId: string; // matched company member WITH tin, 2,000 THB
+  let memberId: string;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+    regWithTinId = randomUUID();
+    regNoTinId = randomUUID();
+    regMatchedId = randomUUID();
+    memberId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      // Tenant invoice settings — standard 7% VAT, an event-distinct prefix.
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+
+      // F2 plan — company scope (drives §86/4 on the matched member).
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId,
+        planYear: 2026,
+        planName: { en: 'Event Issue Plan' },
+        description: { en: 'Test description' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+
+      // F3 matched company member WITH tax_id + a primary contact.
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'Gamma Corp',
+        country: 'TH',
+        taxId: '1111111111111',
+        addressLine1: '1 Wireless Road',
+        city: 'Pathum Wan',
+        province: 'Bangkok',
+        postalCode: '10330',
+        planId,
+        planYear: 2026,
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Som',
+        lastName: 'Chai',
+        email: 'som.chai@gamma.example',
+        isPrimary: true,
+      });
+
+      // F6 event.
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_fee_issue_int',
+        name: 'Annual Gala',
+        startDate: new Date('2026-09-10T11:00:00Z'),
+      } satisfies NewEventRow);
+
+      // Non-member registration — ticket price irrelevant (we override to 10004).
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regWithTinId,
+        eventId,
+        externalId: 'att_with_tin',
+        attendeeEmail: 'jane@beta.example',
+        attendeeName: 'Jane Doe',
+        attendeeCompany: 'Beta Imports Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 5000,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+
+      // Non-member registration, no TIN buyer — 250 THB ticket.
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regNoTinId,
+        eventId,
+        externalId: 'att_no_tin',
+        attendeeEmail: 'walkin@example.com',
+        attendeeName: 'Walk-in Guest',
+        attendeeCompany: null,
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 250,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+
+      // Matched-member registration — 2,000 THB ticket.
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regMatchedId,
+        eventId,
+        externalId: 'att_matched',
+        attendeeEmail: 'som.chai@gamma.example',
+        attendeeName: 'Som Chai',
+        attendeeCompany: 'Gamma Corp',
+        matchType: 'member_domain',
+        matchedMemberId: memberId,
+        ticketType: 'Standard',
+        ticketPriceThb: 2000,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+  });
+
+  /** Helper: read the issued invoice row back (owner role — bypass RLS). */
+  async function readInvoiceRow(invoiceId: string) {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    return row;
+  }
+
+  it('non-member WITH tin: issues, Model-B EXACT VAT on 100.04 THB (10004 satang), tax-invoice snapshot, non-timeline audit, pre-pinned buyer snapshot', async () => {
+    const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+    const draft = await createEventInvoiceDraft(draftDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-draft-withtin-${regWithTinId}`,
+      eventRegistrationId: regWithTinId,
+      amountOverride: 10004, // 100.04 THB inclusive — the known VAT mismatch case.
+      buyer: BUYER_WITH_TIN,
+    });
+    expect(draft.ok, draft.ok ? 'ok' : `draft err: ${draft.error.code}`).toBe(true);
+    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
+    const invoiceId = draft.value.invoiceId;
+
+    const issueReqId = `int-evt-issue-withtin-${invoiceId}`;
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: issueReqId,
+      invoiceId,
+    });
+    expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
+    if (!result.ok) throw new Error(`issue failed`);
+
+    const row = await readInvoiceRow(invoiceId);
+    expect(row).toBeDefined();
+    expect(row!.status).toBe('issued');
+    expect(row!.invoiceSubject).toBe('event');
+    expect(row!.vatInclusive).toBe(true);
+    // §87 numbering + pdf metadata present.
+    expect(row!.fiscalYear).not.toBeNull();
+    expect(row!.sequenceNumber).not.toBeNull();
+    expect(row!.documentNumber).toContain('EVT');
+    expect(row!.pdfBlobKey).not.toBeNull();
+    expect(row!.pdfSha256).not.toBeNull();
+    expect(row!.pdfTemplateVersion).toBe(1);
+    // pro_rate_policy_snapshot is NULL for an event invoice (relaxed CHECK).
+    expect(row!.proRatePolicySnapshot).toBeNull();
+    // net_days_snapshot IS populated for event (from tenant settings).
+    expect(row!.netDaysSnapshot).not.toBeNull();
+
+    // --- Model B EXACT VAT on 10004 satang @ 7% ---
+    const total = BigInt(row!.totalSatang!.toString());
+    const subtotal = BigInt(row!.subtotalSatang!.toString());
+    const vat = BigInt(row!.vatSatang!.toString());
+    expect(total).toBe(10004n); // NOT 10005 — the inclusive amount is preserved exactly.
+    expect(subtotal + vat).toBe(total); // exact split invariant.
+    expect(vat).toBe(total - subtotal); // vat is the derived remainder.
+    // Cross-check against the domain helper directly.
+    const expected = splitVatInclusive(Money.fromSatangUnsafe(10004n), 700n);
+    expect(subtotal).toBe(expected.subtotal.satang);
+    expect(vat).toBe(expected.vat.satang);
+    expect(row!.vatRateSnapshot).toBe('0.0700');
+
+    // Doc-type driver: buyer snapshot tax_id present → tax invoice downstream.
+    const snap = row!.memberIdentitySnapshot as Record<string, unknown>;
+    expect(snap.tax_id).toBe('9876543210123');
+    // The buyer snapshot is the one PINNED AT DRAFT (issue did not re-resolve it).
+    expect(snap).toEqual({
+      legal_name: 'Beta Imports Ltd',
+      tax_id: '9876543210123',
+      address: '50 Sukhumvit Road, Bangkok 10110',
+      primary_contact_name: 'Jane Doe',
+      primary_contact_email: 'jane@beta.example',
+    });
+
+    // Audit: non-member → NON-timeline `invoice_issued` (no member_id, has event_registration_id).
+    const [auditRow] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'invoice_issued'),
+          eq(auditLog.requestId, issueReqId),
+        ),
+      );
+    expect(auditRow).toBeDefined();
+    const payload = auditRow!.payload as Record<string, unknown>;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe(regWithTinId);
+    expect(payload.invoice_id).toBe(invoiceId);
+  }, 60_000);
+
+  it('non-member WITHOUT tin: issues with receipt-type snapshot (tax_id NULL), non-timeline audit', async () => {
+    const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+    const draft = await createEventInvoiceDraft(draftDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-draft-notin-${regNoTinId}`,
+      eventRegistrationId: regNoTinId,
+      buyer: BUYER_NO_TIN,
+    });
+    expect(draft.ok, draft.ok ? 'ok' : `draft err: ${draft.error.code}`).toBe(true);
+    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
+    const invoiceId = draft.value.invoiceId;
+
+    const issueReqId = `int-evt-issue-notin-${invoiceId}`;
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: issueReqId,
+      invoiceId,
+    });
+    expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
+    if (!result.ok) throw new Error('issue failed');
+
+    const row = await readInvoiceRow(invoiceId);
+    expect(row!.status).toBe('issued');
+    // 250 THB = 25000 satang inclusive @ 7% → subtotal 23364, vat 1636, total 25000.
+    const total = BigInt(row!.totalSatang!.toString());
+    const subtotal = BigInt(row!.subtotalSatang!.toString());
+    const vat = BigInt(row!.vatSatang!.toString());
+    expect(total).toBe(25000n);
+    expect(subtotal + vat).toBe(total);
+    const expected = splitVatInclusive(Money.fromSatangUnsafe(25000n), 700n);
+    expect(subtotal).toBe(expected.subtotal.satang);
+    expect(vat).toBe(expected.vat.satang);
+
+    // Doc-type driver: buyer snapshot tax_id NULL → receipt downstream.
+    const snap = row!.memberIdentitySnapshot as Record<string, unknown>;
+    expect(snap.tax_id).toBeNull();
+
+    // Audit: non-member → NON-timeline branch.
+    const [auditRow] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'invoice_issued'),
+          eq(auditLog.requestId, issueReqId),
+        ),
+      );
+    const payload = auditRow!.payload as Record<string, unknown>;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe(regNoTinId);
+  }, 60_000);
+
+  it('matched member: issues with snapshot from getForIssue (their tax_id), TIMELINE audit branch (payload has member_id)', async () => {
+    const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+    const draft = await createEventInvoiceDraft(draftDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-evt-draft-matched-${regMatchedId}`,
+      eventRegistrationId: regMatchedId,
+    });
+    expect(draft.ok, draft.ok ? 'ok' : `draft err: ${draft.error.code}`).toBe(true);
+    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
+    const invoiceId = draft.value.invoiceId;
+
+    const issueReqId = `int-evt-issue-matched-${invoiceId}`;
+    const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: issueReqId,
+      invoiceId,
+    });
+    expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
+    if (!result.ok) throw new Error('issue failed');
+
+    const row = await readInvoiceRow(invoiceId);
+    expect(row!.status).toBe('issued');
+    expect(row!.memberId).toBe(memberId);
+    // 2,000 THB = 200000 satang inclusive @ 7%.
+    const total = BigInt(row!.totalSatang!.toString());
+    const subtotal = BigInt(row!.subtotalSatang!.toString());
+    const vat = BigInt(row!.vatSatang!.toString());
+    expect(total).toBe(200000n);
+    expect(subtotal + vat).toBe(total);
+    // Snapshot resolved from getForIssue (the live member) — pinned at ISSUE.
+    const snap = row!.memberIdentitySnapshot as Record<string, unknown>;
+    expect(snap.tax_id).toBe('1111111111111');
+    expect(snap.legal_name).toBe('Gamma Corp');
+
+    // Audit: matched member → TIMELINE branch (payload HAS member_id).
+    const [auditRow] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'invoice_issued'),
+          eq(auditLog.requestId, issueReqId),
+        ),
+      );
+    const payload = auditRow!.payload as Record<string, unknown>;
+    expect(payload.member_id).toBe(memberId);
+  }, 60_000);
+});

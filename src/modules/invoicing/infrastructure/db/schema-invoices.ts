@@ -78,17 +78,17 @@ export const invoices = pgTable(
     // includes the 7% component. Defaults false to keep F4 behaviour intact.
     vatInclusive: boolean('vat_inclusive').notNull().default(false),
 
-    // FORWARD DEPENDENCY (event-issue task): the live CHECK
-    // `invoices_non_draft_has_snapshots` requires the FULL snapshot/numbering
-    // set on every non-draft row — including `pro_rate_policy_snapshot` and
-    // `net_days_snapshot`, which event invoices do NOT populate (pro-rating is
-    // membership-only). Event DRAFTS are exempt (the CHECK is `status='draft'
-    // OR (...)`), so this schema is correct for drafts today. Before the first
-    // event invoice is ISSUED, the event-issue task MUST DROP + re-ADD
-    // `invoices_non_draft_has_snapshots` with the event subject carved out
-    // (audit all 16 required fields against what an event invoice actually
-    // populates; `member_identity_snapshot` IS populated as the buyer snapshot
-    // for event invoices, so that field stays required in the revised CHECK).
+    // 054-event-fee-invoices (Task 7) — the non-draft snapshot CHECK
+    // `invoices_non_draft_has_snapshots` (declared as a `check()` builder in the
+    // table-constraints array below, mirroring the live predicate after migration
+    // 0203) carves out the single MEMBERSHIP-only field `pro_rate_policy_snapshot`
+    // for the event subject: `(pro_rate_policy_snapshot IS NOT NULL OR
+    // invoice_subject = 'event')`. Every other field — including
+    // `net_days_snapshot` (from tenant settings) and `member_identity_snapshot`
+    // (the BUYER snapshot, populated for event too) — stays required for BOTH
+    // subjects. Event invoices ARE §87-numbered + PDF'd, so the numbering + pdf_*
+    // fields stay required. `issue-invoice` populates them all for event rows and
+    // sets `pro_rate_policy_snapshot = NULL` for the event subject.
 
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
@@ -179,6 +179,40 @@ export const invoices = pgTable(
         (invoice_subject = 'membership' AND member_id IS NOT NULL AND plan_id IS NOT NULL AND plan_year IS NOT NULL)
         OR
         (invoice_subject = 'event' AND event_registration_id IS NOT NULL AND event_id IS NOT NULL)
+      )`,
+    ),
+    // 054-event-fee-invoices (Task 7) — non-draft snapshot completeness.
+    // Mirrors the LIVE predicate after migration 0203 (hand-authored there in
+    // the idempotent DO-block; declared here so the Drizzle schema reflects the
+    // current DB shape). Every non-draft row must carry the full numbering +
+    // snapshot + pdf set; the ONLY relaxation is the membership-only
+    // `pro_rate_policy_snapshot`, which an event invoice legitimately leaves
+    // NULL (pro-rating has no meaning for a ticket fee). `member_identity_snapshot`
+    // stays REQUIRED for both subjects (the §86/4 buyer snapshot). Pre-0203 this
+    // CHECK lived only in migration 0019/0024 SQL; the matching builder is added
+    // now alongside `invoices_subject_fields_ck` (also 054) for schema fidelity.
+    check(
+      'invoices_non_draft_has_snapshots',
+      sql`(
+        status = 'draft'
+        OR (
+          subtotal_satang IS NOT NULL
+          AND vat_rate_snapshot IS NOT NULL
+          AND vat_satang IS NOT NULL
+          AND total_satang IS NOT NULL
+          AND fiscal_year IS NOT NULL
+          AND sequence_number IS NOT NULL
+          AND document_number IS NOT NULL
+          AND issue_date IS NOT NULL
+          AND due_date IS NOT NULL
+          AND (pro_rate_policy_snapshot IS NOT NULL OR invoice_subject = 'event')
+          AND net_days_snapshot IS NOT NULL
+          AND tenant_identity_snapshot IS NOT NULL
+          AND member_identity_snapshot IS NOT NULL
+          AND pdf_blob_key IS NOT NULL
+          AND pdf_sha256 IS NOT NULL
+          AND pdf_template_version IS NOT NULL
+        )
       )`,
     ),
     // 054-event-fee-invoices — one non-void event invoice per registration.
