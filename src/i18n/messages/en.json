@@ -1570,9 +1570,13 @@
           "dueDate": "Due",
           "total": "Total",
           "actions": "Actions",
-          "member": "Member",
+          "buyer": "Buyer",
           "method": "Method",
           "receiptNumber": "Receipt No."
+        },
+        "subjectChip": {
+          "event": "Event",
+          "eventAria": "Event-fee invoice"
         },
         "statuses": {
           "draft": "Draft",
@@ -1589,7 +1593,12 @@
         "filteredEmpty": "No invoices match the current filters.",
         "filters": {
           "allStatuses": "All statuses",
-          "clearAll": "Clear filters"
+          "clearAll": "Clear filters",
+          "subject": {
+            "all": "All types",
+            "membership": "Membership",
+            "event": "Event"
+          }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",

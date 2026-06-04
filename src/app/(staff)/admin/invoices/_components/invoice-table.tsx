@@ -67,7 +67,26 @@ export type InvoicesTableRow = {
   readonly invoiceId: string;
   readonly documentNumber: string;
   readonly status: RowStatus;
+  /**
+   * 054-event-fee-invoices — subject discriminator. `'event'` rows show an
+   * Event chip next to the buyer name; `'membership'` rows do not.
+   */
+  readonly invoiceSubject: 'membership' | 'event';
+  /**
+   * Whether the buyer is a real F3 member (so the name links to
+   * `/admin/members/{memberId}`). False for event-fee invoices billed to a
+   * NON-member attendee — those have no member row, so the name renders as
+   * plain text instead of a broken `/admin/members/` link (the empty-id
+   * broken-link fix). Membership invoices and matched-member event invoices
+   * are both `true`.
+   */
+  readonly buyerHasMemberLink: boolean;
+  /**
+   * Member-link target. Empty string when `buyerHasMemberLink` is false
+   * (event non-member buyer) — never dereferenced in that case.
+   */
   readonly memberId: string;
+  /** Buyer display name — member company name OR non-member legal name. */
   readonly memberName: string;
   readonly issueDate: string | null;
   readonly dueDate: string | null;
@@ -278,7 +297,7 @@ export function InvoicesTable({
               {t('columns.receiptNumber')}
             </TableHead>
             <TableHead scope="col" className={headCls}>
-              {t('columns.member')}
+              {t('columns.buyer')}
             </TableHead>
             <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
               {t('columns.status')}
@@ -361,12 +380,39 @@ export function InvoicesTable({
                 )}
               </TableCell>
               <TableCell className="align-middle">
-                <Link
-                  href={`/admin/members/${r.memberId}`}
-                  className="hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                >
-                  {r.memberName}
-                </Link>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* 054-event-fee-invoices — buyer column. Membership
+                      invoices (and matched-member event invoices) link to
+                      the F3 member; event NON-member buyers have no member
+                      row, so the name renders as plain text — NOT a broken
+                      `/admin/members/` link with an empty id. */}
+                  {r.buyerHasMemberLink ? (
+                    <Link
+                      href={`/admin/members/${r.memberId}`}
+                      className="hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    >
+                      {r.memberName}
+                    </Link>
+                  ) : (
+                    <span>{r.memberName}</span>
+                  )}
+                  {r.invoiceSubject === 'event' && (
+                    // Event chip — surfaces event-fee invoices at a glance.
+                    // aria-label gives SR users the full "Event-fee invoice"
+                    // context (the visible "Event" chip is terse for layout).
+                    // TODO(follow-up): event-name subtitle needs an `events`
+                    // join — F4 listPaged selects only from `invoices` and
+                    // crossing into the F6 `events` table is a non-trivial
+                    // cross-module join, so v1 ships the chip only.
+                    <Badge
+                      variant="secondary"
+                      className="font-normal"
+                      aria-label={t('subjectChip.eventAria')}
+                    >
+                      {t('subjectChip.event')}
+                    </Badge>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap">
                 <div className="flex flex-wrap items-center gap-1.5">

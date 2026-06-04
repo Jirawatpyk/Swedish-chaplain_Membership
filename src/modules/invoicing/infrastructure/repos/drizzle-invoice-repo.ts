@@ -478,6 +478,11 @@ export function makeDrizzleInvoiceRepo(
           filters.push(eq(invoices.fiscalYear, opts.fiscalYear));
         }
         if (opts.memberId) filters.push(eq(invoices.memberId, opts.memberId));
+        if (opts.invoiceSubject) {
+          // 054-event-fee-invoices — subject filter (membership | event).
+          // Maps directly to the stored `invoice_subject` discriminator.
+          filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
+        }
         if (opts.search && opts.search.length > 0) {
           filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
         }

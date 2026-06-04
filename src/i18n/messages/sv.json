@@ -1570,9 +1570,13 @@
           "dueDate": "Förfaller",
           "total": "Totalt",
           "actions": "",
-          "member": "Medlem",
+          "buyer": "Köpare",
           "method": "Metod",
           "receiptNumber": "Kvittonr."
+        },
+        "subjectChip": {
+          "event": "Evenemang",
+          "eventAria": "Evenemangsavgiftsfaktura"
         },
         "statuses": {
           "draft": "Utkast",
@@ -1589,7 +1593,12 @@
         "filteredEmpty": "Inga fakturor matchar filtren.",
         "filters": {
           "allStatuses": "Alla status",
-          "clearAll": "Rensa filter"
+          "clearAll": "Rensa filter",
+          "subject": {
+            "all": "Alla typer",
+            "membership": "Medlemskap",
+            "event": "Evenemang"
+          }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",

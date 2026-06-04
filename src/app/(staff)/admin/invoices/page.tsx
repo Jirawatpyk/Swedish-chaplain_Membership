@@ -61,6 +61,11 @@ interface SearchParams {
    * settled via card or PromptPay. Any other value (or absent) is OFF.
    */
   readonly paidOnline?: string;
+  /**
+   * 054-event-fee-invoices — `?subject=membership|event` restricts the
+   * list to one invoice subject. Any other value (or absent) = all.
+   */
+  readonly subject?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -112,8 +117,14 @@ export default async function AdminInvoicesPage({
     query.status && VALID_STATUSES.has(query.status) ? query.status : undefined;
   const includeDrafts = statusFilter === 'draft';
   const paidOnlineOnly = query.paidOnline === '1';
+  // 054-event-fee-invoices — subject filter. Only the two known subjects
+  // are honoured; any other value falls through to "all".
+  const subjectFilter =
+    query.subject === 'membership' || query.subject === 'event'
+      ? query.subject
+      : undefined;
   const hasFilters =
-    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly;
+    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly || Boolean(subjectFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -143,6 +154,7 @@ export default async function AdminInvoicesPage({
       : {}),
     ...(qTrim ? { search: qTrim } : {}),
     ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
+    ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -274,12 +286,21 @@ export default async function AdminInvoicesPage({
         invoiceId: r.invoiceId,
         documentNumber: r.documentNumber?.raw ?? '—',
         status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
-        // 054-event-fee-invoices — the table row's `memberId` is the F3
-        // member link target; membership invoices always carry one
-        // (`invoices_subject_fields_ck`). Coalesce for the type (an
-        // event-fee invoice gets event-aware row rendering in a future
-        // task; until then it would render with an empty member link).
+        // 054-event-fee-invoices — subject discriminator drives the Event
+        // chip; the buyer column renders membership + event invoices alike.
+        invoiceSubject: r.invoiceSubject,
+        // The buyer name links to the F3 member ONLY when one exists:
+        // membership invoices always carry a `member_id`
+        // (`invoices_subject_fields_ck`), and a matched-member event invoice
+        // does too. A non-member event attendee has `member_id IS NULL` — its
+        // name renders as plain text (no broken `/admin/members/` link).
+        buyerHasMemberLink: r.memberId !== null,
+        // `memberId` is the link target; empty string when there is no member
+        // (event non-member) — the table never dereferences it in that case.
         memberId: r.memberId ?? '',
+        // Buyer display name: the frozen identity snapshot (legal_name —
+        // present on issued/paid rows + non-member event drafts), else the
+        // live member-directory company name (drafts), else a placeholder.
         memberName:
           r.memberIdentitySnapshot?.legal_name ??
           (r.memberId !== null ? memberNameById.get(r.memberId) : undefined) ??

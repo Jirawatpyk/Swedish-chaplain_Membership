@@ -110,6 +110,9 @@ export interface InvoiceRepo {
       readonly search?: string | undefined;
       readonly includeDrafts?: boolean | undefined;
       readonly paidOnlineOnly?: boolean | undefined;
+      // 054-event-fee-invoices — restrict to a single invoice subject.
+      // Absent = all subjects (membership + event).
+      readonly invoiceSubject?: 'membership' | 'event' | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

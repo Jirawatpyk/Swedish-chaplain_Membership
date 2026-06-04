@@ -1570,9 +1570,13 @@
           "dueDate": "ครบกำหนด",
           "total": "ยอดรวม",
           "actions": "",
-          "member": "สมาชิก",
+          "buyer": "ผู้ซื้อ",
           "method": "ช่องทางชำระ",
           "receiptNumber": "เลขใบเสร็จ"
+        },
+        "subjectChip": {
+          "event": "อีเวนต์",
+          "eventAria": "ใบแจ้งหนี้ค่าอีเวนต์"
         },
         "statuses": {
           "draft": "ร่าง",
@@ -1589,7 +1593,12 @@
         "filteredEmpty": "ไม่พบใบแจ้งหนี้ที่ตรงกับตัวกรอง",
         "filters": {
           "allStatuses": "ทุกสถานะ",
-          "clearAll": "ล้างตัวกรอง"
+          "clearAll": "ล้างตัวกรอง",
+          "subject": {
+            "all": "ทุกประเภท",
+            "membership": "ค่าสมาชิก",
+            "event": "ค่าอีเวนต์"
+          }
         },
         "creditedSuffix": "+{count} ใบลดหนี้",
         "creditedTooltip": "ใบลดหนี้ {count} ฉบับ · ลดหนี้ไปแล้ว {amount} บาท",
