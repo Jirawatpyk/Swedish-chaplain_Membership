@@ -79,6 +79,10 @@ import type {
   EraseAttendeePiiOutput,
   EraseAttendeePiiError,
 } from '@/modules/events/application/use-cases/erase-attendee-pii';
+import {
+  makeEventRegistrationLookupForTenant,
+  asRegistrationId,
+} from '@/modules/events';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
 import { makeDrizzleQuotaAccountingAdapter } from '@/modules/events/infrastructure/drizzle-quota-accounting-adapter';
@@ -127,6 +131,34 @@ export async function runLoadEventDetail(
   return runInTenant(ctx, async (tx) => {
     const deps = makeLoadEventDetailDeps(tx);
     return loadEventDetail(deps, { ...input, tenantId });
+  });
+}
+
+/**
+ * 054-event-fee-invoices Task 10 — resolve a registration id to its event id
+ * under the caller's tenant RLS. Used by `/admin/invoices/new` to pre-fill
+ * the event picker from a `?eventRegistrationId=` deep-link.
+ *
+ * Returns the `eventId` (so the client picker can fetch the attendee list)
+ * or `null` when the registration does not exist in the tenant (RLS hides
+ * cross-tenant rows — a null is a clean miss, the page just renders the
+ * empty Event tab). Threads the `runInTenant` tx into the F6 lookup factory
+ * so the read runs under `SET LOCAL app.current_tenant` (Principle I);
+ * `asRegistrationId` validates the uuid shape before the SELECT.
+ */
+export async function runResolveRegistrationEventId(
+  tenantSlug: string,
+  registrationId: string,
+): Promise<string | null> {
+  const ctx = asTenantContext(tenantSlug);
+  return runInTenant(ctx, async (tx) => {
+    const lookup = makeEventRegistrationLookupForTenant(tx);
+    const result = await lookup.findById(
+      asTenantId(tenantSlug),
+      asRegistrationId(registrationId),
+    );
+    if (!result.ok || result.value === null) return null;
+    return String(result.value.eventId);
   });
 }
 
