@@ -280,6 +280,17 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
       }),
     );
 
+    // Guard against a false-positive: confirm the void row really landed,
+    // otherwise the "draft succeeds" assertion below would pass even if the
+    // void INSERT had silently failed.
+    const voidExists = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, voidInvoiceId))),
+    );
+    expect(voidExists[0]!.n).toBe(1);
+
     // A non-void draft for the SAME registration MUST succeed — the void row is
     // excluded from the partial unique index (predicate: `status <> 'void'`).
     const afterVoidId = await insertDraft(registrationIdB, eventIdB);

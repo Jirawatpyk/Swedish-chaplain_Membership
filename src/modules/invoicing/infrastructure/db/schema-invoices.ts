@@ -78,6 +78,18 @@ export const invoices = pgTable(
     // includes the 7% component. Defaults false to keep F4 behaviour intact.
     vatInclusive: boolean('vat_inclusive').notNull().default(false),
 
+    // FORWARD DEPENDENCY (event-issue task): the live CHECK
+    // `invoices_non_draft_has_snapshots` requires the FULL snapshot/numbering
+    // set on every non-draft row — including `pro_rate_policy_snapshot` and
+    // `net_days_snapshot`, which event invoices do NOT populate (pro-rating is
+    // membership-only). Event DRAFTS are exempt (the CHECK is `status='draft'
+    // OR (...)`), so this schema is correct for drafts today. Before the first
+    // event invoice is ISSUED, the event-issue task MUST DROP + re-ADD
+    // `invoices_non_draft_has_snapshots` with the event subject carved out
+    // (audit all 16 required fields against what an event invoice actually
+    // populates; `member_identity_snapshot` IS populated as the buyer snapshot
+    // for event invoices, so that field stays required in the revised CHECK).
+
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
 
