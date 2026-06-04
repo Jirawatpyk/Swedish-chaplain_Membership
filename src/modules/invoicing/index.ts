@@ -39,6 +39,7 @@ export { Money } from './domain/value-objects/money';
 export { Money as AmountSatang } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
 export { calculateVat } from './domain/policies/calculate-vat';
+export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
 export {
   DocumentNumber,
   DOCUMENT_NUMBER_MAX_SEQ,

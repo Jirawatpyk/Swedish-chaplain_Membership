@@ -26,4 +26,11 @@ describe('splitVatInclusive (half-away, reuses Money)', () => {
       expect(subtotal.add(vat).satang).toBe(t);
     }
   });
+
+  it('AS-VAT-02: 0% rate → vat=0, subtotal=total', () => {
+    const total = Money.fromSatangUnsafe(107_000n);
+    const { subtotal, vat } = splitVatInclusive(total, 0n);
+    expect(vat.satang).toBe(0n);
+    expect(subtotal.satang).toBe(total.satang);
+  });
 });

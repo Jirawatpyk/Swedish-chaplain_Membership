@@ -6,6 +6,9 @@ import { Money } from './money';
  * (700n = 7%). subtotal = total × 10000/(10000+rateBps) rounded half-away-from-
  * zero (Money.multiplyByFraction), vat = total − subtotal (derived → the
  * invariant subtotal+vat===total holds exactly). Pure, no I/O.
+ *
+ * @remarks Precondition: caller guarantees `rateBps >= 0` (the validation
+ * boundary is the `VatRate` value object). Throws only on a programming error.
  */
 export function splitVatInclusive(
   total: Money,
