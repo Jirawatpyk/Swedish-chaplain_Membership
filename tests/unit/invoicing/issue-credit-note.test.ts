@@ -184,7 +184,11 @@ function makeCreditNote(
   creditAmount: Money,
   vat: Money,
   total: Money,
-  originalInvoiceMemberId: string,
+  // 054-event-fee-invoices (Task 8 reviewer fix) — null for non-member
+  // event CNs, a real uuid for matched-member CNs. Was `string` + `?? 'unknown'`,
+  // which was a lie that could make a future ownership-check test pass for the
+  // wrong reason. Now honest: non-member invoice → null, matched-member → memberId.
+  originalInvoiceMemberId: string | null,
 ): CreditNote {
   return {
     tenantId: 'test-swecham',
@@ -244,7 +248,7 @@ function makeDeps(
           Money.fromSatangUnsafe(input.creditAmountSatang),
           Money.fromSatangUnsafe(input.vatSatang),
           Money.fromSatangUnsafe(input.totalSatang),
-          (invoice?.memberId ?? 'unknown'),
+          (invoice?.memberId ?? null),
         ),
       ),
       findById: vi.fn(),
@@ -255,7 +259,7 @@ function makeDeps(
           Money.fromSatangUnsafe(1n),
           Money.fromSatangUnsafe(0n),
           Money.fromSatangUnsafe(1n),
-          invoice?.memberId ?? 'unknown',
+          invoice?.memberId ?? null,
         ),
       ]),
       listPaged: vi.fn(),
