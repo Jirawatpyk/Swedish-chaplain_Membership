@@ -152,7 +152,7 @@ export function InvoiceFilters() {
       >
         <SelectTrigger
           className="sm:w-[12rem]"
-          aria-label={t('filters.subject.all')}
+          aria-label={t('filters.subject.label')}
           data-testid="invoice-subject-filter"
         >
           <TranslatedSelectValue

@@ -1595,6 +1595,7 @@
           "allStatuses": "Alla status",
           "clearAll": "Rensa filter",
           "subject": {
+            "label": "Fakturatyp",
             "all": "Alla typer",
             "membership": "Medlemskap",
             "event": "Evenemang"

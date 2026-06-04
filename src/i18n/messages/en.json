@@ -1595,6 +1595,7 @@
           "allStatuses": "All statuses",
           "clearAll": "Clear filters",
           "subject": {
+            "label": "Invoice type",
             "all": "All types",
             "membership": "Membership",
             "event": "Event"

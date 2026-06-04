@@ -96,11 +96,12 @@ export interface Invoice {
   readonly tenantId: string;
   readonly invoiceId: InvoiceId;
   /**
-   * 054-event-fee-invoices — member/plan identity is populated for
-   * `invoiceSubject === 'membership'` and NULL for `'event'` invoices.
-   * The `invoices_subject_fields_ck` DB CHECK guarantees presence per
-   * subject; callers MUST narrow on `invoiceSubject` before relying on
-   * these being non-null.
+   * 054-event-fee-invoices — membership invoices always carry member_id,
+   * plan_id, and plan_year (enforced by `invoices_subject_fields_ck` DB
+   * CHECK). Event invoices carry event_id and event_registration_id;
+   * member_id is set when the attendee is a matched member, or null for a
+   * non-member buyer. Callers MUST narrow on `invoiceSubject` before
+   * relying on any of these being non-null.
    */
   readonly memberId: string | null;
   readonly planId: string | null;
