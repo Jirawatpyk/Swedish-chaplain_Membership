@@ -17,6 +17,8 @@
  *  9. happy path — draft auto_email_on_issue = false → no outbox
  * 10. happy path — draft auto_email_on_issue = true explicit
  * 11. happy path — tenant auto_email = false + draft null → no outbox
+ * 12. no_buyer_snapshot — non-member event draft with null snapshot
+ * 13. VAT-inclusive happy path — splitVatInclusive branch correct total
  *
  * Ports are mocked with vi.fn(); the tx parameter is opaque.
  */
@@ -38,8 +40,17 @@ import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/i
 
 const INVOICE_ID = '00000000-0000-0000-0000-000000000001';
 
+/**
+ * Default draft factory. Safe defaults match the classic MEMBERSHIP path so
+ * existing tests need no changes. Override individual fields to exercise
+ * other subjects/branches.
+ *
+ * The `as Invoice` cast has been dropped so TypeScript enforces that all
+ * required Invoice fields are present — missing or misspelled fields produce
+ * a compile error rather than silently producing a partial object at runtime.
+ */
 function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
-  const line: InvoiceLine = {
+  const membershipLine: InvoiceLine = {
     lineId: asInvoiceLineId('line-1'),
     kind: 'membership_fee',
     descriptionTh: 'ค่าสมาชิก',
@@ -57,6 +68,12 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     memberId: 'member-1',
     planId: 'corporate-regular',
     planYear: 2026,
+    // 054-event-fee-invoices — new discriminator fields; safe defaults keep
+    // existing tests on the membership path without any override.
+    invoiceSubject: 'membership',
+    vatInclusive: false,
+    eventId: null,
+    eventRegistrationId: null,
     status: 'draft',
     draftByUserId: 'actor-user',
     fiscalYear: null,
@@ -86,11 +103,15 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     autoEmailOnIssue: null,
     pdf: null,
     receiptPdf: null,
-    lines: [line],
+    receiptPdfStatus: null,
+    receiptPdfRenderAttempts: 0,
+    receiptPdfLastError: null,
+    receiptDocumentNumberRaw: null,
+    lines: [membershipLine],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
     ...overrides,
-  } as Invoice;
+  };
 }
 
 function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): TenantInvoiceSettingsView {
@@ -510,6 +531,107 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       expect.anything(),
       expect.objectContaining({ requestId: null }),
     );
+  });
+
+  // --- 054-event-fee-invoices (Task 7) new branches --------------------------
+
+  it('no_buyer_snapshot — non-member event draft with null memberIdentitySnapshot → err (data-integrity guard)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(10004n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(10004n),
+      position: 1,
+    };
+    const nonMemberEventDraft = makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-1',
+      eventRegistrationId: 'reg-uuid-1',
+      memberIdentitySnapshot: null, // the corrupted state the guard defends against
+      lines: [eventLine],
+    });
+    const deps = makeDeps(nonMemberEventDraft, makeSettings(), null /* member irrelevant */);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_buyer_snapshot');
+    // Confirms the member path was NOT entered (getForIssue never called).
+    expect(deps.memberIdentity.getForIssue).not.toHaveBeenCalled();
+  });
+
+  it('VAT-inclusive branch — splitVatInclusive path: 10004 satang inclusive @ 7% → total 10004 (not 10005), subtotal+vat=total', async () => {
+    const INCLUSIVE_SATANG = 10004n; // 100.04 THB — known off-by-1 case under naive recompute
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(INCLUSIVE_SATANG),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(INCLUSIVE_SATANG),
+      position: 1,
+    };
+    const buyerSnapshot = Object.freeze({
+      legal_name: 'Beta Imports Ltd',
+      tax_id: '9876543210123',
+      address: '50 Sukhumvit Road, Bangkok 10110',
+      primary_contact_name: 'Jane Doe',
+      primary_contact_email: 'jane@beta.example',
+    });
+    const nonMemberEventDraft = makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-2',
+      eventRegistrationId: 'reg-uuid-2',
+      memberIdentitySnapshot: buyerSnapshot,
+      lines: [eventLine],
+    });
+    // Capture what applyIssue was called with so we can assert the VAT amounts.
+    let capturedIssueInput: Parameters<IssueInvoiceDeps['invoiceRepo']['applyIssue']>[1] | undefined;
+    const deps = makeDeps(nonMemberEventDraft, makeSettings(), null, {
+      invoiceRepo: {
+        ...makeDeps(nonMemberEventDraft, makeSettings(), null).invoiceRepo,
+        applyIssue: vi.fn(async (_tx, issueInput) => {
+          capturedIssueInput = issueInput;
+          return {
+            ...nonMemberEventDraft,
+            status: 'issued',
+            fiscalYear: 2026 as never,
+            sequenceNumber: 1,
+            documentNumber: { raw: issueInput.documentNumber } as never,
+            pdf: issueInput.pdf,
+          } as Invoice;
+        }),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(capturedIssueInput).toBeDefined();
+    const { subtotalSatang, vatSatang, totalSatang } = capturedIssueInput!;
+    expect(totalSatang).toBe(asSatang(INCLUSIVE_SATANG));
+    expect(BigInt(totalSatang.toString())).toBe(10004n); // NOT 10005
+    expect(BigInt(subtotalSatang.toString()) + BigInt(vatSatang.toString())).toBe(10004n);
+    // pro_rate_policy_snapshot is NULL for event (relaxed CHECK migration 0203).
+    expect(capturedIssueInput!.proRatePolicySnapshot).toBeNull();
+    // Audit emitted via non-timeline branch (no member_id in payload).
+    const issuedCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) => (c[1] as Record<string,unknown>).eventType === 'invoice_issued',
+    );
+    expect(issuedCall).toBeDefined();
+    const payload = (issuedCall![1] as Record<string, unknown>).payload as Record<string, unknown>;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe('reg-uuid-2');
   });
 });
 

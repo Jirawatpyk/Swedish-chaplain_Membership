@@ -6,6 +6,8 @@
  * Canonical lock order (documented below so reviewers can spot-check):
  *   1. invoice row FOR UPDATE (lockForUpdate — serialises concurrent issues)
  *   2. member FOR UPDATE (archive-race guard FR-037)
+ *      — SKIPPED for non-member event invoices (buyer snapshot pinned at
+ *        draft; there is no F3 member row to lock)
  *   3. pg_advisory_xact_lock('invoicing:{tenant}:{doc_type}:{fy}')
  *   4. tenant_document_sequences FOR UPDATE (inside allocator)
  *
@@ -29,7 +31,8 @@
  *
  * Operations (all inside a single DB transaction):
  *   A. load tenant settings (no lock; read-only snapshot)
- *   B. load + lock member (archive-race guard)
+ *   B. load + lock member (archive-race guard — SKIPPED for non-member
+ *      event invoices; buyer snapshot was pinned at draft)
  *   C. load + lock invoice draft
  *   D. compute fiscal year (Bangkok TZ)
  *   E. allocate sequence number
@@ -64,8 +67,7 @@ import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type {
   AuditPort,
-  F4AuditEventType,
-  F4MemberTimelineAuditEventType,
+  F4NonTimelineEventType,
 } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
@@ -290,7 +292,12 @@ export async function issueInvoice(
     // an `IssueInvoiceInternalError` so withTx rolls back and the
     // allocator's increment is NOT committed.
 
-    // E. Allocate sequence
+    // E. Allocate sequence.
+    // Event + membership invoices INTENTIONALLY share the single
+    // `documentType:'invoice'` §87 stream. Thai RD §87 requires a
+    // continuous, no-gaps sequence across ALL tax invoices for the
+    // fiscal year — a separate stream for events would create gaps in
+    // the membership stream and vice versa.
     const seq = await deps.sequenceAllocator.allocateNext(tx, {
       tenantId: input.tenantId,
       documentType: 'invoice',
@@ -457,15 +464,14 @@ export async function issueInvoice(
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,
         requestId: input.requestId ?? null,
-        // Cast: `invoice_issued` is a timeline-listed type, but for the no-member
-        // event variant we deliberately emit on the non-timeline branch (no
-        // member_id available; the buyer is not an F3 member). The runtime
-        // adapter is event-type-agnostic — only the compile-time payload contract
-        // differs. Same documented escape as create-event-invoice-draft.ts.
-        eventType: 'invoice_issued' as Exclude<
-          F4AuditEventType,
-          F4MemberTimelineAuditEventType
-        >,
+        // deliberate: emit a timeline-typed event through the non-timeline payload
+        // branch for non-member events (no member_id); MemberTimelineAuditPayload
+        // intentionally NOT widened. The runtime adapter is event-type-agnostic;
+        // only the compile-time payload contract differs. `as unknown as
+        // F4NonTimelineEventType` makes the bypass explicit (a plain `as
+        // Exclude<…>` would silently skip the payload check since invoice_issued
+        // IS in F4MemberTimelineAuditEventType and Exclude resolves to `never`).
+        eventType: 'invoice_issued' as unknown as F4NonTimelineEventType,
         actorUserId: input.actorUserId,
         summary: issuedSummary,
         payload: {

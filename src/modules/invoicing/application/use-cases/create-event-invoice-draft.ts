@@ -45,8 +45,7 @@ import type { EventDetailsLookupPort } from '../ports/event-details-lookup-port'
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type {
   AuditPort,
-  F4AuditEventType,
-  F4MemberTimelineAuditEventType,
+  F4NonTimelineEventType,
 } from '../ports/audit-port';
 import {
   asInvoiceId,
@@ -161,11 +160,14 @@ async function emitNonTimelineDraftCreated(
   await audit.emit(tx, {
     tenantId: event.tenantId,
     requestId: event.requestId,
-    // Cast: `invoice_draft_created` is a timeline-listed type, but for the
-    // no-member event variant we deliberately emit it on the non-timeline
-    // branch (see docstring). The runtime adapter is event-type-agnostic;
-    // only the compile-time payload contract differs.
-    eventType: 'invoice_draft_created' as Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>,
+    // deliberate: emit a timeline-typed event through the non-timeline payload
+    // branch for non-member events (no member_id); MemberTimelineAuditPayload
+    // intentionally NOT widened. The runtime adapter is event-type-agnostic;
+    // only the compile-time payload contract differs. `as unknown as
+    // F4NonTimelineEventType` makes the bypass explicit (a plain `as
+    // Exclude<…>` would silently skip the payload check since invoice_draft_created
+    // IS in F4MemberTimelineAuditEventType and Exclude resolves to `never` for it).
+    eventType: 'invoice_draft_created' as unknown as F4NonTimelineEventType,
     actorUserId: event.actorUserId,
     summary: event.summary,
     payload: event.payload,

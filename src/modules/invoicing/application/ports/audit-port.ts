@@ -195,6 +195,18 @@ export type F4MemberTimelineAuditEventType =
   | 'invoice_pdf_resent'
   | 'credit_note_issued';
 
+/**
+ * The set of F4 audit event types that do NOT require `member_id` in their
+ * payload. Naming this type explicitly avoids the misleading pattern
+ * `'invoice_issued' as Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>`
+ * at NON-MEMBER emit sites — `Exclude<…>` resolves to a union that does NOT
+ * include `invoice_issued`, so the plain `as` bypasses the payload contract
+ * silently. Callers that intentionally emit a timeline-typed event through the
+ * non-timeline branch (no member_id, non-member event buyer) must cast via
+ * `as unknown as F4NonTimelineEventType` to make the deliberate bypass visible.
+ */
+export type F4NonTimelineEventType = Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>;
+
 /** Payload contract for events that surface in the F3 member timeline. */
 export type MemberTimelineAuditPayload = {
   readonly member_id: string;
