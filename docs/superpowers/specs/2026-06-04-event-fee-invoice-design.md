@@ -126,6 +126,14 @@ must be made subject-aware (log as a Complexity-Tracking deviation):
 `issue-credit-note.ts` puts `member_id: loaded.memberId` into a
 `F4MemberTimelineAuditEventType` payload (`member_id: string` required) and
 auto-emails `primary_contact_email`. For event/non-member invoices:
+- **§86/10 gate (HIGH-1, commit `1f6dcf7e`):** a §86/10 ใบลดหนี้ can ONLY reference a
+  §86/4 ใบกำกับภาษี. A `receipt_separate` (§105 ใบเสร็จรับเงิน, no-TIN buyer) event
+  invoice is **NOT creditable** — `issueCreditNote` returns `err({code:'receipt_not_creditable'})`
+  **before** `allocateNext` (no §87 credit-note number burned, no re-render). Detection
+  mirrors issue-invoice: `invoiceSubject==='event' && !buyerHasTin` (trim). Refund/correction
+  of a §105 receipt is via **void** (if unpaid) or **F5 refund** (Stripe/PromptPay); an
+  in-system corrected-receipt flow is an acknowledged v1 gap. TIN-bearing event invoices
+  (kind=`invoice`, §86/4) remain creditable normally.
 - **Audit routing (NF-A):** when `member_id` is null, emit `credit_note_issued`
   through the **non-timeline** branch `Exclude<F4AuditEventType,
   F4MemberTimelineAuditEventType>` (`payload: Record<string, unknown>` with
@@ -445,6 +453,14 @@ deviations recorded in `plan.md` Complexity Tracking.
   tenant-linked, not member-linked) — this keeps the admin record-payment path
   working for non-member event invoices while self-pay stays members-only at the
   portal layer.
+  **NF-B — SATISFIED (commit `eccaac12`):** the F4 `recordPayment` use-case originally
+  also hard-rejected `member_id IS NULL` (`no_snapshot_on_invoice`), so the admin
+  mark-paid path was membership-only despite the DTO widening — a final-review HIGH.
+  Fixed: the null-member guard now rejects only NON-event subjects; an event invoice
+  carries its payer in `member_identity_snapshot`, so a null `member_id` is valid.
+  Audit branches to the non-timeline F4 variant for null-member (mirrors
+  issue-invoice/issue-credit-note); the payment-time receipt is forced to
+  `receipt_separate` for a no-TIN buyer. F5 portal self-pay stays members-only.
 - `member_identity_snapshot` → `BuyerIdentitySnapshot` rename (decide at
   /speckit.plan; if not renamed, the clarifying comment + retention-sweep
   inclusion are mandatory).
