@@ -77,7 +77,7 @@ describe('EventRegistrationLookupPort â€” cross-tenant isolation (Principle I â€
         ticketPriceThb: 3500,
         paymentStatus: 'paid',
         registeredAt: new Date('2026-09-01T03:00:00Z'),
-      } as unknown as NewEventRegistrationRow);
+      } satisfies NewEventRegistrationRow);
     });
   }, 60_000);
 

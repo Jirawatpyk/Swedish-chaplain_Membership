@@ -45,7 +45,7 @@ function toView(reg: EventRegistrationAggregate): EventRegistrationView {
     attendeeName: reg.attendee.name,
     attendeeEmail: String(reg.attendee.email),
     attendeeCompany: reg.attendee.company,
-    ticketPriceThb: reg.ticket.priceThb,
+    ticketPriceThb: reg.ticket.priceThb, // integer THB, NOT satang — caller must ×100 when converting to satang
     paymentStatus: String(reg.ticket.paymentStatus),
     matchType: String(reg.match.type),
     matchedMemberId:

@@ -9,7 +9,7 @@
  * pseudonymised flag) + the err-branch translation, with the F6 barrel
  * lookup mocked so we drive exact aggregates without a DB.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const findByIdMock = vi.fn();
 
@@ -23,6 +23,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { logger } from '@/lib/logger';
 
 // Minimal hand-built aggregate shaped like an F6 EventRegistrationAggregate.
 // Branded fields are plain strings at runtime; the cast satisfies the
@@ -55,6 +56,9 @@ function aggregate(overrides: Record<string, unknown> = {}) {
 const FAKE_TX = {} as unknown;
 
 describe('eventRegistrationLookupAdapter.findById — aggregate → view mapping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
   it('maps a non-member aggregate to the primitive view (brands dropped)', async () => {
     findByIdMock.mockResolvedValueOnce({ ok: true, value: aggregate() });
 
@@ -157,7 +161,7 @@ describe('eventRegistrationLookupAdapter.findById — aggregate → view mapping
     expect(result.value).toBeNull();
   });
 
-  it('translates the F6 repo err branch to err({ kind: lookup_failed })', async () => {
+  it('translates the F6 repo err branch to err({ kind: lookup_failed }) and emits a structured pino breadcrumb', async () => {
     findByIdMock.mockResolvedValueOnce({
       ok: false,
       error: { kind: 'db_error', detail: 'connection refused' },
@@ -166,11 +170,23 @@ describe('eventRegistrationLookupAdapter.findById — aggregate → view mapping
     const result = await eventRegistrationLookupAdapter.findById(
       FAKE_TX,
       'test-tenant',
-      'reg-uuid-1',
+      'reg-uuid-err',
     );
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected err');
     expect(result.error).toEqual({ kind: 'lookup_failed' });
+
+    // Pin the logging contract: a structured breadcrumb MUST be emitted so
+    // the F6 repo error is observable in production logs. A future refactor
+    // that silently drops logger.error would now be caught here.
+    expect(vi.mocked(logger.error)).toHaveBeenCalledOnce();
+    const [bindings] = vi.mocked(logger.error).mock.calls[0]!;
+    expect((bindings as Record<string, unknown>)['event']).toBe(
+      'f4_event_registration_lookup_failed',
+    );
+    expect((bindings as Record<string, unknown>)['tenantId']).toBe('test-tenant');
+    // registrationId in the breadcrumb — no PII (no attendee name/email)
+    expect((bindings as Record<string, unknown>)['registrationId']).toBe('reg-uuid-err');
   });
 });
