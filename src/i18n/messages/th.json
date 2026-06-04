@@ -1578,6 +1578,9 @@
           "event": "อีเวนต์",
           "eventAria": "ใบแจ้งหนี้ค่าอีเวนต์"
         },
+        "buyerSubtitle": {
+          "membership": "สมาชิก {year}"
+        },
         "statuses": {
           "draft": "ร่าง",
           "issued": "ออกแล้ว",

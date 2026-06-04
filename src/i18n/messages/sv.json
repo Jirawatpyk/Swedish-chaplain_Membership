@@ -1578,6 +1578,9 @@
           "event": "Evenemang",
           "eventAria": "Evenemangsavgiftsfaktura"
         },
+        "buyerSubtitle": {
+          "membership": "Medlemskap {year}"
+        },
         "statuses": {
           "draft": "Utkast",
           "issued": "Utfärdad",

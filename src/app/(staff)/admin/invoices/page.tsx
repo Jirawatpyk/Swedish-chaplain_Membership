@@ -31,6 +31,8 @@ import {
 } from '@/modules/payments';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { runListEventNamesByIds } from '@/lib/events-admin-deps';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
@@ -51,6 +53,44 @@ const VALID_STATUSES = new Set([
 ]);
 
 const PAGE_SIZE = 50;
+
+/**
+ * 054-event-fee-invoices Task 14 — compose the muted buyer-subtitle line.
+ *
+ * Event rows: `{event name} · {CE start date}`. The event name comes from
+ * the batched `eventNameById` map (resolved via the F6 barrel in the page
+ * body); the date is Bangkok-local CE (Buddhist Era is display-only, the
+ * list stays CE-consistent with issue/due dates). When the event name can't
+ * be resolved (archived event / lookup miss) we still show the CE date if
+ * we have it, else null — never a crash, never a bare separator.
+ *
+ * Membership rows: the localised "Membership {year}" string built from
+ * `planYear` (already on the invoice row — no lookup needed). Null when a
+ * (legacy) membership row somehow lacks a plan_year.
+ *
+ * Returns `null` for anything else — the table omits the line entirely.
+ */
+function buildBuyerSubtitle(
+  row: {
+    readonly invoiceSubject: 'membership' | 'event';
+    readonly eventId: string | null;
+    readonly planYear: number | null;
+  },
+  eventNameById: ReadonlyMap<string, { name: string; startDateIso: string }>,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string | null {
+  if (row.invoiceSubject === 'event') {
+    if (row.eventId === null) return null;
+    const meta = eventNameById.get(row.eventId);
+    if (meta === undefined) return null;
+    const ceDate = bangkokLocalDate(meta.startDateIso);
+    // `·` is a literal separator (not i18n); the event name is data.
+    return meta.name ? `${meta.name} · ${ceDate}` : ceDate;
+  }
+  // Membership row.
+  if (row.planYear === null) return null;
+  return t('list.buyerSubtitle.membership', { year: row.planYear });
+}
 
 interface SearchParams {
   readonly q?: string;
@@ -255,6 +295,29 @@ export default async function AdminInvoicesPage({
     }
   }
 
+  // 054-event-fee-invoices Task 14 — buyer-subtitle event names.
+  // Collect the DISTINCT event ids from the event rows on THIS page, then
+  // resolve their names + start dates in ONE batched query via the F6
+  // public barrel (Principle III — the cross-context read goes through the
+  // lib composition layer, never a JOIN inside F4 listPaged). The lookup is
+  // skipped entirely when the page has no event rows (the default all-
+  // membership view), so the common path pays zero extra DB cost.
+  const eventNameById = new Map<string, { name: string; startDateIso: string }>();
+  if (invoicesResult.ok) {
+    const eventIds = new Set<string>();
+    for (const r of invoicesResult.value.rows) {
+      if (r.invoiceSubject === 'event' && r.eventId !== null) {
+        eventIds.add(r.eventId);
+      }
+    }
+    if (eventIds.size > 0) {
+      const resolved = await runListEventNamesByIds(tenantCtx.slug, [...eventIds]);
+      for (const [id, meta] of resolved) {
+        eventNameById.set(id, meta);
+      }
+    }
+  }
+
   // Prefer the frozen snapshot on issued/paid/void invoices (FR-038) —
   // it's the legal source of truth and always present. Fall back to the
   // live directory map only for drafts (no snapshot yet). Ultimate
@@ -305,6 +368,13 @@ export default async function AdminInvoicesPage({
           r.memberIdentitySnapshot?.legal_name ??
           (r.memberId !== null ? memberNameById.get(r.memberId) : undefined) ??
           '—',
+        // 054-event-fee-invoices Task 14 — muted buyer subtitle. Event rows
+        // show the event name + Bangkok-local CE start date (BE is display-
+        // only; the list stays CE-consistent). When the event name can't be
+        // resolved (archived / lookup miss), fall back to just the CE date,
+        // else null. Membership rows show the localised "Membership {year}"
+        // from `planYear` (already on the invoice row — no lookup needed).
+        buyerSubtitle: buildBuyerSubtitle(r, eventNameById, t),
         issueDate: r.issueDate,
         dueDate: r.dueDate,
         totalSatang: r.total?.satang.toString() ?? '0',

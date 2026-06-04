@@ -88,6 +88,20 @@ export type InvoicesTableRow = {
   readonly memberId: string;
   /** Buyer display name — member company name OR non-member legal name. */
   readonly memberName: string;
+  /**
+   * 054-event-fee-invoices Task 14 — muted second line under the buyer
+   * name that describes + distinguishes the invoice:
+   *   - event rows  → `{event name} · {CE start date}` (e.g.
+   *     "TSCC Gala Dinner · 2026-06-15"); falls back to just the CE date
+   *     when the event name could not be resolved (archived / lookup miss).
+   *   - membership rows → the localised "Membership {year}" string.
+   *   - null when there is nothing useful to show (no plan_year, no event
+   *     id) — the line is simply omitted, never rendered empty.
+   * The string is fully composed in the server component (page.tsx) so the
+   * event name (data, not i18n) and the localised membership label are both
+   * resolved before the row reaches this client component.
+   */
+  readonly buyerSubtitle: string | null;
   readonly issueDate: string | null;
   readonly dueDate: string | null;
   readonly totalSatang: string;
@@ -380,37 +394,49 @@ export function InvoicesTable({
                 )}
               </TableCell>
               <TableCell className="align-middle">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {/* 054-event-fee-invoices — buyer column. Membership
-                      invoices (and matched-member event invoices) link to
-                      the F3 member; event NON-member buyers have no member
-                      row, so the name renders as plain text — NOT a broken
-                      `/admin/members/` link with an empty id. */}
-                  {r.buyerHasMemberLink ? (
-                    <Link
-                      href={`/admin/members/${r.memberId}`}
-                      className="hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                    >
-                      {r.memberName}
-                    </Link>
-                  ) : (
-                    <span>{r.memberName}</span>
-                  )}
-                  {r.invoiceSubject === 'event' && (
-                    // Event chip — surfaces event-fee invoices at a glance.
-                    // aria-label gives SR users the full "Event-fee invoice"
-                    // context (the visible "Event" chip is terse for layout).
-                    // TODO(follow-up): event-name subtitle needs an `events`
-                    // join — F4 listPaged selects only from `invoices` and
-                    // crossing into the F6 `events` table is a non-trivial
-                    // cross-module join, so v1 ships the chip only.
-                    <Badge
-                      variant="secondary"
-                      className="font-normal"
-                      aria-label={t('subjectChip.eventAria')}
-                    >
-                      {t('subjectChip.event')}
-                    </Badge>
+                {/* 054-event-fee-invoices — buyer column. First line: the
+                    buyer name (+ Event chip on event rows). Second line
+                    (Task 14): the muted subtitle describing the invoice —
+                    event name + CE date, or "Membership {year}". */}
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {/* Membership invoices (and matched-member event
+                        invoices) link to the F3 member; event NON-member
+                        buyers have no member row, so the name renders as
+                        plain text — NOT a broken `/admin/members/` link
+                        with an empty id. */}
+                    {r.buyerHasMemberLink ? (
+                      <Link
+                        href={`/admin/members/${r.memberId}`}
+                        className="hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                      >
+                        {r.memberName}
+                      </Link>
+                    ) : (
+                      <span>{r.memberName}</span>
+                    )}
+                    {r.invoiceSubject === 'event' && (
+                      // Event chip — surfaces event-fee invoices at a glance.
+                      // aria-label gives SR users the full "Event-fee invoice"
+                      // context (the visible "Event" chip is terse for layout).
+                      // The subtitle below carries the event NAME + date.
+                      <Badge
+                        variant="secondary"
+                        className="font-normal"
+                        aria-label={t('subjectChip.eventAria')}
+                      >
+                        {t('subjectChip.event')}
+                      </Badge>
+                    )}
+                  </div>
+                  {r.buyerSubtitle !== null && (
+                    // Muted detail line. `block` so it stacks under the
+                    // name; `text-xs text-muted-foreground` keeps it a
+                    // secondary scan cue. Stacked text reflows cleanly at
+                    // 320px (no fixed width / nowrap).
+                    <span className="block text-xs text-muted-foreground">
+                      {r.buyerSubtitle}
+                    </span>
                   )}
                 </div>
               </TableCell>

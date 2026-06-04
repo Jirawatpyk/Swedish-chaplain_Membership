@@ -183,6 +183,7 @@ function makeDeps(
       setPartnerBenefit: setPartnerBenefitMock as never,
       setCulturalEvent: setCulturalEventMock as never,
       upsert: vi.fn() as never,
+      findByIds: vi.fn() as never,
       findByExternalId: vi.fn() as never,
       list: vi.fn() as never,
       getMatchCountsByEventIds: vi.fn() as never,

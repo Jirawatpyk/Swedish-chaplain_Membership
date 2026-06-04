@@ -32,6 +32,7 @@ type MockRecord<T> = { [K in keyof T]: ReturnType<typeof vi.fn> };
 function makeMockEventsRepo(): EventsRepository {
   const mock: MockRecord<EventsRepository> = {
     findById: vi.fn(),
+    findByIds: vi.fn(),
     findByExternalId: vi.fn(),
     upsert: vi.fn(),
     list: vi.fn(),

@@ -189,6 +189,7 @@ function makeDeps(
       setArchived: setArchivedMock as never,
       // unused but required by EventsRepository shape
       upsert: vi.fn() as never,
+      findByIds: vi.fn() as never,
       findByExternalId: vi.fn() as never,
       list: vi.fn() as never,
       getMatchCountsByEventIds: vi.fn() as never,

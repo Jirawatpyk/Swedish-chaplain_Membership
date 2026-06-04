@@ -522,6 +522,26 @@ export function makeEventDetailsLookupForTenant(
   return _makeEventsRepo(tx);
 }
 
+/**
+ * F4 invoicing bridge (054-event-fee-invoices Task 14): a tenant-scoped
+ * BATCHED event lookup, exposed through the public barrel so the
+ * `/admin/invoices` list composition (src/lib/events-admin-deps.ts) can
+ * resolve many event ids → names in ONE query without deep-importing
+ * events internals (Principle III). The caller passes its OWN runInTenant
+ * tx so the read runs under the same SET LOCAL app.current_tenant (RLS) —
+ * Principle I: cross-tenant ids are invisible (absent from the result map).
+ *
+ * Returns a `Pick<…, 'findByIds'>` (single-method surface) for the same
+ * reason `makeEventDetailsLookupForTenant` returns `Pick<…, 'findById'>`:
+ * the invoicing/list layer sees only the read it needs, and the barrel
+ * never re-exports the raw `makeDrizzleEventsRepository` factory.
+ */
+export function makeEventDetailsBatchLookupForTenant(
+  tx: TenantTx,
+): Pick<_EventsRepository, 'findByIds'> {
+  return _makeEventsRepo(tx);
+}
+
 // --- 7. Infrastructure composition factories (DI surface) -------------------
 
 export {

@@ -1578,6 +1578,9 @@
           "event": "Event",
           "eventAria": "Event-fee invoice"
         },
+        "buyerSubtitle": {
+          "membership": "Membership {year}"
+        },
         "statuses": {
           "draft": "Draft",
           "issued": "Issued",

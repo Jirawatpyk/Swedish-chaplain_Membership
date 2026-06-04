@@ -81,7 +81,10 @@ import type {
 } from '@/modules/events/application/use-cases/erase-attendee-pii';
 import {
   makeEventRegistrationLookupForTenant,
+  makeEventDetailsBatchLookupForTenant,
   asRegistrationId,
+  tryEventId,
+  type EventId,
 } from '@/modules/events';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
@@ -159,6 +162,64 @@ export async function runResolveRegistrationEventId(
     );
     if (!result.ok || result.value === null) return null;
     return String(result.value.eventId);
+  });
+}
+
+/**
+ * 054-event-fee-invoices Task 14 — resolve a batch of event ids to their
+ * `{ name, startDateIso }` under the caller's tenant RLS. Used by the
+ * `/admin/invoices` list to render the buyer-subtitle line (event name +
+ * CE start date) on event-fee invoice rows.
+ *
+ * ONE query (single `WHERE tenant_id = ? AND event_id IN (...)` SELECT via
+ * the F6 `findByIds` repo method) — no N+1. An empty `eventIds` returns an
+ * empty map WITHOUT touching the DB (the repo short-circuits), so an
+ * all-membership invoice page pays zero extra DB cost. Threads the
+ * `runInTenant` tx into the F6 batch-lookup factory so the read runs under
+ * `SET LOCAL app.current_tenant` (Principle I); cross-tenant ids are
+ * invisible (absent from the returned map, never leaked). Malformed ids are
+ * dropped via `tryEventId` (null → skipped) before the SELECT — the
+ * enrichment must never throw, so a stray non-UUID id is silently ignored
+ * rather than crashing the list render.
+ *
+ * `startDateIso` is the CE/UTC ISO instant (Buddhist Era is display-only —
+ * storage + this view stay Gregorian; the caller renders the Bangkok-local
+ * CE date via `bangkokLocalDate`).
+ *
+ * A repo error (DB blip / RLS drift) surfaces as an EMPTY map rather than a
+ * throw: the subtitle is a non-critical enrichment, so the list page must
+ * never 500 because the event-name lookup failed — event rows fall back to
+ * the CE date (or null) in the page composition. The F6 repo already logs
+ * the underlying failure.
+ */
+export async function runListEventNamesByIds(
+  tenantSlug: string,
+  eventIds: ReadonlyArray<string>,
+): Promise<ReadonlyMap<string, { name: string; startDateIso: string }>> {
+  if (eventIds.length === 0) return new Map();
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  // Drop malformed / non-UUID ids defensively. `eventId`s come from the
+  // F4 invoice rows (DB uuid column) so they are well-formed in practice,
+  // but `tryEventId` keeps the enrichment crash-proof.
+  const branded: EventId[] = [];
+  for (const id of eventIds) {
+    const e = tryEventId(id);
+    if (e !== null) branded.push(e);
+  }
+  const out = new Map<string, { name: string; startDateIso: string }>();
+  if (branded.length === 0) return out;
+  return runInTenant(ctx, async (tx) => {
+    const lookup = makeEventDetailsBatchLookupForTenant(tx);
+    const result = await lookup.findByIds(tenantId, branded);
+    if (!result.ok) return out;
+    for (const [eventId, event] of result.value) {
+      out.set(String(eventId), {
+        name: event.name,
+        startDateIso: event.startDate.toISOString(),
+      });
+    }
+    return out;
   });
 }
 
