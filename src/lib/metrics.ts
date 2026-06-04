@@ -572,12 +572,16 @@ export const invoicingMetrics = {
 
   /**
    * 054-event-fee-invoices (Task 15) — non-member event-buyer PII
-   * redaction sweep. Fires ONCE PER REDACTED ROW (label `outcome`
-   * 'redacted') and once with `outcome='swept_zero'` per tenant pass
-   * that found nothing eligible, so SRE can distinguish "ran, nothing
-   * due" from "cron never fired". A sustained `outcome='error'` rate
-   * signals the GUC/trigger path or audit_log is failing — the §87/3 +
-   * GDPR Art.17 erasure obligation is then NOT being met.
+   * redaction sweep. Fired ONCE PER TENANT PASS with `outcome='redacted'`
+   * when that pass tombstoned ≥1 row, else `outcome='swept_zero'` when it
+   * found nothing eligible, so SRE can distinguish "ran, nothing due" from
+   * "cron never fired". `outcome='error'` fires (a) once per tenant pass
+   * whose DB tx threw (the GUC/trigger path or audit_log is failing — the
+   * §87/3 + GDPR Art.17 erasure obligation is then NOT being met), and
+   * (b) once per PDF-blob delete that failed AFTER a committed DB tombstone
+   * (the authoritative DB copy is erased but the derived PDF bytes still
+   * sit in Blob — manual cleanup needed; not auto-retried). A sustained
+   * `outcome='error'` rate is the alerting anchor for both.
    */
   eventBuyerPiiRedacted(outcome: 'redacted' | 'swept_zero' | 'error', tenantId: string): void {
     safeMetric(() => {

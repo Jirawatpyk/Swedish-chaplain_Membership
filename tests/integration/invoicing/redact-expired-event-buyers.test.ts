@@ -32,7 +32,7 @@
  *
  * Migrations 0200–0205 MUST be applied first (`pnpm db:migrate`).
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
@@ -46,6 +46,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { events, eventRegistrations } from '@/modules/events/infrastructure/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { POST as redactCron } from '@/app/api/cron/invoicing/redact-expired-event-buyers/route';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
@@ -106,6 +107,10 @@ const ISSUED_NUMBERS = {
   pdfTemplateVersion: 1,
 };
 
+/** Issued tax-document PDF blob keys for the eligible (>10y) event invoice. */
+const OLD_INVOICE_PDF_KEY = 'test/redact-evt.pdf';
+const OLD_RECEIPT_PDF_KEY = 'test/redact-evt-receipt.pdf';
+
 describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member event buyers', () => {
   let tenant: TestTenant;
   let user: TestUser;
@@ -122,7 +127,18 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
   let memberId: string;
   const planId = 'redact-plan';
 
+  // Spy on the blob-storage delete so the cron's PII-PDF purge is observed
+  // WITHOUT hitting real Vercel Blob (the seeded keys are synthetic test
+  // paths that do not exist in the live store). mockResolvedValue mirrors
+  // the adapter's `Promise<void>` contract; the spy records every (key) the
+  // cron asks to erase so we can assert complete erasure.
+  let blobDeleteSpy: MockInstance<(key: string) => Promise<void>>;
+
   beforeAll(async () => {
+    blobDeleteSpy = vi
+      .spyOn(vercelBlobAdapter, 'delete')
+      .mockResolvedValue(undefined);
+
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
 
@@ -250,9 +266,12 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
           pro_rate_policy_snapshot = NULL,
           tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
           member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
-          pdf_blob_key = ${ISSUED_NUMBERS.pdfBlobKey},
+          pdf_blob_key = ${OLD_INVOICE_PDF_KEY},
           pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
-          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion},
+          receipt_pdf_blob_key = ${OLD_RECEIPT_PDF_KEY},
+          receipt_pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          receipt_pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
         WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${oldEventInvoiceId}
       `);
 
@@ -286,7 +305,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
           pro_rate_policy_snapshot = NULL,
           tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
           member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
-          pdf_blob_key = ${ISSUED_NUMBERS.pdfBlobKey},
+          pdf_blob_key = ${'test/redact-evt-recent.pdf'},
           pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
           pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
         WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${recentEventInvoiceId}
@@ -336,6 +355,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
   }, 90_000);
 
   afterAll(async () => {
+    blobDeleteSpy.mockRestore();
     await tenant.cleanup().catch(() => {});
   });
 
@@ -416,6 +436,22 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     expect(payloadStr).not.toContain('jane@old-buyer.example');
     expect(payloadStr).not.toContain('Sukhumvit');
 
+    // FIX 1 — the issued PDF BYTES (which print the buyer name / address /
+    // tax_id) are also erased: the cron deletes BOTH the invoice PDF blob
+    // and the receipt PDF blob for the redacted row. A DB tombstone without
+    // the blob purge would be INCOMPLETE erasure (the PII would still sit at
+    // a public, non-expiring Blob URL). Keys (not URLs) are not PII.
+    const deletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).toContain(OLD_INVOICE_PDF_KEY);
+    expect(deletedKeys).toContain(OLD_RECEIPT_PDF_KEY);
+
+    // The forensic audit record proves the blob purge happened alongside the
+    // DB tombstone: `blob_purged_keys` lists the KEYS erased (not URLs → not PII).
+    expect(payload.blob_purged_keys).toEqual(
+      expect.arrayContaining([OLD_INVOICE_PDF_KEY, OLD_RECEIPT_PDF_KEY]),
+    );
+    expect((payload.blob_purged_keys as string[]).length).toBe(2);
+
     // (b) recent event invoice UNTOUCHED.
     const recent = await readSnapshot(recentEventInvoiceId);
     expect(recent.legal_name).toBe('Old Buyer Co Ltd');
@@ -425,6 +461,13 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     const membership = await readSnapshot(oldMembershipInvoiceId);
     expect(membership.legal_name).toBe('Member Co');
     expect(membership.tax_id).toBe('1111111111111');
+
+    // And their PDF blobs are NEVER purged — only the eligible row's bytes
+    // are erased. (recent <10y event + >10y membership both retain their
+    // documents.)
+    const allDeletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
+    expect(allDeletedKeys).not.toContain('test/redact-evt-recent.pdf');
+    expect(allDeletedKeys).not.toContain('test/redact-mem.pdf');
   }, 90_000);
 
   it('is idempotent — re-running does NOT re-redact or emit a second audit row', async () => {
