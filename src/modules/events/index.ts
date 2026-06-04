@@ -445,12 +445,15 @@ export { makeDrizzleIdempotencySweepPort } from './infrastructure/drizzle-idempo
 // fully-wired deps object the use-case expects.
 import type { TenantTx } from '@/lib/db';
 import { makeDrizzleRegistrationsRepository as _makeRegRepo } from './infrastructure/drizzle-registrations-repository';
+import { makeDrizzleEventsRepository as _makeEventsRepo } from './infrastructure/drizzle-events-repository';
 import { makePinoAuditPort as _makePinoAudit } from './infrastructure/pino-audit-port';
-// Local type binding for the F4 invoicing-bridge factory below. The
-// `export type { RegistrationsRepository }` re-export at the top of this
-// file does NOT create an in-scope binding usable in a return annotation,
-// so import it here (aliased to avoid colliding with that re-export).
+// Local type bindings for the F4 invoicing-bridge factories below. The
+// `export type { RegistrationsRepository }` / `export type { EventsRepository }`
+// re-exports at the top of this file do NOT create in-scope bindings usable in
+// a return annotation, so import them here (aliased to avoid colliding with
+// those re-exports).
 import type { RegistrationsRepository as _RegistrationsRepository } from './application/ports/registrations-repository';
+import type { EventsRepository as _EventsRepository } from './application/ports/events-repository';
 import type {
   PseudonymisationHasher,
   PseudonymiseStaleNonMemberPiiDeps,
@@ -498,6 +501,25 @@ export function makeEventRegistrationLookupForTenant(
   tx: TenantTx,
 ): Pick<_RegistrationsRepository, 'findById'> {
   return _makeRegRepo(tx);
+}
+
+/**
+ * F4 invoicing bridge (054-event-fee-invoices, Task 6a): a tenant-scoped
+ * event-details lookup, exposed through the public barrel so the invoicing
+ * adapter never deep-imports events internals (Principle III). The caller
+ * passes its OWN runInTenant tx so the read runs under the same
+ * SET LOCAL app.current_tenant (RLS) — Principle I.
+ *
+ * Returns a `Pick<…, 'findById'>` rather than the raw repository so the
+ * invoicing module sees only the read it actually needs — same composition-
+ * factory posture as `makeEventRegistrationLookupForTenant` above (the barrel
+ * never re-exports the raw `makeDrizzleEventsRepository` factory;
+ * tests/unit/architecture/events-barrel.test.ts enforces that).
+ */
+export function makeEventDetailsLookupForTenant(
+  tx: TenantTx,
+): Pick<_EventsRepository, 'findById'> {
+  return _makeEventsRepo(tx);
 }
 
 // --- 7. Infrastructure composition factories (DI surface) -------------------

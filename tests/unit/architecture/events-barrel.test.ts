@@ -99,12 +99,15 @@ describe('events module barrel — architecture guard (L1 round-3)', () => {
 
   it('keeps the public surface bounded (no surprise exports)', () => {
     // Sanity check that the surface doesn't explode unintentionally.
-    // Current count tracks ~50 exports at Phase 4 end. Threshold is
+    // Current count tracks ~50 exports at Phase 4 end. Threshold was
     // bumped to <100 to accommodate Phase 5 (~5-7 wizard use-cases),
     // Phase 6 (~3 admin actions), Phase 7 (~3 CSV import), Phase 9
-    // (~1 relink), Phase 10 (~3 retention/erasure). Bump again if it
-    // becomes load-bearing.
-    expect(exportedNames.length).toBeLessThan(100);
+    // (~1 relink), Phase 10 (~3 retention/erasure). Bumped to <110 for
+    // 054-event-fee-invoices Task 6a (`makeEventDetailsLookupForTenant`
+    // F4 invoicing bridge, sibling of Task-5's
+    // `makeEventRegistrationLookupForTenant`). Bump again if it becomes
+    // load-bearing.
+    expect(exportedNames.length).toBeLessThan(110);
     expect(exportedNames.length).toBeGreaterThan(30);
   });
 });
