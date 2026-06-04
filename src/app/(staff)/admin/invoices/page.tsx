@@ -60,9 +60,12 @@ const PAGE_SIZE = 50;
  * Event rows: `{event name} · {CE start date}`. The event name comes from
  * the batched `eventNameById` map (resolved via the F6 barrel in the page
  * body); the date is Bangkok-local CE (Buddhist Era is display-only, the
- * list stays CE-consistent with issue/due dates). When the event name can't
- * be resolved (archived event / lookup miss) we still show the CE date if
- * we have it, else null — never a crash, never a bare separator.
+ * list stays CE-consistent with issue/due dates). When the event isn't in
+ * the batch (lookup miss / archived → absent from `eventNameById`) we return
+ * `null` and the line is hidden — there's no date to show either. The
+ * `meta.name ? … : ceDate` branch is a defensive date-only fallback for a
+ * resolved-but-empty name, which cannot occur (events.name is NOT NULL) —
+ * never a crash, never a bare separator.
  *
  * Membership rows: the localised "Membership {year}" string built from
  * `planYear` (already on the invoice row — no lookup needed). Null when a
@@ -370,9 +373,9 @@ export default async function AdminInvoicesPage({
           '—',
         // 054-event-fee-invoices Task 14 — muted buyer subtitle. Event rows
         // show the event name + Bangkok-local CE start date (BE is display-
-        // only; the list stays CE-consistent). When the event name can't be
-        // resolved (archived / lookup miss), fall back to just the CE date,
-        // else null. Membership rows show the localised "Membership {year}"
+        // only; the list stays CE-consistent). When the event isn't resolved
+        // (lookup miss / archived → absent from the batch) the subtitle is
+        // null (line hidden). Membership rows show the localised "Membership {year}"
         // from `planYear` (already on the invoice row — no lookup needed).
         buyerSubtitle: buildBuyerSubtitle(r, eventNameById, t),
         issueDate: r.issueDate,
