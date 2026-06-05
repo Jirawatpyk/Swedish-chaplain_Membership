@@ -59,6 +59,13 @@ export type PaletteMemberEntity = {
   readonly primary_contact_name: string | null;
   readonly status: 'active' | 'inactive' | 'archived';
   readonly url: string;
+  /**
+   * 055-member-number — human-readable member number formatted with the
+   * per-tenant prefix, e.g. `SCCM-0042`. Resolved server-side via
+   * `runInTenant → memberSettings.getPrefix` (RLS-safe). Always present;
+   * falls back to `M-NNNN` when the tenant has no settings row.
+   */
+  readonly member_number_display: string;
 };
 
 // --- Refundable-invoice entity (F5 Phase 6 / T118 fuzzy-search) -------------
