@@ -94,6 +94,13 @@ export function parseMemberNumberQuery(q: string): number | null {
   const digits = trimmed.replace(/^[A-Za-z][A-Za-z0-9]{0,7}-/, '');
   if (!/^\d+$/.test(digits)) return null;
 
+  // Cap the digit count BEFORE `Number()`: a >15-digit all-digit query coerces
+  // past Number.MAX_SAFE_INTEGER to an imprecise float that still passes the
+  // `Number.isInteger && > 0` checks below — a silent overflow that would drive
+  // an `eq(members.memberNumber)` probe with a wrong integer. A member number
+  // won't exceed ~9 digits, so anything longer is not a member-number query.
+  if (digits.length > 9) return null;
+
   const n = Number(digits);
   if (!Number.isInteger(n) || n <= 0) return null;
   return n;

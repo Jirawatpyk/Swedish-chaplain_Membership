@@ -125,6 +125,22 @@ describe('parseMemberNumberQuery — search-box parser → integer | null', () =
   it('returns null for a bare non-numeric token (x)', () => {
     expect(parseMemberNumberQuery('x')).toBeNull();
   });
+
+  it('returns null for an absurdly long all-digit query (>9 digits) — past MAX_SAFE_INTEGER guard', () => {
+    // A 19-digit value coerces past Number.MAX_SAFE_INTEGER to an imprecise
+    // float that still passes Number.isInteger && > 0; the length cap rejects
+    // it so the search invariant stays exact (a member number won't exceed ~9
+    // digits).
+    expect(parseMemberNumberQuery('9999999999999999999')).toBeNull();
+  });
+
+  it('returns null for a 10-digit query (one past the 9-digit cap)', () => {
+    expect(parseMemberNumberQuery('1000000000')).toBeNull();
+  });
+
+  it('still accepts a 9-digit query (the boundary)', () => {
+    expect(parseMemberNumberQuery('999999999')).toBe(999999999);
+  });
 });
 
 describe('Member aggregate — memberNumber field', () => {

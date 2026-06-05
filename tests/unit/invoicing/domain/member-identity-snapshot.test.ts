@@ -216,9 +216,12 @@ describe('makeMemberIdentitySnapshot', () => {
 // ── 055-member-number: snapshot carries an optional member_number ──
 describe('member_number on memberIdentitySnapshotSchema (055-member-number)', () => {
   it('parses and KEEPS a positive integer member_number (strip-regression — zod must declare the key)', () => {
+    // Both fields pinned together (the pairing-refine requires it) — the
+    // strip-regression intent is still on `member_number`.
     const result = memberIdentitySnapshotSchema.safeParse({
       ...validSnapshot,
       member_number: 42,
+      member_number_display: 'SCCM-0042',
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -268,7 +271,12 @@ describe('member_number on memberIdentitySnapshotSchema (055-member-number)', ()
 
 describe('makeMemberIdentitySnapshot member_number (055-member-number)', () => {
   it('keeps member_number 42 through make() (strip-regression at creation)', () => {
-    const snap = makeMemberIdentitySnapshot({ ...validSnapshot, member_number: 42 });
+    // Pinned together with the display string (pairing-refine).
+    const snap = makeMemberIdentitySnapshot({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
     expect(snap.member_number).toBe(42);
     expect(Object.isFrozen(snap)).toBe(true);
   });
@@ -347,5 +355,76 @@ describe('makeMemberIdentitySnapshot member_number_display (055-member-number)',
     void _omit;
     const snap = makeMemberIdentitySnapshot(noKey as MemberIdentitySnapshot);
     expect(snap.member_number_display).toBeNull();
+  });
+});
+
+// ── 055-member-number: member_number + member_number_display are PINNED ──
+// The two fields must agree on null-ness: both null (event/non-member buyer
+// or historical snapshot) OR both non-null (membership invoice). A half-
+// populated snapshot is a representable illegal state that would render an
+// inconsistent §86/4 tax document, so the schema rejects it loudly.
+describe('member_number / member_number_display pairing (055-member-number)', () => {
+  it('rejects a half-populated snapshot: member_number set, display null', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: null,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const pathHit = result.error.issues.some(
+        (i) => i.path[0] === 'member_number_display',
+      );
+      expect(pathHit).toBe(true);
+    }
+  });
+
+  it('rejects a half-populated snapshot: display set, member_number null', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: null,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a half-populated snapshot when one key is ABSENT (default null) and the other is set', () => {
+    // A snapshot that carries member_number but omits the display key entirely
+    // (the default supplies null) is still half-populated → reject.
+    const { member_number_display: _omit, ...noDisplay } = validSnapshot;
+    void _omit;
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...noDisplay,
+      member_number: 42,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts both-null (event / non-member / historical)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: null,
+      member_number_display: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts both-non-null (membership invoice)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('makeMemberIdentitySnapshot throws on a half-populated snapshot', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        member_number: 42,
+        member_number_display: null,
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
   });
 });
