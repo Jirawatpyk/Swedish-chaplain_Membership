@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   asMemberNumber,
   formatMemberNumber,
+  parseMemberNumberQuery,
   InvalidMemberNumberError,
   type MemberNumber,
 } from '@/modules/members/domain/value-objects/member-number';
@@ -67,5 +68,59 @@ describe('formatMemberNumber — {prefix}-{zeroPad}', () => {
 
   it('honours an explicit pad override', () => {
     expect(formatMemberNumber('M', asMemberNumber(42), 6)).toBe('M-000042');
+  });
+});
+
+describe('parseMemberNumberQuery — search-box parser → integer | null', () => {
+  it('parses a fully-formatted number (SCCM-0042 → 42)', () => {
+    expect(parseMemberNumberQuery('SCCM-0042')).toBe(42);
+  });
+
+  it('parses a zero-padded bare number (0042 → 42)', () => {
+    expect(parseMemberNumberQuery('0042')).toBe(42);
+  });
+
+  it('parses a bare number (42 → 42)', () => {
+    expect(parseMemberNumberQuery('42')).toBe(42);
+  });
+
+  it('trims surrounding whitespace ("  SCCM-0042  " → 42)', () => {
+    expect(parseMemberNumberQuery('  SCCM-0042  ')).toBe(42);
+  });
+
+  it('is case-insensitive on the prefix (sccm-0042 → 42)', () => {
+    expect(parseMemberNumberQuery('sccm-0042')).toBe(42);
+  });
+
+  it('returns null for an empty string', () => {
+    expect(parseMemberNumberQuery('')).toBeNull();
+  });
+
+  it('returns null for whitespace only', () => {
+    expect(parseMemberNumberQuery('   ')).toBeNull();
+  });
+
+  it('returns null for prefix-only (SCCM-)', () => {
+    expect(parseMemberNumberQuery('SCCM-')).toBeNull();
+  });
+
+  it('returns null for a negative number (-1)', () => {
+    expect(parseMemberNumberQuery('-1')).toBeNull();
+  });
+
+  it('returns null for zero (0)', () => {
+    expect(parseMemberNumberQuery('0')).toBeNull();
+  });
+
+  it('returns null for zero-padded zero (0000)', () => {
+    expect(parseMemberNumberQuery('0000')).toBeNull();
+  });
+
+  it('returns null for a non-numeric query (NOT-A-NUMBER)', () => {
+    expect(parseMemberNumberQuery('NOT-A-NUMBER')).toBeNull();
+  });
+
+  it('returns null for a bare non-numeric token (x)', () => {
+    expect(parseMemberNumberQuery('x')).toBeNull();
   });
 });

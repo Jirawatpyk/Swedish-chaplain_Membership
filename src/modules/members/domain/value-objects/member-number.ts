@@ -65,3 +65,36 @@ export function formatMemberNumber(
 ): string {
   return `${prefix}-${String(n).padStart(pad, '0')}`;
 }
+
+/**
+ * Parse a free-text search query into a member-number integer, or `null` if it
+ * is not a usable member-number query. Accepts the formatted form
+ * (`SCCM-0042`), a zero-padded bare number (`0042`), or a bare number (`42`)
+ * — all → `42`. Returns `null` for empty / whitespace-only / prefix-only
+ * (`SCCM-`) / non-positive (`0`, `-1`, `0000`) / non-numeric (`NOT-A-NUMBER`,
+ * `x`) input.
+ *
+ * Pure Application/Domain helper (no SQL, no route coupling). The directory
+ * search route calls this; a non-null result drives an `eq(members.memberNumber)`
+ * index hit, a null result falls through to the company/contact ILIKE branch.
+ *
+ * The digit segment is taken AFTER an optional trailing `PREFIX-`; leading
+ * zeros are stripped by `Number()`. We intentionally do NOT brand the result
+ * as `MemberNumber` — the parsed value is an untrusted search term, not a
+ * constructed identity; callers compare it against the indexed column as a
+ * plain integer.
+ */
+export function parseMemberNumberQuery(q: string): number | null {
+  const trimmed = q.trim();
+  if (trimmed.length === 0) return null;
+
+  // Strip an optional leading `PREFIX-` (e.g. `SCCM-0042` → `0042`).
+  // The remainder must be all digits — this rejects `SCCM-` (empty digits)
+  // and `NOT-A-NUMBER` (non-digit remainder) alike.
+  const digits = trimmed.replace(/^[A-Za-z][A-Za-z0-9]{0,7}-/, '');
+  if (!/^\d+$/.test(digits)) return null;
+
+  const n = Number(digits);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
