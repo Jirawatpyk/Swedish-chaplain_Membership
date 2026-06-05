@@ -29,6 +29,7 @@ import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
@@ -63,7 +64,7 @@ const INVOICE_ID = '00000000-0000-0000-0000-000000000001';
  * required Invoice fields are present — missing or misspelled fields produce
  * a compile error rather than silently producing a partial object at runtime.
  */
-function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
+function makeDraftInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
   const membershipLine: InvoiceLine = {
     lineId: asInvoiceLineId('line-1'),
     kind: 'membership_fee',
@@ -125,7 +126,12 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
     ...overrides,
-  };
+    // 054-event-fee-invoices — `Invoice` is a discriminated union; the flat
+    // `...overrides` spread (subject + identity widened) cannot be re-narrowed
+    // to a concrete arm by inference, so assert at the factory boundary (the
+    // established convention — see domain/invoice.test.ts). Fixtures may flip
+    // membership⇄event or build a CHECK-violating shape for guard tests.
+  } as Invoice;
 }
 
 function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): TenantInvoiceSettingsView {

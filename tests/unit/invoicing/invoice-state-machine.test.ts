@@ -10,6 +10,7 @@ import {
   enforceOneSubjectLine,
   isTerminal,
   type Invoice,
+  type InvoiceCommon,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
 import {
@@ -184,7 +185,12 @@ describe('Invoice state machine', () => {
       ['memberIdentitySnapshot', { memberIdentitySnapshot: null }],
       ['pdf', { pdf: null }],
     ])('reports missing_snapshot field=%s', (field, override) => {
-      const inv = { ...fullSnapshot, ...(override as Partial<Invoice>) };
+      // 054-event-fee-invoices — the overrides only null out shared
+      // (subject-agnostic) snapshot fields, so they are `Partial<InvoiceCommon>`.
+      // `fullSnapshot` is a concrete membership arm; nulling common fields keeps
+      // it a valid `Invoice`, but TS widens the union value across the spread, so
+      // re-assert at this boundary (no consumer narrowing is bypassed).
+      const inv = { ...fullSnapshot, ...(override as Partial<InvoiceCommon>) } as Invoice;
       const r = assertSnapshotsSet(inv);
       expect(r.ok).toBe(false);
       if (!r.ok) {

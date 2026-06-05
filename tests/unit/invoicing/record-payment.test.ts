@@ -26,6 +26,7 @@ import { recordPayment } from '@/modules/invoicing/application/use-cases/record-
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
@@ -37,7 +38,7 @@ import { invoicingMetrics } from '@/lib/metrics';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
 
-function makeIssuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
+function makeIssuedInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
   const line: InvoiceLine = {
     lineId: asInvoiceLineId('line-1'),
     kind: 'membership_fee',
@@ -508,7 +509,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
 
   /** A NON-member EVENT invoice: member_id NULL, subject 'event', VAT-inclusive,
    *  buyer pinned in the snapshot, single event_fee line. */
-  function makeNonMemberEventInvoice(overrides: Partial<Invoice> = {}): Invoice {
+  function makeNonMemberEventInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
     const eventLine: InvoiceLine = {
       lineId: asInvoiceLineId('evt-line-1'),
       kind: 'event_fee',

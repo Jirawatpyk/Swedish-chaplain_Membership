@@ -299,16 +299,29 @@ export async function issueCreditNote(
       // non-member audit branch consumes `eventRegistrationId` directly, with
       // NO `?? ''` fallback — so if this guard is ever removed, the emit fails
       // to compile (loud) instead of silently persisting an empty string.
+      //
+      // 054-event-fee-invoices (DU refactor) — `Invoice` is now a discriminated
+      // union on `invoiceSubject`, so the 'event' arm types `eventRegistrationId`
+      // as non-null `string`. The DB CHECK + the repo seam's
+      // `MalformedInvoiceSubjectError` already make `event`+null-registration-id
+      // unrepresentable for any row loaded through the repo. We DELIBERATELY keep
+      // the runtime null-check as defence-in-depth (it stays reachable via a
+      // mock-injected fabricated row — see the LOW-12 unit test — and preserves
+      // the `invalid_event_invoice` → 422 contract). To keep the check live and
+      // type-checking, we read the discriminant-agnostic union field
+      // (`string | null`) into `rawEventRegistrationId` BEFORE narrowing, so the
+      // `=== null` comparison is not statically eliminated.
+      const rawEventRegistrationId: string | null = loaded.eventRegistrationId;
       let eventRegistrationId: string | null = null;
       if (loaded.invoiceSubject === 'event') {
-        if (loaded.eventRegistrationId === null) {
+        if (rawEventRegistrationId === null) {
           logger.error(
             { tenantId: input.tenantId, invoiceId, invoiceSubject: loaded.invoiceSubject },
             'issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting',
           );
           return err({ code: 'invalid_event_invoice' });
         }
-        eventRegistrationId = loaded.eventRegistrationId;
+        eventRegistrationId = rawEventRegistrationId;
       }
 
       // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105

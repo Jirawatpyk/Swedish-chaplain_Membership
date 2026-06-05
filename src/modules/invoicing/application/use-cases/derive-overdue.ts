@@ -41,9 +41,14 @@ import type { OverdueAuditPort } from '../ports/overdue-audit-port';
  * need the stored state (e.g. `void` guard in admin actions) MUST
  * keep reading `invoice.status`. `isOverdue` is presentation-only.
  */
-export interface InvoiceWithOverdue extends Invoice {
+// 054-event-fee-invoices — `Invoice` is now a discriminated union on
+// `invoiceSubject`, so this decorator is an INTERSECTION (`Invoice & …`) rather
+// than `interface … extends Invoice`. The `& { isOverdue }` distributes across
+// both union arms, preserving the discriminant so consumers can still narrow on
+// `invoiceSubject` and read every shared field (`invoiceId`, `status`, …).
+export type InvoiceWithOverdue = Invoice & {
   readonly isOverdue: boolean;
-}
+};
 
 /**
  * Pure derivation — no side effects, no deps, trivially unit-testable.

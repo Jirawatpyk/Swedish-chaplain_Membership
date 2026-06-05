@@ -28,6 +28,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { makeTenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
+import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
 
 const TENANT = 'test-tenant';
 const INVOICE_UUID = '11111111-2222-4333-8444-555555555555';
@@ -68,7 +69,7 @@ function tenantSnap() {
   });
 }
 
-function issuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
+function issuedInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
   return {
     tenantId: TENANT,
     invoiceId: asInvoiceId(INVOICE_UUID),
@@ -132,7 +133,7 @@ const EVENT_UUID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
  * timeline-typed audit row with `member_id: ''` (the bug). It must emit the
  * non-member variant carrying `event_registration_id` and NO `member_id` key.
  */
-function nonMemberEventInvoice(overrides: Partial<Invoice> = {}): Invoice {
+function nonMemberEventInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
   return issuedInvoice({
     memberId: null,
     invoiceSubject: 'event',

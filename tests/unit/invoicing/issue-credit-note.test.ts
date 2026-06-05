@@ -35,6 +35,7 @@ import {
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
 import {
   asCreditNoteId,
   type CreditNote,
@@ -108,7 +109,7 @@ const BUYER_SNAP_NO_TIN: MemberIdentitySnapshot = Object.freeze({
  * (memberId NULL) with a pinned buyer snapshot + the Task-7 stored VAT split.
  * 25,000 satang (250 THB) inclusive @ 7% → subtotal 23364, vat 1636.
  */
-function makeIssuedEventInvoice(overrides: Partial<Invoice> = {}): Invoice {
+function makeIssuedEventInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
   const eventLine: InvoiceLine = {
     lineId: asInvoiceLineId('line-evt-1'),
     kind: 'event_fee',
@@ -175,7 +176,12 @@ function makeIssuedEventInvoice(overrides: Partial<Invoice> = {}): Invoice {
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-19T00:00:00Z',
     ...overrides,
-  };
+    // 054-event-fee-invoices — assert at the factory boundary: the flat
+    // `...overrides` spread over a discriminated-union `Invoice` cannot be
+    // re-narrowed to a concrete arm by inference. The LOW-12 corrupted-row
+    // test deliberately passes `eventRegistrationId: null` (a CHECK-violating
+    // shape) through this factory to exercise the runtime guard.
+  } as Invoice;
 }
 
 function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): TenantInvoiceSettingsView {

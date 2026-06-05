@@ -92,37 +92,70 @@ export function parseInvoiceId(
   return { ok: true, value: raw as InvoiceId };
 }
 
-export interface Invoice {
+/**
+ * 054-event-fee-invoices — the subject-specific identity partition.
+ *
+ * `Invoice` is a DISCRIMINATED UNION on `invoiceSubject`, so illegal field
+ * combinations are unrepresentable at compile time (mirroring the DB CHECK
+ * `invoices_subject_fields_ck` tightened by migration 0208). Narrowing on
+ * `invoiceSubject` yields the per-arm non-null / null guarantees:
+ *
+ *   - `'membership'`  ⇒ member_id + plan_id + plan_year present (NON-NULL),
+ *                       event_id + event_registration_id are `null`, and the
+ *                       invoice is VAT-EXCLUSIVE (`vatInclusive: false`).
+ *   - `'event'`       ⇒ event_id + event_registration_id present (NON-NULL),
+ *                       plan_id + plan_year are `null`, member_id may be a
+ *                       matched member (`string`) or a non-member buyer
+ *                       (`null`), and the ticket may be priced VAT-inclusive
+ *                       or VAT-exclusive (`vatInclusive: boolean`).
+ *
+ * All subject-specific fields are kept PRESENT on both arms (typed `null` on
+ * the off-subject arm) so consumers that only read shared financial /
+ * numbering / snapshot fields need no narrowing — only the per-arm literal
+ * types differ.
+ */
+export type InvoiceSubjectFields =
+  | {
+      readonly invoiceSubject: 'membership';
+      readonly memberId: string;
+      readonly planId: string;
+      readonly planYear: number;
+      readonly eventId: null;
+      readonly eventRegistrationId: null;
+      /** Membership invoices are VAT-EXCLUSIVE. */
+      readonly vatInclusive: false;
+    }
+  | {
+      readonly invoiceSubject: 'event';
+      /**
+       * Set when the attendee is a matched member; `null` for a non-member
+       * buyer billed for the ticket.
+       */
+      readonly memberId: string | null;
+      readonly planId: null;
+      readonly planYear: null;
+      /** F6 event id. */
+      readonly eventId: string;
+      /** F6 event_registrations id. */
+      readonly eventRegistrationId: string;
+      /**
+       * VAT treatment. Event invoices may be VAT-INCLUSIVE (`true`) when the
+       * ticket price already embeds the 7% component, or VAT-EXCLUSIVE
+       * (`false`).
+       */
+      readonly vatInclusive: boolean;
+    };
+
+/**
+ * Shared (subject-agnostic) Invoice fields — financial, numbering, lifecycle,
+ * snapshot, payment, void, and PDF metadata. Combined with
+ * {@link InvoiceSubjectFields} to form the full {@link Invoice} discriminated
+ * union. `memberIdentitySnapshot` (the BUYER snapshot) lives here because its
+ * shape is identical for both subjects — only the semantic source differs.
+ */
+export interface InvoiceCommon {
   readonly tenantId: string;
   readonly invoiceId: InvoiceId;
-  /**
-   * 054-event-fee-invoices — membership invoices always carry member_id,
-   * plan_id, and plan_year (enforced by `invoices_subject_fields_ck` DB
-   * CHECK). Event invoices carry event_id and event_registration_id;
-   * member_id is set when the attendee is a matched member, or null for a
-   * non-member buyer. Callers MUST narrow on `invoiceSubject` before
-   * relying on any of these being non-null.
-   */
-  readonly memberId: string | null;
-  readonly planId: string | null;
-  readonly planYear: number | null;
-
-  /**
-   * 054-event-fee-invoices — subject discriminator. `'membership'` is the
-   * classic F4 plan-fee invoice; `'event'` is the event-fee invoice keyed
-   * to an F6 `event_registrations` row.
-   */
-  readonly invoiceSubject: 'membership' | 'event';
-  /**
-   * VAT treatment. Membership invoices are VAT-EXCLUSIVE (`false`); event
-   * invoices may be VAT-INCLUSIVE (`true`) when the ticket price already
-   * embeds the 7% component.
-   */
-  readonly vatInclusive: boolean;
-  /** F6 event id — non-null iff `invoiceSubject === 'event'`. */
-  readonly eventId: string | null;
-  /** F6 event_registrations id — non-null iff `invoiceSubject === 'event'`. */
-  readonly eventRegistrationId: string | null;
 
   readonly status: InvoiceStatus;
   readonly draftByUserId: string;
@@ -234,6 +267,20 @@ export interface Invoice {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+
+/**
+ * 054-event-fee-invoices — Invoice aggregate root, modelled as a REAL
+ * discriminated union on `invoiceSubject` so illegal states are
+ * unrepresentable. Narrowing `if (invoice.invoiceSubject === 'membership')`
+ * widens `memberId`/`planId`/`planYear` to their non-null types and narrows
+ * `eventId`/`eventRegistrationId` to `null`; the `'event'` arm does the
+ * reverse. Constructing a membership invoice with `eventId` set (or
+ * `vatInclusive: true`) is now a COMPILE error.
+ *
+ * See {@link InvoiceCommon} (shared fields) + {@link InvoiceSubjectFields}
+ * (per-subject identity partition).
+ */
+export type Invoice = InvoiceCommon & InvoiceSubjectFields;
 
 export type InvoiceTransitionError =
   | { code: 'invalid_transition'; from: InvoiceStatus; to: InvoiceStatus }
