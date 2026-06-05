@@ -22,7 +22,7 @@
  * real DB or session. Real-DB coverage for the happy path + invariants
  * lives in `tests/integration/invoicing/credit-note-partial-accumulation.test.ts`.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
@@ -103,15 +103,23 @@ async function loadHandler() {
 }
 
 describe('POST /api/credit-notes — contract', () => {
+  // Warm the route-handler import ONCE in setup so no individual test bears the
+  // cold-load cost (@react-pdf + Vercel Blob SDK + Sarabun fonts + Upstash,
+  // pulled transitively by the route). `afterEach` clears mocks but NOT modules,
+  // so this import is cached for every test. Under the full invoicing unit suite
+  // in parallel the cold-load alone can exceed a per-test 30s budget (observed
+  // timeout 2026-06-05) — amortising it here keeps each test's own budget tight.
+  beforeAll(async () => {
+    await loadHandler();
+  }, 60_000);
+
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  // First test in the file eats the cold-load cost of importing the
-  // route handler (transitively pulls @react-pdf, Vercel Blob SDK,
-  // Sarabun fonts, Upstash). On a dev laptop running the full
-  // invoicing unit suite in parallel this can push past the 10s
-  // default (see vitest.config.ts note). 30s is comfortable headroom.
+  // The heavy route-handler import is warmed in beforeAll (above), so this
+  // test runs against the cached module. The explicit 30s budget remains as
+  // headroom for the mocked call + JSON round-trip under parallel load.
   it('201 happy path — returns serialised credit note + email_delivery signal', async () => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
