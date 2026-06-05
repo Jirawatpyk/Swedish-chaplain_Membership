@@ -523,10 +523,20 @@ export const invoicingMetrics = {
    * sustained non-zero rate on `subject='membership'`.
    */
   autoEmailSkipped(subject: 'membership' | 'event', reason: 'no_recipient'): void {
-    counter(
-      'invoicing_auto_email_skipped_total',
-      'F4 auto-email enqueue skipped (no deliverable recipient) by subject + reason',
-    ).add(1, { subject, reason });
+    // safeMetric parity with eventBuyerPiiRedacted / auditEmitFailed: both call
+    // sites (issue-invoice + record-payment) record INSIDE the open `withTx`
+    // callback, AFTER the §87 issuance / payment mutation has been written but
+    // BEFORE commit. If the @vercel/otel exporter throws on first record (cold
+    // instrument cache, pipeline transient), an unguarded throw would escape the
+    // metric call and roll back the committed-in-tx issuance / payment — turning
+    // a best-effort observability skip into a lost financial mutation. Swallow
+    // exporter failures here; the skip is already non-fatal by design.
+    safeMetric(() => {
+      counter(
+        'invoicing_auto_email_skipped_total',
+        'F4 auto-email enqueue skipped (no deliverable recipient) by subject + reason',
+      ).add(1, { subject, reason });
+    });
   },
 
   /**

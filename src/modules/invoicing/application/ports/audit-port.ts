@@ -220,17 +220,6 @@ export type F4MemberTimelineAuditEventType =
   | 'invoice_pdf_resent'
   | 'credit_note_issued';
 
-/**
- * The set of F4 audit event types that do NOT require `member_id` in their
- * payload. Naming this type explicitly avoids the misleading pattern
- * `'invoice_issued' as Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>`
- * at NON-MEMBER emit sites — `Exclude<…>` resolves to a union that does NOT
- * include `invoice_issued`, so the plain `as` bypasses the payload contract
- * silently. These are the event types that are NEVER member-timeline events
- * (probes, config, receipt/credit-note resend, render-failure, etc.).
- */
-export type F4NonTimelineEventType = Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>;
-
 /** Payload contract for events that surface in the F3 member timeline. */
 export type MemberTimelineAuditPayload = {
   readonly member_id: string;
@@ -238,9 +227,7 @@ export type MemberTimelineAuditPayload = {
 
 /**
  * 054-event-fee-invoices — payload contract for a member-timeline event type
- * (`invoice_draft_created` / `invoice_issued` / `invoice_paid` /
- * `credit_note_issued` / `invoice_pdf_resent`) emitted for a NON-member EVENT
- * buyer.
+ * (`F4MemberTimelineAuditEventType`) emitted for a NON-member EVENT buyer.
  *
  * A non-member event invoice has `member_id IS NULL` — there is no F3 member to
  * surface on the member timeline. The F3 timeline filter keys on
@@ -252,8 +239,9 @@ export type MemberTimelineAuditPayload = {
  * coalesce that produced `member_id: ''`) fails typecheck rather than
  * persisting a structurally-invalid timeline row. `event_registration_id` is
  * REQUIRED so the non-member branch always carries the F6 correlation key. This
- * replaces the `as unknown as F4NonTimelineEventType` double-cast that defeated
- * ALL payload type-checking at the 5 non-member emit sites.
+ * replaces the `as unknown as Exclude<F4AuditEventType,
+ * F4MemberTimelineAuditEventType>` double-cast that defeated ALL payload
+ * type-checking at the 5 non-member emit sites.
  */
 export type NonMemberInvoiceAuditPayload = {
   readonly event_registration_id: string;
@@ -327,16 +315,16 @@ export interface AuditPort {
  *
  * The 5 non-member emit sites (`create-event-invoice-draft` /
  * `issue-invoice` / `record-payment` / `issue-credit-note` / `resend-pdf`)
- * previously cast a timeline event-type `as unknown as F4NonTimelineEventType`
- * with an `event_registration_id` payload. The double-cast defeated ALL
- * payload type-checking and was duplicated (with ~20 lines of rationale) at
- * each site.
+ * previously cast a timeline event-type `as unknown as Exclude<F4AuditEventType,
+ * F4MemberTimelineAuditEventType>` with an `event_registration_id` payload. The
+ * double-cast defeated ALL payload type-checking and was duplicated (with ~20
+ * lines of rationale) at each site.
  *
  * This helper is the single typed escape: it accepts a `NonMemberInvoiceAuditPayload`
  * (`event_registration_id` REQUIRED, `member_id` FORBIDDEN) and routes it to
  * the dedicated non-member arm of `F4AuditEvent` — ZERO `as` casts. The
  * compiler enforces:
- *   - `eventType` is one of the 5 member-timeline event types;
+ *   - `eventType` is a member-timeline event type (`F4MemberTimelineAuditEventType`);
  *   - the payload carries `event_registration_id`;
  *   - the payload does NOT carry `member_id` (the F3-timeline key is omitted so
  *     the non-member row never surfaces on a member timeline, and the

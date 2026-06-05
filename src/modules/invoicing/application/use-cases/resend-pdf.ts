@@ -215,6 +215,27 @@ async function resendInvoiceOrReceipt(
     return err({ code: 'not_issued' });
   }
 
+  // Defence-in-depth: memberId null AND eventRegistrationId null is a
+  // structurally-impossible row (violates `invoices_subject_fields_ck` — a row
+  // is EITHER a member invoice OR a non-member event invoice). This guard runs
+  // BEFORE any side effect (outbox enqueue / audit emit): on such a row we
+  // cannot construct a valid audit payload (neither `member_id` nor
+  // `event_registration_id` correlates), so we must NOT have already sent the
+  // email by the time we return the error — otherwise the caller sees a
+  // failure while the buyer still receives the PDF. No PII in the log (ids
+  // only, per CLAUDE.md § Secrets).
+  if (invoice.memberId === null && invoice.eventRegistrationId === null) {
+    logger.warn(
+      {
+        event: 'resend_pdf_invoice_inconsistent_buyer',
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      },
+      'resendPdf: invoice has neither member_id nor event_registration_id — cannot audit resend',
+    );
+    return err({ code: 'not_issued' });
+  }
+
   const documentNumber = invoice.documentNumber?.raw ?? '';
   const outboxEventType =
     input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent';
@@ -289,19 +310,13 @@ async function resendInvoiceOrReceipt(
         extraPayload: invoiceResentPayloadBase,
       });
     } else {
-      // Defence-in-depth: memberId null AND eventRegistrationId null is a
-      // structurally-impossible row (violates `invoices_subject_fields_ck`).
-      // Refuse to persist an audit row that can correlate to neither a member
-      // nor a registration rather than emit a malformed one. No PII in the log
-      // (ids only, per CLAUDE.md § Secrets).
-      logger.warn(
-        {
-          event: 'resend_pdf_invoice_inconsistent_buyer',
-          tenantId: input.tenantId,
-          invoiceId: input.invoiceId,
-        },
-        'resendPdf: invoice has neither member_id nor event_registration_id — cannot audit resend',
-      );
+      // Unreachable: the impossible-buyer row (memberId null AND
+      // eventRegistrationId null) is rejected by the guard ABOVE the outbox
+      // enqueue, so by the time we reach this audit block one of the two
+      // branches above always applies. Kept for exhaustiveness — if it ever
+      // fires, the early guard regressed; return without emitting a malformed
+      // row rather than persisting one that correlates to neither a member nor
+      // a registration. (The structured warn already lives at the early guard.)
       return err({ code: 'not_issued' });
     }
   } else {

@@ -1,7 +1,7 @@
 /**
  * T107 unit tests — resend-pdf use case.
  *
- * Covers the nine decision branches:
+ * Covers the decision branches:
  *   1. invoice+invoice variant → invoice_pdf_resent audit + outbox
  *   2. invoice+receipt variant → receipt_pdf_resent audit + outbox
  *   3. credit_note variant    → credit_note_pdf_resent audit + outbox
@@ -11,6 +11,8 @@
  *   7. receipt variant — no receiptPdf → no_receipt_pdf
  *   8. credit_note not found  → credit_note_cross_tenant_probe + not_found
  *   9. CN member mismatch     → probe + not_found (opaque)
+ *  10. impossible buyer (memberId null AND eventRegistrationId null) →
+ *      not_issued, REJECTED BEFORE any side effect (no enqueue, no audit)
  *
  * 100% branch coverage on the Application-layer use case keeps the
  * Constitution Principle II "security-critical 100% branch" contract
@@ -400,6 +402,33 @@ describe('resendPdf', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('not_issued');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('impossible buyer (memberId null AND eventRegistrationId null) — rejected BEFORE enqueue, no side effects', async () => {
+    // FIX 2 (054 Round-2): a structurally-impossible row — neither a member
+    // invoice (memberId set) nor a non-member event invoice
+    // (eventRegistrationId set) — violates the DB CHECK
+    // `invoices_subject_fields_ck`. The use-case cannot construct a valid audit
+    // payload (no correlation key), so it MUST reject the row BEFORE the outbox
+    // enqueue. Previously the guard lived AFTER the enqueue, so the buyer still
+    // received the email even though the caller saw `not_issued`. This fixture
+    // uses the flattened override type to build the CHECK-violating shape on
+    // purpose (see invoice-fixture-overrides.ts) and asserts NO email was sent.
+    const invoice = issuedInvoice({ memberId: null, eventRegistrationId: null });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('not_issued');
+    // The critical assertion: the email was NOT enqueued. A structurally-broken
+    // row must produce ZERO side effects, not "error to caller + email to buyer".
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
