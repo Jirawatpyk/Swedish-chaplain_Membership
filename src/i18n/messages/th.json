@@ -4246,6 +4246,8 @@
         "memberIdHelp": "อ้างอิงรหัสนี้เมื่อติดต่อทีมสนับสนุนหอการค้า",
         "memberIdCopy": "คัดลอกรหัสสมาชิก",
         "memberIdCopied": "คัดลอกรหัสสมาชิกแล้ว",
+        "memberNumber": "หมายเลขสมาชิก",
+        "memberNumberCopy": "คัดลอกหมายเลขสมาชิก",
         "companyName": "ชื่อบริษัท",
         "legalEntityType": "ประเภทนิติบุคคล",
         "country": "ประเทศ",

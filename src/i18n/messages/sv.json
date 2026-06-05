@@ -4246,6 +4246,8 @@
         "memberIdHelp": "Ange detta ID när du kontaktar kammarens support.",
         "memberIdCopy": "Kopiera medlems-ID",
         "memberIdCopied": "Medlems-ID kopierat",
+        "memberNumber": "Medlemsnummer",
+        "memberNumberCopy": "Kopiera medlemsnummer",
         "companyName": "Företagsnamn",
         "legalEntityType": "Juridisk form",
         "country": "Land",

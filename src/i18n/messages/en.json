@@ -4246,6 +4246,8 @@
         "memberIdHelp": "Reference this ID when contacting chamber support.",
         "memberIdCopy": "Copy member ID",
         "memberIdCopied": "Member ID copied",
+        "memberNumber": "Member Number",
+        "memberNumberCopy": "Copy member number",
         "companyName": "Company Name",
         "legalEntityType": "Legal Entity Type",
         "country": "Country",
