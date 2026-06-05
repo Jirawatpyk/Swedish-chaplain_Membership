@@ -320,9 +320,10 @@ export async function issueCreditNote(
       // DETECTION — there is NO persisted `pdf_kind`/`pdf_doc_kind` column on
       // `invoices` (the resolved doc-type is computed at render time only). So
       // we RECONSTRUCT `receipt_separate` from the persisted `invoiceSubject` +
-      // the BUYER snapshot's TIN, mirroring issue-invoice.ts EXACTLY (lines
-      // ~273-280) so the issue-time gate and this credit-time gate stay in
-      // lockstep. The snapshot-completeness guard above guarantees
+      // the BUYER snapshot's TIN via the shared `inferEventDocumentKind`,
+      // mirroring `issueInvoice`'s issue-time `pdfKind` resolution EXACTLY so the
+      // issue-time gate and this credit-time gate stay in lockstep. The
+      // snapshot-completeness guard above guarantees
       // `memberIdentitySnapshot` is non-null here; the `?.` is defensive parity
       // with the issue-invoice expression. (TIN check trims whitespace, matching
       // the issue-invoice + record-payment gates.)
@@ -695,8 +696,8 @@ export async function issueCreditNote(
       //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is
       //   not an F3 member, so the timeline filter MUST NOT surface it. We do
       //   NOT widen `MemberTimelineAuditPayload` to make `member_id` optional
-      //   (that would weaken the F3 `member_id` guarantee for the 6 timeline
-      //   events); instead we narrow `credit_note_issued` to the non-timeline
+      //   (that would weaken the F3 `member_id` guarantee for the member-timeline
+      //   event types); instead we narrow `credit_note_issued` to the non-timeline
       //   `F4AuditEvent` branch at THIS one site, carrying `event_registration_id`
       //   and omitting `member_id` entirely. Mirrors the `emitNonTimelineDraftCreated`
       //   precedent in create-event-invoice-draft.ts + the issue-invoice.ts

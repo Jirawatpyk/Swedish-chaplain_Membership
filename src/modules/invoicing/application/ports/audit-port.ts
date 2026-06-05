@@ -1,8 +1,10 @@
 /**
  * T032 — Audit port (F4).
  *
- * 17 F4 audit event types defined here as a discriminated union so
- * callers cannot pass an unknown event_type. Payload shapes are
+ * The F4 audit event types are defined here as a discriminated union so
+ * callers cannot pass an unknown event_type. (The authoritative count is
+ * `F4_AUDIT_RETENTION_YEARS` below — every union member must have a retention
+ * entry — so no hard count is kept in this header to rot.) Payload shapes are
  * structurally typed per data-model.md § 4.
  *
  * `invoice_pdf_regenerated` (added 2026-04-20 as part of SC-003 /

@@ -247,10 +247,10 @@ export async function createEventInvoiceDraft(
         // no `member_not_found`; the registration is effectively un-billable.
         if (!member) return err({ code: 'registration_not_found' });
         // HIGH-1: an archived matched member must be rejected at DRAFT, mirroring
-        // the membership twin (create-invoice-draft.ts:128). issue-invoice.ts
-        // blocks an archived member with `member_archived` (issue-invoice.ts:240),
-        // so without this guard an archived match would draft successfully but be
-        // permanently un-issuable — a stuck draft. Reject early instead.
+        // the membership twin in `createInvoiceDraft`. `issueInvoice` blocks an
+        // archived member with `member_archived`, so without this guard an
+        // archived match would draft successfully but be permanently un-issuable
+        // — a stuck draft. Reject early instead.
         if (member.isArchived) return err({ code: 'member_archived' });
 
         memberId = reg.matchedMemberId;
