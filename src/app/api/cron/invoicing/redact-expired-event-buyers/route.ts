@@ -127,9 +127,11 @@ interface EligibleRow {
 
 /**
  * A row whose tx committed and whose PDF bytes still need erasing. `keys` are
- * the blob keys to purge; `tombstonedThisRun` gates whether the audit was
- * emitted on THIS pass (true → fresh redaction; false → a retry of an already-
- * tombstoned row). The post-commit purge stamps `pii_blob_purged_at` only when
+ * the blob keys to purge; `tombstonedThisRun` LABELS the purge for observability
+ * (true → bytes erased on the same pass the snapshot was tombstoned; false → a
+ * retry purging an already-tombstoned row whose prior purge crashed). Audit-once
+ * is enforced UPSTREAM by the `already_tombstoned` branch, NOT by this field.
+ * The post-commit purge stamps `pii_blob_purged_at` only when
  * every key in `keys` is successfully deleted.
  */
 interface PurgeWorkItem {
@@ -322,7 +324,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // stays NULL → the NEXT sweep RE-SELECTS this row (redacted-but-unpurged
       // arm) and retries the purge. No PII is re-exposed (snapshot already
       // tombstoned) and the audit is NOT re-emitted (already_tombstoned branch).
-      for (const { invoiceId, keys } of purgeWork) {
+      for (const { invoiceId, keys, tombstonedThisRun } of purgeWork) {
         let allPurged = true;
         for (const key of keys) {
           try {
@@ -359,9 +361,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               UPDATE invoices
               SET pii_blob_purged_at = now()
               WHERE invoice_id = ${invoiceId}
+                AND tenant_id = ${tenantSlug}
                 AND pii_blob_purged_at IS NULL
             `);
           });
+          // Observability (R1): label the completed purge so an operator can
+          // tell a same-pass erase from a retry that recovered a previously
+          // crashed redaction (the HIGH-3 crash-between-commit-and-purge case).
+          logger.info(
+            {
+              requestId,
+              route: ROUTE,
+              tenantId: tenantSlug,
+              invoiceId,
+              purgeKind: tombstonedThisRun ? 'fresh' : 'retry',
+            },
+            'cron.redact_expired_event_buyers.blob_purged',
+          );
         } catch (e) {
           invoicingMetrics.eventBuyerPiiRedacted('error', tenantSlug);
           logger.error(
