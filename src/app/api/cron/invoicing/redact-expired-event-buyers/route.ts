@@ -12,46 +12,56 @@
  * every financial / §87-numbering field, which the §87/3 statutory record
  * and any later RD audit still need — and emits `event_buyer_pii_redacted`.
  *
- * ── PDF blob purge (complete erasure) ──────────────────────────────────────
+ * ── PDF blob purge (complete erasure, RETRYABLE) ───────────────────────────
  * The buyer PII is ALSO printed on the issued §86/4 tax-document PDF(s) (name
  * / address / tax_id), stored in Vercel Blob at a public, non-expiring URL.
  * Tombstoning only the DB snapshot would leave that PII readable on the blob
- * — INCOMPLETE erasure (GDPR Art. 17). So after the DB tombstone + audit emit
- * succeed, this cron also DELETES the invoice PDF blob and (if present) the
- * receipt PDF blob. The `pdf_blob_key` / `receipt_pdf_blob_key` COLUMNS are
- * intentionally left intact: they are the document reference for the §87/3
- * statutory record; only the underlying BYTES are erased. The invoice-detail
- * Blob-miss recovery path already tolerates a dangling key.
+ * — INCOMPLETE erasure (GDPR Art. 17). So this cron also DELETES the invoice
+ * PDF blob and (if present) the receipt PDF blob. The `pdf_blob_key` /
+ * `receipt_pdf_blob_key` COLUMNS are intentionally left intact: they are the
+ * document reference for the §87/3 statutory record; only the underlying BYTES
+ * are erased. The invoice-detail Blob-miss recovery path already tolerates a
+ * dangling key.
  *
- * Blob delete is BEST-EFFORT + NON-FATAL: each delete is wrapped in try/catch
- * and a failure is logged (errKind only, NO PII) + bumps the error metric for
- * manual cleanup — it does NOT roll back the DB tombstone (the DB row is the
- * authoritative, compliance-critical copy; the blob is a derived artefact).
- * Note the failed delete is NOT auto-retried by the next sweep: once the row
- * is tombstoned it is no longer eligible (the predicate keys off legal_name
- * <> '[REDACTED]'), so a rare blob-delete failure relies on the error metric
- * + runbook alert for manual cleanup. This is the accepted trade (option (b)
- * in the fix plan) — the DB PII (the authoritative copy) IS erased regardless.
+ * RETRYABILITY (code-review HIGH-3): the old design tombstoned + committed,
+ * THEN purged best-effort — a crash between commit and purge stranded PII PDF
+ * bytes on Blob FOREVER, because the row was now tombstoned
+ * (`legal_name='[REDACTED]'`) and the old predicate excluded it from the next
+ * sweep. The fix is a nullable `pii_blob_purged_at` marker column:
+ *   (a) in the tenant tx under the GUC: tombstone the snapshot IF not already
+ *       tombstoned (idempotent) + emit the audit IF actually tombstoned this run
+ *       (so a retry does NOT double-audit); commit.
+ *   (b) purge the blob bytes best-effort (each delete try/catch'd, logged with
+ *       errKind only + the error metric on failure).
+ *   (c) ONLY on a fully successful purge of ALL the row's blob keys, set
+ *       `pii_blob_purged_at = now()` via a SEPARATE UPDATE under the GUC.
+ * A crash before (c) leaves `pii_blob_purged_at` NULL → the next sweep
+ * RE-SELECTS the row (redacted-but-unpurged arm of the predicate) and retries
+ * the purge. The snapshot is already tombstoned, so the retry re-exposes no PII
+ * and does NOT re-emit the audit; the purge simply lands on a later tick.
  *
  * Membership invoices are NOT touched here: their buyer is a real F3 member
  * (member_id IS NOT NULL) whose PII retention is governed by the F3/F9
  * member-lifecycle + GDPR-export surfaces, not this event-buyer sweeper.
  *
  * ── Immutability-trigger bypass (the sensitive part) ───────────────────────
- * `invoices_enforce_immutability` (migration 0019, amended 0205) locks
- * `member_identity_snapshot` the moment a row leaves `draft`. To erase the
- * buyer PII this cron sets the session GUC `app.allow_pii_redaction = 'true'`
- * via `SET LOCAL` INSIDE its per-tenant tx (auto-resets at tx end, mirroring
- * the `app.current_tenant` GUC in `runInTenant`). The amended trigger then
- * permits ONLY `member_identity_snapshot` to change under that GUC — every
- * other snapshot / numbering / financial column still RAISES if touched. No
- * other code path sets this GUC.
+ * `invoices_enforce_immutability` (migration 0019, amended 0205 + 0206) locks
+ * `member_identity_snapshot` + `pii_blob_purged_at` the moment a row leaves
+ * `draft`. To erase the buyer PII this cron sets the session GUC
+ * `app.allow_pii_redaction = 'true'` via `SET LOCAL` INSIDE its per-tenant tx
+ * (auto-resets at tx end, mirroring the `app.current_tenant` GUC in
+ * `runInTenant`). The amended trigger then permits ONLY `member_identity_snapshot`
+ * AND `pii_blob_purged_at` to change under that GUC — every other snapshot /
+ * numbering / financial / event-discriminator column still RAISES if touched.
+ * No other code path sets this GUC.
  *
  * ── Idempotency ────────────────────────────────────────────────────────────
- * The eligibility predicate excludes already-tombstoned rows
- * (`member_identity_snapshot->>'legal_name' <> '[REDACTED]'`), so re-running
- * the cron only ever processes still-unredacted rows. retry-OFF on
- * cron-job.org: the daily tick is the natural retry.
+ * The eligibility predicate matches a row that is EITHER still un-redacted
+ * (`legal_name <> '[REDACTED]'`) OR redacted-but-purge-incomplete
+ * (`legal_name = '[REDACTED]' AND pii_blob_purged_at IS NULL` with a blob key
+ * still present). A fully-redacted-and-purged row (`pii_blob_purged_at` set)
+ * is excluded, so re-running the cron only ever (re-)processes work that is not
+ * yet complete. retry-OFF on cron-job.org: the daily tick is the natural retry.
  *
  * ── Cross-tenant sweep ─────────────────────────────────────────────────────
  * Iterates every tenant that has invoice settings (the only tenants that can
@@ -107,6 +117,25 @@ interface EligibleRow {
   readonly pdf_blob_key: string | null;
   /** Issued receipt PDF blob key — null for combined-mode / unpaid rows. */
   readonly receipt_pdf_blob_key: string | null;
+  /**
+   * Whether this row was ALREADY tombstoned on a prior pass (the redacted-but-
+   * unpurged retry case). When true the cron skips the tombstone UPDATE + audit
+   * and only retries the blob purge. Derived from the snapshot's `legal_name`.
+   */
+  readonly already_tombstoned: boolean;
+}
+
+/**
+ * A row whose tx committed and whose PDF bytes still need erasing. `keys` are
+ * the blob keys to purge; `tombstonedThisRun` gates whether the audit was
+ * emitted on THIS pass (true → fresh redaction; false → a retry of an already-
+ * tombstoned row). The post-commit purge stamps `pii_blob_purged_at` only when
+ * every key in `keys` is successfully deleted.
+ */
+interface PurgeWorkItem {
+  readonly invoiceId: string;
+  readonly keys: readonly string[];
+  readonly tombstonedThisRun: boolean;
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -144,34 +173,53 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       const ctx = asTenantContext(tenantSlug);
       const redactedResult = await runInTenant(ctx, async (tx) => {
-        // Authorise the buyer-PII tombstone for THIS tx only. SET LOCAL
-        // auto-resets at tx end; the amended trigger (0205) lets ONLY
-        // member_identity_snapshot change while this is 'true'.
+        // Authorise the buyer-PII tombstone + purge-marker writes for THIS tx
+        // only. SET LOCAL auto-resets at tx end; the amended trigger (0205 +
+        // 0206) lets ONLY member_identity_snapshot AND pii_blob_purged_at change
+        // while this is 'true'.
         await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
 
-        // Eligible: non-member event invoice, issued (any non-draft), older
-        // than 10 years, with a non-null buyer snapshot NOT already tombstoned.
+        // Eligible (HIGH-3 retryable predicate): a non-member event invoice,
+        // issued (any non-draft), older than 10 years, with a non-null buyer
+        // snapshot, that is EITHER
+        //   (1) still UN-REDACTED (legal_name <> '[REDACTED]'), OR
+        //   (2) REDACTED-BUT-PURGE-INCOMPLETE (legal_name = '[REDACTED]' AND
+        //       pii_blob_purged_at IS NULL with a blob key still present) — i.e.
+        //       a row whose DB tombstone committed on a prior pass but whose PDF
+        //       byte purge did not complete (crash / Blob outage between commit
+        //       and purge). `already_tombstoned` distinguishes the two so case
+        //       (2) skips the tombstone UPDATE + audit and only retries the purge.
+        // A fully-redacted-and-purged row (pii_blob_purged_at set) is excluded.
         // RLS scopes the read to this tenant (chamber_app role + GUC).
         const eligible = (await tx.execute(sql`
-          SELECT invoice_id, pdf_blob_key, receipt_pdf_blob_key
+          SELECT
+            invoice_id,
+            pdf_blob_key,
+            receipt_pdf_blob_key,
+            (member_identity_snapshot->>'legal_name') = '[REDACTED]' AS already_tombstoned
           FROM invoices
           WHERE invoice_subject = 'event'
             AND member_id IS NULL
             AND status <> 'draft'
             AND issue_date < (now() - interval '10 years')::date
             AND member_identity_snapshot IS NOT NULL
-            AND (member_identity_snapshot->>'legal_name') <> '[REDACTED]'
+            AND (
+              (member_identity_snapshot->>'legal_name') <> '[REDACTED]'
+              OR (
+                (member_identity_snapshot->>'legal_name') = '[REDACTED]'
+                AND pii_blob_purged_at IS NULL
+                AND (pdf_blob_key IS NOT NULL OR receipt_pdf_blob_key IS NOT NULL)
+              )
+            )
         `)) as unknown as EligibleRow[];
 
         let tenantRedacted = 0;
-        // Keys whose underlying PDF BYTES must be erased once this tx commits.
+        // Work items whose PDF BYTES must be erased once this tx commits.
         // Collected inside the tx (so we only ever purge bytes for a tombstone
-        // that actually committed) and acted on AFTER commit — never inside the
-        // tx, so a blob-side hiccup can't dirty / roll back the DB erasure.
-        const blobsToPurge: Array<{ readonly invoiceId: string; readonly keys: readonly string[] }> = [];
+        // that is durable) and acted on AFTER commit — never inside the tx, so a
+        // blob-side hiccup can't dirty / roll back the DB erasure.
+        const purgeWork: PurgeWorkItem[] = [];
         for (const row of eligible) {
-          const redactedAt = new Date().toISOString();
-
           // The issued tax-document PDF(s) carry the same buyer PII in print.
           // Collect their KEYS (receipt key may be null) — these are the bytes
           // to erase + the forensic record of WHAT was purged. Keys are path
@@ -180,11 +228,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             (k): k is string => Boolean(k),
           );
 
+          if (row.already_tombstoned) {
+            // RETRY case (HIGH-3): the DB tombstone committed on a prior pass;
+            // only the blob purge is outstanding. Do NOT re-run the tombstone
+            // UPDATE and do NOT re-emit the audit (audit-once across retries) —
+            // just queue the purge so a later successful delete stamps the marker.
+            if (blobKeys.length > 0) {
+              purgeWork.push({ invoiceId: row.invoice_id, keys: blobKeys, tombstonedThisRun: false });
+            }
+            continue;
+          }
+
+          const redactedAt = new Date().toISOString();
+
           // Tombstone the buyer PII, preserving the jsonb STRUCTURE so the
           // non-draft snapshot CHECK (member_identity_snapshot IS NOT NULL)
           // still holds and the doc-type contract shape is intact. Only the
-          // five PII fields change; every financial/numbering column is left
-          // untouched (the trigger enforces this under the GUC).
+          // five PII fields change; every financial/numbering/event column is
+          // left untouched (the trigger enforces this under the GUC).
+          //
+          // LOW-13 (tombstone shape): the `|| jsonb_build_object(...)` merge
+          // OVERWRITES exactly the five REDACTED_FIELDS keys on the existing
+          // buyer object and adds none others, so the result stays a flat jsonb
+          // object with the same key set — schema-valid for the doc-type
+          // contract (legal_name/address/primary_contact_name string, tax_id
+          // nullable, primary_contact_email string) and non-null (the non-draft
+          // snapshot CHECK still holds). `tax_id` → SQL NULL becomes a jsonb
+          // null; `primary_contact_email` → '' keeps it a string. The shape is
+          // fixed (no dynamic keys), so no runtime assertion is warranted.
           await tx.execute(sql`
             UPDATE invoices
             SET member_identity_snapshot = member_identity_snapshot
@@ -196,12 +267,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                    'tax_id', NULL
                  )
             WHERE invoice_id = ${row.invoice_id}
+              AND (member_identity_snapshot->>'legal_name') <> '[REDACTED]'
           `);
 
           // Audit in the SAME tx as the UPDATE — atomic: a rollback removes
-          // both. NON-timeline payload (no member_id; the row has none).
-          // Field NAMES only — never the erased PII values. 10y retention is
-          // applied by the adapter via F4_AUDIT_RETENTION_YEARS.
+          // both. Emitted ONLY on a fresh tombstone (this branch), never on a
+          // retry — so the audit lands EXACTLY ONCE per row across all retries.
+          // NON-timeline payload (no member_id; the row has none). Field NAMES
+          // only — never the erased PII values. 10y retention is applied by the
+          // adapter via F4_AUDIT_RETENTION_YEARS.
           await f4AuditAdapter.emit(tx, {
             eventType: 'event_buyer_pii_redacted',
             // `audit_log.actor_user_id` is `text NOT NULL`; the sweeper has no
@@ -216,8 +290,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               invoice_id: row.invoice_id,
               redacted_at: redactedAt,
               redacted_fields: [...REDACTED_FIELDS],
-              // KEYS erased alongside the DB tombstone (not URLs → not PII) —
-              // the forensic proof the blob purge was part of this erasure.
+              // KEYS to erase alongside the DB tombstone (not URLs → not PII) —
+              // the forensic proof the blob purge is part of this erasure. The
+              // bytes are purged AFTER commit; on a crash the purge retries on a
+              // later tick without re-emitting this audit.
               blob_purged_keys: blobKeys,
               reason: 'retention_10y_elapsed',
               route: ROUTE,
@@ -227,26 +303,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
 
           if (blobKeys.length > 0) {
-            blobsToPurge.push({ invoiceId: row.invoice_id, keys: blobKeys });
+            purgeWork.push({ invoiceId: row.invoice_id, keys: blobKeys, tombstonedThisRun: true });
           }
           tenantRedacted += 1;
         }
-        return { tenantRedacted, blobsToPurge };
+        return { tenantRedacted, purgeWork };
       });
 
-      const { tenantRedacted: redactedThisTenant, blobsToPurge } = redactedResult;
+      const { tenantRedacted: redactedThisTenant, purgeWork } = redactedResult;
 
-      // Erase the PDF BYTES AFTER the tx committed. Best-effort + non-fatal:
-      // the DB tombstone (authoritative copy) is already durable, so a blob
-      // failure must NOT undo it — log (errKind only, NO PII) + bump the error
-      // metric for the runbook alert / manual cleanup, then carry on. A failed
-      // delete is NOT auto-retried (the row is no longer eligible once
-      // tombstoned) — accepted trade since the DB PII is erased regardless.
-      for (const { invoiceId, keys } of blobsToPurge) {
+      // Erase the PDF BYTES AFTER the tx committed, then — and ONLY on a fully
+      // successful purge of every key for the row — stamp `pii_blob_purged_at`
+      // in a SEPARATE GUC-gated UPDATE so the marker is durable proof the bytes
+      // are gone. Best-effort + non-fatal per delete: the DB tombstone
+      // (authoritative copy) is already durable, so a blob failure must NOT undo
+      // it — log (errKind only, NO PII) + bump the error metric, then carry on.
+      // If ANY key fails (or the marker UPDATE fails), `pii_blob_purged_at`
+      // stays NULL → the NEXT sweep RE-SELECTS this row (redacted-but-unpurged
+      // arm) and retries the purge. No PII is re-exposed (snapshot already
+      // tombstoned) and the audit is NOT re-emitted (already_tombstoned branch).
+      for (const { invoiceId, keys } of purgeWork) {
+        let allPurged = true;
         for (const key of keys) {
           try {
             await vercelBlobAdapter.delete(key);
           } catch (e) {
+            allPurged = false;
             invoicingMetrics.eventBuyerPiiRedacted('error', tenantSlug);
             logger.error(
               {
@@ -259,6 +341,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               'cron.redact_expired_event_buyers.blob_delete_failed',
             );
           }
+        }
+
+        if (!allPurged) {
+          // Leave pii_blob_purged_at NULL → retried on the next tick.
+          continue;
+        }
+
+        // Every byte for this row is gone — stamp the completion marker so the
+        // row is no longer re-selected. Separate tx so a marker-UPDATE failure
+        // (rare) also leaves the row eligible for a clean retry rather than
+        // poisoning the whole tenant pass.
+        try {
+          await runInTenant(ctx, async (tx) => {
+            await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+            await tx.execute(sql`
+              UPDATE invoices
+              SET pii_blob_purged_at = now()
+              WHERE invoice_id = ${invoiceId}
+                AND pii_blob_purged_at IS NULL
+            `);
+          });
+        } catch (e) {
+          invoicingMetrics.eventBuyerPiiRedacted('error', tenantSlug);
+          logger.error(
+            {
+              requestId,
+              route: ROUTE,
+              tenantId: tenantSlug,
+              invoiceId,
+              errKind: e instanceof Error ? e.constructor.name : 'unknown',
+            },
+            'cron.redact_expired_event_buyers.purge_marker_failed',
+          );
         }
       }
 
