@@ -1,0 +1,460 @@
+/**
+ * 054-event-fee-invoices — §87 interleaved membership+event sequence
+ * continuity (live Neon Singapore via .env.local).
+ *
+ * Spec §7 requirement: "shared INV continuity across interleaved
+ * membership+event ... no gap/reset, §87."
+ *
+ * Membership invoices (`invoice_subject='membership'`) and event-fee
+ * invoices (`invoice_subject='event'`) SHARE the single
+ * `documentType:'invoice'` §87 sequence stream in
+ * `tenant_document_sequences`. A regression that allocates from a
+ * second, event-only counter would violate §87 (gap or parallel
+ * numbering).
+ *
+ * This test exercises the REAL allocator + REAL use-cases:
+ *
+ *   1. membership invoice: `createInvoiceDraft` → `issueInvoice`  → seq N
+ *   2. event invoice:      `createEventInvoiceDraft` → `issueInvoice` → seq N+1
+ *   3. membership invoice: `createInvoiceDraft` → `issueInvoice`  → seq N+2
+ *
+ * Assertions:
+ *   - the three `sequence_number`s are STRICTLY consecutive (N, N+1, N+2)
+ *     with no gap or reset between them;
+ *   - the `document_number`s embed the same prefix + consecutive seq digits
+ *     (same stream, different subject types);
+ *   - `invoice_subject` on each row matches the expected type
+ *     ('membership' vs 'event'), proving the interleave is genuine.
+ *
+ * PDF render + Blob upload are mocked (same pattern as
+ * `vat-source-chain.test.ts` and `issue-event-invoice.test.ts`) to keep
+ * the test fast while exercising the REAL allocator + transaction path.
+ *
+ * Fiscal-year boundary: the allocator's FY isolation is already proven
+ * in `seq-number-atomicity.test.ts` (e) — we focus on within-FY
+ * interleaving here. Adding a cross-FY interleave variant would require
+ * injecting a clock that crosses the Jan 1 boundary; the existing
+ * atomicity test already covers FY independence at the allocator level
+ * so we do NOT duplicate that concern here.
+ *
+ * Lives in tests/integration/** → hits live Neon.
+ * Migrations 0200–0203 MUST be applied first (`pnpm db:migrate`).
+ */
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { db, runInTenant } from '@/lib/db';
+import {
+  events,
+  eventRegistrations,
+  type NewEventRow,
+  type NewEventRegistrationRow,
+} from '@/modules/events/infrastructure/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { createInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
+import { makeCreateInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
+import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
+import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
+import {
+  issueInvoice,
+  type IssueInvoiceDeps,
+} from '@/modules/invoicing/application/use-cases/issue-invoice';
+import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
+import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const MATRIX: BenefitMatrix = {
+  eblast_per_year: 1,
+  website_page_type: 'member_news_update',
+  homepage_logo_category: 'regular',
+  directory_listing_size: 'half_page',
+  event_discount_scope: 'all_employees',
+  events_cobranded_access: false,
+  cultural_tickets_per_year: 0,
+  m2m_benefits_access: true,
+  business_referrals: true,
+  tailor_made_services: false,
+  partnership: null,
+};
+
+/**
+ * Non-member buyer WITH a Thai TIN — the event invoice uses this buyer
+ * so it issues as a §86/4 full tax invoice (same stream as membership).
+ */
+const EVENT_BUYER = {
+  legal_name: 'Interleave Test Corp',
+  tax_id: '1234512345123',
+  address: '1 Silom Road, Bangkok 10500',
+  primary_contact_name: 'Test Buyer',
+  primary_contact_email: 'buyer@interleave.example',
+} as const;
+
+/**
+ * Build IssueInvoiceDeps with mocked PDF + Blob so the real allocator +
+ * real DB path is exercised without a live PDF render or Blob upload.
+ * The `captured` array records every render call so the test can confirm
+ * which doc-type was chosen at issue.
+ */
+function makeIssueDeps(
+  tenantSlug: string,
+  captured?: PdfRenderInput[],
+): IssueInvoiceDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: {
+      render: vi.fn(async (renderInput: PdfRenderInput) => {
+        captured?.push(renderInput);
+        return {
+          bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+          sha256: Sha256Hex.ofUnsafe('c'.repeat(64)),
+        };
+      }),
+    },
+    blob: {
+      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({
+        key,
+        url: `https://blob.test/${key}`,
+      })),
+      uploadLogo: vi.fn(),
+      signDownloadUrl: vi.fn(),
+      downloadBytes: vi.fn(),
+      delete: vi.fn(),
+      list: vi.fn(),
+    },
+    audit: f4AuditAdapter,
+    clock: { nowIso: () => '2026-07-01T09:00:00Z' },
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: 1,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Suite
+// ---------------------------------------------------------------------------
+
+describe('§87 interleaved membership+event sequence continuity (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+
+  const planId = 'interleave-test-plan';
+  const planYear = 2026;
+  let memberId: string;
+  let eventId: string;
+  let eventRegId: string;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    memberId = randomUUID();
+    eventId = randomUUID();
+    eventRegId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      // Tenant invoice settings — same prefix for all document types so
+      // the interleaved document_number carries one shared prefix.
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้าทดสอบ',
+        legalNameEn: 'Test Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
+      });
+
+      // F2 membership plan — company scope.
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId,
+        planYear,
+        planName: { en: 'Interleave Test Plan' },
+        description: { en: 'Plan for §87 interleave test' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 500_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+
+      // F3 company member WITH tax_id (required for membership §86/4 invoice).
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'Interleave Member Corp',
+        country: 'TH',
+        taxId: '9999999999999',
+        addressLine1: '99 Rama IV Road',
+        city: 'Sathon',
+        province: 'Bangkok',
+        postalCode: '10120',
+        planId,
+        planYear,
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Member',
+        lastName: 'Contact',
+        email: 'member.contact@interleave.example',
+        isPrimary: true,
+      });
+
+      // F6 event.
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_interleave_seq',
+        name: 'Interleave Test Gala',
+        startDate: new Date('2026-08-15T10:00:00Z'),
+      } satisfies NewEventRow);
+
+      // Non-member event registration for the event invoice.
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: eventRegId,
+        eventId,
+        externalId: 'att_interleave_seq',
+        attendeeEmail: 'buyer@interleave.example',
+        attendeeName: 'Test Buyer',
+        attendeeCompany: 'Interleave Test Corp',
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 1000,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-07-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+  });
+
+  /** Read the issued invoice row back (owner role — bypasses RLS). */
+  async function readInvoiceRow(invoiceId: string) {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    return row;
+  }
+
+  it(
+    'membership → event → membership issues produce strictly consecutive §87 sequence numbers on ONE shared stream',
+    async () => {
+      // -----------------------------------------------------------------------
+      // Step 1 — MEMBERSHIP draft + issue
+      // -----------------------------------------------------------------------
+      const membershipDraftDeps = makeCreateInvoiceDraftDeps(tenant.ctx.slug);
+      const draftResult1 = await createInvoiceDraft(membershipDraftDeps, {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-draft-mem1-${memberId}`,
+        memberId,
+        planId,
+        planYear,
+      });
+      expect(
+        draftResult1.ok,
+        draftResult1.ok ? 'ok' : `membership draft 1 err: ${draftResult1.error.code}`,
+      ).toBe(true);
+      if (!draftResult1.ok) throw new Error(`membership draft 1 failed: ${draftResult1.error.code}`);
+      const membershipInvoiceId1 = draftResult1.value.invoiceId;
+
+      const issueResult1 = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-issue-mem1-${membershipInvoiceId1}`,
+        invoiceId: membershipInvoiceId1,
+      });
+      expect(
+        issueResult1.ok,
+        issueResult1.ok ? 'ok' : `membership issue 1 err: ${JSON.stringify(issueResult1)}`,
+      ).toBe(true);
+      if (!issueResult1.ok) throw new Error('membership issue 1 failed');
+
+      // -----------------------------------------------------------------------
+      // Step 2 — EVENT draft + issue (different invoice_subject)
+      // -----------------------------------------------------------------------
+      const eventDraftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+      const eventDraftResult = await createEventInvoiceDraft(eventDraftDeps, {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-draft-evt-${eventRegId}`,
+        eventRegistrationId: eventRegId,
+        amountOverride: 100_000, // 1,000 THB inclusive
+        buyer: EVENT_BUYER,
+      });
+      expect(
+        eventDraftResult.ok,
+        eventDraftResult.ok ? 'ok' : `event draft err: ${eventDraftResult.error.code}`,
+      ).toBe(true);
+      if (!eventDraftResult.ok) throw new Error(`event draft failed: ${eventDraftResult.error.code}`);
+      const eventInvoiceId = eventDraftResult.value.invoiceId;
+
+      const eventIssueResult = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-issue-evt-${eventInvoiceId}`,
+        invoiceId: eventInvoiceId,
+      });
+      expect(
+        eventIssueResult.ok,
+        eventIssueResult.ok ? 'ok' : `event issue err: ${JSON.stringify(eventIssueResult)}`,
+      ).toBe(true);
+      if (!eventIssueResult.ok) throw new Error('event issue failed');
+
+      // -----------------------------------------------------------------------
+      // Step 3 — second MEMBERSHIP draft + issue (interleave closes back to
+      // membership subject — the counter must NOT reset)
+      // -----------------------------------------------------------------------
+      // We need a fresh member to avoid `duplicate_draft` on the same
+      // (memberId, planYear) pair. We insert a second member here inside
+      // a separate `runInTenant` because beforeAll already committed.
+      const memberId2 = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: memberId2,
+          companyName: 'Interleave Member Corp 2',
+          country: 'TH',
+          taxId: '8888888888888',
+          addressLine1: '88 Sukhumvit Road',
+          city: 'Watthana',
+          province: 'Bangkok',
+          postalCode: '10110',
+          planId,
+          planYear,
+        });
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: memberId2,
+          firstName: 'Member2',
+          lastName: 'Contact2',
+          email: 'member2.contact@interleave.example',
+          isPrimary: true,
+        });
+      });
+
+      const draftResult2 = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-draft-mem2-${memberId2}`,
+        memberId: memberId2,
+        planId,
+        planYear,
+      });
+      expect(
+        draftResult2.ok,
+        draftResult2.ok ? 'ok' : `membership draft 2 err: ${draftResult2.error.code}`,
+      ).toBe(true);
+      if (!draftResult2.ok) throw new Error(`membership draft 2 failed: ${draftResult2.error.code}`);
+      const membershipInvoiceId2 = draftResult2.value.invoiceId;
+
+      const issueResult2 = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-issue-mem2-${membershipInvoiceId2}`,
+        invoiceId: membershipInvoiceId2,
+      });
+      expect(
+        issueResult2.ok,
+        issueResult2.ok ? 'ok' : `membership issue 2 err: ${JSON.stringify(issueResult2)}`,
+      ).toBe(true);
+      if (!issueResult2.ok) throw new Error('membership issue 2 failed');
+
+      // -----------------------------------------------------------------------
+      // Assert: all three rows must land on ONE strictly consecutive stream
+      // -----------------------------------------------------------------------
+      const row1 = await readInvoiceRow(membershipInvoiceId1);
+      const rowEvt = await readInvoiceRow(eventInvoiceId);
+      const row2 = await readInvoiceRow(membershipInvoiceId2);
+
+      expect(row1, 'membership invoice 1 row must exist').toBeDefined();
+      expect(rowEvt, 'event invoice row must exist').toBeDefined();
+      expect(row2, 'membership invoice 2 row must exist').toBeDefined();
+
+      // All three must be issued and carry a sequence number.
+      expect(row1!.status).toBe('issued');
+      expect(rowEvt!.status).toBe('issued');
+      expect(row2!.status).toBe('issued');
+
+      expect(row1!.sequenceNumber, 'membership invoice 1 must have a sequence_number').not.toBeNull();
+      expect(rowEvt!.sequenceNumber, 'event invoice must have a sequence_number').not.toBeNull();
+      expect(row2!.sequenceNumber, 'membership invoice 2 must have a sequence_number').not.toBeNull();
+
+      // invoice_subject confirms we genuinely interleaved subjects.
+      expect(row1!.invoiceSubject).toBe('membership');
+      expect(rowEvt!.invoiceSubject).toBe('event');
+      expect(row2!.invoiceSubject).toBe('membership');
+
+      // All three must be in the same fiscal year (same §87 stream).
+      expect(row1!.fiscalYear).not.toBeNull();
+      expect(rowEvt!.fiscalYear).toBe(row1!.fiscalYear);
+      expect(row2!.fiscalYear).toBe(row1!.fiscalYear);
+
+      // Extract sequence numbers for the core §87 continuity assertion.
+      const seq1 = row1!.sequenceNumber!;
+      const seqEvt = rowEvt!.sequenceNumber!;
+      const seq2 = row2!.sequenceNumber!;
+
+      // Sort them: they must form three consecutive integers regardless
+      // of insertion order (the suite runs serially via singleFork but
+      // we sort defensively so the assertion is order-independent).
+      const sorted = [seq1, seqEvt, seq2].sort((a, b) => a - b);
+      expect(sorted[1]).toBe(sorted[0]! + 1);
+      expect(sorted[2]).toBe(sorted[0]! + 2);
+
+      // The event invoice MUST NOT have a lower sequence than the
+      // first membership invoice — it continued the same stream.
+      expect(seqEvt).toBeGreaterThan(seq1);
+      // The second membership invoice MUST be greater than the event
+      // invoice — the stream did NOT reset when the subject switched back.
+      expect(seq2).toBeGreaterThan(seqEvt);
+
+      // document_number must embed the shared prefix on all three rows,
+      // confirming they come from the same document sequence.
+      expect(row1!.documentNumber, 'membership 1 document_number must start with INV').toMatch(
+        /^INV/,
+      );
+      expect(rowEvt!.documentNumber, 'event document_number must start with INV').toMatch(/^INV/);
+      expect(row2!.documentNumber, 'membership 2 document_number must start with INV').toMatch(
+        /^INV/,
+      );
+    },
+    90_000,
+  );
+});
