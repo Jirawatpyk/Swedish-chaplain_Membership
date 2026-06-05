@@ -1464,6 +1464,13 @@
 			"when": 1798533700000,
 			"tag": "0208_invoices_subject_fields_forbid_illegal_states",
 			"breakpoints": true
+		},
+		{
+			"idx": 209,
+			"version": "7",
+			"when": 1798533800000,
+			"tag": "0209_member_number_schema",
+			"breakpoints": true
 		}
 	]
 }
