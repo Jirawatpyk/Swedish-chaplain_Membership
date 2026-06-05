@@ -3,7 +3,12 @@
  */
 
 import type { Satang } from '@/lib/money';
-import type { Invoice, InvoiceId, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
+import type {
+  Invoice,
+  InvoiceId,
+  InvoiceStatus,
+  InvoiceSubjectFields,
+} from '@/modules/invoicing/domain/invoice';
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
@@ -15,12 +20,21 @@ export interface InvoiceRepo {
   /**
    * Insert a new DRAFT invoice + its lines. Returns the persisted row.
    *
-   * 054-event-fee-invoices — `memberId`/`planId`/`planYear` are nullable
-   * (membership invoices set them; event invoices pass null) and the
-   * subject discriminator + event linkage + VAT-inclusive flag are
-   * required. The `invoices_subject_fields_ck` DB CHECK rejects an
-   * identity-incoherent combination (e.g. subject='event' with no
-   * event_registration_id), so callers MUST pass a consistent shape.
+   * 054-event-fee-invoices — the subject-specific identity fields
+   * (`invoiceSubject` + `memberId`/`planId`/`planYear` + `eventId`/
+   * `eventRegistrationId` + `vatInclusive`) are typed as the
+   * {@link InvoiceSubjectFields} DISCRIMINATED UNION (re-used verbatim from
+   * the Invoice read model — Application importing Domain is Clean-Architecture
+   * legal). This makes an identity-incoherent construction a COMPILE error,
+   * the symmetric twin of the read-model guarantee:
+   *   - `'membership'` arm ⇒ member_id/plan_id/plan_year NON-NULL, event_id/
+   *     event_registration_id `null`, `vatInclusive: false`.
+   *   - `'event'` arm ⇒ event_id/event_registration_id NON-NULL, plan_id/
+   *     plan_year `null`, member_id `string | null` (matched member or
+   *     non-member buyer), `vatInclusive: boolean`.
+   * `{ invoiceSubject: 'membership', eventId: 'x' }` no longer compiles — the
+   * runtime `invoices_subject_fields_ck` DB CHECK is now defence-in-depth, not
+   * the sole guard. The shared draft fields below stay flat.
    *
    * `memberIdentitySnapshot` (054-event-fee-invoices Task 6b — OPTIONAL):
    *   The pinned BUYER snapshot. For the MEMBERSHIP path and the MATCHED-
@@ -34,16 +48,9 @@ export interface InvoiceRepo {
    */
   insertDraft(
     tx: unknown,
-    input: {
+    input: InvoiceSubjectFields & {
       readonly tenantId: string;
       readonly invoiceId: InvoiceId;
-      readonly memberId: string | null;
-      readonly planId: string | null;
-      readonly planYear: number | null;
-      readonly invoiceSubject: 'membership' | 'event';
-      readonly eventId: string | null;
-      readonly eventRegistrationId: string | null;
-      readonly vatInclusive: boolean;
       readonly draftByUserId: string;
       readonly autoEmailOnIssue: boolean | null;
       readonly memberIdentitySnapshot?: MemberIdentitySnapshot | null;
