@@ -15,11 +15,13 @@ import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { CountryDisplay } from '@/components/members/country-display';
 import { requireSession } from '@/lib/auth-session';
-import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { getMember, formatMemberNumber, asMemberNumber } from '@/modules/members';
-import type { TenantId } from '@/modules/members';
+import {
+  getMember,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+} from '@/modules/members';
 import { env } from '@/lib/env';
 
 /**
@@ -96,12 +98,11 @@ export default async function PortalProfilePage() {
   const planLookup = await deps.plans.getPlan(tenant, m.planId, m.planYear);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
 
-  // 055-member-number — resolve per-tenant prefix via read-only runInTenant
-  // (Plan corrections §2: never raw db — RLS-bypass gotcha).
-  const memberPrefix = await runInTenant(tenant, (tx) =>
-    deps.memberSettings.getPrefix(tx, tenant.slug as TenantId),
-  );
-  const memberNumberFormatted = formatMemberNumber(memberPrefix, asMemberNumber(m.memberNumber));
+  // 055-member-number — resolve per-tenant prefix via the RLS-safe shared
+  // helper (never raw db — RLS-bypass gotcha). `m.memberNumber` is already a
+  // branded MemberNumber (validated by rowToMember) — no re-wrap needed.
+  const memberPrefix = await resolveMemberNumberPrefix(tenant, deps.memberSettings);
+  const memberNumberFormatted = formatMemberNumber(memberPrefix, m.memberNumber);
 
   return (
     <DetailContainer>

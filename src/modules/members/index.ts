@@ -460,3 +460,8 @@ export type { MemberNumberAllocatorPort } from './application/ports/member-numbe
 
 export { drizzleMemberSettingsRepo } from './infrastructure/repos/drizzle-member-settings-repo';
 export type { MemberSettingsReaderPort } from './application/ports/member-settings-port';
+
+// Shared display-time prefix resolver — wraps the read in `runInTenant`
+// (RLS) so every presentation surface formatting a member number reuses
+// one RLS-safe helper instead of hand-copying the incantation.
+export { resolveMemberNumberPrefix } from './application/use-cases/resolve-member-number-prefix';

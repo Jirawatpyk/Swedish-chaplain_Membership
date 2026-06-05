@@ -9,14 +9,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { searchPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { LocaleKey } from '@/modules/plans';
-import { directorySearch, formatMemberNumber, asMemberNumber } from '@/modules/members';
-import type { TenantId } from '@/modules/members';
+import {
+  directorySearch,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+} from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   listInvoicesPaged,
@@ -104,11 +106,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           },
         ),
         // 055-member-number — resolve the per-tenant display prefix ONCE via
-        // runInTenant (RLS-safe, mirrors the admin members-list page pattern).
+        // the RLS-safe shared helper (mirrors the admin members-list page).
         // Falls back to the DEFAULT 'M' from the settings repo when no row exists.
-        runInTenant(tenant, (tx) =>
-          membersDeps.memberSettings.getPrefix(tx, tenant.slug as TenantId),
-        ),
+        resolveMemberNumberPrefix(tenant, membersDeps.memberSettings),
       ]);
       if (membersResult.ok) {
         members = membersResult.value.items.map((row) => ({
@@ -120,11 +120,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           status: row.member.status,
           url: `/admin/members/${row.member.memberId}`,
           // 055-member-number — format the display number (e.g. `SCCM-0042`)
-          // using the prefix resolved above. The DB CHECK ensures memberNumber
-          // is always a positive integer; asMemberNumber brands the type.
+          // using the prefix resolved above. `row.member.memberNumber` is
+          // already a branded MemberNumber (validated by rowToMember) — pass
+          // it straight through, no re-wrap needed.
           member_number_display: formatMemberNumber(
             memberPrefix,
-            asMemberNumber(row.member.memberNumber),
+            row.member.memberNumber,
           ),
         }));
       }

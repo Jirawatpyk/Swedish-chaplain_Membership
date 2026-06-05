@@ -11,11 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
-import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { formatMemberNumber, asMemberNumber } from '@/modules/members';
-import type { TenantId } from '@/modules/members';
+import { formatMemberNumber, resolveMemberNumberPrefix } from '@/modules/members';
 import { InvoicesSummaryCard } from './invoices/_components/invoices-summary-card';
 
 /**
@@ -42,17 +40,21 @@ export default async function MemberPortalHomePage() {
   const t = await getTranslations('auth.memberPortal');
 
   // 055-member-number — resolve the member number for the welcome badge.
-  // Uses read-only runInTenant (Plan corrections §2: never raw db).
+  // Uses the RLS-safe shared prefix resolver (never raw db).
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
   const memberRes = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
-  const memberPrefix = await runInTenant(tenant, (tx) =>
-    deps.memberSettings.getPrefix(tx, tenant.slug as TenantId),
-  );
-  const memberNumberLabel =
-    memberRes.ok
-      ? formatMemberNumber(memberPrefix, asMemberNumber(memberRes.value.memberNumber))
-      : null;
+  // Only pay for the prefix lookup when the user is actually linked to a
+  // member — a member-role account with no linked member has no number to
+  // format, so the extra round-trip would be wasted.
+  const memberNumberLabel = memberRes.ok
+    ? formatMemberNumber(
+        await resolveMemberNumberPrefix(tenant, deps.memberSettings),
+        // `member.memberNumber` is already a branded MemberNumber (validated
+        // by rowToMember) — pass it straight through, no re-wrap needed.
+        memberRes.value.memberNumber,
+      )
+    : null;
 
   return (
     <DetailContainer>
