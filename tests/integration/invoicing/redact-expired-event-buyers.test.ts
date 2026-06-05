@@ -48,7 +48,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { POST as redactCron } from '@/app/api/cron/invoicing/redact-expired-event-buyers/route';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
-import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -85,6 +85,21 @@ function callCron(): Promise<Response> {
   const req = new NextRequest(
     'http://localhost/api/cron/invoicing/redact-expired-event-buyers',
     { method: 'POST', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } },
+  );
+  return redactCron(req);
+}
+
+/**
+ * As `callCron()` but with a caller-supplied Authorization header (or none).
+ * Used by the FIX-B auth-rejection block to drive the 401 branch without
+ * seeding any tenant data — the Bearer check is the first thing the route does.
+ */
+function callCronWithAuth(authorization: string | null): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (authorization !== null) headers.authorization = authorization;
+  const req = new NextRequest(
+    'http://localhost/api/cron/invoicing/redact-expired-event-buyers',
+    { method: 'POST', headers },
   );
   return redactCron(req);
 }
@@ -1208,3 +1223,341 @@ async function readSnapshotFor(
     .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
   return row!.memberIdentitySnapshot as Record<string, unknown>;
 }
+
+/**
+ * Assert a callback throws a Postgres error whose SQLSTATE matches the
+ * supplied code. Drizzle (postgres-js driver) wraps the PostgresError under
+ * `.cause`; some paths surface `.code` directly — check both.
+ *   - 23514 = check_violation
+ */
+async function expectPgErrorCode(fn: () => Promise<unknown>, sqlstate: string): Promise<void> {
+  let caught: unknown = null;
+  try {
+    await fn();
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught, `expected a Postgres ${sqlstate} error`).not.toBeNull();
+  const err = caught as { cause?: { code?: string }; code?: string };
+  const code = err.cause?.code ?? err.code ?? null;
+  expect(code).toBe(sqlstate);
+}
+
+/**
+ * 054-event-fee-invoices (speckit-review hardening, FIX A — migration 0208) —
+ * the TIGHTENED `invoices_subject_fields_ck` makes illegal subject/identity
+ * combinations un-representable at the DB layer. Migration 0201's CHECK only
+ * asserted the columns each subject MUST carry; it did NOT forbid the opposite
+ * subject's columns nor couple `vat_inclusive`, so contradictory rows
+ * (membership WITH event_id; membership WITH vat_inclusive=true; event WITH
+ * plan_id) silently passed. This block pins the tightened CHECK against live
+ * Neon so a future DROP/weaken regression breaks CI rather than shipping.
+ *
+ * Scenarios:
+ *   (A) a valid membership invoice (member/plan identity, NO event cols,
+ *       vat_inclusive=false) still inserts.
+ *   (B) a valid event invoice (event identity, NO plan cols) still inserts.
+ *   (C) membership WITH event_id set → rejected (23514).
+ *   (D) membership WITH event_registration_id set → rejected (23514).
+ *   (E) membership WITH vat_inclusive=true → rejected (23514).
+ *   (F) event WITH plan_id set → rejected (23514).
+ *   (G) event WITH plan_year set → rejected (23514).
+ *   (H) the live constraint definition names every tightened clause (regression
+ *       trip-wire against a DROP/re-ADD that drops a negative clause).
+ *
+ * Migration 0208 MUST be applied first (`pnpm db:migrate`).
+ */
+describe('invoices_subject_fields_ck — tightened to forbid illegal states (FIX A / migration 0208)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let regId: string;
+  let regId2: string;
+  let memberId: string;
+  const planId = 'ck-tighten-plan';
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+    regId = randomUUID();
+    regId2 = randomUUID();
+    memberId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId,
+        planYear: 2026,
+        planName: { en: 'CK Tighten Plan' },
+        description: { en: 'Test description' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'CK Member Co',
+        country: 'TH',
+        taxId: '2222222222222',
+        planId,
+        planYear: 2026,
+      });
+
+      // Two events + registrations so the composite FK
+      // (tenant_id, event_registration_id) → event_registrations is satisfied
+      // for the valid + illegal event-row probes.
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_ck_tighten',
+        name: 'CK Tighten Gala',
+        startDate: new Date('2024-09-10T11:00:00Z'),
+      });
+      for (const rid of [regId, regId2]) {
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: rid,
+          eventId,
+          externalId: `att_ck_${rid.slice(0, 8)}`,
+          attendeeEmail: 'buyer@ck-tighten.example',
+          attendeeName: 'CK Buyer',
+          attendeeCompany: 'CK Buyer Co Ltd',
+          matchType: 'non_member',
+          ticketType: 'VIP',
+          ticketPriceThb: 100,
+          paymentStatus: 'paid',
+          registeredAt: new Date('2024-09-01T03:00:00Z'),
+        });
+      }
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('(A) accepts a valid membership invoice (member/plan identity, no event cols, vat_inclusive=false)', async () => {
+    const invoiceId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'membership',
+        memberId,
+        planId,
+        planYear: 2026,
+        vatInclusive: false,
+        draftByUserId: user.userId,
+        status: 'draft',
+      }),
+    );
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    expect(row!.invoiceSubject).toBe('membership');
+    expect(row!.vatInclusive).toBe(false);
+  }, 60_000);
+
+  it('(B) accepts a valid event invoice (event identity, no plan cols)', async () => {
+    const invoiceId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      }),
+    );
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    expect(row!.invoiceSubject).toBe('event');
+    expect(row!.eventRegistrationId).toBe(regId);
+  }, 60_000);
+
+  it('(C) rejects membership WITH event_id set (illegal — opposite subject identity)', async () => {
+    await expectPgErrorCode(
+      () =>
+        runInTenant(tenant.ctx, (tx) =>
+          tx.insert(invoices).values({
+            tenantId: tenant.ctx.slug,
+            invoiceId: randomUUID(),
+            invoiceSubject: 'membership',
+            memberId,
+            planId,
+            planYear: 2026,
+            eventId, // illegal on a membership row
+            draftByUserId: user.userId,
+            status: 'draft',
+          }),
+        ),
+      '23514',
+    );
+  }, 60_000);
+
+  it('(D) rejects membership WITH event_registration_id set (illegal)', async () => {
+    await expectPgErrorCode(
+      () =>
+        runInTenant(tenant.ctx, (tx) =>
+          tx.insert(invoices).values({
+            tenantId: tenant.ctx.slug,
+            invoiceId: randomUUID(),
+            invoiceSubject: 'membership',
+            memberId,
+            planId,
+            planYear: 2026,
+            eventRegistrationId: regId, // illegal on a membership row
+            draftByUserId: user.userId,
+            status: 'draft',
+          }),
+        ),
+      '23514',
+    );
+  }, 60_000);
+
+  it('(E) rejects membership WITH vat_inclusive=true (membership is VAT-EXCLUSIVE)', async () => {
+    await expectPgErrorCode(
+      () =>
+        runInTenant(tenant.ctx, (tx) =>
+          tx.insert(invoices).values({
+            tenantId: tenant.ctx.slug,
+            invoiceId: randomUUID(),
+            invoiceSubject: 'membership',
+            memberId,
+            planId,
+            planYear: 2026,
+            vatInclusive: true, // illegal — membership must be VAT-exclusive
+            draftByUserId: user.userId,
+            status: 'draft',
+          }),
+        ),
+      '23514',
+    );
+  }, 60_000);
+
+  it('(F) rejects event WITH plan_id set (illegal — membership identity on event row)', async () => {
+    await expectPgErrorCode(
+      () =>
+        runInTenant(tenant.ctx, (tx) =>
+          tx.insert(invoices).values({
+            tenantId: tenant.ctx.slug,
+            invoiceId: randomUUID(),
+            invoiceSubject: 'event',
+            eventId,
+            eventRegistrationId: regId2,
+            planId, // illegal on an event row
+            memberId: null,
+            planYear: null,
+            draftByUserId: user.userId,
+            status: 'draft',
+          }),
+        ),
+      '23514',
+    );
+  }, 60_000);
+
+  it('(G) rejects event WITH plan_year set (illegal)', async () => {
+    await expectPgErrorCode(
+      () =>
+        runInTenant(tenant.ctx, (tx) =>
+          tx.insert(invoices).values({
+            tenantId: tenant.ctx.slug,
+            invoiceId: randomUUID(),
+            invoiceSubject: 'event',
+            eventId,
+            eventRegistrationId: regId2,
+            planYear: 2026, // illegal on an event row
+            memberId: null,
+            planId: null,
+            draftByUserId: user.userId,
+            status: 'draft',
+          }),
+        ),
+      '23514',
+    );
+  }, 60_000);
+
+  it('(H) the live constraint definition names every tightened clause (regression trip-wire)', async () => {
+    const rows = (await db.execute(sql`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint WHERE conname = 'invoices_subject_fields_ck'
+    `)) as unknown as Array<{ def: string }>;
+    const def = rows[0]?.def ?? '';
+    // membership negative clauses + VAT coupling.
+    expect(def).toContain('event_id IS NULL');
+    expect(def).toContain('event_registration_id IS NULL');
+    expect(def).toContain('vat_inclusive = false');
+    // event negative clauses (no membership plan identity).
+    expect(def).toContain('plan_id IS NULL');
+    expect(def).toContain('plan_year IS NULL');
+  }, 60_000);
+});
+
+/**
+ * 054-event-fee-invoices (speckit-review hardening, FIX B — scan-level auth) —
+ * the redact cron MUST reject a missing / malformed Bearer with 401 BEFORE any
+ * tenant-list query or data access. Constant-time `verifyCronBearer` gates the
+ * whole route (matches the sibling F4/F5 sweep crons). No tenant data is seeded
+ * — the auth check short-circuits the handler.
+ *
+ * (The 500 tenant-list-failure branch + the per-tenant `tenantsErrored`
+ * isolation branch are exercised deterministically in the unit suite
+ * `tests/unit/api/cron/invoicing/redact-expired-event-buyers.test.ts`, where
+ * `@/lib/db` is fully mocked so the tenant-list query and a per-tenant
+ * `runInTenant` throw can be induced without poisoning live Neon or the other
+ * describe blocks' real seeding in this file.)
+ */
+describe('redact cron — Bearer auth rejection (FIX B)', () => {
+  it('401 + unauthorized on a MISSING Authorization header', async () => {
+    const res = await callCronWithAuth(null);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('unauthorized');
+  }, 30_000);
+
+  it('401 + unauthorized on a WRONG Bearer token', async () => {
+    const res = await callCronWithAuth('Bearer wrong-secret-deadbeef-0000000000000000');
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('unauthorized');
+  }, 30_000);
+});
