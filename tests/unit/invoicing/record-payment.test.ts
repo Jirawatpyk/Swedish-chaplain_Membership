@@ -33,6 +33,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
+import { invoicingMetrics } from '@/lib/metrics';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
 
@@ -394,6 +395,38 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  it('auto_email enabled but snapshot has NO recipient email → no enqueue + autoEmailSkipped metric bumps', async () => {
+    // Observability parity (054 speckit-review) — the snapshot-missing-email
+    // skip was previously a silent `logger.warn` only. Assert the dedicated
+    // `autoEmailSkipped` counter bumps so ops can alert (matches the
+    // issue-invoice + credit-note `skipped_no_recipient` surfaces).
+    const skipMetric = vi.spyOn(invoicingMetrics, 'autoEmailSkipped');
+    const invoice = makeIssuedInvoice({
+      memberIdentitySnapshot: {
+        legal_name: 'Acme Co',
+        tax_id: 'snapshot-tax-at-issue',
+        address: '123 Road',
+        primary_contact_name: 'John',
+        // Legacy/migrated snapshot row — no deliverable address (the snapshot
+        // type's "no email" sentinel is '' per the zod union, not null).
+        primary_contact_email: '',
+      },
+    });
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    // No enqueue without a recipient.
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Metric bumped — membership subject (the fixture is a membership invoice).
+    expect(skipMetric).toHaveBeenCalledWith('membership', 'no_recipient');
+    skipMetric.mockRestore();
+  });
+
   it('payment fields — optional reference / notes default null', async () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings());
@@ -548,6 +581,57 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect('member_id' in payload).toBe(false);
     expect(payload.event_registration_id).toBe('reg-88');
     expect(payload.invoice_id).toBe(INVOICE_ID);
+  });
+
+  it('FIX 5 — combined mode + TIN-less event buyer → shared inferEventDocumentKind FORCES receipt_separate allocation', async () => {
+    // The shared `inferEventDocumentKind` discriminator must override the
+    // tenant's `combined` setting for a TIN-less EVENT buyer (a §105
+    // ใบเสร็จรับเงิน can never carry the combined tax-invoice/receipt label).
+    // This is the one path where the refactor is semantically load-bearing —
+    // `combinedMode` resolves to FALSE despite `receiptNumberingMode==='combined'`,
+    // so a separate receipt sequence IS allocated (byte-identical to the prior
+    // inline `buyerHasTin` gate, now sourced from the shared Domain helper).
+    const noTinEventInvoice = makeNonMemberEventInvoice({
+      memberIdentitySnapshot: {
+        legal_name: 'Walk-in Buyer Co',
+        tax_id: null, // TIN-less → §105 receipt_separate forced
+        address: '50 Sukhumvit Road',
+        primary_contact_name: 'Jane',
+        primary_contact_email: 'jane@buyer.example',
+      },
+    });
+    const deps = makeDeps(
+      true,
+      noTinEventInvoice,
+      makeSettings({ receiptNumberingMode: 'combined' }),
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? noTinEventInvoice
+        : makeNonMemberEventInvoice({
+            status: 'paid',
+            memberIdentitySnapshot: {
+              legal_name: 'Walk-in Buyer Co',
+              tax_id: null,
+              address: '50 Sukhumvit Road',
+              primary_contact_name: 'Jane',
+              primary_contact_email: 'jane@buyer.example',
+            },
+          });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    // forceSeparate → a receipt sequence IS allocated despite combined mode.
+    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ documentType: 'receipt' }),
+    );
+    // The rendered receipt carries the plain receipt_separate kind, NOT combined.
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate' }),
+    );
   });
 
   it('non-member EVENT invoice → does NOT flip registration_fee_paid (no F3 member) even with a registration_fee line', async () => {

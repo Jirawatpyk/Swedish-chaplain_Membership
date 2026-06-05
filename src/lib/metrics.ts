@@ -508,6 +508,28 @@ export const invoicingMetrics = {
   },
 
   /**
+   * 054-event-fee-invoices — auto-email enqueue SKIPPED because the buyer
+   * snapshot carries no deliverable contact email. The invoice still
+   * issues / pays successfully (the auto-email is best-effort, never part
+   * of the §87 issuance invariant), so the skip is otherwise SILENT — the
+   * only prior surface was a `logger.warn`, which ops cannot alert on.
+   * This counter brings the issue-invoice + record-payment skip sites to
+   * observability parity with the credit-note path (which already returns
+   * `emailDelivery: 'skipped_no_recipient'`). Labelled by `subject`
+   * ({membership, event} — bounded) so a spike on `event` (non-member
+   * buyers whose `primary_contact_email` is legitimately blank per §86/4)
+   * can be distinguished from a `membership` spike (a Domain-invariant
+   * violation upstream — a member with no contact email). Alert: any
+   * sustained non-zero rate on `subject='membership'`.
+   */
+  autoEmailSkipped(subject: 'membership' | 'event', reason: 'no_recipient'): void {
+    counter(
+      'invoicing_auto_email_skipped_total',
+      'F4 auto-email enqueue skipped (no deliverable recipient) by subject + reason',
+    ).add(1, { subject, reason });
+  },
+
+  /**
    * Cross-tenant probe count — one per `{invoice,credit_note,
    * tenant_invoice_settings}_cross_tenant_probe` audit emit. Alert:
    * any non-zero rate over 5 min indicates enumeration attack.
@@ -578,10 +600,13 @@ export const invoicingMetrics = {
    * "cron never fired". `outcome='error'` fires (a) once per tenant pass
    * whose DB tx threw (the GUC/trigger path or audit_log is failing — the
    * §87/3 + GDPR Art.17 erasure obligation is then NOT being met), and
-   * (b) once per PDF-blob delete that failed AFTER a committed DB tombstone
-   * (the authoritative DB copy is erased but the derived PDF bytes still
-   * sit in Blob — manual cleanup needed; not auto-retried). A sustained
-   * `outcome='error'` rate is the alerting anchor for both.
+   * (b) once per PDF-blob delete that failed AFTER a committed DB tombstone.
+   * Case (b) is RETRYABLE (HIGH-3): the DB tombstone is durable and
+   * `pii_blob_purged_at` stays NULL, so the next daily sweep re-selects the
+   * row and retries the byte purge — no manual action unless the error rate
+   * is sustained. A sustained `outcome='error'` rate is the alerting anchor
+   * for both cases; do NOT manually delete Blob bytes on a transient (b),
+   * the cron already retries them.
    */
   eventBuyerPiiRedacted(outcome: 'redacted' | 'swept_zero' | 'error', tenantId: string): void {
     safeMetric(() => {

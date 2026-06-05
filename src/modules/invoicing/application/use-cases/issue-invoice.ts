@@ -452,7 +452,7 @@ export async function issueInvoice(
     //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is not
     //   an F3 member, so the timeline filter MUST NOT surface it. We do NOT widen
     //   `MemberTimelineAuditPayload` to make `member_id` optional (that would
-    //   weaken the F3 `member_id` guarantee for the 5 membership events); instead
+    //   weaken the F3 `member_id` guarantee for the member-timeline event types); instead
     //   we narrow `invoice_issued` to the non-timeline `F4AuditEvent` branch at
     //   THIS one site, carrying `event_registration_id` and omitting `member_id`
     //   entirely. Mirrors the `emitNonTimelineDraftCreated` precedent in
@@ -527,7 +527,11 @@ export async function issueInvoice(
       const recipientEmail = (memberSnap.primary_contact_email ?? '').trim();
       if (recipientEmail === '') {
         // (A) — no deliverable address. Skip the enqueue; the invoice still
-        // issues successfully. Log ids only (no email / buyer PII).
+        // issues successfully. Log ids only (no email / buyer PII) AND bump a
+        // metric so ops can alert (the warn alone is unobservable; this brings
+        // the issue path to parity with the credit-note `skipped_no_recipient`
+        // surface).
+        invoicingMetrics.autoEmailSkipped(draft.invoiceSubject, 'no_recipient');
         logger.warn(
           {
             event: 'invoice_auto_email_skipped_no_recipient',

@@ -45,8 +45,9 @@ import type {
 } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
-import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
+import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
@@ -202,13 +203,14 @@ export async function recordPayment(
   // other concurrent caller, and vice versa). Settings are effectively
   // immutable during a payment record (the immutability trigger on
   // tenant_invoice_settings makes mid-race mutation a no-op), so reading
-  // outside the tx is safe. Mirrors the identical fix + rationale in
-  // issue-credit-note.ts:126-135 and void-invoice.ts:130-132.
+  // outside the tx is safe. Mirrors the identical fix + rationale in the
+  // pre-`withTx` settings read in `issueCreditNote` and `voidInvoice`.
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
   // R18-03 — early-exit on missing settings BEFORE opening withTx +
   // acquiring lockForUpdate. Matches the "pre-sequence early exits"
-  // pattern in issue-invoice.ts:155-163 and saves a useless round-trip
-  // + probe audit emit when the tenant has no settings row yet.
+  // pattern in `issueInvoice` (its `settings_missing` guard) and saves a
+  // useless round-trip + probe audit emit when the tenant has no settings
+  // row yet.
   if (!settings) return err({ code: 'settings_missing' });
 
   try {
@@ -312,13 +314,21 @@ export async function recordPayment(
     // snapshot (`loaded.memberIdentitySnapshot`, non-null per the guard above) —
     // it is NEVER a deref of `member_id`, so a null-member event invoice renders
     // correctly. (TIN check trims whitespace, matching the issue-invoice gate.)
-    // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
-    // !== ''`, duplicated across issue-invoice + issue-credit-note). The
-    // `combined` receipt label is forced to `receipt_separate` for a TIN-less
-    // buyer; behaviour byte-identical to the former inline check.
+    // FIX 5 — shared Domain discriminator. `inferEventDocumentKind` resolves the
+    // SAME `receipt_separate` verdict the issue-time `pdfKind` gate used (and the
+    // credit-time gate in `issueCreditNote` uses), so all three stay in lockstep
+    // — no inline `buyerHasTin` reconstruction. The `combined` receipt label is
+    // forced to `receipt_separate` for a TIN-less event buyer; behaviour is
+    // byte-identical to the former inline `buyerHasTin(tax_id)` check, because a
+    // MEMBERSHIP invoice always carries a TIN by pay-time (the issue-invoice gate
+    // requires it), so `!forceSeparate` ≡ `buyerHasTin` on every reachable row.
+    const forceSeparate =
+      inferEventDocumentKind(
+        loaded.invoiceSubject,
+        loaded.memberIdentitySnapshot.tax_id,
+      ) === 'receipt_separate';
     const combinedMode =
-      settings.receiptNumberingMode === 'combined' &&
-      buyerHasTin(loaded.memberIdentitySnapshot.tax_id);
+      settings.receiptNumberingMode === 'combined' && !forceSeparate;
     let receiptDocNumRaw: string | null = null;
     let receiptDocNum: DocumentNumber | null = null;
     if (!combinedMode) {
@@ -552,7 +562,7 @@ export async function recordPayment(
     //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is not an
     //   F3 member, so the timeline filter MUST NOT surface it. We do NOT widen
     //   `MemberTimelineAuditPayload` to make `member_id` optional (that would weaken
-    //   the F3 `member_id` guarantee for the 6 membership-timeline events); instead
+    //   the F3 `member_id` guarantee for the member-timeline event types); instead
     //   we route through the typed `emitNonMemberInvoiceEvent` helper, whose payload
     //   contract REQUIRES `event_registration_id` and FORBIDS `member_id` at compile
     //   time (no `as` cast).
@@ -651,8 +661,10 @@ export async function recordPayment(
     } else if (settings.autoEmailEnabled && !recipientEmail) {
       // Skip-with-warn: snapshot is missing the required field. This
       // is a Domain-invariant violation upstream (likely a legacy or
-      // manually-patched invoice row). Observability surface so ops
-      // can detect + backfill the bad row.
+      // manually-patched invoice row). Bump a metric (ops can alert) AND
+      // warn — brings the record-payment skip to parity with the
+      // credit-note `skipped_no_recipient` + issue-invoice surfaces.
+      invoicingMetrics.autoEmailSkipped(loaded.invoiceSubject, 'no_recipient');
       logger.warn(
         {
           tenantId: input.tenantId,
@@ -710,8 +722,8 @@ export async function recordPayment(
     // canonical pattern + runtime brand-check).
     //
     // The non-null assertions on `loaded.total` and `updated.paidAt`
-    // are guarded upstream: `no_snapshot_on_invoice` returns early when
-    // `loaded.total` is null (line ~204), and `applyPayment` always
+    // are guarded upstream: the `no_snapshot_on_invoice` guard returns early
+    // when `loaded.total` is null, and `applyPayment` always
     // populates `paid_at` on a successful issued→paid UPDATE (RETURNING
     // contract). A failed adapter would have thrown before this point.
     //
@@ -768,9 +780,10 @@ export async function recordPayment(
         'recordPayment: internal error, rolling back',
       );
       // T122 — emit `pdf_render_failed` audit AFTER the tx rolled
-      // back so forensic evidence survives (parity with
-      // issue-invoice.ts:375–399). Fire-and-forget: never mask the
-      // original error with an audit-write failure.
+      // back so forensic evidence survives (parity with the post-rollback
+      // `pdf_render_failed` emit in `issueInvoice`'s outer catch).
+      // Fire-and-forget: never mask the original error with an
+      // audit-write failure.
       if (e.error.code === 'pdf_render_failed') {
         try {
           await deps.audit.emit(null, {

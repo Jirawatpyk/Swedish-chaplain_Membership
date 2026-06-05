@@ -36,6 +36,7 @@ import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 
 // Task 14 — spy on the structured logger so the empty-recipient skip path
 // can assert the `invoice_auto_email_skipped_no_recipient` warn fires with
@@ -853,7 +854,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     });
   }
 
-  it('(A) non-member event, auto-email ON, EMPTY buyer email → no enqueue, warn fires, invoice still issues', async () => {
+  it('(A) non-member event, auto-email ON, EMPTY buyer email → no enqueue, warn fires + metric bumps, invoice still issues', async () => {
+    // Observability parity (054 speckit-review) — assert the dedicated
+    // `autoEmailSkipped` counter bumps so ops can alert on the otherwise-silent
+    // skip, not just the warn log.
+    const skipMetric = vi.spyOn(invoicingMetrics, 'autoEmailSkipped');
     const deps = makeDeps(
       makeNonMemberEventDraftWithEmail(''),
       makeSettings({ autoEmailEnabled: true }),
@@ -864,6 +869,9 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     // No enqueue to the empty address.
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Metric bumped with the event subject + no_recipient reason.
+    expect(skipMetric).toHaveBeenCalledWith('event', 'no_recipient');
+    skipMetric.mockRestore();
     // Skip warn fires with ids only (no email/PII).
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
