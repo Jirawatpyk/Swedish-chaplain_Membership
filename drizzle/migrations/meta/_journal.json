@@ -1457,6 +1457,13 @@
 			"when": 1798533600000,
 			"tag": "0207_invoices_redaction_raise_msg_includes_purge_marker",
 			"breakpoints": true
+		},
+		{
+			"idx": 208,
+			"version": "7",
+			"when": 1798533700000,
+			"tag": "0208_invoices_subject_fields_forbid_illegal_states",
+			"breakpoints": true
 		}
 	]
 }

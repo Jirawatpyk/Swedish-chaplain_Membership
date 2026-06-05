@@ -188,12 +188,26 @@ export const invoices = pgTable(
     // event invoice MUST carry event_id + event_registration_id. Defence-
     // in-depth on top of the Application-layer use-case validation so a
     // direct/regressed write can never persist an identity-less row.
+    //
+    // speckit-review hardening (FIX A, migration 0208) — TIGHTENED so the
+    // discriminator also FORBIDS the opposite subject's columns and couples
+    // `vat_inclusive`, making illegal states un-representable:
+    //   membership ⇒ event_id IS NULL AND event_registration_id IS NULL
+    //                AND vat_inclusive = false  (membership is VAT-EXCLUSIVE)
+    //   event      ⇒ plan_id IS NULL AND plan_year IS NULL
+    // (vat_inclusive is unconstrained for the event subject — a ticket may be
+    // priced VAT-inclusive or VAT-exclusive.) Mirrors the live predicate after
+    // migration 0208 exactly.
     check(
       'invoices_subject_fields_ck',
       sql`(
-        (invoice_subject = 'membership' AND member_id IS NOT NULL AND plan_id IS NOT NULL AND plan_year IS NOT NULL)
+        (invoice_subject = 'membership'
+          AND member_id IS NOT NULL AND plan_id IS NOT NULL AND plan_year IS NOT NULL
+          AND event_id IS NULL AND event_registration_id IS NULL AND vat_inclusive = false)
         OR
-        (invoice_subject = 'event' AND event_registration_id IS NOT NULL AND event_id IS NOT NULL)
+        (invoice_subject = 'event'
+          AND event_registration_id IS NOT NULL AND event_id IS NOT NULL
+          AND plan_id IS NULL AND plan_year IS NULL)
       )`,
     ),
     // 054-event-fee-invoices (Task 7) — non-draft snapshot completeness.
