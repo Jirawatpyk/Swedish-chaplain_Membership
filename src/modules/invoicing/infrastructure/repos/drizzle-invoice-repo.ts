@@ -145,7 +145,8 @@ export class MalformedInvoiceSubjectError extends Error {
  * somehow violated the CHECK fails loud via {@link MalformedInvoiceSubjectError}
  * rather than producing a mis-typed Invoice.
  */
-function rowToSubjectFields(row: InvoiceRow): InvoiceSubjectFields {
+/** @internal Exported for unit-test coverage of the 4 CHECK-violating throw branches. */
+export function rowToSubjectFields(row: InvoiceRow): InvoiceSubjectFields {
   if (row.invoiceSubject === 'membership') {
     if (row.memberId === null || row.planId === null || row.planYear === null) {
       throw new MalformedInvoiceSubjectError(
@@ -359,19 +360,40 @@ export function makeDrizzleInvoiceRepo(
 
     async insertDraft(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
+      // 054-event-fee-invoices — `input` carries the subject-discriminated
+      // identity fields as the `InvoiceSubjectFields` DU (write-seam twin of
+      // the read model). Narrow on `invoiceSubject` and map only that arm's
+      // valid fields onto the row; the off-subject columns are the arm's typed
+      // `null` literal. Mirrors the read-seam `rowToSubjectFields`. DB columns
+      // are unchanged — this is a type-level tightening only.
+      const subjectColumns =
+        input.invoiceSubject === 'membership'
+          ? {
+              invoiceSubject: 'membership' as const,
+              memberId: input.memberId,
+              planId: input.planId,
+              planYear: input.planYear,
+              eventId: null,
+              eventRegistrationId: null,
+              vatInclusive: false,
+            }
+          : {
+              invoiceSubject: 'event' as const,
+              // member_id is OPTIONAL on the event arm: matched member (string)
+              // or non-member buyer (null).
+              memberId: input.memberId,
+              planId: null,
+              planYear: null,
+              eventId: input.eventId,
+              eventRegistrationId: input.eventRegistrationId,
+              vatInclusive: input.vatInclusive,
+            };
       const [insertedInvoice] = await tx
         .insert(invoices)
         .values({
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
-          memberId: input.memberId,
-          planId: input.planId,
-          planYear: input.planYear,
-          // 054-event-fee-invoices — subject discriminator + event linkage.
-          invoiceSubject: input.invoiceSubject,
-          eventId: input.eventId,
-          eventRegistrationId: input.eventRegistrationId,
-          vatInclusive: input.vatInclusive,
+          ...subjectColumns,
           status: 'draft',
           draftByUserId: input.draftByUserId,
           autoEmailOnIssue: input.autoEmailOnIssue,

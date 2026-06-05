@@ -143,11 +143,20 @@ describe('emitNonMemberInvoiceEvent compile-time payload contract — 054 non-me
   });
 
   // -------------------------------------------------------------------------
-  // (f) `emitNonMemberInvoiceEvent` accepts a correct call site — no
-  //     member_id, event_registration_id wired through eventRegistrationId.
-  //     Confirms the helper is callable without a cast at a valid emit site.
+  // (f) `emitNonMemberInvoiceEvent` runtime merge contract:
+  //     - `event_registration_id` is injected from the typed argument
+  //       (not from extraPayload — the caller need not repeat it there)
+  //     - `extraPayload` fields (e.g. `invoice_id`) are spread into the
+  //       persisted payload
+  //     - `member_id` is absent from the merged payload object
+  //
+  //     Previously this case asserted on a hand-built literal that was
+  //     NEVER compared with what `captured` actually received — so the
+  //     helper's real merge logic was unverified. This version reads
+  //     `captured[0][1].payload` so any regression in the spread or the
+  //     `event_registration_id` injection is caught at runtime.
   // -------------------------------------------------------------------------
-  it('(f) emitNonMemberInvoiceEvent accepts a correct call (no cast required)', () => {
+  it('(f) emitNonMemberInvoiceEvent — runtime merge injects event_registration_id, spreads extraPayload, omits member_id', async () => {
     const captured: Array<Parameters<AuditPort['emit']>> = [];
     const stubAudit: AuditPort = {
       emit: async (...args) => {
@@ -155,7 +164,7 @@ describe('emitNonMemberInvoiceEvent compile-time payload contract — 054 non-me
       },
     };
 
-    void emitNonMemberInvoiceEvent(stubAudit, null, {
+    await emitNonMemberInvoiceEvent(stubAudit, null, {
       tenantId: 'tenant-2',
       requestId: 'req-2',
       eventType: 'invoice_issued',
@@ -168,15 +177,23 @@ describe('emitNonMemberInvoiceEvent compile-time payload contract — 054 non-me
       },
     });
 
-    // Runtime: the helper constructs a NonMemberInvoiceAuditPayload that
-    // merges extraPayload + event_registration_id. Confirm the merged
-    // payload type shape is what the helper signature promises.
-    const payload: NonMemberInvoiceAuditPayload = {
-      event_registration_id: 'reg-correct-001',
-      invoice_id: 'inv-correct-001',
-      amount_satang: 100_000,
-    };
-    expect(payload.event_registration_id).toBe('reg-correct-001');
+    // The stub was called exactly once.
+    expect(captured).toHaveLength(1);
+
+    // Pull the merged payload out of what the helper passed to audit.emit.
+    const [, emittedEvent] = captured[0]!;
+    const payload = emittedEvent.payload;
+
+    // event_registration_id must be injected from the typed arg.
+    expect(payload['event_registration_id']).toBe('reg-correct-001');
+
+    // extraPayload fields must be spread into the payload.
+    expect(payload['invoice_id']).toBe('inv-correct-001');
+    expect(payload['amount_satang']).toBe(100_000);
+
+    // member_id MUST NOT appear in the merged payload object at runtime —
+    // the F3 timeline filter keys on `payload->>'member_id'`; a non-member
+    // event invoice has no F3 member record, so the key MUST be absent.
     expect('member_id' in payload).toBe(false);
   });
 });
