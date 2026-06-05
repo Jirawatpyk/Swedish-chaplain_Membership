@@ -120,6 +120,12 @@ export const REDACT_PATHS = [
   'address',
   '*.address',
   '*.*.address',
+  // primary_contact_name — the buyer-snapshot contact name (PII), parity with
+  // legal_name / address / primary_contact_email (security-review hardening:
+  // it is listed in the redaction cron's REDACTED_FIELDS, so mirror it here).
+  'primary_contact_name',
+  '*.primary_contact_name',
+  '*.*.primary_contact_name',
   'member_legal_name_snapshot',
   '*.member_legal_name_snapshot',
   'memberLegalNameSnapshot',

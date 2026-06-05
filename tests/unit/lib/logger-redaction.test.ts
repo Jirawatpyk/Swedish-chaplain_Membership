@@ -198,18 +198,20 @@ describe('logger redaction (T158, T-14)', () => {
   // the snapshot directly but defence-in-depth should auto-redact if it
   // ever does. Covers depth-0, depth-1, and depth-2 (same convention as
   // `tax_id` / `attendee_email`).
-  it('F054: redacts top-level legal_name and address', () => {
+  it('F054: redacts top-level legal_name, address and primary_contact_name', () => {
     const { logger, output } = makeCapturingLogger();
     logger.info(
       {
         legal_name: `${SENTINEL}-legalname`,
         address: `${SENTINEL}-address`,
+        primary_contact_name: `${SENTINEL}-contactname`,
       },
       'buyer snapshot top-level',
     );
     const line = output.join('');
     expect(line).not.toContain(`${SENTINEL}-legalname`);
     expect(line).not.toContain(`${SENTINEL}-address`);
+    expect(line).not.toContain(`${SENTINEL}-contactname`);
     expect(line).toContain('[REDACTED]');
   });
 
