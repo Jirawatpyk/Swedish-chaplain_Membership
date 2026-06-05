@@ -1443,6 +1443,13 @@
 			"when": 1798533400000,
 			"tag": "0205_invoices_immutability_pii_redaction_exemption",
 			"breakpoints": true
+		},
+		{
+			"idx": 206,
+			"version": "7",
+			"when": 1798533500000,
+			"tag": "0206_invoices_lock_event_cols_and_pii_blob_purged_at",
+			"breakpoints": true
 		}
 	]
 }

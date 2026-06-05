@@ -163,6 +163,21 @@ export const invoices = pgTable(
     // worker retries. NULL for combined-mode + pre-T166 + non-paid rows.
     receiptDocumentNumberRaw: text('receipt_document_number_raw'),
 
+    // 054-event-fee-invoices (code-review HIGH-3) — retryable PDF-blob purge
+    // marker for the 10-year non-member event-buyer PII redaction sweep.
+    // Set to now() ONLY by the redact-expired-event-buyers cron AFTER it has
+    // successfully purged every PDF-blob key on the row (invoice + receipt
+    // bytes), in a SEPARATE UPDATE under the `app.allow_pii_redaction` GUC.
+    // NULL is the natural state for every non-redacted row AND for a row whose
+    // DB snapshot was tombstoned but whose blob purge has not yet completed
+    // (e.g. a crash between commit and purge). The cron's eligibility predicate
+    // re-selects redacted-but-NULL rows so the purge is retried until it lands,
+    // closing the GDPR Art.17 gap where PII PDF bytes could otherwise persist
+    // on Blob forever. Locked by `invoices_enforce_immutability` on the normal
+    // path; EXEMPT under the redaction GUC (migration 0206), alongside
+    // `member_identity_snapshot`.
+    piiBlobPurgedAt: timestamp('pii_blob_purged_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

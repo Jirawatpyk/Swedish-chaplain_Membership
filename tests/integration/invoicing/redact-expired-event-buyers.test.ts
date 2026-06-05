@@ -549,3 +549,445 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     expect(BigInt(row!.totalSatang!.toString())).toBe(10004n);
   }, 60_000);
 });
+
+/**
+ * 054-event-fee-invoices (code-review HIGH-2) — the immutability trigger MUST
+ * lock the four event discriminator/identity columns added by migration 0201
+ * (`invoice_subject`, `event_id`, `event_registration_id`, `vat_inclusive`)
+ * AND the redaction marker `pii_blob_purged_at` (migration 0206), exactly like
+ * `member_id`/`plan_id`/`plan_year`. Migration 0201's "no trigger change
+ * needed" note relied on the Application layer never updating those columns;
+ * the trigger is the defence-in-depth layer that must ENFORCE that. These tests
+ * pin both the NORMAL (GUC-unset) path and the GUC-exempt path.
+ *
+ * Migrations 0200–0206 MUST be applied first (`pnpm db:migrate`).
+ */
+describe('invoices immutability — event discriminator cols + pii_blob_purged_at locked (HIGH-2/HIGH-3)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let otherEventId: string;
+  let issuedInvoiceId: string;
+  let regId: string;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+    otherEventId = randomUUID();
+    issuedInvoiceId = randomUUID();
+    regId = randomUUID();
+    const otherRegId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+
+      // Two events so an event_id flip targets a real (but different) event.
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_lock_int',
+        name: 'Lock Gala',
+        startDate: new Date('2024-09-10T11:00:00Z'),
+      });
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId: otherEventId,
+        source: 'eventcreate',
+        externalId: 'evt_lock_other',
+        name: 'Other Gala',
+        startDate: new Date('2024-10-10T11:00:00Z'),
+      });
+
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: 'att_lock',
+        attendeeEmail: 'buyer@lock.example',
+        attendeeName: 'Lock Buyer',
+        attendeeCompany: 'Lock Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2024-09-01T03:00:00Z'),
+      });
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: otherRegId,
+        eventId: otherEventId,
+        externalId: 'att_lock_other',
+        attendeeEmail: 'buyer@lock.example',
+        attendeeName: 'Lock Buyer',
+        attendeeCompany: 'Lock Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2024-09-01T03:00:00Z'),
+      });
+
+      // Issued non-member event invoice (recent → never eligible for the
+      // sweeper, so these immutability probes don't race the cron).
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: issuedInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          fiscal_year = 2024,
+          sequence_number = 910001,
+          document_number = 'EVT24-910001',
+          issue_date = (now() - interval '2 years')::date,
+          due_date = (now() - interval '2 years' + interval '30 days')::date,
+          subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+          vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+          vat_satang = ${ISSUED_NUMBERS.vatSatang},
+          total_satang = ${ISSUED_NUMBERS.totalSatang},
+          net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+          pro_rate_policy_snapshot = NULL,
+          tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+          pdf_blob_key = 'test/lock-evt.pdf',
+          pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${issuedInvoiceId}
+      `);
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+  });
+
+  /** Runs `setClause` as a no-GUC UPDATE on the issued row; returns the chained error messages or null. */
+  async function expectNormalRaise(setClause: ReturnType<typeof sql>): Promise<string | null> {
+    let caught: unknown = null;
+    try {
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`
+          UPDATE invoices SET ${setClause}
+          WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${issuedInvoiceId}
+        `),
+      );
+    } catch (e) {
+      caught = e;
+    }
+    if (caught === null) return null;
+    const parts: string[] = [];
+    let cur: unknown = caught;
+    while (cur instanceof Error) {
+      parts.push(cur.message);
+      cur = (cur as { cause?: unknown }).cause;
+    }
+    return parts.join(' | ');
+  }
+
+  it('NORMAL path locks invoice_subject (flip event→membership raises)', async () => {
+    const msg = await expectNormalRaise(sql`invoice_subject = 'membership'`);
+    expect(msg, 'expected immutability raise on invoice_subject change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
+  it('NORMAL path locks event_id (raises)', async () => {
+    const msg = await expectNormalRaise(sql`event_id = ${otherEventId}`);
+    expect(msg, 'expected immutability raise on event_id change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
+  it('NORMAL path locks event_registration_id (raises)', async () => {
+    const msg = await expectNormalRaise(sql`event_registration_id = ${randomUUID()}`);
+    expect(msg, 'expected immutability raise on event_registration_id change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
+  it('NORMAL path locks vat_inclusive (flip true→false raises)', async () => {
+    const msg = await expectNormalRaise(sql`vat_inclusive = false`);
+    expect(msg, 'expected immutability raise on vat_inclusive change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
+  it('NORMAL path locks pii_blob_purged_at (raises — no normal write path may set it)', async () => {
+    const msg = await expectNormalRaise(sql`pii_blob_purged_at = now()`);
+    expect(msg, 'expected immutability raise on pii_blob_purged_at change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
+  it('GUC path STILL locks the 4 event cols + financials (raises with the redaction-only message)', async () => {
+    // Under the GUC, every event/financial column is still rejected — only
+    // member_identity_snapshot + pii_blob_purged_at may change.
+    for (const set of [
+      sql`invoice_subject = 'membership'`,
+      sql`event_id = ${otherEventId}`,
+      sql`event_registration_id = ${randomUUID()}`,
+      sql`vat_inclusive = false`,
+      sql`total_satang = 1`,
+    ]) {
+      let caught: unknown = null;
+      try {
+        await runInTenant(tenant.ctx, async (tx) => {
+          await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+          await tx.execute(sql`
+            UPDATE invoices SET ${set}
+            WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${issuedInvoiceId}
+          `);
+        });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, 'expected a GUC-path raise for a locked column').not.toBeNull();
+      const parts: string[] = [];
+      let cur: unknown = caught;
+      while (cur instanceof Error) {
+        parts.push(cur.message);
+        cur = (cur as { cause?: unknown }).cause;
+      }
+      expect(parts.join(' | ')).toMatch(/only member_identity_snapshot may change under PII redaction/i);
+    }
+  }, 90_000);
+
+  it('GUC path PERMITS member_identity_snapshot + pii_blob_purged_at to change together', async () => {
+    // The redaction flow stamps both columns under the GUC — this must NOT raise.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+      await tx.execute(sql`
+        UPDATE invoices
+        SET member_identity_snapshot = member_identity_snapshot
+              || jsonb_build_object('legal_name', '[REDACTED]'),
+            pii_blob_purged_at = now()
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${issuedInvoiceId}
+      `);
+    });
+
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, issuedInvoiceId)));
+    expect((row!.memberIdentitySnapshot as Record<string, unknown>).legal_name).toBe('[REDACTED]');
+    expect(row!.piiBlobPurgedAt).not.toBeNull();
+    // Financials/event identity untouched.
+    expect(row!.invoiceSubject).toBe('event');
+    expect(row!.eventId).toBe(eventId);
+    expect(row!.vatInclusive).toBe(true);
+    expect(BigInt(row!.totalSatang!.toString())).toBe(10004n);
+  }, 60_000);
+});
+
+/**
+ * 054-event-fee-invoices (code-review HIGH-3) — the PDF-blob purge is RETRYABLE
+ * via the `pii_blob_purged_at` marker so a crash between the DB-tombstone commit
+ * and the blob purge cannot strand PII PDF bytes on Blob forever (GDPR Art.17).
+ *
+ * Scenario (crash simulation):
+ *   Pass 1 — the row is eligible (un-redacted, >10y). The cron tombstones the
+ *     snapshot + emits the audit + commits, then attempts the blob purge —
+ *     which THROWS (simulating the crash / Blob outage). Because the purge did
+ *     not complete, `pii_blob_purged_at` stays NULL.
+ *   Pass 2 — the row is STILL eligible (tombstoned but pii_blob_purged_at IS
+ *     NULL and a blob key is present). The blob purge now SUCCEEDS, so the cron
+ *     stamps `pii_blob_purged_at = now()`. The audit is NOT re-emitted (the
+ *     snapshot was already tombstoned on pass 1).
+ *   Pass 3 — the row is NO LONGER eligible (pii_blob_purged_at IS NOT NULL).
+ *     No re-selection, no purge, no audit.
+ *
+ * Assertions: the audit is emitted EXACTLY ONCE across all three passes; the
+ * blob key is eventually purged; pii_blob_purged_at is NULL after pass 1 and
+ * set after pass 2.
+ *
+ * Migrations 0200–0206 MUST be applied first (`pnpm db:migrate`).
+ */
+describe('redact cron — retryable PDF-blob purge via pii_blob_purged_at (HIGH-3)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let regId: string;
+  let invoiceId: string;
+  const CRASH_PDF_KEY = 'test/retry-evt.pdf';
+
+  let blobDeleteSpy: MockInstance<(key: string) => Promise<void>>;
+
+  beforeAll(async () => {
+    // First call rejects (crash mid-purge); every later call resolves.
+    blobDeleteSpy = vi
+      .spyOn(vercelBlobAdapter, 'delete')
+      .mockRejectedValueOnce(new Error('simulated blob outage'))
+      .mockResolvedValue(undefined);
+
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+    regId = randomUUID();
+    invoiceId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_retry_int',
+        name: 'Retry Gala',
+        startDate: new Date('2013-09-10T11:00:00Z'),
+      });
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: 'att_retry',
+        attendeeEmail: 'buyer@retry.example',
+        attendeeName: 'Retry Buyer',
+        attendeeCompany: 'Retry Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2013-09-01T03:00:00Z'),
+      });
+
+      // Eligible (>10y) non-member event invoice. Single blob key (invoice PDF)
+      // so the purge is a single delete call — easier to drive the crash.
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          fiscal_year = 2013,
+          sequence_number = 920001,
+          document_number = 'EVT13-920001',
+          issue_date = (now() - interval '12 years')::date,
+          due_date = (now() - interval '12 years' + interval '30 days')::date,
+          subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+          vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+          vat_satang = ${ISSUED_NUMBERS.vatSatang},
+          total_satang = ${ISSUED_NUMBERS.totalSatang},
+          net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+          pro_rate_policy_snapshot = NULL,
+          tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+          pdf_blob_key = ${CRASH_PDF_KEY},
+          pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    blobDeleteSpy.mockRestore();
+    await tenant.cleanup().catch(() => {});
+  });
+
+  async function auditCountFor(id: string): Promise<number> {
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'event_buyer_pii_redacted'),
+        ),
+      );
+    return rows.filter((r) => (r.payload as Record<string, unknown>).invoice_id === id).length;
+  }
+
+  async function readRow() {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    return row!;
+  }
+
+  it('pass 1: tombstones + audits + commits, but the blob purge crashes → pii_blob_purged_at stays NULL', async () => {
+    const res = await callCron();
+    expect(res.status).toBe(200);
+
+    const row = await readRow();
+    // Snapshot tombstoned despite the blob crash (DB tombstone is committed first).
+    expect((row.memberIdentitySnapshot as Record<string, unknown>).legal_name).toBe('[REDACTED]');
+    // Purge did NOT complete → marker still NULL → row remains eligible next pass.
+    expect(row.piiBlobPurgedAt).toBeNull();
+    // Audit landed exactly once.
+    expect(await auditCountFor(invoiceId)).toBe(1);
+    // The cron DID attempt the purge (and it threw).
+    expect(blobDeleteSpy.mock.calls.map((c) => c[0])).toContain(CRASH_PDF_KEY);
+  }, 90_000);
+
+  it('pass 2: row re-selected; purge succeeds → pii_blob_purged_at set; audit NOT re-emitted', async () => {
+    const callsBefore = blobDeleteSpy.mock.calls.length;
+    const res = await callCron();
+    expect(res.status).toBe(200);
+
+    const row = await readRow();
+    // Purge succeeded this pass → marker stamped.
+    expect(row.piiBlobPurgedAt).not.toBeNull();
+    // Snapshot is still the tombstone (no PII re-exposure on retry).
+    expect((row.memberIdentitySnapshot as Record<string, unknown>).legal_name).toBe('[REDACTED]');
+    // The row WAS re-selected → the cron asked to purge the key again.
+    expect(blobDeleteSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+    // Audit still exactly ONE — not re-emitted on retry (gated on "tombstoned this run").
+    expect(await auditCountFor(invoiceId)).toBe(1);
+  }, 90_000);
+
+  it('pass 3: marker set → row NOT re-selected (no purge, no second audit)', async () => {
+    const callsBefore = blobDeleteSpy.mock.calls.length;
+    const res = await callCron();
+    expect(res.status).toBe(200);
+
+    // No further purge for this key (row no longer eligible).
+    const callsAfter = blobDeleteSpy.mock.calls.slice(callsBefore).map((c) => c[0]);
+    expect(callsAfter).not.toContain(CRASH_PDF_KEY);
+    // Audit STILL exactly one across all three passes.
+    expect(await auditCountFor(invoiceId)).toBe(1);
+  }, 90_000);
+});
