@@ -65,6 +65,11 @@ const SNAP_TENANT = {
   address_en: 'Bangkok',
   logo_blob_key: null,
 };
+// L-1 (055-member-number, doc-only): the absent `member_number` key here is
+// intentional — it models a historical / pre-feature member-identity snapshot
+// captured before the member-number feature shipped. The snapshot parser maps
+// the missing key to `null` via `.default(null)`, so the PDF buyer block omits
+// the Member No. line (matching the event-attendee + pre-feature golden cases).
 const SNAP_MEMBER = {
   legal_name: 'T127 Co',
   tax_id: '1234567890123',

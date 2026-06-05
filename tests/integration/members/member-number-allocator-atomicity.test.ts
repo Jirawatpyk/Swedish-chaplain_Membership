@@ -78,6 +78,13 @@ describe('member-number allocator atomicity (live Neon)', () => {
     }
   }, 60_000);
 
+  // ALLOC reviewer Minor (doc-only): the no-duplicate guarantee under
+  // concurrency comes from the allocator's single-statement
+  // `UPDATE … SET last_number = last_number + 1 … RETURNING last_number`,
+  // which Postgres serialises per-row — the second writer blocks on the first
+  // row lock and reads the post-increment value. The per-tenant advisory lock
+  // (`pg_advisory_xact_lock(hashtextextended('members:'||tenantId, 0))`) is
+  // defence-in-depth, NOT load-bearing for the assertions below.
   it('two concurrent allocations under one tenant yield distinct consecutive numbers (no duplicate)', async () => {
     const fresh = await createTestTenant('test-swecham');
     try {

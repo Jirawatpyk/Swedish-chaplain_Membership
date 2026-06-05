@@ -223,3 +223,27 @@ describe('CM-3 — createMember emits member_number_assigned audit', () => {
     if (!result.ok) expect(result.error.type).toBe('server_error');
   });
 });
+
+describe('CM-4 — allocator throw aborts the create cleanly (no orphan member row)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('allocate rejecting → server_error AND createWithPrimaryContactInTx NOT called', async () => {
+    const deps = makeDeps();
+    // allocate is the FIRST statement inside the runInTenant(tx) lambda. If it
+    // rejects, the use-case's outer try/catch maps the non-UseCaseAbort throw to
+    // server_error and the tx never reaches the INSERT — so no orphan member row
+    // and no half-written audit trail. (Closes CM reviewer Minor.)
+    (deps.memberNumberAllocator.allocate as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('allocator: advisory-lock acquisition failed'),
+    );
+
+    const result = await createMember(input, meta, deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('server_error');
+    // Clean abort: the member INSERT was never attempted.
+    expect(deps.memberRepo.createWithPrimaryContactInTx).not.toHaveBeenCalled();
+    // And no audit row was written (allocate precedes every recordInTx call).
+    expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+  });
+});
