@@ -23,6 +23,16 @@ export interface MemberIdentitySnapshot {
   readonly address: string;
   readonly primary_contact_name: string;
   readonly primary_contact_email: string;
+  /**
+   * 055-member-number — the buyer's human-readable per-tenant member number
+   * (bare integer; the tenant prefix is a display concern resolved elsewhere).
+   * `null` for: event/non-member buyers (no F3 member) AND historical
+   * snapshots written before this feature (the JSONB key is absent → zod's
+   * `.optional().default(null)` resolves it to null at read time). The PDF
+   * template guards with `!== null`, so historical invoices skip the line
+   * (SC-003 byte-identical re-render preserved).
+   */
+  readonly member_number: number | null;
 }
 
 /**
@@ -56,6 +66,13 @@ export const memberIdentitySnapshotSchema = z.object({
     z.string().email('primary_contact_email, when present, must be a valid email'),
     z.literal(''),
   ]),
+  // 055-member-number — additive, optional, defaults to null. `.optional()
+  // .default(null)` (NOT a bare `.nullable()`) means a MISSING key parses to
+  // null (historical snapshot) rather than undefined; positive int mirrors the
+  // DB CHECK (member_number > 0). Declaring it here is mandatory: z.object
+  // STRIPS undeclared keys, so an interface-only add silently drops the value
+  // at both write and read with no type error.
+  member_number: z.number().int().positive().nullable().optional().default(null),
 });
 
 export class MalformedSnapshotError extends Error {
@@ -99,8 +116,18 @@ export class InvalidMemberIdentitySnapshotError extends Error {
  * exactly-one-primary invariant — `contacts_one_primary_per_member` partial
  * unique index + `removeContact` refusing a primary) plus a non-empty legal
  * name and a composed address.
+ *
+ * 055-member-number — the parameter is the schema's INPUT type, where
+ * `member_number` is OPTIONAL (`.optional().default(null)`). Callers that have
+ * no member number (the event/non-member draft path) may omit the key entirely
+ * and the zod default supplies `null`; the returned object always carries the
+ * full `MemberIdentitySnapshot` (member_number resolved). Using the input type
+ * (vs the required-field interface) is what lets `create-event-invoice-draft`
+ * stay a zero-change consumer.
  */
-export function makeMemberIdentitySnapshot(parts: MemberIdentitySnapshot): MemberIdentitySnapshot {
+export function makeMemberIdentitySnapshot(
+  parts: z.input<typeof memberIdentitySnapshotSchema>,
+): MemberIdentitySnapshot {
   const result = memberIdentitySnapshotSchema.safeParse(parts);
   if (!result.success) {
     throw new InvalidMemberIdentitySnapshotError(result.error.issues);

@@ -18,6 +18,10 @@ const validSnapshot: MemberIdentitySnapshot = {
   address: '99/1 Rama IV, Bangkok',
   primary_contact_name: 'E2E Alpha',
   primary_contact_email: 'e2e-member@swecham.test',
+  // 055-member-number — the snapshot interface now carries member_number.
+  // Default fixtures pin it null (event/non-member shape); cases that exercise
+  // a real number spread `{ ...validSnapshot, member_number: 42 }`.
+  member_number: null,
 };
 
 describe('memberIdentitySnapshotSchema (architect-review 2026-04-24)', () => {
@@ -204,5 +208,74 @@ describe('makeMemberIdentitySnapshot', () => {
         expect(e.kind).toBe('invalid_member_identity_snapshot');
       }
     }
+  });
+});
+
+// ── 055-member-number: snapshot carries an optional member_number ──
+describe('member_number on memberIdentitySnapshotSchema (055-member-number)', () => {
+  it('parses and KEEPS a positive integer member_number (strip-regression — zod must declare the key)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // If the field is on the interface but NOT the schema, z.object strips
+      // it → this is `undefined` and the assertion fails. This is the guard.
+      expect(result.data.member_number).toBe(42);
+    }
+  });
+
+  it('defaults a MISSING member_number key to null (historical snapshot)', () => {
+    // A pre-feature JSONB snapshot has no key at all → .optional().default(null)
+    // resolves to null (NOT undefined), satisfying exactOptionalPropertyTypes.
+    // Strip the key from the typed fixture to faithfully model a key-absent row.
+    const { member_number: _omit, ...noKey } = validSnapshot;
+    void _omit;
+    const result = memberIdentitySnapshotSchema.safeParse(noKey);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.member_number).toBeNull();
+    }
+  });
+
+  it('accepts an explicit null member_number (event / non-member buyer)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.member_number).toBeNull();
+  });
+
+  it('rejects a zero / negative member_number (positive constraint)', () => {
+    expect(
+      memberIdentitySnapshotSchema.safeParse({ ...validSnapshot, member_number: 0 }).success,
+    ).toBe(false);
+    expect(
+      memberIdentitySnapshotSchema.safeParse({ ...validSnapshot, member_number: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a fractional member_number (integer constraint)', () => {
+    expect(
+      memberIdentitySnapshotSchema.safeParse({ ...validSnapshot, member_number: 1.5 }).success,
+    ).toBe(false);
+  });
+});
+
+describe('makeMemberIdentitySnapshot member_number (055-member-number)', () => {
+  it('keeps member_number 42 through make() (strip-regression at creation)', () => {
+    const snap = makeMemberIdentitySnapshot({ ...validSnapshot, member_number: 42 });
+    expect(snap.member_number).toBe(42);
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('defaults member_number to null when the caller omits it', () => {
+    // Key-absent input (pre-feature snapshot shape) → make() applies .default(null).
+    const { member_number: _omit, ...noKey } = validSnapshot;
+    void _omit;
+    const snap = makeMemberIdentitySnapshot(noKey as MemberIdentitySnapshot);
+    expect(snap.member_number).toBeNull();
   });
 });
