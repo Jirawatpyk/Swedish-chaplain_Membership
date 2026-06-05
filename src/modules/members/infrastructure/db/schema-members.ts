@@ -165,6 +165,13 @@ export const members = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+
+    // F-member-number — human-readable display identifier.
+    // NULLABLE in schema until migration 0209 backfill applies;
+    // .notNull() is added in a SEPARATE edit only after 0209 is
+    // verified applied (pnpm drizzle-kit migrate + pnpm test:integration).
+    // See design doc §6 and migration 0094 idempotency comment.
+    memberNumber: integer('member_number'),
   },
   (table) => [
     primaryKey({
