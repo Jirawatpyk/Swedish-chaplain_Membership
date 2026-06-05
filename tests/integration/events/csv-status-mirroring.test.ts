@@ -32,6 +32,7 @@ import {
 } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { runImportCsv } from '@/lib/events-csv-import-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -183,6 +184,7 @@ describe('F6.1 Option B+ — Status mirroring (live Neon)', () => {
           await tx.insert(members).values({
             tenantId: tenant.ctx.slug,
             memberId: a.memberId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: `Mirror Co ${a.firstName}`,
             country: 'TH',
             planId: partnershipPlanId,
@@ -444,6 +446,7 @@ describe('F6.1 Option B+ — Status mirroring (live Neon)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Partnership Test Co',
           country: 'TH',
           planId: partnershipPlanId,

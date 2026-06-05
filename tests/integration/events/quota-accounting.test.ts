@@ -37,6 +37,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { ingestWebhookAttendee } from '@/modules/events';
@@ -116,6 +117,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: COMPANY_NAME,
           country: 'TH',
           planId,
@@ -311,6 +313,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Premium Cultural Co',
           country: 'TH',
           planId,
@@ -492,6 +495,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: freshMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Fresh FY2027 Co',
           country: 'TH',
           planId,
@@ -584,6 +588,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: exactMidnightMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Exact Midnight Co',
           country: 'TH',
           planId,
@@ -693,6 +698,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenantA.ctx.slug,
           memberId: memberIdA,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Tenant A Co',
           country: 'TH',
           planId: planIdA,
@@ -730,6 +736,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenantB.ctx.slug,
           memberId: memberIdB,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Tenant B Co',
           country: 'TH',
           planId: planIdA,
@@ -861,6 +868,7 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: COMPANY_NAME,
           country: 'TH',
           planId: partnershipPlanId,

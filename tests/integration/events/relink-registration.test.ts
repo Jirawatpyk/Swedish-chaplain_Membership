@@ -52,6 +52,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { runRelinkRegistration } from '@/lib/events-admin-deps';
@@ -129,6 +130,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: memberAId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Member A Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -148,6 +150,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: memberBId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Member B Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -347,6 +350,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: memberBId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Member B Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -472,6 +476,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Err Member Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -644,6 +649,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'Arch Member A',
             country: 'TH',
             planId: partnershipPlanId,
@@ -653,6 +659,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId: targetMemberId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'Arch Member B',
             country: 'TH',
             planId: partnershipPlanId,
@@ -788,6 +795,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId: memberAId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'Cultural Member A',
             country: 'TH',
             planId: corpPlanId,
@@ -797,6 +805,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId: memberBId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'Cultural Member B',
             country: 'TH',
             planId: corpPlanId,
@@ -978,6 +987,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId: memberAId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'OQ Member A',
             country: 'TH',
             planId: partnershipPlanId,
@@ -987,6 +997,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId: memberBId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'OQ Member B',
             country: 'TH',
             planId: partnershipPlanId,
@@ -1188,6 +1199,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'DB-Guard Member',
           country: 'TH',
           planId: partnershipPlanId,
@@ -1312,6 +1324,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'PM Member A',
             country: 'TH',
             planId: partnershipPlanId,
@@ -1321,6 +1334,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           {
             tenantId: tenant.ctx.slug,
             memberId: otherMemberId,
+            memberNumber: nextSeedMemberNumber(),
             companyName: 'PM Member B',
             country: 'TH',
             planId: partnershipPlanId,
@@ -1510,6 +1524,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: memberAId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Concurrent A Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -1528,6 +1543,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: memberBId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Concurrent B Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -1713,6 +1729,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         await tx.insert(members).values({
           tenantId: tenantB.ctx.slug,
           memberId: tenantBMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'TenantB Co',
           country: 'TH',
           planId: tenantBPlanId,

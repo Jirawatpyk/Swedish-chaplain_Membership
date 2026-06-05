@@ -26,6 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import {
   matchAttendeeToMember,
@@ -63,6 +64,7 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: memberAId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Fogmaker International AB',
         country: 'SE',
         planId: PLAN_ID,
@@ -73,6 +75,7 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: memberBId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Acme Bangkok Co., Ltd.',
         country: 'TH',
         planId: PLAN_ID,
@@ -160,6 +163,7 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: memberLikeProbeId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'LIKE-Escape Probe Co.',
         country: 'SE',
         planId: PLAN_ID,
@@ -268,6 +272,7 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: tieMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Acme Bangkok Limited', // also normalises to "acme bangkok"
         country: 'TH',
         planId: PLAN_ID,

@@ -31,6 +31,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { ingestWebhookAttendee } from '@/modules/events';
@@ -103,6 +104,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Toggle On Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -264,6 +266,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Toggle Off Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -549,6 +552,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         await tx.insert(members).values({
           tenantId: tenantB.ctx.slug,
           memberId: tenantBMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'TenantB Co',
           country: 'TH',
           planId: tenantBPlanId,
