@@ -410,6 +410,10 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
     // Auto-email is enabled but the recipient email is empty → no enqueue.
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // MEDIUM-5 — the success result must SIGNAL the skip so the admin gets
+    // non-blocking feedback ("buyer has no email on file") instead of silence.
+    if (!r.ok) throw new Error('cn failed');
+    expect(r.value.emailDelivery).toBe('skipped_no_recipient');
   });
 
   it('email ENQUEUED for a non-member event invoice WITH a contact email (guard is on email, not memberId)', async () => {
@@ -431,6 +435,30 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
         recipientEmail: 'jane@beta.example',
       }),
     );
+    // MEDIUM-5 — the email WAS enqueued, so the signal reports 'sent'.
+    if (!r.ok) throw new Error('cn failed');
+    expect(r.value.emailDelivery).toBe('sent');
+  });
+
+  it('email NOT requested (auto-email disabled) → emailDelivery=not_requested, no enqueue', async () => {
+    // Buyer HAS an email, but the per-invoice + tenant auto-email toggles are
+    // BOTH off, so the document is intentionally NOT auto-emailed. The signal
+    // must distinguish this deliberate non-send from an empty-recipient skip
+    // (the UI shows NO notice for not_requested — nothing went wrong).
+    const invoice = makeIssuedEventInvoice({ autoEmailOnIssue: false });
+    const deps = makeDeps(invoice, makeSettings({ autoEmailEnabled: false }));
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-noautoemail',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    if (!r.ok) throw new Error('cn failed');
+    expect(r.value.emailDelivery).toBe('not_requested');
   });
 
   it('matched-member event credit note → TIMELINE audit branch (payload HAS member_id)', async () => {
