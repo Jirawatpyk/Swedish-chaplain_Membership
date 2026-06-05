@@ -58,6 +58,17 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *
  * W3 — the `> max` branch returns a DISTINCT `*TooLong` key (was reusing the
  * `*Required` key, which mislabelled a 501-char name as "required").
+ *
+ * LOW-10 — `contactName` is INTENTIONALLY not validated here. The server's
+ * `createEventInvoiceDraftSchema.buyer.primary_contact_name` is a bare
+ * `z.string()`: it accepts an empty string (optional pre-fill, per spec) and
+ * imposes NO length bound that the server rejects. The form's `maxLength={500}`
+ * on the contact-name `<Input>` is a soft UI cap (matching the legal-name
+ * field), not a server-enforced rule, so there is nothing for the client to
+ * surface an inline error about. `contactEmail` IS validated (the server
+ * requires a valid address when non-empty). If the server ever adds a
+ * `.min(1)` or `.max(n)` to `primary_contact_name`, add a `contactName` branch
+ * here + its return-type field + i18n key to mirror it.
  */
 export function validateNonMemberBuyer(
   buyer: NonMemberBuyer,
@@ -187,6 +198,13 @@ export function NonMemberBuyerFields({
         )}
       </div>
 
+      {/*
+        LOW-10 — contact name is an OPTIONAL pre-fill. The server schema
+        (`primary_contact_name: z.string()`) accepts empty + any length, so
+        there is no inline error to surface; `maxLength` is a soft UI cap only.
+        Hence no `aria-invalid` / error `<p>` wiring (unlike the validated
+        legal-name / address / tax-id / contact-email fields).
+      */}
       <div className="flex flex-col gap-[var(--field-label-gap)]">
         <Label htmlFor="buyer-contact-name">{t('contactName')}</Label>
         <Input

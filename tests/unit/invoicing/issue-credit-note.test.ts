@@ -500,6 +500,33 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     if (!r.ok) expect(r.error.code).not.toBe('no_snapshot_on_invoice');
   });
 
+  // ---- LOW-12 corrupted-event-invoice guard -------------------------------
+
+  it('REJECTS a corrupted event invoice (subject=event, event_registration_id=null) with invalid_event_invoice BEFORE any side effect', async () => {
+    // A row that violates `invoices_subject_fields_ck` (event subject but no
+    // event_registration_id). The audit payload would otherwise emit a null
+    // into a field the contract types as a string — guard rejects it up-front.
+    const invoice = makeIssuedEventInvoice({ eventRegistrationId: null });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-corrupt-evt',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected invalid_event_invoice, got ok');
+    expect(r.error.code).toBe('invalid_event_invoice');
+    // No §87 number burned, no render, no insert, no rollup, no email.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyCreditNoteRollup).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   // ---- §86/10 doc-type gate (final-review HIGH 1) -------------------------
 
   it('BLOCKS a §105 receipt_separate (no-TIN event invoice) with receipt_not_creditable', async () => {

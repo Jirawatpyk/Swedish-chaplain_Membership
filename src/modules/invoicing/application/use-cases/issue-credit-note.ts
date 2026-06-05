@@ -95,10 +95,54 @@ export const issueCreditNoteSchema = z.object({
 
 export type IssueCreditNoteInput = z.infer<typeof issueCreditNoteSchema>;
 
+/**
+ * MEDIUM-5 — outcome of the auto-email enqueue, surfaced on the success
+ * result so the route + admin UI can give the operator a NON-blocking
+ * signal instead of a silent skip:
+ *
+ *   - `'sent'`                 → an outbox row was enqueued to the buyer's
+ *                                snapshotted contact email.
+ *   - `'skipped_no_recipient'` → auto-email is ON but the buyer snapshot has
+ *                                NO contact email (a non-member EVENT buyer may
+ *                                carry an empty `primary_contact_email`). The CN
+ *                                is fully issued + persisted; only the email was
+ *                                skipped. The UI shows a non-blocking notice so
+ *                                the admin knows to send the document manually.
+ *   - `'not_requested'`        → auto-email is OFF (per-invoice override or
+ *                                tenant default). A deliberate non-send — the UI
+ *                                shows NO notice (nothing went wrong).
+ *
+ * NOTE — `issue-invoice.ts` has the SAME empty-recipient skip pattern (its
+ * outbox enqueue is guarded on a non-empty recipient with a parallel warn log).
+ * For UX consistency it could surface the same signal; out of scope here.
+ */
+export type CreditNoteEmailDelivery = 'sent' | 'skipped_no_recipient' | 'not_requested';
+
+/**
+ * Success payload — the issued `CreditNote` aggregate plus the transient
+ * email-delivery signal. The signal is deliberately NOT folded onto the
+ * `CreditNote` domain object (it is per-issue request state, not part of the
+ * immutable tax document) — it rides alongside on the use-case boundary only.
+ */
+export interface IssueCreditNoteSuccess {
+  readonly creditNote: CreditNote;
+  readonly emailDelivery: CreditNoteEmailDelivery;
+}
+
 export type IssueCreditNoteError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  /**
+   * LOW-12 — data-integrity guard. An `invoice_subject='event'` row is
+   * DB-CHECK-guaranteed (`invoices_subject_fields_ck`) to carry a non-null
+   * `event_registration_id`. If a corrupted row somehow reaches here with a
+   * null one, we reject BEFORE allocating a §87 credit-note number (no
+   * side effects) rather than emit a null into the non-member audit payload
+   * — which the audit contract types as a string. Same class as
+   * `no_snapshot_on_invoice`: a row that violates its own subject invariant.
+   */
+  | { code: 'invalid_event_invoice' }
   /**
    * final-review HIGH 1 / §86/10 ruling — the parent is a §105 ใบเสร็จรับเงิน
    * (a `receipt_separate` event invoice issued to a buyer WITHOUT a 13-digit
@@ -148,7 +192,7 @@ export interface IssueCreditNoteDeps {
 export async function issueCreditNote(
   deps: IssueCreditNoteDeps,
   input: IssueCreditNoteInput,
-): Promise<Result<CreditNote, IssueCreditNoteError>> {
+): Promise<Result<IssueCreditNoteSuccess, IssueCreditNoteError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const creditNoteId = asCreditNoteId(randomUUID());
   const now = deps.clock.nowIso();
@@ -237,6 +281,23 @@ export async function issueCreditNote(
       // return on it (removing the prior bug guard that wrongly blocked
       // crediting non-member event invoices).
       const memberId = loaded.memberId;
+
+      // LOW-12 — data-integrity guard for event invoices. `eventRegistrationId`
+      // is typed `string | null` on the aggregate but the DB CHECK
+      // `invoices_subject_fields_ck` guarantees it is NON-null whenever
+      // `invoiceSubject === 'event'`. The non-member audit branch below emits
+      // it into a payload that the audit contract types as a string, so a
+      // (corrupted) null would violate that contract. Reject cleanly here —
+      // BEFORE the POST-SEQUENCE zone, so no §87 number is burned and nothing
+      // needs to roll back (parity with the `no_snapshot_on_invoice` early
+      // return). Under valid state this branch is unreachable.
+      if (loaded.invoiceSubject === 'event' && loaded.eventRegistrationId === null) {
+        logger.error(
+          { tenantId: input.tenantId, invoiceId, invoiceSubject: loaded.invoiceSubject },
+          'issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting',
+        );
+        return err({ code: 'invalid_event_invoice' });
+      }
 
       // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
       // ใบเสร็จรับเงิน (`receipt_separate`). A credit note can only adjust a
@@ -659,7 +720,15 @@ export async function issueCreditNote(
           actorUserId: input.actorUserId,
           summary: creditNoteSummary,
           payload: {
-            event_registration_id: loaded.eventRegistrationId,
+            // LOW-12 — a null `memberId` implies `invoiceSubject==='event'`
+            // (membership invoices always carry member_id per
+            // `invoices_subject_fields_ck`), and the up-front LOW-12 guard has
+            // already rejected any event invoice with a null
+            // `eventRegistrationId`. So at THIS site it is guaranteed non-null;
+            // the `?? ''` is a belt-and-suspenders fallback (unreachable) that
+            // keeps the payload's string contract even if the up-front guard is
+            // ever refactored away — the value is NEVER persisted as null.
+            event_registration_id: loaded.eventRegistrationId ?? '',
             ...creditNotePayloadBase,
           },
         });
@@ -682,6 +751,11 @@ export async function issueCreditNote(
       // downstream + the row would dead-letter). Skip + a no-PII pino.warn
       // (ids only) when there is no contact email to send to.
       const creditNoteRecipient = loaded.memberIdentitySnapshot.primary_contact_email;
+      // MEDIUM-5 — capture the delivery outcome so the route/UI can give the
+      // admin a non-blocking signal (notice on `skipped_no_recipient`, silent
+      // on `sent`/`not_requested`). Defaults to `not_requested`; flips to
+      // `sent` on enqueue, `skipped_no_recipient` on the empty-email skip.
+      let emailDelivery: CreditNoteEmailDelivery = 'not_requested';
       if (shouldAutoEmail && creditNoteRecipient.trim() !== '') {
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
@@ -691,7 +765,9 @@ export async function issueCreditNote(
           pdfBlobKey: blobKey,
           pdfTemplateVersion: deps.currentTemplateVersion,
         });
+        emailDelivery = 'sent';
       } else if (shouldAutoEmail) {
+        emailDelivery = 'skipped_no_recipient';
         logger.warn(
           {
             tenantId: input.tenantId,
@@ -703,7 +779,7 @@ export async function issueCreditNote(
         );
       }
 
-      return ok(cn);
+      return ok({ creditNote: cn, emailDelivery });
     });
   } catch (e) {
     if (e instanceof IssueCreditNoteInternalError) {

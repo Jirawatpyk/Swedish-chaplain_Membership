@@ -278,6 +278,14 @@ export async function recordPayment(
     // (timeline vs non-timeline), registration-fee flip, and onPaid-callback
     // gates below.
     const memberId = loaded.memberId;
+    // LOW-9 — this is the CORRUPTED-MEMBERSHIP-ROW data-error case, NOT a
+    // missing-snapshot case: a non-event invoice with member_id IS NULL
+    // violates `invoices_subject_fields_ck` (which guarantees member_id IS NOT
+    // NULL for invoice_subject='membership'). We reuse the `no_snapshot_on_invoice`
+    // error code deliberately — it is the closest existing data-integrity class
+    // and renaming it would ripple to the route's HTTP-status map + i18n for no
+    // behavioural gain. An operator reading this code/log should understand the
+    // null member_id (not a missing snapshot field) is what triggered the error.
     if (memberId === null && loaded.invoiceSubject !== 'event') {
       return err({ code: 'no_snapshot_on_invoice' });
     }

@@ -112,28 +112,32 @@ describe('POST /api/credit-notes — contract', () => {
   // Sarabun fonts, Upstash). On a dev laptop running the full
   // invoicing unit suite in parallel this can push past the 10s
   // default (see vitest.config.ts note). 30s is comfortable headroom.
-  it('201 happy path — returns serialised credit note', async () => {
+  it('201 happy path — returns serialised credit note + email_delivery signal', async () => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+    // MEDIUM-5 — issueCreditNote success value is now `{ creditNote, emailDelivery }`.
     issueCreditNoteMock.mockResolvedValueOnce(
       ok({
-        tenantId: 'test',
-        creditNoteId: 'cn-1',
-        originalInvoiceId: '00000000-0000-0000-0000-000000000001',
-        fiscalYear: 2026,
-        sequenceNumber: 1,
-        documentNumber: { raw: 'CN-2026-000001' },
-        issueDate: '2026-04-20',
-        issuedByUserId: 'admin-1',
-        reason: 'contract test',
-        creditAmount: { satang: 50000n },
-        vat: { satang: 3500n },
-        total: { satang: 53500n },
-        tenantIdentitySnapshot: {},
-        memberIdentitySnapshot: {},
-        pdf: { blobKey: 'k', sha256: 'a'.repeat(64), templateVersion: 1 },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        creditNote: {
+          tenantId: 'test',
+          creditNoteId: 'cn-1',
+          originalInvoiceId: '00000000-0000-0000-0000-000000000001',
+          fiscalYear: 2026,
+          sequenceNumber: 1,
+          documentNumber: { raw: 'CN-2026-000001' },
+          issueDate: '2026-04-20',
+          issuedByUserId: 'admin-1',
+          reason: 'contract test',
+          creditAmount: { satang: 50000n },
+          vat: { satang: 3500n },
+          total: { satang: 53500n },
+          tenantIdentitySnapshot: {},
+          memberIdentitySnapshot: {},
+          pdf: { blobKey: 'k', sha256: 'a'.repeat(64), templateVersion: 1 },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        emailDelivery: 'skipped_no_recipient',
       }),
     );
     const POST = await loadHandler();
@@ -144,6 +148,9 @@ describe('POST /api/credit-notes — contract', () => {
     expect(body.document_number).toBe('CN-2026-000001');
     // bigints serialise as strings.
     expect(body.total_satang).toBe('53500');
+    // MEDIUM-5 — the email-delivery signal rides as a sibling field so the UI
+    // can show a non-blocking notice on skip.
+    expect(body.email_delivery).toBe('skipped_no_recipient');
   }, 30_000);
 
   it('400 invalid_json on malformed body', async () => {
@@ -218,6 +225,9 @@ describe('POST /api/credit-notes — contract', () => {
     ['concurrent_state_change', 409],
     ['settings_missing', 422],
     ['no_snapshot_on_invoice', 422],
+    // LOW-12 — a corrupted event invoice (no event_registration_id) is a
+    // data-integrity error → 422 Unprocessable Entity.
+    ['invalid_event_invoice', 422],
     // §86/10 ruling (final-review HIGH 1) — crediting a §105 receipt_separate
     // is a legally-invalid request → 422 Unprocessable Entity.
     ['receipt_not_creditable', 422],

@@ -213,6 +213,8 @@ export {
   issueCreditNoteSchema,
   type IssueCreditNoteInput,
   type IssueCreditNoteError,
+  type IssueCreditNoteSuccess,
+  type CreditNoteEmailDelivery,
 } from './application/use-cases/issue-credit-note';
 
 export {

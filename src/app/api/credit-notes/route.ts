@@ -34,6 +34,10 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   credit_exceeds_remainder: 409,
   settings_missing: 422,
   no_snapshot_on_invoice: 422,
+  // LOW-12 — a corrupted event invoice (subject='event' but no
+  // event_registration_id) is a data-integrity error, not a transient
+  // conflict. 422: well-formed request, but the persisted row cannot be acted on.
+  invalid_event_invoice: 422,
   // §86/10 ruling (final-review HIGH 1) — crediting a §105 ใบเสร็จรับเงิน
   // (receipt_separate) is a legally-invalid request, not a transient conflict.
   // 422 Unprocessable Entity: the request is well-formed but cannot be acted on.
@@ -142,5 +146,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  return NextResponse.json(serialiseCreditNote(result.value), { status: 201 });
+  // MEDIUM-5 — surface the email-delivery signal alongside the serialised CN so
+  // the client success path can show a non-blocking notice when the buyer has
+  // no email on file (`skipped_no_recipient`). The serialiser handles the CN
+  // shape; `email_delivery` rides as a sibling field.
+  return NextResponse.json(
+    {
+      ...serialiseCreditNote(result.value.creditNote),
+      email_delivery: result.value.emailDelivery,
+    },
+    { status: 201 },
+  );
 }

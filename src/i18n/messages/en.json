@@ -1461,6 +1461,7 @@
         "submitting": "Issuing…",
         "cancel": "Cancel",
         "success": "Credit note issued.",
+        "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
