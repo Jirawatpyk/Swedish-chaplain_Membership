@@ -537,7 +537,10 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       parts.push(cur.message);
       cur = (cur as { cause?: unknown }).cause;
     }
-    expect(parts.join(' | ')).toMatch(/only member_identity_snapshot may change under PII redaction/i);
+    // Migration 0207 (round-2 FIX 3) names BOTH exempt columns in the message.
+    expect(parts.join(' | ')).toMatch(
+      /only member_identity_snapshot and pii_blob_purged_at may change under PII redaction/i,
+    );
 
     // Financial field unchanged.
     const [row] = await db
@@ -767,7 +770,10 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
         parts.push(cur.message);
         cur = (cur as { cause?: unknown }).cause;
       }
-      expect(parts.join(' | ')).toMatch(/only member_identity_snapshot may change under PII redaction/i);
+      // Migration 0207 (round-2 FIX 3) names BOTH exempt columns in the message.
+      expect(parts.join(' | ')).toMatch(
+        /only member_identity_snapshot and pii_blob_purged_at may change under PII redaction/i,
+      );
     }
   }, 90_000);
 
@@ -991,3 +997,214 @@ describe('redact cron — retryable PDF-blob purge via pii_blob_purged_at (HIGH-
     expect(await auditCountFor(invoiceId)).toBe(1);
   }, 90_000);
 });
+
+/**
+ * 054-event-fee-invoices (round-2 code review, FIX 1 — audit double-emit under
+ * concurrent cron execution).
+ *
+ * The round-1 design emitted `event_buyer_pii_redacted` UNCONDITIONALLY for
+ * every row the eligibility SELECT returned as un-tombstoned. Under two
+ * concurrent cron instances, BOTH can SELECT the same row as un-tombstoned;
+ * instance 1 tombstones+audits+commits; instance 2's tombstone UPDATE (whose
+ * predicate is `legal_name <> '[REDACTED]'`) now matches 0 rows — yet the old
+ * code STILL emitted a second audit → 2 audit rows for 1 tombstone (audit-once
+ * violated).
+ *
+ * FIX: the tombstone UPDATE now `RETURNING invoice_id`; the audit + the
+ * purge-queue are gated on the UPDATE actually changing a row (the RETURNING
+ * set has exactly 1 row). When a concurrent instance already tombstoned the row
+ * the UPDATE returns 0 rows → this instance SKIPS the audit AND skips queueing
+ * the purge (the other instance owns the lifecycle).
+ *
+ * This test simulates "instance 1 already committed" by directly pre-tombstoning
+ * the row (under the redaction GUC, mirroring exactly what a concurrent instance
+ * does on commit) BEFORE the cron runs. The row keeps its blob keys and a NULL
+ * marker, so it still appears in the SELECT (redacted-but-purge-incomplete arm).
+ * The fixed cron must NOT emit a second audit for it (instance 2 path) and must
+ * NOT treat it as a fresh tombstone.
+ *
+ * Migrations 0200–0207 MUST be applied first (`pnpm db:migrate`).
+ */
+describe('redact cron — audit-once under a concurrent pre-tombstone (FIX 1)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let regId: string;
+  let invoiceId: string;
+  const PDF_KEY = 'test/concurrency-evt.pdf';
+
+  let blobDeleteSpy: MockInstance<(key: string) => Promise<void>>;
+
+  beforeAll(async () => {
+    blobDeleteSpy = vi
+      .spyOn(vercelBlobAdapter, 'delete')
+      .mockResolvedValue(undefined);
+
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+    regId = randomUUID();
+    invoiceId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_concurrency_int',
+        name: 'Concurrency Gala',
+        startDate: new Date('2013-09-10T11:00:00Z'),
+      });
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: 'att_concurrency',
+        attendeeEmail: 'buyer@concurrency.example',
+        attendeeName: 'Concurrency Buyer',
+        attendeeCompany: 'Concurrency Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2013-09-01T03:00:00Z'),
+      });
+
+      // Eligible (>10y) non-member event invoice WITH a blob key.
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          fiscal_year = 2013,
+          sequence_number = 930001,
+          document_number = 'EVT13-930001',
+          issue_date = (now() - interval '12 years')::date,
+          due_date = (now() - interval '12 years' + interval '30 days')::date,
+          subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+          vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+          vat_satang = ${ISSUED_NUMBERS.vatSatang},
+          total_satang = ${ISSUED_NUMBERS.totalSatang},
+          net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+          pro_rate_policy_snapshot = NULL,
+          tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+          pdf_blob_key = ${PDF_KEY},
+          pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+
+      // Simulate a CONCURRENT instance that ALREADY committed: tombstone the
+      // snapshot directly under the redaction GUC (exactly what instance 1
+      // does). pii_blob_purged_at stays NULL — instance 1's purge is "still in
+      // flight" — so the row remains selectable on the redacted-but-unpurged arm.
+      await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+      await tx.execute(sql`
+        UPDATE invoices
+        SET member_identity_snapshot = member_identity_snapshot
+          || jsonb_build_object(
+               'legal_name', '[REDACTED]',
+               'address', '[REDACTED]',
+               'primary_contact_name', '[REDACTED]',
+               'primary_contact_email', '',
+               'tax_id', NULL
+             )
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    blobDeleteSpy.mockRestore();
+    await tenant.cleanup().catch(() => {});
+  });
+
+  async function auditCountFor(id: string): Promise<number> {
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'event_buyer_pii_redacted'),
+        ),
+      );
+    return rows.filter((r) => (r.payload as Record<string, unknown>).invoice_id === id).length;
+  }
+
+  it('does NOT emit an audit for a row a concurrent instance already tombstoned (audit-once holds)', async () => {
+    const res = await callCron();
+    expect(res.status).toBe(200);
+
+    // The row was already tombstoned by the "other instance"; THIS cron pass
+    // must NOT add a second audit row. Across the whole pass there is ZERO
+    // event_buyer_pii_redacted audit for this invoice from THIS instance —
+    // the concurrent instance (simulated by the direct pre-tombstone) owns
+    // the audit, which it emitted as part of its own commit. We pre-tombstoned
+    // WITHOUT emitting, so the only acceptable count emitted by the cron is 0.
+    expect(await auditCountFor(invoiceId)).toBe(0);
+
+    // The snapshot is still the tombstone (no PII re-exposure / re-write).
+    const tombstoned = await readSnapshotFor(invoiceId, tenant);
+    expect(tombstoned.legal_name).toBe('[REDACTED]');
+  }, 90_000);
+
+  it('still retries the outstanding blob purge for the pre-tombstoned row and stamps the marker (lifecycle continues)', async () => {
+    // The pre-tombstoned row had a NULL marker + a live blob key → the cron
+    // SHOULD still finish the lifecycle (purge the bytes + stamp the marker)
+    // even though it skipped the audit. The purge is owned by whichever
+    // instance gets there; here only our cron runs, so it completes it.
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    expect(row!.piiBlobPurgedAt).not.toBeNull();
+    // And the blob bytes were deleted.
+    expect(blobDeleteSpy.mock.calls.map((c) => c[0])).toContain(PDF_KEY);
+    // STILL zero audits from this instance.
+    expect(await auditCountFor(invoiceId)).toBe(0);
+  }, 90_000);
+});
+
+/**
+ * Shared helper: read the buyer snapshot for an arbitrary invoice in a tenant.
+ * (The per-describe `readSnapshot` closures above bind a single id/tenant; this
+ * free function serves the FIX-1 block, which needs an explicit tenant.)
+ */
+async function readSnapshotFor(
+  invoiceId: string,
+  tenant: TestTenant,
+): Promise<Record<string, unknown>> {
+  const [row] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+  return row!.memberIdentitySnapshot as Record<string, unknown>;
+}
