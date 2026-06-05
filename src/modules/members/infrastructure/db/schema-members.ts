@@ -167,11 +167,11 @@ export const members = pgTable(
       .defaultNow(),
 
     // F-member-number — human-readable display identifier.
-    // NULLABLE in schema until migration 0209 backfill applies;
-    // .notNull() is added in a SEPARATE edit only after 0209 is
-    // verified applied (pnpm drizzle-kit migrate + pnpm test:integration).
+    // .notNull() is safe now that migration 0209 has applied to live Neon:
+    // the column is backfilled (every row 1..N per tenant), SET NOT NULL,
+    // and carries a positive CHECK + per-tenant UNIQUE index.
     // See design doc §6 and migration 0094 idempotency comment.
-    memberNumber: integer('member_number'),
+    memberNumber: integer('member_number').notNull(),
   },
   (table) => [
     primaryKey({
