@@ -39,6 +39,7 @@ import {
   formatMemberNumber,
   asMemberNumber,
 } from '@/modules/members/domain/value-objects/member-number';
+import { drizzleMemberRepo } from '@/modules/members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
@@ -242,6 +243,39 @@ describe('Member-number tenant isolation — T-MN-01 (REVIEW-GATE BLOCKER)', () 
     expect(aRows[0]!.memberId).toBe(aMemberId);
     expect(aRows[0]!.memberNumber).toBe(1);
     expect(bRows).toHaveLength(0); // B's member is hidden by RLS
+  });
+
+  // ── (g) directory SEARCH for member-number "1" is tenant-scoped ──────────
+  // Both tenants have a member with member_number = 1. The "same number,
+  // different tenant" confusion is exactly what the per-tenant UNIQUE allows
+  // and the directory search must NOT leak across: searching A's directory for
+  // "1" (drives directoryQFilter → eq(members.memberNumber, 1)) must return
+  // ONLY A's member #1, never B's. RLS on the session tenant enforces it.
+  it('(g) directory search for "1" returns only the session tenant\'s member #1', async () => {
+    const aRes = await drizzleMemberRepo.searchDirectoryWithCount(tenantA.ctx, {
+      q: '1',
+      status: ['active', 'inactive'],
+      limit: 50,
+      offset: 0,
+    });
+    expect(aRes.ok).toBe(true);
+    if (!aRes.ok) return;
+    const aIds = aRes.value.items.map((r) => r.member.memberId);
+    expect(aIds).toContain(aMemberId);
+    expect(aIds).not.toContain(bMemberId); // B's member #1 must NOT leak into A
+
+    // Symmetric: B's directory search for "1" returns B's member, not A's.
+    const bRes = await drizzleMemberRepo.searchDirectoryWithCount(tenantB.ctx, {
+      q: '1',
+      status: ['active', 'inactive'],
+      limit: 50,
+      offset: 0,
+    });
+    expect(bRes.ok).toBe(true);
+    if (!bRes.ok) return;
+    const bIds = bRes.value.items.map((r) => r.member.memberId);
+    expect(bIds).toContain(bMemberId);
+    expect(bIds).not.toContain(aMemberId);
   });
 
   // ── (d) formatted string equals stored integer ───────────────────────────

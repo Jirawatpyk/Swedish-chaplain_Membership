@@ -20,7 +20,7 @@
  * returns the rows array DIRECTLY (no `.rows` wrapper) — matching the
  * sibling migration-schema.test.ts. Do not switch to `result.rows`.
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 
@@ -201,5 +201,57 @@ describe('migration 0209 — post-apply verification', () => {
           '__x__', 2024, -1)
       `),
     ).rejects.toThrow();
+  });
+
+  // ── prefix-format CHECK negatives ────────────────────────────────────────
+  // The `member_number_prefix ~ '^[A-Z][A-Z0-9]{0,7}$'` CHECK on
+  // tenant_member_settings is the SOLE guard against a malformed prefix
+  // reaching formatMemberNumber → the Thai tax-invoice buyer block. Each
+  // malformed prefix must be rejected by the DB (SQLSTATE 23514). The CHECK
+  // fires before any row is written, so a throwaway tenant_id needs no cleanup
+  // on the reject path; a defensive DELETE in afterAll covers an accidental
+  // pass (which would itself fail the test above).
+  const PREFIX_CHECK_TENANT = '__test_prefix_check__';
+
+  afterAll(async () => {
+    await db
+      .execute(
+        sql`DELETE FROM tenant_member_settings WHERE tenant_id = ${PREFIX_CHECK_TENANT}`,
+      )
+      .catch(() => {});
+  });
+
+  it.each([
+    ['lowercase (sccm)', 'sccm'],
+    ['leading digit (9X)', '9X'],
+    ['too long >8 chars (TOOLONGPREFIX)', 'TOOLONGPREFIX'],
+    ['empty string ()', ''],
+  ])(
+    'DB backstop: INSERT member_number_prefix %s violates format CHECK',
+    async (_label, prefix) => {
+      await expect(
+        db.execute(sql`
+          INSERT INTO tenant_member_settings (tenant_id, member_number_prefix)
+          VALUES (${PREFIX_CHECK_TENANT}, ${prefix})
+        `),
+      ).rejects.toThrow();
+    },
+  );
+
+  it('DB backstop: a VALID prefix (SCCM) is accepted then cleaned up (positive control)', async () => {
+    // Proves the CHECK is not rejecting everything — a well-formed prefix passes.
+    await db.execute(sql`
+      INSERT INTO tenant_member_settings (tenant_id, member_number_prefix)
+      VALUES (${PREFIX_CHECK_TENANT}, 'SCCM')
+    `);
+    const rows = await db.execute(sql`
+      SELECT member_number_prefix FROM tenant_member_settings
+      WHERE tenant_id = ${PREFIX_CHECK_TENANT}
+    `);
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { member_number_prefix: string }).member_number_prefix).toBe('SCCM');
+    await db.execute(
+      sql`DELETE FROM tenant_member_settings WHERE tenant_id = ${PREFIX_CHECK_TENANT}`,
+    );
   });
 });
