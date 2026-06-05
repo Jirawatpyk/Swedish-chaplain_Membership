@@ -170,7 +170,16 @@ function MemberNumberSortHeader() {
     router.push(`${pathname}?${params.toString()}`);
   }
 
-  const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  // When active but `?order=` is absent, the server defaults to ASC (matches
+  // COLUMN_DEFAULT_ORDER['memberNumber']='asc' in ariaSortFor above). Show the
+  // UP arrow so the icon is consistent with the data order and aria-sort.
+  const effectiveOrder =
+    order === 'asc' || order === 'desc' ? order : 'asc';
+  const Icon = !active
+    ? ArrowUpDownIcon
+    : effectiveOrder === 'asc'
+      ? ArrowUpIcon
+      : ArrowDownIcon;
   // `aria-sort` is NOT placed here: ARIA only allows `aria-sort` on a
   // `role=columnheader` element (the `<th>`/TableHead). The header cell
   // owns it (see MembersTable header render) — putting it on this button
@@ -211,7 +220,16 @@ function EngagementSortHeader() {
     router.push(`${pathname}?${params.toString()}`);
   }
 
-  const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  // When active but `?order=` is absent, the server defaults to DESC
+  // (engagement DESC = healthiest first; matches COLUMN_DEFAULT_ORDER
+  // ['engagement']='desc' in ariaSortFor above). Show the DOWN arrow.
+  const effectiveOrder =
+    order === 'asc' || order === 'desc' ? order : 'desc';
+  const Icon = !active
+    ? ArrowUpDownIcon
+    : effectiveOrder === 'asc'
+      ? ArrowUpIcon
+      : ArrowDownIcon;
   // `aria-sort` lives on the `<th>` (columnheader), not this button — see
   // MemberNumberSortHeader for the same WCAG 1.3.1 / 4.1.2 rationale.
   return (
@@ -611,6 +629,18 @@ export function MembersTable({
   // `engagement`) map 1:1 to the `?sort=` value via this table.
   const activeSort = searchParams.get('sort');
   const activeOrder = searchParams.get('order');
+
+  // Per-column server-default order — must match drizzle-member-repo.ts:
+  //   memberNumber: ASC NULLS LAST (the else-branch when order !== 'desc')
+  //   engagement:   DESC (healthiest first; engagement DESC = risk ASC)
+  // When `?sort=<col>` is present but `&order=` is absent (bookmarked /
+  // hand-edited / deep-link URL), the server uses these defaults, so the
+  // `<th>` aria-sort and header arrow must agree with them.
+  const COLUMN_DEFAULT_ORDER: Record<string, 'asc' | 'desc'> = {
+    memberNumber: 'asc',
+    engagement: 'desc',
+  };
+
   const ariaSortFor = (
     columnId: string,
   ): 'ascending' | 'descending' | undefined => {
@@ -620,7 +650,12 @@ export function MembersTable({
     };
     const sortKey = sortKeyByColumnId[columnId];
     if (!sortKey || activeSort !== sortKey) return undefined;
-    return activeOrder === 'asc' ? 'ascending' : 'descending';
+    // Fall back to the server's per-column default when `?order=` is absent.
+    const effectiveOrder =
+      activeOrder === 'asc' || activeOrder === 'desc'
+        ? activeOrder
+        : (COLUMN_DEFAULT_ORDER[sortKey] ?? 'asc');
+    return effectiveOrder === 'asc' ? 'ascending' : 'descending';
   };
 
   const handleRowSelectionChange = useCallback(

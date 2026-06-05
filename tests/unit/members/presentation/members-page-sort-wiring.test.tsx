@@ -12,6 +12,10 @@
  *       columns, rejects everything else.
  *   (2) End-to-end through `MembersDirectoryBody`: `?sort=memberNumber`
  *       is forwarded into the `directorySearchWithCount` call.
+ *
+ * FIX-D (code-review round-2) — exercise the page row-mapping with a
+ * NON-EMPTY result: proves that `resolveMemberNumberPrefix` + `formatMemberNumber`
+ * are wired correctly and the produced row carries the formatted display value.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -19,6 +23,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 // body directly and assert the search received the sort param). ------------
 
 const directorySearchWithCount = vi.fn();
+const resolveMemberNumberPrefixMock = vi.fn();
 
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant' }),
@@ -27,8 +32,9 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/modules/members', () => ({
   directorySearchWithCount: (...args: unknown[]) =>
     directorySearchWithCount(...args),
-  formatMemberNumber: (prefix: string, n: number) => `${prefix}-${n}`,
-  resolveMemberNumberPrefix: vi.fn().mockResolvedValue('SCCM'),
+  formatMemberNumber: (prefix: string, n: number) => `${prefix}-${String(n).padStart(4, '0')}`,
+  resolveMemberNumberPrefix: (...args: unknown[]) =>
+    resolveMemberNumberPrefixMock(...args),
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
@@ -64,12 +70,13 @@ import { parseDirectorySort } from '@/app/(staff)/admin/members/page';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Empty result so the body returns early (before row-mapping) — the
-  // assertion is purely about what was passed INTO the search.
+  // Default: empty result so the body returns early (before row-mapping).
+  // Tests that need non-empty rows override this mock below.
   directorySearchWithCount.mockResolvedValue({
     ok: true,
     value: { items: [], total: 0 },
   });
+  resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
 });
 
 describe('parseDirectorySort — allow-list', () => {
@@ -114,5 +121,66 @@ describe('MembersDirectoryBody — forwards sort=memberNumber to the search', ()
       sort?: string;
     };
     expect(passedInput.sort).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX-D: exercise the row-mapping with a NON-EMPTY result so the
+// resolveMemberNumberPrefix + formatMemberNumber wiring is covered.
+// The empty-result path short-circuits before row-mapping, so
+// FIX-6 row-mapping code was previously unreachable in this test.
+// ---------------------------------------------------------------------------
+describe('MembersDirectoryBody — row-mapping (FIX-D)', () => {
+  it('produces a row with member_number_display from resolveMemberNumberPrefix + formatMemberNumber', async () => {
+    // Arrange — non-empty result with one member row
+    resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
+    directorySearchWithCount.mockResolvedValue({
+      ok: true,
+      value: {
+        total: 1,
+        items: [
+          {
+            member: {
+              memberId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+              memberNumber: 42,
+              companyName: 'Alpha Corp',
+              legalEntityType: 'limited',
+              country: 'TH',
+              planId: 'corporate',
+              planYear: 2026,
+              status: 'active',
+              lastActivityAt: null,
+              notes: null,
+              tenantId: 'test-tenant',
+            },
+            planDisplayName: 'Corporate',
+            primaryContact: null,
+            riskScore: null,
+            riskScoreBand: null,
+          },
+        ],
+      },
+    });
+
+    // Act — invoke the RSC body function directly
+    const result = await MembersDirectoryBody({
+      query: { sort: 'memberNumber', order: 'asc' },
+      isAdmin: true,
+    });
+
+    // Assert — resolveMemberNumberPrefix was called (wiring present)
+    expect(resolveMemberNumberPrefixMock).toHaveBeenCalledTimes(1);
+
+    // Assert — the JSX result tree contains the formatted display value.
+    // MembersDirectoryBody returns a React element; the rows prop is passed to
+    // DirectoryWithBulk → MembersTable. Rather than render the full tree
+    // (which would need shadcn + next-intl in jsdom), we inspect the props
+    // passed to the component that received the rows.
+    //
+    // The simplest, most stable assertion: stringify the React element tree
+    // and confirm `SCCM-0042` appears in it (produced by the mocked
+    // `formatMemberNumber('SCCM', 42) → 'SCCM-0042'`).
+    const treeJson = JSON.stringify(result);
+    expect(treeJson).toContain('SCCM-0042');
   });
 });

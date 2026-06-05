@@ -92,16 +92,17 @@ export default async function PortalProfilePage() {
   const isPrimary = ownContact?.isPrimary === true;
   const format = await getFormatter();
 
-  // B24 — resolve the plan/tier display name via the existing PlanLookupPort
-  // dep (mirrors admin/members/[memberId]/page.tsx). Falls back to the plan
-  // slug if the row is missing/inactive (defensive against data drift).
-  const planLookup = await deps.plans.getPlan(tenant, m.planId, m.planYear);
+  // B24 — resolve plan display name + member-number prefix in parallel:
+  // both are independent reads (plan lookup vs. member-settings row).
+  // Mirrors the identical Promise.all on admin/members/[memberId]/page.tsx.
+  const [planLookup, memberPrefix] = await Promise.all([
+    deps.plans.getPlan(tenant, m.planId, m.planYear),
+    resolveMemberNumberPrefix(tenant, deps.memberSettings),
+  ]);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
 
-  // 055-member-number — resolve per-tenant prefix via the RLS-safe shared
-  // helper (never raw db — RLS-bypass gotcha). `m.memberNumber` is already a
-  // branded MemberNumber (validated by rowToMember) — no re-wrap needed.
-  const memberPrefix = await resolveMemberNumberPrefix(tenant, deps.memberSettings);
+  // 055-member-number — `m.memberNumber` is already a branded MemberNumber
+  // (validated by rowToMember) — no re-wrap needed.
   const memberNumberFormatted = formatMemberNumber(memberPrefix, m.memberNumber);
 
   return (
