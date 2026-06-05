@@ -18,7 +18,7 @@
  * request-id, rate-limiter, logger) + the invoicing module (use-case + deps
  * factory). The route's own code path runs unmodified.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
@@ -173,6 +173,18 @@ async function getMockedAuthDeps() {
 // ---------------------------------------------------------------------------
 
 describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
+  // Warm the route-handler import ONCE so no individual test bears its cold-load
+  // cost (the event-draft route pulls @react-pdf + Vercel Blob + Sarabun fonts +
+  // Upstash transitively). `afterEach` clears mocks but NOT modules, so this
+  // import is cached for every test. Under the full invoicing contract+unit suite
+  // in parallel the cold-load alone can exceed a per-test budget and time out —
+  // which ALSO strands an unconsumed mockResolvedValueOnce and trips the next
+  // test's call count. Amortising it here removes both flakes (mirrors
+  // credit-notes-route.test.ts).
+  beforeAll(async () => {
+    await importRoute();
+  }, 60_000);
+
   beforeEach(() => {
     requireAdminContextMock.mockResolvedValue(adminContext);
   });
