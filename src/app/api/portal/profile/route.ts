@@ -20,6 +20,7 @@ import { logger } from '@/lib/logger';
 
 function serialiseMember(member: {
   memberId: string;
+  memberNumber: number;
   companyName: string;
   legalEntityType: string | null;
   country: string;
@@ -36,6 +37,7 @@ function serialiseMember(member: {
 }) {
   return {
     member_id: member.memberId,
+    member_number: member.memberNumber,
     company_name: member.companyName,
     legal_entity_type: member.legalEntityType,
     country: member.country,
