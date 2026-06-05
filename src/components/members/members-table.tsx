@@ -80,6 +80,14 @@ import {
 
 export type MembersTableRow = {
   readonly member_id: string;
+  /** Raw human-readable member number (integer) — used for sort + aria. */
+  readonly member_number: number;
+  /**
+   * Pre-formatted display string (`SCCM-0042`) computed server-side in the
+   * page row-mapping via `formatMemberNumber(tenantPrefix, …)`. Kept separate
+   * from the raw integer so this client cell never imports the tenant prefix.
+   */
+  readonly member_number_display: string;
   readonly company_name: string;
   readonly country: string;
   readonly plan_id: string;
@@ -142,6 +150,40 @@ type Props = {
 };
 
 const columnHelper = createColumnHelper<MembersTableRow>();
+
+/** Server-side sort control for the member-number column (toggles
+ *  `?sort=memberNumber&order=asc|desc`, resetting to page 1). */
+function MemberNumberSortHeader() {
+  const t = useTranslations('admin.members.directory');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const active = searchParams.get('sort') === 'memberNumber';
+  const order = searchParams.get('order');
+  const nextOrder = active && order === 'asc' ? 'desc' : 'asc';
+
+  function onSort() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('sort', 'memberNumber');
+    params.set('order', nextOrder);
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  return (
+    <button
+      type="button"
+      onClick={onSort}
+      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={t('sortByMemberNumber')}
+      {...(active ? { 'aria-sort': order === 'asc' ? 'ascending' : 'descending' } : {})}
+    >
+      {t('columns.memberNumber')}
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
+  );
+}
 
 /**
  * F9 (FR-007a) — server-side sort control for the engagement column. Toggles
@@ -627,6 +669,15 @@ export function MembersTable({
           }),
         ]
       : []),
+    columnHelper.accessor('member_number', {
+      header: () => <MemberNumberSortHeader />,
+      cell: (info) => (
+        <span className="whitespace-nowrap tabular-nums text-sm">
+          {info.row.original.member_number_display}
+        </span>
+      ),
+      size: 90,
+    }),
     columnHelper.accessor('company_name', {
       header: () => t('columns.company'),
       cell: (info) => (
@@ -960,8 +1011,10 @@ export function MembersTable({
                 >
                   {row.getVisibleCells().map((cell, idx) => (
                     <TableCell key={cell.id} className="align-middle">
-                      {/* First non-select column is the company name link */}
-                      {!enableSelection && idx === 0 ? (
+                      {/* Company name column is the row link.
+                          No selection: member_number=0, company=1
+                          With selection: select=0, member_number=1, company=2 */}
+                      {!enableSelection && idx === 1 ? (
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
@@ -972,7 +1025,7 @@ export function MembersTable({
                             cell.getContext(),
                           )}
                         </Link>
-                      ) : enableSelection && idx === 1 ? (
+                      ) : enableSelection && idx === 2 ? (
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
