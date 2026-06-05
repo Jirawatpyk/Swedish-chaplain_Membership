@@ -32,6 +32,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('F9 directory — integration (T074/T078)', () => {
   let tenant: TestTenant;
@@ -62,6 +63,7 @@ describe('F9 directory — integration (T074/T078)', () => {
         tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName,
           country: 'TH',
           planId,

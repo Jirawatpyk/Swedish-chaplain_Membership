@@ -73,6 +73,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -210,6 +211,7 @@ describe('§87 interleaved membership+event sequence continuity (live Neon)', ()
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Interleave Member Corp',
         country: 'TH',
         taxId: '9999999999999',
@@ -348,6 +350,7 @@ describe('§87 interleaved membership+event sequence continuity (live Neon)', ()
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: memberId2,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Interleave Member Corp 2',
           country: 'TH',
           taxId: '8888888888888',

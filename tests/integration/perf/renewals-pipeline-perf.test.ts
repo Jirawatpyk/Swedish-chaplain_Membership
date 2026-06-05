@@ -88,6 +88,8 @@ async function seedTenant(tenant: TestTenant, user: TestUser): Promise<void> {
       .map((mid, i) => ({
         tenantId: tenant.ctx.slug,
         memberId: mid,
+        // 055-member-number — NOT NULL + per-tenant UNIQUE; global index → 1..N.
+        memberNumber: offset + i + 1,
         companyName: `Perf Co ${offset + i + 1}`,
         country: 'TH',
         planId,

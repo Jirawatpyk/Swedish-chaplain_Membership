@@ -37,6 +37,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const PLAN_MATRIX = {
   ...DEFAULT_TEST_BENEFIT_MATRIX,
@@ -80,6 +81,7 @@ describe('F9 computeBenefitUsage — membership-year boundary (T061, live Neon)'
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Benefit Co',
           country: 'TH',
           planId,

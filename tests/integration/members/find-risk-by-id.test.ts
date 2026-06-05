@@ -20,6 +20,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const PLAN_ID = 'test-risk-plan';
 
@@ -84,6 +85,7 @@ async function seedMember(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `RiskCo ${memberId.slice(0, 6)}`,
       country: 'TH',
       planId: PLAN_ID,

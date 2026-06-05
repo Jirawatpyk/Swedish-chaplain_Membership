@@ -30,6 +30,7 @@ import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('F9 directory + export cross-tenant isolation — REVIEW-GATE BLOCKER (T102)', () => {
   let tenantA: TestTenant;
@@ -60,6 +61,7 @@ describe('F9 directory + export cross-tenant isolation — REVIEW-GATE BLOCKER (
         await tx.insert(members).values({
           tenantId: t.ctx.slug,
           memberId: mid,
+          memberNumber: nextSeedMemberNumber(),
           companyName: name,
           country: 'TH',
           planId,

@@ -89,6 +89,8 @@ const messages = {
 
 const testRow: MembersTableRow = {
   member_id: 'aaaa-1111-bbbb-2222',
+  member_number: 42,
+  member_number_display: 'SCCM-0042',
   company_name: 'Fogmaker AB',
   country: 'SE',
   plan_id: 'plan-1',

@@ -42,6 +42,7 @@ import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { tenantYearBoundsUtcMs } from '@/modules/insights/application/tenant-year';
 import { env } from '@/lib/env';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const TZ = env.tenant.timezone;
 // Membership year = calendar year in the tenant tz (FR-023) — computed the same
@@ -162,6 +163,7 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
       const member = (memberId: string, planId: string) => ({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Quota Co',
         country: 'TH',
         planId,
@@ -305,6 +307,7 @@ describe('F9 quota aggregate — cross-tenant scoping (P1-4, live Neon)', () => 
       await tx.insert(members).values({
         tenantId: tenantB.ctx.slug,
         memberId: mInB,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'B Co',
         country: 'TH',
         planId: planBId,

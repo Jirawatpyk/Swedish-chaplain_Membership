@@ -51,6 +51,7 @@ const CORPORATE_MATRIX: BenefitMatrix = {
 };
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('T091 — F4 tenant invoice settings lifecycle', () => {
   let tenantA: TestTenant;
@@ -248,6 +249,7 @@ describe('T091 — F4 tenant invoice settings lifecycle', () => {
         tx.insert(members).values({
           tenantId: tenantA.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'FR-011 Test Co',
           country: 'TH',
           planId,

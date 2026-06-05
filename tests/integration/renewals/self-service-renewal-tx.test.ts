@@ -57,6 +57,17 @@ import {
 } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
+// 055-member-number — `members.member_number` is NOT NULL with a per-tenant
+// UNIQUE index. These raw-insert seeds (which bypass the createMember
+// allocator) must supply a distinct positive integer per member. A
+// monotonic counter keeps every seeded member collision-free regardless of
+// how many seeds land in the same throwaway tenant.
+let memberNumberSeq = 0;
+function nextMemberNumber(): number {
+  memberNumberSeq += 1;
+  return memberNumberSeq;
+}
+
 const F4_PAID_DEFAULTS: Pick<
   F4InvoicePaidEvent,
   | 'paidAt'
@@ -131,6 +142,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
       const memberValues = {
         tenantId: tenantA.ctx.slug,
         memberId,
+        memberNumber: nextMemberNumber(),
         companyName: 'Self-Service Co',
         country: 'TH' as const,
         planId: planTextId,
@@ -292,6 +304,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
         await tx.insert(members).values({
           tenantId: tenantAA.ctx.slug,
           memberId: memberA,
+          memberNumber: nextMemberNumber(),
           companyName: 'Tenant A Co',
           country: 'TH',
           planId,

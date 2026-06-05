@@ -18,8 +18,10 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
+import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { directorySearchWithCount } from '@/modules/members';
+import { directorySearchWithCount, formatMemberNumber } from '@/modules/members';
+import type { TenantId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -222,6 +224,14 @@ async function MembersDirectoryBody({
     );
   }
 
+  // 055-member-number — resolve the per-tenant prefix ONCE (read-only
+  // runInTenant; never raw db — RLS) and format every row's display number
+  // (`SCCM-0042`) server-side, mirroring the admin detail page. Falls back to
+  // the column DEFAULT 'M' when no settings row exists (no visible error).
+  const memberPrefix = await runInTenant(tenant, (tx) =>
+    deps.memberSettings.getPrefix(tx, tenant.slug as TenantId),
+  );
+
   const rows: MembersTableRow[] = result.value.items.map((row) => {
     // F9 (G1) — server-side engagement projection (inverse of F8 risk).
     const eng = projectEngagementScore({
@@ -230,6 +240,11 @@ async function MembersDirectoryBody({
     });
     return {
     member_id: row.member.memberId,
+    member_number: row.member.memberNumber,
+    member_number_display: formatMemberNumber(
+      memberPrefix,
+      row.member.memberNumber,
+    ),
     company_name: row.member.companyName,
     country: row.member.country,
     plan_id: row.member.planId,
@@ -270,7 +285,7 @@ async function MembersDirectoryBody({
       <DirectoryFilters plans={planOptions} />
       {/* C1 round-10 — pass `withSelection={isAdmin}` so the
           shimmer-skeleton column count matches the real table for the
-          current role (admin: 10 cols incl. checkbox; manager: 9). */}
+          current role (admin: 12 cols incl. checkbox; manager: 11). */}
       <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
         <DirectoryWithBulk
           rows={rows}

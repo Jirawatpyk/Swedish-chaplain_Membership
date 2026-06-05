@@ -50,6 +50,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 
 // T-30 cycle — pin the dispatcher's clock so the schedule policy
@@ -84,6 +85,7 @@ describe('F8 audit-emit failure rollback (J7-H5) — Principle VIII state↔audi
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'H5 Audit Rollback Co',
         country: 'TH',
         planId,

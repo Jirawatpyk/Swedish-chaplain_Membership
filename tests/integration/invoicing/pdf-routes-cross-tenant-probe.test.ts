@@ -38,6 +38,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -124,6 +125,7 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: MEMBER_SNAP.legal_name,
         country: 'TH',
         planId: 'i5-plan',

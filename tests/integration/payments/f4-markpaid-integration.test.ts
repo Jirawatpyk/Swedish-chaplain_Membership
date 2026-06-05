@@ -81,6 +81,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // ---------------------------------------------------------------------------
 // Adapter mocks — deterministic stubs so we can spy on F4 wiring.
@@ -291,6 +292,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: seed.memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: `T128 Co (${seed.method})`,
           country: 'TH',
           planId,

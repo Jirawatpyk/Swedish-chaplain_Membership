@@ -26,6 +26,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { asMemberId, asPlanId, asTenantId } from '@/modules/members';
 import { asIsoCountryCode } from '@/modules/members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -96,6 +97,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
       tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: `StatusTx ${Date.now()}`,
         country: 'TH',
         planId,

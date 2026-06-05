@@ -50,6 +50,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const RUN_PERF = process.env.RUN_PERF === '1';
 
@@ -142,6 +143,7 @@ async function seedSendableInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'T166 Perf Co',
       country: 'TH',
       planId,

@@ -150,6 +150,10 @@ async function seedBulkCandidates(
       memberRows.push({
         tenantId: tenant.ctx.slug,
         memberId,
+        // 055-member-number — NOT NULL + per-tenant UNIQUE. `idx` is the
+        // global 0-based member index in this tenant, so `idx + 1` is a
+        // collision-free 1..N value matching the design's backfill scheme.
+        memberNumber: idx + 1,
         companyName: `Tier Perf Co ${idx}`,
         country: 'TH',
         planId: REGULAR_PLAN_ID,

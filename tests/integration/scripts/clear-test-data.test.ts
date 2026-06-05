@@ -114,6 +114,7 @@ describe('clearTestData script', () => {
       tx.insert(members).values({
         tenantId: slug,
         memberId,
+        memberNumber: 1,
         companyName: `E2E Co clear-test-${Date.now()}`,
         country: 'TH',
         planId: 'clear-test-plan',

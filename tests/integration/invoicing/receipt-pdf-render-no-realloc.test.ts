@@ -49,6 +49,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 vi.mock('@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter', () => ({
   reactPdfRenderAdapter: {
@@ -152,6 +153,7 @@ async function seedSeparateModePendingInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'R2-CG-2 Co',
       country: 'TH',
       planId,
@@ -288,6 +290,7 @@ async function seedCombinedModePendingInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'R2-CG-2 Combined Co',
       country: 'TH',
       planId,

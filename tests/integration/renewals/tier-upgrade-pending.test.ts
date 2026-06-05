@@ -57,6 +57,16 @@ import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// 055-member-number — raw member seeds (bypassing the createMember allocator)
+// must supply a distinct positive `member_number` per the NOT NULL + per-tenant
+// UNIQUE index. Monotonic counter keeps every seed in the shared test tenant
+// collision-free.
+let memberNumberSeq = 0;
+function nextMemberNumber(): number {
+  memberNumberSeq += 1;
+  return memberNumberSeq;
+}
+
 interface SeededState {
   readonly memberId: string;
   readonly cycleId: string;
@@ -110,6 +120,7 @@ async function seedSuggestionState(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextMemberNumber(),
       companyName: 'Pending Test Co',
       country: 'TH',
       planId: 'regular',
@@ -242,6 +253,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextMemberNumber(),
         companyName: 'No Contact Co',
         country: 'TH',
         planId: 'regular',

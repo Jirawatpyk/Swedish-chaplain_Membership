@@ -44,6 +44,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('F8 markPaidOffline — integration (T077)', () => {
   let tenantA: TestTenant;
@@ -119,6 +120,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: memberIdA,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'MPO Co',
         country: 'TH',
         planId: planIdA,

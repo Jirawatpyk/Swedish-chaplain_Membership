@@ -23,6 +23,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const RUN_PERF = process.env.RUN_PERF === '1';
 
@@ -99,6 +100,11 @@ describe('affected-members-count — SC-008 (T076)', () => {
         ids.map((id, idx) => ({
           tenantId: tenant.ctx.slug,
           memberId: id,
+          // 055-member-number — NOT NULL + per-tenant UNIQUE. This describe
+          // shares ONE tenant across `it`s (incl. the 500-row perf seed that
+          // uses low 1..N), so use the HIGH-base shared counter to stay
+          // collision-free with that range.
+          memberNumber: nextSeedMemberNumber(),
           companyName: `Co ${idx}`,
           country: 'TH',
           planId: 'premium',
@@ -137,6 +143,8 @@ describe('affected-members-count — SC-008 (T076)', () => {
         const rows = Array.from({ length: batchSize }, (_, i) => ({
           tenantId: tenant.ctx.slug,
           memberId: randomUUID(),
+          // 055-member-number — NOT NULL + per-tenant UNIQUE; global index → 1..N.
+          memberNumber: batch * batchSize + i + 1,
           companyName: `Perf Co ${batch * batchSize + i}`,
           country: 'TH',
           planId: 'premium',

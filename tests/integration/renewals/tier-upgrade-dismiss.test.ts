@@ -54,6 +54,16 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// 055-member-number — raw member seeds (bypassing the createMember allocator)
+// must supply a distinct positive `member_number` per the NOT NULL + per-tenant
+// UNIQUE index. Monotonic counter keeps every seed in the shared test tenant
+// collision-free.
+let memberNumberSeq = 0;
+function nextMemberNumber(): number {
+  memberNumberSeq += 1;
+  return memberNumberSeq;
+}
+
 // F4+F8 Satang migration (2026-05-16) — restore missing membership_plan
 // seed. Pre-fix test inserted members with planId='regular', planYear=2026
 // but no matching membership_plans row → FK violation
@@ -117,6 +127,7 @@ async function seedOpenSuggestion(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextMemberNumber(),
       companyName: 'Dismiss Probe Co',
       country: 'TH',
       planId: 'regular',

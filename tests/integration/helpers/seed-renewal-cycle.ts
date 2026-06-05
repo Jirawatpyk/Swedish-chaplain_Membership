@@ -26,6 +26,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from './test-benefit-matrix';
 import { createActiveTestUser, deleteTestUser } from './test-users';
 import type { TenantContext } from '@/modules/tenants';
+import { nextSeedMemberNumber } from './seed-member-number';
 
 export interface SeedRenewalCycleSpec {
   readonly tenant: TenantContext;
@@ -117,6 +118,7 @@ export async function seedMemberAndRenewalCycle(
     await tx.insert(members).values({
       tenantId: spec.tenant.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'Test Co',
       country,
       planId,

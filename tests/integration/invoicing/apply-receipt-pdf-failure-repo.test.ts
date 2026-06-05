@@ -41,6 +41,7 @@ import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/i
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -104,6 +105,7 @@ async function seedPaidInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'R4-I3 Co',
       country: 'TH',
       planId,

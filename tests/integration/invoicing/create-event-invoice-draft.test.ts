@@ -45,6 +45,7 @@ import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -124,6 +125,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Gamma Corp',
         country: 'TH',
         taxId: '1111111111111',
@@ -148,6 +150,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: companyNoTinMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Delta Co',
         country: 'TH',
         taxId: null,
@@ -161,6 +164,7 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: archivedMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Epsilon Archived Co',
         country: 'TH',
         taxId: '2222222222222',

@@ -25,6 +25,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('F8 cancelCycle — integration (T076)', () => {
   let tenantA: TestTenant;
@@ -57,6 +58,7 @@ describe('F8 cancelCycle — integration (T076)', () => {
       tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: memberIdA,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Cancel Co',
         country: 'TH',
         planId: planIdA,

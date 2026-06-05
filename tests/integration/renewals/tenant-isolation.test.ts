@@ -106,6 +106,7 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       tx.insert(members).values({
         tenantId: t.ctx.slug,
         memberId,
+        memberNumber: 1,
         companyName: 'F8 Iso Member',
         country: 'TH',
         planId,

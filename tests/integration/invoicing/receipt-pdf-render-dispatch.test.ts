@@ -48,6 +48,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { asTenantContext } from '@/modules/tenants';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // Stub the heavy adapters — the integration concern under test is the
 // dispatcher routing + cross-tenant scoping, NOT the PDF bytes.
@@ -132,6 +133,7 @@ async function seedPaidPendingInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'T166 Co',
       country: 'TH',
       planId,

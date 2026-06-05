@@ -43,6 +43,10 @@ import { users } from '@/modules/auth/infrastructure/db/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+// 055-member-number — allocate the per-tenant human-readable number INSIDE the
+// seed tx (allocator under tenant RLS), mirroring the createMember path. The
+// column is NOT NULL with a per-tenant UNIQUE index.
+import { drizzleMemberNumberAllocator } from '@/modules/members/infrastructure/repos/drizzle-member-number-allocator';
 import { membershipPlans } from '@/modules/plans';
 
 // --- JSON payload schema (matches extract-demo-members.py output) ------------
@@ -270,10 +274,15 @@ export async function seedRow(
     const now = new Date();
     const requestId = `seed-demo-${randomUUID()}`;
 
-    // 1. Insert member
+    // 1. Insert member (allocate the member number under tenant RLS first)
+    const memberNumber = await drizzleMemberNumberAllocator.allocate(
+      tx,
+      ctx.slug,
+    );
     await tx.insert(members).values({
       tenantId: ctx.slug,
       memberId,
+      memberNumber,
       companyName: row.companyName,
       country: row.country,
       taxId: row.taxId,

@@ -37,6 +37,7 @@ import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '@/modules/payments/domain/system-ac
 import { invoicingBridge } from '@/modules/payments/infrastructure/invoicing-bridge';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // Stub render/blob/outbox — same pattern as F4 processor-bridge.test.ts.
 vi.mock('@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter', async () => {
@@ -130,6 +131,7 @@ describe('InvoicingBridge (F5 → F4) — live Neon', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Test Co',
         country: 'TH',
         planId,

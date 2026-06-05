@@ -48,6 +48,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import type { EmailPort } from '@/modules/members/application/ports/email-port';
 import type { SessionRevocationPort } from '@/modules/members/application/ports/session-revocation-port';
 import { err } from '@/lib/result';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // ---- Test scaffold ---------------------------------------------------------
 
@@ -74,6 +75,7 @@ async function seedMemberWithLinkedContact(args: {
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `Atomic Co ${rand}`,
       country: 'TH',
       planId: 'test-plan',

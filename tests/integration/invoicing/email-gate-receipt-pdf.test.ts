@@ -39,6 +39,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // Stub Resend so the dispatcher's email-send branch is a no-op in tests.
 // Without this, sending hits the real network when the gate releases.
@@ -124,6 +125,7 @@ async function seedPaidPendingInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'T166 Gate Co',
       country: 'TH',
       planId,

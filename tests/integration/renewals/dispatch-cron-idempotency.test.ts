@@ -36,6 +36,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 
 // Pin the dispatcher's clock to a deterministic instant. Schedule
@@ -72,6 +73,7 @@ describe('F8 dispatchRenewalCycle — idempotency on live Neon (T109)', () => {
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Idempotent Co',
         country: 'TH',
         planId,

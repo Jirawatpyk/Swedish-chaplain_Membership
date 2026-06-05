@@ -42,6 +42,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // ---- Test scaffold ---------------------------------------------------------
 
@@ -107,6 +108,7 @@ beforeAll(async () => {
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `Verify Co ${rand}`,
       country: 'TH',
       planId: 'test-plan',

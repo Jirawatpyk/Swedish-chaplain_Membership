@@ -81,6 +81,9 @@ async function seedBulkDispatchCandidates(
       memberRows.push({
         tenantId: tenant.ctx.slug,
         memberId,
+        // 055-member-number — NOT NULL + per-tenant UNIQUE; `idx` is the
+        // 0-based global member index, so `idx + 1` is collision-free 1..N.
+        memberNumber: idx + 1,
         companyName: `Perf Dispatch Co ${idx}`,
         country: 'TH',
         planId,

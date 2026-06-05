@@ -49,6 +49,16 @@ import {
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
+// 055-member-number — raw member seeds (bypassing the createMember allocator)
+// must supply a distinct positive `member_number` per the NOT NULL + per-tenant
+// UNIQUE index. Monotonic counter keeps every seed in the shared test tenant
+// collision-free.
+let memberNumberSeq = 0;
+function nextMemberNumber(): number {
+  memberNumberSeq += 1;
+  return memberNumberSeq;
+}
+
 // F4+F8 Satang migration (2026-05-16) — plan-catalogue seeder.
 // Mirrors the working tier-upgrade-pending.test.ts pattern; required
 // because the members fixture's `planId='regular', planYear=2026`
@@ -111,6 +121,7 @@ async function seedOpenSuggestion(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextMemberNumber(),
       companyName: 'Escalate Probe Co',
       country: 'TH',
       planId: 'regular',

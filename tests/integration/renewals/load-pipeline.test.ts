@@ -31,6 +31,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 interface SeedCycle {
   cycleId: string;
@@ -62,6 +63,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
         tx.insert(members).values({
           tenantId: t.ctx.slug,
           memberId: s.memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: `Co ${s.tier} ${s.memberId.slice(0, 4)}`,
           country: 'TH',
           planId,

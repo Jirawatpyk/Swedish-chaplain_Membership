@@ -43,6 +43,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const FUTURE_DUE_AT = new Date(Date.now() + 7 * MS_PER_DAY);
@@ -78,6 +79,7 @@ async function seedMemberWithCycle(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'Task Co',
       country: 'TH',
       planId,

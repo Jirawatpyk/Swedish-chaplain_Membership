@@ -56,6 +56,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -134,6 +135,7 @@ describe('Integration: soft-delete TOCTOU advisory lock (W0-02)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'W0-02 Regression Co',
         country: 'TH',
         planId,
@@ -220,6 +222,7 @@ describe('Integration: soft-delete TOCTOU advisory lock (W0-02)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'W0-02 Race Test Co',
         country: 'TH',
         planId: startPlanId,

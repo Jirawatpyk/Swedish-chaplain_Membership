@@ -140,7 +140,7 @@ describe('Member aggregate — memberNumber field', () => {
     // @ts-expect-error memberNumber must NOT be a patchable field (immutable).
     const bad: MemberPatch = { memberNumber: asMemberNumber(7) };
     // Runtime no-op assertion keeps vitest happy; the real guard is the
-    // @ts-expect-error above (verified by `pnpm typecheck`).
+    // ts-expect-error directive above (verified by `pnpm typecheck`).
     expect(bad).toBeDefined();
   });
 });

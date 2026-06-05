@@ -1,6 +1,6 @@
 /**
  * ADMIN-5 (055-member-number) — MembersTableSkeleton column count must match
- * the live table (10 without selection, 11 with selection) after the
+ * the live table (11 without selection, 12 with selection) after the
  * member-number column was added (ADMIN-4). Guards CLS-0 per ux-standards § 2.1.
  */
 import { describe, expect, it } from 'vitest';
@@ -14,13 +14,13 @@ function headerCellCount(container: HTMLElement): number {
 }
 
 describe('MembersTableSkeleton column count matches the live table', () => {
-  it('renders 10 header cells without selection (manager + baseline)', () => {
+  it('renders 11 header cells without selection (manager + baseline)', () => {
     const { container } = render(<MembersTableSkeleton />);
-    expect(headerCellCount(container)).toBe(10);
+    expect(headerCellCount(container)).toBe(11);
   });
 
-  it('renders 11 header cells with selection (admin)', () => {
+  it('renders 12 header cells with selection (admin)', () => {
     const { container } = render(<MembersTableSkeleton withSelection />);
-    expect(headerCellCount(container)).toBe(11);
+    expect(headerCellCount(container)).toBe(12);
   });
 });

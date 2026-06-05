@@ -43,6 +43,7 @@ import {
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const F5_PHASE5_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -113,6 +114,7 @@ describe('F5 Phase 5 — Cross-tenant isolation on read use-cases (verify-fix C3
         await tx.insert(members).values({
           tenantId: t.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: `${prefix} Co`,
           country: 'TH',
           planId: `${prefix}-plan`,

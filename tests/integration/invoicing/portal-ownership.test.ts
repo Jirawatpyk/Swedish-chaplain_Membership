@@ -44,6 +44,7 @@ import {
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -124,6 +125,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
         {
           tenantId: tenantA.ctx.slug,
           memberId: alphaMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Alpha Co',
           country: 'TH',
           planId: 'alpha-plan',
@@ -132,6 +134,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
         {
           tenantId: tenantA.ctx.slug,
           memberId: gammaMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Gamma Co',
           country: 'TH',
           planId: 'alpha-plan',
@@ -143,6 +146,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
       tx.insert(members).values({
         tenantId: tenantB.ctx.slug,
         memberId: betaMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Beta Co',
         country: 'TH',
         planId: 'beta-plan',
@@ -372,6 +376,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
       tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: deltaMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Delta Co',
         country: 'TH',
         planId: 'alpha-plan',
@@ -492,6 +497,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: echoMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Echo Co',
         country: 'TH',
         planId: 'alpha-plan',

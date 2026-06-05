@@ -26,6 +26,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const RUN_PERF = process.env.RUN_PERF === '1';
 
@@ -120,6 +121,9 @@ describe('directory search perf — SC-002 (T060)', () => {
         const memberRows = Array.from({ length: batchSize }, (_, i) => ({
           tenantId: tenant.ctx.slug,
           memberId: randomUUID(),
+          // 055-member-number — NOT NULL + per-tenant UNIQUE; `offset + i` is
+          // the 0-based global member index, so `+ 1` is collision-free 1..N.
+          memberNumber: offset + i + 1,
           companyName: pickCompanyName(offset + i),
           country: 'TH',
           planId: 'test-plan',
@@ -178,6 +182,7 @@ describe('directory search perf — SC-002 (T060)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: randomUUID(),
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Nordic Smoke Co',
         country: 'TH',
         planId: 'test-plan',

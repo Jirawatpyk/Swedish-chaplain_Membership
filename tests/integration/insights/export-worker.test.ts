@@ -38,6 +38,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 /** In-memory PrivateBlobPort — records uploads + serves them back as a stream. */
 function makeStubBlob(): PrivateBlobPort & { store: Map<string, { body: Uint8Array; contentType: string }> } {
@@ -96,6 +97,7 @@ describe('F9 export worker — integration (T071)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: id,
+          memberNumber: nextSeedMemberNumber(),
           companyName: name,
           country: 'TH',
           planId,

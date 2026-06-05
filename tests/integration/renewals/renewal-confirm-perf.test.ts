@@ -96,6 +96,9 @@ async function seedCyclesAwaitingPayment(
       memberRows.push({
         tenantId: tenant.ctx.slug,
         memberId,
+        // 055-member-number — NOT NULL + per-tenant UNIQUE; `i` is the
+        // 0-based global member index, so `i + 1` is collision-free 1..N.
+        memberNumber: i + 1,
         companyName: `Perf Confirm Co ${i}`,
         country: 'TH',
         planId,

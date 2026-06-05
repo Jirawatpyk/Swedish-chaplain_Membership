@@ -87,9 +87,11 @@ describe('F8 reconcilePendingReactivations — integration (T148)', () => {
     // unique-active-cycle invariant.
     await runInTenant(tenantA.ctx, (tx) =>
       tx.insert(members).values(
-        [memberA, memberB, memberC, memberD].map((mid) => ({
+        [memberA, memberB, memberC, memberD].map((mid, i) => ({
           tenantId: tenantA.ctx.slug,
           memberId: mid,
+          // 055-member-number — NOT NULL + per-tenant UNIQUE; map index → 1..N.
+          memberNumber: i + 1,
           companyName: `Timeout Co ${mid.slice(0, 6)}`,
           country: 'TH' as const,
           planId,

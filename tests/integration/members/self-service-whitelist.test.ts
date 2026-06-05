@@ -17,6 +17,7 @@ import {
   type MemberSelfUpdateDeps,
 } from '@/modules/members/application/use-cases/member-self-update';
 import type { Member, MemberId } from '@/modules/members/domain/member';
+import { asMemberNumber } from '@/modules/members/domain/value-objects/member-number';
 import type { Contact, ContactId } from '@/modules/members/domain/contact';
 import type { AuditPort, F3AuditEvent } from '@/modules/members/application/ports/audit-port';
 import type { MemberRepo } from '@/modules/members/application/ports/member-repo';
@@ -33,6 +34,7 @@ const tenantCtx = { slug: 'test-swecham' } as TenantContext;
 const baseMember: Member = {
   tenantId: 'test-swecham' as Member['tenantId'],
   memberId: 'mem-1' as MemberId,
+  memberNumber: asMemberNumber(1),
   companyName: 'Test Corp',
   legalEntityType: null,
   country: 'TH' as Member['country'],

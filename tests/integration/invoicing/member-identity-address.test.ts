@@ -16,6 +16,7 @@ import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapte
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -73,6 +74,7 @@ describe('F4 member-identity adapter — composes the full buyer address (§86/�
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Addr Co',
         country: 'TH',
         addressLine1: '99/1 Rama IV Road',
@@ -118,6 +120,7 @@ describe('F4 member-identity adapter — composes the full buyer address (§86/�
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Bare Co',
         country: 'SE',
         planId,

@@ -28,6 +28,7 @@ import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('F8 frozen-price invariant — integration (T149)', () => {
   let tenantA: TestTenant;
@@ -82,6 +83,7 @@ describe('F8 frozen-price invariant — integration (T149)', () => {
       tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: memberIdA,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Frozen Co',
         country: 'TH',
         planId: originalPlanId,

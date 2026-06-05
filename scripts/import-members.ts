@@ -24,6 +24,11 @@ import type { TenantContext } from '@/modules/tenants';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+// 055-member-number — allocate the per-tenant human-readable number INSIDE the
+// commit tx, mirroring the canonical createMember path (allocator under tenant
+// RLS, advisory-lock-serialised). The column is NOT NULL with a per-tenant
+// UNIQUE index, so a raw insert without it now fails at compile + runtime.
+import { drizzleMemberNumberAllocator } from '@/modules/members/infrastructure/repos/drizzle-member-number-allocator';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import { requireSwechamTenant, findActorUserId } from './seed-demo-members';
@@ -224,9 +229,17 @@ export async function commitMembers(
       }
 
       const memberId = randomUUID();
+      // Allocate the next human-readable member number under the tenant RLS
+      // session (tx-bound — never the pool-global db). Advisory-lock
+      // serialised inside the allocator; gaps on rollback are acceptable.
+      const memberNumber = await drizzleMemberNumberAllocator.allocate(
+        tx,
+        ctx.slug,
+      );
       await tx.insert(members).values({
         tenantId: ctx.slug,
         memberId,
+        memberNumber,
         companyName: m.companyName,
         country: m.country,
         taxId: m.taxId,

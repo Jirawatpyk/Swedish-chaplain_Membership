@@ -40,6 +40,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const F7_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -129,6 +130,7 @@ describe('F1 transactional vs F7 Broadcasts API separation (T152a / FR-019)', ()
       tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'T152a Member',
         country: 'TH',
         planId,

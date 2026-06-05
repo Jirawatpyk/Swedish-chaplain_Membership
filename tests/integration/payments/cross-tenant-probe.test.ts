@@ -44,6 +44,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -140,6 +141,7 @@ describe('CR-5 cross-tenant probe — payment_cross_tenant_probe audit emission 
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: memberAId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'CR5 A Co',
         country: 'TH',
         planId: 'cr5-plan-a',
@@ -242,6 +244,7 @@ describe('CR-5 cross-tenant probe — payment_cross_tenant_probe audit emission 
       await tx.insert(members).values({
         tenantId: tenantB.ctx.slug,
         memberId: memberBId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'CR5 B Co',
         country: 'TH',
         planId: 'cr5-plan-b',
