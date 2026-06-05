@@ -8,9 +8,16 @@
  *          contention.
  *   2. INSERT … ON CONFLICT DO NOTHING — seed the counter on first use.
  *   3. UPDATE … SET last_number = last_number + 1 … RETURNING last_number.
- *        The advisory lock already serialises every writer, so — unlike
- *        the F4 sequence allocator — there is NO `SELECT … FOR UPDATE`.
- *        DO NOT copy the F4 allocator verbatim.
+ *
+ * Correctness primitive: the single-statement
+ * `UPDATE … SET last_number = last_number + 1 … RETURNING` is ITSELF atomic —
+ * Postgres takes a row-level lock on the counter row for the duration of the
+ * UPDATE, so concurrent allocators serialise on that row and each reads its own
+ * post-increment value. That is why — unlike the F4 sequence allocator — there
+ * is NO `SELECT … FOR UPDATE` pre-probe (DO NOT copy the F4 allocator verbatim).
+ * The advisory lock in step 1 is DEFENCE-IN-DEPTH, NOT the thing that makes the
+ * allocation correct: it reduces lock-wait churn and follows the F4–F9
+ * per-tenant-lock convention, but the row-lock on the UPDATE is the guarantee.
  *
  * Lock-order discipline: this allocator touches ONLY
  * `tenant_member_sequences` — never `tenant_member_settings` (the prefix

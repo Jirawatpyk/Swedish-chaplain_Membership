@@ -4,9 +4,13 @@
  *
  * Protocol (design §5): advisory xact lock on `members:{tenantId}` +
  * `INSERT … ON CONFLICT DO NOTHING` seed + `UPDATE … RETURNING` of the
- * incremented counter. The advisory lock alone serialises every writer,
- * so — unlike the F4 sequence allocator — there is NO `SELECT … FOR
- * UPDATE`. Implementation: `infrastructure/repos/drizzle-member-number-allocator.ts`.
+ * incremented counter. The correctness primitive is the single-statement
+ * `UPDATE … SET last_number = last_number + 1 … RETURNING`, which is itself
+ * atomic (Postgres row-locks the counter row, so concurrent writers serialise
+ * on it) — that is why, unlike the F4 sequence allocator, there is NO
+ * `SELECT … FOR UPDATE` pre-probe. The advisory lock is defence-in-depth
+ * (lock-wait reduction + F4–F9 convention), not the correctness guarantee.
+ * Implementation: `infrastructure/repos/drizzle-member-number-allocator.ts`.
  *
  * MUST be called as the FIRST statement inside the `createMember`
  * `runInTenant(tenant, async (tx) => …)` lambda, before

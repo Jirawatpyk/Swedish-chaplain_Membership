@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
 import type { MemberSettingsReaderPort } from '../../application/ports/member-settings-port';
 import type { TenantId } from '../../domain/member';
+import { DEFAULT_MEMBER_NUMBER_PREFIX } from '../../domain/value-objects/member-number';
 
 export const drizzleMemberSettingsRepo: MemberSettingsReaderPort = {
   async getPrefix(tx: TenantTx, tenantId: TenantId): Promise<string> {
@@ -23,7 +24,9 @@ export const drizzleMemberSettingsRepo: MemberSettingsReaderPort = {
     `)) as unknown as Array<{ member_number_prefix: string }>;
 
     // No row → tenant provisioned before the settings seed. Fall back to
-    // the column DEFAULT so display never breaks (design §4.3).
-    return rows[0]?.member_number_prefix ?? 'M';
+    // the column DEFAULT so display never breaks (design §4.3). The literal is
+    // single-sourced as DEFAULT_MEMBER_NUMBER_PREFIX (kept in sync with the
+    // migration-0209 column DEFAULT + the adapter COALESCE, which are SQL).
+    return rows[0]?.member_number_prefix ?? DEFAULT_MEMBER_NUMBER_PREFIX;
   },
 };

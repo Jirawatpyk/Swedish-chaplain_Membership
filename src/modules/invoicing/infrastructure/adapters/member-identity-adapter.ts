@@ -101,6 +101,8 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       // the SELECT (sub-select on tenant_member_settings under the per-tenant
       // `tx`, so it only ever reads the current tenant's row). COALESCE → 'M' is
       // the table-default fallback for a tenant with no explicit settings row.
+      // The two `COALESCE(..., 'M')` SQL literals above are the SQL mirror of
+      // members-domain `DEFAULT_MEMBER_NUMBER_PREFIX` — keep them in sync.
       member_number_prefix: string;
       member_type_scope: 'company' | 'individual' | 'both' | null;
     }>;
@@ -127,10 +129,14 @@ export const memberIdentityAdapter: MemberIdentityPort = {
 
     // 055-member-number — compute the FORMATTED display string at issue time so
     // it freezes onto the snapshot (FR-038 immutability). `formatMemberNumber`
-    // lives in the members public barrel (Domain VO). A live member always has a
-    // positive integer post-backfill; `asMemberNumber` would throw on a corrupt
-    // (<=0 / non-int) value, but the `!= null` guard keeps the pre-backfill
-    // window (and any future non-member path that reuses this adapter) at null.
+    // lives in the members public barrel (Domain VO). The `!== null` guard keeps
+    // the (pre-backfill / non-member) no-number path at null. When a number IS
+    // present, `asMemberNumber` throws on a corrupt (<=0 / non-int) value — and
+    // because this runs INSIDE the issue-invoice / credit-note tx, that throw
+    // ABORTS tax-doc issuance. This is a DELIBERATE issue-blocking fail-loud: we
+    // must NOT issue a §86/4 tax invoice off a corrupt buyer identity. The DB
+    // `CHECK (member_number > 0)` makes a corrupt live value near-unreachable, so
+    // this is a backstop, not an expected branch.
     const memberNumberDisplay =
       m.member_number !== null
         ? formatMemberNumber(m.member_number_prefix, asMemberNumber(m.member_number))

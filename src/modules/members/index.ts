@@ -93,6 +93,7 @@ export {
   formatMemberNumber,
   parseMemberNumberQuery,
   InvalidMemberNumberError,
+  DEFAULT_MEMBER_NUMBER_PREFIX,
   type MemberNumber,
 } from './domain/value-objects/member-number';
 

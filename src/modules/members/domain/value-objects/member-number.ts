@@ -13,6 +13,16 @@
  * settings table CHECK, not here — the format helper trusts its prefix arg.
  */
 
+/**
+ * The fallback member-number prefix for a tenant with no explicit
+ * `tenant_member_settings` row. Single source of truth for the TypeScript side
+ * of this default (the settings reader uses it). The DB column DEFAULT and the
+ * adapter's SQL `COALESCE(..., 'M')` are SQL literals (migration 0209) that MUST
+ * be kept in sync with this value — they are duplicated by necessity because
+ * they execute inside Postgres, not TypeScript.
+ */
+export const DEFAULT_MEMBER_NUMBER_PREFIX = 'M';
+
 declare const MemberNumberBrand: unique symbol;
 
 /**
