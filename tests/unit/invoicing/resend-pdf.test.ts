@@ -122,6 +122,29 @@ function paidInvoiceWithReceipt(): Invoice {
   });
 }
 
+const EVENT_REGISTRATION_UUID = 'cccccccc-dddd-4eee-8fff-000000000000';
+const EVENT_UUID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+/**
+ * 054-event-fee-invoices — a NON-member EVENT-fee invoice: `memberId` is null
+ * (the buyer is a non-member attendee), `invoiceSubject === 'event'`, and the
+ * F6 `event_registration_id` is set. Resending the invoice PDF must NOT emit a
+ * timeline-typed audit row with `member_id: ''` (the bug). It must emit the
+ * non-member variant carrying `event_registration_id` and NO `member_id` key.
+ */
+function nonMemberEventInvoice(overrides: Partial<Invoice> = {}): Invoice {
+  return issuedInvoice({
+    memberId: null,
+    invoiceSubject: 'event',
+    eventId: EVENT_UUID,
+    eventRegistrationId: EVENT_REGISTRATION_UUID,
+    vatInclusive: true,
+    planId: null,
+    planYear: null,
+    ...overrides,
+  });
+}
+
 function creditNoteFixture(): CreditNote {
   return {
     tenantId: TENANT,
@@ -223,6 +246,45 @@ describe('resendPdf', () => {
     // payload (recipient_email_sha256) for correlation.
     expect(auditCall.summary).not.toContain('member@example.com');
     expect(auditCall.payload.recipient_email_sha256).toBeTruthy();
+  });
+
+  it('invoice variant — NON-MEMBER event invoice → emits invoice_pdf_resent with event_registration_id and NO member_id key', async () => {
+    // BUG REGRESSION (054-event-fee-invoices): resend-pdf coalesced
+    // `invoice.memberId ?? ''` for a non-member event invoice, persisting a
+    // timeline-typed audit row with `member_id: ''`. The members
+    // last_activity_at trigger then casts `(payload->>'member_id')::uuid` →
+    // throws invalid_text_representation → silent no-op + structurally-invalid
+    // row on the 10-year tax-document audit trail. The fix routes the
+    // non-member branch through the typed non-member helper: payload carries
+    // `event_registration_id`, `member_id` is ABSENT (not '').
+    const invoice = nonMemberEventInvoice();
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.eventType).toBe('invoice_pdf_resent');
+
+    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
+    const auditCall = (deps.audit.emit as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as {
+      eventType: string;
+      payload: Record<string, unknown>;
+    };
+    expect(auditCall.eventType).toBe('invoice_pdf_resent');
+    // The audit row MUST carry the F6 registration id (non-member correlation).
+    expect(auditCall.payload.event_registration_id).toBe(EVENT_REGISTRATION_UUID);
+    // member_id MUST be ABSENT — not '' (the bug), not the member id.
+    expect(auditCall.payload).not.toHaveProperty('member_id');
   });
 
   it('receipt variant — enqueues receipt_pdf_resent + audit WITHOUT member_id', async () => {
