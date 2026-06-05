@@ -68,6 +68,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calculate-credit-note-vat';
 import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder';
+import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
@@ -291,12 +292,23 @@ export async function issueCreditNote(
       // BEFORE the POST-SEQUENCE zone, so no §87 number is burned and nothing
       // needs to roll back (parity with the `no_snapshot_on_invoice` early
       // return). Under valid state this branch is unreachable.
-      if (loaded.invoiceSubject === 'event' && loaded.eventRegistrationId === null) {
-        logger.error(
-          { tenantId: input.tenantId, invoiceId, invoiceSubject: loaded.invoiceSubject },
-          'issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting',
-        );
-        return err({ code: 'invalid_event_invoice' });
+      //
+      // FIX 10/12 — bind the non-null id into a `const` HERE, where the
+      // `invoiceSubject === 'event'` narrowing is valid (TS cannot re-derive
+      // it at the audit emit, which only knows `memberId === null`). The
+      // non-member audit branch consumes `eventRegistrationId` directly, with
+      // NO `?? ''` fallback — so if this guard is ever removed, the emit fails
+      // to compile (loud) instead of silently persisting an empty string.
+      let eventRegistrationId: string | null = null;
+      if (loaded.invoiceSubject === 'event') {
+        if (loaded.eventRegistrationId === null) {
+          logger.error(
+            { tenantId: input.tenantId, invoiceId, invoiceSubject: loaded.invoiceSubject },
+            'issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting',
+          );
+          return err({ code: 'invalid_event_invoice' });
+        }
+        eventRegistrationId = loaded.eventRegistrationId;
       }
 
       // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
@@ -319,8 +331,18 @@ export async function issueCreditNote(
       // never burns a §87 credit-note sequence number — the §87 CN stream stays
       // gap-free. Mirrors the issue-invoice rule that the doc-type gate precedes
       // sequence allocation.
-      const buyerHasTin = (loaded.memberIdentitySnapshot?.tax_id ?? '').trim() !== '';
-      const isReceiptSeparate = loaded.invoiceSubject === 'event' && !buyerHasTin;
+      // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
+      // !== ''` + the event/no-TIN reconstruction, duplicated across
+      // issue-invoice + record-payment). `inferEventDocumentKind` resolves the
+      // SAME `receipt_separate` verdict the issue-time gate used, keeping the
+      // issue-time and credit-time gates in lockstep. The `?.` retains the
+      // defensive parity of the former expression (the snapshot-completeness
+      // guard above already guarantees non-null).
+      const isReceiptSeparate =
+        inferEventDocumentKind(
+          loaded.invoiceSubject,
+          loaded.memberIdentitySnapshot?.tax_id,
+        ) === 'receipt_separate';
       if (isReceiptSeparate) {
         return err({ code: 'receipt_not_creditable' });
       }
@@ -705,6 +727,19 @@ export async function issueCreditNote(
           },
         });
       } else {
+        // LOW-12 / FIX 10/12 — a null `memberId` implies `invoiceSubject==='event'`
+        // (membership invoices always carry member_id per
+        // `invoices_subject_fields_ck`), and the up-front LOW-12 guard already
+        // rejected any event invoice with a null `eventRegistrationId` — so
+        // `eventRegistrationId` (bound from that guard) is non-null here. TS
+        // cannot re-derive that at this site (it only knows `memberId === null`),
+        // so we re-assert it explicitly. This replaces the former silent
+        // `?? ''` fallback: if the up-front guard is ever removed, this throws
+        // (rolling back the tx via withTx) instead of persisting an empty
+        // string into the audit payload's string-typed `event_registration_id`.
+        if (eventRegistrationId === null) {
+          throw new IssueCreditNoteInternalError({ code: 'invalid_event_invoice' });
+        }
         await deps.audit.emit(tx, {
           tenantId: input.tenantId,
           requestId: input.requestId ?? null,
@@ -720,15 +755,8 @@ export async function issueCreditNote(
           actorUserId: input.actorUserId,
           summary: creditNoteSummary,
           payload: {
-            // LOW-12 — a null `memberId` implies `invoiceSubject==='event'`
-            // (membership invoices always carry member_id per
-            // `invoices_subject_fields_ck`), and the up-front LOW-12 guard has
-            // already rejected any event invoice with a null
-            // `eventRegistrationId`. So at THIS site it is guaranteed non-null;
-            // the `?? ''` is a belt-and-suspenders fallback (unreachable) that
-            // keeps the payload's string contract even if the up-front guard is
-            // ever refactored away — the value is NEVER persisted as null.
-            event_registration_id: loaded.eventRegistrationId ?? '',
+            // Non-null per the re-assert above (narrowed to `string`).
+            event_registration_id: eventRegistrationId,
             ...creditNotePayloadBase,
           },
         });

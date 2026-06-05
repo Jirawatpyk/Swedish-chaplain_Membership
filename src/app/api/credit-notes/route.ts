@@ -21,7 +21,30 @@ import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 import { stripReason } from '../invoices/_serialise';
 import { serialiseCreditNote } from './_serialise';
-import type { IssueCreditNoteError } from '@/modules/invoicing';
+import type {
+  IssueCreditNoteError,
+  CreditNoteEmailDelivery,
+} from '@/modules/invoicing';
+
+// FIX 8 (Round-2 code-review) — explicit 201 body type. The serialised
+// credit-note fields are spread, then `email_delivery` rides as a sibling
+// (MEDIUM-5). Without an explicit type a FUTURE `email_delivery` field on
+// `serialiseCreditNote` would SILENTLY collide (the sibling would shadow it).
+// The guard below turns that into a compile error.
+type SerialisedCreditNote = ReturnType<typeof serialiseCreditNote>;
+
+// Compile-time guard: `serialiseCreditNote` MUST NOT itself declare an
+// `email_delivery` key — it would collide with the route's sibling field.
+// `HasEmailDeliveryKey` is `true` iff the serialiser grows such a key; the
+// const below is typed `false`, so a collision fails `tsc` here.
+type HasEmailDeliveryKey = 'email_delivery' extends keyof SerialisedCreditNote
+  ? true
+  : false;
+const _assertNoEmailDeliveryCollision: false = false as HasEmailDeliveryKey;
+
+interface CreditNoteResponseBody extends SerialisedCreditNote {
+  readonly email_delivery: CreditNoteEmailDelivery;
+}
 
 // SG-7 — error-code → HTTP status lookup. Cleaner than a nested
 // ternary chain and easier to extend when new typed errors land.
@@ -149,12 +172,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // MEDIUM-5 — surface the email-delivery signal alongside the serialised CN so
   // the client success path can show a non-blocking notice when the buyer has
   // no email on file (`skipped_no_recipient`). The serialiser handles the CN
-  // shape; `email_delivery` rides as a sibling field.
-  return NextResponse.json(
-    {
-      ...serialiseCreditNote(result.value.creditNote),
-      email_delivery: result.value.emailDelivery,
-    },
-    { status: 201 },
-  );
+  // shape; `email_delivery` rides as a sibling field. FIX 8 — the explicit
+  // `CreditNoteResponseBody` makes a future serialiser-side `email_delivery`
+  // key a compile error rather than a silent override.
+  const responseBody: CreditNoteResponseBody = {
+    ...serialiseCreditNote(result.value.creditNote),
+    email_delivery: result.value.emailDelivery,
+  };
+  return NextResponse.json(responseBody, { status: 201 });
 }
