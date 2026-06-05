@@ -28,7 +28,9 @@ import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts
 import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
 import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
 import { drizzleMemberNumberAllocator } from './infrastructure/repos/drizzle-member-number-allocator';
+import { drizzleMemberSettingsRepo } from './infrastructure/repos/drizzle-member-settings-repo';
 import type { MemberNumberAllocatorPort } from './application/ports/member-number-allocator-port';
+import type { MemberSettingsReaderPort } from './application/ports/member-settings-port';
 import type { MemberRepo } from './application/ports/member-repo';
 import type { ContactRepo } from './application/ports/contact-repo';
 import type { AuditPort } from './application/ports/audit-port';
@@ -97,6 +99,12 @@ export type MembersDeps = {
    * Consumed by `createMember` INSIDE its runInTenant(tx) lambda.
    */
   memberNumberAllocator: MemberNumberAllocatorPort;
+  /**
+   * 055-member-number — per-tenant member-number prefix reader (display time).
+   * Used by admin detail/list, portal, PDF to format `SCCM-0042`-style numbers.
+   * Must be called INSIDE a `runInTenant(ctx, (tx) => …)` block — never raw db.
+   */
+  memberSettings: MemberSettingsReaderPort;
   idFactory: {
     memberId(): MemberId;
     contactId(): ContactId;
@@ -151,6 +159,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     deleteInvitedUser: deleteInvitedUserPortAdapter,
     clock: systemClock,
     memberNumberAllocator: drizzleMemberNumberAllocator,
+    memberSettings: drizzleMemberSettingsRepo,
     idFactory: systemIdFactory,
   };
 }

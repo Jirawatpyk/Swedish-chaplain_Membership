@@ -23,13 +23,14 @@ import {
   UserPlusIcon,
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
+import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { headers } from 'next/headers';
-import { getMember, archiveWindowStatus } from '@/modules/members';
-import type { MemberId, Contact } from '@/modules/members';
+import { getMember, archiveWindowStatus, formatMemberNumber } from '@/modules/members';
+import type { MemberId, Contact, TenantId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   Card,
@@ -43,6 +44,7 @@ import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
+import { MemberNumberField } from '@/components/members/member-number-field';
 import { CountryDisplay } from '@/components/members/country-display';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
@@ -533,6 +535,14 @@ export default async function MemberDetailPage({
     ? planLookup.value.planNameEn
     : member.planId;
 
+  // 055-member-number — resolve the per-tenant prefix via read-only runInTenant
+  // (Plan corrections §2: never raw db). Falls back to 'M' (the column DEFAULT
+  // for tenants provisioned before the settings seed — no visible error).
+  const memberPrefix = await runInTenant(tenant, (tx) =>
+    deps.memberSettings.getPrefix(tx, tenant.slug as TenantId),
+  );
+  const memberNumberDisplay = formatMemberNumber(memberPrefix, member.memberNumber);
+
   const windowStatus =
     member.status === 'archived' && member.archivedAt
       ? archiveWindowStatus(member.archivedAt, new Date())
@@ -614,6 +624,7 @@ export default async function MemberDetailPage({
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+              <MemberNumberField formatted={memberNumberDisplay} />
               <Field
                 label={t('fields.memberId')}
                 value={member.memberId}
