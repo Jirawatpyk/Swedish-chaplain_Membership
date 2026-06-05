@@ -47,6 +47,7 @@ import type { ContactCrudDeps } from '@/modules/members/application/use-cases/co
 import { asTenantContext } from '@/modules/tenants';
 import { asContactId } from '@/modules/members/domain/contact';
 import { asMemberId } from '@/modules/members/domain/member';
+import { asMemberNumber } from '@/modules/members/domain/value-objects/member-number';
 
 const tenant = asTenantContext('test-tenant');
 const memberId = asMemberId('11111111-1111-4111-8111-111111111111');
@@ -320,6 +321,7 @@ function makeBaseMember() {
   return {
     tenantId: tenant.slug as never,
     memberId,
+    memberNumber: asMemberNumber(1),
     companyName: 'Acme Ltd',
     legalEntityType: 'Co., Ltd.',
     country: 'TH' as never,
@@ -519,6 +521,9 @@ function makeCreateMemberDeps(options: {
       recordInTx: vi.fn(async () => auditCalls.shift() ?? ok(undefined)),
     } as unknown as CreateMemberDeps['audit'],
     clock: { now: () => new Date('2026-04-17') },
+    memberNumberAllocator: {
+      allocate: vi.fn().mockResolvedValue(asMemberNumber(1)),
+    },
     idFactory: {
       memberId: () => asMemberId('44444444-4444-4444-8444-444444444444'),
       contactId: () => asContactId('55555555-5555-4555-8555-555555555555'),
@@ -554,7 +559,7 @@ describe('W1 — createMember throw-to-rollback', () => {
     expect(deps.audit.recordInTx).not.toHaveBeenCalled();
   });
 
-  it('returns err when SECOND audit event fails (member_created succeeded, contact_created failed)', async () => {
+  it('returns err when an audit event fails after the member insert succeeds', async () => {
     const fakeCreated = {
       member: makeBaseMember(),
       contact: makeBaseContact(),
@@ -563,12 +568,15 @@ describe('W1 — createMember throw-to-rollback', () => {
       createResult: ok(fakeCreated),
       auditResults: [
         ok(undefined), // member_created ok
-        err({ code: 'repo.unexpected' as const }), // contact_created fail
+        err({ code: 'repo.unexpected' as const }), // member_number_assigned fail
       ],
     });
     const result = await createMember(createMemberInput, createMemberMeta, deps);
     expect(result.ok).toBe(false);
-    // Both audits attempted (first ok, second throws) → 2 calls total.
+    // 055-member-number changed the in-tx audit order to:
+    //   member_created → member_number_assigned → contact_created.
+    // member_created ok, member_number_assigned throws → contact_created
+    // never runs → 2 calls total.
     expect(deps.audit.recordInTx).toHaveBeenCalledTimes(2);
   });
 });
