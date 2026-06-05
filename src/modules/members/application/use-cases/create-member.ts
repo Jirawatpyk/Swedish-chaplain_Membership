@@ -42,6 +42,7 @@ import type { MemberRepo, RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
+import type { MemberNumberAllocatorPort } from '../ports/member-number-allocator-port';
 import { UseCaseAbort } from '../tx-abort';
 
 // --- Input schema ------------------------------------------------------------
@@ -120,6 +121,13 @@ export type CreateMemberDeps = {
   plans: PlanLookupPort;
   audit: AuditPort;
   clock: ClockPort;
+  /**
+   * Allocates the next per-tenant human-readable member number INSIDE the
+   * createMember runInTenant(tx) lambda (under the tenant RLS session).
+   * Must run BEFORE createWithPrimaryContactInTx — the allocated integer is
+   * threaded into the member INSERT in the SAME tx (gap-OK on rollback).
+   */
+  memberNumberAllocator: MemberNumberAllocatorPort;
   idFactory: {
     memberId(): MemberId;
     contactId(): ContactId;
