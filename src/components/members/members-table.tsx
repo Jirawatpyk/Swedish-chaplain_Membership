@@ -80,12 +80,12 @@ import {
 
 export type MembersTableRow = {
   readonly member_id: string;
-  /** Raw human-readable member number (integer) — used for sort + aria. */
-  readonly member_number: number;
   /**
    * Pre-formatted display string (`SCCM-0042`) computed server-side in the
-   * page row-mapping via `formatMemberNumber(tenantPrefix, …)`. Kept separate
-   * from the raw integer so this client cell never imports the tenant prefix.
+   * page row-mapping via `formatMemberNumber(tenantPrefix, …)`. The raw
+   * integer is intentionally NOT shipped to the client: the cell renders
+   * this display string and sort is server-side via the `?sort=memberNumber`
+   * URL param, so the wire payload stays one field lighter per row.
    */
   readonly member_number_display: string;
   readonly company_name: string;
@@ -171,13 +171,16 @@ function MemberNumberSortHeader() {
   }
 
   const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  // `aria-sort` is NOT placed here: ARIA only allows `aria-sort` on a
+  // `role=columnheader` element (the `<th>`/TableHead). The header cell
+  // owns it (see MembersTable header render) — putting it on this button
+  // is a WCAG 1.3.1 / 4.1.2 violation (axe `aria-allowed-attr`).
   return (
     <button
       type="button"
       onClick={onSort}
       className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
       aria-label={t('sortByMemberNumber')}
-      {...(active ? { 'aria-sort': order === 'asc' ? 'ascending' : 'descending' } : {})}
     >
       {t('columns.memberNumber')}
       <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -209,13 +212,14 @@ function EngagementSortHeader() {
   }
 
   const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  // `aria-sort` lives on the `<th>` (columnheader), not this button — see
+  // MemberNumberSortHeader for the same WCAG 1.3.1 / 4.1.2 rationale.
   return (
     <button
       type="button"
       onClick={onSort}
       className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
       aria-label={t('sortByEngagement')}
-      {...(active ? { 'aria-sort': order === 'asc' ? 'ascending' : 'descending' } : {})}
     >
       {t('columns.engagement')}
       <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -600,6 +604,25 @@ export function MembersTable({
   const lastSelectedRef = useRef<number | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  // WCAG 1.3.1 / 4.1.2 — `aria-sort` belongs on the `role=columnheader`
+  // (the `<th>`/TableHead), not on the inner sort button. Derive the
+  // sorted column + direction once from the URL and stamp it on the
+  // matching header cell below. The two sortable columns (`member_number`,
+  // `engagement`) map 1:1 to the `?sort=` value via this table.
+  const activeSort = searchParams.get('sort');
+  const activeOrder = searchParams.get('order');
+  const ariaSortFor = (
+    columnId: string,
+  ): 'ascending' | 'descending' | undefined => {
+    const sortKeyByColumnId: Record<string, string> = {
+      member_number: 'memberNumber',
+      engagement: 'engagement',
+    };
+    const sortKey = sortKeyByColumnId[columnId];
+    if (!sortKey || activeSort !== sortKey) return undefined;
+    return activeOrder === 'asc' ? 'ascending' : 'descending';
+  };
+
   const handleRowSelectionChange = useCallback(
     (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
       const next = typeof updater === 'function' ? updater(rowSelection) : updater;
@@ -669,7 +692,8 @@ export function MembersTable({
           }),
         ]
       : []),
-    columnHelper.accessor('member_number', {
+    columnHelper.display({
+      id: 'member_number',
       header: () => <MemberNumberSortHeader />,
       cell: (info) => (
         <span className="whitespace-nowrap tabular-nums text-sm">
@@ -981,11 +1005,14 @@ export function MembersTable({
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
+              {headerGroup.headers.map((header) => {
+                const ariaSort = ariaSortFor(header.column.id);
+                return (
                 <TableHead
                   key={header.id}
                   scope="col"
                   className="text-xs uppercase tracking-wide text-muted-foreground"
+                  {...(ariaSort ? { 'aria-sort': ariaSort } : {})}
                 >
                     {header.isPlaceholder
                       ? null
@@ -994,7 +1021,8 @@ export function MembersTable({
                           header.getContext(),
                         )}
                   </TableHead>
-                ))}
+                );
+              })}
               </TableRow>
             ))}
           </TableHeader>

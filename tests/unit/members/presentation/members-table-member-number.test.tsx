@@ -82,7 +82,6 @@ const messages = {
 
 const row: MembersTableRow = {
   member_id: '11111111-1111-4111-8111-111111111111',
-  member_number: 42,
   member_number_display: 'SCCM-0042',
   company_name: 'Zeta Holdings',
   country: 'TH',
