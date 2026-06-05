@@ -45,6 +45,7 @@ import type {
 } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
+import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
@@ -311,10 +312,13 @@ export async function recordPayment(
     // snapshot (`loaded.memberIdentitySnapshot`, non-null per the guard above) —
     // it is NEVER a deref of `member_id`, so a null-member event invoice renders
     // correctly. (TIN check trims whitespace, matching the issue-invoice gate.)
-    const buyerHasTin =
-      (loaded.memberIdentitySnapshot.tax_id ?? '').trim() !== '';
+    // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
+    // !== ''`, duplicated across issue-invoice + issue-credit-note). The
+    // `combined` receipt label is forced to `receipt_separate` for a TIN-less
+    // buyer; behaviour byte-identical to the former inline check.
     const combinedMode =
-      settings.receiptNumberingMode === 'combined' && buyerHasTin;
+      settings.receiptNumberingMode === 'combined' &&
+      buyerHasTin(loaded.memberIdentitySnapshot.tax_id);
     let receiptDocNumRaw: string | null = null;
     let receiptDocNum: DocumentNumber | null = null;
     if (!combinedMode) {

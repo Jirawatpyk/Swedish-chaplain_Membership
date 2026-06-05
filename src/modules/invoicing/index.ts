@@ -43,6 +43,15 @@ export { Money as AmountSatang } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
 export { calculateVat } from './domain/policies/calculate-vat';
 export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
+// FIX 5 — shared §86/4 buyer-TIN / event-document-kind discriminator (dedup of
+// the inline check formerly repeated across issue-invoice / record-payment /
+// issue-credit-note).
+export {
+  buyerHasTin,
+  inferEventDocumentKind,
+  type InvoiceSubject,
+  type EventDocumentKind,
+} from './domain/document-kind';
 export {
   DocumentNumber,
   DOCUMENT_NUMBER_MAX_SEQ,

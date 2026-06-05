@@ -84,6 +84,10 @@ import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
+import {
+  buyerHasTin,
+  inferEventDocumentKind,
+} from '@/modules/invoicing/domain/document-kind';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -270,14 +274,16 @@ export async function issueInvoice(
     // ship-blocker where a TIN-less buyer could receive an illegal full
     // ใบกำกับภาษี. Runs BEFORE allocateNext so a blocked membership invoice never
     // burns a §87 sequence number.
-    const buyerHasTin = (memberSnap.tax_id ?? '').trim() !== '';
-    if (draft.invoiceSubject === 'membership' && !buyerHasTin) {
+    // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
+    // !== ''` + the event/no-TIN → receipt_separate ternary, duplicated across
+    // record-payment + issue-credit-note). Behaviour byte-identical.
+    if (draft.invoiceSubject === 'membership' && !buyerHasTin(memberSnap.tax_id)) {
       return err({ code: 'tax_id_required' });
     }
-    const pdfKind: PdfDocKind =
-      draft.invoiceSubject === 'event' && !buyerHasTin
-        ? 'receipt_separate'
-        : 'invoice';
+    const pdfKind: PdfDocKind = inferEventDocumentKind(
+      draft.invoiceSubject,
+      memberSnap.tax_id,
+    );
 
     // Domain invariant — exactly one subject-defining line required before issue
     // (`membership_fee` for membership, `event_fee` for event). Runs BEFORE
