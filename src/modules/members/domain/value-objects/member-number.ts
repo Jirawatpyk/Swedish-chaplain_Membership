@@ -49,3 +49,19 @@ export function asMemberNumber(n: number): MemberNumber {
   }
   return n as MemberNumber;
 }
+
+/**
+ * Render a MemberNumber as `{prefix}-{zeroPad}` — e.g. `SCCM-0042`.
+ * `pad` defaults to 4 (`0001`–`9999`); `padStart` is a no-op once the
+ * digit count meets/exceeds `pad`, so values past 9999 auto-expand
+ * (`SCCM-10000`) with no truncation. Pure — used by the PDF template and
+ * the API/portal serializers. The caller supplies the per-tenant `prefix`
+ * (validated by the settings-table CHECK, not re-validated here).
+ */
+export function formatMemberNumber(
+  prefix: string,
+  n: MemberNumber,
+  pad = 4,
+): string {
+  return `${prefix}-${String(n).padStart(pad, '0')}`;
+}

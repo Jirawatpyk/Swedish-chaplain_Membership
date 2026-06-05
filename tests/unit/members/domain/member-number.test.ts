@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   asMemberNumber,
+  formatMemberNumber,
   InvalidMemberNumberError,
   type MemberNumber,
 } from '@/modules/members/domain/value-objects/member-number';
@@ -40,5 +41,31 @@ describe('asMemberNumber — branded positive-integer constructor', () => {
       expect(e).toBeInstanceOf(InvalidMemberNumberError);
       expect((e as InvalidMemberNumberError).value).toBe(0);
     }
+  });
+});
+
+describe('formatMemberNumber — {prefix}-{zeroPad}', () => {
+  it('pads to width 4 by default (SCCM-0042)', () => {
+    expect(formatMemberNumber('SCCM', asMemberNumber(42))).toBe('SCCM-0042');
+  });
+
+  it('pads a single digit (M-0001)', () => {
+    expect(formatMemberNumber('M', asMemberNumber(1))).toBe('M-0001');
+  });
+
+  it('renders an exact-width number without extra padding (SCCM-9999)', () => {
+    expect(formatMemberNumber('SCCM', asMemberNumber(9999))).toBe('SCCM-9999');
+  });
+
+  it('auto-expands past the pad width (SCCM-10000, no truncation)', () => {
+    expect(formatMemberNumber('SCCM', asMemberNumber(10000))).toBe('SCCM-10000');
+  });
+
+  it('auto-expands far past the pad width (SCCM-123456)', () => {
+    expect(formatMemberNumber('SCCM', asMemberNumber(123456))).toBe('SCCM-123456');
+  });
+
+  it('honours an explicit pad override', () => {
+    expect(formatMemberNumber('M', asMemberNumber(42), 6)).toBe('M-000042');
   });
 });
