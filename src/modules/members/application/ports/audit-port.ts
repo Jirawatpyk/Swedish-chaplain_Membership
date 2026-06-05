@@ -55,7 +55,12 @@ export type F3AuditEventType =
   | 'member_portal_invite_queued'
   | 'contact_linked_to_user'
   // R4 verify-fix Types-#6 (2026-05-02) — preferred_locale write path.
-  | 'member_preferred_locale_changed';
+  | 'member_preferred_locale_changed'
+  // 055-member-number (migration 0210) — emitted by createMember
+  // immediately after the allocation INSERT returns. Payload:
+  // { member_number: number }. 5y retention (F3 default).
+  // See design doc §9 audit wiring.
+  | 'member_number_assigned';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —
