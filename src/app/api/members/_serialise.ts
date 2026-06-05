@@ -11,6 +11,7 @@ import type { DirectoryRow } from '@/modules/members';
 export function serialiseMember(m: Member) {
   return {
     member_id: m.memberId,
+    member_number: m.memberNumber,
     company_name: m.companyName,
     legal_entity_type: m.legalEntityType,
     country: m.country,
@@ -64,6 +65,7 @@ export function serialiseContact(
 export function serialiseDirectoryRow(row: DirectoryRow) {
   return {
     member_id: row.member.memberId,
+    member_number: row.member.memberNumber,
     company_name: row.member.companyName,
     country: row.member.country,
     plan_id: row.member.planId,
