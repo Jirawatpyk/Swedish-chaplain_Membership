@@ -55,6 +55,7 @@ const MEMBER = '22222222-2222-2222-2222-222222222222';
 function baseMember() {
   return {
     memberId: MEMBER,
+    memberNumber: 7,
     companyName: 'Acme Co',
     legalEntityType: null,
     country: 'TH',
@@ -138,6 +139,13 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       // P2 Wave-0 — turnover is the member's own subject-provided data.
       turnoverThb: 5_000_000,
     });
+  });
+
+  it("profile includes member_number — the subject's own display id (GDPR Art.15/20 transparency)", async () => {
+    listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    expect(data).not.toBeNull();
+    expect(data!.profile).toMatchObject({ member_number: 7 });
   });
 
   it('contacts include dateOfBirth — material personal data (P2 Wave-0, GDPR Art.15/20)', async () => {
