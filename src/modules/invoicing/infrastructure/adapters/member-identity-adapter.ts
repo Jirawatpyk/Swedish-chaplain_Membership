@@ -46,6 +46,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
+                   m.member_number,
                    mp.member_type_scope
               FROM members m
               LEFT JOIN membership_plans mp
@@ -59,6 +60,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
+                   m.member_number,
                    mp.member_type_scope
               FROM members m
               LEFT JOIN membership_plans mp
@@ -81,6 +83,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       archived_at: Date | null;
       registration_date: Date | string;
       registration_fee_paid: boolean;
+      member_number: number | null;
       member_type_scope: 'company' | 'individual' | 'both' | null;
     }>;
 
@@ -126,6 +129,10 @@ export const memberIdentityAdapter: MemberIdentityPort = {
           ? `${primaryContact.firstName} ${primaryContact.lastName}`
           : '',
         primary_contact_email: primaryContact?.email ?? '',
+        // 055-member-number — surface the buyer's member number on the snapshot
+        // pinned at issue (FR-038). A live member always has a non-null number
+        // post-backfill; the `?? null` is defensive only (pre-backfill window).
+        member_number: m.member_number ?? null,
       }),
     };
   },
