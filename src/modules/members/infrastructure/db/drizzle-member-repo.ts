@@ -50,7 +50,7 @@ import type { ContactId } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
-import { asMemberNumber } from '../../domain/value-objects/member-number';
+import { asMemberNumber, parseMemberNumberQuery } from '../../domain/value-objects/member-number';
 
 // --- Row → Domain ------------------------------------------------------------
 
@@ -168,12 +168,16 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
   return conds;
 }
 
-/** Substring `q` across company_name + non-removed primary-contact name/email. */
+/** Substring `q` across company_name + non-removed primary-contact name/email,
+ *  plus an exact member-number match when `q` parses to a positive integer
+ *  (`SCCM-0042` / `0042` / `42`). The integer branch uses the
+ *  `members_tenant_member_number_uniq` index. */
 function directoryQFilter(q: string) {
   // Escape LIKE metacharacters (% _ \) so a literal `_`/`%` in the term matches
   // literally instead of acting as a wildcard (e.g. searching `john_doe` must
   // not match `johnXdoe`). Postgres ILIKE's default escape char is backslash.
   const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+  const num = parseMemberNumberQuery(q);
   return or(
     ilike(members.companyName, like),
     sql`EXISTS (SELECT 1 FROM contacts c
@@ -183,6 +187,7 @@ function directoryQFilter(q: string) {
                  AND (c.first_name ILIKE ${like}
                       OR c.last_name ILIKE ${like}
                       OR c.email ILIKE ${like}))`,
+    ...(num !== null ? [eq(members.memberNumber, num)] : []),
   )!;
 }
 
