@@ -361,6 +361,22 @@ export async function createMember(
       });
       if (!memberAudit.ok) throw new UseCaseAbort<RepoError>(memberAudit.error);
 
+      // 055-member-number — record the allocated human-readable number
+      // adjacent to member_created. snake_case `member_id` keeps the member
+      // rising in the directory's last-activity sort (the denorm trigger
+      // fires only on payload ? 'member_id'; schema-members.ts:75-79).
+      const numberAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_number_assigned',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_number_assigned ${memberNumber}`,
+        payload: {
+          member_id: result.value.member.memberId,
+          member_number: memberNumber,
+        },
+      });
+      if (!numberAudit.ok) throw new UseCaseAbort<RepoError>(numberAudit.error);
+
       const contactAudit = await deps.audit.recordInTx(tx, deps.tenant, {
         type: 'contact_created',
         actorUserId: meta.actorUserId,
