@@ -473,6 +473,25 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
       if (!r.ok) expect(r.error.code).toBe('registration_not_found');
     });
 
+    it('member_archived — matched member is archived → reject at draft (mirrors membership twin; an archived match drafts but is un-issuable in issue-invoice → stuck draft)', async () => {
+      // HIGH-1: the matched-member branch must reject an ARCHIVED member the
+      // same way create-invoice-draft does (member.isArchived → member_archived).
+      // Without this guard the draft persists successfully but issue-invoice
+      // later blocks it with `member_archived` → an un-issuable stuck draft.
+      const deps = makeDeps({
+        registration: {
+          kind: 'ok',
+          value: makeRegistration({ matchedMemberId: MEMBER_ID, matchType: 'member' }),
+        },
+        member: makeMember({ isArchived: true }),
+      });
+      const r = await createEventInvoiceDraft(deps, baseInput);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('member_archived');
+      // No invoice persisted for an archived matched member.
+      expect(deps.invoiceRepo.insertDraft).not.toHaveBeenCalled();
+    });
+
     it('individual matched member with null tax_id → NOT gated (ok)', async () => {
       const deps = makeDeps({
         registration: {
