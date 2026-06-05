@@ -387,4 +387,47 @@ describe('logger redaction (T158, T-14)', () => {
       expect(line).not.toContain(`${SENTINEL}-memEmail@x.test`);
     });
   });
+
+  // F-member-number — spec §9 re-linkable PII.
+  // memberNumber + member_number + member_number_display are all re-linkable
+  // (number → company identity). companyName is NOT re-classified; it may
+  // remain visible so the log entry is still operationally useful.
+  it('F-member-number: redacts memberNumber, member_number, member_number_display at depths 0–2', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        memberNumber: `${SENTINEL}-mn`,
+        member_number: `${SENTINEL}-mn-snake`,
+        member_number_display: `${SENTINEL}-mn-display`,
+        companyName: 'Visible Co Ltd', // non-PII sibling — MUST stay
+        ctx: {
+          memberNumber: `${SENTINEL}-mn-d1`,
+          member_number: `${SENTINEL}-mn-snake-d1`,
+          member_number_display: `${SENTINEL}-mn-display-d1`,
+        },
+        audit: {
+          payload: {
+            memberNumber: `${SENTINEL}-mn-d2`,
+            member_number: `${SENTINEL}-mn-snake-d2`,
+            member_number_display: `${SENTINEL}-mn-display-d2`,
+          },
+        },
+      },
+      'member-number re-linkable PII',
+    );
+    const line = output.join('');
+    // All three field forms at all three depths MUST be redacted.
+    expect(line).not.toContain(`${SENTINEL}-mn`);
+    expect(line).not.toContain(`${SENTINEL}-mn-snake`);
+    expect(line).not.toContain(`${SENTINEL}-mn-display`);
+    expect(line).not.toContain(`${SENTINEL}-mn-d1`);
+    expect(line).not.toContain(`${SENTINEL}-mn-snake-d1`);
+    expect(line).not.toContain(`${SENTINEL}-mn-display-d1`);
+    expect(line).not.toContain(`${SENTINEL}-mn-d2`);
+    expect(line).not.toContain(`${SENTINEL}-mn-snake-d2`);
+    expect(line).not.toContain(`${SENTINEL}-mn-display-d2`);
+    // companyName is a non-sensitive sibling — MUST remain visible.
+    expect(line).toContain('Visible Co Ltd');
+    expect(line).toContain('[REDACTED]');
+  });
 });
