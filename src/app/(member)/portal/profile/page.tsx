@@ -15,9 +15,11 @@ import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { CountryDisplay } from '@/components/members/country-display';
 import { requireSession } from '@/lib/auth-session';
+import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { getMember } from '@/modules/members';
+import { getMember, formatMemberNumber, asMemberNumber } from '@/modules/members';
+import type { TenantId } from '@/modules/members';
 import { env } from '@/lib/env';
 
 /**
@@ -94,6 +96,13 @@ export default async function PortalProfilePage() {
   const planLookup = await deps.plans.getPlan(tenant, m.planId, m.planYear);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
 
+  // 055-member-number — resolve per-tenant prefix via read-only runInTenant
+  // (Plan corrections §2: never raw db — RLS-bypass gotcha).
+  const memberPrefix = await runInTenant(tenant, (tx) =>
+    deps.memberSettings.getPrefix(tx, tenant.slug as TenantId),
+  );
+  const memberNumberFormatted = formatMemberNumber(memberPrefix, asMemberNumber(m.memberNumber));
+
   return (
     <DetailContainer>
       <PageHeader
@@ -114,6 +123,23 @@ export default async function PortalProfilePage() {
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* 055-member-number — human-readable member number displayed ABOVE
+                the UUID so callers can quote it to support without needing a
+                copy of the raw UUID (design §8.3 portal affordance). */}
+            <div className="lg:col-span-3">
+              <dt className="text-caption text-muted-foreground">
+                {t('fields.memberNumber')}
+              </dt>
+              <dd className="text-body flex items-center gap-2">
+                <span className="font-mono text-sm font-medium">
+                  {memberNumberFormatted}
+                </span>
+                <CopyButton
+                  value={memberNumberFormatted}
+                  label={t('fields.memberNumberCopy')}
+                />
+              </dd>
+            </div>
             {/* I6 round-10 ui-design-specialist — surface member_id +
                 copy-to-clipboard. Support staff first question when a
                 member calls is "what's your member ID?"; the admin
