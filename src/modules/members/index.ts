@@ -452,3 +452,11 @@ export {
   type ResendBouncedInviteOutput,
   type ResendBouncedInviteError,
 } from './application/use-cases/resend-bounced-invite';
+
+// --- 055-member-number — allocator + settings (ALLOC group) -----------------
+
+export { drizzleMemberNumberAllocator } from './infrastructure/repos/drizzle-member-number-allocator';
+export type { MemberNumberAllocatorPort } from './application/ports/member-number-allocator-port';
+
+export { drizzleMemberSettingsRepo } from './infrastructure/repos/drizzle-member-settings-repo';
+export type { MemberSettingsReaderPort } from './application/ports/member-settings-port';
