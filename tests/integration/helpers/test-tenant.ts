@@ -43,6 +43,8 @@ import {
 } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { tenantMemberSequences } from '@/modules/members/infrastructure/db/schema-member-sequences';
+import { tenantMemberSettings } from '@/modules/members/infrastructure/db/schema-member-settings';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
@@ -149,6 +151,15 @@ export async function createTestTenant(
     await db.delete(invoices).where(eq(invoices.tenantId, slug));
     await db.delete(tenantDocumentSequences).where(eq(tenantDocumentSequences.tenantId, slug));
     await db.delete(tenantInvoiceSettings).where(eq(tenantInvoiceSettings.tenantId, slug));
+    // F-member-number cleanup — tenant_member_sequences + tenant_member_settings
+    // have no outbound FKs; clean them before members for logical ordering.
+    // Owner role bypasses RLS+FORCE so these DELETEs see the test-tenant rows.
+    await db
+      .delete(tenantMemberSequences)
+      .where(eq(tenantMemberSequences.tenantId, slug));
+    await db
+      .delete(tenantMemberSettings)
+      .where(eq(tenantMemberSettings.tenantId, slug));
     await db.delete(contacts).where(eq(contacts.tenantId, slug));
     // R2 Batch 3b-bis — migration 0125 added composite FKs:
     //   scheduled_plan_changes → renewal_cycles → members.
