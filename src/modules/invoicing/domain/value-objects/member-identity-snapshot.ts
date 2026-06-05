@@ -30,9 +30,28 @@ export interface MemberIdentitySnapshot {
    * snapshots written before this feature (the JSONB key is absent → zod's
    * `.optional().default(null)` resolves it to null at read time). The PDF
    * template guards with `!== null`, so historical invoices skip the line
-   * (SC-003 byte-identical re-render preserved).
+   * (SC-003 byte-identical re-render preserved). The bare integer is retained
+   * (additive — never removed) for backend joins / debugging; the human-facing
+   * value the PDF renders is `member_number_display`.
    */
   readonly member_number: number | null;
+  /**
+   * 055-member-number — the FORMATTED, human-readable member number
+   * (`{prefix}-{zeroPad}`, e.g. `SCCM-0042`), computed at ISSUE time from the
+   * tenant's `member_number_prefix` + the bare `member_number`. Frozen on the
+   * snapshot so the tax document is immutable (FR-038 / §86/4): a later prefix
+   * change or member edit never alters an already-issued document — this is the
+   * value the buyer block renders, consistent with the admin/portal surfaces.
+   *
+   * `null` for: event/non-member buyers (no F3 member) AND historical snapshots
+   * written before this field shipped (the JSONB key is absent → zod's
+   * `.optional().default(null)` resolves it to null at read time). The PDF
+   * template guards with `!== null`, so those invoices skip the Member No. line
+   * (SC-003 byte-identical re-render preserved). The bare `member_number` and
+   * this display string are pinned together: both non-null for a membership
+   * invoice, both null otherwise.
+   */
+  readonly member_number_display: string | null;
 }
 
 /**
@@ -73,6 +92,14 @@ export const memberIdentitySnapshotSchema = z.object({
   // STRIPS undeclared keys, so an interface-only add silently drops the value
   // at both write and read with no type error.
   member_number: z.number().int().positive().nullable().optional().default(null),
+  // 055-member-number — the FORMATTED display string (`{prefix}-{zeroPad}`),
+  // computed at issue time and frozen here. SAME `.optional().default(null)`
+  // posture as `member_number` above: a MISSING key (historical snapshot) parses
+  // to null (NOT undefined) so the template omits the line and SC-003 byte-stable
+  // re-render holds. Declaring it on the schema is mandatory — z.object STRIPS
+  // undeclared keys, so an interface-only add would silently drop the value at
+  // both write (makeMemberIdentitySnapshot) and read (repo boundary parse).
+  member_number_display: z.string().min(1).nullable().optional().default(null),
 });
 
 export class MalformedSnapshotError extends Error {

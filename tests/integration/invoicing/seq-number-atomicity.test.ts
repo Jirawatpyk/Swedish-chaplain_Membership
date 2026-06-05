@@ -209,6 +209,7 @@ function makeIssueDeps(
           primary_contact_name: 'n',
           primary_contact_email: 'test@example.com',
           member_number: null,
+          member_number_display: null,
         },
       })),
       markRegistrationFeePaid: vi.fn(async () => {}),

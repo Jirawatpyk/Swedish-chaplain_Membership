@@ -72,6 +72,7 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
       primary_contact_name: 'John',
       primary_contact_email: 'john@acme.example',
       member_number: null,
+      member_number_display: null,
     },
     ...overrides,
   };
@@ -216,8 +217,9 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
       expect(call.eventRegistrationId).toBe(REG_ID);
       // Non-member buyer snapshot MUST be pinned at draft.
       // 055-member-number — the event/non-member buyer has no member number;
-      // makeMemberIdentitySnapshot's zod `.default(null)` pins it null (the
-      // §105 receipt path must never carry a member number). See
+      // makeMemberIdentitySnapshot's zod `.default(null)` pins BOTH the bare
+      // member_number AND the formatted member_number_display null (the §105
+      // receipt path must never carry a member number). See
       // create-event-invoice-draft-member-number.test.ts for the dedicated lock.
       expect(call.memberIdentitySnapshot).toEqual({
         legal_name: 'Beta Imports Ltd',
@@ -226,6 +228,7 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
         primary_contact_name: 'Jane Doe',
         primary_contact_email: 'jane@beta.example',
         member_number: null,
+        member_number_display: null,
       });
       // Model B — single event_fee line holds the VAT-INCLUSIVE total.
       const lines = call.lines as Invoice['lines'];
@@ -452,6 +455,7 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
             primary_contact_name: 'John',
             primary_contact_email: 'john@acme.example',
             member_number: null,
+            member_number_display: null,
           },
         }),
       });
@@ -514,6 +518,7 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
             primary_contact_name: 'Jane',
             primary_contact_email: 'jane@person.example',
             member_number: null,
+            member_number_display: null,
           },
         }),
       });

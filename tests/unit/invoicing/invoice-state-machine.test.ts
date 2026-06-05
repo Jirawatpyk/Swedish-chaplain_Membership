@@ -150,7 +150,7 @@ describe('Invoice state machine', () => {
       proRatePolicy: null,
       netDays: null,
       tenantIdentitySnapshot: { legal_name_th: 'x', legal_name_en: 'x', tax_id: '0', address_th: 'a', address_en: 'a', logo_blob_key: null },
-      memberIdentitySnapshot: { legal_name: 'm', tax_id: null, address: 'a', primary_contact_name: 'n', primary_contact_email: 'e', member_number: null },
+      memberIdentitySnapshot: { legal_name: 'm', tax_id: null, address: 'a', primary_contact_name: 'n', primary_contact_email: 'e', member_number: null, member_number_display: null },
       paymentMethod: null,
       paymentReference: null,
       paymentNotes: null,

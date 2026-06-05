@@ -1,12 +1,14 @@
 /**
  * 055-member-number — invoice PDF golden: the buyer block renders a bilingual
- * "หมายเลขสมาชิก / Member No.: <n>" line ONLY when the snapshot's member_number
- * is non-null.
+ * "หมายเลขสมาชิก / Member No.: <formatted>" line ONLY when the snapshot's
+ * member_number_display (the FORMATTED `{prefix}-{zeroPad}` string pinned at
+ * issue) is non-null.
  *
- *  (a) membership invoice, member_number=42  → line present, shows 42
- *  (b) event invoice,      member_number=null → line ABSENT
- *  (c) historical snapshot (no key → null)    → line ABSENT (SC-003: byte-stable
- *                                               re-render of a pre-feature invoice)
+ *  (a) membership invoice, member_number_display='SCCM-0042' → line present,
+ *                                                              shows SCCM-0042
+ *  (b) event invoice,      member_number_display=null        → line ABSENT
+ *  (c) historical snapshot (no key → null)                   → line ABSENT
+ *      (SC-003: byte-stable re-render of a pre-feature invoice)
  *
  * Render-input → real bytes → pdf-parse text. No DB. Mirrors
  * event-invoice-pdf-golden.test.ts (the lightweight golden posture).
@@ -44,11 +46,17 @@ function makeLine(): InvoiceLine[] {
 }
 
 // `member` typed as a parsed MemberIdentitySnapshot so we can pass null AND a
-// real number. A historical (key-absent) snapshot resolves to null at the write
-// boundary's zod default, so for the template the runtime form is the same null
-// — cases (b) and (c) both render the null variant (the distinction is the
-// PROVENANCE of the null, both of which must omit the line).
-function makeRenderInput(memberNumber: number | null): PdfRenderInput {
+// real (formatted) number. A historical (key-absent) snapshot resolves to null
+// at the write boundary's zod default, so for the template the runtime form is
+// the same null — cases (b) and (c) both render the null variant (the
+// distinction is the PROVENANCE of the null, both of which must omit the line).
+// The template renders `member_number_display` (the FORMATTED string), so the
+// fixture drives that field; the bare `member_number` is set in lockstep for a
+// faithful snapshot shape but is NOT what the buyer block prints.
+function makeRenderInput(opts: {
+  memberNumber: number | null;
+  memberNumberDisplay: string | null;
+}): PdfRenderInput {
   const docR = DocumentNumber.of('INV', 2026, 1);
   if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
   const member: MemberIdentitySnapshot = {
@@ -57,7 +65,8 @@ function makeRenderInput(memberNumber: number | null): PdfRenderInput {
     address: '99/1 Rama IV, Bangkok 10500',
     primary_contact_name: 'Jane Doe',
     primary_contact_email: 'jane@member.example',
-    member_number: memberNumber,
+    member_number: opts.memberNumber,
+    member_number_display: opts.memberNumberDisplay,
   };
   return {
     kind: 'invoice',
@@ -83,26 +92,37 @@ function makeRenderInput(memberNumber: number | null): PdfRenderInput {
 }
 
 describe('055 — member-number invoice PDF golden (buyer block, SC-003)', () => {
-  it('(a) membership invoice with member_number=42 → buyer block shows Member No.: 42', async () => {
-    const { bytes } = await reactPdfRenderAdapter.render(makeRenderInput(42));
+  it('(a) membership invoice with member_number_display="SCCM-0042" → buyer block shows the FORMATTED Member No.: SCCM-0042', async () => {
+    const { bytes } = await reactPdfRenderAdapter.render(
+      makeRenderInput({ memberNumber: 42, memberNumberDisplay: 'SCCM-0042' }),
+    );
     const text = await extractPdfText(bytes);
-    expect(text).toMatch(/Member No\.?:?\s*42/);
+    // The buyer block renders the FORMATTED string (prefix-zeroPad), NOT the bare
+    // integer 42 — this is the whole point of the display field.
+    expect(text).toMatch(/Member No\.?:?\s*SCCM-0042/);
+    // The bare integer must NOT leak as a standalone "Member No.: 42" line.
+    expect(text).not.toMatch(/Member No\.?:?\s*42(?!\d)/);
     // Thai label survives shapeThai (sara-am-free → matches verbatim).
     expect(text).toContain('หมายเลขสมาชิก');
   }, 60_000);
 
-  it('(b) event invoice with member_number=null → NO Member No. line', async () => {
-    const { bytes } = await reactPdfRenderAdapter.render(makeRenderInput(null));
+  it('(b) event invoice with member_number_display=null → NO Member No. line', async () => {
+    const { bytes } = await reactPdfRenderAdapter.render(
+      makeRenderInput({ memberNumber: null, memberNumberDisplay: null }),
+    );
     const text = await extractPdfText(bytes);
     expect(text).not.toMatch(/Member No\./i);
     expect(text).not.toContain('หมายเลขสมาชิก');
   }, 60_000);
 
-  it('(c) historical snapshot (member_number=null after default) → NO Member No. line (byte-stable re-render)', async () => {
-    // A pre-feature invoice's JSONB had no member_number key; the zod .default(null)
-    // resolves it to null at read, so the template MUST omit the line — preserving
-    // the determinism/byte-stability guarantee for already-issued tax documents.
-    const { bytes } = await reactPdfRenderAdapter.render(makeRenderInput(null));
+  it('(c) historical snapshot (member_number_display=null after default) → NO Member No. line (byte-stable re-render)', async () => {
+    // A pre-feature invoice's JSONB had no member_number_display key; the zod
+    // .default(null) resolves it to null at read, so the template MUST omit the
+    // line — preserving the determinism/byte-stability guarantee for
+    // already-issued tax documents.
+    const { bytes } = await reactPdfRenderAdapter.render(
+      makeRenderInput({ memberNumber: null, memberNumberDisplay: null }),
+    );
     const text = await extractPdfText(bytes);
     expect(text).not.toMatch(/Member No\./i);
   }, 60_000);

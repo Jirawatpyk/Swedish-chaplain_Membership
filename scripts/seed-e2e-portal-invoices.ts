@@ -314,8 +314,10 @@ async function renderAndUploadPdf(
       address: '99/1 E2E Road, Bangkok',
       primary_contact_name: 'E2E Alpha',
       primary_contact_email: 'e2e-member@swecham.test',
-      // 055-member-number — snapshot now carries member_number (null = no line).
+      // 055-member-number — snapshot now carries member_number + the formatted
+      // member_number_display (both null here = no Member No. line on the PDF).
       member_number: null,
+      member_number_display: null,
     },
     lines: [
       {

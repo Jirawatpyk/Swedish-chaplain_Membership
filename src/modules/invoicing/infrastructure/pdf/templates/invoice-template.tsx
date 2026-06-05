@@ -276,17 +276,17 @@ export function InvoiceTemplate(input: PdfRenderInput) {
             <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
           )}
           {/*
-            055-member-number — the buyer's member number, pinned on the snapshot
-            at issue. Guarded `!== null` (NOT truthy): explicit so a future type
-            widen can't silently render `0`/`undefined`, and so a HISTORICAL
+            055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
+            pinned on the snapshot at ISSUE time (computed from the tenant prefix +
+            bare integer), so the buyer block matches the admin/portal/search
+            surfaces. Guarded `!== null` (NOT truthy): explicit so a future type
+            widen can't silently render `''`/`undefined`, and so a HISTORICAL
             snapshot (pre-feature JSONB → zod `.default(null)`) omits the line,
             preserving SC-003 byte-stable re-render of already-issued documents.
-            The value is the bare integer; the tenant display prefix is resolved
-            at admin/portal/search surfaces, NOT on the tax document.
           */}
-          {input.member.member_number !== null && (
+          {input.member.member_number_display !== null && (
             <Text style={styles.label}>
-              {shapeThai('หมายเลขสมาชิก')} / Member No.: {input.member.member_number}
+              {shapeThai('หมายเลขสมาชิก')} / Member No.: {input.member.member_number_display}
             </Text>
           )}
           {input.member.address.split('\n').map((line, i) => (

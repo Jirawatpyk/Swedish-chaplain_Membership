@@ -412,6 +412,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         // type's "no email" sentinel is '' per the zod union, not null).
         primary_contact_email: '',
         member_number: null,
+        member_number_display: null,
       },
     });
     const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
@@ -539,6 +540,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         primary_contact_name: 'Jane',
         primary_contact_email: 'jane@buyer.example',
         member_number: null,
+        member_number_display: null,
       },
       ...overrides,
     });
@@ -602,6 +604,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         primary_contact_name: 'Jane',
         primary_contact_email: 'jane@buyer.example',
         member_number: null,
+        member_number_display: null,
       },
     });
     const deps = makeDeps(
@@ -623,6 +626,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
               primary_contact_name: 'Jane',
               primary_contact_email: 'jane@buyer.example',
               member_number: null,
+              member_number_display: null,
             },
           });
     });
