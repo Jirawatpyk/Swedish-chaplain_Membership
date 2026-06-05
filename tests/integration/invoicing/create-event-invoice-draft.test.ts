@@ -290,12 +290,16 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
     expect(row!.vatSatang).toBeNull();
     expect(row!.totalSatang).toBeNull();
     // Non-member buyer snapshot pinned at DRAFT (THE Task-6b behaviour).
+    // 055-member-number — the snapshot persisted to JSONB now carries
+    // member_number: null (zod `.default(null)` via makeMemberIdentitySnapshot);
+    // the §105 receipt path must never carry a member number.
     expect(row!.memberIdentitySnapshot).toEqual({
       legal_name: 'Beta Imports Ltd',
       tax_id: '9876543210123',
       address: '50 Sukhumvit Road, Bangkok 10110',
       primary_contact_name: 'Jane Doe',
       primary_contact_email: 'jane@beta.example',
+      member_number: null,
     });
 
     // event_fee line = ticketPriceThb × 100 inclusive.

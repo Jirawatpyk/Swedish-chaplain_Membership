@@ -101,6 +101,8 @@ function makeEventRenderInput(opts: {
       address: '50 Sukhumvit Road, Bangkok 10110',
       primary_contact_name: 'Jane Doe',
       primary_contact_email: 'jane@beta.example',
+      // 055-member-number — event buyer has no member number → no Member No. line.
+      member_number: null,
     },
     lines: makeEventLine(),
     subtotal: Money.fromSatangUnsafe(100_000n), // 1,000.00 net

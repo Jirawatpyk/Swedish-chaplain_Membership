@@ -78,6 +78,8 @@ function makeInput(kind: PdfDocKind, templateVersion = 1): PdfRenderInput {
       address: '99/1 Sukhumvit Rd',
       primary_contact_name: 'John Doe',
       primary_contact_email: 'john@acme.example',
+      // 055-member-number — additive field on the snapshot (null → no line).
+      member_number: null,
     },
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),

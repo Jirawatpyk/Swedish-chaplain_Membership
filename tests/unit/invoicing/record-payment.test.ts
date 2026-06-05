@@ -411,6 +411,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         // Legacy/migrated snapshot row — no deliverable address (the snapshot
         // type's "no email" sentinel is '' per the zod union, not null).
         primary_contact_email: '',
+        member_number: null,
       },
     });
     const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
@@ -537,6 +538,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         address: '50 Sukhumvit Road',
         primary_contact_name: 'Jane',
         primary_contact_email: 'jane@buyer.example',
+        member_number: null,
       },
       ...overrides,
     });
@@ -599,6 +601,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         address: '50 Sukhumvit Road',
         primary_contact_name: 'Jane',
         primary_contact_email: 'jane@buyer.example',
+        member_number: null,
       },
     });
     const deps = makeDeps(
@@ -619,6 +622,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
               address: '50 Sukhumvit Road',
               primary_contact_name: 'Jane',
               primary_contact_email: 'jane@buyer.example',
+              member_number: null,
             },
           });
     });

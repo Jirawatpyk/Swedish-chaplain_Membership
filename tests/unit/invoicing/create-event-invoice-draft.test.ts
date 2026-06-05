@@ -71,6 +71,7 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
       address: 'TH',
       primary_contact_name: 'John',
       primary_contact_email: 'john@acme.example',
+      member_number: null,
     },
     ...overrides,
   };
@@ -214,12 +215,17 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
       expect(call.eventId).toBe(EVENT_ID);
       expect(call.eventRegistrationId).toBe(REG_ID);
       // Non-member buyer snapshot MUST be pinned at draft.
+      // 055-member-number — the event/non-member buyer has no member number;
+      // makeMemberIdentitySnapshot's zod `.default(null)` pins it null (the
+      // §105 receipt path must never carry a member number). See
+      // create-event-invoice-draft-member-number.test.ts for the dedicated lock.
       expect(call.memberIdentitySnapshot).toEqual({
         legal_name: 'Beta Imports Ltd',
         tax_id: '9876543210123',
         address: '50 Sukhumvit Road, Bangkok 10110',
         primary_contact_name: 'Jane Doe',
         primary_contact_email: 'jane@beta.example',
+        member_number: null,
       });
       // Model B — single event_fee line holds the VAT-INCLUSIVE total.
       const lines = call.lines as Invoice['lines'];
@@ -445,6 +451,7 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
             address: 'TH',
             primary_contact_name: 'John',
             primary_contact_email: 'john@acme.example',
+            member_number: null,
           },
         }),
       });
@@ -506,6 +513,7 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
             address: 'TH',
             primary_contact_name: 'Jane',
             primary_contact_email: 'jane@person.example',
+            member_number: null,
           },
         }),
       });

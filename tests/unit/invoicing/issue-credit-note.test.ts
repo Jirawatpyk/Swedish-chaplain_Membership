@@ -72,6 +72,7 @@ const BUYER_SNAP_WITH_EMAIL: MemberIdentitySnapshot = Object.freeze({
   address: '50 Sukhumvit Road, Bangkok 10110',
   primary_contact_name: 'Jane Doe',
   primary_contact_email: 'jane@beta.example',
+  member_number: null,
 });
 
 /**
@@ -88,6 +89,7 @@ const BUYER_SNAP_NO_EMAIL: MemberIdentitySnapshot = Object.freeze({
   address: '99 Charoen Krung Road, Bangkok 10500',
   primary_contact_name: 'Procurement Desk',
   primary_contact_email: '',
+  member_number: null,
 });
 
 /**
@@ -102,6 +104,7 @@ const BUYER_SNAP_NO_TIN: MemberIdentitySnapshot = Object.freeze({
   address: '99 Charoen Krung Road, Bangkok 10500',
   primary_contact_name: 'Walk-in Guest',
   primary_contact_email: 'walkin@example.com',
+  member_number: null,
 });
 
 /**

@@ -230,6 +230,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
           address: 'Bangkok',
           primary_contact_name: 'Test Contact',
           primary_contact_email: 'recipient@t105.test',
+          member_number: null,
         },
       })),
       markRegistrationFeePaid: vi.fn(async () => {}),
