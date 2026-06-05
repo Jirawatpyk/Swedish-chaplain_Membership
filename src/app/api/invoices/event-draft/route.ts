@@ -96,6 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const status =
       result.error.code === 'registration_not_found' ? 404
       : result.error.code === 'event_not_found' ? 404
+      : result.error.code === 'member_archived' ? 422
       : result.error.code === 'attendee_erased' ? 422
       : result.error.code === 'no_fee_free_event' ? 422
       : result.error.code === 'invalid_amount' ? 422

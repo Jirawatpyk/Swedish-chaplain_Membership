@@ -78,8 +78,10 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
   let nonMemberRegId: string;
   let matchedRegId: string;
   let companyNoTinRegId: string;
+  let archivedRegId: string;
   let memberId: string;
   let companyNoTinMemberId: string;
+  let archivedMemberId: string;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -90,8 +92,10 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
     nonMemberRegId = randomUUID();
     matchedRegId = randomUUID();
     companyNoTinRegId = randomUUID();
+    archivedRegId = randomUUID();
     memberId = randomUUID();
     companyNoTinMemberId = randomUUID();
+    archivedMemberId = randomUUID();
 
     await runInTenant(tenant.ctx, async (tx) => {
       // F2 plan — `memberTypeScope='company'` drives the §86/4 gate.
@@ -151,6 +155,21 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
         planYear: 2026,
       });
 
+      // F3 ARCHIVED member (HIGH-1) → matched-member event draft must reject it
+      // with `member_archived` (the live member-identity adapter derives
+      // isArchived from `archived_at IS NOT NULL`).
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: archivedMemberId,
+        companyName: 'Epsilon Archived Co',
+        country: 'TH',
+        taxId: '2222222222222',
+        planId,
+        planYear: 2026,
+        status: 'archived',
+        archivedAt: new Date('2026-01-15T00:00:00Z'),
+      });
+
       // F6 event.
       await tx.insert(events).values({
         tenantId: tenant.ctx.slug,
@@ -207,6 +226,23 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
         matchedMemberId: companyNoTinMemberId,
         ticketType: 'Standard',
         ticketPriceThb: 1500,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+
+      // Matched to the ARCHIVED member (HIGH-1).
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: archivedRegId,
+        eventId,
+        externalId: 'att_archived',
+        attendeeEmail: 'ops@epsilon.example',
+        attendeeName: 'Epsilon Ops',
+        attendeeCompany: 'Epsilon Archived Co',
+        matchType: 'member_domain',
+        matchedMemberId: archivedMemberId,
+        ticketType: 'Standard',
+        ticketPriceThb: 1800,
         paymentStatus: 'paid',
         registeredAt: new Date('2026-09-01T03:00:00Z'),
       } satisfies NewEventRegistrationRow);
@@ -307,6 +343,31 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       );
     expect(lineRows).toHaveLength(1);
     expect(lineRows[0]!.unitPriceSatang).toBe(200000n); // 2000 THB × 100
+  }, 30_000);
+
+  it('matched ARCHIVED member: rejects with member_archived and persists no invoice (HIGH-1)', async () => {
+    const deps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
+    const result = await createEventInvoiceDraft(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-archived-${archivedRegId}`,
+      eventRegistrationId: archivedRegId,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('member_archived');
+
+    // No draft invoice persisted for the archived-member registration.
+    const rows = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.eventRegistrationId, archivedRegId),
+        ),
+      );
+    expect(rows).toHaveLength(0);
   }, 30_000);
 
   it('duplicate guard: a second draft for the same registration → duplicate', async () => {

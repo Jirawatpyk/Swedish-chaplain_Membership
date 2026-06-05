@@ -20,8 +20,15 @@
  *      * MATCHED member (`reg.matchedMemberId !== null`) — the buyer is the
  *        F3 member; the snapshot is pinned at ISSUE (FR-038, like
  *        membership), so this draft carries `memberId` + a null snapshot.
- *        The §86/4 company tax-id gate runs here on the live member data so
- *        it can't be bypassed by going straight to issue.
+ *        The member is re-read live here only to (a) confirm it still
+ *        resolves and (b) reject an ARCHIVED member at draft (mirrors the
+ *        membership twin — an archived match would otherwise be un-issuable).
+ *        Unlike the membership path, EVENT invoices do NOT run the §86/4
+ *        company tax-id gate at draft (Task 9): the §86/4 doc-type decision
+ *        (full ใบกำกับภาษี vs §105 ใบเสร็จรับเงิน for a TIN-less buyer) is made
+ *        at ISSUE time in `issue-invoice.ts`, because the ticket was already
+ *        paid so a receipt is legally valid — a matched company member with
+ *        no TIN yields a receipt rather than blocking the draft.
  *      * NON-MEMBER attendee — there is NO member record to re-read at
  *        issue, so the manually-entered buyer identity is captured into the
  *        `member_identity_snapshot` AT DRAFT and persisted via
@@ -38,6 +45,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { EventRegistrationLookupPort } from '../ports/event-registration-lookup-port';
@@ -110,6 +118,7 @@ export type CreateEventInvoiceDraftInput = z.infer<typeof createEventInvoiceDraf
 export type CreateEventInvoiceDraftError =
   | { code: 'lookup_failed' }
   | { code: 'registration_not_found' }
+  | { code: 'member_archived' }
   | { code: 'attendee_erased' }
   | { code: 'no_fee_free_event' }
   | { code: 'invalid_amount' }
@@ -214,7 +223,22 @@ export async function createEventInvoiceDraft(
       const reg = regResult.value;
 
       // 2. Refuse drafting a fee invoice against a retention-purged attendee.
-      if (reg.pseudonymised) return err({ code: 'attendee_erased' });
+      if (reg.pseudonymised) {
+        // MEDIUM-4: log the non-fatal reject so ops can answer "why can't I
+        // invoice this attendee". IDs only — NO attendee name/email/company
+        // (the row is pseudonymised; its PII has been erased and must not be
+        // re-surfaced in logs). Mirrors the issue-invoice logger convention.
+        logger.warn(
+          {
+            event: 'event_invoice_draft_rejected_attendee_erased',
+            tenantId: input.tenantId,
+            eventId: reg.eventId,
+            eventRegistrationId: input.eventRegistrationId,
+          },
+          'createEventInvoiceDraft: attendee data erased (pseudonymised) — cannot draft event invoice',
+        );
+        return err({ code: 'attendee_erased' });
+      }
 
       // 3. Resolve the VAT-INCLUSIVE amount in satang (Model B — line carries
       // the all-in price; no VAT split at draft). `ticketPriceThb` is integer
@@ -270,6 +294,12 @@ export async function createEventInvoiceDraft(
         // dangling match) — treat as a not-found path. The error union carries
         // no `member_not_found`; the registration is effectively un-billable.
         if (!member) return err({ code: 'registration_not_found' });
+        // HIGH-1: an archived matched member must be rejected at DRAFT, mirroring
+        // the membership twin (create-invoice-draft.ts:128). issue-invoice.ts
+        // blocks an archived member with `member_archived` (issue-invoice.ts:240),
+        // so without this guard an archived match would draft successfully but be
+        // permanently un-issuable — a stuck draft. Reject early instead.
+        if (member.isArchived) return err({ code: 'member_archived' });
 
         memberId = reg.matchedMemberId;
         buyerSnapshot = null; // pinned at issue

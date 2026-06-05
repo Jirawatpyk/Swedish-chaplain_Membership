@@ -1720,6 +1720,7 @@
         "errors": {
           "noAttendee": "Select an attendee first.",
           "registration_not_found": "That attendee could not be found.",
+          "member_archived": "This member has been archived and cannot be invoiced. Restore the member first.",
           "event_not_found": "That event could not be found.",
           "attendee_erased": "This attendee's personal data has been erased and cannot be invoiced.",
           "no_fee_free_event": "This attendee has no ticket fee. Enter an amount to invoice them.",

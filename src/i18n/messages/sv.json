@@ -1720,6 +1720,7 @@
         "errors": {
           "noAttendee": "Välj en deltagare först.",
           "registration_not_found": "Den deltagaren kunde inte hittas.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "event_not_found": "Det evenemanget kunde inte hittas.",
           "attendee_erased": "Denna deltagares personuppgifter har raderats och kan inte faktureras.",
           "no_fee_free_event": "Denna deltagare har ingen biljettavgift. Ange ett belopp för att fakturera.",

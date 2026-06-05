@@ -254,6 +254,7 @@ export function EventFeeForm({
         ? // Only map codes we have copy for; otherwise fall back.
           [
             'registration_not_found',
+            'member_archived',
             'event_not_found',
             'attendee_erased',
             'no_fee_free_event',
