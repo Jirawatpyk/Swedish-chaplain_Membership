@@ -156,6 +156,53 @@ describe("enforceOneSubjectLine('membership') — exactly-one invariant on issue
   });
 });
 
+describe("enforceOneSubjectLine('event') — exactly-one invariant on issue", () => {
+  // LOW-14 — locks the event-subject 0/1/>1 behaviour so the shared-rule
+  // refactor of enforceOneSubjectLine cannot silently diverge either branch.
+  const makeLine = (kind: InvoiceLine['kind']): InvoiceLine =>
+    ({ kind }) as unknown as InvoiceLine;
+
+  it('returns ok with exactly one event_fee line', () => {
+    const r = enforceOneSubjectLine('event', [
+      makeLine('event_fee'),
+      makeLine('discount' as InvoiceLine['kind']),
+    ]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('returns err.no_event_fee_line when count === 0', () => {
+    const r = enforceOneSubjectLine('event', [
+      makeLine('discount' as InvoiceLine['kind']),
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('no_event_fee_line');
+    }
+  });
+
+  it('returns err.no_event_fee_line when lines is empty', () => {
+    const r = enforceOneSubjectLine('event', []);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('no_event_fee_line');
+    }
+  });
+
+  it('returns err.multiple_event_fee_lines with count when > 1', () => {
+    const r = enforceOneSubjectLine('event', [
+      makeLine('event_fee'),
+      makeLine('event_fee'),
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('multiple_event_fee_lines');
+      if (r.error.code === 'multiple_event_fee_lines') {
+        expect(r.error.count).toBe(2);
+      }
+    }
+  });
+});
+
 describe('assertSnapshotsSet — non-draft snapshot completeness', () => {
   const validDigest = Sha256Hex.ofUnsafe('a'.repeat(64));
   const makeBase = (overrides: Partial<Invoice> = {}): Invoice =>

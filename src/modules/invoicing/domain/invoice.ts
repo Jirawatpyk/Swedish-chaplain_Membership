@@ -249,30 +249,55 @@ export function isTerminal(status: InvoiceStatus): boolean {
 }
 
 /**
+ * LOW-14 — per-subject rule for the "exactly-one subject-defining line"
+ * invariant. Each subject pins (1) the line `kind` that must appear exactly
+ * once and (2) the two error builders for the 0-line and >1-line cases. A new
+ * invoice subject adds ONE entry here and cannot diverge the count logic from
+ * the other subjects (the count-and-compare lives in `enforceOneSubjectLine`,
+ * not per branch). Error codes + shapes are UNCHANGED — callers/tests pin the
+ * same `no_*_line` / `multiple_*_lines` contract.
+ */
+const SUBJECT_LINE_RULES: Record<
+  'membership' | 'event',
+  {
+    readonly kind: InvoiceLine['kind'];
+    readonly zero: InvoiceTransitionError;
+    readonly many: (count: number) => InvoiceTransitionError;
+  }
+> = {
+  membership: {
+    kind: 'membership_fee',
+    zero: { code: 'no_membership_line' },
+    many: (count) => ({ code: 'multiple_membership_lines', count }),
+  },
+  event: {
+    kind: 'event_fee',
+    zero: { code: 'no_event_fee_line' },
+    many: (count) => ({ code: 'multiple_event_fee_lines', count }),
+  },
+};
+
+/**
  * Draft invariant: exactly one subject-defining line required before
  * issue — `membership_fee` for a `'membership'` invoice, `event_fee`
  * for an `'event'` invoice. Enforced at Application layer on transition
  * to `issued`.
  *
- * The `'membership'` branch carries the `no_membership_line` /
+ * The `'membership'` rule carries the `no_membership_line` /
  * `multiple_membership_lines` error contract (formerly the standalone
  * `enforceOneMembershipLine`, removed in Task 7 once `issue-invoice` became
- * the last caller). The `'event'` branch mirrors the same shape for
- * `event_fee` lines.
+ * the last caller). The `'event'` rule mirrors the same shape for `event_fee`
+ * lines. Both are driven by the shared `SUBJECT_LINE_RULES` table (LOW-14) so
+ * the count-and-compare logic exists in exactly one place.
  */
 export function enforceOneSubjectLine(
   subject: 'membership' | 'event',
   lines: readonly InvoiceLine[],
 ): Result<void, InvoiceTransitionError> {
-  if (subject === 'event') {
-    const count = lines.filter((l) => l.kind === 'event_fee').length;
-    if (count === 0) return err({ code: 'no_event_fee_line' });
-    if (count > 1) return err({ code: 'multiple_event_fee_lines', count });
-    return ok(undefined);
-  }
-  const count = lines.filter((l) => l.kind === 'membership_fee').length;
-  if (count === 0) return err({ code: 'no_membership_line' });
-  if (count > 1) return err({ code: 'multiple_membership_lines', count });
+  const rule = SUBJECT_LINE_RULES[subject];
+  const count = lines.filter((l) => l.kind === rule.kind).length;
+  if (count === 0) return err(rule.zero);
+  if (count > 1) return err(rule.many(count));
   return ok(undefined);
 }
 
