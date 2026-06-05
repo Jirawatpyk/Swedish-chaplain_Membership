@@ -13,9 +13,15 @@ on-call for technical detail.
 
 **Last reviewed**: 2026-04-29 (Batch D T034 spec scaffolding)
 
-> **TODO**: F1 (Auth & RBAC), F4 (Invoices & Receipts), and F5 (Online
-> Payment) sections are part of the Constitution-mandated compliance
-> backlog and NOT in F7 scope. They MUST be authored before the next
+> **TODO**: F1 (Auth & RBAC) and F5 (Online Payment) sections are part of
+> the Constitution-mandated compliance backlog and NOT yet authored. The
+> **F4 (Invoices & Receipts)** RoPA is partially authored: the
+> **event-fee non-member-buyer sub-scope** (issuing §86/4 / §105 documents
+> to non-member event buyers + the 10-year PII-redaction cron) IS
+> documented below (added 2026-06-04 for branch `054-event-fee-invoices`),
+> but the **membership-invoicing F4 RoPA** (member buyers, credit notes,
+> tenant invoice settings, sequential numbering) remains backlog. All
+> outstanding sections MUST be authored before the next
 > chamber-of-commerce annual data-protection report cycle. Tracking:
 > see `.specify/memory/constitution.md` § Compliance — record-of-
 > processing requirement.
@@ -576,4 +582,258 @@ Existing F6 record already lists Vercel as hosting + OTel processor. F6.1 expand
 |---|---|
 | Erasure (Art. 17 / §30) | Cascades to error-CSV Blobs per `docs/runbooks/f6-manual-erasure.md § F6.1` (staff-review H-5). Operator queries `csv_import_records WHERE error_csv_expires_at > NOW()` for the affected event + run-time-range, `del()` the matching Blob URLs, emits `csv_import_error_csv_manually_erased` audit. Also clears DB columns. |
 | Access (Art. 15 / §30) | Existing F6 procedure covers attendee row export. F6.1 csv_import_records contains only operational metadata + counts (no attendee PII outside the linked event_registrations); not exported separately. |
+
+---
+
+## F4 — Event-Fee Invoices (non-member buyer)
+
+**Status**: IMPLEMENTED — branch `054-event-fee-invoices`. Event-fee
+invoice issuance + the 10-year PII-redaction cron are live behind the
+existing `FEATURE_F4_INVOICING` kill-switch.
+**Scope**: This entry documents ONLY the **event-fee** sub-scope of F4 —
+issuing a Thai-tax document to a **non-member event buyer** (a natural
+person / company representative who is NOT an F3 member) and the
+scheduled 10-year erasure of that buyer's PII. The **membership-invoicing
+F4 RoPA** (member buyers, credit notes, sequential numbering, tenant
+invoice settings) is a separate, still-backlog section (see top-of-file
+TODO). This entry codifies the record so the `/speckit.review` privacy
+gate can verify the implementation matches the documented processing.
+
+This section documents **two distinct processing activities**:
+
+1. **Issuance** — capturing non-member buyer PII to issue a §86/4 tax
+   invoice / §105 receipt for an event-ticket fee.
+2. **Retention-managed erasure** — the daily redaction cron that
+   tombstones the buyer PII + purges the PDF blob after the 10-year
+   statutory window. PDPA §39 / GDPR Art. 30 expect the
+   retention-management mechanism itself to be recorded.
+
+### Controller
+
+Same as F7 — the chamber tenant operating the Chamber-OS deployment
+(single-tenant F1 deployment = Thailand-Swedish Chamber of Commerce /
+SweCham / TSCC). For an event-fee invoice the chamber is the controller
+of the buyer's identity data: it decides to issue the tax document and
+holds the statutory obligation to retain it.
+
+### Processors
+
+- **Vercel Inc.** (US-incorporated; deployment region `sin1` Singapore)
+  — application hosting + function execution + **Vercel Blob storage of
+  the issued tax-document PDF(s)** (invoice + receipt). Covered by the
+  existing F1–F8 Vercel DPA + SCCs (F4 invoice PDF already uses Vercel
+  Blob — no new DPA required).
+- **Neon, Inc.** (US-incorporated; deployment region `ap-southeast-1`
+  Singapore) — Postgres database holding the `invoices` row +
+  `member_identity_snapshot` buyer PII. Existing DPA + SCCs.
+- **Resend Inc.** (US-incorporated) — **transactional** invoice/receipt
+  auto-email (the optional buyer copy). F4 reuses the F1+F4
+  transactional Resend surface (operational notification, NOT the F7
+  Broadcasts marketing surface). Existing DPA + SCCs.
+- **Upstash, Inc.** (Singapore) — Redis rate-limit cache. Existing DPA;
+  no buyer PII (only rate-limit counters).
+- **cron-job.org** — external HTTP scheduler triggering the daily
+  `POST /api/cron/invoicing/redact-expired-event-buyers` redaction
+  sweep. Bearer `CRON_SECRET` only; **no PII flows through cron-job.org**
+  (only the Bearer header + URL path). Not a processor under GDPR
+  Art. 28.
+
+No new processor is introduced by the event-fee sub-scope — all four
+data processors are already covered by existing F1–F8 DPAs.
+
+### Categories of data subjects
+
+- **Non-member event attendees / event-fee invoice buyers** — natural
+  persons who purchased an event ticket and require a tax document but
+  are NOT chamber members (`invoices.member_id IS NULL`,
+  `invoice_subject = 'event'`).
+- **Company representatives of a buyer organisation** — the named
+  primary contact of a company buyer (a natural person).
+
+### Categories of personal data
+
+All buyer PII is captured into the invoice `member_identity_snapshot`
+JSONB column at issue time (an immutable point-in-time snapshot) and the
+same PII is **printed on the issued PDF**:
+
+| Category | Field (in `member_identity_snapshot`) | Notes |
+|---|---|---|
+| **Identity** | `legal_name` | Buyer's legal name (natural person or company) — printed on the document |
+| **Tax identity** | `tax_id` | 13-digit Thai TIN (nullable — present → §86/4 tax invoice; absent → §105 receipt) |
+| **Contact** | `primary_contact_name` | Named representative (natural person) |
+| **Contact** | `primary_contact_email` | Buyer email — destination of the optional auto-email; printed/used for delivery only |
+| **Address** | `address` | Buyer billing address — printed on the document |
+
+**No special categories (Art. 9 / PDPA §26)** are processed — no health,
+religion, political opinion, racial origin, biometric, or genetic data.
+A buyer TIN is a tax-administration identifier, not a special category.
+
+### Purpose of processing
+
+Issue a **Thai-tax-compliant event-fee document** for the buyer's
+event-ticket fee:
+
+- **§86/4 tax invoice** (ใบกำกับภาษี) when the buyer supplies a TIN — the
+  Revenue Code requires a tax invoice carrying both parties' tax IDs.
+- **§105 receipt** (ใบเสร็จรับเงิน) when the buyer has no TIN — a plain
+  official receipt with no buyer TIN field.
+
+The doc-type gate is in the issuance use-case (membership invoices
+require a buyer TIN; event invoices downgrade to a receipt when the
+buyer has none). The buyer-identity capture is **necessary to satisfy
+the statutory tax-document content requirement** — it is not optional
+enrichment.
+
+### Lawful basis
+
+**Legal obligation** — **Thai Revenue Code §86/4** (tax-invoice content)
++ **§87/3** (10-year retention of tax documents); **GDPR Art. 6(1)(c)**
+(processing necessary for compliance with a legal obligation to which
+the controller is subject). The retention itself rests additionally on
+**GDPR Art. 5(1)(e)** (storage limitation) + **PDPA §28** — the data is
+kept no longer than the statutory window, then erased by the cron below.
+
+### Recipients of personal data
+
+- **The buyer** (the data subject) — receives the issued tax document,
+  and, if the chamber enables the auto-email, a copy via Resend
+  transactional email to `primary_contact_email`.
+- **Vercel Blob (processor)** — stores the issued PDF(s) at rest
+  (Singapore region). The PDF carries the same printed buyer PII.
+- **Chamber admins** (controller-role staff) — issue + view the document
+  in the admin portal.
+- **Thai Revenue Department** — the statutory recipient of the retained
+  tax document on audit (the reason for the 10-year retention).
+- **Chamber DPO + legal counsel** — may access any processing record
+  for compliance review.
+
+### Cross-border data transfers
+
+Same as F7 — **Singapore** (Vercel `sin1` / Neon `ap-southeast-1` /
+Upstash). Thailand → Singapore is covered by **Thailand PDPA §28**
+cross-border provisions; Swedish/EU buyer data subjects are covered by
+**GDPR Standard Contractual Clauses (SCCs)** with Vercel + Neon +
+Upstash. The optional Resend transactional auto-email transits Resend's
+regional infrastructure under its existing DPA + SCCs. No new
+cross-border path is introduced by the event-fee sub-scope.
+
+### Retention periods
+
+| Resource | Retention | Authority |
+|---|---|---|
+| `invoices` row + `member_identity_snapshot` buyer PII (event-subject, non-member) | **10 years from issue date** | Thai RD §87/3 (tax-document retention) — buyer PII tombstoned at the 10-year boundary by the cron below; the financial record (numbering, amounts) is preserved permanently as the §87/3 statutory document |
+| Issued tax-document PDF blob(s) (invoice + receipt) | **10 years from issue date** | Same §87/3 — PDF **bytes** purged at the boundary; the `pdf_blob_key` / `receipt_pdf_blob_key` reference columns are retained as the document identifier |
+| `audit_log` row `event_buyer_pii_redacted` | **10 years** | `F4_AUDIT_RETENTION_YEARS['event_buyer_pii_redacted'] = 10` — the erasure event keeps the §87/3 forensic window (the RD must see WHICH fields were minimised WHEN); **payload carries field NAMES only, never the erased PII values** |
+
+### Erasure mechanism (retention-managed erasure — distinct processing activity)
+
+After the 10-year statutory window elapses, the daily cron
+`POST /api/cron/invoicing/redact-expired-event-buyers` performs the
+storage-limitation erasure (GDPR Art. 5(1)(e) + Art. 17; PDPA §28). For
+every eligible row (`invoice_subject = 'event'` AND `member_id IS NULL`
+AND `status <> 'draft'` AND `issue_date < now() - 10 years` AND the
+snapshot is not already tombstoned) it:
+
+1. **Tombstones the 5 buyer-PII fields** in `member_identity_snapshot`
+   (`legal_name`, `address`, `primary_contact_name` → `'[REDACTED]'`;
+   `primary_contact_email` → `''`; `tax_id` → `NULL`), preserving the
+   JSONB structure so the non-draft `member_identity_snapshot IS NOT
+   NULL` CHECK still holds and **every financial / numbering column is
+   left untouched** (the §87/3 record is preserved).
+2. **Purges the PDF blob(s)** — deletes the invoice + receipt PDF
+   **bytes** from Vercel Blob (the same buyer PII is printed on them, so
+   DB-only tombstoning would be incomplete erasure). Reference columns
+   are kept as the document identifier. Blob delete is **best-effort +
+   non-fatal**: a failure logs `errKind` only (no PII) + bumps the
+   `invoicing_event_buyer_pii_redacted_total{outcome=error}` metric for
+   manual cleanup; it never rolls back the authoritative DB tombstone.
+3. **Emits `event_buyer_pii_redacted`** audit (10-year retention; payload
+   carries field NAMES + invoice_id + purged blob KEYS, **never the
+   erased PII values**) in the SAME transaction as the tombstone —
+   atomic.
+
+**Idempotent**: the eligibility predicate excludes already-tombstoned
+rows (`legal_name <> '[REDACTED]'`), so re-running only processes
+still-unredacted rows; retry-OFF on cron-job.org — the daily tick is the
+natural retry. **Membership invoices are NOT touched** (their buyer is a
+real F3 member governed by the F3/F9 member-lifecycle + GDPR-export
+surfaces).
+
+### Technical + organisational measures (TOMs)
+
+**Technical**:
+
+- **Tenant isolation (NON-NEGOTIABLE)** — Constitution v1.4.0 Principle I:
+  the `invoices` table has Postgres `ENABLE` + `FORCE ROW LEVEL
+  SECURITY` + tenant-isolation policy. The redaction cron mutates each
+  tenant's rows inside `runInTenant(ctx, tx)` so RLS + the
+  `app.current_tenant` GUC apply per tenant; only the cross-tenant
+  tenant-LIST read bypasses RLS (owner role, no GUC) as a maintenance
+  path gated by `CRON_SECRET`.
+- **Immutability trigger + GUC-gated PII-erasure path** —
+  `invoices_enforce_immutability` (migration 0019, amended 0205) locks
+  `member_identity_snapshot` (and every financial / numbering column)
+  the moment a row leaves `draft`, so the §87/3 financial record cannot
+  be altered. The redaction cron is the ONLY code path that sets
+  `SET LOCAL app.allow_pii_redaction = 'true'` (auto-resets at
+  tx-end); under that GUC the amended trigger permits **only**
+  `member_identity_snapshot` to change — every other column still
+  `RAISE`s. This is the sole, narrowly-scoped exemption to invoice
+  immutability.
+- **Append-only audit trail** — `event_buyer_pii_redacted` (10y) records
+  the erasure; the `audit_log` BEFORE UPDATE/DELETE triggers prevent
+  tampering.
+- **Log redaction** — pino `REDACT_PATHS` includes
+  `primary_contact_email` (snake + camel + nested forms) and
+  `member_identity_snapshot` / `memberIdentitySnapshot`, so buyer PII
+  never reaches the log aggregator. Cron error logs carry `errKind`
+  (constructor name) only — never SQL fragments or column values.
+- **Bearer-gated cron** — the redaction sweep authenticates with a
+  constant-time `verifyCronBearer(authorization, CRON_SECRET)`; an
+  unauthenticated call returns 401 with no data access.
+- **Encryption** — TLS in-flight (Vercel managed certs); Neon at-rest
+  AES-256 (DB + Blob).
+
+**Organisational**:
+
+- **Spec Kit `/speckit.review` privacy gate** before ship.
+- **Annual data-protection report** to the chamber bylaws committee.
+- **Incident response + cron runbooks** under `docs/runbooks/` —
+  redaction-cron operations in
+  `docs/runbooks/cron-jobs.md § F4 redact-expired-event-buyers`,
+  including the blob-delete-failure manual-cleanup alert bound to the
+  `…{outcome=error}` metric.
+- **PDPA §23 / GDPR Art. 13/14 privacy-notice footer** — the optional
+  auto-email that delivers the non-member buyer's invoice copy includes
+  a multilingual footer (`EventNonMemberFooter`, `copy.ts` Task 14) in
+  EN + TH + SV. The footer discloses that the buyer's PII was processed
+  solely to issue the §86/4 / §105 tax document and will be retained
+  for 10 years per §87/3, satisfying the Art. 13/14 "at time of
+  collection" transparency obligation.
+- **Solo-maintainer substitute** (Constitution v1.4.0 Principle IX +
+  Governance) governs the review workflow when no second human reviewer
+  is available.
+
+### Data subject rights — exercise procedures
+
+Non-member buyers have **no member portal account**, so DSRs are handled
+manually by the DPO (there is no self-service surface for a non-member).
+
+| Right (GDPR / PDPA equivalent) | Procedure |
+|---|---|
+| **Right to access (Art. 15 / §30)** | Manual DSR to the DPO; SQL query on `invoices WHERE invoice_subject='event' AND member_id IS NULL` for the buyer's email/name returns the stored `member_identity_snapshot`. |
+| **Right to rectification (Art. 16 / §31)** | An issued tax document is **immutable by law** (§86/4 + immutability trigger). A correction is handled the §86/10 way — issue a credit note / corrected document, not an in-place edit. |
+| **Right to erasure (Art. 17 / §32)** | The **automated storage-limitation erasure** is the daily redaction cron at the 10-year boundary (tombstone + blob purge, above). **Before** that boundary, erasure is constrained by the §87/3 legal-retention obligation (GDPR Art. 17(3)(b) — retention required for compliance with a legal obligation overrides erasure until the statutory window elapses); the DPO documents this lawful-basis-to-retain in any pre-window erasure request. |
+| **Right to restrict processing (Art. 18 / §33)** | Art. 18 requests for an individual buyer are handled via a manual DPO procedure (no self-service surface). The §87/3 legal-obligation basis means restriction can apply to **optional downstream uses** (e.g. the auto-email copy) but **NOT** the core 10-year tax retention — the chamber cannot restrict what Thai law mandates it keep. The `FEATURE_F4_INVOICING=false` kill-switch halts all new event-invoice issuance tenant-wide; it is an **emergency operational control**, not a per-subject restriction mechanism. |
+| **Right to object (Art. 21 / §32)** | Limited — processing rests on a legal obligation (Art. 6(1)(c)), not legitimate interest, so the Art. 21 objection right does not apply to the statutory retention; the auto-email copy can be declined (the chamber simply does not enable it / does not send). *(Note: Thai PDPA §32 covers both the erasure right [Art. 17, row above] and the objection right [Art. 21, this row] — the §32 citation appearing in both rows is correct.)* |
+
+### DPO contact
+
+Same as F7.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-06-04 | Initial F4 event-fee sub-scope entry created — issuance + 10-year redaction cron (branch `054-event-fee-invoices`, Task 16) | F4 event-fee implementation pass |
 

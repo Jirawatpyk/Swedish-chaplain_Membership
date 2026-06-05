@@ -34,6 +34,18 @@ export interface PdfRenderInput {
   readonly vatRate: VatRate;
   readonly vat: Money;
   readonly total: Money;
+  /**
+   * 054-event-fee-invoices — whether the document's amounts are VAT-INCLUSIVE
+   * (event Model B): the line totals carry the all-in (gross) ticket price and
+   * `subtotal`/`vat` are the back-calculated split. When true, the template
+   * renders a "ราคารวมภาษีมูลค่าเพิ่มแล้ว / VAT included" annotation near the
+   * totals so a Thai reader understands the line amount is gross while the
+   * subtotal is net. Membership invoices are VAT-EXCLUSIVE (`false`/omitted):
+   * the line amounts are net and VAT is added on top. Optional so existing
+   * callers (credit-note, void, preview, receipt re-render) default to
+   * exclusive without change.
+   */
+  readonly vatInclusive?: boolean;
   readonly voidReason?: string | null;
   /**
    * T078/T079 — credit-note-specific context. Required when

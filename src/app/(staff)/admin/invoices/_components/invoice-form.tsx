@@ -130,7 +130,7 @@ export function CreateDraftForm({
       onSubmit={submit}
       className="flex flex-col gap-[var(--page-section-gap)]"
     >
-      <div>
+      <div className="flex flex-col gap-[var(--field-label-gap)]">
         <Label htmlFor="memberId">{t('fields.memberId')}</Label>
         <SearchableCombobox
           id="memberId"

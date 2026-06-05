@@ -1,0 +1,22 @@
+-- 054-event-fee-invoices (Task 2+3) — add the `event_fee` value to the
+-- `invoice_line_kind` enum.
+--
+-- WHY ITS OWN MIGRATION (split from the 0201 schema migration):
+--   `ALTER TYPE ... ADD VALUE` adds a label to an existing enum. On
+--   PostgreSQL the newly-added enum value MUST NOT be referenced by any
+--   statement in the SAME transaction that adds it (the catalog change is
+--   not visible to that transaction). The drizzle-orm migrator wraps each
+--   migration file's statements together, so the ADD VALUE lives in this
+--   standalone, earlier-ordered file and any future code/migration that
+--   INSERTs an `event_fee` line runs in a later, separate transaction.
+--
+-- The Drizzle TS source-of-truth (`schema-invoice-lines.ts` →
+-- `invoiceLineKindEnum`) was already widened to include `'event_fee'`
+-- (Task 2); this migration makes the matching SQL value exist. No live
+-- code path constructs an `event_fee` line until the event-fee draft
+-- use-case lands (a later task), so widening the array before this value
+-- exists could never have produced an out-of-range INSERT.
+--
+-- Idempotent: `ADD VALUE IF NOT EXISTS` is a no-op if the label already
+-- exists (safe to re-apply after a manual partial run).
+ALTER TYPE "invoice_line_kind" ADD VALUE IF NOT EXISTS 'event_fee';

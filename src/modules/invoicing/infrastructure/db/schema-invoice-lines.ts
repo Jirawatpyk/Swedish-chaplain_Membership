@@ -19,9 +19,19 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 
+// NOTE: `'event_fee'` is added here as the TS source-of-truth for the
+// `kind` column's inferred insert/select type so the widened Domain
+// `INVOICE_LINE_KINDS` const (event-fee invoices, Task 2) typechecks
+// against the Drizzle insert shape. The matching SQL value is added by
+// the non-tx migration `ALTER TYPE invoice_line_kind ADD VALUE
+// 'event_fee'` (Task 3) — no live code path constructs an `event_fee`
+// line until the event-fee draft use-case lands alongside that
+// migration, so this array widening cannot produce an out-of-range
+// INSERT before the DB enum value exists.
 export const invoiceLineKindEnum = pgEnum('invoice_line_kind', [
   'membership_fee',
   'registration_fee',
+  'event_fee',
 ]);
 
 export const invoiceLines = pgTable(

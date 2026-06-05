@@ -193,6 +193,64 @@ describe('logger redaction (T158, T-14)', () => {
     expect(line).not.toContain(SENTINEL);
   });
 
+  // F054 — non-member buyer snapshot bare `legal_name` + `address` keys.
+  // BuyerSnapshot has these at the object root; no code currently logs
+  // the snapshot directly but defence-in-depth should auto-redact if it
+  // ever does. Covers depth-0, depth-1, and depth-2 (same convention as
+  // `tax_id` / `attendee_email`).
+  it('F054: redacts top-level legal_name, address and primary_contact_name', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        legal_name: `${SENTINEL}-legalname`,
+        address: `${SENTINEL}-address`,
+        primary_contact_name: `${SENTINEL}-contactname`,
+      },
+      'buyer snapshot top-level',
+    );
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-legalname`);
+    expect(line).not.toContain(`${SENTINEL}-address`);
+    expect(line).not.toContain(`${SENTINEL}-contactname`);
+    expect(line).toContain('[REDACTED]');
+  });
+
+  it('F054: redacts nested (depth-1) legal_name and address', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        buyer: {
+          legal_name: `${SENTINEL}-nested-legalname`,
+          address: `${SENTINEL}-nested-address`,
+        },
+      },
+      'buyer snapshot nested',
+    );
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-nested-legalname`);
+    expect(line).not.toContain(`${SENTINEL}-nested-address`);
+    expect(line).toContain('[REDACTED]');
+  });
+
+  it('F054: redacts depth-2 legal_name and address (audit-payload shape)', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        audit: {
+          payload: {
+            legal_name: `${SENTINEL}-deep-legalname`,
+            address: `${SENTINEL}-deep-address`,
+          },
+        },
+      },
+      'buyer snapshot depth-2',
+    );
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-deep-legalname`);
+    expect(line).not.toContain(`${SENTINEL}-deep-address`);
+    expect(line).toContain('[REDACTED]');
+  });
+
   // R2-I1 — F4 audit payload PII. Classified as PDPA/GDPR Cat-B in
   // `specs/007-invoices-receipts/security.md § 4`. Must NEVER leak to
   // logs even if a caller passes the full audit event object to pino.

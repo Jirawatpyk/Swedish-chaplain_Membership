@@ -93,6 +93,10 @@ export const f4AuditAdapter: AuditPort = {
       invoicingMetrics.crossTenantProbe('credit_note');
     } else if (event.eventType === 'tenant_invoice_settings_cross_tenant_probe') {
       invoicingMetrics.crossTenantProbe('tenant_invoice_settings');
+    } else if (event.eventType === 'registration_cross_tenant_probe') {
+      // 054-event-fee-invoices (Task 6b fix) — registration probe emitted by
+      // `createEventInvoiceDraft` on an ok(null) event-registration lookup.
+      invoicingMetrics.crossTenantProbe('registration');
     }
   },
 };

@@ -75,6 +75,9 @@ export const listInvoicesPagedSchema = z.object({
   search: z.string().optional(),
   includeDrafts: z.boolean().default(false),
   paidOnlineOnly: z.boolean().optional(),
+  // 054-event-fee-invoices — subject discriminator filter. Absent = all
+  // subjects; 'membership'/'event' restrict to that invoice kind.
+  invoiceSubject: z.enum(['membership', 'event']).optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -99,6 +102,7 @@ export async function listInvoicesPaged(
     search: input.search,
     includeDrafts: input.includeDrafts,
     paidOnlineOnly: input.paidOnlineOnly,
+    invoiceSubject: input.invoiceSubject,
   });
   return ok({ rows, total });
 }

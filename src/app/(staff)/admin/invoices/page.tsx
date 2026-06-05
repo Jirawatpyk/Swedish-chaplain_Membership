@@ -31,6 +31,8 @@ import {
 } from '@/modules/payments';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { runListEventNamesByIds } from '@/lib/events-admin-deps';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
@@ -52,6 +54,47 @@ const VALID_STATUSES = new Set([
 
 const PAGE_SIZE = 50;
 
+/**
+ * 054-event-fee-invoices Task 14 — compose the muted buyer-subtitle line.
+ *
+ * Event rows: `{event name} · {CE start date}`. The event name comes from
+ * the batched `eventNameById` map (resolved via the F6 barrel in the page
+ * body); the date is Bangkok-local CE (Buddhist Era is display-only, the
+ * list stays CE-consistent with issue/due dates). When the event isn't in
+ * the batch (lookup miss / archived → absent from `eventNameById`) we return
+ * `null` and the line is hidden — there's no date to show either. The
+ * `meta.name ? … : ceDate` branch is a defensive date-only fallback for a
+ * resolved-but-empty name, which cannot occur (events.name is NOT NULL) —
+ * never a crash, never a bare separator.
+ *
+ * Membership rows: the localised "Membership {year}" string built from
+ * `planYear` (already on the invoice row — no lookup needed). Null when a
+ * (legacy) membership row somehow lacks a plan_year.
+ *
+ * Returns `null` for anything else — the table omits the line entirely.
+ */
+function buildBuyerSubtitle(
+  row: {
+    readonly invoiceSubject: 'membership' | 'event';
+    readonly eventId: string | null;
+    readonly planYear: number | null;
+  },
+  eventNameById: ReadonlyMap<string, { name: string; startDateIso: string }>,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string | null {
+  if (row.invoiceSubject === 'event') {
+    if (row.eventId === null) return null;
+    const meta = eventNameById.get(row.eventId);
+    if (meta === undefined) return null;
+    const ceDate = bangkokLocalDate(meta.startDateIso);
+    // `·` is a literal separator (not i18n); the event name is data.
+    return meta.name ? `${meta.name} · ${ceDate}` : ceDate;
+  }
+  // Membership row.
+  if (row.planYear === null) return null;
+  return t('list.buyerSubtitle.membership', { year: row.planYear });
+}
+
 interface SearchParams {
   readonly q?: string;
   readonly status?: string;
@@ -61,6 +104,11 @@ interface SearchParams {
    * settled via card or PromptPay. Any other value (or absent) is OFF.
    */
   readonly paidOnline?: string;
+  /**
+   * 054-event-fee-invoices — `?subject=membership|event` restricts the
+   * list to one invoice subject. Any other value (or absent) = all.
+   */
+  readonly subject?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -112,8 +160,14 @@ export default async function AdminInvoicesPage({
     query.status && VALID_STATUSES.has(query.status) ? query.status : undefined;
   const includeDrafts = statusFilter === 'draft';
   const paidOnlineOnly = query.paidOnline === '1';
+  // 054-event-fee-invoices — subject filter. Only the two known subjects
+  // are honoured; any other value falls through to "all".
+  const subjectFilter =
+    query.subject === 'membership' || query.subject === 'event'
+      ? query.subject
+      : undefined;
   const hasFilters =
-    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly;
+    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly || Boolean(subjectFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -143,6 +197,7 @@ export default async function AdminInvoicesPage({
       : {}),
     ...(qTrim ? { search: qTrim } : {}),
     ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
+    ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -243,6 +298,29 @@ export default async function AdminInvoicesPage({
     }
   }
 
+  // 054-event-fee-invoices Task 14 — buyer-subtitle event names.
+  // Collect the DISTINCT event ids from the event rows on THIS page, then
+  // resolve their names + start dates in ONE batched query via the F6
+  // public barrel (Principle III — the cross-context read goes through the
+  // lib composition layer, never a JOIN inside F4 listPaged). The lookup is
+  // skipped entirely when the page has no event rows (the default all-
+  // membership view), so the common path pays zero extra DB cost.
+  const eventNameById = new Map<string, { name: string; startDateIso: string }>();
+  if (invoicesResult.ok) {
+    const eventIds = new Set<string>();
+    for (const r of invoicesResult.value.rows) {
+      if (r.invoiceSubject === 'event' && r.eventId !== null) {
+        eventIds.add(r.eventId);
+      }
+    }
+    if (eventIds.size > 0) {
+      const resolved = await runListEventNamesByIds(tenantCtx.slug, [...eventIds]);
+      for (const [id, meta] of resolved) {
+        eventNameById.set(id, meta);
+      }
+    }
+  }
+
   // Prefer the frozen snapshot on issued/paid/void invoices (FR-038) —
   // it's the legal source of truth and always present. Fall back to the
   // live directory map only for drafts (no snapshot yet). Ultimate
@@ -274,11 +352,32 @@ export default async function AdminInvoicesPage({
         invoiceId: r.invoiceId,
         documentNumber: r.documentNumber?.raw ?? '—',
         status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
-        memberId: r.memberId,
+        // 054-event-fee-invoices — subject discriminator drives the Event
+        // chip; the buyer column renders membership + event invoices alike.
+        invoiceSubject: r.invoiceSubject,
+        // The buyer name links to the F3 member ONLY when one exists:
+        // membership invoices always carry a `member_id`
+        // (`invoices_subject_fields_ck`), and a matched-member event invoice
+        // does too. A non-member event attendee has `member_id IS NULL` — its
+        // name renders as plain text (no broken `/admin/members/` link).
+        buyerHasMemberLink: r.memberId !== null,
+        // `memberId` is the link target; empty string when there is no member
+        // (event non-member) — the table never dereferences it in that case.
+        memberId: r.memberId ?? '',
+        // Buyer display name: the frozen identity snapshot (legal_name —
+        // present on issued/paid rows + non-member event drafts), else the
+        // live member-directory company name (drafts), else a placeholder.
         memberName:
           r.memberIdentitySnapshot?.legal_name ??
-          memberNameById.get(r.memberId) ??
+          (r.memberId !== null ? memberNameById.get(r.memberId) : undefined) ??
           '—',
+        // 054-event-fee-invoices Task 14 — muted buyer subtitle. Event rows
+        // show the event name + Bangkok-local CE start date (BE is display-
+        // only; the list stays CE-consistent). When the event isn't resolved
+        // (lookup miss / archived → absent from the batch) the subtitle is
+        // null (line hidden). Membership rows show the localised "Membership {year}"
+        // from `planYear` (already on the invoice row — no lookup needed).
+        buyerSubtitle: buildBuyerSubtitle(r, eventNameById, t),
         issueDate: r.issueDate,
         dueDate: r.dueDate,
         totalSatang: r.total?.satang.toString() ?? '0',

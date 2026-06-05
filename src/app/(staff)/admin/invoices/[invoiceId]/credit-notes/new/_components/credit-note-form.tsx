@@ -101,12 +101,32 @@ export function CreditNoteForm({
           error?: { code?: string };
         };
         const code = body.error?.code;
-        toast.error(t('errors.failed'), {
-          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
-        });
+        // §86/10 ruling (final-review HIGH 1) — a §105 ใบเสร็จรับเงิน
+        // (receipt_separate) cannot be credited. Surface the actionable
+        // guidance (refund / void) rather than a bare error code.
+        const description =
+          code === 'receipt_not_creditable'
+            ? t('errors.receiptNotCreditable')
+            : code
+              ? t('errors.codeFallback', { code })
+              : t('errors.unknown');
+        toast.error(t('errors.failed'), { description });
         return;
       }
-      toast.success(t('success'));
+      // MEDIUM-5 — read the email-delivery signal so the admin gets a
+      // non-blocking notice when the buyer has no email on file (the CN is
+      // still fully issued; only the auto-email was skipped). `sent` /
+      // `not_requested` / absent → plain success toast (nothing went wrong).
+      const successBody = (await res.json().catch(() => ({}))) as {
+        email_delivery?: string;
+      };
+      if (successBody.email_delivery === 'skipped_no_recipient') {
+        toast.success(t('success'), {
+          description: t('emailSkippedNoRecipient'),
+        });
+      } else {
+        toast.success(t('success'));
+      }
       // Destination page (`/admin/invoices/[id]`) is a server component
       // that fetches fresh on mount; `router.refresh()` here would
       // invalidate the abandoned form route, not the target. Drop it.

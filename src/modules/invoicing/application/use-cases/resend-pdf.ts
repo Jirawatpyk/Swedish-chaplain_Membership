@@ -40,9 +40,10 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
+import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
-import type { AuditPort } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
@@ -214,6 +215,27 @@ async function resendInvoiceOrReceipt(
     return err({ code: 'not_issued' });
   }
 
+  // Defence-in-depth: memberId null AND eventRegistrationId null is a
+  // structurally-impossible row (violates `invoices_subject_fields_ck` — a row
+  // is EITHER a member invoice OR a non-member event invoice). This guard runs
+  // BEFORE any side effect (outbox enqueue / audit emit): on such a row we
+  // cannot construct a valid audit payload (neither `member_id` nor
+  // `event_registration_id` correlates), so we must NOT have already sent the
+  // email by the time we return the error — otherwise the caller sees a
+  // failure while the buyer still receives the PDF. No PII in the log (ids
+  // only, per CLAUDE.md § Secrets).
+  if (invoice.memberId === null && invoice.eventRegistrationId === null) {
+    logger.warn(
+      {
+        event: 'resend_pdf_invoice_inconsistent_buyer',
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      },
+      'resendPdf: invoice has neither member_id nor event_registration_id — cannot audit resend',
+    );
+    return err({ code: 'not_issued' });
+  }
+
   const documentNumber = invoice.documentNumber?.raw ?? '';
   const outboxEventType =
     input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent';
@@ -238,25 +260,65 @@ async function resendInvoiceOrReceipt(
   // on the timeline alongside invoice_paid).
   const recipientHash = hashRecipientEmail(recipientEmail);
   if (outboxEventType === 'invoice_pdf_resent') {
-    await deps.audit.emit(null, {
-      tenantId: input.tenantId,
-      requestId: input.actor.requestId,
-      eventType: 'invoice_pdf_resent',
-      actorUserId: input.actor.userId,
-      // P2 Wave-0 (PDPA data-minimization): the `summary` column persists for
-      // the audit row's FULL retention (5–10y), exactly like the payload — it is
-      // NOT transient. So it must not carry plaintext PII. The hashed recipient
-      // lives in `payload.recipient_email_sha256` for correlation.
-      summary: `Invoice ${documentNumber} PDF resent (recipient hashed in payload)`,
-      payload: {
-        invoice_id: input.invoiceId,
-        member_id: invoice.memberId,
-        document_number: documentNumber,
-        recipient_email_sha256: recipientHash,
-        actor_role: input.actor.role,
-        pdf_template_version: pdf.templateVersion,
-      },
-    });
+    // P2 Wave-0 (PDPA data-minimization): the `summary` column persists for the
+    // audit row's FULL retention (5–10y), exactly like the payload — it is NOT
+    // transient. So it must not carry plaintext PII. The hashed recipient lives
+    // in `payload.recipient_email_sha256` for correlation.
+    const invoiceResentSummary = `Invoice ${documentNumber} PDF resent (recipient hashed in payload)`;
+    const invoiceResentPayloadBase = {
+      invoice_id: input.invoiceId,
+      document_number: documentNumber,
+      recipient_email_sha256: recipientHash,
+      actor_role: input.actor.role,
+      pdf_template_version: pdf.templateVersion,
+    } as const;
+    // 054-event-fee-invoices — `invoice_pdf_resent` is a member-timeline event.
+    //   MEMBERSHIP / matched-member (memberId non-null) → TIMELINE branch: the
+    //   payload carries `member_id` so the F3 member timeline surfaces the
+    //   resend (US7 / FR-033). UNCHANGED behaviour.
+    //
+    //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is not
+    //   an F3 member. We emit via `emitNonMemberInvoiceEvent` so the payload
+    //   carries `event_registration_id` and OMITS `member_id` entirely. The
+    //   former `invoice.memberId ?? ''` coalesce persisted `member_id: ''` on a
+    //   timeline-typed row → the members.last_activity_at trigger cast
+    //   `(payload->>'member_id')::uuid` → invalid_text_representation → silent
+    //   no-op + a structurally-invalid row on the 10-year tax-document trail.
+    if (invoice.memberId !== null) {
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        eventType: 'invoice_pdf_resent',
+        actorUserId: input.actor.userId,
+        summary: invoiceResentSummary,
+        payload: {
+          member_id: invoice.memberId,
+          ...invoiceResentPayloadBase,
+        },
+      });
+    } else if (invoice.eventRegistrationId !== null) {
+      // Non-member EVENT invoice. The DB CHECK `invoices_subject_fields_ck`
+      // guarantees `event_registration_id IS NOT NULL` whenever `member_id IS
+      // NULL`; TS only knows `memberId === null`, so re-narrow on the column.
+      await emitNonMemberInvoiceEvent(deps.audit, null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        eventType: 'invoice_pdf_resent',
+        eventRegistrationId: invoice.eventRegistrationId,
+        actorUserId: input.actor.userId,
+        summary: invoiceResentSummary,
+        extraPayload: invoiceResentPayloadBase,
+      });
+    } else {
+      // Unreachable: the impossible-buyer row (memberId null AND
+      // eventRegistrationId null) is rejected by the guard ABOVE the outbox
+      // enqueue, so by the time we reach this audit block one of the two
+      // branches above always applies. Kept for exhaustiveness — if it ever
+      // fires, the early guard regressed; return without emitting a malformed
+      // row rather than persisting one that correlates to neither a member nor
+      // a registration. (The structured warn already lives at the early guard.)
+      return err({ code: 'not_issued' });
+    }
   } else {
     await deps.audit.emit(null, {
       tenantId: input.tenantId,

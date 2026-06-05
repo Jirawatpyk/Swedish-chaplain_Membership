@@ -20,6 +20,8 @@ import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-emai
 import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
+import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
+import { eventDetailsLookupAdapter } from '../infrastructure/adapters/event-details-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
 import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-adapter';
 // `sharp` is a Node-only native dep (libvips → detect-libc →
@@ -32,6 +34,7 @@ import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-ad
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
+import type { CreateEventInvoiceDraftDeps } from './use-cases/create-event-invoice-draft';
 import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
@@ -61,6 +64,27 @@ export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraft
     planLookup: planLookupAdapter,
     audit: f4AuditAdapter,
     clock: systemClock,
+    newUuid: () => randomUUID(),
+  };
+}
+
+/**
+ * 054-event-fee-invoices (Task 6b) — composition for the event-fee draft
+ * use-case. The two F6 lookup adapters bridge into the events module through
+ * its public barrel; `memberIdentity` resolves the matched-member buyer (+
+ * the §86/4 company tax-id gate). No tenant-settings / plan / clock deps —
+ * event drafts do not pro-rate and do not read invoice settings (the VAT
+ * split happens at ISSUE).
+ */
+export function makeCreateEventInvoiceDraftDeps(
+  tenantId: string,
+): CreateEventInvoiceDraftDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
+    eventDetailsLookup: eventDetailsLookupAdapter,
+    memberIdentity: memberIdentityAdapter,
+    audit: f4AuditAdapter,
     newUuid: () => randomUUID(),
   };
 }

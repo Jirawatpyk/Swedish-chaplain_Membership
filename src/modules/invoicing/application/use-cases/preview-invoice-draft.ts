@@ -83,6 +83,10 @@ export async function previewInvoiceDraft(
     const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
     if (!settings) return err({ code: 'settings_missing' });
 
+    // 054-event-fee-invoices — preview is MEMBERSHIP-only today (the
+    // `invoices_subject_fields_ck` CHECK guarantees member_id for
+    // `invoice_subject='membership'`). Narrow before the buyer lookup.
+    if (draft.memberId === null) return err({ code: 'member_not_found' });
     const member = await deps.memberIdentity.getForIssue(tx, input.tenantId, draft.memberId);
     if (!member) return err({ code: 'member_not_found' });
 

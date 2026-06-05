@@ -1,0 +1,32 @@
+-- 054-event-fee-invoices (Task 15) — add the `event_buyer_pii_redacted`
+-- value to the shared `audit_event_type` enum.
+--
+-- WHY ITS OWN MIGRATION (split from the trigger migration 0205):
+--   `ALTER TYPE ... ADD VALUE` adds a label to an existing enum. On PostgreSQL
+--   the newly-added enum value MUST NOT be referenced by any statement in the
+--   SAME transaction that adds it (the catalog change is not yet visible to
+--   that transaction). The drizzle-orm migrator wraps each migration file's
+--   statements in one transaction, so the ADD VALUE lives in this standalone
+--   file; the redaction cron that emits this event runs in a separate, later
+--   transaction at runtime — never in this migration. Migration 0205 (the
+--   trigger CREATE OR REPLACE) does NOT reference this enum value, so the two
+--   migrations are order-independent w.r.t. the enum.
+--
+-- Emitted by the `/api/cron/invoicing/redact-expired-event-buyers` retention
+-- sweeper once a non-member EVENT-fee invoice issued more than 10 years ago has
+-- its buyer PII tombstoned in `member_identity_snapshot` (Thai RD §87/3 +
+-- §86/10 statutory retention satisfied → GDPR Art. 5(1)(e) / Art. 17
+-- minimisation requires erasure). Written to the shared `audit_log` via the F4
+-- audit adapter with 10-year retention (the underlying §86/4 tax document's
+-- forensic window covers the erasure record itself). Kept in lockstep with the
+-- TS `F4AuditEventType` union + `F4_AUDIT_RETENTION_YEARS` map (invoicing audit
+-- port) + the Drizzle `auditEventTypeEnum` mirror (auth schema) — the F4
+-- enum↔retention parity integration test enforces it.
+--
+-- The payload carries field NAMES only (`redacted_fields`) — NEVER the erased
+-- PII values — so re-running a forensic SELECT can prove WHICH columns were
+-- minimised WHEN without re-introducing the erased PII into the audit trail.
+--
+-- Idempotent: `ADD VALUE IF NOT EXISTS` is a no-op if the label already exists
+-- (safe to re-apply after a manual partial run).
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'event_buyer_pii_redacted';

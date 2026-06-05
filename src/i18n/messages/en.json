@@ -1461,9 +1461,11 @@
         "submitting": "Issuing…",
         "cancel": "Cancel",
         "success": "Credit note issued.",
+        "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
+          "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
           "codeFallback": "Error code: {code}"
         }
       },
@@ -1570,9 +1572,16 @@
           "dueDate": "Due",
           "total": "Total",
           "actions": "Actions",
-          "member": "Member",
+          "buyer": "Buyer",
           "method": "Method",
           "receiptNumber": "Receipt No."
+        },
+        "subjectChip": {
+          "event": "Event",
+          "eventAria": "Event-fee invoice"
+        },
+        "buyerSubtitle": {
+          "membership": "Membership {year}"
         },
         "statuses": {
           "draft": "Draft",
@@ -1589,7 +1598,13 @@
         "filteredEmpty": "No invoices match the current filters.",
         "filters": {
           "allStatuses": "All statuses",
-          "clearAll": "Clear filters"
+          "clearAll": "Clear filters",
+          "subject": {
+            "label": "Invoice type",
+            "all": "All types",
+            "membership": "Membership",
+            "event": "Event"
+          }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
@@ -1620,7 +1635,108 @@
       "new": {
         "title": "New invoice draft",
         "description": "Select a member and plan. You can preview before issuing.",
-        "cancel": "Back to list"
+        "cancel": "Back to list",
+        "type": {
+          "legend": "What is this invoice for?",
+          "membership": "Membership",
+          "membershipHint": "Annual membership fee for a member.",
+          "event": "Event fee",
+          "eventHint": "Ticket fee for an event attendee (member or non-member)."
+        }
+      },
+      "eventFeeForm": {
+        "eventPicker": {
+          "label": "Event",
+          "placeholder": "Pick an event…",
+          "search": "Search events…",
+          "empty": "No events match.",
+          "noEvents": "No events available"
+        },
+        "attendeePicker": {
+          "label": "Attendee",
+          "loading": "Loading attendees…",
+          "selectEventFirst": "Select an event to choose an attendee.",
+          "matchBadge": {
+            "matched": "Matched member",
+            "nonMember": "Non-member",
+            "unmatched": "Unmatched"
+          },
+          "noPaymentStatus": "—",
+          "noPrice": "No fee",
+          "price": "{amount} THB",
+          "rowAria": "{name}, {match}, {price}, payment {payment}",
+          "erasedTooltip": "This attendee's personal data has been erased — they can no longer be invoiced.",
+          "empty": {
+            "none": "This event has no registered attendees yet.",
+            "allErased": "All attendees for this event have had their personal data erased and cannot be invoiced."
+          }
+        },
+        "buyer": {
+          "legend": "Bill to",
+          "matchedReadonly": "Billed to {name}. The buyer's tax details are resolved from the member record when the invoice is issued.",
+          "nonMemberLegend": "Non-member buyer details",
+          "legalName": "Legal name",
+          "legalNamePlaceholder": "Company or individual legal name",
+          "address": "Address",
+          "addressPlaceholder": "Billing address",
+          "taxId": "Tax ID (optional)",
+          "taxIdPlaceholder": "13-digit Thai tax ID",
+          "contactName": "Contact name (optional)",
+          "contactEmail": "Contact email (optional)",
+          "errors": {
+            "legalNameRequired": "Legal name is required.",
+            "legalNameTooLong": "Legal name must be 500 characters or fewer.",
+            "addressRequired": "Address is required.",
+            "addressTooLong": "Address must be 1,000 characters or fewer.",
+            "taxIdFormat": "Tax ID must be exactly 13 digits.",
+            "contactEmailFormat": "Enter a valid email address."
+          }
+        },
+        "amount": {
+          "label": "Amount (VAT-inclusive)",
+          "help": "Pre-filled from the ticket price. Edit to override.",
+          "errors": {
+            "required": "Enter an amount.",
+            "min": "Amount must be at least 1 THB.",
+            "max": "Amount cannot exceed 1,000,000 THB."
+          }
+        },
+        "vatPreview": {
+          "label": "VAT-inclusive / ราคารวม VAT แล้ว",
+          "total": "Total (incl. VAT)",
+          "subtotal": "Subtotal",
+          "vat": "VAT 7%"
+        },
+        "docType": {
+          "taxInvoice": "Tax Invoice / ใบกำกับภาษี",
+          "receipt": "Receipt / ใบเสร็จรับเงิน",
+          "pending": "Document type set at issue",
+          "ariaTaxInvoice": "This invoice will be issued as a tax invoice because the buyer has a tax ID.",
+          "ariaReceipt": "This will be issued as a receipt because the buyer has no tax ID.",
+          "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued."
+        },
+        "submit": "Create event-fee draft",
+        "submitting": "Creating…",
+        "success": "Draft created",
+        "errors": {
+          "noAttendee": "Select an attendee first.",
+          "registration_not_found": "That attendee could not be found.",
+          "member_archived": "This member has been archived and cannot be invoiced. Restore the member first.",
+          "event_not_found": "That event could not be found.",
+          "attendee_erased": "This attendee's personal data has been erased and cannot be invoiced.",
+          "no_fee_free_event": "This attendee has no ticket fee. Enter an amount to invoice them.",
+          "invalid_amount": "The amount is out of range (1 – 1,000,000 THB).",
+          "buyer_required": "Buyer details are required for a non-member.",
+          "invalid_tax_id_format": "Tax ID must be exactly 13 digits.",
+          "invalid_buyer_snapshot": "Buyer details are incomplete or invalid.",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        },
+        "duplicateDialog": {
+          "title": "An invoice already exists",
+          "description": "An event-fee invoice has already been created for this attendee. View the existing invoice instead of creating a duplicate.",
+          "cancel": "Close"
+        }
       },
       "form": {
         "submit": "Create draft",
@@ -4511,7 +4627,11 @@
   },
   "email": {
     "invoiceIssued": {
-      "payOnlineCta": "Pay online now"
+      "payOnlineCta": "Pay online now",
+      "eventNonMemberFooter": {
+        "title": "Privacy notice",
+        "notice": "Your name and address were recorded solely to issue this tax document, retained for 10 years per Thai Revenue Code §87/3."
+      }
     },
     "refundConfirmation": {
       "subject": "Refund confirmation"

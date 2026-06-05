@@ -209,6 +209,60 @@ export const PAY_ONLINE_CTA: Record<InvoiceAutoEmailLocale, string> = {
 };
 
 /**
+ * 054-event-fee-invoices (Task 14) — PDPA privacy-notice footer for the
+ * auto-email of a NON-MEMBER event invoice. A walk-in / non-member buyer's
+ * identity (name + address) is processed solely to issue the §86/4 / §105
+ * tax document; PDPA + GDPR Art. 13/14 transparency expects the email that
+ * delivers that document to carry a short notice explaining why the buyer's
+ * PII was recorded and the §87/3 10-year retention basis. Rendered ONLY when
+ * the dispatcher threads `privacyFooterKind = 'event_non_member'` (set by
+ * `issueInvoice` for `invoiceSubject === 'event' && memberId === null`).
+ *
+ * Mirrored under `email.invoiceIssued.eventNonMemberFooter.*` in
+ * `src/i18n/messages/{en,th,sv}.json` so the trilingual CI coverage check
+ * (`pnpm check:i18n`) enforces parity — the template consumes the values
+ * from THIS matrix at render time (the F4 email pipeline does NOT thread
+ * `next-intl` into @react-email templates), exactly like `PAY_ONLINE_CTA`.
+ */
+export interface EventNonMemberFooterCopy {
+  readonly title: string;
+  readonly notice: string;
+}
+
+export const EVENT_NON_MEMBER_FOOTER: Record<
+  InvoiceAutoEmailLocale,
+  EventNonMemberFooterCopy
+> = {
+  en: {
+    title: 'Privacy notice',
+    notice:
+      'Your name and address were recorded solely to issue this tax document, ' +
+      'retained for 10 years per Thai Revenue Code §87/3.',
+  },
+  th: {
+    title: 'ประกาศความเป็นส่วนตัว',
+    notice:
+      'ชื่อและที่อยู่ของท่านถูกบันทึกเพื่อออกเอกสารภาษีฉบับนี้เท่านั้น ' +
+      'และจะเก็บรักษาไว้เป็นเวลา 10 ปี ตามประมวลรัษฎากร มาตรา 87/3',
+  },
+  sv: {
+    title: 'Integritetsmeddelande',
+    notice:
+      'Ditt namn och din adress registrerades enbart för att utfärda detta ' +
+      'skattedokument och sparas i 10 år enligt thailändska skattelagen §87/3.',
+  },
+};
+
+/**
+ * 054-event-fee-invoices (Task 14) — discriminator for the optional
+ * privacy-notice footer threaded from the issue use-case through the outbox
+ * row's `context_data` to the email renderer. `'event_non_member'` is the
+ * only kind today; the union leaves room for future PDPA footers without a
+ * boolean-flag explosion.
+ */
+export type PrivacyFooterKind = 'event_non_member';
+
+/**
  * Resolve the interpolated subject + body + CTA once per build. The
  * React template + plain-text fallback share this single string so
  * the two rendering paths stay bit-consistent — a divergence between

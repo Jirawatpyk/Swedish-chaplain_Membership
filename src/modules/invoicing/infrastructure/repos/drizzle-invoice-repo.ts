@@ -12,6 +12,7 @@ import {
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
+  type InvoiceSubjectFields,
 } from '../../domain/invoice';
 import {
   asInvoiceLineId,
@@ -114,6 +115,92 @@ function parseMemberIdentitySnapshot(row: InvoiceRow): MemberIdentitySnapshot {
   return result.data;
 }
 
+/**
+ * 054-event-fee-invoices — corrupt-row sentinel for the subject partition.
+ *
+ * The DB CHECK `invoices_subject_fields_ck` (migration 0208) GUARANTEES the
+ * per-subject NON-NULL / NULL invariants for every persisted row, so this is
+ * only ever thrown for a row that bypassed the CHECK (legacy seed, manual DB
+ * patch, regressed write). Throwing turns such a row into a loud failure
+ * instead of constructing an {@link Invoice} that lies to its consumers about
+ * which fields are non-null.
+ */
+export class MalformedInvoiceSubjectError extends Error {
+  constructor(invoiceId: string, detail: string) {
+    super(
+      `drizzle-invoice-repo: invoice ${invoiceId} violates ` +
+        `invoices_subject_fields_ck — ${detail}`,
+    );
+    this.name = 'MalformedInvoiceSubjectError';
+  }
+}
+
+/**
+ * 054-event-fee-invoices — map the row's subject columns into the
+ * subject-discriminated identity partition of the {@link Invoice} DU.
+ *
+ * Each arm is constructed explicitly (not spread-widened) so TypeScript checks
+ * the literal-typed members against {@link InvoiceSubjectFields}. The defensive
+ * checks mirror the DB CHECK `invoices_subject_fields_ck` exactly; a row that
+ * somehow violated the CHECK fails loud via {@link MalformedInvoiceSubjectError}
+ * rather than producing a mis-typed Invoice.
+ */
+/** @internal Exported for unit-test coverage of the 4 CHECK-violating throw branches. */
+export function rowToSubjectFields(row: InvoiceRow): InvoiceSubjectFields {
+  if (row.invoiceSubject === 'membership') {
+    if (row.memberId === null || row.planId === null || row.planYear === null) {
+      throw new MalformedInvoiceSubjectError(
+        row.invoiceId,
+        'membership row missing member_id/plan_id/plan_year',
+      );
+    }
+    if (
+      row.eventId !== null ||
+      row.eventRegistrationId !== null ||
+      row.vatInclusive !== false
+    ) {
+      throw new MalformedInvoiceSubjectError(
+        row.invoiceId,
+        'membership row carries event_id/event_registration_id or vat_inclusive=true',
+      );
+    }
+    return {
+      invoiceSubject: 'membership',
+      memberId: row.memberId,
+      planId: row.planId,
+      planYear: row.planYear,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+    };
+  }
+
+  // invoiceSubject === 'event'
+  if (row.eventId === null || row.eventRegistrationId === null) {
+    throw new MalformedInvoiceSubjectError(
+      row.invoiceId,
+      'event row missing event_id/event_registration_id',
+    );
+  }
+  if (row.planId !== null || row.planYear !== null) {
+    throw new MalformedInvoiceSubjectError(
+      row.invoiceId,
+      'event row carries plan_id/plan_year',
+    );
+  }
+  return {
+    invoiceSubject: 'event',
+    // member_id is OPTIONAL for the event subject: a matched member or a
+    // non-member buyer (null). Not constrained by the DB CHECK.
+    memberId: row.memberId ?? null,
+    planId: null,
+    planYear: null,
+    eventId: row.eventId,
+    eventRegistrationId: row.eventRegistrationId,
+    vatInclusive: row.vatInclusive,
+  };
+}
+
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
   if (row.documentNumber !== null) {
@@ -133,12 +220,19 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     BigInt(row.creditedTotalSatang as unknown as string),
   );
 
+  // 054-event-fee-invoices — construct the subject-discriminated identity
+  // partition (the `Invoice` DU is keyed on `invoice_subject`). The DB CHECK
+  // `invoices_subject_fields_ck` (migration 0208) GUARANTEES these invariants
+  // for every persisted row; the defensive throws below turn a corrupt row
+  // (legacy seed, manual DB patch, regressed write) into a loud
+  // MalformedInvoiceSubjectError instead of a mis-typed Invoice that lies to
+  // its consumers about which fields are non-null.
+  const subjectFields = rowToSubjectFields(row);
+
   return {
     tenantId: row.tenantId,
     invoiceId: asInvoiceId(row.invoiceId),
-    memberId: row.memberId,
-    planId: row.planId,
-    planYear: row.planYear,
+    ...subjectFields,
     status: row.status as InvoiceStatus,
     draftByUserId: row.draftByUserId,
 
@@ -266,17 +360,48 @@ export function makeDrizzleInvoiceRepo(
 
     async insertDraft(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
+      // 054-event-fee-invoices — `input` carries the subject-discriminated
+      // identity fields as the `InvoiceSubjectFields` DU (write-seam twin of
+      // the read model). Narrow on `invoiceSubject` and map only that arm's
+      // valid fields onto the row; the off-subject columns are the arm's typed
+      // `null` literal. Mirrors the read-seam `rowToSubjectFields`. DB columns
+      // are unchanged — this is a type-level tightening only.
+      const subjectColumns =
+        input.invoiceSubject === 'membership'
+          ? {
+              invoiceSubject: 'membership' as const,
+              memberId: input.memberId,
+              planId: input.planId,
+              planYear: input.planYear,
+              eventId: null,
+              eventRegistrationId: null,
+              vatInclusive: false,
+            }
+          : {
+              invoiceSubject: 'event' as const,
+              // member_id is OPTIONAL on the event arm: matched member (string)
+              // or non-member buyer (null).
+              memberId: input.memberId,
+              planId: null,
+              planYear: null,
+              eventId: input.eventId,
+              eventRegistrationId: input.eventRegistrationId,
+              vatInclusive: input.vatInclusive,
+            };
       const [insertedInvoice] = await tx
         .insert(invoices)
         .values({
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
-          memberId: input.memberId,
-          planId: input.planId,
-          planYear: input.planYear,
+          ...subjectColumns,
           status: 'draft',
           draftByUserId: input.draftByUserId,
           autoEmailOnIssue: input.autoEmailOnIssue,
+          // 054-event-fee-invoices (Task 6b) — pin the BUYER snapshot at draft
+          // for NON-MEMBER event attendees (no member row to re-read at issue).
+          // `undefined` (membership + matched-member callers) → DB null; the
+          // snapshot is then populated at ISSUE for those subjects (FR-038).
+          memberIdentitySnapshot: input.memberIdentitySnapshot ?? null,
         })
         .returning();
       if (!insertedInvoice) throw new Error('insertDraft: no row returned');
@@ -463,6 +588,11 @@ export function makeDrizzleInvoiceRepo(
           filters.push(eq(invoices.fiscalYear, opts.fiscalYear));
         }
         if (opts.memberId) filters.push(eq(invoices.memberId, opts.memberId));
+        if (opts.invoiceSubject) {
+          // 054-event-fee-invoices — subject filter (membership | event).
+          // Maps directly to the stored `invoice_subject` discriminator.
+          filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
+        }
         if (opts.search && opts.search.length > 0) {
           filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
         }

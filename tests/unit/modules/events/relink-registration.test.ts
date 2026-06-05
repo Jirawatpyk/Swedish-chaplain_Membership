@@ -182,6 +182,7 @@ function makeDeps(o: MockOverrides = {}): {
   const deps: RelinkRegistrationDeps = {
     eventsRepo: {
       findById: findEventByIdMock as never,
+      findByIds: vi.fn() as never,
       upsert: vi.fn() as never,
       findByExternalId: vi.fn() as never,
       list: vi.fn() as never,

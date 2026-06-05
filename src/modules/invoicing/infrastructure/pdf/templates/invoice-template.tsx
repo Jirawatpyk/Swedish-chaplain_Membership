@@ -79,6 +79,10 @@ const styles = StyleSheet.create({
   totalValue: { fontWeight: 500 },
   grand: { fontSize: 12, fontWeight: 700, marginTop: 4 },
   wordsLine: { marginTop: 8, fontSize: 9, color: '#333' },
+  // 054-event-fee-invoices — VAT-inclusive annotation under the totals block.
+  // Right-aligned so it sits beneath the grand-total figure; muted colour so it
+  // reads as a clarifying note, not a new line item.
+  vatInclusiveNote: { marginTop: 4, fontSize: 8, color: '#555', textAlign: 'right' },
   watermark: {
     position: 'absolute',
     top: 280,
@@ -341,6 +345,20 @@ export function InvoiceTemplate(input: PdfRenderInput) {
               {formatThbSatang(input.total.satang)}
             </Text>
           </View>
+          {/* 054-event-fee-invoices — VAT-inclusive (event Model B) annotation.
+              The single event_fee line carries the GROSS (all-in) ticket price,
+              while the subtotal above is the back-calculated NET amount and VAT
+              is the derived remainder. Without this label a Thai reader sees a
+              line total that doesn't equal the subtotal and could mistake the
+              document for an arithmetic error. Bilingual + placed directly under
+              the totals so the relationship (line gross = net + VAT) is explicit.
+              Membership invoices are VAT-EXCLUSIVE (vatInclusive falsy) → no
+              annotation, preserving byte-identical re-render for F4 documents. */}
+          {input.vatInclusive && (
+            <Text style={styles.vatInclusiveNote}>
+              {shapeThai('ราคารวมภาษีมูลค่าเพิ่มแล้ว')} / VAT included
+            </Text>
+          )}
         </View>
 
         <Text style={styles.wordsLine}>

@@ -3,25 +3,57 @@
  */
 
 import type { Satang } from '@/lib/money';
-import type { Invoice, InvoiceId, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
+import type {
+  Invoice,
+  InvoiceId,
+  InvoiceStatus,
+  InvoiceSubjectFields,
+} from '@/modules/invoicing/domain/invoice';
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 export interface InvoiceRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
   withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
 
-  /** Insert a new DRAFT invoice + its lines. Returns the persisted row. */
+  /**
+   * Insert a new DRAFT invoice + its lines. Returns the persisted row.
+   *
+   * 054-event-fee-invoices — the subject-specific identity fields
+   * (`invoiceSubject` + `memberId`/`planId`/`planYear` + `eventId`/
+   * `eventRegistrationId` + `vatInclusive`) are typed as the
+   * {@link InvoiceSubjectFields} DISCRIMINATED UNION (re-used verbatim from
+   * the Invoice read model — Application importing Domain is Clean-Architecture
+   * legal). This makes an identity-incoherent construction a COMPILE error,
+   * the symmetric twin of the read-model guarantee:
+   *   - `'membership'` arm ⇒ member_id/plan_id/plan_year NON-NULL, event_id/
+   *     event_registration_id `null`, `vatInclusive: false`.
+   *   - `'event'` arm ⇒ event_id/event_registration_id NON-NULL, plan_id/
+   *     plan_year `null`, member_id `string | null` (matched member or
+   *     non-member buyer), `vatInclusive: boolean`.
+   * `{ invoiceSubject: 'membership', eventId: 'x' }` no longer compiles — the
+   * runtime `invoices_subject_fields_ck` DB CHECK is now defence-in-depth, not
+   * the sole guard. The shared draft fields below stay flat.
+   *
+   * `memberIdentitySnapshot` (054-event-fee-invoices Task 6b — OPTIONAL):
+   *   The pinned BUYER snapshot. For the MEMBERSHIP path and the MATCHED-
+   *   MEMBER event path it is omitted / `null` — the buyer is an F3 member
+   *   re-read and snapshotted at ISSUE time (FR-038), so the draft carries
+   *   no snapshot. For a NON-MEMBER event attendee there is NO member row
+   *   to re-read at issue, so the manually-entered buyer identity MUST be
+   *   captured here and persisted into `member_identity_snapshot` at draft.
+   *   The `invoices_enforce_immutability` trigger only locks the snapshot
+   *   once `status != 'draft'`, so writing it at draft-insert is permitted.
+   */
   insertDraft(
     tx: unknown,
-    input: {
+    input: InvoiceSubjectFields & {
       readonly tenantId: string;
       readonly invoiceId: InvoiceId;
-      readonly memberId: string;
-      readonly planId: string;
-      readonly planYear: number;
       readonly draftByUserId: string;
       readonly autoEmailOnIssue: boolean | null;
+      readonly memberIdentitySnapshot?: MemberIdentitySnapshot | null;
       readonly lines: readonly InvoiceLine[];
     },
   ): Promise<Invoice>;
@@ -85,6 +117,9 @@ export interface InvoiceRepo {
       readonly search?: string | undefined;
       readonly includeDrafts?: boolean | undefined;
       readonly paidOnlineOnly?: boolean | undefined;
+      // 054-event-fee-invoices — restrict to a single invoice subject.
+      // Absent = all subjects (membership + event).
+      readonly invoiceSubject?: 'membership' | 'event' | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 
@@ -103,7 +138,13 @@ export interface InvoiceRepo {
       readonly vatRate: string;
       readonly vatSatang: Satang;
       readonly totalSatang: Satang;
-      readonly proRatePolicySnapshot: string;
+      /**
+       * 054-event-fee-invoices — NULL for `invoice_subject='event'` (pro-rating
+       * is membership-only). Required (non-null) for membership invoices; the
+       * relaxed `invoices_non_draft_has_snapshots` CHECK (migration 0203) enforces
+       * `pro_rate_policy_snapshot IS NOT NULL OR invoice_subject='event'`.
+       */
+      readonly proRatePolicySnapshot: string | null;
       readonly netDaysSnapshot: number;
       readonly tenantIdentitySnapshot: unknown;
       readonly memberIdentitySnapshot: unknown;

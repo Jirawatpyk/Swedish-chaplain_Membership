@@ -14,6 +14,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { logger } from '@/lib/logger';
+import { runListEvents, runResolveRegistrationEventId } from '@/lib/events-admin-deps';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,7 +25,9 @@ import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { CreateDraftForm, type MemberOption, type PlanOption } from '../_components/invoice-form';
+import { type MemberOption, type PlanOption } from '../_components/invoice-form';
+import { InvoiceCreateSwitcher } from './_components/invoice-create-switcher';
+import type { EventOption } from './_components/event-fee-form';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,6 +50,14 @@ export default async function NewInvoiceDraftPage({
   const memberIdParam = typeof sp.memberId === 'string' ? sp.memberId : undefined;
   const initialMemberId =
     memberIdParam && UUID_RE.test(memberIdParam) ? memberIdParam : undefined;
+
+  // Event-fee deep-link from the F6 attendee table ("Create invoice" CTA).
+  // UUID-validated here (same defence as ?memberId) so a malformed query
+  // string can't smuggle an attacker-chosen value into the client form.
+  const eventRegParam =
+    typeof sp.eventRegistrationId === 'string' ? sp.eventRegistrationId : undefined;
+  const initialRegistrationId =
+    eventRegParam && UUID_RE.test(eventRegParam) ? eventRegParam : undefined;
 
   const hdrs = await headers();
   const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
@@ -102,6 +116,48 @@ export default async function NewInvoiceDraftPage({
       })
     : [];
 
+  // Events — only when the F6 integration is live (the event-fee tab is
+  // hidden behind real attendee data; with F6 off the selector still shows
+  // but the Event tab renders the "no events" empty state). Loaded server-
+  // side so the picker is a fast searchable combobox over the tenant's
+  // events (ceiling 200 mirrors the F6 detail-endpoint pageSize cap).
+  let events: readonly EventOption[] = [];
+  let initialEventId: string | undefined;
+  if (env.features.f6EventCreate) {
+    const eventsResult = await runListEvents(tenantCtx.slug, {
+      page: 1,
+      pageSize: 200,
+      includeArchived: false,
+      partnerBenefitOnly: false,
+      culturalEventOnly: false,
+      categoryFilter: null,
+    });
+    if (eventsResult.ok) {
+      events = eventsResult.value.items.map((e) => ({
+        eventId: e.eventId,
+        // CE start date (Asia/Bangkok) — BE is display-only, applied at the
+        // user-facing renderer, not here. Matches the line-description date.
+        label: `${e.name} (${bangkokLocalDate(e.startDate)})`,
+      }));
+    } else {
+      logger.warn(
+        { event: 'invoice_new_events_load_failed', tenantId: tenantCtx.slug },
+        '[F4] /admin/invoices/new — listEvents failed; rendering empty Event tab',
+      );
+    }
+
+    // Resolve the deep-link registration → its event id so the event picker
+    // is pre-filled. A null (cross-tenant / missing) silently drops the
+    // pre-fill; the client still preselects the Event tab via the regId.
+    if (initialRegistrationId) {
+      initialEventId =
+        (await runResolveRegistrationEventId(
+          tenantCtx.slug,
+          initialRegistrationId,
+        )) ?? undefined;
+    }
+  }
+
   return (
     <FormContainer>
       <PageHeader
@@ -119,10 +175,13 @@ export default async function NewInvoiceDraftPage({
       />
       <Card>
         <CardContent>
-          <CreateDraftForm
+          <InvoiceCreateSwitcher
             members={members}
             plans={plans}
+            events={events}
             {...(initialMemberId ? { initialMemberId } : {})}
+            {...(initialEventId ? { initialEventId } : {})}
+            {...(initialRegistrationId ? { initialRegistrationId } : {})}
           />
         </CardContent>
       </Card>

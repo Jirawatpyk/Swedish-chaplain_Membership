@@ -165,6 +165,42 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
       }
     },
 
+    async findByIds(
+      tenantId: TenantId,
+      eventIds: ReadonlyArray<EventId>,
+    ): Promise<Result<ReadonlyMap<EventId, EventAggregate>, EventsRepositoryError>> {
+      // Empty input — short-circuit WITHOUT a query so the caller (F4
+      // invoices-list subtitle, 054 Task 14) pays zero DB cost on the
+      // common all-membership page. `inArray(col, [])` is also a SQL
+      // anti-pattern (some drivers emit `IN ()` → syntax error), so the
+      // guard doubles as correctness.
+      if (eventIds.length === 0) {
+        return ok(new Map());
+      }
+      try {
+        // Single batched SELECT. tenant_id is enforced by RLS but also
+        // included explicitly so the query uses the tenant_id-prefixed
+        // index (Principle I defence-in-depth, same posture as `list`).
+        const rows = await executor
+          .select()
+          .from(events)
+          .where(
+            and(
+              eq(events.tenantId, tenantId),
+              inArray(events.eventId, eventIds as EventId[]),
+            ),
+          );
+        const map = new Map<EventId, EventAggregate>();
+        for (const row of rows) {
+          const agg = toAggregate(row);
+          map.set(agg.eventId, agg);
+        }
+        return ok(map);
+      } catch (e) {
+        return err(wrapRepoError('events', e));
+      }
+    },
+
     async findByExternalId(
       tenantId: TenantId,
       source: Source,

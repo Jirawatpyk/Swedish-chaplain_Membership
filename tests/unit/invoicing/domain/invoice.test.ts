@@ -5,7 +5,8 @@
  *   - parseInvoiceId         — UUID validator
  *   - asInvoiceId            — trusted brand cast (1 trivial case)
  *   - isTerminal             — 6 status values
- *   - enforceOneMembershipLine — 0/1/many membership_fee lines
+ *   - enforceOneSubjectLine('membership', …) — 0/1/many membership_fee lines
+ *     (replaces the removed `enforceOneMembershipLine` delegate; Task 7)
  *   - assertSnapshotsSet     — 5 missing-field branches + happy
  *   - canTransition          — full transition table per data-model.md § 3.1
  *
@@ -16,7 +17,7 @@ import {
   parseInvoiceId,
   asInvoiceId,
   isTerminal,
-  enforceOneMembershipLine,
+  enforceOneSubjectLine,
   assertSnapshotsSet,
   canTransition,
   INVOICE_STATUSES,
@@ -105,7 +106,7 @@ describe('isTerminal — void + credited are terminal; others are not', () => {
   });
 });
 
-describe('enforceOneMembershipLine — exactly-one invariant on issue', () => {
+describe("enforceOneSubjectLine('membership') — exactly-one invariant on issue", () => {
   const makeLine = (kind: InvoiceLine['kind']): InvoiceLine =>
     ({
       kind,
@@ -114,7 +115,7 @@ describe('enforceOneMembershipLine — exactly-one invariant on issue', () => {
     }) as unknown as InvoiceLine;
 
   it('returns ok with exactly one membership_fee line', () => {
-    const r = enforceOneMembershipLine([
+    const r = enforceOneSubjectLine('membership', [
       makeLine('membership_fee'),
       makeLine('discount' as InvoiceLine['kind']),
     ]);
@@ -122,7 +123,7 @@ describe('enforceOneMembershipLine — exactly-one invariant on issue', () => {
   });
 
   it('returns err.no_membership_line when count === 0', () => {
-    const r = enforceOneMembershipLine([
+    const r = enforceOneSubjectLine('membership', [
       makeLine('discount' as InvoiceLine['kind']),
     ]);
     expect(r.ok).toBe(false);
@@ -132,7 +133,7 @@ describe('enforceOneMembershipLine — exactly-one invariant on issue', () => {
   });
 
   it('returns err.no_membership_line when lines is empty', () => {
-    const r = enforceOneMembershipLine([]);
+    const r = enforceOneSubjectLine('membership', []);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe('no_membership_line');
@@ -140,7 +141,7 @@ describe('enforceOneMembershipLine — exactly-one invariant on issue', () => {
   });
 
   it('returns err.multiple_membership_lines with count when > 1', () => {
-    const r = enforceOneMembershipLine([
+    const r = enforceOneSubjectLine('membership', [
       makeLine('membership_fee'),
       makeLine('membership_fee'),
       makeLine('membership_fee'),
@@ -150,6 +151,53 @@ describe('enforceOneMembershipLine — exactly-one invariant on issue', () => {
       expect(r.error.code).toBe('multiple_membership_lines');
       if (r.error.code === 'multiple_membership_lines') {
         expect(r.error.count).toBe(3);
+      }
+    }
+  });
+});
+
+describe("enforceOneSubjectLine('event') — exactly-one invariant on issue", () => {
+  // LOW-14 — locks the event-subject 0/1/>1 behaviour so the shared-rule
+  // refactor of enforceOneSubjectLine cannot silently diverge either branch.
+  const makeLine = (kind: InvoiceLine['kind']): InvoiceLine =>
+    ({ kind }) as unknown as InvoiceLine;
+
+  it('returns ok with exactly one event_fee line', () => {
+    const r = enforceOneSubjectLine('event', [
+      makeLine('event_fee'),
+      makeLine('discount' as InvoiceLine['kind']),
+    ]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('returns err.no_event_fee_line when count === 0', () => {
+    const r = enforceOneSubjectLine('event', [
+      makeLine('discount' as InvoiceLine['kind']),
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('no_event_fee_line');
+    }
+  });
+
+  it('returns err.no_event_fee_line when lines is empty', () => {
+    const r = enforceOneSubjectLine('event', []);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('no_event_fee_line');
+    }
+  });
+
+  it('returns err.multiple_event_fee_lines with count when > 1', () => {
+    const r = enforceOneSubjectLine('event', [
+      makeLine('event_fee'),
+      makeLine('event_fee'),
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('multiple_event_fee_lines');
+      if (r.error.code === 'multiple_event_fee_lines') {
+        expect(r.error.count).toBe(2);
       }
     }
   });

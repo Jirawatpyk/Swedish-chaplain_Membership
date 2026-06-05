@@ -31,6 +31,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | F5 stale-refund sweep | `POST /api/cron/sweep-stale-pending-refunds` | `0 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-refund-sweep.md](./stale-pending-refund-sweep.md) |
 | F4 outbox purge | `POST /api/cron/outbox-purge` | `15 20 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | (in `vercel.json`) |
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
+| **F4 redact-expired-event-buyers** (054 Task 15) | **`POST /api/cron/invoicing/redact-expired-event-buyers`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F4 redact-expired-event-buyers) |
 | **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
@@ -74,6 +75,108 @@ should look but harness MUST NOT retry":
 (every 30s for 1 hour) on a 500 response would hammer the endpoint
 during a Resend outage. The 15-min cadence already provides natural
 retry; the 500 status is purely a dashboard-paint-red signal.
+
+## F4 — redact-expired-event-buyers (NEW — 054 Task 15)
+
+Daily retention sweep that **tombstones the buyer PII** on NON-MEMBER
+event-fee invoices once their 10-year statutory retention window has
+elapsed. Thai RD §87/3 + §86/10 require a §86/4 tax document be retained
+for 10 years; once that elapses, GDPR Art. 5(1)(e) (storage limitation) +
+Art. 17 (erasure) require the personal data on it be minimised.
+
+### What it does
+
+For every tenant with invoice settings, inside `runInTenant`:
+
+1. `SET LOCAL app.allow_pii_redaction = 'true'` — authorises the
+   buyer-PII change for THIS transaction only (auto-resets at tx end,
+   mirroring the `app.current_tenant` GUC). See § "GUC mechanism" below.
+2. Selects eligible rows (the **predicate**):
+   ```sql
+   invoice_subject = 'event'
+     AND member_id IS NULL                         -- non-member buyer only
+     AND status <> 'draft'                          -- issued/paid/void/credited
+     AND issue_date < (now() - interval '10 years') -- retention elapsed
+     AND member_identity_snapshot IS NOT NULL
+     AND (member_identity_snapshot->>'legal_name') <> '[REDACTED]'  -- idempotent skip
+   ```
+3. For each, UPDATEs `member_identity_snapshot` to a tombstone preserving
+   STRUCTURE: `legal_name` / `address` / `primary_contact_name` →
+   `'[REDACTED]'`, `primary_contact_email` → `''`, `tax_id` → `null`.
+   **Every financial / §87-numbering / pdf field is left untouched** —
+   the §87/3 statutory record and any future RD audit still need them.
+4. Emits one `event_buyer_pii_redacted` audit row per redaction, IN THE
+   SAME TX as the UPDATE (atomic — a rollback removes both). 10-year
+   retention. Payload carries `invoice_id`, `redacted_at`, and
+   `redacted_fields` (field NAMES only — **never** the erased PII values).
+
+Membership invoices are **not** touched: their buyer is a real F3 member
+(`member_id IS NOT NULL`) whose PII retention is governed by the F3/F9
+member-lifecycle + GDPR-export surfaces.
+
+### Idempotency
+
+The predicate's last clause (`legal_name <> '[REDACTED]'`) excludes
+already-tombstoned rows, so re-running only ever processes
+still-unredacted rows. Re-running emits no duplicate audit row.
+
+### GUC mechanism (the immutability bypass)
+
+`invoices_enforce_immutability` (migration 0019, amended **0205**) locks
+`member_identity_snapshot` the moment a row leaves `draft`. The amended
+trigger adds a GUC-gated exemption that fires ONLY when
+`current_setting('app.allow_pii_redaction', true) = 'true'`. Inside that
+branch **only** `member_identity_snapshot` may change — every other
+snapshot / numbering / financial / identity column still RAISES
+`check_violation` if touched (the exemption is buyer-PII-only). When the
+GUC is unset (every normal write path), the trigger falls through to the
+unchanged normal-path check that locks `member_identity_snapshot` along
+with all the other columns. **Only this cron sets the GUC.**
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · F4 redact-expired-event-buyers`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/invoicing/redact-expired-event-buyers`
+   - **Schedule**: `0 5 * * *` (daily 05:00 UTC = 12:00 ICT — low-traffic;
+     the 10-year cutoff has >24h tolerance so a missed daily tick is not a
+     correctness issue, the next tick catches up)
+   - **Request method**: `POST`
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7/F8)
+   - **Timeout**: 60 seconds
+   - **Retry on failure**: **OFF** (per § Retry policy contract — the sweep
+     is idempotent + the next daily tick is the natural retry)
+   - **Notifications**: email on ≥3 consecutive failures
+3. Click **Run** to verify a 200 OK response:
+   ```json
+   { "ok": true, "redactedCount": 0, "tenantsSwept": 1, "tenantsErrored": 0 }
+   ```
+   `redactedCount: 0` is the expected steady state until a SweCham event
+   invoice actually crosses its 10th anniversary.
+
+### Expected response codes
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `redactedCount: 0` | Healthy steady state (nothing due) | None |
+| 200 + `redactedCount > 0` | Buyer PII tombstoned this tick | None — expected once invoices age past 10y |
+| 200 + `tenantsErrored > 0` | A per-tenant sweep threw (DB blip / GUC/trigger failure) — others unaffected | Inspect Vercel logs `cron.redact_expired_event_buyers.tenant_threw`; alert binds to `invoicing_event_buyer_pii_redacted_total{outcome=error}` |
+| 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |
+| 500 + `tenant_list_failed` | Scan-level failure (tenant-list query) | Investigate DB connectivity; harness retries next tick |
+
+### Alert rules
+
+- `invoicing_event_buyer_pii_redacted_total{outcome=error}` non-zero rate
+  over 24h pages on-call — the §87/3 + GDPR Art. 17 erasure obligation is
+  then NOT being met.
+- The 10-year forensic record is the `event_buyer_pii_redacted` audit row
+  (10y retention) — a future RD/DSAR audit reads it to prove WHICH columns
+  were minimised WHEN.
+
+### Handler module
+
+`src/app/api/cron/invoicing/redact-expired-event-buyers/route.ts`
 
 ## F7 — broadcasts/dispatch-scheduled (NEW — F7 ship)
 

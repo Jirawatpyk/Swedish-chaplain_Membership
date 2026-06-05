@@ -21,7 +21,30 @@ import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 import { stripReason } from '../invoices/_serialise';
 import { serialiseCreditNote } from './_serialise';
-import type { IssueCreditNoteError } from '@/modules/invoicing';
+import type {
+  IssueCreditNoteError,
+  CreditNoteEmailDelivery,
+} from '@/modules/invoicing';
+
+// FIX 8 (Round-2 code-review) — explicit 201 body type. The serialised
+// credit-note fields are spread, then `email_delivery` rides as a sibling
+// (MEDIUM-5). Without an explicit type a FUTURE `email_delivery` field on
+// `serialiseCreditNote` would SILENTLY collide (the sibling would shadow it).
+// The guard below turns that into a compile error.
+type SerialisedCreditNote = ReturnType<typeof serialiseCreditNote>;
+
+// Compile-time guard: `serialiseCreditNote` MUST NOT itself declare an
+// `email_delivery` key — it would collide with the route's sibling field.
+// `HasEmailDeliveryKey` is `true` iff the serialiser grows such a key; the
+// const below is typed `false`, so a collision fails `tsc` here.
+type HasEmailDeliveryKey = 'email_delivery' extends keyof SerialisedCreditNote
+  ? true
+  : false;
+const _assertNoEmailDeliveryCollision: false = false as HasEmailDeliveryKey;
+
+interface CreditNoteResponseBody extends SerialisedCreditNote {
+  readonly email_delivery: CreditNoteEmailDelivery;
+}
 
 // SG-7 — error-code → HTTP status lookup. Cleaner than a nested
 // ternary chain and easier to extend when new typed errors land.
@@ -34,6 +57,14 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   credit_exceeds_remainder: 409,
   settings_missing: 422,
   no_snapshot_on_invoice: 422,
+  // LOW-12 — a corrupted event invoice (subject='event' but no
+  // event_registration_id) is a data-integrity error, not a transient
+  // conflict. 422: well-formed request, but the persisted row cannot be acted on.
+  invalid_event_invoice: 422,
+  // §86/10 ruling (final-review HIGH 1) — crediting a §105 ใบเสร็จรับเงิน
+  // (receipt_separate) is a legally-invalid request, not a transient conflict.
+  // 422 Unprocessable Entity: the request is well-formed but cannot be acted on.
+  receipt_not_creditable: 422,
   overflow: 422,
   pdf_render_failed: 500,
   blob_upload_failed: 500,
@@ -138,5 +169,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  return NextResponse.json(serialiseCreditNote(result.value), { status: 201 });
+  // MEDIUM-5 — surface the email-delivery signal alongside the serialised CN so
+  // the client success path can show a non-blocking notice when the buyer has
+  // no email on file (`skipped_no_recipient`). The serialiser handles the CN
+  // shape; `email_delivery` rides as a sibling field. FIX 8 — the explicit
+  // `CreditNoteResponseBody` makes a future serialiser-side `email_delivery`
+  // key a compile error rather than a silent override.
+  const responseBody: CreditNoteResponseBody = {
+    ...serialiseCreditNote(result.value.creditNote),
+    email_delivery: result.value.emailDelivery,
+  };
+  return NextResponse.json(responseBody, { status: 201 });
 }

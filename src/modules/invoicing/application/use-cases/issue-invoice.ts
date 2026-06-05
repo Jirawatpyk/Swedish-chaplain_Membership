@@ -6,6 +6,8 @@
  * Canonical lock order (documented below so reviewers can spot-check):
  *   1. invoice row FOR UPDATE (lockForUpdate — serialises concurrent issues)
  *   2. member FOR UPDATE (archive-race guard FR-037)
+ *      — SKIPPED for non-member event invoices (buyer snapshot pinned at
+ *        draft; there is no F3 member row to lock)
  *   3. pg_advisory_xact_lock('invoicing:{tenant}:{doc_type}:{fy}')
  *   4. tenant_document_sequences FOR UPDATE (inside allocator)
  *
@@ -29,7 +31,8 @@
  *
  * Operations (all inside a single DB transaction):
  *   A. load tenant settings (no lock; read-only snapshot)
- *   B. load + lock member (archive-race guard)
+ *   B. load + lock member (archive-race guard — SKIPPED for non-member
+ *      event invoices; buyer snapshot was pinned at draft)
  *   C. load + lock invoice draft
  *   D. compute fiscal year (Bangkok TZ)
  *   E. allocate sequence number
@@ -60,14 +63,14 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
-import type { PdfRenderPort } from '../ports/pdf-render-port';
+import type { PdfDocKind, PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
   asInvoiceId,
-  enforceOneMembershipLine,
+  enforceOneSubjectLine,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
@@ -77,6 +80,12 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
+import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
+import {
+  buyerHasTin,
+  inferEventDocumentKind,
+} from '@/modules/invoicing/domain/document-kind';
+import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
@@ -101,6 +110,13 @@ export type IssueInvoiceError =
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
   | { code: 'tax_id_required' }
+  /**
+   * 054-event-fee-invoices — a NON-member event invoice reached issue without a
+   * buyer snapshot pinned at draft. `createEventInvoiceDraft` always pins the
+   * non-member buyer snapshot, so this is a data-integrity guard (corrupted /
+   * hand-written draft) rather than a normal flow.
+   */
+  | { code: 'no_buyer_snapshot' }
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
@@ -198,39 +214,78 @@ export async function issueInvoice(
     const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
 
-    // B. Member lock (FR-037 archive-race)
-    const member = await deps.memberIdentity.getForIssue(
-      tx,
-      input.tenantId,
-      draft.memberId,
-      { forUpdate: true },
-    );
-    if (!member) return err({ code: 'member_not_found' });
-    if (member.isArchived) return err({ code: 'member_archived' });
-
-    // S1-P1-16 — a Thai tax invoice for a COMPANY member must carry the buyer's
-    // tax_id (FR-009a / Revenue Code §86). Person tiers (memberTypeScope
-    // 'individual'/'both'/null) are exempt. Early-exit BEFORE allocateNext so a
-    // missing tax_id never burns a §87 sequence number. Defense-in-depth: the
-    // member importer already requires tax_id at company-member entry.
+    // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7).
     //
-    // KNOWN FUTURE-TENANT GAP: a `'both'`-scope plan admits BOTH company and
-    // person members, so a company entity on a 'both' plan would be exempted
-    // here. No SweCham 2026 plan uses 'both' (corporate tiers are 'company',
-    // partnership tiers 'individual'), so there is no live defect. A future
-    // tenant introducing a 'both' plan with company members must re-scope this
-    // gate to the member's entity type rather than the plan scope.
-    if (
-      member.memberTypeScope === 'company' &&
-      (member.snapshot.tax_id ?? '').trim() === ''
-    ) {
-      return err({ code: 'tax_id_required' });
+    //   MEMBERSHIP invoice (memberId non-null) → re-read + LOCK the member
+    //   (FR-037 archive-race), snapshot pinned HERE at issue. Also matched-
+    //   member EVENT invoices take this branch (their buyer is an F3 member and
+    //   the draft pins the snapshot at issue, not draft).
+    //
+    //   NON-MEMBER event invoice (memberId null) → there is NO F3 member to
+    //   read; the buyer snapshot was pinned at DRAFT by createEventInvoiceDraft.
+    //   Use that pre-pinned snapshot directly; do NOT call getForIssue.
+    //
+    // The `invoices_subject_fields_ck` DB CHECK guarantees member_id IS NOT NULL
+    // for `invoice_subject='membership'`, so a null memberId here implies an
+    // event invoice with a non-member buyer.
+    const memberId = draft.memberId;
+    let memberSnap: MemberIdentitySnapshot;
+    if (memberId !== null) {
+      const member = await deps.memberIdentity.getForIssue(
+        tx,
+        input.tenantId,
+        memberId,
+        { forUpdate: true },
+      );
+      if (!member) return err({ code: 'member_not_found' });
+      if (member.isArchived) return err({ code: 'member_archived' });
+      memberSnap = member.snapshot;
+    } else {
+      // Non-member event buyer — the snapshot was pinned at draft. Validate it
+      // is present (data-integrity guard; the draft use-case always pins it).
+      if (draft.memberIdentitySnapshot === null) {
+        return err({ code: 'no_buyer_snapshot' });
+      }
+      memberSnap = draft.memberIdentitySnapshot;
     }
 
-    // Domain invariant — exactly one membership_fee line required
-    // before issue (spec § invariant). Runs BEFORE allocateNext so a
-    // malformed draft cannot consume a §87 sequence number.
-    const linesCheck = enforceOneMembershipLine(draft.lines);
+    // §86/4 doc-type gate (054-event-fee-invoices Task 9) — subject-based, NOT
+    // tier-based. The PDF document kind is chosen at ISSUE from
+    // `invoiceSubject` + whether the resolved BUYER snapshot carries a 13-digit
+    // TIN:
+    //
+    //   MEMBERSHIP + TIN     → kind 'invoice' (ใบกำกับภาษี / full tax invoice)
+    //   MEMBERSHIP + no TIN  → BLOCK `tax_id_required` (a chamber cannot issue a
+    //                          §105 receipt pre-payment, nor a §86/6 abbreviated
+    //                          tax invoice without RD approval). Every membership
+    //                          buyer must have a TIN — Thai individuals have a
+    //                          national-ID-as-TIN, so it is always obtainable.
+    //   EVENT + TIN          → kind 'invoice' (buyer can claim input VAT)
+    //   EVENT + no TIN       → kind 'receipt_separate' (ใบเสร็จรับเงิน / §105
+    //                          receipt — VALID, the ticket was already paid; NO
+    //                          block).
+    //
+    // Supersedes the prior tier-based S1-P1-16 company-only gate: the rule is now
+    // "every MEMBERSHIP invoice requires a buyer TIN" regardless of plan
+    // memberTypeScope (individual buyers have a national-ID TIN). This closes the
+    // ship-blocker where a TIN-less buyer could receive an illegal full
+    // ใบกำกับภาษี. Runs BEFORE allocateNext so a blocked membership invoice never
+    // burns a §87 sequence number.
+    // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
+    // !== ''` + the event/no-TIN → receipt_separate ternary, duplicated across
+    // record-payment + issue-credit-note). Behaviour byte-identical.
+    if (draft.invoiceSubject === 'membership' && !buyerHasTin(memberSnap.tax_id)) {
+      return err({ code: 'tax_id_required' });
+    }
+    const pdfKind: PdfDocKind = inferEventDocumentKind(
+      draft.invoiceSubject,
+      memberSnap.tax_id,
+    );
+
+    // Domain invariant — exactly one subject-defining line required before issue
+    // (`membership_fee` for membership, `event_fee` for event). Runs BEFORE
+    // allocateNext so a malformed draft cannot consume a §87 sequence number.
+    const linesCheck = enforceOneSubjectLine(draft.invoiceSubject, draft.lines);
     if (!linesCheck.ok) {
       return err({
         code: 'invalid_lines',
@@ -248,7 +303,12 @@ export async function issueInvoice(
     // an `IssueInvoiceInternalError` so withTx rolls back and the
     // allocator's increment is NOT committed.
 
-    // E. Allocate sequence
+    // E. Allocate sequence.
+    // Event + membership invoices INTENTIONALLY share the single
+    // `documentType:'invoice'` §87 stream. Thai RD §87 requires a
+    // continuous, no-gaps sequence across ALL tax invoices for the
+    // fiscal year — a separate stream for events would create gaps in
+    // the membership stream and vice versa.
     const seq = await deps.sequenceAllocator.allocateNext(tx, {
       tenantId: input.tenantId,
       documentType: 'invoice',
@@ -261,16 +321,39 @@ export async function issueInvoice(
       throw new IssueInvoiceInternalError({ code: 'overflow', fiscalYear: fy });
     }
 
-    // F. Pricing from lines
-    let subtotal = Money.zero();
+    // F. Pricing from lines (054-event-fee-invoices — Model A vs Model B).
+    //
+    //   Sum the line totals once. Then branch on `draft.vatInclusive`:
+    //
+    //   - VAT-EXCLUSIVE (membership, vatInclusive=false): the line sum IS the
+    //     subtotal; VAT is added on top → `calculateVat`. UNCHANGED F4 behaviour.
+    //
+    //   - VAT-INCLUSIVE (event Model B, vatInclusive=true): the single event_fee
+    //     line stores the all-in ticket price, so the line sum IS the total. Back-
+    //     calculate subtotal + VAT via `splitVatInclusive` (subtotal = round-half-
+    //     away(total × 10000/(10000+bps)); vat = total − subtotal). This preserves
+    //     the inclusive amount EXACTLY (subtotal+vat===total by construction) and
+    //     avoids the ~6.5% off-by-1-satang mismatch a store-subtotal-then-recompute
+    //     path produces (e.g. 100.04 THB → total stays 10004, not 10005).
+    let lineSum = Money.zero();
     for (const line of draft.lines) {
-      subtotal = subtotal.add(line.total);
+      lineSum = lineSum.add(line.total);
     }
-    const { vat, total } = calculateVat(subtotal, settings.vatRate);
+    let subtotal: Money;
+    let vat: Money;
+    let total: Money;
+    if (draft.vatInclusive) {
+      total = lineSum;
+      ({ subtotal, vat } = splitVatInclusive(total, settings.vatRate.numerator));
+    } else {
+      subtotal = lineSum;
+      ({ vat, total } = calculateVat(subtotal, settings.vatRate));
+    }
 
-    // G. Snapshots
+    // G. Snapshots — `tenantSnap` is the seller; `memberSnap` is the BUYER,
+    // resolved above (membership/matched-member from getForIssue; non-member
+    // event from the draft's pre-pinned snapshot).
     const tenantSnap = settings.identity;
-    const memberSnap = member.snapshot;
 
     // Dates — invoice date follows wall-clock Bangkok, not UTC, so an
     // issuance at 23:30 UTC (= 06:30 Bangkok next day) shows the correct
@@ -291,7 +374,7 @@ export async function issueInvoice(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {
         renderInput: {
-          kind: 'invoice',
+          kind: pdfKind,
           templateVersion: deps.currentTemplateVersion,
           documentNumber: docNum.value,
           issueDate,
@@ -304,6 +387,10 @@ export async function issueInvoice(
           vatRate: settings.vatRate,
           vat,
           total,
+          // 054-event-fee-invoices — VAT-inclusive flag drives the "VAT included"
+          // annotation on event Model-B documents (gross line + net subtotal +
+          // VAT + total read coherently). Membership invoices are VAT-exclusive.
+          vatInclusive: draft.vatInclusive,
         },
         blobKey,
       },
@@ -329,7 +416,11 @@ export async function issueInvoice(
         vatRate: settings.vatRate.raw,
         vatSatang: asSatang(vat.satang),
         totalSatang: asSatang(total.satang),
-        proRatePolicySnapshot: settings.proRatePolicy,
+        // 054-event-fee-invoices — pro-rating is membership-only, so event
+        // invoices persist NULL here (the relaxed non-draft CHECK, migration
+        // 0203, permits `pro_rate_policy_snapshot IS NULL` iff subject='event').
+        proRatePolicySnapshot:
+          draft.invoiceSubject === 'event' ? null : settings.proRatePolicy,
         netDaysSnapshot: settings.defaultNetDays,
         tenantIdentitySnapshot: tenantSnap,
         memberIdentitySnapshot: memberSnap,
@@ -352,36 +443,120 @@ export async function issueInvoice(
       throw e;
     }
 
-    // K. Audit
-    await deps.audit.emit(tx, {
-      tenantId: input.tenantId,
-      requestId: input.requestId ?? null,
-      eventType: 'invoice_issued',
-      actorUserId: input.actorUserId,
-      summary: `Invoice ${docNum.value.raw} issued`,
-      payload: {
-        invoice_id: invoiceId,
-        member_id: draft.memberId,
-        fiscal_year: fy,
-        sequence_number: seq,
-        document_number: docNum.value.raw,
-        total_satang: total.satang.toString(),
-        pdf_sha256: rendered.sha256,
-      },
-    });
+    // K. Audit `invoice_issued` — branch on buyer kind (054-event-fee-invoices).
+    //
+    //   MEMBERSHIP / matched-member (memberId non-null) → TIMELINE branch: the
+    //   payload carries `member_id` so the F3 member timeline filter
+    //   (`payload->>'member_id'`) surfaces the issuance. UNCHANGED F4 behaviour.
+    //
+    //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is not
+    //   an F3 member, so the timeline filter MUST NOT surface it. We do NOT widen
+    //   `MemberTimelineAuditPayload` to make `member_id` optional (that would
+    //   weaken the F3 `member_id` guarantee for the member-timeline event types); instead
+    //   we narrow `invoice_issued` to the non-timeline `F4AuditEvent` branch at
+    //   THIS one site, carrying `event_registration_id` and omitting `member_id`
+    //   entirely. Mirrors the `emitNonTimelineDraftCreated` precedent in
+    //   create-event-invoice-draft.ts.
+    const issuedSummary = `Invoice ${docNum.value.raw} issued`;
+    const issuedPayloadBase = {
+      invoice_id: invoiceId,
+      fiscal_year: fy,
+      sequence_number: seq,
+      document_number: docNum.value.raw,
+      total_satang: total.satang.toString(),
+      pdf_sha256: rendered.sha256,
+    } as const;
+    if (memberId !== null) {
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_issued',
+        actorUserId: input.actorUserId,
+        summary: issuedSummary,
+        payload: {
+          member_id: memberId,
+          ...issuedPayloadBase,
+        },
+      });
+    } else {
+      // NON-MEMBER event invoice. `invoices_subject_fields_ck` guarantees
+      // `event_registration_id IS NOT NULL` whenever `member_id IS NULL`; TS only
+      // knows `memberId === null`, so re-narrow on the column. The typed
+      // `emitNonMemberInvoiceEvent` helper REQUIRES `event_registration_id` and
+      // FORBIDS `member_id` at compile time (no `as` cast) so the F3 timeline
+      // filter (`payload->>'member_id'`) never surfaces a non-member row.
+      if (draft.eventRegistrationId === null) {
+        throw new Error(
+          'issueInvoice: non-member invoice has null event_registration_id (violates invoices_subject_fields_ck)',
+        );
+      }
+      await emitNonMemberInvoiceEvent(deps.audit, tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_issued',
+        eventRegistrationId: draft.eventRegistrationId,
+        actorUserId: input.actorUserId,
+        summary: issuedSummary,
+        extraPayload: {
+          event_id: draft.eventId,
+          ...issuedPayloadBase,
+        },
+      });
+    }
 
     // L. Outbox (if auto-email enabled — per-invoice override trumps tenant default)
+    //
+    // Task 14 — auto-email is BEST-EFFORT and NOT part of the issue tx
+    // invariant: the §87 sequence number + PDF + audit are already committed
+    // above; the enqueue is a single row insert and a skip here leaves the
+    // issued invoice fully valid (admins can manually resend from the detail
+    // page). Two Task-14 hardenings on this path:
+    //
+    //   (A) Empty-recipient guard — a NON-MEMBER event buyer may have an
+    //       empty `primary_contact_email` (the buyer snapshot accepts ''
+    //       per §86/4: a contact is supplementary, not required). Enqueuing
+    //       to '' would queue an undeliverable row. Skip + warn (ids only,
+    //       NO email/PII per CLAUDE.md § Secrets) instead.
+    //
+    //   (B) Non-member event privacy footer — when the buyer is a non-member
+    //       on an EVENT invoice, thread `privacyFooterKind = 'event_non_member'`
+    //       so the auto-email carries the §87/3 PDPA transparency notice.
     const shouldAutoEmail =
       draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
     if (shouldAutoEmail) {
-      await deps.outbox.enqueue(tx, {
-        tenantId: input.tenantId,
-        eventType: 'invoice_issued',
-        recipientEmail: memberSnap.primary_contact_email,
-        invoiceId,
-        pdfBlobKey: blobKey,
-        pdfTemplateVersion: deps.currentTemplateVersion,
-      });
+      const recipientEmail = (memberSnap.primary_contact_email ?? '').trim();
+      if (recipientEmail === '') {
+        // (A) — no deliverable address. Skip the enqueue; the invoice still
+        // issues successfully. Log ids only (no email / buyer PII) AND bump a
+        // metric so ops can alert (the warn alone is unobservable; this brings
+        // the issue path to parity with the credit-note `skipped_no_recipient`
+        // surface).
+        invoicingMetrics.autoEmailSkipped(draft.invoiceSubject, 'no_recipient');
+        logger.warn(
+          {
+            event: 'invoice_auto_email_skipped_no_recipient',
+            tenantId: input.tenantId,
+            invoiceId,
+            invoiceSubject: draft.invoiceSubject,
+          },
+          'issueInvoice: auto-email skipped — buyer has no contact email',
+        );
+      } else {
+        // (B) — non-member event buyer → PDPA privacy footer.
+        const privacyFooterKind =
+          draft.invoiceSubject === 'event' && draft.memberId === null
+            ? ('event_non_member' as const)
+            : undefined;
+        await deps.outbox.enqueue(tx, {
+          tenantId: input.tenantId,
+          eventType: 'invoice_issued',
+          recipientEmail,
+          invoiceId,
+          pdfBlobKey: blobKey,
+          pdfTemplateVersion: deps.currentTemplateVersion,
+          ...(privacyFooterKind ? { privacyFooterKind } : {}),
+        });
+      }
     }
 
     // T113 — happy-path emit. Count + duration fire together so

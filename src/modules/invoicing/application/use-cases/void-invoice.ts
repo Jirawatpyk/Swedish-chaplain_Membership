@@ -191,6 +191,12 @@ export async function voidInvoice(
       ) {
         return err({ code: 'no_snapshot_on_invoice' });
       }
+      // 054-event-fee-invoices — void-invoice is MEMBERSHIP-only today.
+      // `invoices_subject_fields_ck` guarantees member_id for
+      // `invoice_subject='membership'`; treat null (an event invoice that
+      // should never reach this path) as a missing snapshot.
+      const memberId = loaded.memberId;
+      if (memberId === null) return err({ code: 'no_snapshot_on_invoice' });
       if (!settings) return err({ code: 'settings_missing' });
 
       // D. Re-render with VOID overlay (pinned template version per FR-016).
@@ -254,7 +260,7 @@ export async function voidInvoice(
         summary: `Invoice ${loaded.documentNumber.raw} voided`,
         payload: {
           invoice_id: invoiceId,
-          member_id: loaded.memberId,
+          member_id: memberId,
           document_number: loaded.documentNumber.raw,
           void_reason_sha256: voidReasonHash,
           original_pdf_sha256: loaded.pdf.sha256,

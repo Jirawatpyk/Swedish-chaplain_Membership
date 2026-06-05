@@ -62,8 +62,16 @@ export interface CreditNote {
    * does not cascade), so a lookup-time JOIN is cheaper than schema
    * churn. Typed as `string` (not `MemberId`) to avoid a cross-module
    * domain coupling; callers narrow as needed.
+   *
+   * 054-event-fee-invoices (Task 8) — `string | null`. A credit note
+   * against a NON-member EVENT invoice (`invoice_subject='event'`,
+   * `member_id IS NULL`) has NO owning F3 member, so this is null for
+   * those CNs. The member-role ownership checks compare
+   * `originalInvoiceMemberId !== actor.memberId`; a null here therefore
+   * correctly DENIES every member actor (no member can own a non-member
+   * event CN) — the widening is safe and adds no portal-access path.
    */
-  readonly originalInvoiceMemberId: string;
+  readonly originalInvoiceMemberId: string | null;
 
   readonly fiscalYear: FiscalYear;
   readonly sequenceNumber: number;

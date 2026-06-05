@@ -9,14 +9,17 @@
 // --- Domain branded types ---------------------------------------------------
 export {
   INVOICE_STATUSES,
+  MAX_EVENT_INVOICE_SATANG,
   asInvoiceId,
   parseInvoiceId,
   isTerminal,
   canTransition,
+  enforceOneSubjectLine,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
   type InvoiceIdError,
+  type InvoiceTransitionError,
 } from './domain/invoice';
 export {
   INVOICE_LINE_KINDS,
@@ -39,6 +42,16 @@ export { Money } from './domain/value-objects/money';
 export { Money as AmountSatang } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
 export { calculateVat } from './domain/policies/calculate-vat';
+export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
+// FIX 5 — shared §86/4 buyer-TIN / event-document-kind discriminator (dedup of
+// the inline check formerly repeated across issue-invoice / record-payment /
+// issue-credit-note).
+export {
+  buyerHasTin,
+  inferEventDocumentKind,
+  type InvoiceSubject,
+  type EventDocumentKind,
+} from './domain/document-kind';
 export {
   DocumentNumber,
   DOCUMENT_NUMBER_MAX_SEQ,
@@ -123,6 +136,14 @@ export {
 } from './application/use-cases/create-invoice-draft';
 
 export {
+  createEventInvoiceDraft,
+  createEventInvoiceDraftSchema,
+  type CreateEventInvoiceDraftInput,
+  type CreateEventInvoiceDraftError,
+  type CreateEventInvoiceDraftDeps,
+} from './application/use-cases/create-event-invoice-draft';
+
+export {
   issueInvoice,
   issueInvoiceSchema,
   type IssueInvoiceInput,
@@ -201,6 +222,8 @@ export {
   issueCreditNoteSchema,
   type IssueCreditNoteInput,
   type IssueCreditNoteError,
+  type IssueCreditNoteSuccess,
+  type CreditNoteEmailDelivery,
 } from './application/use-cases/issue-credit-note';
 
 export {
@@ -326,6 +349,7 @@ export type {
 // tenant-scoped dependency graph.
 export {
   makeCreateInvoiceDraftDeps,
+  makeCreateEventInvoiceDraftDeps,
   makeIssueInvoiceDeps,
   makeListInvoicesDeps,
   makeListInvoicesByMemberDeps,

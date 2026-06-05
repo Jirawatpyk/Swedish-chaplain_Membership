@@ -1461,9 +1461,11 @@
         "submitting": "Utfärdar…",
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
+        "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "errors": {
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
+          "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
           "codeFallback": "Felkod: {code}"
         }
       },
@@ -1570,9 +1572,16 @@
           "dueDate": "Förfaller",
           "total": "Totalt",
           "actions": "",
-          "member": "Medlem",
+          "buyer": "Köpare",
           "method": "Metod",
           "receiptNumber": "Kvittonr."
+        },
+        "subjectChip": {
+          "event": "Evenemang",
+          "eventAria": "Evenemangsavgiftsfaktura"
+        },
+        "buyerSubtitle": {
+          "membership": "Medlemskap {year}"
         },
         "statuses": {
           "draft": "Utkast",
@@ -1589,7 +1598,13 @@
         "filteredEmpty": "Inga fakturor matchar filtren.",
         "filters": {
           "allStatuses": "Alla status",
-          "clearAll": "Rensa filter"
+          "clearAll": "Rensa filter",
+          "subject": {
+            "label": "Fakturatyp",
+            "all": "Alla typer",
+            "membership": "Medlemskap",
+            "event": "Evenemang"
+          }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
@@ -1620,7 +1635,108 @@
       "new": {
         "title": "Nytt fakturautkast",
         "description": "Välj medlem och plan. Förhandsgranska före utfärdande.",
-        "cancel": "Tillbaka"
+        "cancel": "Tillbaka",
+        "type": {
+          "legend": "Vad avser denna faktura?",
+          "membership": "Medlemskap",
+          "membershipHint": "Årlig medlemsavgift för en medlem.",
+          "event": "Evenemangsavgift",
+          "eventHint": "Biljettavgift för en evenemangsdeltagare (medlem eller icke-medlem)."
+        }
+      },
+      "eventFeeForm": {
+        "eventPicker": {
+          "label": "Evenemang",
+          "placeholder": "Välj ett evenemang…",
+          "search": "Sök evenemang…",
+          "empty": "Inga evenemang matchar.",
+          "noEvents": "Inga evenemang tillgängliga"
+        },
+        "attendeePicker": {
+          "label": "Deltagare",
+          "loading": "Laddar deltagare…",
+          "selectEventFirst": "Välj ett evenemang för att välja en deltagare.",
+          "matchBadge": {
+            "matched": "Matchad medlem",
+            "nonMember": "Icke-medlem",
+            "unmatched": "Omatchad"
+          },
+          "noPaymentStatus": "—",
+          "noPrice": "Ingen avgift",
+          "price": "{amount} THB",
+          "rowAria": "{name}, {match}, {price}, betalning {payment}",
+          "erasedTooltip": "Denna deltagares personuppgifter har raderats — de kan inte längre faktureras.",
+          "empty": {
+            "none": "Detta evenemang har inga registrerade deltagare ännu.",
+            "allErased": "Alla deltagare för detta evenemang har fått sina personuppgifter raderade och kan inte faktureras."
+          }
+        },
+        "buyer": {
+          "legend": "Fakturera till",
+          "matchedReadonly": "Faktureras till {name}. Köparens skatteuppgifter hämtas från medlemsposten när fakturan utfärdas.",
+          "nonMemberLegend": "Köparuppgifter för icke-medlem",
+          "legalName": "Juridiskt namn",
+          "legalNamePlaceholder": "Företagets eller personens juridiska namn",
+          "address": "Adress",
+          "addressPlaceholder": "Faktureringsadress",
+          "taxId": "Skatte-ID (valfritt)",
+          "taxIdPlaceholder": "13-siffrigt thailändskt skatte-ID",
+          "contactName": "Kontaktnamn (valfritt)",
+          "contactEmail": "Kontakt-e-post (valfritt)",
+          "errors": {
+            "legalNameRequired": "Juridiskt namn krävs.",
+            "legalNameTooLong": "Juridiskt namn får vara högst 500 tecken.",
+            "addressRequired": "Adress krävs.",
+            "addressTooLong": "Adress får vara högst 1 000 tecken.",
+            "taxIdFormat": "Skatte-ID måste vara exakt 13 siffror.",
+            "contactEmailFormat": "Ange en giltig e-postadress."
+          }
+        },
+        "amount": {
+          "label": "Belopp (inkl. moms)",
+          "help": "Förifyllt från biljettpriset. Redigera för att åsidosätta.",
+          "errors": {
+            "required": "Ange ett belopp.",
+            "min": "Beloppet måste vara minst 1 THB.",
+            "max": "Beloppet får inte överstiga 1 000 000 THB."
+          }
+        },
+        "vatPreview": {
+          "label": "Inkl. moms / ราคารวม VAT แล้ว",
+          "total": "Totalt (inkl. moms)",
+          "subtotal": "Delsumma",
+          "vat": "Moms 7%"
+        },
+        "docType": {
+          "taxInvoice": "Skattefaktura / ใบกำกับภาษี",
+          "receipt": "Kvitto / ใบเสร็จรับเงิน",
+          "pending": "Dokumenttyp sätts vid utfärdande",
+          "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
+          "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
+          "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas."
+        },
+        "submit": "Skapa utkast för evenemangsavgift",
+        "submitting": "Skapar…",
+        "success": "Utkast skapat",
+        "errors": {
+          "noAttendee": "Välj en deltagare först.",
+          "registration_not_found": "Den deltagaren kunde inte hittas.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
+          "event_not_found": "Det evenemanget kunde inte hittas.",
+          "attendee_erased": "Denna deltagares personuppgifter har raderats och kan inte faktureras.",
+          "no_fee_free_event": "Denna deltagare har ingen biljettavgift. Ange ett belopp för att fakturera.",
+          "invalid_amount": "Beloppet är utanför intervallet (1 – 1 000 000 THB).",
+          "buyer_required": "Köparuppgifter krävs för en icke-medlem.",
+          "invalid_tax_id_format": "Skatte-ID måste vara exakt 13 siffror.",
+          "invalid_buyer_snapshot": "Köparuppgifterna är ofullständiga eller ogiltiga.",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        },
+        "duplicateDialog": {
+          "title": "En faktura finns redan",
+          "description": "En evenemangsfaktura har redan skapats för denna deltagare. Visa den befintliga fakturan istället för att skapa en dubblett.",
+          "cancel": "Stäng"
+        }
       },
       "form": {
         "submit": "Skapa utkast",
@@ -4511,7 +4627,11 @@
   },
   "email": {
     "invoiceIssued": {
-      "payOnlineCta": "Betala online"
+      "payOnlineCta": "Betala online",
+      "eventNonMemberFooter": {
+        "title": "Integritetsmeddelande",
+        "notice": "Ditt namn och din adress registrerades enbart för att utfärda detta skattedokument och sparas i 10 år enligt thailändska skattelagen §87/3."
+      }
     },
     "refundConfirmation": {
       "subject": "Bekräftelse av återbetalning"

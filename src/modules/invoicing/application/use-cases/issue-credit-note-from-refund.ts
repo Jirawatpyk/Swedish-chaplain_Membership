@@ -35,7 +35,7 @@
  * which matches Stripe's refund amount semantics. F4 internally splits
  * gross → vat + net via its credit-note-vat policy.
  */
-import { type Result } from '@/lib/result';
+import { ok, type Result } from '@/lib/result';
 import type { Satang } from '@/lib/money';
 import {
   issueCreditNote,
@@ -78,7 +78,7 @@ export async function issueCreditNoteFromRefund(
   Result<IssueCreditNoteFromRefundOutput, IssueCreditNoteFromRefundError>
 > {
   const deps = makeIssueCreditNoteDeps(input.tenantId);
-  return issueCreditNote(deps, {
+  const result = await issueCreditNote(deps, {
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
     ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
@@ -90,4 +90,11 @@ export async function issueCreditNoteFromRefund(
     // via the barrel-extended insertCreditNote port.
     sourceRefundId: input.refundId,
   });
+  // MEDIUM-5 — F4's success value is now `{ creditNote, emailDelivery }`. The
+  // F5 refund bridge's public output stays `CreditNote` (the payments module
+  // contract is insulated from F4's transient email-delivery signal — refund
+  // emails are out of scope for F5). Unwrap to the CN aggregate; pass errors
+  // through verbatim.
+  if (!result.ok) return result;
+  return ok(result.value.creditNote);
 }

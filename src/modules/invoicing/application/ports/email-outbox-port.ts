@@ -90,6 +90,17 @@ export interface EmailOutboxPort {
        * resend, credit-note) leave it `false`/undefined.
        */
       readonly dependsOnReceiptPdf?: boolean;
+      /**
+       * 054-event-fee-invoices (Task 14) — PDPA privacy-footer
+       * discriminator. Set to `'event_non_member'` by `issueInvoice` when
+       * the invoice is an EVENT invoice with a non-member buyer
+       * (`invoiceSubject === 'event' && memberId === null`); the dispatcher
+       * threads it into the email renderer so the §87/3 transparency notice
+       * is appended for that buyer only. Omitted/undefined for membership +
+       * matched-member event invoices (no extra footer). Persisted on the
+       * outbox row's `context_data` so a resend reproduces the same footer.
+       */
+      readonly privacyFooterKind?: 'event_non_member';
     },
   ): Promise<void>;
 }

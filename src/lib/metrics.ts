@@ -179,10 +179,9 @@ export interface EmailLabels {
 export const authMetrics = {
   // --- Sign-in ---------------------------------------------------------------
   signInAttempt(labels: SignInLabels): void {
-    counter(
-      'auth_signin_attempts_total',
-      'Sign-in attempts by portal and outcome',
-    ).add(1, { ...labels });
+    counter('auth_signin_attempts_total', 'Sign-in attempts by portal and outcome').add(1, {
+      ...labels,
+    });
   },
   signInDuration(seconds: number, labels: SignInLabels): void {
     histogram(
@@ -200,16 +199,12 @@ export const authMetrics = {
 
   // --- Password reset --------------------------------------------------------
   passwordResetRequested(emailKnown: boolean): void {
-    counter(
-      'auth_password_reset_requested_total',
-      'Forgot-password requests',
-    ).add(1, { email_known: emailKnown ? 'true' : 'false' });
+    counter('auth_password_reset_requested_total', 'Forgot-password requests').add(1, {
+      email_known: emailKnown ? 'true' : 'false',
+    });
   },
   passwordResetCompleted(): void {
-    counter(
-      'auth_password_reset_completed_total',
-      'Successful password resets',
-    ).add(1);
+    counter('auth_password_reset_completed_total', 'Successful password resets').add(1);
   },
 
   // --- Invitations -----------------------------------------------------------
@@ -219,10 +214,9 @@ export const authMetrics = {
     });
   },
   invitationRedeemed(role: 'admin' | 'manager' | 'member'): void {
-    counter(
-      'auth_invitation_redeemed_total',
-      'Invitations converted to active accounts',
-    ).add(1, { role });
+    counter('auth_invitation_redeemed_total', 'Invitations converted to active accounts').add(1, {
+      role,
+    });
   },
   invitationRedemptionFailed(reason: 'expired' | 'used'): void {
     counter(
@@ -248,23 +242,22 @@ export const authMetrics = {
 
   // --- Sessions --------------------------------------------------------------
   idleWarningShown(outcome: 'stayed' | 'timed_out'): void {
-    counter(
-      'auth_idle_warning_shown_total',
-      'How often users engage with the idle warning',
-    ).add(1, { outcome });
+    counter('auth_idle_warning_shown_total', 'How often users engage with the idle warning').add(
+      1,
+      { outcome },
+    );
   },
   sessionDuration(
     seconds: number,
     labels: { role: 'admin' | 'manager' | 'member'; endReason: string },
   ): void {
-    histogram(
-      'auth_session_duration_seconds',
-      'Session lifetime distribution',
-      's',
-    ).record(seconds, {
-      role: labels.role,
-      end_reason: labels.endReason,
-    });
+    histogram('auth_session_duration_seconds', 'Session lifetime distribution', 's').record(
+      seconds,
+      {
+        role: labels.role,
+        end_reason: labels.endReason,
+      },
+    );
   },
 
   // --- Password change -------------------------------------------------------
@@ -274,24 +267,23 @@ export const authMetrics = {
     });
   },
   passwordWeakRejected(reason: 'short' | 'pwned' | 'same'): void {
-    counter(
-      'auth_password_weak_rejected_total',
-      'How often the policy blocks weak passwords',
-    ).add(1, { reason });
+    counter('auth_password_weak_rejected_total', 'How often the policy blocks weak passwords').add(
+      1,
+      { reason },
+    );
   },
 
   // --- RBAC ------------------------------------------------------------------
   rbacDenied(labels: RbacDeniedLabels): void {
-    counter(
-      'auth_rbac_denied_total',
-      'Denied operations by role/resource/action',
-    ).add(1, { ...labels });
+    counter('auth_rbac_denied_total', 'Denied operations by role/resource/action').add(1, {
+      ...labels,
+    });
   },
   managerDeniedWrite(endpoint: string): void {
-    counter(
-      'auth_manager_denied_write_total',
-      'Managers hitting endpoints they cannot mutate',
-    ).add(1, { endpoint });
+    counter('auth_manager_denied_write_total', 'Managers hitting endpoints they cannot mutate').add(
+      1,
+      { endpoint },
+    );
   },
 
   // --- Email -----------------------------------------------------------------
@@ -303,10 +295,10 @@ export const authMetrics = {
     ).record(seconds, { template });
   },
   emailSendFailure(labels: Required<EmailLabels>): void {
-    counter(
-      'auth_email_send_failures_total',
-      'Email delivery failures by reason',
-    ).add(1, { template: labels.template, reason: labels.reason });
+    counter('auth_email_send_failures_total', 'Email delivery failures by reason').add(1, {
+      template: labels.template,
+      reason: labels.reason,
+    });
   },
 
   // --- Infrastructure health ------------------------------------------------
@@ -317,10 +309,9 @@ export const authMetrics = {
     ).add(1);
   },
   auditMissing(eventType: string): void {
-    counter(
-      'auth_audit_missing_total',
-      'Expected audit events that failed to commit',
-    ).add(1, { event_type: eventType });
+    counter('auth_audit_missing_total', 'Expected audit events that failed to commit').add(1, {
+      event_type: eventType,
+    });
   },
 } as const;
 
@@ -508,11 +499,7 @@ export const invoicingMetrics = {
    * Alert: bounce rate > 5% over 1h (see docs/observability.md).
    */
   autoEmailBounce(
-    reason:
-      | 'invalid_recipient'
-      | 'max_retries'
-      | 'no_template_handler'
-      | 'attachment_sha_mismatch',
+    reason: 'invalid_recipient' | 'max_retries' | 'no_template_handler' | 'attachment_sha_mismatch',
   ): void {
     counter(
       'invoicing_auto_email_bounces_total',
@@ -521,12 +508,44 @@ export const invoicingMetrics = {
   },
 
   /**
+   * 054-event-fee-invoices — auto-email enqueue SKIPPED because the buyer
+   * snapshot carries no deliverable contact email. The invoice still
+   * issues / pays successfully (the auto-email is best-effort, never part
+   * of the §87 issuance invariant), so the skip is otherwise SILENT — the
+   * only prior surface was a `logger.warn`, which ops cannot alert on.
+   * This counter brings the issue-invoice + record-payment skip sites to
+   * observability parity with the credit-note path (which already returns
+   * `emailDelivery: 'skipped_no_recipient'`). Labelled by `subject`
+   * ({membership, event} — bounded) so a spike on `event` (non-member
+   * buyers whose `primary_contact_email` is legitimately blank per §86/4)
+   * can be distinguished from a `membership` spike (a Domain-invariant
+   * violation upstream — a member with no contact email). Alert: any
+   * sustained non-zero rate on `subject='membership'`.
+   */
+  autoEmailSkipped(subject: 'membership' | 'event', reason: 'no_recipient'): void {
+    // safeMetric parity with eventBuyerPiiRedacted / auditEmitFailed: both call
+    // sites (issue-invoice + record-payment) record INSIDE the open `withTx`
+    // callback, AFTER the §87 issuance / payment mutation has been written but
+    // BEFORE commit. If the @vercel/otel exporter throws on first record (cold
+    // instrument cache, pipeline transient), an unguarded throw would escape the
+    // metric call and roll back the committed-in-tx issuance / payment — turning
+    // a best-effort observability skip into a lost financial mutation. Swallow
+    // exporter failures here; the skip is already non-fatal by design.
+    safeMetric(() => {
+      counter(
+        'invoicing_auto_email_skipped_total',
+        'F4 auto-email enqueue skipped (no deliverable recipient) by subject + reason',
+      ).add(1, { subject, reason });
+    });
+  },
+
+  /**
    * Cross-tenant probe count — one per `{invoice,credit_note,
    * tenant_invoice_settings}_cross_tenant_probe` audit emit. Alert:
    * any non-zero rate over 5 min indicates enumeration attack.
    */
   crossTenantProbe(
-    probeType: 'invoice' | 'credit_note' | 'tenant_invoice_settings',
+    probeType: 'invoice' | 'credit_note' | 'tenant_invoice_settings' | 'registration',
   ): void {
     counter(
       'invoicing_cross_tenant_probe_total',
@@ -582,6 +601,31 @@ export const invoicingMetrics = {
       ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
     });
   },
+
+  /**
+   * 054-event-fee-invoices (Task 15) — non-member event-buyer PII
+   * redaction sweep. Fired ONCE PER TENANT PASS with `outcome='redacted'`
+   * when that pass tombstoned ≥1 row, else `outcome='swept_zero'` when it
+   * found nothing eligible, so SRE can distinguish "ran, nothing due" from
+   * "cron never fired". `outcome='error'` fires (a) once per tenant pass
+   * whose DB tx threw (the GUC/trigger path or audit_log is failing — the
+   * §87/3 + GDPR Art.17 erasure obligation is then NOT being met), and
+   * (b) once per PDF-blob delete that failed AFTER a committed DB tombstone.
+   * Case (b) is RETRYABLE (HIGH-3): the DB tombstone is durable and
+   * `pii_blob_purged_at` stays NULL, so the next daily sweep re-selects the
+   * row and retries the byte purge — no manual action unless the error rate
+   * is sustained. A sustained `outcome='error'` rate is the alerting anchor
+   * for both cases; do NOT manually delete Blob bytes on a transient (b),
+   * the cron already retries them.
+   */
+  eventBuyerPiiRedacted(outcome: 'redacted' | 'swept_zero' | 'error', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_event_buyer_pii_redacted_total',
+        'Non-member event-invoice buyer PII tombstones (10y retention sweep) by outcome + tenant',
+      ).add(1, { outcome, tenant: tenantId });
+    });
+  },
 } as const;
 
 // --- F5 payments metrics -----------------------------------------------------
@@ -603,11 +647,7 @@ export const paymentsMetrics = {
    * p95 < 1500 ms — alert if exceeded for 5 min. Labelled by `method`
    * so card vs PromptPay can be analysed separately.
    */
-  initiateDurationMs(
-    method: 'card' | 'promptpay',
-    ms: number,
-    tenantId?: string,
-  ): void {
+  initiateDurationMs(method: 'card' | 'promptpay', ms: number, tenantId?: string): void {
     // Staff-review R2 R018 (2026-04-28): added optional `tenantId` label
     // so cross-tenant performance attribution is possible per the
     // catalogue spec at docs/observability.md § 21.1. Tenant cardinality
@@ -659,10 +699,10 @@ export const paymentsMetrics = {
    * Emitted by `/api/payments/initiate` route on every success.
    */
   initiateCount(tenantId: string, method: 'card' | 'promptpay'): void {
-    counter(
-      'payments_initiate_count',
-      'POST /api/payments/initiate success rate by method',
-    ).add(1, { tenant: tenantId, method });
+    counter('payments_initiate_count', 'POST /api/payments/initiate success rate by method').add(
+      1,
+      { tenant: tenantId, method },
+    );
   },
 
   /**
@@ -680,15 +720,12 @@ export const paymentsMetrics = {
    * `payments.failed.count{tenant, method, reason_code}` — decline-rate alert
    * (excluding bank-decline codes per SLO-F5-005).
    */
-  failedCount(
-    tenantId: string,
-    method: 'card' | 'promptpay',
-    reasonCode: string,
-  ): void {
-    counter(
-      'payments_failed_count',
-      'Payment failures by method and reason_code',
-    ).add(1, { tenant: tenantId, method, reason_code: reasonCode });
+  failedCount(tenantId: string, method: 'card' | 'promptpay', reasonCode: string): void {
+    counter('payments_failed_count', 'Payment failures by method and reason_code').add(1, {
+      tenant: tenantId,
+      method,
+      reason_code: reasonCode,
+    });
   },
 
   /**
@@ -706,15 +743,12 @@ export const paymentsMetrics = {
   /**
    * `refunds.initiate.count{tenant, method, partial:bool}` — refund volume.
    */
-  refundInitiateCount(
-    tenantId: string,
-    method: 'card' | 'promptpay',
-    partial: boolean,
-  ): void {
-    counter(
-      'refunds_initiate_count',
-      'Admin-initiated refund attempts',
-    ).add(1, { tenant: tenantId, method, partial: partial ? 'true' : 'false' });
+  refundInitiateCount(tenantId: string, method: 'card' | 'promptpay', partial: boolean): void {
+    counter('refunds_initiate_count', 'Admin-initiated refund attempts').add(1, {
+      tenant: tenantId,
+      method,
+      partial: partial ? 'true' : 'false',
+    });
   },
 
   /**
@@ -731,10 +765,10 @@ export const paymentsMetrics = {
    * `refunds.failed.count{tenant, reason_code}` — refund failure forensics.
    */
   refundFailedCount(tenantId: string, reasonCode: string): void {
-    counter(
-      'refunds_failed_count',
-      'Refund failures by reason_code',
-    ).add(1, { tenant: tenantId, reason_code: reasonCode });
+    counter('refunds_failed_count', 'Refund failures by reason_code').add(1, {
+      tenant: tenantId,
+      reason_code: reasonCode,
+    });
   },
 
   /**
@@ -742,10 +776,10 @@ export const paymentsMetrics = {
    * Pre-tenant-resolution events use `tenant='unresolved'`.
    */
   webhookReceiveCount(tenantId: string, eventType: string): void {
-    counter(
-      'payments_webhook_receive_count',
-      'Stripe webhook events received by type',
-    ).add(1, { tenant: tenantId, event_type: eventType });
+    counter('payments_webhook_receive_count', 'Stripe webhook events received by type').add(1, {
+      tenant: tenantId,
+      event_type: eventType,
+    });
   },
 
   /**
@@ -783,10 +817,7 @@ export const paymentsMetrics = {
    * vs `permanence='permanent' AND rate > 0` (schema drift).
    * NO tenant label (failures are often pre-tenant-resolution).
    */
-  webhookDispatchFailed(
-    permanence: 'transient' | 'permanent',
-    kind: string,
-  ): void {
+  webhookDispatchFailed(permanence: 'transient' | 'permanent', kind: string): void {
     counter(
       'payments_webhook_dispatch_failed_total',
       'Stripe webhook dispatcher returned Result.err; labels distinguish retry semantics',
@@ -992,10 +1023,7 @@ export const paymentsMetrics = {
    * leading indicator. Admin used Stripe Dashboard refund instead of
    * in-app refund flow.
    */
-  outOfBandRefundRejected(
-    tenantId: string,
-    processorEnv: 'test' | 'live',
-  ): void {
+  outOfBandRefundRejected(tenantId: string, processorEnv: 'test' | 'live'): void {
     counter(
       'payments_out_of_band_refund_rejected_total',
       'Refunds detected via charge.refunded webhook with no in-app refund row',
@@ -1100,10 +1128,7 @@ function safeMetric(fn: () => void): void {
  * (see `broadcastsMetrics.cascadeOutcome`). Exported so callers, tests,
  * and dashboard code reference one symbol — Round 2 type-design fix.
  */
-export type BroadcastsCascadeOutcomeMetric =
-  | 'cancelled'
-  | 'concurrent_skip'
-  | 'unexpected_error';
+export type BroadcastsCascadeOutcomeMetric = 'cancelled' | 'concurrent_skip' | 'unexpected_error';
 
 export const broadcastsMetrics = {
   /**
@@ -1122,13 +1147,7 @@ export const broadcastsMetrics = {
    */
   unsubscribesCount(
     tenantId: string | null,
-    outcome:
-      | 'success'
-      | 'already'
-      | 'invalid'
-      | 'rate_limited'
-      | 'repo_error'
-      | 'unhandled_error',
+    outcome: 'success' | 'already' | 'invalid' | 'rate_limited' | 'repo_error' | 'unhandled_error',
   ): void {
     safeMetric(() => {
       counter(
@@ -1209,28 +1228,22 @@ export const broadcastsMetrics = {
   // label by recipient_email_lower / member_id (FR-042).
 
   /** `broadcasts.draft.count{tenant, actor_role}` — compose-funnel TOF. */
-  draftCount(
-    tenantId: string,
-    actorRole: 'member_self_service' | 'admin_proxy' | 'system',
-  ): void {
+  draftCount(tenantId: string, actorRole: 'member_self_service' | 'admin_proxy' | 'system'): void {
     safeMetric(() => {
-      counter(
-        'broadcasts_draft_count',
-        'Drafts created — compose-funnel top-of-funnel signal',
-      ).add(1, { tenant: tenantId, actor_role: actorRole });
+      counter('broadcasts_draft_count', 'Drafts created — compose-funnel top-of-funnel signal').add(
+        1,
+        { tenant: tenantId, actor_role: actorRole },
+      );
     });
   },
 
   /** `broadcasts.submit.count{tenant, actor_role}` — submission throughput. */
-  submitCount(
-    tenantId: string,
-    actorRole: 'member_self_service' | 'admin_proxy',
-  ): void {
+  submitCount(tenantId: string, actorRole: 'member_self_service' | 'admin_proxy'): void {
     safeMetric(() => {
-      counter(
-        'broadcasts_submit_count',
-        'Successful submit transitions to status=submitted',
-      ).add(1, { tenant: tenantId, actor_role: actorRole });
+      counter('broadcasts_submit_count', 'Successful submit transitions to status=submitted').add(
+        1,
+        { tenant: tenantId, actor_role: actorRole },
+      );
     });
   },
 
@@ -1298,12 +1311,7 @@ export const broadcastsMetrics = {
    */
   failedToDispatchCount(
     tenantId: string,
-    failureReason:
-      | 'resend_5xx'
-      | 'resend_429'
-      | 'resend_403'
-      | 'app_error'
-      | 'timeout',
+    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout',
   ): void {
     safeMetric(() => {
       counter(
@@ -1319,10 +1327,10 @@ export const broadcastsMetrics = {
    */
   cronDispatchedCount(tenantId: string): void {
     safeMetric(() => {
-      counter(
-        'broadcasts_cron_dispatched_count',
-        'Scheduled-send cron successful dispatches',
-      ).add(1, { tenant: tenantId });
+      counter('broadcasts_cron_dispatched_count', 'Scheduled-send cron successful dispatches').add(
+        1,
+        { tenant: tenantId },
+      );
     });
   },
 
@@ -1342,10 +1350,7 @@ export const broadcastsMetrics = {
    * ever surfaced. The alert rule was removed alongside the label
    * (see docs/observability.md § F7 alerts post-R6).
    */
-  cronSkippedCount(
-    tenantId: string,
-    reason: 'kill_switch' | 'no_due_rows',
-  ): void {
+  cronSkippedCount(tenantId: string, reason: 'kill_switch' | 'no_due_rows'): void {
     safeMetric(() => {
       counter(
         'broadcasts_cron_skipped_count',
@@ -1476,11 +1481,7 @@ export const broadcastsMetrics = {
    * `broadcast_id` is a UUID — dashboards must group by `tenant`,
    * not by `broadcast_id`, for human-readable rollups.
    */
-  bounceRatePerBroadcast(
-    tenantId: string,
-    broadcastId: string,
-    rate: number,
-  ): void {
+  bounceRatePerBroadcast(tenantId: string, broadcastId: string, rate: number): void {
     safeMetric(() => {
       observeGauge(
         'broadcasts_bounce_rate_per_broadcast',
@@ -1498,11 +1499,7 @@ export const broadcastsMetrics = {
    * Cardinality ceiling: see `bounceRatePerBroadcast` above —
    * same shape, same ceiling, same dashboard-grouping guidance.
    */
-  complaintRatePerBroadcast(
-    tenantId: string,
-    broadcastId: string,
-    rate: number,
-  ): void {
+  complaintRatePerBroadcast(tenantId: string, broadcastId: string, rate: number): void {
     safeMetric(() => {
       observeGauge(
         'broadcasts_complaint_rate_per_broadcast',
@@ -1649,10 +1646,7 @@ export const broadcastsMetrics = {
    * which classifies whether the cascade USE-CASE ran end-to-end vs the
    * use-case ITSELF errored.
    */
-  cascadeOutcome(
-    tenantId: string,
-    outcome: BroadcastsCascadeOutcomeMetric,
-  ): void {
+  cascadeOutcome(tenantId: string, outcome: BroadcastsCascadeOutcomeMetric): void {
     safeMetric(() => {
       counter(
         'broadcasts_cascade_outcome_total',
@@ -1724,10 +1718,7 @@ export const renewalsMetrics = {
    * needs to know WHICH tenant failed to triage. Pages on-call when
    * the same tenant fails 3 successive coordinator runs.
    */
-  coordinatorTenantFailed(
-    tenantId: string,
-    kind: RenewalsCoordinatorFailureKind,
-  ): void {
+  coordinatorTenantFailed(tenantId: string, kind: RenewalsCoordinatorFailureKind): void {
     safeMetric(() => {
       counter(
         'renewals_coordinator_tenant_failures_total',
@@ -1760,10 +1751,7 @@ export const renewalsMetrics = {
    * needs this pair. Any non-zero rate sustained >5 min indicates
    * the F8 supersede / reschedule audit chain is being silently lost.
    */
-  manualPlanChangeListenerFailed(
-    listener: 'supersede' | 'reschedule',
-    tenantId: string,
-  ): void {
+  manualPlanChangeListenerFailed(listener: 'supersede' | 'reschedule', tenantId: string): void {
     safeMetric(() => {
       counter(
         'renewals_manual_plan_change_listener_failed_total',
@@ -1849,10 +1837,7 @@ export const renewalsMetrics = {
    * makes the type honest + future drift surfaces at compile time
    * if a new swallow-able audit emission lands.
    */
-  atRiskAuditEmitFailed(
-    auditType: 'at_risk_skipped_below_min_tenure',
-    tenantId: string,
-  ): void {
+  atRiskAuditEmitFailed(auditType: 'at_risk_skipped_below_min_tenure', tenantId: string): void {
     safeMetric(() => {
       counter(
         'renewals_at_risk_audit_emit_failed_total',
@@ -1948,9 +1933,7 @@ export const renewalsMetrics = {
    * schedule_rescheduled` audit unemitted. Companion to the new audit
    * `renewal_schedule_reschedule_skipped`.
    */
-  rescheduleBucketResolutionFailed(
-    side: 'old' | 'new' | 'both',
-  ): void {
+  rescheduleBucketResolutionFailed(side: 'old' | 'new' | 'both'): void {
     safeMetric(() => {
       counter(
         'renewals_reschedule_bucket_resolution_failed_total',
@@ -1995,9 +1978,7 @@ export const renewalsMetrics = {
    * CI-fail at the audit emit site BEFORE reaching this counter.
    */
   rescheduleAuditEmitFailed(
-    auditType:
-      | 'renewal_schedule_reschedule_skipped'
-      | 'renewal_schedule_rescheduled',
+    auditType: 'renewal_schedule_reschedule_skipped' | 'renewal_schedule_rescheduled',
   ): void {
     safeMetric(() => {
       counter(
@@ -2065,10 +2046,7 @@ export const renewalsMetrics = {
    * Cardinality bound: 2 dimensions — outcome (2 values: success,
    * failure) × tenant_id (low cardinality, bounded by tenant count).
    */
-  pruneConsumedTokensRunCompleted(
-    tenantId: string,
-    outcome: 'success' | 'failure',
-  ): void {
+  pruneConsumedTokensRunCompleted(tenantId: string, outcome: 'success' | 'failure'): void {
     safeMetric(() => {
       counter(
         'renewals_prune_consumed_tokens_runs_total',
@@ -2098,10 +2076,7 @@ export const renewalsMetrics = {
    * bounded by tenant count; no `outcome` label by design since this
    * counter is success-only emission).
    */
-  pruneConsumedTokensRowsPruned(
-    tenantId: string,
-    rowCount: number,
-  ): void {
+  pruneConsumedTokensRowsPruned(tenantId: string, rowCount: number): void {
     safeMetric(() => {
       counter(
         'renewals_prune_consumed_tokens_rows_deleted_total',
@@ -2185,10 +2160,7 @@ export const renewalsMetrics = {
    * indicates F5 refund pipeline is degraded and admins are getting
    * stuck cycles. Steady-state `refunded` is informational only.
    */
-  adminRejectCompleted(
-    tenantId: string,
-    outcome: 'refunded' | 'no_payment' | 'failed',
-  ): void {
+  adminRejectCompleted(tenantId: string, outcome: 'refunded' | 'no_payment' | 'failed'): void {
     safeMetric(() => {
       counter(
         'renewals_admin_reject_total',
@@ -2233,10 +2205,7 @@ export const renewalsMetrics = {
    * Alert rule: any non-zero rate sustained for 10 min pages on-call.
    */
   reminderAuditEmitFailures: {
-    add(
-      value: number,
-      attrs: { tenant_id: string; type: string },
-    ): void {
+    add(value: number, attrs: { tenant_id: string; type: string }): void {
       safeMetric(() => {
         counter(
           'renewals_reminder_audit_emit_failures_total',
@@ -2439,11 +2408,7 @@ export const renewalsMetrics = {
    * tenant. Crossings into `high`/`critical` are the value-add
    * signal that powers the at-risk widget badge.
    */
-  atRiskThresholdCrossing(
-    tenant: string,
-    from_band: string,
-    to_band: string,
-  ): void {
+  atRiskThresholdCrossing(tenant: string, from_band: string, to_band: string): void {
     safeMetric(() => {
       counter(
         'at_risk_threshold_crossings_total',
@@ -2458,10 +2423,7 @@ export const renewalsMetrics = {
    * 5-bucket enum as `remindersSent`. Pivot view: cross-tenant
    * funnel of suggestions vs accepts vs dismisses (FR-037 → FR-039).
    */
-  tierUpgradeSuggestionsCreated(
-    tenant: string,
-    target_tier: string,
-  ): void {
+  tierUpgradeSuggestionsCreated(tenant: string, target_tier: string): void {
     safeMetric(() => {
       counter(
         'tier_upgrade_suggestions_created_total',
@@ -2579,11 +2541,7 @@ export const renewalsMetrics = {
    */
   cascadeOutcome(
     tenantId: string,
-    kind:
-      | 'cancelled'
-      | 'concurrent_skip'
-      | 'audit_emit_failed'
-      | 'unexpected_error',
+    kind: 'cancelled' | 'concurrent_skip' | 'audit_emit_failed' | 'unexpected_error',
   ): void {
     safeMetric(() => {
       counter(
@@ -2604,12 +2562,7 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind:
-      | 'dispatch'
-      | 'at_risk_recompute'
-      | 'lapse'
-      | 'reconcile'
-      | 'prune_consumed_tokens',
+    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile' | 'prune_consumed_tokens',
   ): void {
     safeMetric(() => {
       counter(
@@ -2659,12 +2612,7 @@ export const renewalsMetrics = {
   escalationTaskAction(
     tenant: string,
     action: 'done' | 'skip' | 'reassign',
-    outcome:
-      | 'success'
-      | 'task_not_found'
-      | 'task_not_open'
-      | 'invalid_input'
-      | 'server_error',
+    outcome: 'success' | 'task_not_found' | 'task_not_open' | 'invalid_input' | 'server_error',
   ): void {
     safeMetric(() => {
       counter(
@@ -2871,10 +2819,10 @@ export const renewalsMetrics = {
    */
   atRiskSnooze(tenantId: string, actorRole: string): void {
     safeMetric(() => {
-      counter(
-        'renewals.at_risk.snooze_total',
-        'F8 admin snoozed an at-risk member (§ 23.1.2)',
-      ).add(1, { tenant_id: tenantId, actor_role: actorRole });
+      counter('renewals.at_risk.snooze_total', 'F8 admin snoozed an at-risk member (§ 23.1.2)').add(
+        1,
+        { tenant_id: tenantId, actor_role: actorRole },
+      );
     });
   },
 
@@ -2890,11 +2838,7 @@ export const renewalsMetrics = {
    * (template IDs are admin-configured strings, bounded by the template
    * library size, acceptable per § 23.1 cardinality note).
    */
-  atRiskOutreachRecorded(
-    tenantId: string,
-    channel: string,
-    templateId: string | undefined,
-  ): void {
+  atRiskOutreachRecorded(tenantId: string, channel: string, templateId: string | undefined): void {
     safeMetric(() => {
       counter(
         'renewals.at_risk.outreach_recorded_total',
@@ -3094,10 +3038,7 @@ export const eventcreateMetrics = {
    * handler lands. Zero-emission counter is correctly absent from
    * Prometheus output until first call — no observability noise pre-flag.
    */
-  idempotencySweepRowsTotal(
-    tenantId: string,
-    outcome: 'swept' | 'skipped',
-  ): void {
+  idempotencySweepRowsTotal(tenantId: string, outcome: 'swept' | 'skipped'): void {
     safeMetric(() => {
       counter(
         'eventcreate_idempotency_sweep_rows_total',
@@ -3325,10 +3266,7 @@ export const eventcreateMetrics = {
     });
   },
 
-  quotaOverQuotaWarning(
-    tenantId: string,
-    scope: 'partnership' | 'cultural',
-  ): void {
+  quotaOverQuotaWarning(tenantId: string, scope: 'partnership' | 'cultural'): void {
     safeMetric(() => {
       counter(
         'eventcreate_quota_over_quota_warnings_total',
@@ -3443,10 +3381,7 @@ export const eventcreateMetrics = {
    * feature flag should flip OFF (or EventCreate's export schema
    * broke the header-presence check).
    */
-  csvImportAdapterModeDetected(
-    tenantId: string,
-    format: 'eventcreate_csv' | 'generic_csv',
-  ): void {
+  csvImportAdapterModeDetected(tenantId: string, format: 'eventcreate_csv' | 'generic_csv'): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_adapter_mode_detected_total',
@@ -3516,10 +3451,7 @@ export const eventcreateMetrics = {
    * and the thrown exception path (`'threw'`) so dashboards can break
    * down by failure mode.
    */
-  csvImportSafetyNetFallback(
-    tenantId: string,
-    reason: 'result_err' | 'threw',
-  ): void {
+  csvImportSafetyNetFallback(tenantId: string, reason: 'result_err' | 'threw'): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_safety_net_fallback_total',
@@ -3577,8 +3509,7 @@ export const eventcreateMetrics = {
     // 9-literal union is architecturally correct; drift between
     // FailureStage + this union is acceptable risk traded for layer
     // boundaries.
-    reason:
-      // Pre-R2 reasons (kept for backward-compat with existing dashboards
+    reason: // Pre-R2 reasons (kept for backward-compat with existing dashboards
       // during F6.2 dashboard migration; pre-R2 probe surface still emits
       // these from lookup_err / lookup_missing / update_err code-paths
       // BEFORE the outer-catch is reached).
@@ -3618,10 +3549,7 @@ export const eventcreateMetrics = {
    * which only matters if the event was quota-eligible — operator must
    * verify via the runbook.
    */
-  csvImportEventLookupFailed(
-    tenantId: string,
-    scope: 'state_change_quota_gate',
-  ): void {
+  csvImportEventLookupFailed(tenantId: string, scope: 'state_change_quota_gate'): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_event_lookup_failed_total',
@@ -3676,10 +3604,7 @@ export const eventcreateMetrics = {
    * (storage_error / blob_not_found) is operationally distinct from a
    * thrown `await put(...)` network timeout.
    */
-  csvErrorCsvUploadFailed(
-    tenantId: string,
-    reason: 'result_err' | 'threw',
-  ): void {
+  csvErrorCsvUploadFailed(tenantId: string, reason: 'result_err' | 'threw'): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_error_csv_upload_failed_total',

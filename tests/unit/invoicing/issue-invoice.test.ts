@@ -17,6 +17,8 @@
  *  9. happy path — draft auto_email_on_issue = false → no outbox
  * 10. happy path — draft auto_email_on_issue = true explicit
  * 11. happy path — tenant auto_email = false + draft null → no outbox
+ * 12. no_buyer_snapshot — non-member event draft with null snapshot
+ * 13. VAT-inclusive happy path — splitVatInclusive branch correct total
  *
  * Ports are mocked with vi.fn(); the tx parameter is opaque.
  */
@@ -27,19 +29,43 @@ import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
+import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
+
+// Task 14 — spy on the structured logger so the empty-recipient skip path
+// can assert the `invoice_auto_email_skipped_no_recipient` warn fires with
+// ids only (no email/PII). `vi.importActual` keeps every other logger method
+// real (PAN regex, child loggers) — we only stub `warn`.
+vi.mock('@/lib/logger', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger');
+  return {
+    ...actual,
+    logger: { ...actual.logger, warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+  };
+});
 
 // ---- Fixtures ---------------------------------------------------------------
 
 const INVOICE_ID = '00000000-0000-0000-0000-000000000001';
 
-function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
-  const line: InvoiceLine = {
+/**
+ * Default draft factory. Safe defaults match the classic MEMBERSHIP path so
+ * existing tests need no changes. Override individual fields to exercise
+ * other subjects/branches.
+ *
+ * The `as Invoice` cast has been dropped so TypeScript enforces that all
+ * required Invoice fields are present — missing or misspelled fields produce
+ * a compile error rather than silently producing a partial object at runtime.
+ */
+function makeDraftInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
+  const membershipLine: InvoiceLine = {
     lineId: asInvoiceLineId('line-1'),
     kind: 'membership_fee',
     descriptionTh: 'ค่าสมาชิก',
@@ -57,6 +83,12 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     memberId: 'member-1',
     planId: 'corporate-regular',
     planYear: 2026,
+    // 054-event-fee-invoices — new discriminator fields; safe defaults keep
+    // existing tests on the membership path without any override.
+    invoiceSubject: 'membership',
+    vatInclusive: false,
+    eventId: null,
+    eventRegistrationId: null,
     status: 'draft',
     draftByUserId: 'actor-user',
     fiscalYear: null,
@@ -86,10 +118,19 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     autoEmailOnIssue: null,
     pdf: null,
     receiptPdf: null,
-    lines: [line],
+    receiptPdfStatus: null,
+    receiptPdfRenderAttempts: 0,
+    receiptPdfLastError: null,
+    receiptDocumentNumberRaw: null,
+    lines: [membershipLine],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
     ...overrides,
+    // 054-event-fee-invoices — `Invoice` is a discriminated union; the flat
+    // `...overrides` spread (subject + identity widened) cannot be re-narrowed
+    // to a concrete arm by inference, so assert at the factory boundary (the
+    // established convention — see domain/invoice.test.ts). Fixtures may flip
+    // membership⇄event or build a CHECK-violating shape for guard tests.
   } as Invoice;
 }
 
@@ -298,7 +339,15 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('member_archived');
   });
 
-  it('tax_id_required — COMPANY member with no tax_id → err (S1-P1-16 / FR-009a)', async () => {
+  // --- 054-event-fee-invoices (Task 9) — §86/4 SUBJECT-BASED require-TIN gate.
+  //
+  // The gate is now subject-based, NOT tier-based: EVERY membership invoice
+  // whose buyer snapshot lacks a 13-digit TIN is blocked, regardless of plan
+  // memberTypeScope (company/individual/both/null). This closes the
+  // ship-blocker where a TIN-less buyer received an illegal full ใบกำกับภาษี.
+  // Thai individuals have a national-ID-as-TIN, so a TIN is always obtainable.
+
+  it('tax_id_required — COMPANY-scope membership member with no tax_id → err (§86/4)', async () => {
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -316,9 +365,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+    // Gate runs BEFORE allocateNext → no §87 sequence number burned.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
   });
 
-  it('tax_id_required — COMPANY member with whitespace-only tax_id → err (S1-P1-16 trim branch)', async () => {
+  it('tax_id_required — membership member with whitespace-only tax_id → err (trim branch)', async () => {
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -340,7 +391,10 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('tax_id_required');
   });
 
-  it('tax_id NOT required for an INDIVIDUAL-tier member without tax_id (S1-P1-16)', async () => {
+  it('tax_id_required — INDIVIDUAL-tier membership member without tax_id → err (now subject-based, Task 9)', async () => {
+    // BEHAVIOUR CHANGE: under the old tier-based S1-P1-16 gate an individual
+    // member was exempt. Now the gate is subject-based — a membership invoice
+    // ALWAYS requires a buyer TIN (Thai individuals use their national ID).
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -356,15 +410,14 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    // Gate is exempt for individuals: the result is NEVER tax_id_required,
-    // whether the issue ultimately succeeds or fails downstream. Asserting on
-    // `blockedByGate` (rather than a bare `if (!r.ok)`) keeps this non-vacuous
-    // even when the issue happens to succeed.
-    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
-    expect(blockedByGate).toBe(false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
   });
 
-  it('tax_id NOT required when memberTypeScope is null (plan row missing → fail-open exemption, S1-P1-16)', async () => {
+  it('tax_id_required — membership member with null memberTypeScope and no tax_id → err (subject-based, no longer fail-open, Task 9)', async () => {
+    // BEHAVIOUR CHANGE: a null scope used to fail open. The subject-based gate
+    // keys on `invoiceSubject==='membership'` + missing buyer TIN, so a null
+    // scope no longer exempts a TIN-less membership buyer.
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -380,33 +433,32 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    // Gate fires ONLY on an explicit 'company' scope. A null scope (plan row
-    // could not be joined) must not block issuance — fail-open by design.
-    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
-    expect(blockedByGate).toBe(false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
   });
 
-  it("tax_id NOT required for a 'both'-scope plan member without tax_id (S1-P1-16)", async () => {
+  it('membership member WITH a valid tax_id (any tier) → NOT blocked, renders kind:invoice', async () => {
+    // An individual-tier member that DOES carry a TIN must pass the gate and
+    // render a full tax invoice — proves the gate keys on the TIN, not the tier.
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
       makeMember({
-        memberTypeScope: 'both',
+        memberTypeScope: 'individual',
         snapshot: {
-          legal_name: 'Mixed-Scope Co',
-          tax_id: null,
+          legal_name: 'Solo Person',
+          tax_id: '1234567890123',
           address: '123 Road, Bangkok',
-          primary_contact_name: 'Alex',
-          primary_contact_email: 'alex@example.com',
+          primary_contact_name: 'Jane',
+          primary_contact_email: 'jane@example.com',
         },
       }),
     );
     const r = await issueInvoice(deps, input);
-    // 'both'-scope plans admit person-tier members, so the gate exempts them.
-    // No SweCham 2026 plan uses 'both'; documented as a known future-tenant
-    // gap in issue-invoice.ts (not a live defect).
-    const blockedByGate = !r.ok && r.error.code === 'tax_id_required';
-    expect(blockedByGate).toBe(false);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
   });
 
   it('overflow — seq > 999_999 → err (FR-035)', async () => {
@@ -510,6 +562,427 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       expect.anything(),
       expect.objectContaining({ requestId: null }),
     );
+  });
+
+  // --- 054-event-fee-invoices (Task 7) new branches --------------------------
+
+  it('no_buyer_snapshot — non-member event draft with null memberIdentitySnapshot → err (data-integrity guard)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(10004n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(10004n),
+      position: 1,
+    };
+    const nonMemberEventDraft = makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-1',
+      eventRegistrationId: 'reg-uuid-1',
+      memberIdentitySnapshot: null, // the corrupted state the guard defends against
+      lines: [eventLine],
+    });
+    const deps = makeDeps(nonMemberEventDraft, makeSettings(), null /* member irrelevant */);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_buyer_snapshot');
+    // Confirms the member path was NOT entered (getForIssue never called).
+    expect(deps.memberIdentity.getForIssue).not.toHaveBeenCalled();
+  });
+
+  it('VAT-inclusive branch — splitVatInclusive path: 10004 satang inclusive @ 7% → total 10004 (not 10005), subtotal+vat=total', async () => {
+    const INCLUSIVE_SATANG = 10004n; // 100.04 THB — known off-by-1 case under naive recompute
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(INCLUSIVE_SATANG),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(INCLUSIVE_SATANG),
+      position: 1,
+    };
+    const buyerSnapshot = Object.freeze({
+      legal_name: 'Beta Imports Ltd',
+      tax_id: '9876543210123',
+      address: '50 Sukhumvit Road, Bangkok 10110',
+      primary_contact_name: 'Jane Doe',
+      primary_contact_email: 'jane@beta.example',
+    });
+    const nonMemberEventDraft = makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-2',
+      eventRegistrationId: 'reg-uuid-2',
+      memberIdentitySnapshot: buyerSnapshot,
+      lines: [eventLine],
+    });
+    // Capture what applyIssue was called with so we can assert the VAT amounts.
+    let capturedIssueInput: Parameters<IssueInvoiceDeps['invoiceRepo']['applyIssue']>[1] | undefined;
+    const deps = makeDeps(nonMemberEventDraft, makeSettings(), null, {
+      invoiceRepo: {
+        ...makeDeps(nonMemberEventDraft, makeSettings(), null).invoiceRepo,
+        applyIssue: vi.fn(async (_tx, issueInput) => {
+          capturedIssueInput = issueInput;
+          return {
+            ...nonMemberEventDraft,
+            status: 'issued',
+            fiscalYear: 2026 as never,
+            sequenceNumber: 1,
+            documentNumber: { raw: issueInput.documentNumber } as never,
+            pdf: issueInput.pdf,
+          } as Invoice;
+        }),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(capturedIssueInput).toBeDefined();
+    const { subtotalSatang, vatSatang, totalSatang } = capturedIssueInput!;
+    expect(totalSatang).toBe(asSatang(INCLUSIVE_SATANG));
+    expect(BigInt(totalSatang.toString())).toBe(10004n); // NOT 10005
+    expect(BigInt(subtotalSatang.toString()) + BigInt(vatSatang.toString())).toBe(10004n);
+    // pro_rate_policy_snapshot is NULL for event (relaxed CHECK migration 0203).
+    expect(capturedIssueInput!.proRatePolicySnapshot).toBeNull();
+    // Audit emitted via non-timeline branch (no member_id in payload).
+    const issuedCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) => (c[1] as Record<string,unknown>).eventType === 'invoice_issued',
+    );
+    expect(issuedCall).toBeDefined();
+    const payload = (issuedCall![1] as Record<string, unknown>).payload as Record<string, unknown>;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe('reg-uuid-2');
+  });
+
+  // --- 054-event-fee-invoices (Task 9) — §86/4 doc-type kind selection --------
+  //
+  //   EVENT + buyer TIN     → kind 'invoice' (ใบกำกับภาษี — buyer can claim VAT)
+  //   EVENT + no buyer TIN  → kind 'receipt_separate' (ใบเสร็จรับเงิน — §105
+  //                           receipt, ticket already paid; NO block)
+  // and the render input must carry vatInclusive:true for the Model-B annotation.
+
+  /** Build a non-member event draft with a chosen buyer tax_id. */
+  function makeEventDraft(taxId: string | null): Invoice {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(107000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(107000n),
+      position: 1,
+    };
+    return makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-9',
+      eventRegistrationId: 'reg-uuid-9',
+      memberIdentitySnapshot: Object.freeze({
+        legal_name: taxId ? 'Beta Imports Ltd' : 'Walk-in Guest',
+        tax_id: taxId,
+        address: '50 Sukhumvit Road, Bangkok 10110',
+        primary_contact_name: 'Buyer',
+        primary_contact_email: 'buyer@example.com',
+      }),
+      lines: [eventLine],
+    });
+  }
+
+  it("event + buyer TIN → renders kind:'invoice' (full tax invoice) with vatInclusive:true", async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
+    );
+    // Non-member event → never enters the member-lock branch.
+    expect(deps.memberIdentity.getForIssue).not.toHaveBeenCalled();
+  });
+
+  it("event + NO buyer TIN → renders kind:'receipt_separate' (§105 receipt), NOT blocked, vatInclusive:true", async () => {
+    const deps = makeDeps(makeEventDraft(null), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    // No block: a TIN-less event buyer is valid (ticket already paid).
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate', vatInclusive: true }),
+    );
+  });
+
+  it('event + whitespace-only buyer tax_id → treated as no-TIN → receipt_separate (trim branch)', async () => {
+    const deps = makeDeps(makeEventDraft('   '), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate' }),
+    );
+  });
+
+  it('matched-member event + member carries a TIN → kind:invoice (member branch, snapshot pinned at issue)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-10',
+      eventRegistrationId: 'reg-uuid-10',
+      memberIdentitySnapshot: null, // pinned at issue for matched member
+      lines: [eventLine],
+    });
+    // Member carries a TIN (makeMember default) → resolves to a full tax invoice.
+    const deps = makeDeps(matchedEventDraft, makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
+    );
+  });
+
+  it('matched-member event + member has NO TIN → receipt_separate (events never block, even matched)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-11',
+      eventRegistrationId: 'reg-uuid-11',
+      memberIdentitySnapshot: null,
+      lines: [eventLine],
+    });
+    const deps = makeDeps(
+      matchedEventDraft,
+      makeSettings(),
+      makeMember({
+        memberTypeScope: 'company',
+        snapshot: {
+          legal_name: 'No-Tax Co',
+          tax_id: null,
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'John Doe',
+          primary_contact_email: 'john@acme.example',
+        },
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    // A matched company member with no TIN is a rare data anomaly → receipt,
+    // NOT a block (per the §86/4 ruling). NEVER tax_id_required for an event.
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'receipt_separate' }),
+    );
+  });
+
+  it('membership → always renders kind:invoice (gate guarantees a TIN was present)', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice', vatInclusive: false }),
+    );
+  });
+
+  // --- 054-event-fee-invoices (Task 14) — auto-email hardening -----------------
+  //   (A) empty-recipient guard: a non-member event buyer with an empty
+  //       contact email → SKIP enqueue + warn (ids only), invoice still issues.
+  //   (B) non-member event privacy footer: enqueue carries
+  //       privacyFooterKind:'event_non_member'.
+  //   regression: membership invoice enqueue carries NO footer flag.
+
+  /** Non-member event draft with a chosen buyer contact email (tax_id pinned). */
+  function makeNonMemberEventDraftWithEmail(contactEmail: string): Invoice {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(107000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(107000n),
+      position: 1,
+    };
+    return makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-14',
+      eventRegistrationId: 'reg-uuid-14',
+      memberIdentitySnapshot: Object.freeze({
+        legal_name: 'Walk-in Guest',
+        tax_id: '9876543210123',
+        address: '50 Sukhumvit Road, Bangkok 10110',
+        primary_contact_name: 'Buyer',
+        primary_contact_email: contactEmail,
+      }),
+      lines: [eventLine],
+    });
+  }
+
+  it('(A) non-member event, auto-email ON, EMPTY buyer email → no enqueue, warn fires + metric bumps, invoice still issues', async () => {
+    // Observability parity (054 speckit-review) — assert the dedicated
+    // `autoEmailSkipped` counter bumps so ops can alert on the otherwise-silent
+    // skip, not just the warn log.
+    const skipMetric = vi.spyOn(invoicingMetrics, 'autoEmailSkipped');
+    const deps = makeDeps(
+      makeNonMemberEventDraftWithEmail(''),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueInvoice(deps, input);
+    // Invoice still issues successfully — email is best-effort, not a tx invariant.
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    // No enqueue to the empty address.
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Metric bumped with the event subject + no_recipient reason.
+    expect(skipMetric).toHaveBeenCalledWith('event', 'no_recipient');
+    skipMetric.mockRestore();
+    // Skip warn fires with ids only (no email/PII).
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'invoice_auto_email_skipped_no_recipient',
+        tenantId: input.tenantId,
+        invoiceSubject: 'event',
+      }),
+      expect.any(String),
+    );
+    // Defence-in-depth: the buyer's (empty) email never appears in the log
+    // call arg — assert no field on the warn payload carries an email value.
+    const warnArgs = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(warnArgs).toBeDefined();
+    expect(JSON.stringify(warnArgs)).not.toContain('primary_contact_email');
+    expect(JSON.stringify(warnArgs)).not.toContain('@');
+  });
+
+  it('(A) whitespace-only buyer email → treated as empty → no enqueue, warn fires', async () => {
+    const deps = makeDeps(
+      makeNonMemberEventDraftWithEmail('   '),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'invoice_auto_email_skipped_no_recipient' }),
+      expect.any(String),
+    );
+  });
+
+  it('(B) non-member event, auto-email ON, buyer HAS email → enqueues with privacyFooterKind:event_non_member', async () => {
+    const deps = makeDeps(
+      makeNonMemberEventDraftWithEmail('buyer@walkin.example'),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'invoice_issued',
+        recipientEmail: 'buyer@walkin.example',
+        privacyFooterKind: 'event_non_member',
+      }),
+    );
+    // Skip warn must NOT fire on the happy enqueue path.
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'invoice_auto_email_skipped_no_recipient' }),
+      expect.anything(),
+    );
+  });
+
+  it('(regression) membership invoice, auto-email ON → enqueues WITHOUT the event-non-member footer flag', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice({ autoEmailOnIssue: null }),
+      makeSettings({ autoEmailEnabled: true }),
+      makeMember(),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    const enqueueArg = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as Record<string, unknown>;
+    expect(enqueueArg.recipientEmail).toBe('john@acme.example');
+    // No footer flag for a membership invoice (the buyer is a known member).
+    expect(enqueueArg.privacyFooterKind).toBeUndefined();
+  });
+
+  it('(regression) matched-member EVENT invoice → enqueues WITHOUT the footer flag (member, not walk-in)', async () => {
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน',
+      descriptionEn: 'Event',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-14b',
+      eventRegistrationId: 'reg-uuid-14b',
+      memberIdentitySnapshot: null, // pinned at issue from the member row
+      lines: [eventLine],
+    });
+    const deps = makeDeps(matchedEventDraft, makeSettings({ autoEmailEnabled: true }), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    const enqueueArg = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as Record<string, unknown>;
+    // memberId is non-null → the footer is for NON-member buyers only.
+    expect(enqueueArg.privacyFooterKind).toBeUndefined();
   });
 });
 

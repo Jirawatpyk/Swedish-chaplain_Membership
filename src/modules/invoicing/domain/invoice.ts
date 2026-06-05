@@ -40,6 +40,20 @@ export const INVOICE_STATUSES = [
 ] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+/**
+ * 054-event-fee-invoices (NF-C) — upper bound on an event-fee invoice
+ * amount, in satang. `100_000_000` satang = 1,000,000.00 THB. A single
+ * event ticket fee above one million baht is almost certainly an
+ * operator typo (an extra trailing zero) rather than a real charge, so
+ * we reject it as `invalid_amount` rather than persist it.
+ *
+ * Shared (defense-in-depth) by `createEventInvoiceDraft`'s zod schema
+ * (`amountOverride.max(...)`), its defensive in-body re-check of the
+ * ticket-price-derived amount, and the route-handler zod. Exported via
+ * the invoicing barrel so the route + form layers bound the same value.
+ */
+export const MAX_EVENT_INVOICE_SATANG = 100_000_000;
+
 declare const InvoiceIdBrand: unique symbol;
 export type InvoiceId = string & { readonly [InvoiceIdBrand]: true };
 
@@ -78,12 +92,70 @@ export function parseInvoiceId(
   return { ok: true, value: raw as InvoiceId };
 }
 
-export interface Invoice {
+/**
+ * 054-event-fee-invoices — the subject-specific identity partition.
+ *
+ * `Invoice` is a DISCRIMINATED UNION on `invoiceSubject`, so illegal field
+ * combinations are unrepresentable at compile time (mirroring the DB CHECK
+ * `invoices_subject_fields_ck` tightened by migration 0208). Narrowing on
+ * `invoiceSubject` yields the per-arm non-null / null guarantees:
+ *
+ *   - `'membership'`  ⇒ member_id + plan_id + plan_year present (NON-NULL),
+ *                       event_id + event_registration_id are `null`, and the
+ *                       invoice is VAT-EXCLUSIVE (`vatInclusive: false`).
+ *   - `'event'`       ⇒ event_id + event_registration_id present (NON-NULL),
+ *                       plan_id + plan_year are `null`, member_id may be a
+ *                       matched member (`string`) or a non-member buyer
+ *                       (`null`), and the ticket may be priced VAT-inclusive
+ *                       or VAT-exclusive (`vatInclusive: boolean`).
+ *
+ * All subject-specific fields are kept PRESENT on both arms (typed `null` on
+ * the off-subject arm) so consumers that only read shared financial /
+ * numbering / snapshot fields need no narrowing — only the per-arm literal
+ * types differ.
+ */
+export type InvoiceSubjectFields =
+  | {
+      readonly invoiceSubject: 'membership';
+      readonly memberId: string;
+      readonly planId: string;
+      readonly planYear: number;
+      readonly eventId: null;
+      readonly eventRegistrationId: null;
+      /** Membership invoices are VAT-EXCLUSIVE. */
+      readonly vatInclusive: false;
+    }
+  | {
+      readonly invoiceSubject: 'event';
+      /**
+       * Set when the attendee is a matched member; `null` for a non-member
+       * buyer billed for the ticket.
+       */
+      readonly memberId: string | null;
+      readonly planId: null;
+      readonly planYear: null;
+      /** F6 event id. */
+      readonly eventId: string;
+      /** F6 event_registrations id. */
+      readonly eventRegistrationId: string;
+      /**
+       * VAT treatment. Event invoices may be VAT-INCLUSIVE (`true`) when the
+       * ticket price already embeds the 7% component, or VAT-EXCLUSIVE
+       * (`false`).
+       */
+      readonly vatInclusive: boolean;
+    };
+
+/**
+ * Shared (subject-agnostic) Invoice fields — financial, numbering, lifecycle,
+ * snapshot, payment, void, and PDF metadata. Combined with
+ * {@link InvoiceSubjectFields} to form the full {@link Invoice} discriminated
+ * union. `memberIdentitySnapshot` (the BUYER snapshot) lives here because its
+ * shape is identical for both subjects — only the semantic source differs.
+ */
+export interface InvoiceCommon {
   readonly tenantId: string;
   readonly invoiceId: InvoiceId;
-  readonly memberId: string;
-  readonly planId: string;
-  readonly planYear: number;
 
   readonly status: InvoiceStatus;
   readonly draftByUserId: string;
@@ -110,6 +182,13 @@ export interface Invoice {
   readonly netDays: number | null;
 
   readonly tenantIdentitySnapshot: TenantIdentitySnapshot | null;
+  /**
+   * BUYER identity snapshot, frozen at issue time. For
+   * `invoiceSubject === 'membership'` this is the member; for `'event'`
+   * it is the registrant/attendee billed for the ticket. The shape is
+   * identical (legal name / tax id / address) so the type is unchanged —
+   * only the semantic source differs by subject.
+   */
   readonly memberIdentitySnapshot: MemberIdentitySnapshot | null;
 
   // Payment (null unless paid)
@@ -189,25 +268,83 @@ export interface Invoice {
   readonly updatedAt: string;
 }
 
+/**
+ * 054-event-fee-invoices — Invoice aggregate root, modelled as a REAL
+ * discriminated union on `invoiceSubject` so illegal states are
+ * unrepresentable. Narrowing `if (invoice.invoiceSubject === 'membership')`
+ * widens `memberId`/`planId`/`planYear` to their non-null types and narrows
+ * `eventId`/`eventRegistrationId` to `null`; the `'event'` arm does the
+ * reverse. Constructing a membership invoice with `eventId` set (or
+ * `vatInclusive: true`) is now a COMPILE error.
+ *
+ * See {@link InvoiceCommon} (shared fields) + {@link InvoiceSubjectFields}
+ * (per-subject identity partition).
+ */
+export type Invoice = InvoiceCommon & InvoiceSubjectFields;
+
 export type InvoiceTransitionError =
   | { code: 'invalid_transition'; from: InvoiceStatus; to: InvoiceStatus }
   | { code: 'terminal_state'; status: InvoiceStatus }
   | { code: 'missing_snapshot'; field: string }
   | { code: 'no_membership_line' }
-  | { code: 'multiple_membership_lines'; count: number };
+  | { code: 'multiple_membership_lines'; count: number }
+  | { code: 'no_event_fee_line' }
+  | { code: 'multiple_event_fee_lines'; count: number };
 
 export function isTerminal(status: InvoiceStatus): boolean {
   return status === 'void' || status === 'credited';
 }
 
 /**
- * Draft invariant: exactly one `membership_fee` line required before
- * issue. Enforced at Application layer on transition to `issued`.
+ * LOW-14 — per-subject rule for the "exactly-one subject-defining line"
+ * invariant. Each subject pins (1) the line `kind` that must appear exactly
+ * once and (2) the two error builders for the 0-line and >1-line cases. A new
+ * invoice subject adds ONE entry here and cannot diverge the count logic from
+ * the other subjects (the count-and-compare lives in `enforceOneSubjectLine`,
+ * not per branch). Error codes + shapes are UNCHANGED — callers/tests pin the
+ * same `no_*_line` / `multiple_*_lines` contract.
  */
-export function enforceOneMembershipLine(lines: readonly InvoiceLine[]): Result<void, InvoiceTransitionError> {
-  const count = lines.filter((l) => l.kind === 'membership_fee').length;
-  if (count === 0) return err({ code: 'no_membership_line' });
-  if (count > 1) return err({ code: 'multiple_membership_lines', count });
+const SUBJECT_LINE_RULES: Record<
+  'membership' | 'event',
+  {
+    readonly kind: InvoiceLine['kind'];
+    readonly zero: InvoiceTransitionError;
+    readonly many: (count: number) => InvoiceTransitionError;
+  }
+> = {
+  membership: {
+    kind: 'membership_fee',
+    zero: { code: 'no_membership_line' },
+    many: (count) => ({ code: 'multiple_membership_lines', count }),
+  },
+  event: {
+    kind: 'event_fee',
+    zero: { code: 'no_event_fee_line' },
+    many: (count) => ({ code: 'multiple_event_fee_lines', count }),
+  },
+};
+
+/**
+ * Draft invariant: exactly one subject-defining line required before
+ * issue — `membership_fee` for a `'membership'` invoice, `event_fee`
+ * for an `'event'` invoice. Enforced at Application layer on transition
+ * to `issued`.
+ *
+ * The `'membership'` rule carries the `no_membership_line` /
+ * `multiple_membership_lines` error contract (formerly the standalone
+ * `enforceOneMembershipLine`, removed in Task 7 once `issue-invoice` became
+ * the last caller). The `'event'` rule mirrors the same shape for `event_fee`
+ * lines. Both are driven by the shared `SUBJECT_LINE_RULES` table (LOW-14) so
+ * the count-and-compare logic exists in exactly one place.
+ */
+export function enforceOneSubjectLine(
+  subject: 'membership' | 'event',
+  lines: readonly InvoiceLine[],
+): Result<void, InvoiceTransitionError> {
+  const rule = SUBJECT_LINE_RULES[subject];
+  const count = lines.filter((l) => l.kind === rule.kind).length;
+  if (count === 0) return err(rule.zero);
+  if (count > 1) return err(rule.many(count));
   return ok(undefined);
 }
 

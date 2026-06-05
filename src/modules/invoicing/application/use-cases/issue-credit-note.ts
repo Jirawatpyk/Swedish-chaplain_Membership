@@ -50,7 +50,7 @@ import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
@@ -68,6 +68,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calculate-credit-note-vat';
 import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder';
+import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
@@ -95,10 +96,65 @@ export const issueCreditNoteSchema = z.object({
 
 export type IssueCreditNoteInput = z.infer<typeof issueCreditNoteSchema>;
 
+/**
+ * MEDIUM-5 — outcome of the auto-email enqueue, surfaced on the success
+ * result so the route + admin UI can give the operator a NON-blocking
+ * signal instead of a silent skip:
+ *
+ *   - `'sent'`                 → an outbox row was enqueued to the buyer's
+ *                                snapshotted contact email.
+ *   - `'skipped_no_recipient'` → auto-email is ON but the buyer snapshot has
+ *                                NO contact email (a non-member EVENT buyer may
+ *                                carry an empty `primary_contact_email`). The CN
+ *                                is fully issued + persisted; only the email was
+ *                                skipped. The UI shows a non-blocking notice so
+ *                                the admin knows to send the document manually.
+ *   - `'not_requested'`        → auto-email is OFF (per-invoice override or
+ *                                tenant default). A deliberate non-send — the UI
+ *                                shows NO notice (nothing went wrong).
+ *
+ * NOTE — `issue-invoice.ts` has the SAME empty-recipient skip pattern (its
+ * outbox enqueue is guarded on a non-empty recipient with a parallel warn log).
+ * For UX consistency it could surface the same signal; out of scope here.
+ */
+export type CreditNoteEmailDelivery = 'sent' | 'skipped_no_recipient' | 'not_requested';
+
+/**
+ * Success payload — the issued `CreditNote` aggregate plus the transient
+ * email-delivery signal. The signal is deliberately NOT folded onto the
+ * `CreditNote` domain object (it is per-issue request state, not part of the
+ * immutable tax document) — it rides alongside on the use-case boundary only.
+ */
+export interface IssueCreditNoteSuccess {
+  readonly creditNote: CreditNote;
+  readonly emailDelivery: CreditNoteEmailDelivery;
+}
+
 export type IssueCreditNoteError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  /**
+   * LOW-12 — data-integrity guard. An `invoice_subject='event'` row is
+   * DB-CHECK-guaranteed (`invoices_subject_fields_ck`) to carry a non-null
+   * `event_registration_id`. If a corrupted row somehow reaches here with a
+   * null one, we reject BEFORE allocating a §87 credit-note number (no
+   * side effects) rather than emit a null into the non-member audit payload
+   * — which the audit contract types as a string. Same class as
+   * `no_snapshot_on_invoice`: a row that violates its own subject invariant.
+   */
+  | { code: 'invalid_event_invoice' }
+  /**
+   * final-review HIGH 1 / §86/10 ruling — the parent is a §105 ใบเสร็จรับเงิน
+   * (a `receipt_separate` event invoice issued to a buyer WITHOUT a 13-digit
+   * TIN). A credit note (ใบลดหนี้, §86/10) can ONLY legally adjust a §86/4 tax
+   * invoice (ใบกำกับภาษี). It can never reference a §105 receipt — the buyer
+   * never received an input-VAT-claimable tax invoice, so there is nothing to
+   * credit. The correct remedy is a direct refund or a void. Returned BEFORE
+   * `allocateNext` so a blocked attempt never burns a §87 credit-note sequence
+   * number.
+   */
+  | { code: 'receipt_not_creditable' }
   | { code: 'settings_missing' }
   | {
       // F5R3v4 M-5 (2026-05-16) — fields are `UntrustedSatang`
@@ -137,7 +193,7 @@ export interface IssueCreditNoteDeps {
 export async function issueCreditNote(
   deps: IssueCreditNoteDeps,
   input: IssueCreditNoteInput,
-): Promise<Result<CreditNote, IssueCreditNoteError>> {
+): Promise<Result<IssueCreditNoteSuccess, IssueCreditNoteError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const creditNoteId = asCreditNoteId(randomUUID());
   const now = deps.clock.nowIso();
@@ -214,6 +270,95 @@ export async function issueCreditNote(
         !loaded.issueDate
       ) {
         return err({ code: 'no_snapshot_on_invoice' });
+      }
+      // 054-event-fee-invoices (Task 8) — `memberId` is nullable. Membership
+      // invoices always carry one (`invoices_subject_fields_ck`); NON-member
+      // EVENT invoices have `member_id IS NULL` but DO carry a complete pinned
+      // buyer snapshot (set at draft by createEventInvoiceDraft). The snapshot
+      // completeness guard above (memberIdentitySnapshot/subtotal/vat/vatRate
+      // non-null) already protects the credit-note math + render, so a null
+      // memberId is NOT a missing-snapshot condition. We keep `memberId` only
+      // to branch the audit (timeline vs non-timeline) below — do NOT early-
+      // return on it (removing the prior bug guard that wrongly blocked
+      // crediting non-member event invoices).
+      const memberId = loaded.memberId;
+
+      // LOW-12 — data-integrity guard for event invoices. `eventRegistrationId`
+      // is typed `string | null` on the aggregate but the DB CHECK
+      // `invoices_subject_fields_ck` guarantees it is NON-null whenever
+      // `invoiceSubject === 'event'`. The non-member audit branch below emits
+      // it into a payload that the audit contract types as a string, so a
+      // (corrupted) null would violate that contract. Reject cleanly here —
+      // BEFORE the POST-SEQUENCE zone, so no §87 number is burned and nothing
+      // needs to roll back (parity with the `no_snapshot_on_invoice` early
+      // return). Under valid state this branch is unreachable.
+      //
+      // FIX 10/12 — bind the non-null id into a `const` HERE, where the
+      // `invoiceSubject === 'event'` narrowing is valid (TS cannot re-derive
+      // it at the audit emit, which only knows `memberId === null`). The
+      // non-member audit branch consumes `eventRegistrationId` directly, with
+      // NO `?? ''` fallback — so if this guard is ever removed, the emit fails
+      // to compile (loud) instead of silently persisting an empty string.
+      //
+      // 054-event-fee-invoices (DU refactor) — `Invoice` is now a discriminated
+      // union on `invoiceSubject`, so the 'event' arm types `eventRegistrationId`
+      // as non-null `string`. The DB CHECK + the repo seam's
+      // `MalformedInvoiceSubjectError` already make `event`+null-registration-id
+      // unrepresentable for any row loaded through the repo. We DELIBERATELY keep
+      // the runtime null-check as defence-in-depth (it stays reachable via a
+      // mock-injected fabricated row — see the LOW-12 unit test — and preserves
+      // the `invalid_event_invoice` → 422 contract). To keep the check live and
+      // type-checking, we read the discriminant-agnostic union field
+      // (`string | null`) into `rawEventRegistrationId` BEFORE narrowing, so the
+      // `=== null` comparison is not statically eliminated.
+      const rawEventRegistrationId: string | null = loaded.eventRegistrationId;
+      let eventRegistrationId: string | null = null;
+      if (loaded.invoiceSubject === 'event') {
+        if (rawEventRegistrationId === null) {
+          logger.error(
+            { tenantId: input.tenantId, invoiceId, invoiceSubject: loaded.invoiceSubject },
+            'issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting',
+          );
+          return err({ code: 'invalid_event_invoice' });
+        }
+        eventRegistrationId = rawEventRegistrationId;
+      }
+
+      // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
+      // ใบเสร็จรับเงิน (`receipt_separate`). A credit note can only adjust a
+      // §86/4 tax invoice (ใบกำกับภาษี, kind='invoice'); a buyer who never
+      // received a TIN-bearing tax invoice has no input VAT to reverse, so a
+      // §86/10 ใบลดหนี้ against their §105 receipt is legally void.
+      //
+      // DETECTION — there is NO persisted `pdf_kind`/`pdf_doc_kind` column on
+      // `invoices` (the resolved doc-type is computed at render time only). So
+      // we RECONSTRUCT `receipt_separate` from the persisted `invoiceSubject` +
+      // the BUYER snapshot's TIN via the shared `inferEventDocumentKind`,
+      // mirroring `issueInvoice`'s issue-time `pdfKind` resolution EXACTLY so the
+      // issue-time gate and this credit-time gate stay in lockstep. The
+      // snapshot-completeness guard above guarantees
+      // `memberIdentitySnapshot` is non-null here; the `?.` is defensive parity
+      // with the issue-invoice expression. (TIN check trims whitespace, matching
+      // the issue-invoice + record-payment gates.)
+      //
+      // Runs BEFORE `allocateNext` (POST-SEQUENCE zone), so a blocked attempt
+      // never burns a §87 credit-note sequence number — the §87 CN stream stays
+      // gap-free. Mirrors the issue-invoice rule that the doc-type gate precedes
+      // sequence allocation.
+      // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
+      // !== ''` + the event/no-TIN reconstruction, duplicated across
+      // issue-invoice + record-payment). `inferEventDocumentKind` resolves the
+      // SAME `receipt_separate` verdict the issue-time gate used, keeping the
+      // issue-time and credit-time gates in lockstep. The `?.` retains the
+      // defensive parity of the former expression (the snapshot-completeness
+      // guard above already guarantees non-null).
+      const isReceiptSeparate =
+        inferEventDocumentKind(
+          loaded.invoiceSubject,
+          loaded.memberIdentitySnapshot?.tax_id,
+        ) === 'receipt_separate';
+      if (isReceiptSeparate) {
+        return err({ code: 'receipt_not_creditable' });
       }
 
       if (!settings) return err({ code: 'settings_missing' });
@@ -481,6 +626,12 @@ export async function issueCreditNote(
           { pdfRender: deps.pdfRender, blob: deps.blob },
           {
             renderInput: {
+              // §86/10 doc-type gate (final-review HIGH 1): a §105 receipt_separate
+              // parent is rejected by the `receipt_not_creditable` guard above
+              // BEFORE this point is ever reached, so ONLY kind='invoice' (§86/4
+              // ใบกำกับภาษี) parents arrive here. Hardcoding 'invoice' is therefore
+              // tax-correct — the CREDITED overlay can only ever stamp a genuine
+              // tax invoice, never a §105 ใบเสร็จรับเงิน.
               kind: 'invoice',
               templateVersion: loaded.pdf.templateVersion,
               documentNumber: loaded.documentNumber,
@@ -494,6 +645,11 @@ export async function issueCreditNote(
               vatRate: loaded.vatRate,
               vat: loaded.vat,
               total: loaded.total,
+              // 054-event-fee-invoices — preserve the VAT-inclusive annotation
+              // when re-annotating a credited EVENT invoice (Model B). Membership
+              // invoices carry `false` so the re-render stays byte-equivalent to
+              // the original (modulo the CREDITED overlay) per SC-003 intent.
+              vatInclusive: loaded.vatInclusive,
               creditedAnnotation: {
                 fullyCredited,
                 references: annotationRefs,
@@ -542,27 +698,77 @@ export async function issueCreditNote(
         });
       }
 
-      // K. Audit.
-      await deps.audit.emit(tx, {
-        tenantId: input.tenantId,
-        requestId: input.requestId ?? null,
-        eventType: 'credit_note_issued',
-        actorUserId: input.actorUserId,
-        summary: `Credit note ${docNum.value.raw} issued against ${loaded.documentNumber.raw}`,
-        payload: {
-          credit_note_id: creditNoteId,
-          original_invoice_id: invoiceId,
-          // US7 — surfaces in the F3 member timeline (filter is on
-          // `payload->>'member_id'`).
-          member_id: loaded.memberId,
-          credit_amount_satang: creditAmount.satang.toString(),
-          vat_satang: vat.satang.toString(),
-          total_satang: total.satang.toString(),
-          reason: input.reason,
-          document_number: docNum.value.raw,
-          pdf_sha256: rendered.sha256,
-        },
-      });
+      // K. Audit `credit_note_issued` — branch on buyer kind (054-event-fee-
+      // invoices Task 8).
+      //
+      //   MEMBERSHIP / matched-member (memberId non-null) → TIMELINE branch:
+      //   the payload carries `member_id` so the F3 member timeline filter
+      //   (`payload->>'member_id'`) surfaces the credit note (US7). UNCHANGED
+      //   F4 behaviour.
+      //
+      //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is
+      //   not an F3 member, so the timeline filter MUST NOT surface it. We do
+      //   NOT widen `MemberTimelineAuditPayload` to make `member_id` optional
+      //   (that would weaken the F3 `member_id` guarantee for the member-timeline
+      //   event types); instead we narrow `credit_note_issued` to the non-timeline
+      //   `F4AuditEvent` branch at THIS one site, carrying `event_registration_id`
+      //   and omitting `member_id` entirely. Mirrors the `emitNonTimelineDraftCreated`
+      //   precedent in create-event-invoice-draft.ts + the issue-invoice.ts
+      //   non-member branch.
+      const creditNoteSummary = `Credit note ${docNum.value.raw} issued against ${loaded.documentNumber.raw}`;
+      const creditNotePayloadBase: Record<string, unknown> = {
+        credit_note_id: creditNoteId,
+        original_invoice_id: invoiceId,
+        credit_amount_satang: creditAmount.satang.toString(),
+        vat_satang: vat.satang.toString(),
+        total_satang: total.satang.toString(),
+        reason: input.reason,
+        document_number: docNum.value.raw,
+        pdf_sha256: rendered.sha256,
+      };
+      if (memberId !== null) {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'credit_note_issued',
+          actorUserId: input.actorUserId,
+          summary: creditNoteSummary,
+          payload: {
+            // US7 — surfaces in the F3 member timeline (filter is on
+            // `payload->>'member_id'`).
+            member_id: memberId,
+            ...creditNotePayloadBase,
+          },
+        });
+      } else {
+        // LOW-12 / FIX 10/12 — a null `memberId` implies `invoiceSubject==='event'`
+        // (membership invoices always carry member_id per
+        // `invoices_subject_fields_ck`), and the up-front LOW-12 guard already
+        // rejected any event invoice with a null `eventRegistrationId` — so
+        // `eventRegistrationId` (bound from that guard) is non-null here. TS
+        // cannot re-derive that at this site (it only knows `memberId === null`),
+        // so we re-assert it explicitly. This replaces the former silent
+        // `?? ''` fallback: if the up-front guard is ever removed, this throws
+        // (rolling back the tx via withTx) instead of persisting an empty
+        // string into the audit payload's string-typed `event_registration_id`.
+        if (eventRegistrationId === null) {
+          throw new IssueCreditNoteInternalError({ code: 'invalid_event_invoice' });
+        }
+        // NON-MEMBER event invoice. The typed `emitNonMemberInvoiceEvent` helper
+        // (audit-port.ts) REQUIRES `event_registration_id` and FORBIDS `member_id`
+        // at compile time — no `as unknown as` cast — so the F3 timeline filter
+        // (`payload->>'member_id'`) never surfaces a non-member credit note.
+        await emitNonMemberInvoiceEvent(deps.audit, tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'credit_note_issued',
+          // Non-null per the re-assert above (narrowed to `string`).
+          eventRegistrationId,
+          actorUserId: input.actorUserId,
+          summary: creditNoteSummary,
+          extraPayload: creditNotePayloadBase,
+        });
+      }
 
       // L. Outbox (auto-email). The `autoEmailOnIssue` flag name comes
       // from the invoice-issue flow but the per-invoice override
@@ -573,18 +779,43 @@ export async function issueCreditNote(
       // email-toggle rule is the tenant `autoEmailEnabled` setting;
       // keeping both here for clarity).
       const shouldAutoEmail = loaded.autoEmailOnIssue ?? settings.autoEmailEnabled;
-      if (shouldAutoEmail) {
+      // 054-event-fee-invoices (Task 8) — a NON-member event buyer snapshot may
+      // carry an EMPTY `primary_contact_email` (`makeMemberIdentitySnapshot`
+      // accepts ''); membership/matched-member snapshots always have a real
+      // contact email. Guard the enqueue on a non-empty recipient so we never
+      // queue an outbox row addressed to '' (the Resend adapter would reject it
+      // downstream + the row would dead-letter). Skip + a no-PII pino.warn
+      // (ids only) when there is no contact email to send to.
+      const creditNoteRecipient = loaded.memberIdentitySnapshot.primary_contact_email;
+      // MEDIUM-5 — capture the delivery outcome so the route/UI can give the
+      // admin a non-blocking signal (notice on `skipped_no_recipient`, silent
+      // on `sent`/`not_requested`). Defaults to `not_requested`; flips to
+      // `sent` on enqueue, `skipped_no_recipient` on the empty-email skip.
+      let emailDelivery: CreditNoteEmailDelivery = 'not_requested';
+      if (shouldAutoEmail && creditNoteRecipient.trim() !== '') {
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'credit_note_issued',
-          recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email,
+          recipientEmail: creditNoteRecipient,
           creditNoteId,
           pdfBlobKey: blobKey,
           pdfTemplateVersion: deps.currentTemplateVersion,
         });
+        emailDelivery = 'sent';
+      } else if (shouldAutoEmail) {
+        emailDelivery = 'skipped_no_recipient';
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            creditNoteId,
+            invoiceSubject: loaded.invoiceSubject,
+          },
+          'issueCreditNote: auto-email enabled but buyer snapshot has no contact email — skipping credit-note email',
+        );
       }
 
-      return ok(cn);
+      return ok({ creditNote: cn, emailDelivery });
     });
   } catch (e) {
     if (e instanceof IssueCreditNoteInternalError) {

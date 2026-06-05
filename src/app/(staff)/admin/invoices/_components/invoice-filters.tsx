@@ -55,6 +55,11 @@ export function InvoiceFilters() {
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
   const paidOnlineActive = searchParams.get('paidOnline') === '1';
+  // 054-event-fee-invoices — subject filter (all | membership | event).
+  // Only the two known subjects are honoured; anything else => 'all'.
+  const rawSubject = searchParams.get('subject');
+  const currentSubject =
+    rawSubject === 'membership' || rawSubject === 'event' ? rawSubject : 'all';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -81,7 +86,10 @@ export function InvoiceFilters() {
   };
 
   const hasAnyFilter =
-    currentQ !== '' || currentStatus !== 'all' || paidOnlineActive;
+    currentQ !== '' ||
+    currentStatus !== 'all' ||
+    currentSubject !== 'all' ||
+    paidOnlineActive;
 
   const togglePaidOnline = () => {
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
@@ -133,6 +141,39 @@ export function InvoiceFilters() {
           ))}
         </SelectContent>
       </Select>
+      {/* 054-event-fee-invoices — subject filter (All types / Membership /
+          Event). Mirrors the status dropdown: URL `?subject=` param is the
+          source of truth; resetting to "all" clears the param. */}
+      <Select
+        value={currentSubject}
+        onValueChange={(v) =>
+          pushUrl({ subject: v && v !== 'all' ? v : null })
+        }
+      >
+        <SelectTrigger
+          className="sm:w-[12rem]"
+          aria-label={t('filters.subject.label')}
+          data-testid="invoice-subject-filter"
+        >
+          <TranslatedSelectValue
+            placeholder={t('filters.subject.all')}
+            translate={(v) =>
+              v === 'membership'
+                ? t('filters.subject.membership')
+                : v === 'event'
+                  ? t('filters.subject.event')
+                  : t('filters.subject.all')
+            }
+          />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t('filters.subject.all')}</SelectItem>
+          <SelectItem value="membership">
+            {t('filters.subject.membership')}
+          </SelectItem>
+          <SelectItem value="event">{t('filters.subject.event')}</SelectItem>
+        </SelectContent>
+      </Select>
       {/* R3-fix N7 (2026-04-26): the staff admin layout already
           mounts `<TooltipProvider>` at the shell level — a local
           provider here would remount on every searchParam change
@@ -176,7 +217,7 @@ export function InvoiceFilters() {
           variant="ghost"
           size="sm"
           onClick={() =>
-            pushUrl({ q: null, status: null, paidOnline: null })
+            pushUrl({ q: null, status: null, paidOnline: null, subject: null })
           }
           aria-label={t('filters.clearAll')}
         >

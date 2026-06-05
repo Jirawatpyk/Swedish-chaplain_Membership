@@ -863,6 +863,29 @@ describe('initiatePayment (T055)', () => {
     expect(result.error.currentStatus).toBe('paid');
   });
 
+  // 054-event-fee-invoices (Task 8) — F5 access model for NON-member event
+  // invoices. The F4 bridge surfaces `not_payable` for a null-member event
+  // invoice (its memberId can't bind a `payments.member_id NOT NULL` row), so
+  // the member-portal self-pay path here MUST reject with
+  // `invoice_not_payable` and NEVER reach `paymentsRepo.insert` (no null
+  // memberId persisted, no createPaymentIntent burned). This pins the decision
+  // that non-member event invoices are not member-self-payable.
+  it('non-member event invoice (bridge not_payable, status=issued) — invoice_not_payable, no insert / no Stripe call', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'not_payable', status: 'issued' }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_not_payable');
+    if (result.error.code !== 'invoice_not_payable') return;
+    expect(result.error.currentStatus).toBe('issued');
+    // No DB write + no processor round-trip on the non-payable path.
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+  });
+
   // W1 (audit 2026-04-25 follow-up): F4's `getInvoiceForPayment` returns
   // `ok({status: 'paid'})` for already-settled invoices (it only hard-
   // rejects on `null`/zero `total`). Without an explicit gate in the

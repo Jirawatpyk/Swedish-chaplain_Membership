@@ -71,6 +71,20 @@ function mapF4InvoiceForPayment(
     );
     return err({ code: 'corrupted_total', invoiceId: v.id });
   }
+  // 054-event-fee-invoices (Task 8) — F4 widened `InvoiceForPayment.memberId`
+  // to `string | null`; F5's `InvoiceForPaymentDTO.memberId` stays `string`
+  // because `payments.member_id` is NOT NULL and a member binding is required
+  // for self-pay. F4's `getInvoiceForPayment` ALREADY rejects null-member
+  // (event-fee) invoices with `not_payable` before returning an `ok` DTO, so
+  // this branch is defense-in-depth: if a future F4 change ever surfaces a
+  // null memberId on the `ok` path, the bridge MUST NOT fabricate a `null`
+  // into F5's NOT-NULL contract (it would crash the `payments.member_id`
+  // insert). Surface it as the bridge's existing `not_payable` so the
+  // use-case fails cleanly with a typed error instead of a 500.
+  if (v.memberId === null) {
+    return err({ code: 'not_payable', status: v.status });
+  }
+
   return ok({
     id: v.id,
     status: v.status,

@@ -1,8 +1,10 @@
 /**
  * T032 — Audit port (F4).
  *
- * 17 F4 audit event types defined here as a discriminated union so
- * callers cannot pass an unknown event_type. Payload shapes are
+ * The F4 audit event types are defined here as a discriminated union so
+ * callers cannot pass an unknown event_type. (The authoritative count is
+ * `F4_AUDIT_RETENTION_YEARS` below — every union member must have a retention
+ * entry — so no hard count is kept in this header to rot.) Payload shapes are
  * structurally typed per data-model.md § 4.
  *
  * `invoice_pdf_regenerated` (added 2026-04-20 as part of SC-003 /
@@ -31,6 +33,17 @@ export type F4AuditEventType =
   | 'invoice_cross_tenant_probe'
   | 'credit_note_cross_tenant_probe'
   | 'tenant_invoice_settings_cross_tenant_probe'
+  /**
+   * 054-event-fee-invoices (Task 6b) — emitted by `createEventInvoiceDraft`
+   * when `EventRegistrationLookupPort.findById` returns `ok(null)`: the F6
+   * registration either genuinely does not exist OR is RLS-hidden because it
+   * belongs to another tenant. Indistinguishable at the data layer, so we
+   * audit either case as a probe (Constitution Principle I clause 4). NON-
+   * timeline (no `member_id` available — the read fires BEFORE the buyer is
+   * resolved). Operational/probe class → 5y retention. Payload carries the
+   * attempted `event_registration_id` + route.
+   */
+  | 'registration_cross_tenant_probe'
   | 'pdf_render_failed'
   | 'auto_email_delivery_failed'
   /**
@@ -90,7 +103,25 @@ export type F4AuditEventType =
    * invoice/receipt rows already carry their own 10y events.
    * Payload: `from`, `to`, `row_count`, `actor_user_id`, `route`.
    */
-  | 'invoices_csv_exported';
+  | 'invoices_csv_exported'
+  /**
+   * 054-event-fee-invoices (Task 15) — emitted by the
+   * `/api/cron/invoicing/redact-expired-event-buyers` retention sweeper
+   * once a non-member EVENT-fee invoice issued >10 years ago has its
+   * buyer PII tombstoned in `member_identity_snapshot` (Thai RD §87/3 +
+   * §86/10 statutory retention satisfied → GDPR Art. 5(1)(e) /
+   * Art. 17 minimisation requires erasure). NON-timeline (the row has
+   * `member_id IS NULL` — there is no member to surface on the F3
+   * timeline). The payload carries `invoice_id`, `redacted_at`, and the
+   * list of `redacted_fields` (field NAMES only, NEVER the PII values)
+   * so a future RD/forensic SELECT can prove WHICH columns were erased
+   * WHEN, without re-introducing the erased PII into the audit trail.
+   * 10-year retention so the §87/3 forensic window still covers the
+   * erasure record itself (the financial/numbering fields on the
+   * invoice row are PRESERVED untouched — only the buyer identity is
+   * tombstoned).
+   */
+  | 'event_buyer_pii_redacted';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -124,6 +155,8 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   invoice_cross_tenant_probe: 5,
   credit_note_cross_tenant_probe: 5,
   tenant_invoice_settings_cross_tenant_probe: 5,
+  // 054-event-fee-invoices — probe/operational event; 5y (no tax-doc touch).
+  registration_cross_tenant_probe: 5,
   pdf_render_failed: 5,
   auto_email_delivery_failed: 5,
   // T166: tax-doc-touching (receipt sha256 lands on this row); 10y.
@@ -141,6 +174,11 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   // Phase 3 — derivative export, not a §86/§87 tax document; 5y
   // operational retention per Constitution VIII.
   invoices_csv_exported: 5,
+  // 054-event-fee-invoices (Task 15) — erasure record for a non-member
+  // event-invoice buyer's PII. The underlying invoice is a §86/4 tax
+  // document, so the erasure event itself keeps the 10y forensic window
+  // (the RD must be able to see WHICH columns were minimised WHEN).
+  event_buyer_pii_redacted: 10,
 };
 
 /** Single-source helper — call at every F4 emit site. */
@@ -187,12 +225,50 @@ export type MemberTimelineAuditPayload = {
   readonly member_id: string;
 } & Record<string, unknown>;
 
+/**
+ * 054-event-fee-invoices — payload contract for a member-timeline event type
+ * (`F4MemberTimelineAuditEventType`) emitted for a NON-member EVENT buyer.
+ *
+ * A non-member event invoice has `member_id IS NULL` — there is no F3 member to
+ * surface on the member timeline. The F3 timeline filter keys on
+ * `payload->>'member_id'`, so the audit row MUST omit `member_id` entirely; the
+ * non-member buyer is correlated by the F6 `event_registration_id` instead.
+ *
+ * `member_id?: never` makes the key COMPILE-TIME FORBIDDEN: a payload that
+ * accidentally carries `member_id` (e.g. the old `invoice.memberId ?? ''`
+ * coalesce that produced `member_id: ''`) fails typecheck rather than
+ * persisting a structurally-invalid timeline row. `event_registration_id` is
+ * REQUIRED so the non-member branch always carries the F6 correlation key. This
+ * replaces the `as unknown as Exclude<F4AuditEventType,
+ * F4MemberTimelineAuditEventType>` double-cast that defeated ALL payload
+ * type-checking at the 5 non-member emit sites.
+ */
+export type NonMemberInvoiceAuditPayload = {
+  readonly event_registration_id: string;
+  readonly member_id?: never;
+} & Record<string, unknown>;
+
 export type F4AuditEvent =
   | {
       readonly eventType: F4MemberTimelineAuditEventType;
       readonly actorUserId: string;
       readonly summary: string;
       readonly payload: MemberTimelineAuditPayload;
+    }
+  | {
+      /**
+       * Non-member EVENT-buyer variant of a member-timeline event type. Same
+       * `eventType` set as the timeline arm above, but the payload omits
+       * `member_id` (FORBIDDEN via `member_id?: never`) and requires
+       * `event_registration_id`. TypeScript routes an object literal to THIS
+       * arm iff it carries `event_registration_id` and NO `member_id` — so the
+       * two arms stay unambiguous without any cast. Emit via
+       * `emitNonMemberInvoiceEvent`.
+       */
+      readonly eventType: F4MemberTimelineAuditEventType;
+      readonly actorUserId: string;
+      readonly summary: string;
+      readonly payload: NonMemberInvoiceAuditPayload;
     }
   | {
       readonly eventType: Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>;
@@ -231,4 +307,63 @@ export type F4AuditEvent =
  */
 export interface AuditPort {
   emit(tx: unknown, event: F4AuditEvent & { tenantId: string; requestId: string | null }): Promise<void>;
+}
+
+/**
+ * 054-event-fee-invoices — TYPED emit helper for a member-timeline event type
+ * fired for a NON-member EVENT buyer (no F3 member id).
+ *
+ * The 5 non-member emit sites (`create-event-invoice-draft` /
+ * `issue-invoice` / `record-payment` / `issue-credit-note` / `resend-pdf`)
+ * previously cast a timeline event-type `as unknown as Exclude<F4AuditEventType,
+ * F4MemberTimelineAuditEventType>` with an `event_registration_id` payload. The
+ * double-cast defeated ALL payload type-checking and was duplicated (with ~20
+ * lines of rationale) at each site.
+ *
+ * This helper is the single typed escape: it accepts a `NonMemberInvoiceAuditPayload`
+ * (`event_registration_id` REQUIRED, `member_id` FORBIDDEN) and routes it to
+ * the dedicated non-member arm of `F4AuditEvent` — ZERO `as` casts. The
+ * compiler enforces:
+ *   - `eventType` is a member-timeline event type (`F4MemberTimelineAuditEventType`);
+ *   - the payload carries `event_registration_id`;
+ *   - the payload does NOT carry `member_id` (the F3-timeline key is omitted so
+ *     the non-member row never surfaces on a member timeline, and the
+ *     `members.last_activity_at` trigger never casts an empty `member_id` ::uuid).
+ *
+ * `tx` follows the same convention as `AuditPort.emit`: pass the Drizzle tx for
+ * mutation-path emits (atomic with the mutation); pass `null` for read-path
+ * emits (e.g. resend-pdf, which is append-only against mutations).
+ */
+export function emitNonMemberInvoiceEvent(
+  audit: AuditPort,
+  tx: unknown,
+  event: {
+    readonly tenantId: string;
+    readonly requestId: string | null;
+    readonly eventType: F4MemberTimelineAuditEventType;
+    readonly eventRegistrationId: string;
+    readonly actorUserId: string;
+    readonly summary: string;
+    /**
+     * Extra payload fields. `member_id` is FORBIDDEN here (`member_id?: never`)
+     * so a caller cannot smuggle it back in through the spread; the F3-timeline
+     * key stays absent on the persisted row. `event_registration_id` is
+     * supplied via the typed `eventRegistrationId` arg and merged below, so it
+     * does not need to be repeated here.
+     */
+    readonly extraPayload?: { readonly member_id?: never } & Record<string, unknown>;
+  },
+): Promise<void> {
+  const payload: NonMemberInvoiceAuditPayload = {
+    ...event.extraPayload,
+    event_registration_id: event.eventRegistrationId,
+  };
+  return audit.emit(tx, {
+    tenantId: event.tenantId,
+    requestId: event.requestId,
+    eventType: event.eventType,
+    actorUserId: event.actorUserId,
+    summary: event.summary,
+    payload,
+  });
 }

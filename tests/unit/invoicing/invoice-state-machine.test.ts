@@ -7,9 +7,10 @@ import {
   asInvoiceId,
   assertSnapshotsSet,
   canTransition,
-  enforceOneMembershipLine,
+  enforceOneSubjectLine,
   isTerminal,
   type Invoice,
+  type InvoiceCommon,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
 import {
@@ -74,7 +75,7 @@ describe('Invoice state machine', () => {
     });
   });
 
-  describe('enforceOneMembershipLine', () => {
+  describe("enforceOneSubjectLine('membership')", () => {
     const mkLine = (kind: 'membership_fee' | 'registration_fee', pos = 1): InvoiceLine => {
       const r = makeInvoiceLine({
         lineId: asInvoiceLineId(`line-${pos}-${kind}`),
@@ -91,23 +92,23 @@ describe('Invoice state machine', () => {
     };
 
     it('accepts exactly 1 membership line', () => {
-      const r = enforceOneMembershipLine([mkLine('membership_fee')]);
+      const r = enforceOneSubjectLine('membership', [mkLine('membership_fee')]);
       expect(r.ok).toBe(true);
     });
 
     it('accepts 1 membership + 1 registration', () => {
-      const r = enforceOneMembershipLine([mkLine('membership_fee', 1), mkLine('registration_fee', 2)]);
+      const r = enforceOneSubjectLine('membership', [mkLine('membership_fee', 1), mkLine('registration_fee', 2)]);
       expect(r.ok).toBe(true);
     });
 
     it('rejects 0 membership', () => {
-      const r = enforceOneMembershipLine([mkLine('registration_fee')]);
+      const r = enforceOneSubjectLine('membership', [mkLine('registration_fee')]);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('no_membership_line');
     });
 
     it('rejects multiple membership', () => {
-      const r = enforceOneMembershipLine([mkLine('membership_fee', 1), mkLine('membership_fee', 2)]);
+      const r = enforceOneSubjectLine('membership', [mkLine('membership_fee', 1), mkLine('membership_fee', 2)]);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('multiple_membership_lines');
     });
@@ -127,6 +128,10 @@ describe('Invoice state machine', () => {
       memberId: 'm',
       planId: 'p',
       planYear: 2026,
+      invoiceSubject: 'membership',
+      vatInclusive: false,
+      eventId: null,
+      eventRegistrationId: null,
       status: 'issued',
       draftByUserId: 'u',
       fiscalYear: null,
@@ -180,7 +185,12 @@ describe('Invoice state machine', () => {
       ['memberIdentitySnapshot', { memberIdentitySnapshot: null }],
       ['pdf', { pdf: null }],
     ])('reports missing_snapshot field=%s', (field, override) => {
-      const inv = { ...fullSnapshot, ...(override as Partial<Invoice>) };
+      // 054-event-fee-invoices — the overrides only null out shared
+      // (subject-agnostic) snapshot fields, so they are `Partial<InvoiceCommon>`.
+      // `fullSnapshot` is a concrete membership arm; nulling common fields keeps
+      // it a valid `Invoice`, but TS widens the union value across the spread, so
+      // re-assert at this boundary (no consumer narrowing is bypassed).
+      const inv = { ...fullSnapshot, ...(override as Partial<InvoiceCommon>) } as Invoice;
       const r = assertSnapshotsSet(inv);
       expect(r.ok).toBe(false);
       if (!r.ok) {

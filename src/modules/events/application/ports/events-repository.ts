@@ -8,6 +8,8 @@
  * Read methods:
  *   - `findByExternalId`         — lookup pre-upsert (FR-010 webhook upsert)
  *   - `findById`                 — admin events list / detail (Phase 4)
+ *   - `findByIds`                — batched per-id event lookup (054 Task 14:
+ *                                  F4 invoices-list buyer subtitle)
  *   - `list`                     — admin events list paginated (Phase 4)
  *   - `getEmptyContext`          — 3-variant empty-state per US2 AS5 / CHK028
  *   - `getMatchCountsByEventIds` — batched per-event match aggregate (Phase 4)
@@ -133,6 +135,20 @@ export interface EventsRepository {
     tenantId: TenantId,
     eventId: EventId,
   ): Promise<Result<EventAggregate | null, EventsRepositoryError>>;
+
+  /**
+   * Batched per-id lookup (054-event-fee-invoices Task 14). Returns a map
+   * keyed by EventId for the subset of `eventIds` that exist in the
+   * caller's tenant. Ids that do not resolve (archived/deleted/cross-tenant
+   * — hidden by RLS) are simply absent from the map. A single
+   * `WHERE tenant_id = ? AND event_id IN (...)` SELECT — no N+1. Mirrors
+   * the batched `getMatchCountsByEventIds` shape. An empty `eventIds` returns
+   * an empty map WITHOUT issuing a query.
+   */
+  findByIds(
+    tenantId: TenantId,
+    eventIds: ReadonlyArray<EventId>,
+  ): Promise<Result<ReadonlyMap<EventId, EventAggregate>, EventsRepositoryError>>;
 
   findByExternalId(
     tenantId: TenantId,

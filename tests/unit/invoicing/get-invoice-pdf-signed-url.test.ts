@@ -151,7 +151,9 @@ describe('getInvoicePdfSignedUrl — byte-identical admin↔portal (C1)', () => 
       tenantId: 't',
       actorUserId: 'u-member',
       actorRole: 'member',
-      actorMemberId: invoice.memberId,
+      // 054-event-fee-invoices — fixture is a membership invoice with a
+      // known non-null memberId; assert for the optional `string` input.
+      actorMemberId: invoice.memberId as string,
       invoiceId: 'i',
     });
 
@@ -237,7 +239,9 @@ describe('getInvoicePdfSignedUrl — T166 receipt_pdf_pending gate', () => {
       tenantId: 't',
       actorUserId: 'u',
       actorRole: 'member',
-      actorMemberId: invoice.memberId,
+      // 054-event-fee-invoices — fixture is a membership invoice with a
+      // known non-null memberId; assert for the optional `string` input.
+      actorMemberId: invoice.memberId as string,
       invoiceId: 'i',
     });
     expect(result.ok).toBe(false);
@@ -274,7 +278,9 @@ describe('getInvoicePdfSignedUrl — T166 receipt_pdf_pending gate', () => {
       tenantId: 't',
       actorUserId: 'u',
       actorRole: 'member',
-      actorMemberId: invoice.memberId,
+      // 054-event-fee-invoices — fixture is a membership invoice with a
+      // known non-null memberId; assert for the optional `string` input.
+      actorMemberId: invoice.memberId as string,
       invoiceId: 'i',
     });
     expect(result.ok).toBe(true);
@@ -317,7 +323,9 @@ describe('getInvoicePdfSignedUrl — invoice_pdf_downloaded audit (R8-M1)', () =
       tenantId: 't',
       actorUserId: 'u-member',
       actorRole: 'member',
-      actorMemberId: invoice.memberId,
+      // 054-event-fee-invoices — fixture is a membership invoice with a
+      // known non-null memberId; assert for the optional `string` input.
+      actorMemberId: invoice.memberId as string,
       invoiceId: 'i',
     });
     expect(result.ok).toBe(true);
