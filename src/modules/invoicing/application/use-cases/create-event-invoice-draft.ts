@@ -51,10 +51,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { EventRegistrationLookupPort } from '../ports/event-registration-lookup-port';
 import type { EventDetailsLookupPort } from '../ports/event-details-lookup-port';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
-import type {
-  AuditPort,
-  F4NonTimelineEventType,
-} from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import {
   asInvoiceId,
   MAX_EVENT_INVOICE_SATANG,
@@ -135,51 +132,6 @@ export interface CreateEventInvoiceDraftDeps {
   readonly memberIdentity: MemberIdentityPort;
   readonly audit: AuditPort;
   readonly newUuid: () => string;
-}
-
-/**
- * Emit `invoice_draft_created` for a NON-member event invoice through the
- * NON-timeline `F4AuditEvent` branch (no `member_id` in the payload).
- *
- * `invoice_draft_created` is declared in `F4MemberTimelineAuditEventType`, so
- * the `AuditPort.emit` discriminated union would otherwise force a
- * `member_id: string` payload. A non-member event buyer has no F3 member id,
- * and per the design decision (§3f / NF-A) we must NOT widen
- * `MemberTimelineAuditPayload` to make `member_id` optional (that would
- * silently weaken the F3-timeline `member_id` guarantee for the 5 membership
- * events). This helper is the single, audited escape: it constructs the event
- * and casts it to the non-timeline branch so the persisted payload carries NO
- * `member_id` key — the F3 timeline filter (`payload->>'member_id'`) then
- * correctly never surfaces a non-member event draft. The matched-member event
- * draft path does NOT use this helper (it emits with a real `member_id` on the
- * timeline branch).
- */
-async function emitNonTimelineDraftCreated(
-  audit: AuditPort,
-  tx: unknown,
-  event: {
-    readonly tenantId: string;
-    readonly requestId: string | null;
-    readonly actorUserId: string;
-    readonly summary: string;
-    readonly payload: Record<string, unknown>;
-  },
-): Promise<void> {
-  await audit.emit(tx, {
-    tenantId: event.tenantId,
-    requestId: event.requestId,
-    // deliberate: emit a timeline-typed event through the non-timeline payload
-    // branch for non-member events (no member_id); MemberTimelineAuditPayload
-    // intentionally NOT widened. The runtime adapter is event-type-agnostic;
-    // only the compile-time payload contract differs. `as unknown as
-    // F4NonTimelineEventType` makes the bypass explicit (a plain `as
-    // Exclude<…>` would silently skip the payload check since invoice_draft_created
-    // IS in F4MemberTimelineAuditEventType and Exclude resolves to `never` for it).
-    eventType: 'invoice_draft_created' as unknown as F4NonTimelineEventType,
-    actorUserId: event.actorUserId,
-    summary: event.summary,
-    payload: event.payload,
-  });
 }
 
 export async function createEventInvoiceDraft(
@@ -382,21 +334,20 @@ export async function createEventInvoiceDraft(
       //      The buyer is not an F3 member, so the timeline filter MUST NOT
       //      surface it — omitting member_id is the correct behaviour. We do
       //      NOT widen `MemberTimelineAuditPayload` (audit-port.ts) per the
-      //      design decision; instead we narrow the event at THIS one call
-      //      site to the non-timeline `F4AuditEvent` branch via the
-      //      `emitNonTimeline` helper below. (`invoice_draft_created` is a
-      //      member-timeline event type, so the discriminated union otherwise
-      //      requires member_id — the cast is the documented escape for the
-      //      no-member event-fee variant.)
+      //      design decision; instead we route the non-member emit through the
+      //      typed `emitNonMemberInvoiceEvent` helper (audit-port.ts), whose
+      //      payload contract REQUIRES `event_registration_id` and FORBIDS
+      //      `member_id` at compile time — no `as` cast.
       if (memberId === null) {
-        await emitNonTimelineDraftCreated(deps.audit, tx, {
+        await emitNonMemberInvoiceEvent(deps.audit, tx, {
           tenantId: input.tenantId,
           requestId: input.requestId ?? null,
+          eventType: 'invoice_draft_created',
+          eventRegistrationId: input.eventRegistrationId,
           actorUserId: input.actorUserId,
           summary: `Event-fee draft invoice created for registration ${input.eventRegistrationId}`,
-          payload: {
+          extraPayload: {
             invoice_id: invoiceId,
-            event_registration_id: input.eventRegistrationId,
             event_id: reg.eventId,
             invoice_subject: 'event',
           },

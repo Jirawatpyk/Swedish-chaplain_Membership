@@ -65,10 +65,7 @@ import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfDocKind, PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type {
-  AuditPort,
-  F4NonTimelineEventType,
-} from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
@@ -461,6 +458,14 @@ export async function issueInvoice(
     //   entirely. Mirrors the `emitNonTimelineDraftCreated` precedent in
     //   create-event-invoice-draft.ts.
     const issuedSummary = `Invoice ${docNum.value.raw} issued`;
+    const issuedPayloadBase = {
+      invoice_id: invoiceId,
+      fiscal_year: fy,
+      sequence_number: seq,
+      document_number: docNum.value.raw,
+      total_satang: total.satang.toString(),
+      pdf_sha256: rendered.sha256,
+    } as const;
     if (memberId !== null) {
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,
@@ -469,38 +474,32 @@ export async function issueInvoice(
         actorUserId: input.actorUserId,
         summary: issuedSummary,
         payload: {
-          invoice_id: invoiceId,
           member_id: memberId,
-          fiscal_year: fy,
-          sequence_number: seq,
-          document_number: docNum.value.raw,
-          total_satang: total.satang.toString(),
-          pdf_sha256: rendered.sha256,
+          ...issuedPayloadBase,
         },
       });
     } else {
-      await deps.audit.emit(tx, {
+      // NON-MEMBER event invoice. `invoices_subject_fields_ck` guarantees
+      // `event_registration_id IS NOT NULL` whenever `member_id IS NULL`; TS only
+      // knows `memberId === null`, so re-narrow on the column. The typed
+      // `emitNonMemberInvoiceEvent` helper REQUIRES `event_registration_id` and
+      // FORBIDS `member_id` at compile time (no `as` cast) so the F3 timeline
+      // filter (`payload->>'member_id'`) never surfaces a non-member row.
+      if (draft.eventRegistrationId === null) {
+        throw new Error(
+          'issueInvoice: non-member invoice has null event_registration_id (violates invoices_subject_fields_ck)',
+        );
+      }
+      await emitNonMemberInvoiceEvent(deps.audit, tx, {
         tenantId: input.tenantId,
         requestId: input.requestId ?? null,
-        // deliberate: emit a timeline-typed event through the non-timeline payload
-        // branch for non-member events (no member_id); MemberTimelineAuditPayload
-        // intentionally NOT widened. The runtime adapter is event-type-agnostic;
-        // only the compile-time payload contract differs. `as unknown as
-        // F4NonTimelineEventType` makes the bypass explicit (a plain `as
-        // Exclude<…>` would silently skip the payload check since invoice_issued
-        // IS in F4MemberTimelineAuditEventType and Exclude resolves to `never`).
-        eventType: 'invoice_issued' as unknown as F4NonTimelineEventType,
+        eventType: 'invoice_issued',
+        eventRegistrationId: draft.eventRegistrationId,
         actorUserId: input.actorUserId,
         summary: issuedSummary,
-        payload: {
-          invoice_id: invoiceId,
-          event_registration_id: draft.eventRegistrationId,
+        extraPayload: {
           event_id: draft.eventId,
-          fiscal_year: fy,
-          sequence_number: seq,
-          document_number: docNum.value.raw,
-          total_satang: total.satang.toString(),
-          pdf_sha256: rendered.sha256,
+          ...issuedPayloadBase,
         },
       });
     }

@@ -50,7 +50,7 @@ import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort, F4NonTimelineEventType } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
@@ -740,25 +740,19 @@ export async function issueCreditNote(
         if (eventRegistrationId === null) {
           throw new IssueCreditNoteInternalError({ code: 'invalid_event_invoice' });
         }
-        await deps.audit.emit(tx, {
+        // NON-MEMBER event invoice. The typed `emitNonMemberInvoiceEvent` helper
+        // (audit-port.ts) REQUIRES `event_registration_id` and FORBIDS `member_id`
+        // at compile time — no `as unknown as` cast — so the F3 timeline filter
+        // (`payload->>'member_id'`) never surfaces a non-member credit note.
+        await emitNonMemberInvoiceEvent(deps.audit, tx, {
           tenantId: input.tenantId,
           requestId: input.requestId ?? null,
-          // deliberate: emit a timeline-typed event through the non-timeline
-          // payload branch for non-member events (no member_id);
-          // MemberTimelineAuditPayload intentionally NOT widened. The runtime
-          // adapter is event-type-agnostic; only the compile-time payload
-          // contract differs. `as unknown as F4NonTimelineEventType` makes the
-          // bypass explicit (a plain `as Exclude<…>` would silently skip the
-          // payload check since credit_note_issued IS in
-          // F4MemberTimelineAuditEventType and Exclude resolves to `never`).
-          eventType: 'credit_note_issued' as unknown as F4NonTimelineEventType,
+          eventType: 'credit_note_issued',
+          // Non-null per the re-assert above (narrowed to `string`).
+          eventRegistrationId,
           actorUserId: input.actorUserId,
           summary: creditNoteSummary,
-          payload: {
-            // Non-null per the re-assert above (narrowed to `string`).
-            event_registration_id: eventRegistrationId,
-            ...creditNotePayloadBase,
-          },
+          extraPayload: creditNotePayloadBase,
         });
       }
 

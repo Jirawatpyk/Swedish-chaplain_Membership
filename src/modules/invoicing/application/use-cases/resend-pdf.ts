@@ -40,9 +40,10 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
+import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
-import type { AuditPort } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
@@ -238,31 +239,71 @@ async function resendInvoiceOrReceipt(
   // on the timeline alongside invoice_paid).
   const recipientHash = hashRecipientEmail(recipientEmail);
   if (outboxEventType === 'invoice_pdf_resent') {
-    // 054-event-fee-invoices — `invoice_pdf_resent` is a member-timeline
-    // event requiring a non-null member_id. Membership invoices always
-    // carry one (`invoices_subject_fields_ck`). Resend is MEMBERSHIP-only
-    // today; coalesce null defensively so the type narrows (an event-fee
-    // invoice resend would need its own audit shape in a future task).
-    const memberId = invoice.memberId ?? '';
-    await deps.audit.emit(null, {
-      tenantId: input.tenantId,
-      requestId: input.actor.requestId,
-      eventType: 'invoice_pdf_resent',
-      actorUserId: input.actor.userId,
-      // P2 Wave-0 (PDPA data-minimization): the `summary` column persists for
-      // the audit row's FULL retention (5–10y), exactly like the payload — it is
-      // NOT transient. So it must not carry plaintext PII. The hashed recipient
-      // lives in `payload.recipient_email_sha256` for correlation.
-      summary: `Invoice ${documentNumber} PDF resent (recipient hashed in payload)`,
-      payload: {
-        invoice_id: input.invoiceId,
-        member_id: memberId,
-        document_number: documentNumber,
-        recipient_email_sha256: recipientHash,
-        actor_role: input.actor.role,
-        pdf_template_version: pdf.templateVersion,
-      },
-    });
+    // P2 Wave-0 (PDPA data-minimization): the `summary` column persists for the
+    // audit row's FULL retention (5–10y), exactly like the payload — it is NOT
+    // transient. So it must not carry plaintext PII. The hashed recipient lives
+    // in `payload.recipient_email_sha256` for correlation.
+    const invoiceResentSummary = `Invoice ${documentNumber} PDF resent (recipient hashed in payload)`;
+    const invoiceResentPayloadBase = {
+      invoice_id: input.invoiceId,
+      document_number: documentNumber,
+      recipient_email_sha256: recipientHash,
+      actor_role: input.actor.role,
+      pdf_template_version: pdf.templateVersion,
+    } as const;
+    // 054-event-fee-invoices — `invoice_pdf_resent` is a member-timeline event.
+    //   MEMBERSHIP / matched-member (memberId non-null) → TIMELINE branch: the
+    //   payload carries `member_id` so the F3 member timeline surfaces the
+    //   resend (US7 / FR-033). UNCHANGED behaviour.
+    //
+    //   NON-MEMBER event (memberId null) → NON-timeline branch: the buyer is not
+    //   an F3 member. We emit via `emitNonMemberInvoiceEvent` so the payload
+    //   carries `event_registration_id` and OMITS `member_id` entirely. The
+    //   former `invoice.memberId ?? ''` coalesce persisted `member_id: ''` on a
+    //   timeline-typed row → the members.last_activity_at trigger cast
+    //   `(payload->>'member_id')::uuid` → invalid_text_representation → silent
+    //   no-op + a structurally-invalid row on the 10-year tax-document trail.
+    if (invoice.memberId !== null) {
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        eventType: 'invoice_pdf_resent',
+        actorUserId: input.actor.userId,
+        summary: invoiceResentSummary,
+        payload: {
+          member_id: invoice.memberId,
+          ...invoiceResentPayloadBase,
+        },
+      });
+    } else if (invoice.eventRegistrationId !== null) {
+      // Non-member EVENT invoice. The DB CHECK `invoices_subject_fields_ck`
+      // guarantees `event_registration_id IS NOT NULL` whenever `member_id IS
+      // NULL`; TS only knows `memberId === null`, so re-narrow on the column.
+      await emitNonMemberInvoiceEvent(deps.audit, null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        eventType: 'invoice_pdf_resent',
+        eventRegistrationId: invoice.eventRegistrationId,
+        actorUserId: input.actor.userId,
+        summary: invoiceResentSummary,
+        extraPayload: invoiceResentPayloadBase,
+      });
+    } else {
+      // Defence-in-depth: memberId null AND eventRegistrationId null is a
+      // structurally-impossible row (violates `invoices_subject_fields_ck`).
+      // Refuse to persist an audit row that can correlate to neither a member
+      // nor a registration rather than emit a malformed one. No PII in the log
+      // (ids only, per CLAUDE.md § Secrets).
+      logger.warn(
+        {
+          event: 'resend_pdf_invoice_inconsistent_buyer',
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+        },
+        'resendPdf: invoice has neither member_id nor event_registration_id — cannot audit resend',
+      );
+      return err({ code: 'not_issued' });
+    }
   } else {
     await deps.audit.emit(null, {
       tenantId: input.tenantId,

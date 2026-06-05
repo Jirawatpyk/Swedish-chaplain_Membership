@@ -27,7 +27,7 @@ import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort, F4NonTimelineEventType } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
@@ -553,11 +553,9 @@ export async function recordPayment(
     //   F3 member, so the timeline filter MUST NOT surface it. We do NOT widen
     //   `MemberTimelineAuditPayload` to make `member_id` optional (that would weaken
     //   the F3 `member_id` guarantee for the 6 membership-timeline events); instead
-    //   we narrow `invoice_paid` to the non-timeline `F4AuditEvent` branch at THIS
-    //   one site, carrying `event_registration_id` and omitting `member_id` entirely.
-    //   The `as unknown as F4NonTimelineEventType` makes the bypass explicit (a plain
-    //   `as Exclude<…>` would silently skip the payload check since `invoice_paid` IS
-    //   in F4MemberTimelineAuditEventType and Exclude resolves to `never` for it).
+    //   we route through the typed `emitNonMemberInvoiceEvent` helper, whose payload
+    //   contract REQUIRES `event_registration_id` and FORBIDS `member_id` at compile
+    //   time (no `as` cast).
     if (memberId !== null) {
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,
@@ -574,16 +572,24 @@ export async function recordPayment(
         },
       });
     } else {
-      await deps.audit.emit(tx, {
+      // NON-MEMBER event invoice. The guard at the top of this fn already
+      // returned for a null-member NON-event invoice, so a null memberId here
+      // implies `invoiceSubject === 'event'` → `invoices_subject_fields_ck`
+      // guarantees `event_registration_id IS NOT NULL`. TS can't re-derive that,
+      // so re-narrow on the column.
+      if (loaded.eventRegistrationId === null) {
+        throw new Error(
+          'recordPayment: non-member event invoice has null event_registration_id (violates invoices_subject_fields_ck)',
+        );
+      }
+      await emitNonMemberInvoiceEvent(deps.audit, tx, {
         tenantId: input.tenantId,
         requestId: input.requestId ?? null,
-        eventType: 'invoice_paid' as unknown as F4NonTimelineEventType,
+        eventType: 'invoice_paid',
+        eventRegistrationId: loaded.eventRegistrationId,
         actorUserId: input.actorUserId,
         summary: invoicePaidSummary,
-        payload: {
-          event_registration_id: loaded.eventRegistrationId,
-          ...invoicePaidPayloadBase,
-        },
+        extraPayload: invoicePaidPayloadBase,
       });
     }
 
