@@ -28,11 +28,16 @@
  * bytes on Blob FOREVER, because the row was now tombstoned
  * (`legal_name='[REDACTED]'`) and the old predicate excluded it from the next
  * sweep. The fix is a nullable `pii_blob_purged_at` marker column:
- *   (a) in the tenant tx under the GUC: tombstone the snapshot IF not already
- *       tombstoned (idempotent) + emit the audit IF actually tombstoned this run
- *       (so a retry does NOT double-audit); commit.
+ *   (a) in the tenant tx under the GUC: tombstone the snapshot via an UPDATE that
+ *       `RETURNING`s the row, then emit the audit + queue the purge ONLY when the
+ *       UPDATE actually changed a row (round-2 FIX 1 — audit-once is gated on the
+ *       UPDATE's real effect, not the stale SELECT flag, so a concurrent instance
+ *       that already tombstoned the row cannot trigger a duplicate audit); commit.
+ *       For a tombstoned row with ZERO blob keys, stamp `pii_blob_purged_at` in
+ *       this SAME tx (round-2 FIX 2 — the purge is trivially complete; nothing to
+ *       erase) so the marker is never left permanently NULL.
  *   (b) purge the blob bytes best-effort (each delete try/catch'd, logged with
- *       errKind only + the error metric on failure).
+ *       errKind only + the error metric on failure) — only for rows WITH keys.
  *   (c) ONLY on a fully successful purge of ALL the row's blob keys, set
  *       `pii_blob_purged_at = now()` via a SEPARATE UPDATE under the GUC.
  * A crash before (c) leaves `pii_blob_purged_at` NULL → the next sweep
@@ -193,6 +198,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         //       (2) skips the tombstone UPDATE + audit and only retries the purge.
         // A fully-redacted-and-purged row (pii_blob_purged_at set) is excluded.
         // RLS scopes the read to this tenant (chamber_app role + GUC).
+        //
+        // FIX 1 (round-2) — `FOR UPDATE SKIP LOCKED`: under two concurrent cron
+        // instances the eligibility windows can overlap. Locking the selected
+        // rows FOR UPDATE and SKIPPING any a sibling instance already holds means
+        // each row is processed by AT MOST ONE instance per tick — eliminating
+        // the contended path entirely. The tombstone UPDATE's RETURNING-rowcount
+        // gate below is the authoritative audit-once guarantee even if a row is
+        // somehow seen by both (SKIP LOCKED is the cheap first line of defence).
         const eligible = (await tx.execute(sql`
           SELECT
             invoice_id,
@@ -213,6 +226,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 AND (pdf_blob_key IS NOT NULL OR receipt_pdf_blob_key IS NOT NULL)
               )
             )
+          FOR UPDATE SKIP LOCKED
         `)) as unknown as EligibleRow[];
 
         let tenantRedacted = 0;
@@ -258,7 +272,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // snapshot CHECK still holds). `tax_id` → SQL NULL becomes a jsonb
           // null; `primary_contact_email` → '' keeps it a string. The shape is
           // fixed (no dynamic keys), so no runtime assertion is warranted.
-          await tx.execute(sql`
+          //
+          // FIX 1 (round-2) — audit-once is gated on this UPDATE's ACTUAL effect,
+          // NOT the stale SELECT flag. `RETURNING invoice_id` reports whether the
+          // row was actually changed: the predicate `legal_name <> '[REDACTED]'`
+          // means a concurrent instance that already tombstoned this row makes the
+          // UPDATE match 0 rows. We emit the audit + queue the purge ONLY when
+          // THIS instance tombstoned the row (exactly one row returned). When 0
+          // rows come back, a sibling instance already owns the row's lifecycle —
+          // SKIP the audit and SKIP queueing the purge (no double-audit, no
+          // double-purge-queue). Atomic with the audit because both run in this tx.
+          const tombstoned = (await tx.execute(sql`
             UPDATE invoices
             SET member_identity_snapshot = member_identity_snapshot
               || jsonb_build_object(
@@ -270,11 +294,47 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                  )
             WHERE invoice_id = ${row.invoice_id}
               AND (member_identity_snapshot->>'legal_name') <> '[REDACTED]'
-          `);
+            RETURNING invoice_id
+          `)) as unknown as Array<{ invoice_id: string }>;
+
+          if (tombstoned.length !== 1) {
+            // A concurrent instance tombstoned this row between our SELECT and
+            // this UPDATE (the SELECT flag was stale). That instance owns the
+            // audit + purge for this row — do NOT emit a duplicate audit and do
+            // NOT queue the purge here. (The FOR UPDATE SKIP LOCKED above makes
+            // this branch rare; this rowcount gate is the authoritative guard.)
+            continue;
+          }
+
+          // FIX 2 (round-2) — zero-blob rows: a redacted row with NO blob keys
+          // has nothing to purge, so its redaction is COMPLETE the instant the
+          // snapshot is tombstoned. Stamp `pii_blob_purged_at = now()` in THIS
+          // GUC tx (the marker column is exempt under the redaction GUC —
+          // migration 0206) so the row is not left with a permanently-NULL marker
+          // (the retry predicate requires a blob key, so a NULL-marker zero-blob
+          // row would never be re-selected). Rows WITH blob keys keep the marker
+          // NULL until the post-commit purge succeeds (handled by purgeWork below).
+          //
+          // DEFENCE-IN-DEPTH NOTE: under the CURRENT schema this branch is not
+          // reachable for an ISSUED event invoice — the CHECK constraint
+          // `invoices_non_draft_has_snapshots` (migrations 0024 + 0203) requires
+          // `pdf_blob_key IS NOT NULL` on every non-draft invoice, so `blobKeys`
+          // always carries at least the invoice-PDF key. The guard is kept so the
+          // marker stays correct IF that invariant is ever relaxed (constraint
+          // change, manual data fix, or a future doc-kind that skips PDF render).
+          if (blobKeys.length === 0) {
+            await tx.execute(sql`
+              UPDATE invoices
+              SET pii_blob_purged_at = now()
+              WHERE invoice_id = ${row.invoice_id}
+                AND pii_blob_purged_at IS NULL
+            `);
+          }
 
           // Audit in the SAME tx as the UPDATE — atomic: a rollback removes
-          // both. Emitted ONLY on a fresh tombstone (this branch), never on a
-          // retry — so the audit lands EXACTLY ONCE per row across all retries.
+          // both. Emitted ONLY when THIS instance freshly tombstoned the row
+          // (rowcount gate above), never on a retry or a lost concurrency race —
+          // so the audit lands EXACTLY ONCE per row across all passes/instances.
           // NON-timeline payload (no member_id; the row has none). Field NAMES
           // only — never the erased PII values. 10y retention is applied by the
           // adapter via F4_AUDIT_RETENTION_YEARS.
@@ -304,6 +364,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             requestId,
           });
 
+          // Queue the post-commit byte purge ONLY for rows WITH blob keys. A
+          // zero-blob row already had its `pii_blob_purged_at` stamped inline
+          // above (FIX 2) — its redaction is complete, nothing to purge — so it
+          // is intentionally NOT queued here.
           if (blobKeys.length > 0) {
             purgeWork.push({ invoiceId: row.invoice_id, keys: blobKeys, tombstonedThisRun: true });
           }

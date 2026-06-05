@@ -1450,6 +1450,13 @@
 			"when": 1798533500000,
 			"tag": "0206_invoices_lock_event_cols_and_pii_blob_purged_at",
 			"breakpoints": true
+		},
+		{
+			"idx": 207,
+			"version": "7",
+			"when": 1798533600000,
+			"tag": "0207_invoices_redaction_raise_msg_includes_purge_marker",
+			"breakpoints": true
 		}
 	]
 }
