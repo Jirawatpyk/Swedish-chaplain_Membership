@@ -16,6 +16,7 @@ import {
   type Member,
   type MemberStatus,
 } from '@/modules/members/domain/member';
+import { asMemberNumber } from '@/modules/members/domain/value-objects/member-number';
 
 // M5: the Member lifecycle is now a discriminated union (status ⟺ archivedAt),
 // so the fixture takes status + archivedAt separately and builds the correlated
@@ -32,6 +33,7 @@ function fixture(
   return {
     tenantId: 't' as Member['tenantId'],
     memberId: 'm' as Member['memberId'],
+    memberNumber: asMemberNumber(1),
     companyName: 'Co',
     legalEntityType: null,
     country: 'TH' as Member['country'],

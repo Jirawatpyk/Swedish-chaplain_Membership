@@ -6,6 +6,8 @@ import {
   InvalidMemberNumberError,
   type MemberNumber,
 } from '@/modules/members/domain/value-objects/member-number';
+import type { Member } from '@/modules/members/domain/member';
+import type { MemberPatch } from '@/modules/members/application/ports/member-repo';
 
 describe('asMemberNumber — branded positive-integer constructor', () => {
   it('accepts a positive integer and returns it branded', () => {
@@ -122,5 +124,23 @@ describe('parseMemberNumberQuery — search-box parser → integer | null', () =
 
   it('returns null for a bare non-numeric token (x)', () => {
     expect(parseMemberNumberQuery('x')).toBeNull();
+  });
+});
+
+describe('Member aggregate — memberNumber field', () => {
+  it('Member carries a branded memberNumber (compile-time + runtime read)', () => {
+    const memberNumber = asMemberNumber(42);
+    // Build only the discriminating + new field to assert the type shape;
+    // a partial cast keeps this a Domain-only unit (no full fixture here).
+    const partial = { memberNumber } satisfies Pick<Member, 'memberNumber'>;
+    expect(partial.memberNumber).toBe(42);
+  });
+
+  it('memberNumber is immutable — not assignable via MemberPatch', () => {
+    // @ts-expect-error memberNumber must NOT be a patchable field (immutable).
+    const bad: MemberPatch = { memberNumber: asMemberNumber(7) };
+    // Runtime no-op assertion keeps vitest happy; the real guard is the
+    // @ts-expect-error above (verified by `pnpm typecheck`).
+    expect(bad).toBeDefined();
   });
 });

@@ -89,6 +89,14 @@ export {
 } from './domain/value-objects/tax-id';
 
 export {
+  asMemberNumber,
+  formatMemberNumber,
+  parseMemberNumberQuery,
+  InvalidMemberNumberError,
+  type MemberNumber,
+} from './domain/value-objects/member-number';
+
+export {
   asUserId,
   type UserId,
   type UserIdError,
