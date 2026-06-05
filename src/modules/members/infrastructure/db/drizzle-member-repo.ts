@@ -50,6 +50,7 @@ import type { ContactId } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
+import { asMemberNumber } from '../../domain/value-objects/member-number';
 
 // --- Row → Domain ------------------------------------------------------------
 
@@ -57,6 +58,10 @@ function rowToMember(row: MemberRow): Member {
   return {
     tenantId: row.tenantId as TenantId,
     memberId: row.memberId as MemberId,
+    // 055-member-number — column is NOT NULL post-backfill (migration 0209).
+    // asMemberNumber throws InvalidMemberNumberError on a <= 0 / non-integer
+    // value: a loud backstop if a direct-INSERT bypass ever writes a bad row.
+    memberNumber: asMemberNumber(row.memberNumber),
     companyName: row.companyName,
     legalEntityType: row.legalEntityType,
     country: row.country as IsoCountryCode,
@@ -379,6 +384,8 @@ export const drizzleMemberRepo: MemberRepo = {
         .values({
           tenantId: draft.member.tenantId,
           memberId: draft.member.memberId,
+          // 055-member-number — allocated by createMember inside the same tx.
+          memberNumber: draft.member.memberNumber,
           companyName: draft.member.companyName,
           legalEntityType: draft.member.legalEntityType,
           country: draft.member.country,
