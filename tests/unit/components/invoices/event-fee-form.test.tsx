@@ -30,6 +30,7 @@ vi.mock('sonner', () => ({
 import {
   EventFeeForm,
   previewVatInclusive,
+  resolveDocType,
   type EventOption,
 } from '@/app/(staff)/admin/invoices/new/_components/event-fee-form';
 import enMessages from '@/i18n/messages/en.json';
@@ -99,6 +100,39 @@ describe('previewVatInclusive (pure, half-away)', () => {
   it('returns zero for non-positive input', () => {
     expect(previewVatInclusive(0)).toEqual({ subtotal: 0, vat: 0 });
     expect(previewVatInclusive(-5)).toEqual({ subtotal: 0, vat: 0 });
+  });
+});
+
+describe('resolveDocType (pure helper)', () => {
+  const anyRow = {
+    registrationId: 'r-1',
+    attendeeName: 'Test',
+    attendeeCompany: null,
+    matchType: 'non_member' as const,
+    matchedMemberId: null,
+    ticketPriceThb: null,
+    paymentStatus: 'paid' as const,
+    isPseudonymised: false,
+  };
+
+  it('no attendee → pending', () => {
+    expect(resolveDocType(null, false, '')).toBe('pending');
+    expect(resolveDocType(null, false, '1234567890123')).toBe('pending');
+  });
+
+  it('matched member → pending (TIN unknown client-side)', () => {
+    expect(resolveDocType(anyRow, true, '')).toBe('pending');
+    expect(resolveDocType(anyRow, true, '1234567890123')).toBe('pending');
+  });
+
+  it('non-member with non-empty TIN → taxInvoice', () => {
+    expect(resolveDocType(anyRow, false, '1234567890123')).toBe('taxInvoice');
+    // whitespace-only is NOT a TIN
+    expect(resolveDocType(anyRow, false, '   ')).toBe('receipt');
+  });
+
+  it('non-member without TIN → receipt', () => {
+    expect(resolveDocType(anyRow, false, '')).toBe('receipt');
   });
 });
 

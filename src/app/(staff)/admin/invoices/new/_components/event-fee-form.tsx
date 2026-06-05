@@ -99,6 +99,25 @@ function formatSatang(satang: number): string {
 
 type DocTypeKind = 'taxInvoice' | 'receipt' | 'pending';
 
+/**
+ * Derives the document type for the preview badge.
+ *
+ * Rules:
+ * - No attendee selected OR the attendee is a matched member → 'pending'
+ *   (matched member's TIN is resolved server-side at issue; we can't see it
+ *   client-side).
+ * - Non-member with a non-empty TIN → 'taxInvoice'.
+ * - Non-member without a TIN → 'receipt'.
+ */
+export function resolveDocType(
+  attendee: AttendeeRow | null,
+  matched: boolean,
+  taxId: string,
+): DocTypeKind {
+  if (attendee === null || matched) return 'pending';
+  return taxId.trim().length > 0 ? 'taxInvoice' : 'receipt';
+}
+
 export function EventFeeForm({
   events,
   initialEventId,
@@ -169,17 +188,9 @@ export function EventFeeForm({
   const totalSatang = amountValid ? Math.round(amountNum * 100) : 0;
   const { subtotal, vat } = previewVatInclusive(totalSatang);
 
-  // Doc-type: a matched member's TIN is resolved server-side at issue — we
-  // can't see it client-side, so show "pending". A non-member: tax invoice
-  // iff they typed a TIN, else receipt.
-  const docType: DocTypeKind =
-    attendee === null
-      ? 'pending'
-      : matched
-        ? 'pending'
-        : buyer.taxId.trim().length > 0
-          ? 'taxInvoice'
-          : 'receipt';
+  // Doc-type: resolved via pure helper — matched/no-attendee → 'pending';
+  // non-member with TIN → 'taxInvoice'; without → 'receipt'.
+  const docType = resolveDocType(attendee, matched, buyer.taxId);
 
   function validateAmount(): string | null {
     if (amountThb === '' || !Number.isFinite(amountNum)) return t('amount.errors.required');
@@ -378,11 +389,11 @@ export function EventFeeForm({
                 role="status"
                 variant={docType === 'taxInvoice' ? 'default' : 'secondary'}
                 aria-label={
-                  docType === 'taxInvoice'
-                    ? t('docType.ariaTaxInvoice')
-                    : docType === 'receipt'
-                      ? t('docType.ariaReceipt')
-                      : t('docType.ariaPending')
+                  ({
+                    taxInvoice: t('docType.ariaTaxInvoice'),
+                    receipt: t('docType.ariaReceipt'),
+                    pending: t('docType.ariaPending'),
+                  } satisfies Record<DocTypeKind, string>)[docType]
                 }
                 data-testid="doc-type-badge"
               >
