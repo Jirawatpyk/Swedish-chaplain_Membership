@@ -278,34 +278,12 @@ export async function createMember(
     });
   }
 
-  // 6. Assemble the draft and persist
+  // 6. Assemble identity + persist. The member number is allocated INSIDE
+  // the tenant tx (first statement) so the per-tenant counter bump and the
+  // member INSERT commit/rollback atomically (gap-OK: a rolled-back create
+  // leaves the counter incremented — numbers are never reused).
   const memberId = deps.idFactory.memberId();
   const contactId = deps.idFactory.contactId();
-  const memberDraft: Omit<Member, 'createdAt' | 'updatedAt'> = {
-    tenantId: deps.tenant.slug,
-    memberId,
-    companyName: data.company_name.trim(),
-    legalEntityType: data.legal_entity_type ?? null,
-    country: country.value,
-    taxId,
-    website: data.website ?? null,
-    description: data.description ?? null,
-    foundedYear: data.founded_year ?? null,
-    turnoverThb: data.turnover_thb ?? null,
-    planId: plan.planId,
-    planYear: data.plan_year,
-    registrationDate: regDate,
-    registrationFeePaid: false,
-    lastActivityAt: null,
-    notes: null,
-    addressLine1: data.address_line1 ?? null,
-    addressLine2: data.address_line2 ?? null,
-    city: data.city ?? null,
-    province: data.province ?? null,
-    postalCode: data.postal_code ?? null,
-    status: 'active',
-    archivedAt: null,
-  };
   const contactDraft: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'> = {
     tenantId: deps.tenant.slug,
     contactId,
@@ -324,9 +302,44 @@ export async function createMember(
     removedAt: null,
   };
 
-  // W1: throw-to-rollback — state + 2 audit rows atomic across the tx.
+  // W1: throw-to-rollback — number allocation + state + audit rows atomic.
   try {
     const created = await runInTenant(deps.tenant, async (tx) => {
+      // FIRST statement: allocate under the tenant RLS session. Running this
+      // outside the tx would use a pool-fresh connection without
+      // SET LOCAL app.current_tenant → silent RLS bypass (F7.1a US2 class).
+      const memberNumber = await deps.memberNumberAllocator.allocate(
+        tx,
+        deps.tenant.slug,
+      );
+
+      const memberDraft: Omit<Member, 'createdAt' | 'updatedAt'> = {
+        tenantId: deps.tenant.slug,
+        memberId,
+        memberNumber,
+        companyName: data.company_name.trim(),
+        legalEntityType: data.legal_entity_type ?? null,
+        country: country.value,
+        taxId,
+        website: data.website ?? null,
+        description: data.description ?? null,
+        foundedYear: data.founded_year ?? null,
+        turnoverThb: data.turnover_thb ?? null,
+        planId: plan.planId,
+        planYear: data.plan_year,
+        registrationDate: regDate,
+        registrationFeePaid: false,
+        lastActivityAt: null,
+        notes: null,
+        addressLine1: data.address_line1 ?? null,
+        addressLine2: data.address_line2 ?? null,
+        city: data.city ?? null,
+        province: data.province ?? null,
+        postalCode: data.postal_code ?? null,
+        status: 'active',
+        archivedAt: null,
+      };
+
       const result = await deps.memberRepo.createWithPrimaryContactInTx(tx, {
         member: memberDraft,
         primaryContact: contactDraft,
