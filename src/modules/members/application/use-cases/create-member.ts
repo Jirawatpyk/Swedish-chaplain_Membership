@@ -369,7 +369,12 @@ export async function createMember(
         type: 'member_number_assigned',
         actorUserId: meta.actorUserId,
         requestId: meta.requestId,
-        summary: `member_number_assigned ${memberNumber}`,
+        // The bare number is intentionally NOT interpolated into the free-text
+        // summary: `redactSummaryForRole` (audit viewer + GDPR subset) only
+        // strips emails, so a number here would leak past the logger's
+        // `member_number` REDACT_PATHS. The value lives in the structured
+        // `payload` below, which is access-controlled — the canonical place.
+        summary: 'member_number_assigned',
         payload: {
           member_id: result.value.member.memberId,
           member_number: memberNumber,
