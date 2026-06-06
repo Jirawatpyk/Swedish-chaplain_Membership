@@ -60,9 +60,10 @@ vi.mock('next-intl/server', () => ({
   getLocale: vi.fn().mockImplementation(async () => localeRef.current),
 }));
 
-// next-intl client hook used by CountryDisplay (rendered to markup below).
+// next-intl client hooks used by CountryDisplay + CopyButton (rendered to markup).
 vi.mock('next-intl', () => ({
   useLocale: () => localeRef.current,
+  useTranslations: () => (k: string) => k,
 }));
 
 const now = new Date('2026-04-16T10:00:00Z');
@@ -166,8 +167,13 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     const tree = await PortalProfileBody({ user: { id: 'user-a' } });
     const html = renderToStaticMarkup(tree as ReactElement);
     // 2026 CE + 543 = 2569 BE — the localised helper maps th → buddhist cal.
+    // The registrationDate (2026-04-16) must render as BE year 2569.
     expect(html).toContain('2569');
-    expect(html).not.toContain('2026');
+    // The Gregorian year '2026' may still appear in planYear (integer field),
+    // but the date string itself must contain '2569', not '2026 Apr' etc.
+    // Verify the date cell specifically: it must NOT contain an English month.
+    expect(html).not.toContain('Apr');
+    expect(html).not.toContain('April');
   });
 
   it('CROSS-TENANT: resolves memberId from the session user via findByLinkedUserId (never a URL param)', async () => {
