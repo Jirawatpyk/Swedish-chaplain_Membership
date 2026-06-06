@@ -2,60 +2,56 @@
 
 **Date:** 2026-06-06
 **Branch:** `057-member-portal-redesign`
-**Status:** Design approved (brainstorming). Pending implementation plan (writing-plans).
-**Scope:** Full professional redesign of the member-facing portal (`/portal/**`). Presentation + IA only — reuses existing F3–F9 reads; no new backend features; no admin changes.
+**Status:** Design approved (brainstorming) + hardened against a 4-specialist review (UX/IA, architecture, a11y/mobile, PM). Pending implementation plan (writing-plans).
+**Scope:** Full professional redesign of the member-facing portal (`/portal/**`). **Presentation + IA only** — reuses existing F3–F9 reads; no new backend features; no admin changes; **no new auth/payment surfaces** (change-password reuses the existing flow).
 
 ---
 
 ## 1. Context & Goals
 
-The member portal is the chamber's face to its **members** (the actual customers) — login → self-service. It is currently under-designed:
+The member portal is the chamber's face to its **members** (the actual customers) — login → self-service. It is currently under-designed: a horizontal top-nav with **8 items** (cramped icon-only on mobile), and a **thin dashboard** (welcome + invoice-summary + email). 18 routes with scattered IA.
 
-- **Nav**: a horizontal top-nav with **8 items** (`MemberNav` in the header). On mobile it collapses to icon-only and is cramped at 320px.
-- **Dashboard** (`/portal`): thin — a welcome header, an invoice-summary card, and a contact (email) card. No at-a-glance status.
-- **18 routes** with scattered IA (e.g. renewal-prefs and data-export are reachable only by direct URL / buried).
+**Goals:** (1) streamlined professional **nav** (mobile + desktop); (2) a **rich at-a-glance dashboard**; (3) **consolidated IA** (8 → 5 destinations); (4) a consistent professional **design language**.
 
-**Goals**
+**Audience:** chamber members; mobile-heavy; occasional self-service. External-facing → first impression matters (go-live invites ~131 members at once — **empty/first-run states are mandatory**, see §4.1).
 
-1. Streamlined, professional **navigation** that works on mobile and desktop.
-2. A **rich dashboard** that surfaces everything a member cares about in one screen.
-3. **Consolidated IA** — fewer top-level destinations, related things grouped.
-4. A consistent, professional **design language** across all portal pages.
-
-**Audience:** chamber members; mobile-heavy; occasional self-service use. External-facing → first impression matters for adoption.
-
-**Non-goals:** changing the admin (`/admin/**`); new backend features (reuse existing reads); pixel-perfect treatment of every micro-route; changing the payment flow (F5) beyond surfacing it.
+**Non-goals:** admin changes; new backend features (reuse existing reads); pixel-perfect every micro-route; changing the payment flow (F5) beyond surfacing it; a NEW change-password surface (reuse `/forgot-password`).
 
 ---
 
 ## 2. Navigation Architecture (DECIDED)
 
-- **Desktop** — horizontal **top-nav** with **4 destinations** (`Dashboard · Profile · Invoices · Benefits`) + a **top-right avatar menu** that is the **Account hub** (account settings, renewal prefs, data export, theme, sign-out).
-- **Mobile** — a **bottom tab bar** with **5 tabs** (`Dashboard · Profile · Invoices · Benefits · Account`). No avatar dropdown on mobile; the **Account tab** is the hub.
+- **Desktop** — horizontal **top-nav** with **4 destinations** (`Dashboard · Profile · Invoices · Benefits`) + a **top-right avatar menu** = the **Account hub** entry.
+- **Mobile** — a **bottom tab bar** with **5 tabs** (`Dashboard · Profile · Invoices · Benefits · Account`). No avatar dropdown on mobile; the Account tab is the hub.
 
-**Rationale**
+**Rationale:** top-nav (few items, full-width content, member-friendly) over sidebar (admin-y); bottom tabs = native-app feel, thumb-reachable; Account is context-appropriate (avatar desktop / tab mobile) — one destination, one affordance per viewport, **no same-screen duplication**.
 
-- Top-nav over sidebar: the portal has few destinations, top-nav keeps content full-width and feels member-friendly (consumer app) rather than admin-tool. Sidebar (admin pattern) is reserved for the 14-item admin.
-- Bottom tabs on mobile: native-app feel, thumb-reachable, no cramped 320px icon row.
-- **Account is context-appropriate, not duplicated**: it is the avatar menu on desktop and a bottom tab on mobile — one destination, one affordance per viewport (resolves the prior avatar-vs-nav "Account" duplication).
+### 2a. NavConfig model (RESOLVED — review M3)
+The current `NavConfig`/`NavItem`/`NavGroup` (`src/config/nav.ts`) supports `href` link items only — not display-context (desktop-nav vs mobile-tab) nor avatar action items (sign-out is a POST, not a link). **Decision (Option C — simplest, no breaking change):**
+- Keep `memberNavConfig` as the source for the **desktop top-nav** (4 items: Dashboard/Profile/Invoices/Benefits).
+- Add a **separate `memberBottomTabItems` constant** for the 5 mobile tabs (the 4 + Account).
+- The **avatar Account menu extends the existing `UserMenu`** component (`src/components/shell/user-menu.tsx`, which already owns sign-out) — do NOT hand-roll. It is built on shadcn `DropdownMenu` (Radix) for free ESC / focus-return / `role=menu` (review a11y-4).
 
 ---
 
 ## 3. Information Architecture (8 → 5 destinations)
 
-| Old nav item | New home |
-|---|---|
-| Dashboard | **Dashboard** (destination) |
-| Profile | **Profile** (destination) |
-| Invoices | **Invoices** (destination) |
-| Benefits | **Benefits** (destination) |
-| **E-Blast** | tab/section inside **Benefits** (it is a quota-bearing benefit) |
-| **Timeline** | "Recent activity" **section on the Dashboard** (+ "view all" → the full timeline route, which stays as a route but is no longer a nav item) |
-| **Renewal prefs** | **Account** hub |
-| Account | **Account** hub (avatar desktop / tab mobile) |
-| (Data export — was buried) | **Account** hub (Data & privacy) |
+| Old nav item / route | New home | Route handling |
+|---|---|---|
+| Dashboard | **Dashboard** (destination) | — |
+| Profile | **Profile** (destination) | — |
+| `/portal/profile/directory` (F9 directory opt-in) | **Profile** → "Directory listing" section/link (review M-3) | route preserved |
+| Invoices | **Invoices** (destination) | — |
+| Benefits | **Benefits** (destination) | — |
+| **E-Blast** (`/portal/benefits/e-blasts`) | tab inside **Benefits** (labelled **"Broadcasts"**, not jargon "E-Blast" — review S-6) | route preserved; Benefits tab `activePattern` prefix-matches it |
+| `/portal/broadcasts/new`, `/portal/broadcasts/[id]` (compose/detail) | reached from the Broadcasts tab; **routes stay at `/portal/broadcasts/**`** | Benefits-tab active-state matcher MUST also match `/portal/broadcasts/**` (review M-2) |
+| **Timeline** | "Recent activity" **section on Dashboard** + "view all" → `/portal/timeline` (route stays; no email CTA depends on it) | route preserved |
+| **Renewal prefs** (`/portal/preferences/renewals`) | linked from **Account** hub | **ROUTE PRESERVED — renewal-reminder emails hardcode this URL** (review M-1, see §4.5) |
+| Renewal flow (`/portal/renewal/[memberId]`) | Dashboard "Renew" CTA (conditional) | **ROUTE PRESERVED — email redeem-link + use-case hardcode it** |
+| `/portal/account/data-export` | **Account** → Data & privacy | route preserved |
+| Account | **Account** hub (avatar desktop / tab mobile) | — |
 
-Routes whose content **moves into another page** keep their underlying route alive where it still serves email-CTA deep-links (e.g. `/portal/timeline`, the renewal flow) — only their **nav entry** changes.
+**Route-preservation principle:** any route referenced by an email CTA, an application-layer hardcode, or an external deep-link MUST keep working. Moving its *nav entry* is fine; removing/renaming the *route* is a ship blocker.
 
 ---
 
@@ -63,92 +59,104 @@ Routes whose content **moves into another page** keep their underlying route ali
 
 ### 4.1 Dashboard (`/portal`) — at-a-glance hub
 
-- **Header**: `สวัสดี {name}` + member-number chip (`SCCM-NNNN`) + plan chip + status chip.
-- **3 stat cards**: Membership (renews in N days / expiry) · Outstanding balance (฿ + invoice count + due date) · Benefits used (% + e.g. `E-Blast 2/5`).
-- **Quick actions**: Pay invoice (primary) · View benefits · Renew · Edit profile.
-- **2-col**: Latest invoices (3 + "view all") | Benefits quota (usage bars + "view all").
-- **Recent activity**: timeline preview (3–4 events + "view all" → timeline route).
-- **Data sources (existing)**: invoices (F4), `computeBenefitUsage` (F9), `loadMemberRenewalStatus` (F8), timeline (F9).
-- **Mobile reflow**: stat cards → 1 column; quick actions → 2×2 grid; panels stack.
+- **Header**: `สวัสดี {name}` + member-number chip (`SCCM-NNNN`) + plan chip + status chip. **Remove the `versionBadge`** (review SG-6).
+- **3 stat cards**:
+  - **Membership** — uses `loadMemberRenewalStatus` with **`memberId` resolved from session** (`findByLinkedUserId`, never URL) (review M-2). Shown **conditionally + variant by status**: `upcoming` (neutral) / `action-needed` (warning, e.g. outstanding invoice) / `overdue` (destructive). When renewal is far off, the card shows membership status (plan, "active") rather than a stale countdown (review M-1, SG-2).
+  - **Outstanding balance** — ฿ + invoice count + due date.
+  - **Benefits** — **under-use highlight, NOT an aggregate %** (review S-1): e.g. "2 benefits under-used" (warning) or "All benefits on track" (ok), aligned with `computeBenefitUsage`'s under-use logic.
+- **Quick actions** (transactional only): Pay invoice (primary) · View benefits · **Renew (conditional, same threshold as the Membership card; hide/disable when not due)** · Edit profile.
+- **2-col**: Latest invoices (3 + "view all") | Benefits quota (bars + "view all").
+- **Recent activity**: timeline preview (3–4 events + "view all" → `/portal/timeline`). **MUST use the same member-permission event filter as `/portal/timeline`** — member-relevant events only (invoice paid/issued, broadcast sent, event attended); exclude admin-only/system events that would confuse or leak (review S-2).
+- **Empty / first-run state (MANDATORY — review S-5 + PM)**: a member with no invoices / unused quota / empty activity MUST see friendly, actionable empty states (illustrated, localised, CTA — per `docs/ux-standards.md`), NOT zeroes + blank lists. Go-live invites ~131 members simultaneously → all land on an empty dashboard first.
+- **Data sources (existing, reuse)**: invoice reads (F4), `computeBenefitUsage` (F9 insights barrel), `loadMemberRenewalStatus` (F8 renewals barrel), timeline (F9). All RLS-safe via `runInTenant`, `memberId` from session. **Wrap reused reads in React `cache()`** for per-request dedup (Dashboard + Profile both read renewal/benefits — review S-2 architect).
+- **Mobile reflow**: stat cards → 1 column; quick actions → 2×2 grid; panels stack; **content gets `padding-bottom` ≥ bottom-tab height** (see §7).
 
 ### 4.2 Profile (`/portal/profile`) — my membership
 
-- A **member-facing** version of the admin member-detail (the just-shipped Option C structure), **without** admin actions / renewal-triage.
-- Header (company + `SCCM-NNNN` + status) → **Organisation** card (country, tax id, address, website, founded) → **Membership** card (plan, year, member-since, renewal) → **Contacts** card (primary + others; invite contact) → `[Edit profile]` → `/portal/edit`.
-- **Reuse**: `detail-field` component, the localised date helper, the Option C grouping pattern.
+- Member-facing version of the admin member-detail (Option C structure) **without** admin actions / renewal-triage.
+- Header (company + `SCCM-NNNN` + status) → **Organisation** card → **Membership** card → **Contacts** card (primary + others; "invite contact" reuses the existing `/portal/contacts/invite` flow → `/invite/[token]` — review SG-4) → **Directory listing** section (F9 opt-in, from `/portal/profile/directory` — review M-3) → `[Edit profile]` → `/portal/edit`.
+- **Reuse `DetailField`** (`src/components/members/detail-field.tsx`) — note the current profile page uses inline `<dt>/<dd>`; this is a **refactor**, not a copy (review S-3 architect).
+- **Heading rule (MUST — review a11y-6):** section titles are **real `<h2>`**, NOT `CardTitle` (which renders a `<div>`). The admin member-detail shipped an h1→h3 skip from exactly this; do NOT reproduce it. Outline must be h1 (PageHeader) → h2 (sections).
 
 ### 4.3 Invoices (`/portal/invoices`) — billing + pay
 
-- **Summary**: outstanding total.
-- **List**: number · date · status · amount · `[Pay]` — apply the same **a11y/CLS** treatment as the admin invoice table (table `aria-label`, matched skeleton).
-- **Detail** (`/portal/invoices/[id]`): invoice view + **Pay online** (F5 PromptPay / card) + download PDF.
-- Largely exists → apply the new design language + a11y parity.
+- **Summary**: outstanding total. **List**: number · date · status · amount · `[Pay]` — apply the same a11y/CLS treatment as the admin invoice table (table `aria-label`, matched skeleton). **Detail**: invoice view + Pay online (F5 PromptPay/card) + download PDF. Largely exists → design-language + a11y parity.
 
-### 4.4 Benefits (`/portal/benefits`) — entitlements + E-Blast
+### 4.4 Benefits (`/portal/benefits`) — entitlements + Broadcasts
 
-- **Tabs**: `[Benefits] [E-Blast]`.
+- **Tabs**: `[Benefits] [Broadcasts]` (label "Broadcasts" not "E-Blast" — review S-6; i18n key reuses `nav.member.broadcasts`).
 - **Benefits tab**: quota overview (entitlement vs usage bars) + under-use warning (existing F9 `BenefitUsageCard`).
-- **E-Blast tab** (moved from nav): E-Blast quota + `[Compose]` CTA + sent history (the current `/portal/benefits/e-blasts` content surfaced as a tab).
+- **Broadcasts tab**: quota + `[Compose]` CTA + sent history. Compose/detail navigate to `/portal/broadcasts/new` + `/portal/broadcasts/[id]` (routes stay); **the Benefits tab keeps its active state while on `/portal/broadcasts/**`** (review M-2).
 
-### 4.5 Account (`/portal/account`) — settings hub (NEW consolidation)
+### 4.5 Account (`/portal/account`) — settings hub
 
-- **Account**: email (display) · change password.
-- **Renewal preferences** (moved from `/portal/preferences/renewals`): reminder opt-out.
-- **Data & privacy** (moved from `/portal/account/data-export`): GDPR data-export request.
-- **Appearance**: theme (light/dark).
-- **Sign out**.
-- **Canonical hub = the `/portal/account` page.** On **desktop**, the top-right avatar opens a dropdown listing these items as quick links + an inline theme toggle + sign-out (the dropdown's links open the corresponding hub sections). On **mobile**, the Account bottom tab opens the hub page directly. Both affordances render from one source so they never drift.
+- **Account**: email (display) · **change password → link to the existing `/forgot-password` flow** (NOT a new inline form — keeps scope presentation-only; review S-3 ux).
+- **Renewal preferences**: **the `/portal/preferences/renewals` route is PRESERVED** (renewal-reminder emails hardcode `${baseUrl}/portal/preferences/renewals` in `dispatch-one-cycle.ts` + `retry-failed-reminders.ts` + the email layout). The Account hub **links to / embeds** it; if it is instead made a redirect to `/portal/account#renewal-prefs`, the route MUST still resolve (redirect, not 404) AND the use-case hardcodes updated. **A 404 here breaks PDPA opt-out (ship blocker — review M-1).**
+- **Data & privacy**: GDPR data-export (from `/portal/account/data-export`).
+- **Appearance**: theme (light/dark) · **Sign out**.
+- **Canonical hub = the `/portal/account` page** (one URL). Desktop avatar dropdown items link to the **same `/portal/account` URL / section anchors** (no modal, no shallow route) so share-link / back-button / deep-link work; mobile Account tab opens it directly. Both render from one source (review S-4).
 
 ---
 
 ## 5. Design Language (professional)
 
-- Consistent **card** styling (the dashboard sets the tone): bordered, rounded, generous padding/spacing.
-- **Stat cards** (label + big value + sub) for at-a-glance metrics.
-- **Quota bars** for benefit usage.
-- **Chips/badges** for status — non-colour-only text labels (WCAG 1.4.1).
-- Clear hierarchy: page `<h1>` (PageHeader) → section `<h2>` → sub.
-- Reuse existing primitives + the admin lean-table a11y patterns.
+Consistent **card** styling (the dashboard sets the tone). **Stat cards** (label + big value + sub). **Quota bars** — visible text value (`2/5`) + `role="progressbar"` aria (NOT colour/length alone — review a11y-5). **Chips/badges** — non-colour-only text labels (WCAG 1.4.1). Clear hierarchy h1 → h2 (real headings). Reuse primitives + the admin lean-table a11y patterns.
 
 ---
 
 ## 6. Components & Reuse
 
-**New**
-- `bottom-tab-bar` (mobile nav, 5 tabs, `aria-current`, ≥44px targets).
-- redesigned **top-nav** (desktop, 4 items) — evolve the existing `MemberNav`.
-- **avatar Account menu** (desktop dropdown → Account hub).
-- dashboard primitives: `stat-card`, `quota-bar`, `quick-action`, `activity-feed`.
-- Profile section components (member-facing).
+**New:** `bottom-tab-bar` (mobile); redesigned **top-nav** (desktop, evolve `MemberNav`); **avatar Account menu** (extend `UserMenu`, shadcn `DropdownMenu`); dashboard primitives (`stat-card`, `quota-bar`, `quick-action`, `activity-feed`); Profile section components.
 
-**Reuse**
-- `PageHeader`, `Card`, `Badge`, `Button`, `detail-field`, the localised date helper, `BenefitUsageCard`, `InvoicesSummaryCard`, the timeline preview.
-- Reads: `loadMemberRenewalStatus` (F8), `computeBenefitUsage` (F9), invoice reads (F4) — all RLS-safe via `runInTenant`.
-- `memberNavConfig` (`src/config/nav.ts`) — restructure to the 4 top-nav destinations + the bottom-tab set; Account via avatar.
+**Reuse:** `PageHeader`, `Card`, `Badge`, `Button`, `DetailField`, the localised date helper, `BenefitUsageCard` (compact mode — pass a **portal** `previewHref="/portal/benefits"`, not the admin path — review 1b), `InvoicesSummaryCard` (**move from `portal/invoices/_components/` → `src/components/portal/` as a shared component** since the Dashboard also uses it — review S1 architect), the timeline preview. Reads via module **barrels** only (`@/modules/insights`, `@/modules/renewals`) — Clean Architecture (Principle III). `RenewalHealthCard` reuse must override the admin `viewHref` (`/admin/renewals` → `/portal/renewal/{memberId}`).
+
+**i18n namespaces (review V):** new labels under `portal.dashboard.*`, `portal.account.*`, `portal.profile.*`, `portal.benefits.*`; bottom-tab labels may need a `.short` variant (TH "สิทธิประโยชน์"/"บัญชีผู้ใช้" overflow a 320px tab — review SG-5) → use short TH labels in the tab with the full label as `aria-label`.
 
 ---
 
-## 7. Accessibility & i18n
+## 7. Accessibility & i18n (MUST-level requirements)
 
-- **WCAG 2.1 AA**: bottom tabs (touch targets ≥44px, `aria-current="page"`); top-nav (`aria-current`); avatar menu (keyboard + focus management); heading hierarchy h1→h2; non-colour status; **mobile reflow** (no horizontal overflow at 320px).
-- **i18n EN/TH/SV** for every new label (nav, dashboard, account hub, tabs). BE date display-only for `th` (off-by-543 is a ship blocker).
+- **Bottom tab bar**: touch targets **≥44px**; `aria-current="page"` on active; **visible text label under each icon** (NOT `sr-only` like the current `MemberNav` — review a11y-3); unique `<nav aria-label>`; **`env(safe-area-inset-bottom)` padding + `viewport-fit=cover`** (iPhone home-bar — review a11y-1); the fixed bar requires **`<main>` `padding-bottom` = tab-bar height** so it never obscures the last row / Sign-out / Pay (WCAG 2.4.11 Focus Not Obscured — review a11y-2 + architect S4).
+- **Top-nav (desktop)**: `aria-current`, keyboard, focus-visible.
+- **Avatar dropdown**: shadcn `DropdownMenu` (Radix) — ESC, focus-return, `role=menu` (review a11y-4).
+- **Mobile reflow (320px)**: dashboard 3-stat / 2-col / quick-actions specified to 1-col / 2×2; no horizontal overflow.
+- **Headings**: h1 (PageHeader) → h2 (real `<h2>`, never `CardTitle`-div) — every section a landmark + accessible name.
+- **i18n EN/TH/SV** for every new label; **BE date display-only for `th`** (off-by-543 is a ship blocker).
 
 ---
 
 ## 8. Scope & Phasing (input for writing-plans)
 
-1. **Nav** — top-nav (desktop, 4) + bottom-tab bar (mobile, 5) + avatar Account menu; IA wiring (E-Blast→Benefits tab, renewal-prefs→Account, data-export→Account, Timeline→Dashboard section; preserve underlying routes).
-2. **Dashboard** redesign (header, stat cards, quick actions, 2-col, activity).
-3. **Profile** redesign (member-facing member-detail).
-4. **Benefits** (tabs + E-Blast) + **Account** hub consolidation.
-5. **Invoices** design-language parity + a11y.
+Restructured to **3 deliverables** (review PM) so member value ships first:
+
+- **D1 — pre-launch member value (highest priority):** Nav shell (top-nav + bottom-tab + avatar; **façade — wire hrefs to existing pages first**) + **Dashboard** redesign (incl. empty/first-run states) + **Profile** redesign. This is the bulk of the visible win for the ~131 launch invitees.
+- **D2 — fast-follow:** **Benefits** (tabs + Broadcasts) + **Account** hub consolidation (incl. renewal-prefs preservation, data-export, change-password link).
+- **D3 — polish:** **Invoices** design-language + a11y parity. *(Consider pulling D3 forward / parallel with D1 so the Dashboard `InvoicesSummaryCard` is consistent — review G3.)*
+
+Each deliverable: TDD, a11y axe pass, i18n parity, a **cross-tenant integration test** (member A never sees member B's renewal/benefit/invoice data — Principle I Review-Gate blocker).
 
 ---
 
-## 9. Out of Scope / Risks
+## 9. Dependencies, Risks & Out-of-Scope
 
-- No new backend features; reads reuse F3–F9.
-- No admin changes.
-- Underlying routes preserved where they still serve email-CTA deep-links (timeline, renewal flow).
-- Payment flow (F5) unchanged — only surfaced.
-- **Risk**: the avatar Account menu and the Account page must share content (single source) so desktop/mobile stay in sync. **Risk**: bottom-tab 320px layout — keep to 5 tabs (no "More" needed at 5).
+- **Branch / merge order (review PM-1):** `057` is cut from `056` (admin UX overhaul, **unmerged**) to inherit shared components (`DetailField`, `BenefitUsageCard` compact, `loadMemberRenewalStatus`). Merge order: land **`056` → `main` first**, then rebase `057`. Resolve i18n-key conflicts at merge (056, 015, and 057 all add keys).
+- **Risk — F9 benefit-usage data (review PM-3):** verify during planning that `computeBenefitUsage` returns complete data for the Dashboard stat (it already backs `/portal/benefits`); if any quota metric is "not yet computed", show a placeholder rather than a wrong number.
+- **Risk — duplicate reads:** Dashboard + Profile both read renewal/benefits → use React `cache()` per-request dedup.
+- **Out of scope:** admin; new backend features; new change-password surface (reuse `/forgot-password`); the F5 payment flow itself (only surfaced); underlying routes preserved per §3.
+
+---
+
+## 10. Success Criteria (measurable — review PM-2)
+
+- **a11y:** `@axe-core/playwright` reports **0 violations** on every redesigned portal page (run on preview deploy) — incl. heading-order, target-size, aria-current, focus-not-obscured.
+- **i18n:** `pnpm check:i18n` **0 missing keys** across EN/TH/SV for all new labels.
+- **Responsive:** **no horizontal overflow at 320px** on every portal page; bottom-tab does not obscure content (verified `<main>` padding).
+- **Tenant isolation:** a cross-tenant integration test passes (member A ≠ member B data) for each new member-facing read surface.
+- **Perf:** Dashboard server render within the portal-composite TTFB budget (target **p95 < 600 ms** on preview; confirm against `docs/observability.md`).
+- **Route safety:** every email-CTA / hardcoded route in §3 still resolves (no 404) — a regression check for `/portal/preferences/renewals` + `/portal/renewal/[memberId]`.
+
+---
+
+## 11. Open Decisions Resolved by This Revision
+
+M-1 renewal-prefs route preserved · M-2 broadcasts route + Benefits-tab active matcher · M-3 directory + renewal CTA in IA · NavConfig Option C · loadMemberRenewalStatus session-memberId + portal viewHref · empty/first-run states mandatory · Benefits stat = under-use highlight · activity event whitelist · "Broadcasts" label · change-password = `/forgot-password` link · DetailField refactor + real-h2 headings · bottom-tab safe-area + main padding + visible labels · avatar = shadcn DropdownMenu via UserMenu · success criteria added · branch/merge order documented.
