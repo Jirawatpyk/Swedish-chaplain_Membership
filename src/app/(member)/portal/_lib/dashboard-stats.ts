@@ -5,10 +5,6 @@
  * dependency-light). Turns the existing F4/F8/F9 read outputs into plain,
  * serialisable view-models the dashboard sections render. No async, no DB,
  * no React — fully unit-testable.
- *
- * The 30-day "renew due" threshold is the single source consumed by BOTH the
- * Membership stat card AND the Quick-actions Renew CTA (spec §4.1: "same
- * threshold as the Membership card; hide/disable when not due").
  */
 import {
   daysUntilExpiry,
@@ -20,9 +16,6 @@ import type { BenefitUsage } from '@/modules/insights';
 
 /** Visual emphasis for a stat chip — never colour-alone (a text label always pairs it). */
 export type StatVariant = 'neutral' | 'warning' | 'destructive';
-
-/** Days-to-expiry at/under which the Renew CTA + Membership "due" variant fire. */
-export const RENEW_DUE_THRESHOLD_DAYS = 30;
 
 export interface MembershipStat {
   /** `empty` = first-run (no cycle); `active` = far off; `due`/`overdue` = act. */
@@ -48,20 +41,11 @@ export function deriveMembershipStat(
   if (isOverdue(cycle, now)) {
     return { kind: 'overdue', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
-  if (days !== null && days <= RENEW_DUE_THRESHOLD_DAYS && !isTerminalCycleStatus(status)) {
+  if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
     return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
   // Far off OR terminal-but-not-overdue → show membership status, not a stale countdown.
   return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt };
-}
-
-/** True when the Renew CTA should show (same window as the Membership "due"/"overdue"). */
-export function isRenewDue(cycle: RenewalCycle | null, now: Date): boolean {
-  if (cycle === null) return false;
-  if (isOverdue(cycle, now)) return true;
-  if (isTerminalCycleStatus(cycle.status)) return false;
-  const raw = daysUntilExpiry(cycle, now);
-  return Number.isFinite(raw) && raw <= RENEW_DUE_THRESHOLD_DAYS;
 }
 
 /** The minimal invoice shape the outstanding stat needs (decoupled from the F4 domain row). */

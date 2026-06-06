@@ -4332,7 +4332,6 @@
       }
     },
     "profile": {
-      "title": "My profile",
       "pageTitle": "My Profile",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loadError": "Could not load your profile. Please try again.",

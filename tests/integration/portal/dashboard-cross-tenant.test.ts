@@ -19,6 +19,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { loadMemberRenewalStatus, makeRenewalsDeps } from '@/modules/renewals';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import { computeBenefitUsage, makeComputeBenefitUsageDeps } from '@/modules/insights';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -127,5 +128,32 @@ describe('057 dashboard reads — cross-tenant isolation (Principle I)', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.rows).toHaveLength(0);
+  });
+
+  it('tenant A sees benefit usage for its own member (positive control)', async () => {
+    // The member is seeded in tenant A with a plan that has eblast_per_year=1.
+    // computeBenefitUsage returns ok=true with a valid BenefitUsage — the
+    // member + plan exist in tenant A's RLS scope.
+    const res = await computeBenefitUsage(
+      tenantA.ctx,
+      { memberId },
+      makeComputeBenefitUsageDeps(tenantA.ctx.slug),
+    );
+    expect(res.ok).toBe(true);
+  });
+
+  it('tenant B cannot see tenant A benefit usage for the same memberId', async () => {
+    // The memberId belongs to tenant A. When computeBenefitUsage runs under
+    // tenant B's RLS context, memberPlanSource.findPlanIdentity returns null
+    // (the member row is not visible to tenant B) → use-case returns
+    // err({ code: 'member_not_found' }) — no data leak.
+    const res = await computeBenefitUsage(
+      tenantB.ctx,
+      { memberId },
+      makeComputeBenefitUsageDeps(tenantB.ctx.slug),
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe('member_not_found');
   });
 });

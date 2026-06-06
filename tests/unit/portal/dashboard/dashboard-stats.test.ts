@@ -1,11 +1,9 @@
 // tests/unit/portal/dashboard/dashboard-stats.test.ts
 import { describe, expect, it } from 'vitest';
 import {
-  RENEW_DUE_THRESHOLD_DAYS,
   deriveMembershipStat,
   deriveOutstandingStat,
   deriveBenefitsStat,
-  isRenewDue,
 } from '@/app/(member)/portal/_lib/dashboard-stats';
 import type { RenewalCycle } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
@@ -70,27 +68,6 @@ describe('deriveMembershipStat', () => {
     );
     expect(stat.kind).toBe('active');
     expect(stat.variant).toBe('neutral');
-  });
-});
-
-describe('isRenewDue', () => {
-  it('is false when there is no cycle', () => {
-    expect(isRenewDue(null, NOW)).toBe(false);
-  });
-  it('is true within the threshold, false outside it', () => {
-    expect(isRenewDue(cycle({ expiresAt: '2026-06-16T00:00:00.000Z' }), NOW)).toBe(true);
-    expect(isRenewDue(cycle({ expiresAt: '2026-09-30T00:00:00.000Z' }), NOW)).toBe(false);
-  });
-  it('is true when overdue (negative days still inside the renew window)', () => {
-    expect(isRenewDue(cycle({ expiresAt: '2026-05-27T00:00:00.000Z' }), NOW)).toBe(true);
-  });
-  it('is false for a terminal completed cycle far from expiry', () => {
-    expect(
-      isRenewDue(cycle({ status: 'completed', expiresAt: '2026-12-31T00:00:00.000Z' }), NOW),
-    ).toBe(false);
-  });
-  it('exposes the threshold constant', () => {
-    expect(RENEW_DUE_THRESHOLD_DAYS).toBe(30);
   });
 });
 
