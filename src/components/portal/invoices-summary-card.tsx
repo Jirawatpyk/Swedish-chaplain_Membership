@@ -151,19 +151,22 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div>
+      {/* Heading + "view all" share one centred row (heading level with the
+          button, matching the Recent activity card); the description sits on
+          its own line below. */}
+      <CardHeader>
+        <div className="flex flex-row items-center justify-between gap-3">
           <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
-          <CardDescription>{t('summary.description')}</CardDescription>
+          {rows.length > 0 ? (
+            <Link
+              href="/portal/invoices"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              {t('summary.viewAll')}
+            </Link>
+          ) : null}
         </div>
-        {rows.length > 0 ? (
-          <Link
-            href="/portal/invoices"
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            {t('summary.viewAll')}
-          </Link>
-        ) : null}
+        <CardDescription>{t('summary.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (

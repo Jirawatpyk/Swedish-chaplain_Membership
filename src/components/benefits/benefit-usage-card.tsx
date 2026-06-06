@@ -105,8 +105,11 @@ export function BenefitUsageCard({
     // Stable settle hook for the a11y e2e scan: the Suspense skeleton has no such
     // testid, so a scan can wait for the LOADED card before running axe (F9-QA-03).
     <Card data-testid="benefit-usage-card" className={className}>
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
+      {/* Heading + action share one centred row (heading level with the
+          button, matching the Recent activity card); the live-figures note
+          sits on its own line below (full view only). */}
+      <CardHeader>
+        <div className="flex flex-row items-center justify-between gap-3">
           {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the
               card lands in the SR heading tree under the page <h1>. */}
           <h2
@@ -115,27 +118,27 @@ export function BenefitUsageCard({
           >
             {t('card.title', { year: membershipYear })}
           </h2>
-          {/* Figures are computed live per request (no cache) — surface the
-              freshness so a viewer knows they are current (spec edge case).
-              Omitted in the compact preview to keep the summary tight. */}
-          {!compact && (
-            <p className="text-caption text-muted-foreground">
-              {t('card.liveNote')}
-            </p>
+          {compact && previewHref !== undefined ? (
+            <Link
+              href={previewHref}
+              className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
+            >
+              {t('card.fullBenefits')}
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          ) : (
+            staffActions !== undefined && (
+              <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+            )
           )}
         </div>
-        {compact && previewHref !== undefined ? (
-          <Link
-            href={previewHref}
-            className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
-          >
-            {t('card.fullBenefits')}
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
-        ) : (
-          staffActions !== undefined && (
-            <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
-          )
+        {/* Figures are computed live per request (no cache) — surface the
+            freshness so a viewer knows they are current (spec edge case).
+            Omitted in the compact preview to keep the summary tight. */}
+        {!compact && (
+          <p className="text-caption text-muted-foreground">
+            {t('card.liveNote')}
+          </p>
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
