@@ -47,9 +47,15 @@ export function MemberBottomTabs() {
                 aria-label={fullLabel}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-xs font-medium transition-colors',
+                  // `border-t-2` is always reserved (transparent when inactive) so
+                  // the active indicator bar adds no layout shift. The active state
+                  // is conveyed by THREE cues — the top bar, a heavier font weight,
+                  // and aria-current — so it never relies on colour alone (WCAG 1.4.1).
+                  'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 border-t-2 px-1 py-1.5 text-xs transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                  active ? 'text-accent-foreground' : 'text-muted-foreground',
+                  active
+                    ? 'border-current font-semibold text-accent-foreground'
+                    : 'border-transparent font-medium text-muted-foreground',
                 )}
               >
                 <item.icon className="size-5 shrink-0" aria-hidden />
