@@ -1575,7 +1575,7 @@
           "issueDate": "วันที่ออก",
           "dueDate": "ครบกำหนด",
           "total": "ยอดรวม",
-          "actions": "",
+          "actions": "การดำเนินการ",
           "buyer": "ผู้ซื้อ",
           "method": "ช่องทางชำระ",
           "receiptNumber": "เลขใบเสร็จ"
@@ -1614,7 +1614,8 @@
         "creditedTooltip": "ใบลดหนี้ {count} ฉบับ · ลดหนี้ไปแล้ว {amount} บาท",
         "creditedAria": "ใบแจ้งหนี้นี้มีการออกใบลดหนี้ {count} ฉบับ ลดหนี้ไปแล้ว {amount} บาท",
         "receiptNumberCombinedTooltip": "โหมดรวมเอกสาร — ใบเสร็จใช้เลขเดียวกับใบแจ้งหนี้",
-        "receiptNumberCombinedAria": "ใบเสร็จใช้เลขที่ใบแจ้งหนี้ (โหมดรวมเอกสาร)"
+        "receiptNumberCombinedAria": "ใบเสร็จใช้เลขที่ใบแจ้งหนี้ (โหมดรวมเอกสาร)",
+        "tableCaption": "รายการใบแจ้งหนี้ตามตัวกรองที่เลือก"
       },
       "csvExport": {
         "trigger": "ส่งออก CSV",

@@ -1614,7 +1614,8 @@
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
         "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
-        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)"
+        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
+        "tableCaption": "List of invoices for the selected filters."
       },
       "csvExport": {
         "trigger": "Export CSV",

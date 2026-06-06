@@ -1575,7 +1575,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "total": "Totalt",
-          "actions": "",
+          "actions": "Åtgärder",
           "buyer": "Köpare",
           "method": "Metod",
           "receiptNumber": "Kvittonr."
@@ -1614,7 +1614,8 @@
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
         "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
-        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)"
+        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
+        "tableCaption": "Lista över fakturor för de valda filtren."
       },
       "csvExport": {
         "trigger": "Exportera CSV",
