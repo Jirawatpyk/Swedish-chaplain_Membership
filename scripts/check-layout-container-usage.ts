@@ -21,6 +21,17 @@ const CONTAINER_RE = /\b(TableContainer|FormContainer|DetailContainer)\b/g;
 const LAYOUT_IMPORT_RE =
   /import\s*\{[^}]+\}\s*from\s*['"]@\/components\/layout(?:\/[^'"]+)?['"]/g;
 
+// Redirect-only page detection.
+//   - imports `redirect` from `next/navigation`
+//   - calls `redirect(`
+const REDIRECT_IMPORT_RE =
+  /import\s*\{[^}]*\bredirect\b[^}]*\}\s*from\s*['"]next\/navigation['"]/;
+const REDIRECT_CALL_RE = /\bredirect\s*\(/;
+// A real page returns a JSX tree: `return (` followed (soon) by `<`.
+// Used as the negative guard so a real page that *conditionally* redirects
+// while ALSO rendering a layout is NOT mistaken for a redirect-only page.
+const JSX_RETURN_RE = /return\s*\(\s*</;
+
 type Offense =
   | { kind: 'count'; file: string; found: Container[]; reason: 'zero' | 'multiple' }
   | { kind: 'pair-mismatch'; page: string; loading: string; pageVariant: Container; loadingVariant: Container }
@@ -48,6 +59,38 @@ function findContainers(source: string): Container[] {
   return [...found];
 }
 
+/**
+ * A redirect-only page renders NO layout — it exists purely to preserve a
+ * route for email/bookmark deep-links and `redirect()` the visitor onward
+ * (058 D2 consolidated several portal surfaces into hubs; the legacy routes
+ * stay alive only as redirects, e.g. /portal/benefits/e-blasts →
+ * /portal/benefits?tab=broadcasts and /portal/preferences/renewals →
+ * /portal/account#renewal-prefs). Such a page has no container to require, so
+ * it is exempt from the layout-container rule.
+ *
+ * The heuristic is deliberately PRECISE so it never exempts a real page that
+ * conditionally calls `redirect()` while ALSO rendering a layout (e.g.
+ * admin/plans/new redirects after a successful create but otherwise renders a
+ * FormContainer). A file is redirect-only ONLY when ALL hold:
+ *   1. it imports `redirect` from `next/navigation`, AND
+ *   2. it contains a `redirect(` call, AND
+ *   3. it imports ZERO layout containers, AND
+ *   4. it returns NO JSX tree (`return (` followed by `<`).
+ * If a file imports a container OR returns JSX, it is a real page and stays
+ * subject to the container requirement.
+ */
+function isRedirectOnlyPage(
+  source: string,
+  containers: Container[],
+): boolean {
+  return (
+    containers.length === 0 &&
+    REDIRECT_IMPORT_RE.test(source) &&
+    REDIRECT_CALL_RE.test(source) &&
+    !JSX_RETURN_RE.test(source)
+  );
+}
+
 function main(): void {
   const files = collectFiles();
   if (files.length === 0) {
@@ -61,6 +104,9 @@ function main(): void {
   for (const file of files) {
     const src = readFileSync(file, 'utf8');
     const found = findContainers(src);
+    // Redirect-only pages render no layout — skip the container requirement
+    // (and the page+loading pairing check, since they have no loading.tsx).
+    if (isRedirectOnlyPage(src, found)) continue;
     if (found.length === 0) offenses.push({ kind: 'count', file, found, reason: 'zero' });
     else if (found.length > 1) offenses.push({ kind: 'count', file, found, reason: 'multiple' });
     else variantByFile.set(file, found[0]!);

@@ -158,6 +158,16 @@ describe('isLapsedAllowedRoute (T134 helper)', () => {
     ['/api/portal/preferences/renewals?next=/x', true],
     ['/portal/renewal', true],
     ['/portal/renewal?cycle=1', true],
+    // 058 D2: the consolidated Account hub hosts the FR-016 renewal opt-out
+    // + GDPR data export — both must stay reachable for a lapsed member.
+    // `isLapsedAllowedRoute` matches the PATHNAME only; the `#renewal-prefs`
+    // hash the redirect appends never reaches the server, so we assert the
+    // bare pathname. The data-export child route is covered by prefix match.
+    ['/portal/account', true],
+    ['/portal/account/data-export', true],
+    // Precision: a confusable substring like /portal/account-settings must
+    // NOT match the /portal/account prefix.
+    ['/portal/account-settings', false],
   ])('isLapsedAllowedRoute(%s) === %s', (path, expected) => {
     expect(isLapsedAllowedRoute(path)).toBe(expected);
   });
