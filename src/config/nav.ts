@@ -15,7 +15,6 @@ import {
   PlugZapIcon,
   Settings2Icon,
   ScrollTextIcon,
-  HistoryIcon,
   GiftIcon,
   BookUserIcon,
 } from 'lucide-react';
@@ -27,6 +26,12 @@ import {
 /** A single navigation link. */
 export interface NavItem {
   readonly titleKey: string;
+  /**
+   * Optional shorter i18n key used by the mobile bottom-tab bar where the
+   * full `titleKey` label overflows a 320px tab (e.g. TH "สิทธิประโยชน์").
+   * The full `titleKey` is still used as the tab's `aria-label`.
+   */
+  readonly shortTitleKey?: string;
   readonly icon: LucideIcon;
   readonly href: string;
   /** URL prefix for active-state matching. Use `exact:` prefix for exact match. */
@@ -238,9 +243,16 @@ export const staffNavConfig: NavConfig = {
 };
 
 // ---------------------------------------------------------------------------
-// Member navigation (T008)
+// Member navigation (057 redesign)
 // ---------------------------------------------------------------------------
 
+/**
+ * Desktop top-nav (≥ lg). Four destinations only — Account is reached via the
+ * avatar dropdown (UserMenu), not the top-nav (spec §2/§2a, review M3).
+ * Broadcasts/Timeline/Renewal-prefs were de-promoted from the top-nav: their
+ * ROUTES are preserved (spec §3 route-preservation) — Broadcasts lives inside
+ * the Benefits tab, Timeline on the Dashboard, Renewal-prefs in the Account hub.
+ */
 export const memberNavConfig: NavConfig = {
   sections: [
     {
@@ -257,59 +269,68 @@ export const memberNavConfig: NavConfig = {
           href: '/portal/profile',
           activePattern: '/portal/profile',
         },
-        // R7-B3 — US3 member invoice self-service.
         {
           titleKey: 'nav.member.invoices',
           icon: ReceiptIcon,
           href: '/portal/invoices',
           activePattern: '/portal/invoices',
         },
-        // F9 US4 — benefit usage dashboard (consumption vs entitlement +
-        // under-use warning). Shown to every member regardless of tier.
+        // Benefits (entitlements + Broadcasts tab). The active matcher must
+        // ALSO cover /portal/broadcasts/** so the compose/detail routes keep
+        // the Benefits tab highlighted (spec §3/§4.4, review M-2). We express
+        // this with a leading "any:" multi-prefix pattern resolved by
+        // isNavItemActive below — keeps NavItem.activePattern a single string.
         {
           titleKey: 'nav.member.benefits',
           icon: GiftIcon,
           href: '/portal/benefits',
-          // Exact-match so the E-Blast sub-route doesn't also light this item.
-          activePattern: 'exact:/portal/benefits',
-        },
-        // F7 — Email Broadcasts (E-Blast) entry point. Lands on the
-        // benefits dashboard which shows quota + history + Compose CTA.
-        // Members on plans with no E-Blast quota still see the page
-        // (with upgrade-explainer treatment) so the link is shown to
-        // every member regardless of tier.
-        {
-          titleKey: 'nav.member.broadcasts',
-          icon: MegaphoneIcon,
-          href: '/portal/benefits/e-blasts',
-          activePattern: '/portal/benefits/e-blasts',
-        },
-        // F9 US3 — member's own unified activity timeline.
-        {
-          titleKey: 'nav.member.timeline',
-          icon: HistoryIcon,
-          href: '/portal/timeline',
-          activePattern: '/portal/timeline',
-        },
-        // S1-P1-2 — inbound link to the renewal-reminder opt-out page, which
-        // otherwise had ZERO in-app links (reachable only by direct URL). The
-        // renewal FLOW page is reached via the email CTA (S1-P0-4 redeem-link).
-        {
-          titleKey: 'nav.member.renewalPrefs',
-          icon: CalendarClockIcon,
-          href: '/portal/preferences/renewals',
-          activePattern: '/portal/preferences/renewals',
-        },
-        {
-          titleKey: 'nav.member.account',
-          icon: UserCircleIcon,
-          href: '/portal/account',
-          activePattern: '/portal/account',
+          activePattern: 'any:/portal/benefits|/portal/broadcasts',
         },
       ],
     },
   ],
 };
+
+/**
+ * Mobile bottom tab bar (< lg). Five tabs = the four desktop destinations +
+ * Account (which is the avatar dropdown on desktop). `shortTitleKey` supplies
+ * a compact label so TH strings don't overflow a 320px tab; the full
+ * `titleKey` is the tab's accessible name (spec §6/§7, review SG-5).
+ */
+export const memberBottomTabItems: readonly NavItem[] = [
+  {
+    titleKey: 'nav.member.dashboard',
+    icon: LayoutDashboardIcon,
+    href: '/portal',
+    activePattern: 'exact:/portal',
+  },
+  {
+    titleKey: 'nav.member.profile',
+    icon: BuildingIcon,
+    href: '/portal/profile',
+    activePattern: '/portal/profile',
+  },
+  {
+    titleKey: 'nav.member.invoices',
+    icon: ReceiptIcon,
+    href: '/portal/invoices',
+    activePattern: '/portal/invoices',
+  },
+  {
+    titleKey: 'nav.member.benefits',
+    shortTitleKey: 'nav.member.benefitsShort',
+    icon: GiftIcon,
+    href: '/portal/benefits',
+    activePattern: 'any:/portal/benefits|/portal/broadcasts',
+  },
+  {
+    titleKey: 'nav.member.account',
+    shortTitleKey: 'nav.member.accountShort',
+    icon: UserCircleIcon,
+    href: '/portal/account',
+    activePattern: '/portal/account',
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Active-state matching utility (T009)
@@ -318,16 +339,28 @@ export const memberNavConfig: NavConfig = {
 /** Prefix used for exact-match active patterns (e.g., `exact:/admin`). */
 const EXACT_PREFIX = 'exact:' as const;
 
+/** Prefix used for a pipe-separated OR list of prefix patterns. */
+const ANY_PREFIX = 'any:' as const;
+
 /**
  * Determine if a nav item is active for the given pathname.
  *
- * Supports two modes:
+ * Supports three modes:
  * - `exact:/admin` — matches only the exact pathname `/admin`
+ * - `any:/portal/benefits|/portal/broadcasts` — active if the pathname
+ *   matches ANY of the pipe-separated prefixes (used so the Benefits tab
+ *   stays lit on /portal/broadcasts/** — review M-2)
  * - `/admin/plans` — prefix match (pathname starts with the pattern)
  */
 export function isNavItemActive(pathname: string, activePattern: string): boolean {
   if (activePattern.startsWith(EXACT_PREFIX)) {
     return pathname === activePattern.slice(EXACT_PREFIX.length);
+  }
+  if (activePattern.startsWith(ANY_PREFIX)) {
+    return activePattern
+      .slice(ANY_PREFIX.length)
+      .split('|')
+      .some((p) => pathname === p || pathname.startsWith(`${p}/`));
   }
   return pathname === activePattern || pathname.startsWith(`${activePattern}/`);
 }
