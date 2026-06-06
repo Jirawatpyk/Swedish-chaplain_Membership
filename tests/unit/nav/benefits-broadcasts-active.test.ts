@@ -9,9 +9,13 @@ import {
  *  doesn't break the test. */
 const benefitsItem = memberNavConfig.sections
   .flatMap((s) => s.items)
-  .find((i) => 'href' in i && i.href === '/portal/benefits')!;
+  .find((i) => 'href' in i && i.href === '/portal/benefits');
 
-const benefitsTab = memberBottomTabItems.find((i) => i.href === '/portal/benefits')!;
+const benefitsTab = memberBottomTabItems.find((i) => i.href === '/portal/benefits');
+
+if (!benefitsItem || !benefitsTab) {
+  throw new Error('Benefits nav item missing (href /portal/benefits) — update nav.ts or this test');
+}
 
 describe('Benefits nav active-state on /portal/broadcasts/** (058 G1, review M-2)', () => {
   it('top-nav Benefits item exists with an any: multi-prefix pattern', () => {
@@ -23,8 +27,11 @@ describe('Benefits nav active-state on /portal/broadcasts/** (058 G1, review M-2
     expect(isNavItemActive('/portal/benefits', benefitsItem.activePattern)).toBe(true);
   });
 
-  it('is active on /portal/benefits?tab=broadcasts base path', () => {
-    expect(isNavItemActive('/portal/benefits', benefitsItem.activePattern)).toBe(true);
+  it('stays active on the /portal/benefits/e-blasts child route (redirect target)', () => {
+    // isNavItemActive matches the pathname only; the caller strips the query
+    // string (?tab=broadcasts), so it never affects active-state. The e-blasts
+    // child path must still light Benefits via the plain-prefix arm.
+    expect(isNavItemActive('/portal/benefits/e-blasts', benefitsItem.activePattern)).toBe(true);
   });
 
   it('stays active on /portal/broadcasts/new (compose route preserved)', () => {
@@ -39,6 +46,10 @@ describe('Benefits nav active-state on /portal/broadcasts/** (058 G1, review M-2
 
   it('is NOT active on /portal/invoices', () => {
     expect(isNavItemActive('/portal/invoices', benefitsItem.activePattern)).toBe(false);
+  });
+
+  it('is NOT active on /portal/benefitsX (prefix-boundary guard)', () => {
+    expect(isNavItemActive('/portal/benefitsX', benefitsItem.activePattern)).toBe(false);
   });
 
   it('mobile bottom-tab Benefits mirrors the same pattern', () => {
