@@ -26,6 +26,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { RenewalCycle } from '../../domain/renewal-cycle';
 
@@ -59,7 +60,9 @@ export async function loadMemberRenewalStatus(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // errKind logs only the error class name — never e.message
+        // (Postgres errors carry SQL params / table names in message).
+        errKind: errKind(e),
         tenantId: input.tenantId,
         memberId: input.memberId,
       },

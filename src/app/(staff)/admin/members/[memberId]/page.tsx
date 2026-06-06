@@ -28,6 +28,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { headers } from 'next/headers';
 import {
@@ -289,6 +290,7 @@ function ContactBlock({
   pendingInvitation,
   subscribed,
   canWrite,
+  locale,
   t,
 }: {
   contact: Contact;
@@ -303,6 +305,12 @@ function ContactBlock({
   subscribed: boolean;
   /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
   canWrite: boolean;
+  /**
+   * FIX 5 (056 polish) — active locale passed from the page-level
+   * `getLocale()` call so the pending-invitation badge title renders
+   * BE year for th-TH users instead of raw ค.ศ. ISO date.
+   */
+  locale: string;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
 }) {
   // "Invite to portal" is only shown when the contact has an email and
@@ -348,9 +356,13 @@ function ContactBlock({
                 variant="outline"
                 className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
                 title={t('pendingInvitations.expiresAt', {
-                  date: pendingInvitation.expiresAt
-                    .toISOString()
-                    .slice(0, 10),
+                  // FIX 5 — use the shared Buddhist-aware helper so th-TH
+                  // users see พ.ศ. (BE) in the hover tooltip, not raw ค.ศ.
+                  date: formatLocalisedDate(
+                    pendingInvitation.expiresAt.toISOString(),
+                    locale,
+                    { dateStyle: 'medium' },
+                  ),
                 })}
               >
                 <MailWarningIcon
@@ -597,7 +609,9 @@ export default async function MemberDetailPage({
           logger.error(
             {
               event: 'pending_invitations_threw',
-              err: e instanceof Error ? e.message : String(e),
+              // errKind logs only the error class name — never e.message
+              // (Postgres errors carry SQL params; Upstash errors carry keys).
+              errKind: errKind(e),
               memberId,
             },
             '[F3] pending-invitations fetch threw — falling back to empty map',
@@ -635,7 +649,23 @@ export default async function MemberDetailPage({
           const emailByContact = new Map<string, EmailLower>();
           for (const c of liveContacts) {
             const parsed = asEmailLower(String(c.email).toLowerCase());
-            if (parsed.ok) emailByContact.set(c.contactId, parsed.value);
+            if (parsed.ok) {
+              emailByContact.set(c.contactId, parsed.value);
+            } else {
+              // FIX 4 — log a debug breadcrumb when a contact email fails the
+              // EmailLower parse (data drift / non-standard character in a
+              // stored address). The contact is silently skipped → defaults
+              // to "Subscribed". Mirrors the `metadata_company_name_lookup_failed`
+              // pattern (page.tsx ~line 140) so future data-drift is observable.
+              logger.debug(
+                {
+                  event: 'contact_email_lower_parse_failed',
+                  contactId: c.contactId,
+                  memberId,
+                },
+                '[Pass A] asEmailLower parse failed — contact defaults to Subscribed',
+              );
+            }
           }
           const suppressionRepo = makeDrizzleMarketingUnsubscribesRepo(
             tenant.slug,
@@ -653,11 +683,18 @@ export default async function MemberDetailPage({
           logger.warn(
             {
               event: 'marketing_unsubscribe_lookup_threw',
-              err: e instanceof Error ? e.message : String(e),
+              // errKind logs only the error class name — never e.message
+              // (Postgres errors carry SQL params / table names).
+              errKind: errKind(e),
               memberId,
             },
             '[Pass A] marketing-suppression lookup threw — defaulting all contacts to Subscribed',
           );
+          // TODO(056-followup): on marketing-DB outage the lookup returns an
+          // empty Set → all badges show "Subscribed" (fail-open). Reviewer
+          // confirmed this is NOT a compliance bug (send path re-resolves
+          // suppression independently). A proper "unknown/degraded" badge
+          // state is a separate follow-up task.
           return new Set<string>();
         }
       })(),
@@ -1085,6 +1122,7 @@ export default async function MemberDetailPage({
                   )}
                   subscribed={!unsubscribedContactIds.has(primary.contactId)}
                   canWrite={canWrite}
+                  locale={locale}
                   t={t}
                 />
               ) : null}
@@ -1106,6 +1144,7 @@ export default async function MemberDetailPage({
                         )}
                         subscribed={!unsubscribedContactIds.has(c.contactId)}
                         canWrite={canWrite}
+                        locale={locale}
                         t={t}
                       />
                     </div>

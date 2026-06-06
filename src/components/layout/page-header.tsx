@@ -65,7 +65,16 @@ export function PageHeader({
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        {/*
+         * 056 polish FIX 1 (WCAG 1.4.10 Reflow) — `flex-wrap` lets the
+         * badge chips drop to a new line on narrow viewports instead of
+         * overflowing past 320 px. `min-w-0` on both the row container
+         * and the h1 enable the text to shrink below its intrinsic width
+         * before the layout overflows. This is purely additive: pages
+         * that pass no badge are unaffected (the empty slot renders
+         * nothing; `break-words` on h1 is safe everywhere).
+         */}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {/*
            * R4 + Round-5 review-finding H4: focus-only announcement
            * pattern. R4-W10 had paired `tabIndex={-1}.focus()` with
@@ -81,7 +90,7 @@ export function PageHeader({
           <h1
             ref={titleRef}
             data-slot="page-header-title"
-            className="text-h1 text-foreground focus-visible:outline-none"
+            className="min-w-0 break-words text-h1 text-foreground focus-visible:outline-none"
             tabIndex={autoFocusTitle ? -1 : undefined}
           >
             {title}

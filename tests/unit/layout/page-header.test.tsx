@@ -53,6 +53,26 @@ describe('<PageHeader>', () => {
     expect(actionsWrapper?.className).toMatch(/flex-wrap/);
   });
 
+  it('badge row has min-w-0 and flex-wrap for 320px reflow (WCAG 1.4.10)', () => {
+    const { container } = render(
+      <PageHeader
+        title="A Very Long Company Name That Could Overflow"
+        badge={<span>ACTIVE</span>}
+      />,
+    );
+    // The inner row wrapping h1 + badge slot
+    const titleWrapper = container.querySelector('[data-slot="page-header-title"]')?.parentElement;
+    expect(titleWrapper?.className).toMatch(/min-w-0/);
+    expect(titleWrapper?.className).toMatch(/flex-wrap/);
+  });
+
+  it('h1 has min-w-0 and break-words for 320px reflow (WCAG 1.4.10)', () => {
+    render(<PageHeader title="VeryLongUnbreakableName" />);
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(h1.className).toMatch(/min-w-0/);
+    expect(h1.className).toMatch(/break-words/);
+  });
+
   it('h1 uses .text-h1 semantic class (not direct Tailwind size)', () => {
     render(<PageHeader title="X" />);
     const h1 = screen.getByRole('heading', { level: 1 });
