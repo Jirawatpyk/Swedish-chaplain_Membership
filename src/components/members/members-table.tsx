@@ -4,20 +4,24 @@
  * T065 + T108 + T112 — Members directory table.
  *
  * TanStack Table v8 headless + shadcn Table visual primitives. Rows link
- * to the detail page. The risk column (accessor id `member_risk_flag`, kept
- * stable since the F8 pre-wiring) renders the F8-derived risk band/score from
- * the row's `member_risk_flag` object (`{ score, band } | null`, sourced from
- * F3 `members.risk_score_band` populated by F8's batched recompute); when not
- * yet computed (FR-035 min-tenure) it shows a labelled tooltip explaining why
- * — see the cell renderer below, not a bare em-dash.
+ * to the detail page.
+ *
+ * 056-members-table-compact — Lean 8-column layout (was 12; the wide set
+ * overflowed the page). Final columns:
+ *   ☑ select │ Member No. │ Company (flag + name) │ Plan · Year │
+ *   Contact (name only) │ Status │ Engagement │ Last Activity
+ * Country moved into the Company cell as a leading flag (edited on the
+ * member detail page). Plan + Year are merged with a middot. The Risk
+ * column was dropped (Engagement is the positive-framed inverse of the
+ * same F8 signal). Notes moved to the detail page. Inline edit now serves
+ * Status only — the country/notes inline cells were removed.
  *
  * T108 (US4): Row-selection state via TanStack Table enableRowSelection +
  * Shift+Click range + Space toggle + Ctrl+A page-select + "Select all N
  * matching" (FR-040). Selection is hidden for non-admin roles.
  *
- * T112 (US4): Inline-edit cells for status/country/notes with
- * aria-live save/rollback announcements + 24×24 min target size
- * (ADOPT-01 / WCAG 2.2 SC 2.5.8).
+ * T112 (US4): Inline-edit Status cell with aria-live save/rollback
+ * announcements + 24×24 min target size (ADOPT-01 / WCAG 2.2 SC 2.5.8).
  *
  * Pagination is cursor-based at the server level; this component exposes
  * a "Load more" button that the parent wires to re-fetch with the echoed
@@ -63,20 +67,12 @@ import {
   PencilLineIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-// F8 Phase 6 Wave H — risk-score badge for the directory column. F8
-// shared primitive lives at src/components/renewals/risk-score-badge.tsx
-// and is barrel-safe (Domain types only; no Drizzle/server imports).
-import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
 // to the insights server graph). The engagement value is projected server-side.
-import type { EngagementBand, RiskBand } from '@/modules/insights';
+import type { EngagementBand } from '@/modules/insights';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
+// 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
-import {
-  useInlineEditField,
-  activateOnEnterSpace,
-  type InlineSaveOutcome,
-} from './use-inline-edit-field';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -89,8 +85,17 @@ export type MembersTableRow = {
    */
   readonly member_number_display: string;
   readonly company_name: string;
+  /**
+   * ISO 3166-1 alpha-2 country code. 056-members-table-compact: rendered
+   * as a leading flag inside the Company cell (no standalone column). Edited
+   * on the member detail page, not inline.
+   */
   readonly country: string;
   readonly plan_id: string;
+  /**
+   * 056-members-table-compact: merged with `plan_display_name` into a single
+   * "Plan · Year" cell (no standalone Year column).
+   */
   readonly plan_year: number;
   /**
    * English display name of the plan, resolved at the SQL layer via a
@@ -100,24 +105,15 @@ export type MembersTableRow = {
   readonly plan_display_name: string | null;
   readonly status: 'active' | 'inactive' | 'archived';
   /**
-   * F8 Phase 6 Wave H — at-risk band derived from F3
-   * `members.risk_score_band` (populated by F8's batched recompute
-   * cron). Null when the recompute hasn't run yet (FR-035 min-tenure
-   * skips fresh members) — the column then renders the "—" placeholder.
-   * Kept under the legacy `member_risk_flag` accessor name for column
-   * id stability across F3 → F8 transition.
-   */
-  readonly member_risk_flag: { score: number; band: RiskBand } | null;
-  /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
-   * canonical `projectEngagementScore`; null when unscored (mirrors
-   * member_risk_flag). The cell only renders this value (no projection logic).
+   * canonical `projectEngagementScore`; null when unscored. The cell only
+   * renders this value (no projection logic). 056-members-table-compact: this
+   * is now the sole at-risk surface in the table — the redundant Risk column
+   * (raw inverse of the same signal) was dropped.
    */
   readonly engagement: { readonly score: number; readonly band: EngagementBand } | null;
   readonly last_activity_at: string | null;
-  /** Admin-only inline-edit target (FR-040). Visible in the Notes cell. */
-  readonly notes: string | null;
   readonly primary_contact: {
     readonly contact_id: string;
     readonly first_name: string;
@@ -141,10 +137,15 @@ type Props = {
   readonly enableSelection?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
   readonly onSelectionChange?: ((selectedIds: string[]) => void) | undefined;
-  /** Callback for inline-edit save. */
+  /**
+   * Callback for inline-edit save. 056-members-table-compact: only Status is
+   * inline-editable in the table now (country/notes moved to the detail page),
+   * so the field is narrowed to `'status'`. The wrapper's wider handler
+   * signature (`'status' | 'country' | 'notes'`) is still assignable here.
+   */
   readonly onInlineEdit?: ((
     memberId: string,
-    field: 'status' | 'country' | 'notes',
+    field: 'status',
     value: string | null,
   ) => Promise<InlineEditResult>) | undefined;
 };
@@ -270,12 +271,14 @@ function EngagementSortHeader() {
 }
 
 /**
- * C7 round-10 ui-design-specialist — column-header affordance for the
- * 3 editable cells (status / country / notes). Renders the label + a
- * small pencil icon; hovering / focusing the icon surfaces the
- * instruction ("Double-click any cell in this column to edit inline.
- * Enter to save, Escape to cancel."). Only mounted when the caller
- * passes `editable={true}` — manager view drops it.
+ * C7 round-10 ui-design-specialist — column-header affordance for an
+ * editable cell. Renders the label + a small pencil icon; hovering /
+ * focusing the icon surfaces the inline-edit instruction. Only mounted
+ * when the caller passes `editable={true}` — manager view drops it.
+ *
+ * 056-members-table-compact — the only remaining inline-editable column is
+ * Status (the country/notes inline cells were removed; those fields are now
+ * edited on the member detail page).
  *
  * Icon-only (no "Editable" text) per maintainer feedback — keeps the
  * column header compact. `aria-label` + Tooltip carry the meaning for
@@ -406,230 +409,6 @@ function InlineStatusCell({
   );
 }
 
-/**
- * T112 — Inline-editable country cell.
- *
- * Double-click the flag/code to enter edit mode. The admin types a new
- * ISO 3166-1 alpha-2 code (2 letters). Save on Enter or blur; rollback
- * on Escape. Server-side value-object validation rejects invalid codes.
- */
-function InlineCountryCell({
-  memberId,
-  country,
-  onSave,
-}: {
-  memberId: string;
-  country: string;
-  onSave?: Props['onInlineEdit'];
-}) {
-  const t = useTranslations('admin.members.inlineEdit');
-
-  // Value-specific save logic (validate → onSave → toast); the shared
-  // hook owns the edit/saving/flash state + the double-fire + Escape+blur
-  // race guards (see use-inline-edit-field.ts).
-  const commit = useCallback(
-    async (draft: string, current: string): Promise<InlineSaveOutcome> => {
-      const normalised = draft.trim().toUpperCase();
-      if (normalised === current) return 'closed';
-      if (normalised.length !== 2) {
-        toast.error(t('countryInvalid'));
-        return 'closed';
-      }
-      const result = await onSave!(memberId, 'country', normalised);
-      if (result.ok) {
-        toast.success(t('countryUpdated'));
-        return 'saved';
-      }
-      // Round-3 N-I1: keep input open on error so user can retry without retyping.
-      toast.error(result.error);
-      return 'kept-open';
-    },
-    [memberId, onSave, t],
-  );
-
-  const {
-    editing,
-    isEditing,
-    saving,
-    savedFlash,
-    fieldRef,
-    startEdit,
-    setDraft,
-    handleSave,
-    handleKeyDown,
-  } = useInlineEditField<string, HTMLInputElement>({
-    current: country,
-    toDraft: (c) => c,
-    commit,
-    selectOnFocus: true,
-  });
-
-  if (!onSave) {
-    return <span>{country}</span>;
-  }
-
-  if (!isEditing) {
-    return (
-      <button
-        type="button"
-        onDoubleClick={startEdit}
-        // W1-06 (a11y SC 2.1.1): a native button with only onDoubleClick is
-        // keyboard-dead (Enter/Space fire `click`, not `dblclick`). Activate edit
-        // on Enter/Space too, while keeping double-click for mouse (single mouse
-        // click intentionally does nothing in this dense grid). Shared with
-        // InlineNotesCell via activateOnEnterSpace (code-review #14).
-        onKeyDown={activateOnEnterSpace(startEdit)}
-        title={t('editCountryHint')}
-        className="group inline-flex min-h-[28px] min-w-[40px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={t('editCountry')}
-      >
-        {/* C4 round-10 — flag-only matches the read-only manager
-            view so admin/manager rows have identical width. */}
-        <CountryDisplay code={country} variant="flag-only" />
-        <PencilIcon
-          className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-          aria-hidden="true"
-        />
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1">
-      <input
-        ref={fieldRef}
-        type="text"
-        value={editing ?? ''}
-        maxLength={2}
-        pattern="[A-Za-z]{2}"
-        onChange={(e) => setDraft(e.target.value.toUpperCase())}
-        onBlur={handleSave}
-        onKeyDown={handleKeyDown}
-        disabled={saving}
-        className="h-7 w-14 rounded-sm border border-input bg-background px-2 text-sm uppercase focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={t('countryInput')}
-      />
-      <span className="sr-only" aria-live="polite">
-        {saving ? t('saving') : savedFlash ? t('saved') : ''}
-      </span>
-    </div>
-  );
-}
-
-/**
- * T112 — Inline-editable notes cell.
- *
- * Double-click to enter edit mode (textarea). Blur or Enter saves;
- * Escape cancels. Content truncated to a short preview in display mode.
- * Notes content is NOT in the audit diff for privacy — only the
- * `fields_changed: ['notes']` marker is logged.
- */
-function InlineNotesCell({
-  memberId,
-  notes,
-  onSave,
-}: {
-  memberId: string;
-  notes: string | null;
-  onSave?: Props['onInlineEdit'];
-}) {
-  const t = useTranslations('admin.members.inlineEdit');
-
-  const commit = useCallback(
-    async (
-      draft: string,
-      current: string | null,
-    ): Promise<InlineSaveOutcome> => {
-      const next = draft.trim() || null;
-      if (next === current) return 'closed';
-      const result = await onSave!(memberId, 'notes', next);
-      if (result.ok) {
-        toast.success(t('notesUpdated'));
-        return 'saved';
-      }
-      // Round-3 N-I1: keep textarea open so user doesn't lose their draft.
-      toast.error(result.error);
-      return 'kept-open';
-    },
-    [memberId, onSave, t],
-  );
-
-  const {
-    editing,
-    isEditing,
-    saving,
-    savedFlash,
-    fieldRef,
-    startEdit,
-    setDraft,
-    handleSave,
-    handleKeyDown,
-  } = useInlineEditField<string | null, HTMLTextAreaElement>({
-    current: notes,
-    toDraft: (n) => n ?? '',
-    commit,
-    // Shift+Enter inserts a newline; plain Enter submits.
-    submitOnEnter: (e) => !e.shiftKey,
-  });
-
-  if (!onSave) {
-    return (
-      <span
-        className="block max-w-[160px] truncate text-sm text-muted-foreground"
-        title={notes ?? undefined}
-      >
-        {notes ?? '—'}
-      </span>
-    );
-  }
-
-  if (!isEditing) {
-    // I5 round-10 — preview was clipped at 24 chars (notes accepts
-    // 4000). Bumped to 60 so multi-sentence notes are readable
-    // without entering edit mode. Full text remains available via
-    // `title` tooltip for sighted users + sr-only span for SR users.
-    const preview = notes ? (notes.length > 60 ? notes.slice(0, 60) + '…' : notes) : '—';
-    return (
-      <button
-        type="button"
-        onDoubleClick={startEdit}
-        // W1-06 (a11y SC 2.1.1): keyboard activation (see InlineCountryCell).
-        onKeyDown={activateOnEnterSpace(startEdit)}
-        title={notes ?? t('editNotesHint')}
-        className="group inline-flex min-h-[28px] max-w-[260px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={t('editNotes')}
-      >
-        <span className="truncate">{preview}</span>
-        <PencilIcon
-          className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-          aria-hidden="true"
-        />
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1">
-      <textarea
-        ref={fieldRef}
-        value={editing ?? ''}
-        maxLength={4000}
-        rows={2}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={handleSave}
-        onKeyDown={handleKeyDown}
-        disabled={saving}
-        className="min-h-[28px] w-48 resize-y rounded-sm border border-input bg-background px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={t('notesInput')}
-        placeholder={t('notesPlaceholder')}
-      />
-      <span className="sr-only" aria-live="polite">
-        {saving ? t('saving') : savedFlash ? t('saved') : ''}
-      </span>
-    </div>
-  );
-}
-
 export function MembersTable({
   rows,
   nextCursor,
@@ -749,33 +528,27 @@ export function MembersTable({
       ),
       size: 90,
     }),
+    // 056-members-table-compact — Company cell leads with the country flag
+    // (the standalone Country column was removed; country is edited on the
+    // detail page). Null country → no flag, just the name. The flag carries
+    // the localised country name via its hover `title` + SR `aria-label`
+    // (CountryDisplay variant="flag-only"), so a11y is intact.
     columnHelper.accessor('company_name', {
       header: () => t('columns.company'),
-      cell: (info) => (
-        <span className="font-medium">{info.getValue()}</span>
-      ),
+      cell: (info) => {
+        const country = info.row.original.country;
+        return (
+          <span className="inline-flex items-center gap-2">
+            {country && (
+              <CountryDisplay code={country} variant="flag-only" />
+            )}
+            <span className="font-medium">{info.getValue()}</span>
+          </span>
+        );
+      },
     }),
-    columnHelper.accessor('country', {
-      header: () => (
-        <EditableColumnHeader
-          label={t('columns.country')}
-          editable={enableSelection}
-        />
-      ),
-      cell: (info) =>
-        enableSelection ? (
-          <InlineCountryCell
-            memberId={info.row.original.member_id}
-            country={info.getValue()}
-            onSave={onInlineEdit}
-          />
-        ) : (
-          // C4 round-10 — `variant="flag-only"` per user preference:
-          // ISO code redundant when the flag already identifies the
-          // country. Hover/SR surfaces the localised full name.
-          <CountryDisplay code={info.getValue()} variant="flag-only" />
-        ),
-    }),
+    // 056-members-table-compact — merged "Plan · Year" cell (the standalone
+    // Year column was removed). Middot separator is a locale-neutral literal.
     columnHelper.accessor('plan_display_name', {
       header: () => t('columns.plan'),
       cell: (info) => {
@@ -783,27 +556,20 @@ export function MembersTable({
         const row = info.row.original;
         const label = displayName ?? row.plan_id;
         return (
-          <span title={row.plan_id} className="text-sm">
-            {label}
+          <span title={row.plan_id} className="text-sm whitespace-nowrap">
+            {label} · {row.plan_year}
           </span>
         );
       },
     }),
-    columnHelper.accessor('plan_year', {
-      header: () => t('columns.year'),
-      cell: (info) => info.getValue(),
-    }),
+    // 056-members-table-compact — Contact shows the name only (the email
+    // second line was dropped to keep the column compact).
     columnHelper.accessor('primary_contact', {
       header: () => t('columns.primaryContact'),
       cell: (info) => {
         const c = info.getValue();
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
-        return (
-          <div className="flex flex-col">
-            <span>{`${c.first_name} ${c.last_name}`.trim()}</span>
-            <span className="text-xs text-muted-foreground">{c.email}</span>
-          </div>
-        );
+        return <span>{`${c.first_name} ${c.last_name}`.trim()}</span>;
       },
     }),
     columnHelper.accessor('status', {
@@ -824,60 +590,9 @@ export function MembersTable({
           <StatusBadge status={info.getValue()} />
         ),
     }),
-    columnHelper.accessor('member_risk_flag', {
-      header: () => t('columns.risk'),
-      cell: (info) => {
-        const flag = info.getValue();
-        if (flag === null) {
-          // C5 round-10 ui-design-specialist — the previous em-dash
-          // placeholder + sr-only "Risk score not yet computed" made
-          // sighted admins think the data was broken. Show a short
-          // descriptive label + a tooltip that explains WHY (newly-
-          // added members don't have a score until 30 days of activity
-          // accumulate per FR-035 min-tenure rule). Cell stays compact;
-          // the tooltip surfaces the rationale on hover/focus.
-          // Round-11 review fix — TooltipProvider HOISTED to MembersTable
-          // root (line ~770). Per-row TooltipProvider × N rows produced
-          // tooltip races + Tab order noise at scale.
-          return (
-            <Tooltip>
-              {/* T097 (F9 a11y) — no `aria-label` on this roleless <span>:
-                  ARIA prohibits aria-label on a generic span (axe
-                  `aria-prohibited-attr`, WCAG 4.1.2). The visible text
-                  ("Not yet scored") is the accessible name and the tooltip
-                  content is wired via aria-describedby, so SR users still get
-                  the full "computed after 30 days" explanation. Satisfies
-                  WCAG 2.5.3 Label in Name (visible text == accessible name). */}
-              <TooltipTrigger
-                render={
-                  <span
-                    tabIndex={0}
-                    className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                  />
-                }
-              >
-                {t('riskNotComputed')}
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('riskNotComputedTooltip')}
-              </TooltipContent>
-            </Tooltip>
-          );
-        }
-        // F8 Phase 6 Wave H — render real RiskScoreBadge from F8 module.
-        // F6 readiness gate is presentation-deferred: directory rows
-        // don't carry the active_max signal so we use 100 as the
-        // canonical max (production uses the F6-active formula by
-        // default; F6-inactive surface 70 is widget-specific).
-        return (
-          <RiskScoreBadge
-            score={flag.score}
-            band={flag.band}
-            activeMax={100}
-          />
-        );
-      },
-    }),
+    // 056-members-table-compact — the standalone Risk column was removed.
+    // Engagement (below) is the positive-framed inverse of the same F8 risk
+    // signal, so the raw Risk column was redundant.
     // F9 (T034) — Engagement Score column: positive-framed inverse of the F8
     // risk score, projected on read. Non-colour encoding (numeric score + text
     // band label, FR-035). Server-side sortable via `?sort=engagement&order=`
@@ -921,29 +636,8 @@ export function MembersTable({
         );
       },
     }),
-    columnHelper.accessor('notes', {
-      header: () => (
-        <EditableColumnHeader
-          label={t('columns.notes')}
-          editable={enableSelection}
-        />
-      ),
-      cell: (info) =>
-        enableSelection ? (
-          <InlineNotesCell
-            memberId={info.row.original.member_id}
-            notes={info.getValue()}
-            onSave={onInlineEdit}
-          />
-        ) : (
-          <span
-            className="block max-w-[160px] truncate text-sm text-muted-foreground"
-            title={info.getValue() ?? undefined}
-          >
-            {info.getValue() ?? '—'}
-          </span>
-        ),
-    }),
+    // 056-members-table-compact — the Notes column was removed; notes are
+    // edited on the member detail page.
   ], [enableSelection, onInlineEdit, t, locale, rows, rowSelection, handleRowSelectionChange]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
