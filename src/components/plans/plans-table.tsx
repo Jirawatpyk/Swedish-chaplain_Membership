@@ -428,7 +428,7 @@ export function PlansTable({
                   <TableCell>
                     <a
                       href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`}
-                      className="hover:underline focus-visible:underline"
+                      className="focus-visible:underline"
                     >
                       <LocaleTextDisplay
                         value={plan.plan_name}

@@ -348,7 +348,7 @@ export function InvoicesTable({
               <TableCell className="align-middle whitespace-nowrap">
                 <Link
                   href={`/admin/invoices/${r.invoiceId}`}
-                  className="cursor-pointer font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                 >
                   {r.documentNumber}
                 </Link>
@@ -397,7 +397,7 @@ export function InvoicesTable({
                     {r.buyerHasMemberLink ? (
                       <Link
                         href={`/admin/members/${r.memberId}`}
-                        className="hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                        className="focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                       >
                         {r.memberName}
                       </Link>

@@ -726,7 +726,7 @@ export function MembersTable({
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
-                          className="cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                          className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                         >
                           {flexRender(
                             cell.column.columnDef.cell,
@@ -737,7 +737,7 @@ export function MembersTable({
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
-                          className="cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                          className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                         >
                           {flexRender(
                             cell.column.columnDef.cell,
