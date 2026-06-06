@@ -1,27 +1,25 @@
 /**
- * T072 (R7-B3 polish) — Member-portal invoice summary card.
+ * Member-portal invoice summary card (relocated from
+ * `app/(member)/portal/invoices/_components/` to the shared
+ * `src/components/portal/` namespace — review S1 architect).
  *
  * Renders the **latest 3 invoices** for the signed-in member plus a
- * "view all" link to `/portal/invoices`. Mounted on `/portal`
- * (member landing page) to satisfy **US7 AS4**:
+ * "view all" link to `/portal/invoices`. Reused by BOTH the Invoices
+ * page and the redesigned Dashboard (`/portal`), which is why it now
+ * lives under `src/components/portal/` rather than a route-local
+ * `_components/` folder.
  *
- *   Given a `member` role (self-service),
- *   When they open their own portal landing page,
- *   Then a compact invoice-history summary (latest 3 + "view all"
- *        link) is visible.
- *
- * Architecture notes:
- * - Server Component: calls `listInvoicesPaged` directly with
- *   `memberId` filter (same B3 pattern as `/portal/invoices`).
+ * Architecture notes (unchanged from the original):
+ * - Server Component: calls `listInvoicesPaged` directly with a
+ *   `memberId` filter resolved from the session via
+ *   `findByLinkedUserId` (RLS-safe, never URL-derived).
  *   `includeDrafts: false` — members never see drafts.
- * - Handles the **three member-linking states** surfaced on the
- *   full list page (linked + has invoices, linked + empty, not
- *   linked) so the card renders gracefully in all cases — no 5xx
- *   regression path.
- * - Reuses `portal.invoices.*` i18n namespace + adds
- *   `portal.invoices.summary.*` keys (heading + viewAll copy).
- * - PDF download goes through the same byte-streamed route as the
- *   full list (`/api/portal/invoices/[id]/pdf`) — no Blob URL leak.
+ * - Handles the three member-linking states (linked + has invoices,
+ *   linked + empty, not linked) so the card renders gracefully in all
+ *   cases — no 5xx regression path.
+ * - On a backend read failure it logs + renders a distinct error
+ *   variant (NOT the "no invoices" empty copy) so operators see the
+ *   diagnostic (R7-M4).
  */
 import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
@@ -54,8 +52,8 @@ import {
   statusBadgeVariant,
   statusIconName,
   type InvoiceStatusIconName,
-} from '../_utils/format';
-import { PortalInvoiceDownloadButton } from './portal-pdf-download-button';
+} from '@/app/(member)/portal/invoices/_utils/format';
+import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
 
 const SUMMARY_LIMIT = 3;
 

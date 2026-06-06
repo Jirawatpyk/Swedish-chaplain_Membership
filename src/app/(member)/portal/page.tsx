@@ -14,7 +14,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { formatMemberNumber, resolveMemberNumberPrefix } from '@/modules/members';
-import { InvoicesSummaryCard } from './invoices/_components/invoices-summary-card';
+import { InvoicesSummaryCard } from '@/components/portal/invoices-summary-card';
 
 /**
  * Member portal landing — `/portal` (Dashboard).
