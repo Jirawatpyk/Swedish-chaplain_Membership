@@ -180,3 +180,8 @@ specs/012-eventcreate-integration/perf-results/local-*.json
 # (Pre-existing tracked root PNGs are not retro-untracked by this rule.)
 # ============================================
 /*.png
+
+# ============================================
+# Visual-companion brainstorm mockups (superpowers)
+# ============================================
+.superpowers/
