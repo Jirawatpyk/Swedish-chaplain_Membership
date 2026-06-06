@@ -3883,6 +3883,41 @@
   },
   "portal": {
     "dashboard": {
+      "welcome": "Hej {name}",
+      "intro": "Här är ditt medlemskap i korthet.",
+      "statusChip": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "archived": "Arkiverad"
+      },
+      "membership": {
+        "label": "Medlemskap",
+        "activeValue": "Aktivt",
+        "renewDueValue": "Förnya snart",
+        "overdueValue": "Förnyelse försenad",
+        "activeSub": "Ditt medlemskap är i gott skick.",
+        "daysRemainingSub": "Förnyas om {days} dagar",
+        "overdueSub": "Försenad med {days} dagar",
+        "emptyValue": "Välkommen",
+        "emptySub": "Ditt förnyelseschema visas här när din första period börjar."
+      },
+      "outstanding": {
+        "label": "Utestående saldo",
+        "value": "{amount}",
+        "countSub": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}}",
+        "dueSub": "Förfaller tidigast {date}",
+        "clearValue": "Allt betalt",
+        "clearSub": "Du har inga utestående fakturor."
+      },
+      "benefits": {
+        "label": "Förmåner",
+        "underUseValue": "{count, plural, one {# förmån underutnyttjad} other {# förmåner underutnyttjade}}",
+        "underUseSub": "Få ut det mesta av det din plan inkluderar.",
+        "onTrackValue": "Alla förmåner på rätt spår",
+        "onTrackSub": "Du håller jämna steg med året.",
+        "emptyValue": "Inga förmåner ännu",
+        "emptySub": "Din plans förmåner visas här."
+      },
       "quotaBar": {
         "readout": "{used} av {max}",
         "ariaLabel": "{label}: {used} av {max} använt"
@@ -3893,10 +3928,27 @@
           "title": "Ingen aktivitet ännu",
           "body": "Dina fakturor, förmånsanvändning och utskick visas här när du använder portalen."
         },
-        "viewAll": "Visa all aktivitet"
+        "viewAll": "Visa all aktivitet",
+        "emptyCta": "Utforska förmåner"
       },
       "quickActions": {
-        "title": "Snabbåtgärder"
+        "title": "Snabbåtgärder",
+        "pay": "Betala faktura",
+        "benefits": "Visa förmåner",
+        "renew": "Förnya medlemskap",
+        "editProfile": "Redigera profil"
+      },
+      "invoicesPanel": {
+        "heading": "Senaste fakturor"
+      },
+      "benefitsPanel": {
+        "heading": "Förmånsanvändning",
+        "viewAll": "Visa alla förmåner"
+      },
+      "firstRun": {
+        "title": "Välkommen till {tenant}s medlemsportal",
+        "body": "Din instrumentpanel fylls på när du använder ditt medlemskap — betala fakturor, delta i evenemang och använd dina förmåner.",
+        "exploreBenefits": "Utforska dina förmåner"
       }
     },
     "account": {

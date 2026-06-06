@@ -3883,6 +3883,41 @@
   },
   "portal": {
     "dashboard": {
+      "welcome": "Hi {name}",
+      "intro": "Here's your membership at a glance.",
+      "statusChip": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "archived": "Archived"
+      },
+      "membership": {
+        "label": "Membership",
+        "activeValue": "Active",
+        "renewDueValue": "Renew soon",
+        "overdueValue": "Renewal overdue",
+        "activeSub": "Your membership is in good standing.",
+        "daysRemainingSub": "Renews in {days} days",
+        "overdueSub": "Overdue by {days} days",
+        "emptyValue": "Welcome aboard",
+        "emptySub": "Your renewal schedule will appear here once your first cycle starts."
+      },
+      "outstanding": {
+        "label": "Outstanding balance",
+        "value": "{amount}",
+        "countSub": "{count, plural, one {# unpaid invoice} other {# unpaid invoices}}",
+        "dueSub": "Earliest due {date}",
+        "clearValue": "All paid",
+        "clearSub": "You have no outstanding invoices."
+      },
+      "benefits": {
+        "label": "Benefits",
+        "underUseValue": "{count, plural, one {# benefit under-used} other {# benefits under-used}}",
+        "underUseSub": "Make the most of what your plan includes.",
+        "onTrackValue": "All benefits on track",
+        "onTrackSub": "You're keeping pace with the year.",
+        "emptyValue": "No benefits yet",
+        "emptySub": "Your plan's benefits will show up here."
+      },
       "quotaBar": {
         "readout": "{used} of {max}",
         "ariaLabel": "{label}: {used} of {max} used"
@@ -3893,10 +3928,27 @@
           "title": "No activity yet",
           "body": "Your invoices, benefit usage and broadcasts will appear here as you use the portal."
         },
-        "viewAll": "View all activity"
+        "viewAll": "View all activity",
+        "emptyCta": "Explore benefits"
       },
       "quickActions": {
-        "title": "Quick actions"
+        "title": "Quick actions",
+        "pay": "Pay invoice",
+        "benefits": "View benefits",
+        "renew": "Renew membership",
+        "editProfile": "Edit profile"
+      },
+      "invoicesPanel": {
+        "heading": "Latest invoices"
+      },
+      "benefitsPanel": {
+        "heading": "Benefits usage",
+        "viewAll": "View all benefits"
+      },
+      "firstRun": {
+        "title": "Welcome to the {tenant} member portal",
+        "body": "Your dashboard fills up as you use your membership — pay invoices, attend events, and use your benefits.",
+        "exploreBenefits": "Explore your benefits"
       }
     },
     "account": {
