@@ -20,7 +20,7 @@
  */
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -135,6 +135,14 @@ export function PlansTable({
 
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous in-flight guard for the no-confirmation Activate path.
+  // `submitting` (React state) only flips on the NEXT render — after an
+  // await tick — so two rapid Activate clicks both passed the
+  // `if (submitting) return` gate and each minted a fresh
+  // Idempotency-Key, defeating server-side dedupe. A ref mutates
+  // synchronously, so the second click sees `inFlightRef.current === true`
+  // within the same event-loop turn and bails before the second fetch.
+  const inFlightRef = useRef(false);
 
   async function runAction(action: PendingAction): Promise<void> {
     const { method, url } = endpointFor(action.kind, action.plan);
@@ -195,6 +203,9 @@ export function PlansTable({
     } finally {
       setSubmitting(false);
       setPending(null);
+      // Release the synchronous Activate guard once the request settles
+      // (success or failure) so a subsequent legitimate Activate can run.
+      inFlightRef.current = false;
     }
   }
 
@@ -204,8 +215,12 @@ export function PlansTable({
     // already at click, so there's no UI glitch.
     if (kind === 'activate') {
       // Activate is non-destructive — fire immediately, no confirmation.
-      // Guard against double-click race before submitting state takes effect.
-      if (submitting) return;
+      // SYNCHRONOUS guard: `submitting` (state) only updates next render,
+      // so two fast clicks both slipped past a `if (submitting)` check and
+      // each minted a fresh Idempotency-Key (server couldn't dedupe). The
+      // ref flips within this same turn, so the second click bails here.
+      if (inFlightRef.current || submitting) return;
+      inFlightRef.current = true;
       runAction({ kind, plan }).catch(() => {});
       return;
     }
@@ -330,7 +345,14 @@ export function PlansTable({
 
       {/* Table — matches /admin/members style (uppercase muted header
           + hover row). No outer border: parent <Card> is the container. */}
-      <Table>
+      <Table aria-label={t('tableCaption')}>
+          {/* aria-label above names the scrollable REGION landmark (the
+              <Table> wrapper); without it the region fell back to the
+              hardcoded English "Data table" for every locale. The
+              sr-only <caption> additionally labels the inner <table>
+              element itself — both are kept so the table has an
+              accessible name whether a SR navigates by region or by
+              table. */}
           <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
