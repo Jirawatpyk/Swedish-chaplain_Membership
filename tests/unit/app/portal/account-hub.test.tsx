@@ -3,6 +3,60 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 
+// ---------------------------------------------------------------------------
+// Real-en.json translator for the RSC body's next-intl/server calls.
+//
+// The page calls getTranslations()/getLocale() from 'next-intl/server',
+// which throws "not supported in Client Components" in the Vitest env.
+// We back the mock with a resolver against the REAL en.json so the
+// structural assertions render genuine text (e.g. "Account",
+// "Renewal preferences") AND a dangling t() reference surfaces as a
+// "MISSING_KEY:" string — the MISSING_MESSAGE defence. The CLIENT
+// children (forms/toggle/theme) get their strings from the
+// NextIntlClientProvider below. (Pattern mirrors dashboard-loading.test.tsx.)
+// ---------------------------------------------------------------------------
+type Messages = Record<string, unknown>;
+
+function getPath(obj: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>(
+      (acc, k) =>
+        acc && typeof acc === 'object' ? (acc as Messages)[k] : undefined,
+      obj,
+    );
+}
+
+function makeRealTranslator(ns: string) {
+  return (key: string, params?: Record<string, unknown>): string => {
+    const nsObj = getPath(enMessages as unknown, ns);
+    if (!nsObj) return `MISSING_NS:${ns}`;
+    const val = getPath(nsObj, key);
+    if (val === undefined || val === null) return `MISSING_KEY:${ns}.${key}`;
+    if (typeof val !== 'string') return `NOT_STRING:${ns}.${key}`;
+    if (!params) return val;
+    return val.replace(/\{(\w+)[^}]*\}/g, (_, k: string) =>
+      params[k] !== undefined ? String(params[k]) : `{${k}}`,
+    );
+  };
+}
+
+vi.mock('next-intl/server', () => ({
+  getTranslations: vi
+    .fn()
+    .mockImplementation(async (ns: string) => makeRealTranslator(ns)),
+  getLocale: vi.fn().mockResolvedValue('en'),
+}));
+
+// Client children (DataExportPanel, PortalSignOutButton) call useRouter(),
+// which throws "expected app router to be mounted" outside a Next.js app
+// shell. Stub the navigation hooks the app-router would provide.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/portal/account',
+}));
+
 // Server-only deps stubbed so the RSC body is pure JSX in the test.
 vi.mock('@/lib/auth-session', () => ({
   requireSession: vi.fn().mockResolvedValue({
