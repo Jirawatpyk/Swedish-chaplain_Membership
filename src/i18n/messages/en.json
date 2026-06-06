@@ -3884,7 +3884,11 @@
   "portal": {
     "account": {
       "title": "Account settings",
-      "subtitle": "Manage your password and notification language."
+      "subtitle": "Manage your password and notification language.",
+      "menu": {
+        "renewalPrefs": "Renewal reminders",
+        "dataPrivacy": "Data & privacy"
+      }
     },
     "preferredLocale": {
       "title": "Notification language",

@@ -3884,7 +3884,11 @@
   "portal": {
     "account": {
       "title": "Kontoinställningar",
-      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl."
+      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
+      "menu": {
+        "renewalPrefs": "Förnyelsepåminnelser",
+        "dataPrivacy": "Data och integritet"
+      }
     },
     "preferredLocale": {
       "title": "Språk för aviseringar",

@@ -7,10 +7,24 @@
  * opens a shadcn dropdown with account settings + sign-out actions.
  * Sign-out is an HTML form posting to `/api/auth/sign-out` so it works
  * without JS (progressive enhancement).
+ *
+ * Members get an Account hub with section-anchor links (/portal/account,
+ * #renewal-prefs, #data-privacy), theme controls, and sign-out (057).
+ * Staff (admin/manager) keep the original single account item.
  */
-import { LogOutIcon, UserIcon } from 'lucide-react';
+import {
+  LogOutIcon,
+  UserIcon,
+  CalendarClockIcon,
+  ShieldIcon,
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+} from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 // Client component — same rationale as `idle-warning-dialog.tsx`.
 // Type-only import of a Domain type is pure and safe.
- 
+
 import type { Role } from '@/modules/auth/domain/role';
 
 export interface UserMenuProps {
@@ -53,6 +67,10 @@ function initials(displayName: string | null, email: string): string {
 export function UserMenu({ displayName, email, role }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
+  const tTheme = useTranslations('shell.theme');
+  const tHub = useTranslations('portal.account.menu');
+  const { setTheme } = useTheme();
+  const isMember = role === 'member';
   const router = useRouter();
 
   const handleSignOut = async () => {
@@ -92,14 +110,46 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem
-            onClick={() => router.push(role === 'member' ? '/portal/account' : '/admin/account')}
-          >
-            <UserIcon className="size-4" aria-hidden />
-            {t('account')}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+        {isMember ? (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuItem render={<Link href="/portal/account" />}>
+                <UserIcon className="size-4" aria-hidden />
+                {t('account')}
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/portal/account#renewal-prefs" />}>
+                <CalendarClockIcon className="size-4" aria-hidden />
+                {tHub('renewalPrefs')}
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/portal/account#data-privacy" />}>
+                <ShieldIcon className="size-4" aria-hidden />
+                {tHub('dataPrivacy')}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('light')}>
+                <SunIcon className="size-4" aria-hidden />
+                {tTheme('light')}
+              </DropdownMenuItem>
+              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('dark')}>
+                <MoonIcon className="size-4" aria-hidden />
+                {tTheme('dark')}
+              </DropdownMenuItem>
+              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('system')}>
+                <MonitorIcon className="size-4" aria-hidden />
+                {tTheme('system')}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        ) : (
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={() => router.push('/admin/account')}>
+              <UserIcon className="size-4" aria-hidden />
+              {t('account')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={handleSignOut}>
