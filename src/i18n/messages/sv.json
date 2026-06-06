@@ -3835,7 +3835,10 @@
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering",
       "benefits": "Förmåner",
-      "renewalPrefs": "Förnyelsepåminnelser"
+      "renewalPrefs": "Förnyelsepåminnelser",
+      "benefitsShort": "Förmåner",
+      "accountShort": "Konto",
+      "bottomTabsAriaLabel": "Medlemsflikar"
     }
   },
   "breadcrumb": {
@@ -3879,9 +3882,76 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "dashboard": {
+      "welcome": "Hej {name}",
+      "intro": "Här är ditt medlemskap i korthet.",
+      "statusChip": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "archived": "Arkiverad"
+      },
+      "membership": {
+        "label": "Medlemskap",
+        "activeValue": "Aktivt",
+        "renewDueValue": "Förnya snart",
+        "overdueValue": "Förnyelse försenad",
+        "activeSub": "Ditt medlemskap är i gott skick.",
+        "daysRemainingSub": "Förnyas om {days} dagar",
+        "overdueSub": "Försenad med {days} dagar",
+        "lapsedValue": "Medlemskap upphört",
+        "lapsedSub": "Ditt medlemskap har upphört. Förnya för att återställa dina förmåner.",
+        "errorValue": "Status ej tillgänglig",
+        "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
+        "emptyValue": "Välkommen",
+        "emptySub": "Ditt förnyelseschema visas här när din första period börjar."
+      },
+      "outstanding": {
+        "label": "Utestående saldo",
+        "value": "{amount}",
+        "valuePartial": "{amount}+",
+        "countSub": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}}",
+        "countSubPartial": "{count, plural, one {# eller fler obetald faktura} other {# eller fler obetalda fakturor}}",
+        "overdueSub": "{count, plural, one {# förfallen faktura} other {# förfallna fakturor}}",
+        "overdueSubPartial": "{count, plural, one {# eller fler förfallen faktura} other {# eller fler förfallna fakturor}}",
+        "dueSub": "Förfaller tidigast {date}",
+        "clearValue": "Allt betalt",
+        "clearSub": "Du har inga utestående fakturor.",
+        "errorValue": "Saldo ej tillgängligt",
+        "errorSub": "Vi kunde inte läsa in dina fakturor. Försök igen."
+      },
+      "benefits": {
+        "label": "Förmåner",
+        "underUseValue": "{count, plural, one {# förmån underutnyttjad} other {# förmåner underutnyttjade}}",
+        "underUseSub": "Få ut det mesta av det din plan inkluderar.",
+        "onTrackValue": "Alla förmåner på rätt spår",
+        "onTrackSub": "Du håller jämna steg med året.",
+        "emptyValue": "Inga förmåner ännu",
+        "emptySub": "Din plans förmåner visas här.",
+        "errorValue": "Förmåner ej tillgängliga",
+        "errorSub": "Vi kunde inte läsa in dina förmåner. Försök igen."
+      },
+      "activity": {
+        "title": "Senaste aktivitet",
+        "empty": {
+          "title": "Ingen aktivitet ännu"
+        },
+        "viewAll": "Visa all aktivitet",
+        "emptyCta": "Utforska förmåner",
+        "loadFailed": "Vi kunde inte läsa in din senaste aktivitet. Försök igen."
+      },
+      "firstRun": {
+        "title": "Välkommen till {tenant}s medlemsportal",
+        "body": "Din instrumentpanel fylls på när du använder ditt medlemskap — betala fakturor, delta i evenemang och använd dina förmåner.",
+        "exploreBenefits": "Utforska dina förmåner"
+      }
+    },
     "account": {
       "title": "Kontoinställningar",
-      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl."
+      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
+      "menu": {
+        "renewalPrefs": "Förnyelsepåminnelser",
+        "dataPrivacy": "Data och integritet"
+      }
     },
     "preferredLocale": {
       "title": "Språk för aviseringar",
@@ -4275,21 +4345,25 @@
       }
     },
     "profile": {
-      "title": "Min profil",
       "pageTitle": "Min profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
-      "loadError": "Kunde inte ladda din profil. Försök igen.",
+      "loadError": "Det gick inte att läsa in din profil. Försök igen.",
       "editButton": "Redigera profil",
-      "companySection": "Företagsinformation",
-      "planSection": "Medlemsplan",
+      "organisationSection": "Organisation",
+      "membershipSection": "Medlemskap",
       "contactsSection": "Kontakter",
       "inviteColleague": "Bjud in kollega",
       "primaryBadge": "Primär",
-      "portalLinked": "Portalkopplad",
+      "portalLinked": "Portal kopplad",
       "noContacts": "Inga kontakter hittades.",
+      "statusBadge": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "archived": "Arkiverad"
+      },
       "fields": {
         "memberId": "Medlems-ID",
-        "memberIdHelp": "Ange detta ID när du kontaktar kammarens support.",
+        "memberIdHelp": "Ange detta ID när du kontaktar handelskammarens support.",
         "memberIdCopy": "Kopiera medlems-ID",
         "memberIdCopied": "Medlems-ID kopierat",
         "memberNumber": "Medlemsnummer",
@@ -4299,15 +4373,15 @@
         "country": "Land",
         "website": "Webbplats",
         "description": "Beskrivning",
-        "planName": "Paketnamn",
-        "planYear": "Paketår",
+        "taxId": "Skatte-ID",
+        "foundedYear": "Grundat",
+        "turnoverThb": "Årsomsättning",
+        "address": "Adress",
+        "planName": "Plannamn",
+        "planYear": "Planår",
         "registrationDate": "Registreringsdatum",
+        "lastActivityAt": "Senaste aktivitet",
         "status": "Status"
-      },
-      "status": {
-        "active": "Aktiv",
-        "inactive": "Inaktiv",
-        "archived": "Arkiverad"
       }
     },
     "edit": {

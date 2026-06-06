@@ -40,6 +40,14 @@ export const metadata: Metadata = {
   },
 };
 
+// NOTE: `viewport-fit=cover` is intentionally NOT exported here. It is scoped
+// to the member portal segment (`(member)/portal/layout.tsx`) where the
+// fixed-bottom tab bar needs `env(safe-area-inset-bottom)` room. Exporting it
+// at the root leaked `cover` app-wide — admin/auth surfaces (e.g. the
+// fixed-bottom `bulk-action-bar`) then lost their safe-area inset under the
+// iPhone home indicator (057 review F3). The root keeps Next.js's sensible
+// default viewport.
+
 export default async function RootLayout({
   children,
 }: Readonly<{

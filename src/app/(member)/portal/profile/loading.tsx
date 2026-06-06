@@ -3,7 +3,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -14,9 +13,20 @@ import {
 
 /**
  * Portal profile loading skeleton — matches the shape of
- * `/portal/profile/page.tsx` (Company Info + Plan + Contacts).
+ * `/portal/profile/page.tsx` (Organisation + Membership + Contacts).
  * Wraps in DetailContainer (72rem) to mirror the real page.
+ *
+ * Section titles render as real `<h2>` (NOT CardTitle, which is a `<div>`) so
+ * the skeleton's heading semantics match the loaded page's `SectionHeading`
+ * (057 review F10) — same font classes, identical visual.
  */
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="font-heading text-base font-medium leading-snug">
+      {children}
+    </h2>
+  );
+}
 export default async function Loading() {
   const t = await getTranslations('portal.profile');
   const tLayout = await getTranslations('layout');
@@ -28,10 +38,10 @@ export default async function Loading() {
           subtitle={<SkeletonBlock className="h-4 w-48" />}
           actions={<SkeletonBlock className="h-9 w-28" />}
         />
-        {/* Company Info */}
+        {/* Organisation */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('companySection')}</CardTitle>
+            <SectionHeading>{t('organisationSection')}</SectionHeading>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -45,10 +55,10 @@ export default async function Loading() {
           </CardContent>
         </Card>
 
-        {/* Plan */}
+        {/* Membership */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('planSection')}</CardTitle>
+            <SectionHeading>{t('membershipSection')}</SectionHeading>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -65,7 +75,7 @@ export default async function Loading() {
         {/* Contacts */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t('contactsSection')}</CardTitle>
+            <SectionHeading>{t('contactsSection')}</SectionHeading>
             {/* Invite Colleague button (visible only when caller is primary —
                 optimistic render of the skeleton so layout stays stable). */}
             <SkeletonBlock className="h-9 w-36" />

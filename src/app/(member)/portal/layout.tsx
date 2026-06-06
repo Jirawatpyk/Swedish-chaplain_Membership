@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
+import type { Viewport } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
+import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -21,6 +23,19 @@ import { MarketingAcknowledgementBanner } from './_components/marketing-acknowle
  * Renders the persistent header with horizontal MemberNav +
  * UserMenu + ThemeToggle.
  */
+
+/**
+ * `viewport-fit=cover` is scoped to the member portal only (NOT the root
+ * layout — 057 review F3). It lets content extend under the iPhone home-bar
+ * so the fixed member bottom-tab bar's `env(safe-area-inset-bottom)` padding
+ * has room to push the tabs above the home indicator. Next.js resolves the
+ * viewport per-segment, so admin/auth surfaces keep the default (no `cover`)
+ * and their fixed-bottom UI (e.g. bulk-action-bar) keeps its safe-area inset.
+ */
+export const viewport: Viewport = {
+  viewportFit: 'cover',
+};
+
 export default async function MemberLayout({ children }: { children: ReactNode }) {
   const { user } = await requireSession('member');
 
@@ -74,13 +89,19 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
-      <main className="flex-1" id="main-content">
+      <main
+        className="flex-1 pb-[calc(var(--bottom-tab-height)+env(safe-area-inset-bottom))] lg:pb-0"
+        id="main-content"
+      >
         {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
             Server component returns null when ineligible (member already
             acknowledged, plan has no eblast quota, or feature flag off). */}
         <MarketingAcknowledgementBanner />
         {children}
       </main>
+      {/* 057 — mobile bottom tab bar (hidden ≥ lg). Fixed; <main> reserves
+          equivalent padding-bottom above so it never obscures content. */}
+      <MemberBottomTabs />
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
       <IdleWarningDialog portal="member" />
       {/* T086 — ⌘K member command palette (Pay-invoice shortcut). */}

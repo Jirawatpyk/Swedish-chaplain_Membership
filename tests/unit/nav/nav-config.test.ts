@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isNavGroup,
+  isNavItemActive,
   memberNavConfig,
+  memberBottomTabItems,
   staffNavConfig,
   type NavGroup,
   type NavItem,
@@ -108,27 +110,23 @@ describe('staffNavConfig', () => {
   });
 });
 
-describe('memberNavConfig', () => {
-  it('has exactly 1 section with 8 items: Dashboard, Profile, Invoices, Benefits, Broadcasts, Timeline, Renewal reminders, Account (S1-P1-2 renewalPrefs added)', () => {
+describe('memberNavConfig (057 — 4 desktop top-nav destinations)', () => {
+  it('has exactly 1 section with 4 items: Dashboard, Profile, Invoices, Benefits', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(8);
+    expect(section.items).toHaveLength(4);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
     expect(section.items[1]!.titleKey).toBe('nav.member.profile');
-    // R7-B3 — US3 member invoice self-service inserted between
-    // Profile and Account to group "company information" (Profile +
-    // Invoices) before "personal settings" (Account).
     expect(section.items[2]!.titleKey).toBe('nav.member.invoices');
-    // F9 US4 — benefit usage dashboard, above the E-Blast entry point.
     expect(section.items[3]!.titleKey).toBe('nav.member.benefits');
-    // F7 — E-Blast benefit dashboard entry point.
-    expect(section.items[4]!.titleKey).toBe('nav.member.broadcasts');
-    // F9 US3 — member's own unified activity timeline.
-    expect(section.items[5]!.titleKey).toBe('nav.member.timeline');
-    // S1-P1-2 (commit 13670b63) — renewal-reminder opt-out page; the only
-    // in-app link to /portal/preferences/renewals.
-    expect(section.items[6]!.titleKey).toBe('nav.member.renewalPrefs');
-    expect(section.items[7]!.titleKey).toBe('nav.member.account');
+  });
+
+  it('drops Broadcasts/Timeline/RenewalPrefs/Account from the desktop top-nav', () => {
+    const keys = memberNavConfig.sections[0]!.items.map((i) => i.titleKey);
+    expect(keys).not.toContain('nav.member.broadcasts');
+    expect(keys).not.toContain('nav.member.timeline');
+    expect(keys).not.toContain('nav.member.renewalPrefs');
+    expect(keys).not.toContain('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {
@@ -137,6 +135,50 @@ describe('memberNavConfig', () => {
         expect(isNavGroup(item)).toBe(false);
       }
     }
+  });
+
+  it('Benefits item keeps active state on /portal/benefits AND /portal/broadcasts/** (review M-2)', () => {
+    const benefits = memberNavConfig.sections[0]!.items[3]! as NavItem;
+    expect(isNavItemActive('/portal/benefits', benefits.activePattern)).toBe(true);
+    expect(isNavItemActive('/portal/benefits/e-blasts', benefits.activePattern)).toBe(true);
+    expect(isNavItemActive('/portal/broadcasts/new', benefits.activePattern)).toBe(true);
+    expect(isNavItemActive('/portal/broadcasts/abc123', benefits.activePattern)).toBe(true);
+    // Negative: must NOT light up on unrelated routes.
+    expect(isNavItemActive('/portal/profile', benefits.activePattern)).toBe(false);
+  });
+});
+
+describe('memberBottomTabItems (057 — 5 mobile tabs)', () => {
+  it('has exactly 5 tabs: Dashboard, Profile, Invoices, Benefits, Account', () => {
+    expect(memberBottomTabItems).toHaveLength(5);
+    expect(memberBottomTabItems.map((t) => t.titleKey)).toEqual([
+      'nav.member.dashboard',
+      'nav.member.profile',
+      'nav.member.invoices',
+      'nav.member.benefits',
+      'nav.member.account',
+    ]);
+  });
+
+  it('every tab has titleKey, icon, href, activePattern', () => {
+    for (const tab of memberBottomTabItems) {
+      expect(tab.titleKey).toBeTruthy();
+      expect(tab.icon).toBeTruthy();
+      expect(tab.href).toBeTruthy();
+      expect(tab.activePattern).toBeTruthy();
+    }
+  });
+
+  it('overflow-prone tabs (Benefits, Account) carry a shortTitleKey for the TH label', () => {
+    const benefits = memberBottomTabItems[3]!;
+    const account = memberBottomTabItems[4]!;
+    expect(benefits.shortTitleKey).toBe('nav.member.benefitsShort');
+    expect(account.shortTitleKey).toBe('nav.member.accountShort');
+  });
+
+  it('Benefits tab also keeps active on /portal/broadcasts/** (mobile parity)', () => {
+    const benefits = memberBottomTabItems[3]!;
+    expect(isNavItemActive('/portal/broadcasts/new', benefits.activePattern)).toBe(true);
   });
 });
 

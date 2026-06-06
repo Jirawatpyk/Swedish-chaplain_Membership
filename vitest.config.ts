@@ -708,6 +708,13 @@ export default defineConfig({
       // transitively imports it. Stub to a noop file so the import
       // resolves but adds no runtime side effect.
       'server-only': resolve(__dirname, './tests/stubs/server-only.ts'),
+      // 057: `next/font/google` uses a Next.js build-time loader that
+      // cannot run in jsdom / Vitest. Tests that transitively import
+      // `src/app/layout.tsx` (which calls Geist() / Geist_Mono()) would
+      // throw "Geist is not a function". This stub returns factory
+      // functions that produce the same CSS-variable shape without a
+      // running Next.js compiler.
+      'next/font/google': resolve(__dirname, './tests/stubs/next-font-google.ts'),
     },
   },
 });

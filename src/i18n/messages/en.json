@@ -3835,7 +3835,10 @@
       "account": "Account",
       "ariaLabel": "Member navigation",
       "benefits": "Benefits",
-      "renewalPrefs": "Renewal reminders"
+      "renewalPrefs": "Renewal reminders",
+      "benefitsShort": "Benefits",
+      "accountShort": "Account",
+      "bottomTabsAriaLabel": "Member tab bar"
     }
   },
   "breadcrumb": {
@@ -3879,9 +3882,76 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "dashboard": {
+      "welcome": "Hi {name}",
+      "intro": "Here's your membership at a glance.",
+      "statusChip": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "archived": "Archived"
+      },
+      "membership": {
+        "label": "Membership",
+        "activeValue": "Active",
+        "renewDueValue": "Renew soon",
+        "overdueValue": "Renewal overdue",
+        "activeSub": "Your membership is in good standing.",
+        "daysRemainingSub": "Renews in {days} days",
+        "overdueSub": "Overdue by {days} days",
+        "lapsedValue": "Membership lapsed",
+        "lapsedSub": "Your membership has ended. Renew to restore your benefits.",
+        "errorValue": "Status unavailable",
+        "errorSub": "We couldn't load your membership status. Please try again.",
+        "emptyValue": "Welcome aboard",
+        "emptySub": "Your renewal schedule will appear here once your first cycle starts."
+      },
+      "outstanding": {
+        "label": "Outstanding balance",
+        "value": "{amount}",
+        "valuePartial": "{amount}+",
+        "countSub": "{count, plural, one {# unpaid invoice} other {# unpaid invoices}}",
+        "countSubPartial": "{count, plural, one {# or more unpaid invoice} other {# or more unpaid invoices}}",
+        "overdueSub": "{count, plural, one {# overdue invoice} other {# overdue invoices}}",
+        "overdueSubPartial": "{count, plural, one {# or more overdue invoice} other {# or more overdue invoices}}",
+        "dueSub": "Earliest due {date}",
+        "clearValue": "All paid",
+        "clearSub": "You have no outstanding invoices.",
+        "errorValue": "Balance unavailable",
+        "errorSub": "We couldn't load your invoices. Please try again."
+      },
+      "benefits": {
+        "label": "Benefits",
+        "underUseValue": "{count, plural, one {# benefit under-used} other {# benefits under-used}}",
+        "underUseSub": "Make the most of what your plan includes.",
+        "onTrackValue": "All benefits on track",
+        "onTrackSub": "You're keeping pace with the year.",
+        "emptyValue": "No benefits yet",
+        "emptySub": "Your plan's benefits will show up here.",
+        "errorValue": "Benefits unavailable",
+        "errorSub": "We could not load your benefits. Please try again."
+      },
+      "activity": {
+        "title": "Recent activity",
+        "empty": {
+          "title": "No activity yet"
+        },
+        "viewAll": "View all activity",
+        "emptyCta": "Explore benefits",
+        "loadFailed": "We couldn't load your recent activity. Please try again."
+      },
+      "firstRun": {
+        "title": "Welcome to the {tenant} member portal",
+        "body": "Your dashboard fills up as you use your membership — pay invoices, attend events, and use your benefits.",
+        "exploreBenefits": "Explore your benefits"
+      }
+    },
     "account": {
       "title": "Account settings",
-      "subtitle": "Manage your password and notification language."
+      "subtitle": "Manage your password and notification language.",
+      "menu": {
+        "renewalPrefs": "Renewal reminders",
+        "dataPrivacy": "Data & privacy"
+      }
     },
     "preferredLocale": {
       "title": "Notification language",
@@ -4275,18 +4345,22 @@
       }
     },
     "profile": {
-      "title": "My profile",
       "pageTitle": "My Profile",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loadError": "Could not load your profile. Please try again.",
       "editButton": "Edit Profile",
-      "companySection": "Company Information",
-      "planSection": "Membership Plan",
+      "organisationSection": "Organisation",
+      "membershipSection": "Membership",
       "contactsSection": "Contacts",
       "inviteColleague": "Invite Colleague",
       "primaryBadge": "Primary",
       "portalLinked": "Portal linked",
       "noContacts": "No contacts found.",
+      "statusBadge": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "archived": "Archived"
+      },
       "fields": {
         "memberId": "Member ID",
         "memberIdHelp": "Reference this ID when contacting chamber support.",
@@ -4299,15 +4373,15 @@
         "country": "Country",
         "website": "Website",
         "description": "Description",
+        "taxId": "Tax ID",
+        "foundedYear": "Founded",
+        "turnoverThb": "Annual turnover",
+        "address": "Address",
         "planName": "Plan Name",
         "planYear": "Plan Year",
         "registrationDate": "Registration Date",
+        "lastActivityAt": "Last activity",
         "status": "Status"
-      },
-      "status": {
-        "active": "Active",
-        "inactive": "Inactive",
-        "archived": "Archived"
       }
     },
     "edit": {

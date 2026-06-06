@@ -1,33 +1,32 @@
 /**
- * T072 (R7-B3 polish) — Member-portal invoice summary card.
+ * Member-portal invoice summary card (relocated from
+ * `app/(member)/portal/invoices/_components/` to the shared
+ * `src/components/portal/` namespace — review S1 architect).
  *
  * Renders the **latest 3 invoices** for the signed-in member plus a
- * "view all" link to `/portal/invoices`. Mounted on `/portal`
- * (member landing page) to satisfy **US7 AS4**:
+ * "view all" link to `/portal/invoices`. Reused by BOTH the Invoices
+ * page and the redesigned Dashboard (`/portal`), which is why it now
+ * lives under `src/components/portal/` rather than a route-local
+ * `_components/` folder.
  *
- *   Given a `member` role (self-service),
- *   When they open their own portal landing page,
- *   Then a compact invoice-history summary (latest 3 + "view all"
- *        link) is visible.
- *
- * Architecture notes:
- * - Server Component: calls `listInvoicesPaged` directly with
- *   `memberId` filter (same B3 pattern as `/portal/invoices`).
+ * Architecture notes (unchanged from the original):
+ * - Server Component: calls `listInvoicesPaged` directly with a
+ *   `memberId` filter resolved from the session via
+ *   `findByLinkedUserId` (RLS-safe, never URL-derived).
  *   `includeDrafts: false` — members never see drafts.
- * - Handles the **three member-linking states** surfaced on the
- *   full list page (linked + has invoices, linked + empty, not
- *   linked) so the card renders gracefully in all cases — no 5xx
- *   regression path.
- * - Reuses `portal.invoices.*` i18n namespace + adds
- *   `portal.invoices.summary.*` keys (heading + viewAll copy).
- * - PDF download goes through the same byte-streamed route as the
- *   full list (`/api/portal/invoices/[id]/pdf`) — no Blob URL leak.
+ * - Handles the three member-linking states (linked + has invoices,
+ *   linked + empty, not linked) so the card renders gracefully in all
+ *   cases — no 5xx regression path.
+ * - On a backend read failure it logs + renders a distinct error
+ *   variant (NOT the "no invoices" empty copy) so operators see the
+ *   diagnostic (R7-M4).
  */
 import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
 import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -35,7 +34,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -54,8 +52,8 @@ import {
   statusBadgeVariant,
   statusIconName,
   type InvoiceStatusIconName,
-} from '../_utils/format';
-import { PortalInvoiceDownloadButton } from './portal-pdf-download-button';
+} from '@/app/(member)/portal/invoices/_utils/format';
+import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
 
 const SUMMARY_LIMIT = 3;
 
@@ -91,7 +89,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t('summary.heading')}</CardTitle>
+          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
           <CardDescription>{t('summary.description')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -114,34 +112,47 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
 
   const member = memberResult.value;
 
-  const invoicesResult = await listInvoicesPaged(
-    makeListInvoicesDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      offset: 0,
-      pageSize: SUMMARY_LIMIT,
-      includeDrafts: false,
-      memberId: member.memberId,
-    },
-  );
-
   // R7-M4 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
-  // Card showed "no invoices" copy on backend failures, identical to
-  // a member who actually had zero invoices. Now we log + render a
-  // distinct error variant so operators see the diagnostic.
-  if (!invoicesResult.ok) {
+  // Card showed "no invoices" copy on backend failures, identical to a member
+  // who actually had zero invoices. Now we log + render a distinct error
+  // variant so operators see the diagnostic.
+  //
+  // D1 review finding B3 — `listInvoicesPaged` is typed `Result<…, never>` and
+  // has NO try/catch: a DB error THROWS rather than returning `!ok`, so the
+  // `!ok` branch was UNREACHABLE and the card would CRASH instead of showing
+  // the error variant. Wrap the call so a thrown read renders the error variant
+  // (making the docblock claim true). Log only the error CLASS (errKind) — never
+  // the raw error/SQL/PII.
+  let rows;
+  try {
+    const invoicesResult = await listInvoicesPaged(
+      makeListInvoicesDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        offset: 0,
+        pageSize: SUMMARY_LIMIT,
+        includeDrafts: false,
+        memberId: member.memberId,
+      },
+    );
+    // `listInvoicesPaged` is `Result<…, never>` — `ok` is always true at
+    // runtime, but the union still carries the `Err<never>` variant so we
+    // narrow explicitly (the `else` is type-unreachable, not a real branch).
+    if (!invoicesResult.ok) throw new Error('unreachable');
+    rows = invoicesResult.value.rows;
+  } catch (e) {
     logger.warn(
       {
         tenantId: tenantCtx.slug,
         memberId: member.memberId,
-        err: invoicesResult.error,
+        errKind: errKind(e),
       },
-      '[portal-invoices-summary] listInvoicesPaged failed — rendering error variant',
+      '[portal-invoices-summary] listInvoicesPaged threw — rendering error variant',
     );
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t('summary.heading')}</CardTitle>
+          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
           <CardDescription>{t('summary.description')}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -150,26 +161,25 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
       </Card>
     );
   }
-  const rows = invoicesResult.value.rows;
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div>
-          <CardTitle>{t('summary.heading')}</CardTitle>
-          <CardDescription>{t('summary.description')}</CardDescription>
+      {/* Heading + "view all" share one centred row (heading level with the
+          button, matching the Recent activity card); the description sits on
+          its own line below. */}
+      <CardHeader>
+        <div className="flex flex-row items-center justify-between gap-3">
+          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
+          {rows.length > 0 ? (
+            <Link
+              href="/portal/invoices"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              {t('summary.viewAll')}
+            </Link>
+          ) : null}
         </div>
-        {rows.length > 0 ? (
-          <Link
-            href="/portal/invoices"
-            className={cn(
-              buttonVariants({ variant: 'ghost', size: 'sm' }),
-              'min-h-11 px-3',
-            )}
-          >
-            {t('summary.viewAll')}
-          </Link>
-        ) : null}
+        <CardDescription>{t('summary.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (

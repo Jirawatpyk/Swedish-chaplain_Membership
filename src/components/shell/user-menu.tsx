@@ -5,12 +5,34 @@
  *
  * Always-visible header element on every authenticated page. Clicking
  * opens a shadcn dropdown with account settings + sign-out actions.
- * Sign-out is an HTML form posting to `/api/auth/sign-out` so it works
- * without JS (progressive enhancement).
+ * Sign-out is a client-side `fetch('/api/auth/sign-out', { method: 'POST' })`
+ * (this is a `'use client'` component); on success it routes to the
+ * role-appropriate sign-in page via `router.push` + `router.refresh`, and on
+ * failure/network error it shows a toast. It requires JS (no progressive
+ * enhancement) — consistent with the rest of this interactive dropdown.
+ *
+ * Members get an Account menu linking to Account settings (/portal/account),
+ * Renewal reminders (/portal/preferences/renewals), Data & privacy
+ * (/portal/account/data-export), theme controls, and sign-out (057). The
+ * renewal/privacy items point at the REAL existing routes — the earlier
+ * `/portal/account#renewal-prefs` / `#data-privacy` anchors were dead (the
+ * Account-hub consolidation is D2), which orphaned the FR-016 renewal opt-out
+ * in-app (057 review F7/F8). D2 will re-point these to the consolidated hub.
+ * Staff (admin/manager) keep the original single account item.
  */
-import { LogOutIcon, UserIcon } from 'lucide-react';
+import {
+  LogOutIcon,
+  UserIcon,
+  CalendarClockIcon,
+  ShieldIcon,
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+} from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +48,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 // Client component — same rationale as `idle-warning-dialog.tsx`.
 // Type-only import of a Domain type is pure and safe.
- 
+
 import type { Role } from '@/modules/auth/domain/role';
 
 export interface UserMenuProps {
@@ -53,6 +75,10 @@ function initials(displayName: string | null, email: string): string {
 export function UserMenu({ displayName, email, role }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
+  const tTheme = useTranslations('shell.theme');
+  const tHub = useTranslations('portal.account.menu');
+  const { setTheme } = useTheme();
+  const isMember = role === 'member';
   const router = useRouter();
 
   const handleSignOut = async () => {
@@ -92,14 +118,46 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem
-            onClick={() => router.push(role === 'member' ? '/portal/account' : '/admin/account')}
-          >
-            <UserIcon className="size-4" aria-hidden />
-            {t('account')}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+        {isMember ? (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuItem render={<Link href="/portal/account" />}>
+                <UserIcon className="size-4" aria-hidden />
+                {t('account')}
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/portal/preferences/renewals" />}>
+                <CalendarClockIcon className="size-4" aria-hidden />
+                {tHub('renewalPrefs')}
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/portal/account/data-export" />}>
+                <ShieldIcon className="size-4" aria-hidden />
+                {tHub('dataPrivacy')}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('light')}>
+                <SunIcon className="size-4" aria-hidden />
+                {tTheme('light')}
+              </DropdownMenuItem>
+              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('dark')}>
+                <MoonIcon className="size-4" aria-hidden />
+                {tTheme('dark')}
+              </DropdownMenuItem>
+              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('system')}>
+                <MonitorIcon className="size-4" aria-hidden />
+                {tTheme('system')}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        ) : (
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={() => router.push('/admin/account')}>
+              <UserIcon className="size-4" aria-hidden />
+              {t('account')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={handleSignOut}>
