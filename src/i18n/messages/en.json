@@ -3936,7 +3936,8 @@
           "title": "No activity yet"
         },
         "viewAll": "View all activity",
-        "emptyCta": "Explore benefits"
+        "emptyCta": "Explore benefits",
+        "loadFailed": "We couldn't load your recent activity. Please try again."
       },
       "firstRun": {
         "title": "Welcome to the {tenant} member portal",

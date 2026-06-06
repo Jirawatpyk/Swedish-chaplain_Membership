@@ -3,6 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { logger } from '@/lib/logger';
+import { errKind, rootCause } from '@/lib/log-id';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -47,9 +49,33 @@ export async function RecentActivitySection({
     tenant,
     { memberRepo: deps.memberRepo, timeline: deps.timeline },
   );
-  const events = result.ok
-    ? result.value.events.slice(0, PREVIEW_LIMIT).map(toTimelineItemProps)
-    : [];
+
+  // D1 review finding B2 — a failed read must NOT fall open to the "No activity
+  // yet" empty state (which tells a member nothing happened when in fact the
+  // read failed). Distinguish the failure: log it here in the SERVER component
+  // (errKind only — never raw error/PII) and render a distinct "unavailable"
+  // state below. The log stays server-side; the client `RecentActivityList`
+  // never sees the error.
+  if (!result.ok) {
+    logger.warn(
+      { requestId, errKind: errKind(rootCause(result.error)) },
+      '[dashboard-recent-activity] timelineList failed',
+    );
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <h2 className="font-heading text-base font-medium leading-snug">{t('title')}</h2>
+        </CardHeader>
+        <CardContent>
+          <p className="py-8 text-center text-sm text-muted-foreground">{t('loadFailed')}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const events = result.value.events
+    .slice(0, PREVIEW_LIMIT)
+    .map(toTimelineItemProps);
 
   return (
     <Card>

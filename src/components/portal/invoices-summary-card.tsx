@@ -26,6 +26,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -111,29 +112,42 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
 
   const member = memberResult.value;
 
-  const invoicesResult = await listInvoicesPaged(
-    makeListInvoicesDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      offset: 0,
-      pageSize: SUMMARY_LIMIT,
-      includeDrafts: false,
-      memberId: member.memberId,
-    },
-  );
-
   // R7-M4 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
-  // Card showed "no invoices" copy on backend failures, identical to
-  // a member who actually had zero invoices. Now we log + render a
-  // distinct error variant so operators see the diagnostic.
-  if (!invoicesResult.ok) {
+  // Card showed "no invoices" copy on backend failures, identical to a member
+  // who actually had zero invoices. Now we log + render a distinct error
+  // variant so operators see the diagnostic.
+  //
+  // D1 review finding B3 — `listInvoicesPaged` is typed `Result<…, never>` and
+  // has NO try/catch: a DB error THROWS rather than returning `!ok`, so the
+  // `!ok` branch was UNREACHABLE and the card would CRASH instead of showing
+  // the error variant. Wrap the call so a thrown read renders the error variant
+  // (making the docblock claim true). Log only the error CLASS (errKind) — never
+  // the raw error/SQL/PII.
+  let rows;
+  try {
+    const invoicesResult = await listInvoicesPaged(
+      makeListInvoicesDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        offset: 0,
+        pageSize: SUMMARY_LIMIT,
+        includeDrafts: false,
+        memberId: member.memberId,
+      },
+    );
+    // `listInvoicesPaged` is `Result<…, never>` — `ok` is always true at
+    // runtime, but the union still carries the `Err<never>` variant so we
+    // narrow explicitly (the `else` is type-unreachable, not a real branch).
+    if (!invoicesResult.ok) throw new Error('unreachable');
+    rows = invoicesResult.value.rows;
+  } catch (e) {
     logger.warn(
       {
         tenantId: tenantCtx.slug,
         memberId: member.memberId,
-        err: invoicesResult.error,
+        errKind: errKind(e),
       },
-      '[portal-invoices-summary] listInvoicesPaged failed — rendering error variant',
+      '[portal-invoices-summary] listInvoicesPaged threw — rendering error variant',
     );
     return (
       <Card>
@@ -147,7 +161,6 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
       </Card>
     );
   }
-  const rows = invoicesResult.value.rows;
 
   return (
     <Card>

@@ -3936,7 +3936,8 @@
           "title": "Ingen aktivitet ännu"
         },
         "viewAll": "Visa all aktivitet",
-        "emptyCta": "Utforska förmåner"
+        "emptyCta": "Utforska förmåner",
+        "loadFailed": "Vi kunde inte läsa in din senaste aktivitet. Försök igen."
       },
       "firstRun": {
         "title": "Välkommen till {tenant}s medlemsportal",

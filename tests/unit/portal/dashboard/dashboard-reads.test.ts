@@ -11,6 +11,13 @@ vi.mock('@/modules/invoicing', () => ({
   makeListInvoicesDeps: vi.fn(() => ({ invoiceRepo: {} })),
 }));
 
+// 057 D1 review finding B1 — the bare `catch {}` was silent. Spy on logger so
+// the test asserts the failure is observable (errKind only — never raw err/PII).
+const warnSpy = vi.fn();
+vi.mock('@/lib/logger', () => ({
+  logger: { warn: (...args: unknown[]) => warnSpy(...args) },
+}));
+
 import {
   toOutstandingInvoiceInputs,
   loadDashboardOutstanding,
@@ -23,6 +30,20 @@ describe('loadDashboardOutstanding — error resilience (finding C)', () => {
     expect(read.inputs).toEqual([]);
     expect(read.total).toBe(0);
     expect(read.partial).toBe(false);
+  });
+
+  it('logs a warning with errKind + tenantId/memberId (no raw error) — finding B1', async () => {
+    warnSpy.mockClear();
+    // Distinct ids so React `cache()` does not replay the first call's memo.
+    await loadDashboardOutstanding('tenant-2', 'member-2');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [ctx, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
+    expect(ctx).toMatchObject({ tenantId: 'tenant-2', memberId: 'member-2' });
+    expect(typeof ctx.errKind).toBe('string');
+    // PII-safe: never log the raw error object or its message.
+    expect(ctx).not.toHaveProperty('err');
+    expect(ctx).not.toHaveProperty('error');
+    expect(msg).toContain('dashboard-outstanding');
   });
 });
 

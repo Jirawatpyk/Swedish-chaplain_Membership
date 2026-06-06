@@ -170,7 +170,14 @@ export const loadDashboardOutstanding = cache(
         memberId,
         status: 'issued',
       });
-    } catch {
+    } catch (e) {
+      // D1 review finding B1 — the bare `catch {}` was silent. Log the failure
+      // class so operators see WHY the Balance card reads "unavailable" instead
+      // of "all paid". errKind only — never the raw error/SQL/PII.
+      logger.warn(
+        { tenantId, memberId, errKind: errKind(e) },
+        '[dashboard-outstanding] listInvoicesPaged threw — Balance unavailable',
+      );
       return OUTSTANDING_ERROR_READ;
     }
     if (!res.ok) {

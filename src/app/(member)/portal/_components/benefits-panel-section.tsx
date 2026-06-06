@@ -17,10 +17,13 @@ const PORTAL_BENEFITS_HREF = '/portal/benefits';
  * BenefitsStatSection's skeleton dead).
  *
  * Collapses (returns null) when usage is unavailable, errored, or empty.
- * The `'error'` sentinel from loadDashboardBenefitUsage is handled here so
- * BenefitUsageCard's `BenefitUsage|null` contract is NOT changed (Defer 1).
- * The stat card (BenefitsStatSection) shows the "unavailable" warning;
- * this panel simply hides to avoid a half-broken layout.
+ * `loadDashboardBenefitUsage` returns three shapes (D1 review finding C):
+ * a `BenefitUsage` VO, `null` (benign no-plan `member_not_found`), or the
+ * `'error'` sentinel (a real compute failure). BenefitUsageCard's
+ * `BenefitUsage|null` contract is NOT changed — both `'error'` and `null` are
+ * collapsed here. The stat card (BenefitsStatSection) shows the "unavailable"
+ * warning (error) or neutral "No benefits yet" (null); this panel simply hides
+ * to avoid a half-broken layout.
  */
 export async function BenefitsPanelSection({
   ctx,
@@ -34,6 +37,10 @@ export async function BenefitsPanelSection({
   // Collapse on error — the stat card (BenefitsStatSection) already shows the
   // "Benefits unavailable" warning variant; the panel adds nothing more.
   if (usage === 'error') return null;
+  // Collapse on the benign no-plan case (null) too — narrows `usage` to a
+  // real BenefitUsage VO for the card props below (the stat card shows the
+  // neutral "No benefits yet" empty state for this member).
+  if (usage === null) return null;
 
   const benefitsStat = deriveBenefitsStat(usage);
   if (benefitsStat.kind === 'empty') return null;
