@@ -1,8 +1,9 @@
 /**
  * 058 G1 — /portal/benefits/e-blasts is now a tab inside /portal/benefits
- * (spec §4.4). The ROUTE IS PRESERVED (the broadcast-detail back-link and the
- * FR-009 cap=0 compose redirect both target it) — a 404 here would break those
- * deep-links, so we permanently redirect to the Broadcasts tab.
+ * (spec §4.4). The ROUTE IS PRESERVED for EXTERNAL / email deep-links (older
+ * notification emails and bookmarks point here) — a 404 would break those, so
+ * we permanently redirect to the Broadcasts tab. Internal navigation now links
+ * straight at `?tab=broadcasts` to avoid a chain redirect.
  *
  * The `_helpers/quota-banner.ts` module stays — BroadcastsPanel + the broadcast
  * detail page still import it.

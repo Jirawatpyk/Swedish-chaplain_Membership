@@ -245,7 +245,7 @@ export function MemberCommandPalette({
               value={`view e-blast usage benefits quota ${tBcast('benefits.title')}`}
               onSelect={() => {
                 handleOpenChange(false);
-                router.push('/portal/benefits/e-blasts');
+                router.push('/portal/benefits?tab=broadcasts');
               }}
               data-testid="cmdk-broadcasts-benefits"
             >

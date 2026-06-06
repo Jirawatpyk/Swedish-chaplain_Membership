@@ -46,7 +46,7 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
           {tErrors('notFound')}
         </p>
         <Link
-          href="/portal/benefits/e-blasts"
+          href="/portal/benefits?tab=broadcasts"
           className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-2 inline-flex items-center`}
         >
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />

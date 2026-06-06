@@ -53,7 +53,7 @@ test.describe('Broadcast quota counter (T053 — US1 AS2)', () => {
     page,
   }) => {
     await signIn(page);
-    const response = await page.goto('/portal/benefits/e-blasts');
+    const response = await page.goto('/portal/benefits?tab=broadcasts');
     expect(response?.status()).toBeLessThan(400);
     const qc = page.locator('[data-testid="quota-display"]').or(
       page.getByText(/quota|remaining/i),

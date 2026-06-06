@@ -25,7 +25,7 @@ export default function ComposeBroadcastError(props: {
       logTag="[portal/broadcasts/new error boundary]"
       actions={
         <Link
-          href="/portal/benefits/e-blasts"
+          href="/portal/benefits?tab=broadcasts"
           className={buttonVariants({ variant: 'outline' })}
         >
           {tBack('back')}

@@ -2,8 +2,8 @@
  * 058 G1 T4 — BroadcastsPanel server component.
  *
  * Extracted verbatim from the F7 US3 T130 e-blasts page body
- * (`../e-blasts/page.tsx`) so the soon-to-be-tabbed Benefits page stays
- * small and the e-blasts route can later become a thin redirect (T6).
+ * (`../e-blasts/page.tsx`) so the tabbed Benefits page stays small, and the
+ * e-blasts route is now a thin redirect to ?tab=broadcasts (058 G1).
  *
  * Spec authority (unchanged from the e-blasts page): spec.md US3 AS1, AS2,
  * AS4 + contracts/broadcasts-api.md § 1.7 (`nextResetAt` + `tenantTimezone`).

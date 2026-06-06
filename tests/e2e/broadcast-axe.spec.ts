@@ -9,7 +9,7 @@
  * Surfaces covered (per a11y.md CHK055):
  *   - /portal/broadcasts/new       (compose form)
  *   - /admin/broadcasts            (admin queue)
- *   - /portal/benefits/e-blasts    (member quota dashboard)
+ *   - /portal/benefits?tab=broadcasts (member quota dashboard / Broadcasts tab)
  *   - /unsubscribe/v1.invalid.invalid (public unsubscribe — invalid token render)
  */
 import { AxeBuilder } from '@axe-core/playwright';
@@ -89,9 +89,9 @@ test.describe('@a11y T190 — F7 axe-core scan', () => {
         { timeout: 120_000 },
       );
 
-      await page.goto('/portal/benefits/e-blasts');
+      await page.goto('/portal/benefits?tab=broadcasts');
       await page.waitForLoadState('domcontentloaded');
-      await expectNoAxeViolations(page, '/portal/benefits/e-blasts');
+      await expectNoAxeViolations(page, '/portal/benefits?tab=broadcasts');
     });
   });
 
