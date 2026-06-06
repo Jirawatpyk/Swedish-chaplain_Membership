@@ -3835,7 +3835,10 @@
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering",
       "benefits": "Förmåner",
-      "renewalPrefs": "Förnyelsepåminnelser"
+      "renewalPrefs": "Förnyelsepåminnelser",
+      "benefitsShort": "Förmåner",
+      "accountShort": "Konto",
+      "bottomTabsAriaLabel": "Medlemsflikar"
     }
   },
   "breadcrumb": {

@@ -3835,7 +3835,10 @@
       "account": "Account",
       "ariaLabel": "Member navigation",
       "benefits": "Benefits",
-      "renewalPrefs": "Renewal reminders"
+      "renewalPrefs": "Renewal reminders",
+      "benefitsShort": "Benefits",
+      "accountShort": "Account",
+      "bottomTabsAriaLabel": "Member tab bar"
     }
   },
   "breadcrumb": {

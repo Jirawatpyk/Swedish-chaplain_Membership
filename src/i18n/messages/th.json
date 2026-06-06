@@ -3835,7 +3835,10 @@
       "account": "บัญชีของฉัน",
       "ariaLabel": "เมนูนำทางสำหรับสมาชิก",
       "benefits": "สิทธิประโยชน์",
-      "renewalPrefs": "การแจ้งเตือนต่ออายุ"
+      "renewalPrefs": "การแจ้งเตือนต่ออายุ",
+      "benefitsShort": "สิทธิ์",
+      "accountShort": "บัญชี",
+      "bottomTabsAriaLabel": "แถบแท็บสมาชิก"
     }
   },
   "breadcrumb": {
