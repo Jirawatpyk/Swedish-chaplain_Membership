@@ -1,10 +1,12 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 /**
  * G2 — locks the relocation of InvoicesSummaryCard to the shared
  * `src/components/portal/` path. The Dashboard (Task 25+) and the
  * Invoices page both import it from there. The old route-local path
- * must no longer export it (single source of truth).
+ * must no longer exist (single source of truth).
  */
 describe('InvoicesSummaryCard relocation', () => {
   it('is exported from the shared @/components/portal path', async () => {
@@ -12,18 +14,17 @@ describe('InvoicesSummaryCard relocation', () => {
     expect(typeof mod.InvoicesSummaryCard).toBe('function');
   });
 
-  it('is no longer exported from the old route-local _components path', async () => {
-    // Use `new Function` to bypass Vite's static import-analysis, which would
-    // fail at transform time when the module no longer exists — even inside
-    // `.rejects.toThrow()`.  The runtime import throws ERR_MODULE_NOT_FOUND,
-    // which is the GREEN assertion: the old route-local file is gone.
-    const dynamicImport = new Function('m', 'return import(m)') as (
-      m: string,
-    ) => Promise<unknown>;
-    await expect(
-      dynamicImport(
-        '@/app/(member)/portal/invoices/_components/invoices-summary-card',
-      ),
-    ).rejects.toThrow();
+  it('no longer exists at the old route-local _components path', () => {
+    // 057 review F12 — the prior `new Function('m','return import(m)')` guard
+    // was FALSE-GREEN: a `@/`-aliased specifier rejects at runtime for ANY
+    // path (Node can't resolve the Vite alias), so the assertion passed even
+    // if the old file still existed. Assert on disk instead — the only real
+    // signal that the file was actually deleted.
+    const base = resolve(
+      process.cwd(),
+      'src/app/(member)/portal/invoices/_components/invoices-summary-card',
+    );
+    expect(existsSync(`${base}.tsx`)).toBe(false);
+    expect(existsSync(`${base}.ts`)).toBe(false);
   });
 });
