@@ -1,6 +1,7 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 import { formatSatangThb } from '@/lib/format-thb';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { deriveOutstandingStat } from '../_lib/dashboard-stats';
 import { loadDashboardOutstanding } from './dashboard-reads';
@@ -33,8 +34,26 @@ export async function OutstandingStatSection({
 }): Promise<React.JSX.Element> {
   const t = await getTranslations('portal.dashboard.outstanding');
   const locale = await getLocale();
-  const invoices = await loadDashboardOutstanding(tenantId, memberId);
-  const stat = deriveOutstandingStat(invoices);
+  const read = await loadDashboardOutstanding(tenantId, memberId);
+
+  // F4 — a failed read shows an "unavailable" state, NEVER a misleading
+  // "all paid" (which would hide an overdue balance on a transient failure).
+  if (read.error) {
+    return (
+      <StatCard
+        label={t('label')}
+        value={t('errorValue')}
+        sub={t('errorSub')}
+        variant="warning"
+        variantLabel={t('errorValue')}
+      />
+    );
+  }
+
+  // Bangkok-local "today" for overdue classification — display/derive only;
+  // storage stays UTC Gregorian (Constitution Conventions § Timestamps).
+  const todayBkk = bangkokLocalDate(new Date().toISOString());
+  const stat = deriveOutstandingStat(read.inputs, todayBkk);
 
   if (stat.kind === 'clear') {
     return (
@@ -47,19 +66,31 @@ export async function OutstandingStatSection({
     );
   }
 
+  // F6 — when the page cap clipped the result, the count line is a floor.
+  const countSub = read.partial
+    ? t('countSubPartial', { count: stat.count })
+    : t('countSub', { count: stat.count });
+
+  // F5 — split owing into overdue (destructive) vs due-soon (warning). Only
+  // a strictly past-due invoice goes red; the net-N window stays a calm
+  // warning so the stat does not over-alarm during the normal payment window.
+  const isOverdue = stat.kind === 'overdue';
+
   const sub =
     stat.earliestDueDate !== null
       ? t('dueSub', { date: formatDueDate(stat.earliestDueDate, locale) })
-      : t('countSub', { count: stat.count });
+      : countSub;
 
-  const variantLabel = t('countSub', { count: stat.count });
+  const variantLabel = isOverdue
+    ? t('overdueSub', { count: stat.overdueCount })
+    : countSub;
 
   return (
     <StatCard
       label={t('label')}
       value={t('value', { amount: formatSatangThb(stat.totalSatang, locale) })}
       sub={sub}
-      variant="destructive"
+      variant={isOverdue ? 'destructive' : 'warning'}
       variantLabel={variantLabel}
     />
   );

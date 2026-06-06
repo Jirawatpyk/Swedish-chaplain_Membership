@@ -30,20 +30,28 @@ export async function MembershipStatSection({
   const value =
     stat.kind === 'empty'
       ? t('emptyValue')
-      : stat.kind === 'overdue'
-        ? t('overdueValue')
-        : stat.kind === 'due'
-          ? t('renewDueValue')
-          : t('activeValue');
+      : stat.kind === 'error'
+        ? t('errorValue')
+        : stat.kind === 'lapsed'
+          ? t('lapsedValue')
+          : stat.kind === 'overdue'
+            ? t('overdueValue')
+            : stat.kind === 'due'
+              ? t('renewDueValue')
+              : t('activeValue');
 
   const sub =
     stat.kind === 'empty'
       ? t('emptySub')
-      : stat.kind === 'overdue' && stat.daysRemaining !== null
-        ? t('overdueSub', { days: Math.abs(stat.daysRemaining) })
-        : stat.daysRemaining !== null && stat.kind === 'due'
-          ? t('daysRemainingSub', { days: stat.daysRemaining })
-          : t('activeSub');
+      : stat.kind === 'error'
+        ? t('errorSub')
+        : stat.kind === 'lapsed'
+          ? t('lapsedSub')
+          : stat.kind === 'overdue' && stat.daysRemaining !== null
+            ? t('overdueSub', { days: Math.abs(stat.daysRemaining) })
+            : stat.daysRemaining !== null && stat.kind === 'due'
+              ? t('daysRemainingSub', { days: stat.daysRemaining })
+              : t('activeSub');
 
   // variantLabel mirrors the value text so the icon + text pair conveys
   // the same information (WCAG 1.4.1 — not colour alone).

@@ -18,20 +18,37 @@ import type { BenefitUsage } from '@/modules/insights';
 export type StatVariant = 'neutral' | 'warning' | 'destructive';
 
 export interface MembershipStat {
-  /** `empty` = first-run (no cycle); `active` = far off; `due`/`overdue` = act. */
-  readonly kind: 'empty' | 'active' | 'due' | 'overdue';
+  /**
+   * `empty` = first-run (no cycle); `active` = far off / still-covered;
+   * `due`/`overdue` = act on a non-terminal cycle; `lapsed` = terminal
+   * (completed/lapsed/cancelled) AND coverage has ended → must renew;
+   * `error` = the renewal read failed (transient) — distinct from `empty`
+   * so a DB-throw is never shown as the "Welcome aboard" first-run state.
+   */
+  readonly kind: 'empty' | 'active' | 'due' | 'overdue' | 'lapsed' | 'error';
   readonly variant: StatVariant;
-  /** Days to expiry (negative = overdue), or null when no cycle / malformed. */
+  /** Days to expiry (negative = overdue), or null when no cycle / malformed / error. */
   readonly daysRemaining: number | null;
   /** Cycle status passed through for the card sub-line, or null. */
   readonly status: RenewalCycle['status'] | null;
   readonly expiryIso: string | null;
 }
 
+/**
+ * Sentinel the read layer passes when the underlying renewal read FAILED
+ * (Result `!ok`) — as opposed to `null`, which means a genuine no-cycle
+ * (first-run) member. Keeping the two distinct stops a transient DB-throw
+ * from masquerading as "Welcome aboard" and hiding an overdue signal (F4).
+ */
+export type RenewalCycleReadInput = RenewalCycle | null | 'error';
+
 export function deriveMembershipStat(
-  cycle: RenewalCycle | null,
+  cycle: RenewalCycleReadInput,
   now: Date,
 ): MembershipStat {
+  if (cycle === 'error') {
+    return { kind: 'error', variant: 'warning', daysRemaining: null, status: null, expiryIso: null };
+  }
   if (cycle === null) {
     return { kind: 'empty', variant: 'neutral', daysRemaining: null, status: null, expiryIso: null };
   }
@@ -41,10 +58,20 @@ export function deriveMembershipStat(
   if (isOverdue(cycle, now)) {
     return { kind: 'overdue', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
+  // F11 — a TERMINAL cycle (completed/lapsed/cancelled) whose expiry is in
+  // the past has no live coverage. `isOverdue` returns false for terminal
+  // statuses and the `due` branch excludes them, so previously these fell
+  // through to `active` and rendered "Active — in good standing", which
+  // MISINFORMS. Surface a destructive "membership lapsed / renew" instead.
+  // (A terminal cycle still within its period — expiry in the future —
+  // stays `active`: the member is paid up and covered.)
+  if (isTerminalCycleStatus(status) && days !== null && days < 0) {
+    return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+  }
   if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
     return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
-  // Far off OR terminal-but-not-overdue → show membership status, not a stale countdown.
+  // Far off OR terminal-but-still-covered → show membership status, not a stale countdown.
   return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt };
 }
 
@@ -58,9 +85,18 @@ export interface OutstandingInvoiceInput {
 }
 
 export interface OutstandingStat {
-  readonly kind: 'owing' | 'clear';
+  /**
+   * `clear` = nothing owed; `due` = owing but none past-due (net-N window,
+   * warning/neutral — NOT alarming); `overdue` = ≥1 issued invoice past its
+   * due date (destructive). Splitting `due` vs `overdue` stops the stat from
+   * shouting red during the normal payment window (F5).
+   */
+  readonly kind: 'clear' | 'due' | 'overdue';
   readonly totalSatang: bigint;
   readonly count: number;
+  /** Subset of `count`/`totalSatang` that is strictly past due. */
+  readonly overdueCount: number;
+  readonly overdueSatang: bigint;
   /** Earliest due date among owed invoices (lexicographic on YYYY-MM-DD), or null. */
   readonly earliestDueDate: string | null;
 }
@@ -68,11 +104,23 @@ export interface OutstandingStat {
 /** Statuses that represent an unpaid balance the member can pay online. */
 const OWED_STATUSES = new Set(['issued']);
 
+/**
+ * Derive the outstanding-balance stat.
+ *
+ * @param invoices the member's issued (owed) invoices, decoupled shape.
+ * @param todayBkk Bangkok-local "today" as YYYY-MM-DD. An issued invoice is
+ *   overdue when its `dueDate` is STRICTLY before today (same rule as the F4
+ *   `computeIsOverdue` derivation — `dueDate === today` is still within the
+ *   member's Bangkok business day to pay). Null `dueDate` → never overdue.
+ */
 export function deriveOutstandingStat(
   invoices: readonly OutstandingInvoiceInput[],
+  todayBkk: string,
 ): OutstandingStat {
   let totalSatang = 0n;
   let count = 0;
+  let overdueSatang = 0n;
+  let overdueCount = 0;
   let earliestDueDate: string | null = null;
   for (const inv of invoices) {
     if (!OWED_STATUSES.has(inv.status) || inv.totalSatang === null) continue;
@@ -81,13 +129,15 @@ export function deriveOutstandingStat(
     if (inv.dueDate !== null && (earliestDueDate === null || inv.dueDate < earliestDueDate)) {
       earliestDueDate = inv.dueDate;
     }
+    // YYYY-MM-DD strings compare lexicographically == chronologically.
+    if (inv.dueDate !== null && todayBkk > inv.dueDate) {
+      overdueSatang += inv.totalSatang;
+      overdueCount += 1;
+    }
   }
-  return {
-    kind: count > 0 ? 'owing' : 'clear',
-    totalSatang,
-    count,
-    earliestDueDate,
-  };
+  const kind: OutstandingStat['kind'] =
+    count === 0 ? 'clear' : overdueCount > 0 ? 'overdue' : 'due';
+  return { kind, totalSatang, count, overdueCount, overdueSatang, earliestDueDate };
 }
 
 /** Percentage-point gap at/above which a SINGLE benefit counts as under-used (mirrors FR-021). */

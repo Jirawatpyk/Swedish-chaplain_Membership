@@ -32,18 +32,26 @@ import {
 import type { TenantContext } from '@/modules/tenants';
 import type { OutstandingInvoiceInput } from '../_lib/dashboard-stats';
 
-/** Most-recent renewal cycle for the session member, or null. Cached per request. */
+/**
+ * Most-recent renewal cycle for the session member. Cached per request.
+ *
+ * Returns the cycle, `null` for a genuine no-cycle (first-run) member, or
+ * the `'error'` sentinel when the read FAILED (Result `!ok`). The two latter
+ * cases were previously both collapsed to `null` (F4) — a DB-throw then
+ * rendered the "Welcome aboard" first-run state and hid an overdue signal.
+ */
 export const loadDashboardRenewalCycle = cache(
   async (
     tenantId: string,
     memberId: string,
-  ): Promise<RenewalCycle | null> => {
+  ): Promise<RenewalCycle | 'error' | null> => {
     const deps = makeRenewalsDeps(tenantId);
     const res = await loadMemberRenewalStatus(deps, {
       tenantId,
       memberId,
     });
-    return res.ok ? res.value.cycle : null;
+    if (!res.ok) return 'error';
+    return res.value.cycle;
   },
 );
 
@@ -73,20 +81,52 @@ export function toOutstandingInvoiceInputs(
   }));
 }
 
+/**
+ * Result of the outstanding read.
+ *
+ * `total` is the server-reported issued-invoice count for the member.
+ * `partial` is true when the page cap clipped the result (`total > inputs
+ * length`) — the section then flags the figure as a floor rather than
+ * silently under-reporting (F6). `error` is true when the read FAILED, so
+ * callers can show an "unavailable" state instead of a misleading "all paid"
+ * (F4, applied to outstanding too — cheap).
+ */
+export interface DashboardOutstandingRead {
+  readonly inputs: OutstandingInvoiceInput[];
+  readonly total: number;
+  readonly partial: boolean;
+  readonly error: boolean;
+}
+
+/** The page cap for the member's issued invoices. */
+const OUTSTANDING_PAGE_SIZE = 100;
+
 /** The member's unpaid invoices (issued only). Cached per request. */
 export const loadDashboardOutstanding = cache(
   async (
     tenantId: string,
     memberId: string,
-  ): Promise<OutstandingInvoiceInput[]> => {
+  ): Promise<DashboardOutstandingRead> => {
     const res = await listInvoicesPaged(makeListInvoicesDeps(tenantId), {
       tenantId,
       offset: 0,
-      pageSize: 200,
+      // Repo-honoured cap (the use-case schema maxes at 100). A member with
+      // >100 unpaid issued invoices is a pathological state; we report the
+      // figure as a partial floor (F6) rather than over-reading.
+      pageSize: OUTSTANDING_PAGE_SIZE,
       includeDrafts: false,
       memberId,
       status: 'issued',
     });
-    return res.ok ? toOutstandingInvoiceInputs(res.value.rows) : [];
+    if (!res.ok) {
+      return { inputs: [], total: 0, partial: false, error: true };
+    }
+    const inputs = toOutstandingInvoiceInputs(res.value.rows);
+    return {
+      inputs,
+      total: res.value.total,
+      partial: res.value.total > inputs.length,
+      error: false,
+    };
   },
 );

@@ -18,6 +18,16 @@ const REQUIRED = [
   'activity.empty.title',
   'activity.emptyCta',
   'activity.viewAll',
+  // 057 code-review F11/F4 — membership lapsed + read-error states.
+  'membership.lapsedValue',
+  'membership.lapsedSub',
+  'membership.errorValue',
+  'membership.errorSub',
+  // 057 code-review F5/F6 — outstanding overdue/due split + partial floor + error.
+  'outstanding.overdueSub',
+  'outstanding.countSubPartial',
+  'outstanding.errorValue',
+  'outstanding.errorSub',
 ] as const;
 
 function get(obj: unknown, path: string): unknown {

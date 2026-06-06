@@ -3898,6 +3898,10 @@
         "activeSub": "Your membership is in good standing.",
         "daysRemainingSub": "Renews in {days} days",
         "overdueSub": "Overdue by {days} days",
+        "lapsedValue": "Membership lapsed",
+        "lapsedSub": "Your membership has ended. Renew to restore your benefits.",
+        "errorValue": "Status unavailable",
+        "errorSub": "We couldn't load your membership status. Please try again.",
         "emptyValue": "Welcome aboard",
         "emptySub": "Your renewal schedule will appear here once your first cycle starts."
       },
@@ -3905,9 +3909,13 @@
         "label": "Outstanding balance",
         "value": "{amount}",
         "countSub": "{count, plural, one {# unpaid invoice} other {# unpaid invoices}}",
+        "countSubPartial": "{count, plural, one {# or more unpaid invoice} other {# or more unpaid invoices}}",
+        "overdueSub": "{count, plural, one {# overdue invoice} other {# overdue invoices}}",
         "dueSub": "Earliest due {date}",
         "clearValue": "All paid",
-        "clearSub": "You have no outstanding invoices."
+        "clearSub": "You have no outstanding invoices.",
+        "errorValue": "Balance unavailable",
+        "errorSub": "We couldn't load your invoices. Please try again."
       },
       "benefits": {
         "label": "Benefits",

@@ -69,32 +69,116 @@ describe('deriveMembershipStat', () => {
     expect(stat.kind).toBe('active');
     expect(stat.variant).toBe('neutral');
   });
+
+  it('returns active (neutral) for a completed cycle still within its period', () => {
+    // completed but expiry is in the FUTURE → coverage still running → good standing.
+    const stat = deriveMembershipStat(
+      cycle({ status: 'completed', expiresAt: '2026-07-06T00:00:00.000Z' }),
+      NOW,
+    );
+    expect(stat.kind).toBe('active');
+    expect(stat.variant).toBe('neutral');
+  });
+
+  it.each(['lapsed', 'cancelled', 'completed'] as const)(
+    'returns lapsed (destructive) for a terminal %s cycle expired in the past',
+    (status) => {
+      // F11 — a terminal cycle whose coverage has ended MUST NOT read
+      // "Active — in good standing". isOverdue() returns false for terminal
+      // statuses, and the `due` branch excludes terminal too, so without an
+      // explicit branch these fell through to `active` and misinformed.
+      const stat = deriveMembershipStat(
+        cycle({ status, expiresAt: '2026-05-27T00:00:00.000Z' }),
+        NOW,
+      );
+      expect(stat.kind).toBe('lapsed');
+      expect(stat.variant).toBe('destructive');
+      expect(stat.status).toBe(status);
+    },
+  );
+
+  it('returns error (warning) when the renewal read failed (not first-run)', () => {
+    // F4 — a DB-throw collapsed to a different sentinel than a genuine
+    // no-cycle member. `'error'` must NOT render the "Welcome aboard"
+    // first-run state, which would hide an overdue signal on a transient
+    // failure.
+    const stat = deriveMembershipStat('error', NOW);
+    expect(stat.kind).toBe('error');
+    expect(stat.variant).toBe('warning');
+    expect(stat.daysRemaining).toBeNull();
+    expect(stat.status).toBeNull();
+  });
 });
 
 describe('deriveOutstandingStat', () => {
-  it('sums issued/overdue totals and counts them', () => {
-    const stat = deriveOutstandingStat([
-      { status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' },
-      { status: 'issued', totalSatang: 53_50n, dueDate: '2026-06-10' },
-      { status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' },
-    ]);
-    expect(stat.kind).toBe('owing');
+  // Bangkok-local "today" the section threads in. All dueDates below
+  // relative to this anchor.
+  const TODAY_BKK = '2026-06-06';
+
+  it('sums issued totals and counts them; classifies overdue vs not-yet-due', () => {
+    const stat = deriveOutstandingStat(
+      [
+        { status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' }, // future → not overdue
+        { status: 'issued', totalSatang: 53_50n, dueDate: '2026-05-10' }, // past → overdue
+        { status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' },
+      ],
+      TODAY_BKK,
+    );
+    // ≥1 overdue → the stat is `overdue` (destructive).
+    expect(stat.kind).toBe('overdue');
     expect(stat.totalSatang).toBe(1_123_50n);
     expect(stat.count).toBe(2);
-    expect(stat.earliestDueDate).toBe('2026-06-10');
+    expect(stat.overdueCount).toBe(1);
+    expect(stat.overdueSatang).toBe(53_50n);
+    expect(stat.earliestDueDate).toBe('2026-05-10');
+  });
+
+  it('returns `due` (not destructive) when owing but nothing is overdue yet', () => {
+    // F5 — every issued invoice is in the net-N window → warning, not red.
+    const stat = deriveOutstandingStat(
+      [
+        { status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' },
+        { status: 'issued', totalSatang: 53_50n, dueDate: '2026-06-30' },
+      ],
+      TODAY_BKK,
+    );
+    expect(stat.kind).toBe('due');
+    expect(stat.count).toBe(2);
+    expect(stat.overdueCount).toBe(0);
+    expect(stat.overdueSatang).toBe(0n);
+  });
+
+  it('treats dueDate === today as NOT overdue (full Bangkok business day to pay)', () => {
+    const stat = deriveOutstandingStat(
+      [{ status: 'issued', totalSatang: 100_00n, dueDate: TODAY_BKK }],
+      TODAY_BKK,
+    );
+    expect(stat.kind).toBe('due');
+    expect(stat.overdueCount).toBe(0);
+  });
+
+  it('treats a null dueDate issued invoice as owing but not overdue', () => {
+    const stat = deriveOutstandingStat(
+      [{ status: 'issued', totalSatang: 100_00n, dueDate: null }],
+      TODAY_BKK,
+    );
+    expect(stat.kind).toBe('due');
+    expect(stat.overdueCount).toBe(0);
   });
 
   it('returns the clear/first-run variant when nothing is owed', () => {
-    const stat = deriveOutstandingStat([
-      { status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' },
-    ]);
+    const stat = deriveOutstandingStat(
+      [{ status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' }],
+      TODAY_BKK,
+    );
     expect(stat.kind).toBe('clear');
     expect(stat.totalSatang).toBe(0n);
     expect(stat.count).toBe(0);
+    expect(stat.overdueCount).toBe(0);
   });
 
   it('treats an empty list as clear (first-run member)', () => {
-    expect(deriveOutstandingStat([]).kind).toBe('clear');
+    expect(deriveOutstandingStat([], TODAY_BKK).kind).toBe('clear');
   });
 });
 

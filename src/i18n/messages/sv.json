@@ -3898,6 +3898,10 @@
         "activeSub": "Ditt medlemskap är i gott skick.",
         "daysRemainingSub": "Förnyas om {days} dagar",
         "overdueSub": "Försenad med {days} dagar",
+        "lapsedValue": "Medlemskap upphört",
+        "lapsedSub": "Ditt medlemskap har upphört. Förnya för att återställa dina förmåner.",
+        "errorValue": "Status ej tillgänglig",
+        "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
         "emptyValue": "Välkommen",
         "emptySub": "Ditt förnyelseschema visas här när din första period börjar."
       },
@@ -3905,9 +3909,13 @@
         "label": "Utestående saldo",
         "value": "{amount}",
         "countSub": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}}",
+        "countSubPartial": "{count, plural, one {# eller fler obetald faktura} other {# eller fler obetalda fakturor}}",
+        "overdueSub": "{count, plural, one {# förfallen faktura} other {# förfallna fakturor}}",
         "dueSub": "Förfaller tidigast {date}",
         "clearValue": "Allt betalt",
-        "clearSub": "Du har inga utestående fakturor."
+        "clearSub": "Du har inga utestående fakturor.",
+        "errorValue": "Saldo ej tillgängligt",
+        "errorSub": "Vi kunde inte läsa in dina fakturor. Försök igen."
       },
       "benefits": {
         "label": "Förmåner",
