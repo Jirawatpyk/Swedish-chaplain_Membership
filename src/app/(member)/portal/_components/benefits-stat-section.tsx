@@ -8,9 +8,9 @@ import type { TenantContext } from '@/modules/tenants';
  * 057 portal redesign §4.1 — Benefits stat card section.
  *
  * Resolves the cached benefit usage VO, derives the display label/variant,
- * and renders a `StatCard`. A null usage (compute miss, spec risk PM-3)
- * shows a neutral placeholder — never an error state that blocks the full
- * dashboard render.
+ * and renders a `StatCard`. A transient read error returns the `'error'`
+ * sentinel and renders a warning "Benefits unavailable" — distinct from the
+ * genuine empty state so the member is not misled (Defer 1 D1 code review).
  */
 export async function BenefitsStatSection({
   ctx,
@@ -22,33 +22,25 @@ export async function BenefitsStatSection({
   const t = await getTranslations('portal.dashboard.benefits');
   const usage = await loadDashboardBenefitUsage(ctx, memberId);
 
-  // Risk PM-3: compute miss (null) shows a neutral placeholder.
-  if (usage === null) {
-    return (
-      <StatCard
-        label={t('label')}
-        value={t('emptyValue')}
-        sub={t('emptySub')}
-        variant="neutral"
-      />
-    );
-  }
-
   const stat = deriveBenefitsStat(usage);
 
   const value =
-    stat.kind === 'empty'
-      ? t('emptyValue')
-      : stat.kind === 'under-use'
-        ? t('underUseValue', { count: stat.underUseCount })
-        : t('onTrackValue');
+    stat.kind === 'error'
+      ? t('errorValue')
+      : stat.kind === 'empty'
+        ? t('emptyValue')
+        : stat.kind === 'under-use'
+          ? t('underUseValue', { count: stat.underUseCount })
+          : t('onTrackValue');
 
   const sub =
-    stat.kind === 'empty'
-      ? t('emptySub')
-      : stat.kind === 'under-use'
-        ? t('underUseSub')
-        : t('onTrackSub');
+    stat.kind === 'error'
+      ? t('errorSub')
+      : stat.kind === 'empty'
+        ? t('emptySub')
+        : stat.kind === 'under-use'
+          ? t('underUseSub')
+          : t('onTrackSub');
 
   // Conditionally spread to satisfy exactOptionalPropertyTypes.
   const variantProps =

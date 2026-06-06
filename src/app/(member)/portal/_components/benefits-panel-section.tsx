@@ -16,8 +16,11 @@ const PORTAL_BENEFITS_HREF = '/portal/benefits';
  * `await` benefit usage, which would serialise every stat boundary AND make
  * BenefitsStatSection's skeleton dead).
  *
- * Renders nothing when usage is unavailable or empty (no benefits to show) —
- * the panel simply collapses, same as the prior page-body conditional.
+ * Collapses (returns null) when usage is unavailable, errored, or empty.
+ * The `'error'` sentinel from loadDashboardBenefitUsage is handled here so
+ * BenefitUsageCard's `BenefitUsage|null` contract is NOT changed (Defer 1).
+ * The stat card (BenefitsStatSection) shows the "unavailable" warning;
+ * this panel simply hides to avoid a half-broken layout.
  */
 export async function BenefitsPanelSection({
   ctx,
@@ -28,7 +31,9 @@ export async function BenefitsPanelSection({
 }): Promise<React.JSX.Element | null> {
   const locale = await getLocale();
   const usage = await loadDashboardBenefitUsage(ctx, memberId);
-  if (usage === null) return null;
+  // Collapse on error — the stat card (BenefitsStatSection) already shows the
+  // "Benefits unavailable" warning variant; the panel adds nothing more.
+  if (usage === 'error') return null;
 
   const benefitsStat = deriveBenefitsStat(usage);
   if (benefitsStat.kind === 'empty') return null;

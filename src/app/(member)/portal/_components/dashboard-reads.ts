@@ -55,18 +55,25 @@ export const loadDashboardRenewalCycle = cache(
   },
 );
 
-/** Benefit usage VO for the session member, or null on a genuine compute failure. */
+/**
+ * Benefit usage VO for the session member.
+ *
+ * Returns the VO, or the `'error'` sentinel when computeBenefitUsage returned
+ * !ok. Previously collapsed to `null` (Defer 1 D1 code review) — `null` is
+ * now unused here; the caller distinguishes error from genuine empty via the
+ * sentinel so a transient failure is not shown as "No benefits yet".
+ */
 export const loadDashboardBenefitUsage = cache(
   async (
     ctx: TenantContext,
     memberId: string,
-  ): Promise<BenefitUsage | null> => {
+  ): Promise<BenefitUsage | 'error'> => {
     const res = await computeBenefitUsage(
       ctx,
       { memberId },
       makeComputeBenefitUsageDeps(ctx.slug),
     );
-    return res.ok ? res.value : null;
+    return res.ok ? res.value : 'error';
   },
 );
 

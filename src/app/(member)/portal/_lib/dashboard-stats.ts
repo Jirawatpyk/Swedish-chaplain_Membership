@@ -65,7 +65,12 @@ export function deriveMembershipStat(
   // MISINFORMS. Surface a destructive "membership lapsed / renew" instead.
   // (A terminal cycle still within its period — expiry in the future —
   // stays `active`: the member is paid up and covered.)
-  if (isTerminalCycleStatus(status) && days !== null && days < 0) {
+  //
+  // Defer 2: use an instant-level comparison (same `<` semantics as
+  // `isOverdue`) rather than `days < 0` (Math.ceil day-granularity). With
+  // day-granularity a cycle expiring at 08:00 BKK is still days=0 at 14:00
+  // BKK, so it fell through to `active` for the rest of the expiry day.
+  if (isTerminalCycleStatus(status) && Date.parse(cycle.expiresAt) < now.getTime()) {
     return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
   if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
@@ -144,11 +149,23 @@ export function deriveOutstandingStat(
 export const PER_BENEFIT_UNDER_USE_GAP_PCT = 25;
 
 export interface BenefitsStat {
-  /** `empty` = first-run (no benefits); `under-use` = ≥1 lagging; `on-track` otherwise. */
-  readonly kind: 'empty' | 'under-use' | 'on-track';
+  /**
+   * `empty` = first-run (no benefits); `under-use` = ≥1 lagging; `on-track`
+   * otherwise; `error` = the benefit read failed (transient) — distinct from
+   * `empty` so a compute failure is never shown as "No benefits yet" (Defer 1).
+   */
+  readonly kind: 'empty' | 'under-use' | 'on-track' | 'error';
   readonly variant: StatVariant;
   readonly underUseCount: number;
 }
+
+/**
+ * Sentinel the read layer passes when computeBenefitUsage returned !ok —
+ * as opposed to a real BenefitUsage value. Keeps the error path distinct from
+ * genuine "no benefits" so the section can render a transient-failure
+ * placeholder instead of misinforming the member (Defer 1 D1 code review).
+ */
+export type BenefitUsageReadInput = BenefitUsage | 'error';
 
 /**
  * Under-use HIGHLIGHT (spec §4.1 + review S-1) — a COUNT of benefits lagging
@@ -156,8 +173,13 @@ export interface BenefitsStat {
  * (used ÷ entitlement) %-point gap below the elapsed-year % is ≥ 25 (same
  * threshold the F9 aggregate uses). Active-only plans (no quantifiable
  * benefit) are always "on-track".
+ *
+ * Accepts `'error'` sentinel (computeBenefitUsage !ok) → returns kind:'error'.
  */
-export function deriveBenefitsStat(usage: BenefitUsage): BenefitsStat {
+export function deriveBenefitsStat(usage: BenefitUsageReadInput): BenefitsStat {
+  if (usage === 'error') {
+    return { kind: 'error', variant: 'warning', underUseCount: 0 };
+  }
   const hasContent = usage.quantifiable.length > 0 || usage.active.length > 0;
   if (!hasContent) {
     return { kind: 'empty', variant: 'neutral', underUseCount: 0 };

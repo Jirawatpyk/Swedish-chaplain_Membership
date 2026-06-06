@@ -3924,7 +3924,9 @@
         "onTrackValue": "Alla förmåner på rätt spår",
         "onTrackSub": "Du håller jämna steg med året.",
         "emptyValue": "Inga förmåner ännu",
-        "emptySub": "Din plans förmåner visas här."
+        "emptySub": "Din plans förmåner visas här.",
+        "errorValue": "Förmåner ej tillgängliga",
+        "errorSub": "Vi kunde inte läsa in dina förmåner. Försök igen."
       },
       "activity": {
         "title": "Senaste aktivitet",

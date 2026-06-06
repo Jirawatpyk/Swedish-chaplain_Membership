@@ -3924,7 +3924,9 @@
         "onTrackValue": "All benefits on track",
         "onTrackSub": "You're keeping pace with the year.",
         "emptyValue": "No benefits yet",
-        "emptySub": "Your plan's benefits will show up here."
+        "emptySub": "Your plan's benefits will show up here.",
+        "errorValue": "Benefits unavailable",
+        "errorSub": "We could not load your benefits. Please try again."
       },
       "activity": {
         "title": "Recent activity",
