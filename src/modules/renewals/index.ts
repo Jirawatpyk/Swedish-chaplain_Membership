@@ -475,6 +475,14 @@ export {
   type BenefitConsumptionEntry,
 } from './application/use-cases/load-renewal-summary';
 
+// Pass A · Section 1 — admin member-detail "Renewal & Health" card read.
+export {
+  loadMemberRenewalStatus,
+  type LoadMemberRenewalStatusInput,
+  type LoadMemberRenewalStatusOutput,
+  type LoadMemberRenewalStatusError,
+} from './application/use-cases/load-member-renewal-status';
+
 export {
   confirmRenewal,
   confirmRenewalInputSchema,
