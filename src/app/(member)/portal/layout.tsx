@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { Viewport } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -22,6 +23,19 @@ import { MarketingAcknowledgementBanner } from './_components/marketing-acknowle
  * Renders the persistent header with horizontal MemberNav +
  * UserMenu + ThemeToggle.
  */
+
+/**
+ * `viewport-fit=cover` is scoped to the member portal only (NOT the root
+ * layout — 057 review F3). It lets content extend under the iPhone home-bar
+ * so the fixed member bottom-tab bar's `env(safe-area-inset-bottom)` padding
+ * has room to push the tabs above the home indicator. Next.js resolves the
+ * viewport per-segment, so admin/auth surfaces keep the default (no `cover`)
+ * and their fixed-bottom UI (e.g. bulk-action-bar) keeps its safe-area inset.
+ */
+export const viewport: Viewport = {
+  viewportFit: 'cover',
+};
+
 export default async function MemberLayout({ children }: { children: ReactNode }) {
   const { user } = await requireSession('member');
 
