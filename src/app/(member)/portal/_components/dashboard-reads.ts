@@ -108,25 +108,44 @@ export interface DashboardOutstandingRead {
 /** The page cap for the member's issued invoices. */
 const OUTSTANDING_PAGE_SIZE = 100;
 
+/** Sentinel returned on a failed/clipped read — shared by both failure exits. */
+const OUTSTANDING_ERROR_READ: DashboardOutstandingRead = {
+  inputs: [],
+  total: 0,
+  partial: false,
+  error: true,
+};
+
 /** The member's unpaid invoices (issued only). Cached per request. */
 export const loadDashboardOutstanding = cache(
   async (
     tenantId: string,
     memberId: string,
   ): Promise<DashboardOutstandingRead> => {
-    const res = await listInvoicesPaged(makeListInvoicesDeps(tenantId), {
-      tenantId,
-      offset: 0,
-      // Repo-honoured cap (the use-case schema maxes at 100). A member with
-      // >100 unpaid issued invoices is a pathological state; we report the
-      // figure as a partial floor (F6) rather than over-reading.
-      pageSize: OUTSTANDING_PAGE_SIZE,
-      includeDrafts: false,
-      memberId,
-      status: 'issued',
-    });
+    // 057 R2 finding C — `listInvoicesPaged` is typed `Result<…, never>` and
+    // has NO try/catch: a DB error THROWS rather than returning `!ok`, so the
+    // `!res.ok` branch alone never fires on a real failure and the section
+    // would CRASH instead of showing "Balance unavailable". Wrap the call so a
+    // thrown read resolves to the same error sentinel the other dashboard
+    // reads (renewal/benefit) already return — keeping the section resilient.
+    let res;
+    try {
+      res = await listInvoicesPaged(makeListInvoicesDeps(tenantId), {
+        tenantId,
+        offset: 0,
+        // Repo-honoured cap (the use-case schema maxes at 100). A member with
+        // >100 unpaid issued invoices is a pathological state; we report the
+        // figure as a partial floor (F6) rather than over-reading.
+        pageSize: OUTSTANDING_PAGE_SIZE,
+        includeDrafts: false,
+        memberId,
+        status: 'issued',
+      });
+    } catch {
+      return OUTSTANDING_ERROR_READ;
+    }
     if (!res.ok) {
-      return { inputs: [], total: 0, partial: false, error: true };
+      return OUTSTANDING_ERROR_READ;
     }
     const inputs = toOutstandingInvoiceInputs(res.value.rows);
     return {
