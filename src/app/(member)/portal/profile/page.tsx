@@ -1,19 +1,21 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getTranslations, getFormatter } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { BookUserIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { CountryDisplay } from '@/components/members/country-display';
+import { DetailField } from '@/components/members/detail-field';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -25,26 +27,67 @@ import {
 import { env } from '@/lib/env';
 
 /**
- * Portal profile view — US5 AS1 (T123).
+ * 057 G4 — member-facing member-detail (design §4.2, Option C structure
+ * WITHOUT admin actions / renewal-triage).
  *
- * Displays the member's company info, plan, and contact list.
- * Admin-only fields (notes, override reasons) are omitted.
- * Tabs that depend on F4/F5/F6/F7 are hidden entirely (not disabled).
+ * Header (company + SCCM-NNNN + status) → Organisation card →
+ * Membership card → Contacts card → Directory listing.
+ *
+ * Refactor of the old inline `<dt>/<dd>` page (review S-3): all rows now
+ * use the shared `DetailField`; section titles are real `<h2>` (review
+ * a11y-6 — NEVER CardTitle, which renders a div and reproduced the admin
+ * h1→h3 skip). Dates render via `formatLocalisedDate` (BE display-only
+ * for th-TH; storage stays Gregorian ISO).
  */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.profile');
   return { title: t('pageTitle') };
 }
 
-export default async function PortalProfilePage() {
-  const { user } = await requireSession('member');
+/**
+ * 057 fix — section heading as a real `<h2>` (not a CardTitle `<div>`) so
+ * every content group is reachable via SR heading navigation under the
+ * page `<h1>`. Mirrors the admin detail page's SectionHeading; carries
+ * CardTitle font classes so the visual is unchanged. The `id` is wired to
+ * the wrapping `<section aria-labelledby>`.
+ */
+function SectionHeading({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <h2
+      id={id}
+      className="font-heading text-base font-medium leading-snug"
+    >
+      {children}
+    </h2>
+  );
+}
+
+/**
+ * Testable RSC body — accepts the already-resolved session user so a unit
+ * test can invoke it directly (no live session). The default export below
+ * is a thin wrapper that resolves the member session and delegates here.
+ */
+export async function PortalProfileBody({
+  user,
+}: {
+  user: { id: string };
+}) {
   const t = await getTranslations('portal.profile');
   const tDir = await getTranslations('directorySettings');
+  const locale = await getLocale();
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
 
-  // Resolve member from linked user
+  // memberId is ALWAYS resolved from the session user via findByLinkedUserId —
+  // NEVER from a URL param (review M-2: cross-tenant safety. The repo wraps
+  // the query in runInTenant so RLS scopes it to the caller's tenant).
   const memberResult = await deps.memberRepo.findByLinkedUserId(
     tenant,
     user.id,
@@ -85,31 +128,40 @@ export default async function PortalProfilePage() {
 
   const { member: m, contacts } = result.value;
   const activeContacts = contacts.filter((c) => !c.removedAt);
-  // Find the caller's own contact and check if THEY are primary
   const ownContact = activeContacts.find(
     (c) => String(c.linkedUserId) === user.id,
   );
   const isPrimary = ownContact?.isPrimary === true;
-  const format = await getFormatter();
 
-  // B24 — resolve plan display name + member-number prefix in parallel:
-  // both are independent reads (plan lookup vs. member-settings row).
-  // Mirrors the identical Promise.all on admin/members/[memberId]/page.tsx.
+  // Both reads are independent (plan lookup vs. member-settings row) —
+  // collapse to ~1 RTT. Mirrors the Promise.all on the admin detail page.
   const [planLookup, memberPrefix] = await Promise.all([
     deps.plans.getPlan(tenant, m.planId, m.planYear),
     resolveMemberNumberPrefix(tenant, deps.memberSettings),
   ]);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
 
-  // 055-member-number — `m.memberNumber` is already a branded MemberNumber
-  // (validated by rowToMember) — no re-wrap needed.
+  // `m.memberNumber` is already a branded MemberNumber (validated by
+  // rowToMember) — no re-wrap needed.
   const memberNumberFormatted = formatMemberNumber(memberPrefix, m.memberNumber);
 
   return (
     <DetailContainer>
       <PageHeader
-        title={t('pageTitle')}
-        subtitle={m.companyName}
+        title={m.companyName}
+        subtitle={t('pageTitle')}
+        badge={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={m.status === 'active' ? 'default' : 'secondary'}
+            >
+              {t(`statusBadge.${m.status}`)}
+            </Badge>
+            <Badge variant="outline" className="font-mono">
+              {memberNumberFormatted}
+            </Badge>
+          </div>
+        }
         actions={
           <Link href="/portal/edit" className={buttonVariants()}>
             <PencilIcon className="size-4" aria-hidden />
@@ -118,225 +170,211 @@ export default async function PortalProfilePage() {
         }
       />
 
-      {/* Company Info */}
-        <Card>
-        <CardHeader>
-          <CardTitle>{t('companySection')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {/* 055-member-number — human-readable member number displayed ABOVE
-                the UUID so callers can quote it to support without needing a
-                copy of the raw UUID (design §8.3 portal affordance). */}
-            <div className="lg:col-span-3">
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.memberNumber')}
-              </dt>
-              <dd className="text-body flex items-center gap-2">
-                <span className="font-mono text-sm font-medium">
-                  {memberNumberFormatted}
-                </span>
-                <CopyButton
-                  value={memberNumberFormatted}
-                  label={t('fields.memberNumberCopy')}
-                />
-              </dd>
-            </div>
-            {/* I6 round-10 ui-design-specialist — surface member_id +
-                copy-to-clipboard. Support staff first question when a
-                member calls is "what's your member ID?"; the admin
-                detail page already had this affordance, the portal
-                side was the gap. `font-mono text-xs` to mirror admin
-                styling; `lg:col-span-3` so the row spans the full
-                grid above the rest of the fields. */}
-            <div className="lg:col-span-3">
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.memberId')}
-              </dt>
-              <dd className="text-body flex items-center gap-2">
-                <span className="font-mono text-xs">{m.memberId}</span>
-                <CopyButton
-                  value={m.memberId}
-                  label={t('fields.memberIdCopy')}
-                />
-                <span className="text-caption text-muted-foreground">
-                  {t('fields.memberIdHelp')}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.companyName')}
-              </dt>
-              <dd className="text-body font-medium">{m.companyName}</dd>
-            </div>
-            {m.legalEntityType && (
-              <div>
-                <dt className="text-caption text-muted-foreground">
-                  {t('fields.legalEntityType')}
-                </dt>
-                <dd className="text-body">{m.legalEntityType}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.country')}
-              </dt>
-              <dd className="text-body">
-                <CountryDisplay code={m.country} />
-              </dd>
-            </div>
-            {m.website && (
-              <div>
-                <dt className="text-caption text-muted-foreground">
-                  {t('fields.website')}
-                </dt>
-                <dd className="text-body">
-                  <a
-                    href={m.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline underline-offset-4"
-                  >
-                    {m.website}
-                  </a>
-                </dd>
-              </div>
-            )}
-            {m.description && (
-              <div className="sm:col-span-2 lg:col-span-3">
-                <dt className="text-caption text-muted-foreground">
-                  {t('fields.description')}
-                </dt>
-                <dd className="text-body">{m.description}</dd>
-              </div>
-            )}
-          </dl>
-        </CardContent>
-      </Card>
-
-      {/* Plan */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('planSection')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.planName')}
-              </dt>
-              <dd className="text-body font-medium">{planDisplayName}</dd>
-            </div>
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.planYear')}
-              </dt>
-              <dd className="text-body font-medium">{m.planYear}</dd>
-            </div>
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.registrationDate')}
-              </dt>
-              <dd className="text-body">
-                {format.dateTime(m.registrationDate, { dateStyle: 'medium' })}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t('fields.status')}
-              </dt>
-              <dd>
-                <Badge
-                  variant={m.status === 'active' ? 'default' : 'secondary'}
-                >
-                  {t(`status.${m.status}`)}
-                </Badge>
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
-
-      {/* Contacts */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{t('contactsSection')}</CardTitle>
-          {isPrimary && (
-            <Link
-              href="/portal/contacts/invite"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <UserPlusIcon className="size-4" aria-hidden />
-              {t('inviteColleague')}
-            </Link>
-          )}
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {activeContacts.map((contact) => (
-              <div
-                key={contact.contactId}
-                className="flex items-start justify-between rounded-lg border p-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-body font-medium">
-                      {contact.firstName} {contact.lastName}
-                    </p>
-                    {contact.isPrimary && (
-                      <Badge variant="secondary">{t('primaryBadge')}</Badge>
-                    )}
-                    {contact.linkedUserId && (
-                      <Badge variant="outline">{t('portalLinked')}</Badge>
-                    )}
-                  </div>
-                  <p className="text-caption text-muted-foreground">
-                    {contact.email}
-                  </p>
-                  {contact.phone && (
-                    <p className="text-caption text-muted-foreground">
-                      {contact.phone}
-                    </p>
-                  )}
-                  {contact.roleTitle && (
-                    <p className="text-caption text-muted-foreground">
-                      {contact.roleTitle}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-            {activeContacts.length === 0 && (
-              <p className="text-body text-muted-foreground">
-                {t('noContacts')}
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* F9 US5 — directory listing self-service (FR-025). Gated on the F9 flag
-          so it stays hidden until the feature flips on; the target page itself
-          notFounds when dark. Keeps the member's directory settings discoverable
-          "under /portal/profile" per the IA. */}
-      {env.features.f9Dashboard ? (
+      {/* Organisation — who the member is. */}
+      <section aria-labelledby="portal-profile-org-heading">
         <Card>
           <CardHeader>
-            <CardTitle>{tDir('title')}</CardTitle>
+            <SectionHeading id="portal-profile-org-heading">
+              {t('organisationSection')}
+            </SectionHeading>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-body text-muted-foreground">{tDir('subtitle')}</p>
-            <Link
-              href="/portal/profile/directory"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <BookUserIcon className="size-4" aria-hidden />
-              {tDir('manage')}
-            </Link>
+          <CardContent>
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+              <DetailField
+                label={t('fields.memberNumber')}
+                value={memberNumberFormatted}
+                mono
+                extra={
+                  <CopyButton
+                    value={memberNumberFormatted}
+                    label={t('fields.memberNumberCopy')}
+                  />
+                }
+              />
+              <DetailField
+                label={t('fields.companyName')}
+                value={m.companyName}
+              />
+              <DetailField
+                label={t('fields.legalEntityType')}
+                value={m.legalEntityType}
+              />
+              <DetailField
+                label={t('fields.country')}
+                value={null}
+                extra={<CountryDisplay code={m.country} />}
+              />
+              {m.website ? (
+                <DetailField
+                  label={t('fields.website')}
+                  value={null}
+                  extra={
+                    <a
+                      href={m.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <span className="truncate">{m.website}</span>
+                    </a>
+                  }
+                />
+              ) : (
+                <DetailField
+                  label={t('fields.website')}
+                  value={null}
+                />
+              )}
+              <DetailField
+                label={t('fields.foundedYear')}
+                value={m.foundedYear}
+              />
+              {m.description ? (
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <DetailField
+                    label={t('fields.description')}
+                    value={m.description}
+                  />
+                </div>
+              ) : null}
+            </dl>
           </CardContent>
         </Card>
+      </section>
+
+      {/* Membership — the chamber relationship. */}
+      <section aria-labelledby="portal-profile-membership-heading">
+        <Card>
+          <CardHeader>
+            <SectionHeading id="portal-profile-membership-heading">
+              {t('membershipSection')}
+            </SectionHeading>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+              <DetailField
+                label={t('fields.planName')}
+                value={planDisplayName}
+              />
+              <DetailField
+                label={t('fields.planYear')}
+                value={m.planYear}
+              />
+              <DetailField
+                label={t('fields.registrationDate')}
+                value={formatLocalisedDate(
+                  m.registrationDate.toISOString(),
+                  locale,
+                  { dateStyle: 'medium' },
+                )}
+              />
+              <DetailField
+                label={t('fields.lastActivityAt')}
+                value={
+                  m.lastActivityAt
+                    ? formatLocalisedDate(
+                        m.lastActivityAt.toISOString(),
+                        locale,
+                        { dateStyle: 'medium', timeStyle: 'short' },
+                      )
+                    : null
+                }
+              />
+            </dl>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Contacts — primary + others. */}
+      <section aria-labelledby="portal-profile-contacts-heading">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <SectionHeading id="portal-profile-contacts-heading">
+              {t('contactsSection')}
+            </SectionHeading>
+            {isPrimary && (
+              <Link
+                href="/portal/contacts/invite"
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                <UserPlusIcon className="size-4" aria-hidden />
+                {t('inviteColleague')}
+              </Link>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-4">
+              {activeContacts.map((contact, i) => (
+                <div key={contact.contactId} className="flex flex-col gap-4">
+                  {i > 0 ? <Separator /> : null}
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-body font-medium">
+                          {`${contact.firstName} ${contact.lastName}`.trim()}
+                        </p>
+                        {contact.isPrimary && (
+                          <Badge variant="secondary">
+                            {t('primaryBadge')}
+                          </Badge>
+                        )}
+                        {contact.linkedUserId && (
+                          <Badge variant="outline">{t('portalLinked')}</Badge>
+                        )}
+                      </div>
+                      <p className="text-caption text-muted-foreground">
+                        {contact.email}
+                      </p>
+                      {contact.roleTitle ? (
+                        <p className="text-caption text-muted-foreground">
+                          {contact.roleTitle}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {activeContacts.length === 0 && (
+                <p className="text-body text-muted-foreground">
+                  {t('noContacts')}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* F9 directory listing self-service — gated on the F9 flag so it stays
+          hidden until the feature flips on; the target page notFounds when
+          dark. Heading is a real <h2> per a11y-6. */}
+      {env.features.f9Dashboard ? (
+        <section aria-labelledby="portal-profile-directory-heading">
+          <Card>
+            <CardHeader>
+              <SectionHeading id="portal-profile-directory-heading">
+                {tDir('title')}
+              </SectionHeading>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-body text-muted-foreground">
+                {tDir('subtitle')}
+              </p>
+              <Link
+                href="/portal/profile/directory"
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                <BookUserIcon className="size-4" aria-hidden />
+                {tDir('manage')}
+              </Link>
+            </CardContent>
+          </Card>
+        </section>
       ) : null}
     </DetailContainer>
   );
+}
+
+export default async function PortalProfilePage() {
+  const { user } = await requireSession('member');
+  return <PortalProfileBody user={{ id: user.id }} />;
 }
