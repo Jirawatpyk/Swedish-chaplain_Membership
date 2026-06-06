@@ -4344,6 +4344,13 @@
         "back": "Tillbaka till utskick"
       }
     },
+    "benefits": {
+      "tabs": {
+        "ariaLabel": "Förmånssektioner",
+        "benefits": "Förmåner",
+        "broadcasts": "Utskick"
+      }
+    },
     "profile": {
       "pageTitle": "Min profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",

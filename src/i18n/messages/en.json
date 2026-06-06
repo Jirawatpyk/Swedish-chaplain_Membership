@@ -4344,6 +4344,13 @@
         "back": "Back to broadcasts"
       }
     },
+    "benefits": {
+      "tabs": {
+        "ariaLabel": "Benefits sections",
+        "benefits": "Benefits",
+        "broadcasts": "Broadcasts"
+      }
+    },
     "profile": {
       "pageTitle": "My Profile",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
