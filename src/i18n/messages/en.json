@@ -3948,6 +3948,13 @@
     "account": {
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",
+      "forgotPassword": "Forgot your password?",
+      "sections": {
+        "account": "Account",
+        "renewalPrefs": "Renewal preferences",
+        "dataPrivacy": "Data & privacy",
+        "appearance": "Appearance"
+      },
       "menu": {
         "renewalPrefs": "Renewal reminders",
         "dataPrivacy": "Data & privacy"

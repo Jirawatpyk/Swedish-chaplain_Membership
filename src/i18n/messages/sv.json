@@ -3948,6 +3948,13 @@
     "account": {
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
+      "forgotPassword": "Glömt ditt lösenord?",
+      "sections": {
+        "account": "Konto",
+        "renewalPrefs": "Förnyelseinställningar",
+        "dataPrivacy": "Data och integritet",
+        "appearance": "Utseende"
+      },
       "menu": {
         "renewalPrefs": "Förnyelsepåminnelser",
         "dataPrivacy": "Data och integritet"
