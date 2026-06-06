@@ -8,8 +8,13 @@
  * Sign-out is an HTML form posting to `/api/auth/sign-out` so it works
  * without JS (progressive enhancement).
  *
- * Members get an Account hub with section-anchor links (/portal/account,
- * #renewal-prefs, #data-privacy), theme controls, and sign-out (057).
+ * Members get an Account menu linking to Account settings (/portal/account),
+ * Renewal reminders (/portal/preferences/renewals), Data & privacy
+ * (/portal/account/data-export), theme controls, and sign-out (057). The
+ * renewal/privacy items point at the REAL existing routes — the earlier
+ * `/portal/account#renewal-prefs` / `#data-privacy` anchors were dead (the
+ * Account-hub consolidation is D2), which orphaned the FR-016 renewal opt-out
+ * in-app (057 review F7/F8). D2 will re-point these to the consolidated hub.
  * Staff (admin/manager) keep the original single account item.
  */
 import {
@@ -117,11 +122,11 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
                 <UserIcon className="size-4" aria-hidden />
                 {t('account')}
               </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/portal/account#renewal-prefs" />}>
+              <DropdownMenuItem render={<Link href="/portal/preferences/renewals" />}>
                 <CalendarClockIcon className="size-4" aria-hidden />
                 {tHub('renewalPrefs')}
               </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/portal/account#data-privacy" />}>
+              <DropdownMenuItem render={<Link href="/portal/account/data-export" />}>
                 <ShieldIcon className="size-4" aria-hidden />
                 {tHub('dataPrivacy')}
               </DropdownMenuItem>
