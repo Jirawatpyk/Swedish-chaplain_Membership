@@ -856,7 +856,7 @@
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
         "managerReadOnlyBanner": "Skrivskyddad vy — chefer kan bläddra och söka men inte redigera, arkivera eller utföra massåtgärder. Kontakta en systemadministratör för att göra ändringar.",
-        "searchPlaceholder": "Sök på företag, kontaktnamn eller e-post",
+        "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
         "filters": {
@@ -882,7 +882,9 @@
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
         "sortByEngagement": "Sortera efter engagemang",
+        "sortByMemberNumber": "Sortera efter medlemsnummer",
         "columns": {
+          "memberNumber": "Medlemsnr",
           "company": "Företag",
           "country": "Land",
           "plan": "Paket",
@@ -971,6 +973,7 @@
           "contactStatusBadges": "Kontaktstatus"
         },
         "fields": {
+          "memberNumber": "Medlemsnummer",
           "memberId": "Medlems-ID",
           "legalEntityType": "Företagstyp",
           "country": "Land",
@@ -1001,6 +1004,7 @@
         },
         "copy": {
           "copyMemberId": "Kopiera medlems-ID",
+          "copyMemberNumber": "Kopiera medlemsnummer",
           "copyEmail": "Kopiera e-post",
           "copyTaxId": "Kopiera skatte-ID",
           "copied": "Kopierat!"
@@ -4242,6 +4246,8 @@
         "memberIdHelp": "Ange detta ID när du kontaktar kammarens support.",
         "memberIdCopy": "Kopiera medlems-ID",
         "memberIdCopied": "Medlems-ID kopierat",
+        "memberNumber": "Medlemsnummer",
+        "memberNumberCopy": "Kopiera medlemsnummer",
         "companyName": "Företagsnamn",
         "legalEntityType": "Juridisk form",
         "country": "Land",

@@ -34,6 +34,7 @@ import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { lastNMonthKeys } from '@/modules/insights/domain/trend-window';
 import { env } from '@/lib/env';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 type Band = 'healthy' | 'warning' | 'at-risk' | 'critical';
 
@@ -69,6 +70,7 @@ describe('F9 computeDashboardSnapshot — integration (T022)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: randomUUID(),
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Snapshot Co',
           country: 'TH',
           planId,
@@ -248,6 +250,7 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Rev Co',
         country: 'TH',
         planId,
@@ -403,9 +406,11 @@ describe('F9 computeDashboardSnapshot — 12-month trend distribution (G2/G3)', 
         { memberId: randomUUID(), createdAt: midMonth(keys[3]!) },
         { memberId: randomUUID(), createdAt: midMonth(keys[7]!) },
         { memberId: randomUUID(), createdAt: midMonth(keys[11]!) },
-      ].map((m) => ({
+      ].map((m, i) => ({
         tenantId: tenant.ctx.slug,
         memberId: m.memberId,
+        // 055-member-number — NOT NULL + per-tenant UNIQUE; map index → 1..N.
+        memberNumber: i + 1,
         companyName: 'Trend Co',
         country: 'TH',
         planId,

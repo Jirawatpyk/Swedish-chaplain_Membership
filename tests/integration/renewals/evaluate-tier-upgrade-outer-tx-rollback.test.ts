@@ -43,6 +43,7 @@ import {
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -119,6 +120,7 @@ describe('F8 evaluateTierUpgrade outerTx rollback — Staff-R003 close', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Rollback Test Co',
         country: 'TH',
         planId: 'rb-regular',

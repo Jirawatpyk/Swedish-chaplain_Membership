@@ -56,6 +56,9 @@ function buildRealisticInput(): PdfRenderInput {
       address: '99/1 สุขุมวิท 21 (อโศก), คลองเตยเหนือ, วัฒนา, กรุงเทพฯ 10110',
       primary_contact_name: 'คุณสมชาย ใจดี / John Doe',
       primary_contact_email: 'billing@acme-global.example',
+      // 055-member-number — additive fields on the snapshot (null → no line).
+      member_number: null,
+      member_number_display: null,
     },
     lines: [
       {

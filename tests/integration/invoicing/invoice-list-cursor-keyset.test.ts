@@ -118,7 +118,7 @@ describe('invoice list() composite cursor keyset (S1-P1-9b)', () => {
         invoiceNumberPrefix: 'CUR', creditNoteNumberPrefix: 'CURC',
       });
       await tx.insert(members).values({
-        tenantId: tenant.ctx.slug, memberId: MEMBER_ID, companyName: 'Cursor Co',
+        tenantId: tenant.ctx.slug, memberId: MEMBER_ID, memberNumber: 1, companyName: 'Cursor Co',
         country: 'TH', planId: 'cur-plan', planYear: 2026,
       });
       await tx.insert(invoices).values([

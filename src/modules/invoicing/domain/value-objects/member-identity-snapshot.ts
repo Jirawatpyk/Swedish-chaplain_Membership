@@ -23,6 +23,37 @@ export interface MemberIdentitySnapshot {
   readonly address: string;
   readonly primary_contact_name: string;
   readonly primary_contact_email: string;
+  /**
+   * 055-member-number — the buyer's human-readable per-tenant member number
+   * (bare integer; the tenant prefix is a display concern resolved elsewhere).
+   * `null` for: event/non-member buyers (no F3 member) AND historical
+   * snapshots written before this feature (the JSONB key is absent → zod's
+   * `.optional().default(null)` resolves it to null at read time). The PDF
+   * template guards with `!== null`, so historical invoices skip the line
+   * (SC-003 byte-identical re-render preserved). The bare integer is retained
+   * (additive — never removed) for backend joins / debugging; the human-facing
+   * value the PDF renders is `member_number_display`.
+   */
+  readonly member_number: number | null;
+  /**
+   * 055-member-number — the FORMATTED, human-readable member number
+   * (`{prefix}-{zeroPad}`, e.g. `SCCM-0042`), computed at ISSUE time from the
+   * tenant's `member_number_prefix` + the bare `member_number`. Frozen on the
+   * snapshot so the tax document is immutable (FR-038 / §86/4): a later prefix
+   * change or member edit never alters an already-issued document — this is the
+   * value the buyer block renders, consistent with the admin/portal surfaces.
+   *
+   * `null` for: event/non-member buyers (no F3 member) AND historical snapshots
+   * written before this field shipped (the JSONB key is absent → zod's
+   * `.optional().default(null)` resolves it to null at read time). The PDF
+   * template guards with `!== null`, so those invoices skip the Member No. line
+   * (SC-003 byte-identical re-render preserved). The bare `member_number` and
+   * this display string are pinned together: both non-null for a membership
+   * invoice, both null otherwise. This pairing is ENFORCED by a `.superRefine`
+   * on `memberIdentitySnapshotSchema` (a half-populated snapshot fails parse at
+   * both the read and write boundaries), not merely a doc convention.
+   */
+  readonly member_number_display: string | null;
 }
 
 /**
@@ -56,6 +87,41 @@ export const memberIdentitySnapshotSchema = z.object({
     z.string().email('primary_contact_email, when present, must be a valid email'),
     z.literal(''),
   ]),
+  // 055-member-number — additive, optional, defaults to null. `.optional()
+  // .default(null)` (NOT a bare `.nullable()`) means a MISSING key parses to
+  // null (historical snapshot) rather than undefined; positive int mirrors the
+  // DB CHECK (member_number > 0). Declaring it here is mandatory: z.object
+  // STRIPS undeclared keys, so an interface-only add silently drops the value
+  // at both write and read with no type error.
+  member_number: z.number().int().positive().nullable().optional().default(null),
+  // 055-member-number — the FORMATTED display string (`{prefix}-{zeroPad}`),
+  // computed at issue time and frozen here. SAME `.optional().default(null)`
+  // posture as `member_number` above: a MISSING key (historical snapshot) parses
+  // to null (NOT undefined) so the template omits the line and SC-003 byte-stable
+  // re-render holds. Declaring it on the schema is mandatory — z.object STRIPS
+  // undeclared keys, so an interface-only add would silently drop the value at
+  // both write (makeMemberIdentitySnapshot) and read (repo boundary parse).
+  member_number_display: z.string().min(1).nullable().optional().default(null),
+}).superRefine((data, ctx) => {
+  // 055-member-number — the bare integer and the formatted display string are
+  // PINNED together: both null (event/non-member buyer or historical snapshot)
+  // OR both non-null (membership invoice). A half-populated snapshot
+  // (`member_number: 42, member_number_display: null` or vice-versa) is a
+  // representable illegal state that would render an inconsistent §86/4 buyer
+  // block — reject it loudly here so the READ boundary
+  // (`parseMemberIdentitySnapshot` → MalformedSnapshotError) and the WRITE guard
+  // (`makeMemberIdentitySnapshot` → InvalidMemberIdentitySnapshotError) both
+  // refuse it instead of emitting a malformed tax document. The two
+  // `.optional().default(null)` defaults run BEFORE this refine, so a missing
+  // key is already resolved to null by the time the pairing is checked.
+  if ((data.member_number === null) !== (data.member_number_display === null)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['member_number_display'],
+      message:
+        'member_number and member_number_display must be pinned together (both null, or both non-null)',
+    });
+  }
 });
 
 export class MalformedSnapshotError extends Error {
@@ -99,8 +165,18 @@ export class InvalidMemberIdentitySnapshotError extends Error {
  * exactly-one-primary invariant — `contacts_one_primary_per_member` partial
  * unique index + `removeContact` refusing a primary) plus a non-empty legal
  * name and a composed address.
+ *
+ * 055-member-number — the parameter is the schema's INPUT type, where
+ * `member_number` is OPTIONAL (`.optional().default(null)`). Callers that have
+ * no member number (the event/non-member draft path) may omit the key entirely
+ * and the zod default supplies `null`; the returned object always carries the
+ * full `MemberIdentitySnapshot` (member_number resolved). Using the input type
+ * (vs the required-field interface) is what lets `create-event-invoice-draft`
+ * stay a zero-change consumer.
  */
-export function makeMemberIdentitySnapshot(parts: MemberIdentitySnapshot): MemberIdentitySnapshot {
+export function makeMemberIdentitySnapshot(
+  parts: z.input<typeof memberIdentitySnapshotSchema>,
+): MemberIdentitySnapshot {
   const result = memberIdentitySnapshotSchema.safeParse(parts);
   if (!result.success) {
     throw new InvalidMemberIdentitySnapshotError(result.error.issues);

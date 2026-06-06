@@ -80,6 +80,14 @@ import {
 
 export type MembersTableRow = {
   readonly member_id: string;
+  /**
+   * Pre-formatted display string (`SCCM-0042`) computed server-side in the
+   * page row-mapping via `formatMemberNumber(tenantPrefix, …)`. The raw
+   * integer is intentionally NOT shipped to the client: the cell renders
+   * this display string and sort is server-side via the `?sort=memberNumber`
+   * URL param, so the wire payload stays one field lighter per row.
+   */
+  readonly member_number_display: string;
   readonly company_name: string;
   readonly country: string;
   readonly plan_id: string;
@@ -144,6 +152,78 @@ type Props = {
 const columnHelper = createColumnHelper<MembersTableRow>();
 
 /**
+ * Per-column server-default sort order — single source of truth for the arrow
+ * icon, the `<th>` aria-sort, AND the server default. Must match
+ * drizzle-member-repo.ts:
+ *   memberNumber: ASC NULLS LAST (the else-branch when order !== 'desc')
+ *   engagement:   DESC (healthiest first; engagement DESC = risk ASC)
+ * When `?sort=<col>` is present but `&order=` is absent (bookmarked /
+ * hand-edited / deep-link URL), the server uses these defaults.
+ */
+const COLUMN_DEFAULT_ORDER: Record<string, 'asc' | 'desc'> = {
+  memberNumber: 'asc',
+  engagement: 'desc',
+};
+
+/**
+ * Resolve the effective sort order for a sort key: the explicit `?order=` when
+ * valid, else the column's server default. Shared by the two sort-header
+ * components (arrow icon) and `ariaSortFor` (the `<th>` aria-sort) so the icon,
+ * the announced sort state, and the server's actual ordering can never drift.
+ */
+function effectiveOrder(
+  sortKey: string,
+  urlOrder: string | null,
+): 'asc' | 'desc' {
+  if (urlOrder === 'asc' || urlOrder === 'desc') return urlOrder;
+  return COLUMN_DEFAULT_ORDER[sortKey] ?? 'asc';
+}
+
+/** Server-side sort control for the member-number column (toggles
+ *  `?sort=memberNumber&order=asc|desc`, resetting to page 1). */
+function MemberNumberSortHeader() {
+  const t = useTranslations('admin.members.directory');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const active = searchParams.get('sort') === 'memberNumber';
+  const order = searchParams.get('order');
+  const nextOrder = active && order === 'asc' ? 'desc' : 'asc';
+
+  function onSort() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('sort', 'memberNumber');
+    params.set('order', nextOrder);
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  // When active but `?order=` is absent, the server defaults to the column
+  // default (memberNumber → ASC). The shared `effectiveOrder` helper resolves
+  // it so the UP/DOWN arrow stays consistent with the data order and aria-sort.
+  const Icon = !active
+    ? ArrowUpDownIcon
+    : effectiveOrder('memberNumber', order) === 'asc'
+      ? ArrowUpIcon
+      : ArrowDownIcon;
+  // `aria-sort` is NOT placed here: ARIA only allows `aria-sort` on a
+  // `role=columnheader` element (the `<th>`/TableHead). The header cell
+  // owns it (see MembersTable header render) — putting it on this button
+  // is a WCAG 1.3.1 / 4.1.2 violation (axe `aria-allowed-attr`).
+  return (
+    <button
+      type="button"
+      onClick={onSort}
+      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={t('sortByMemberNumber')}
+    >
+      {t('columns.memberNumber')}
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
+  );
+}
+
+/**
  * F9 (FR-007a) — server-side sort control for the engagement column. Toggles
  * the `?sort=engagement&order=desc|asc` URL params (resetting to page 1); the
  * server re-orders by the inverted F8 risk score. Own client hooks so the
@@ -166,14 +246,22 @@ function EngagementSortHeader() {
     router.push(`${pathname}?${params.toString()}`);
   }
 
-  const Icon = !active ? ArrowUpDownIcon : order === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+  // When active but `?order=` is absent, the server defaults to the column
+  // default (engagement → DESC = healthiest first). The shared `effectiveOrder`
+  // helper resolves it so the UP/DOWN arrow stays consistent.
+  const Icon = !active
+    ? ArrowUpDownIcon
+    : effectiveOrder('engagement', order) === 'asc'
+      ? ArrowUpIcon
+      : ArrowDownIcon;
+  // `aria-sort` lives on the `<th>` (columnheader), not this button — see
+  // MemberNumberSortHeader for the same WCAG 1.3.1 / 4.1.2 rationale.
   return (
     <button
       type="button"
       onClick={onSort}
       className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
       aria-label={t('sortByEngagement')}
-      {...(active ? { 'aria-sort': order === 'asc' ? 'ascending' : 'descending' } : {})}
     >
       {t('columns.engagement')}
       <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -558,6 +646,30 @@ export function MembersTable({
   const lastSelectedRef = useRef<number | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  // WCAG 1.3.1 / 4.1.2 — `aria-sort` belongs on the `role=columnheader`
+  // (the `<th>`/TableHead), not on the inner sort button. Derive the
+  // sorted column + direction once from the URL and stamp it on the
+  // matching header cell below. The two sortable columns (`member_number`,
+  // `engagement`) map 1:1 to the `?sort=` value via this table.
+  const activeSort = searchParams.get('sort');
+  const activeOrder = searchParams.get('order');
+
+  const ariaSortFor = (
+    columnId: string,
+  ): 'ascending' | 'descending' | undefined => {
+    const sortKeyByColumnId: Record<string, string> = {
+      member_number: 'memberNumber',
+      engagement: 'engagement',
+    };
+    const sortKey = sortKeyByColumnId[columnId];
+    if (!sortKey || activeSort !== sortKey) return undefined;
+    // Shared helper: explicit `?order=` when valid, else the server's per-column
+    // default — so the `<th>` aria-sort matches the header arrow + the server.
+    return effectiveOrder(sortKey, activeOrder) === 'asc'
+      ? 'ascending'
+      : 'descending';
+  };
+
   const handleRowSelectionChange = useCallback(
     (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
       const next = typeof updater === 'function' ? updater(rowSelection) : updater;
@@ -627,6 +739,16 @@ export function MembersTable({
           }),
         ]
       : []),
+    columnHelper.display({
+      id: 'member_number',
+      header: () => <MemberNumberSortHeader />,
+      cell: (info) => (
+        <span className="whitespace-nowrap tabular-nums text-sm">
+          {info.row.original.member_number_display}
+        </span>
+      ),
+      size: 90,
+    }),
     columnHelper.accessor('company_name', {
       header: () => t('columns.company'),
       cell: (info) => (
@@ -930,11 +1052,14 @@ export function MembersTable({
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
+              {headerGroup.headers.map((header) => {
+                const ariaSort = ariaSortFor(header.column.id);
+                return (
                 <TableHead
                   key={header.id}
                   scope="col"
                   className="text-xs uppercase tracking-wide text-muted-foreground"
+                  {...(ariaSort ? { 'aria-sort': ariaSort } : {})}
                 >
                     {header.isPlaceholder
                       ? null
@@ -943,7 +1068,8 @@ export function MembersTable({
                           header.getContext(),
                         )}
                   </TableHead>
-                ))}
+                );
+              })}
               </TableRow>
             ))}
           </TableHeader>
@@ -960,8 +1086,10 @@ export function MembersTable({
                 >
                   {row.getVisibleCells().map((cell, idx) => (
                     <TableCell key={cell.id} className="align-middle">
-                      {/* First non-select column is the company name link */}
-                      {!enableSelection && idx === 0 ? (
+                      {/* Company name column is the row link.
+                          No selection: member_number=0, company=1
+                          With selection: select=0, member_number=1, company=2 */}
+                      {!enableSelection && idx === 1 ? (
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
@@ -972,7 +1100,7 @@ export function MembersTable({
                             cell.getContext(),
                           )}
                         </Link>
-                      ) : enableSelection && idx === 1 ? (
+                      ) : enableSelection && idx === 2 ? (
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}

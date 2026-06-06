@@ -18,6 +18,12 @@ const validSnapshot: MemberIdentitySnapshot = {
   address: '99/1 Rama IV, Bangkok',
   primary_contact_name: 'E2E Alpha',
   primary_contact_email: 'e2e-member@swecham.test',
+  // 055-member-number — the snapshot interface now carries BOTH the bare
+  // member_number AND the formatted member_number_display. Default fixtures pin
+  // both null (event/non-member shape); cases that exercise a real member spread
+  // `{ ...validSnapshot, member_number: 42, member_number_display: 'SCCM-0042' }`.
+  member_number: null,
+  member_number_display: null,
 };
 
 describe('memberIdentitySnapshotSchema (architect-review 2026-04-24)', () => {
@@ -204,5 +210,221 @@ describe('makeMemberIdentitySnapshot', () => {
         expect(e.kind).toBe('invalid_member_identity_snapshot');
       }
     }
+  });
+});
+
+// ── 055-member-number: snapshot carries an optional member_number ──
+describe('member_number on memberIdentitySnapshotSchema (055-member-number)', () => {
+  it('parses and KEEPS a positive integer member_number (strip-regression — zod must declare the key)', () => {
+    // Both fields pinned together (the pairing-refine requires it) — the
+    // strip-regression intent is still on `member_number`.
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // If the field is on the interface but NOT the schema, z.object strips
+      // it → this is `undefined` and the assertion fails. This is the guard.
+      expect(result.data.member_number).toBe(42);
+    }
+  });
+
+  it('defaults a MISSING member_number key to null (historical snapshot)', () => {
+    // A pre-feature JSONB snapshot has no key at all → .optional().default(null)
+    // resolves to null (NOT undefined), satisfying exactOptionalPropertyTypes.
+    // Strip the key from the typed fixture to faithfully model a key-absent row.
+    const { member_number: _omit, ...noKey } = validSnapshot;
+    void _omit;
+    const result = memberIdentitySnapshotSchema.safeParse(noKey);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.member_number).toBeNull();
+    }
+  });
+
+  it('accepts an explicit null member_number (event / non-member buyer)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.member_number).toBeNull();
+  });
+
+  it('rejects a zero / negative member_number (positive constraint)', () => {
+    expect(
+      memberIdentitySnapshotSchema.safeParse({ ...validSnapshot, member_number: 0 }).success,
+    ).toBe(false);
+    expect(
+      memberIdentitySnapshotSchema.safeParse({ ...validSnapshot, member_number: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a fractional member_number (integer constraint)', () => {
+    expect(
+      memberIdentitySnapshotSchema.safeParse({ ...validSnapshot, member_number: 1.5 }).success,
+    ).toBe(false);
+  });
+});
+
+describe('makeMemberIdentitySnapshot member_number (055-member-number)', () => {
+  it('keeps member_number 42 through make() (strip-regression at creation)', () => {
+    // Pinned together with the display string (pairing-refine).
+    const snap = makeMemberIdentitySnapshot({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(snap.member_number).toBe(42);
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('defaults member_number to null when the caller omits it', () => {
+    // Key-absent input (pre-feature snapshot shape) → make() applies .default(null).
+    const { member_number: _omit, ...noKey } = validSnapshot;
+    void _omit;
+    const snap = makeMemberIdentitySnapshot(noKey as MemberIdentitySnapshot);
+    expect(snap.member_number).toBeNull();
+  });
+});
+
+// ── 055-member-number: snapshot carries the FORMATTED display string ──
+describe('member_number_display on memberIdentitySnapshotSchema (055-member-number)', () => {
+  it('parses and KEEPS a formatted display string (strip-regression — zod must declare the key)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // If the field is on the interface but NOT the schema, z.object strips
+      // it → this is `undefined` and the assertion fails. This is the guard.
+      expect(result.data.member_number_display).toBe('SCCM-0042');
+    }
+  });
+
+  it('defaults a MISSING member_number_display key to null (historical snapshot)', () => {
+    // A pre-feature JSONB snapshot has no key → .optional().default(null)
+    // resolves to null (NOT undefined), so the PDF template omits the line.
+    const { member_number_display: _omit, ...noKey } = validSnapshot;
+    void _omit;
+    const result = memberIdentitySnapshotSchema.safeParse(noKey);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.member_number_display).toBeNull();
+    }
+  });
+
+  it('accepts an explicit null member_number_display (event / non-member buyer)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number_display: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.member_number_display).toBeNull();
+  });
+
+  it('rejects an empty-string member_number_display (must be null when absent)', () => {
+    // Mirrors the tax_id posture: an empty string is ambiguous — callers pick
+    // null explicitly so the template can branch on "no number" unambiguously.
+    expect(
+      memberIdentitySnapshotSchema.safeParse({
+        ...validSnapshot,
+        member_number_display: '',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('makeMemberIdentitySnapshot member_number_display (055-member-number)', () => {
+  it('keeps the formatted display string through make() (strip-regression at creation)', () => {
+    const snap = makeMemberIdentitySnapshot({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(snap.member_number_display).toBe('SCCM-0042');
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('defaults member_number_display to null when the caller omits it', () => {
+    const { member_number_display: _omit, ...noKey } = validSnapshot;
+    void _omit;
+    const snap = makeMemberIdentitySnapshot(noKey as MemberIdentitySnapshot);
+    expect(snap.member_number_display).toBeNull();
+  });
+});
+
+// ── 055-member-number: member_number + member_number_display are PINNED ──
+// The two fields must agree on null-ness: both null (event/non-member buyer
+// or historical snapshot) OR both non-null (membership invoice). A half-
+// populated snapshot is a representable illegal state that would render an
+// inconsistent §86/4 tax document, so the schema rejects it loudly.
+describe('member_number / member_number_display pairing (055-member-number)', () => {
+  it('rejects a half-populated snapshot: member_number set, display null', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: null,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const pathHit = result.error.issues.some(
+        (i) => i.path[0] === 'member_number_display',
+      );
+      expect(pathHit).toBe(true);
+    }
+  });
+
+  it('rejects a half-populated snapshot: display set, member_number null', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: null,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a half-populated snapshot when one key is ABSENT (default null) and the other is set', () => {
+    // A snapshot that carries member_number but omits the display key entirely
+    // (the default supplies null) is still half-populated → reject.
+    const { member_number_display: _omit, ...noDisplay } = validSnapshot;
+    void _omit;
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...noDisplay,
+      member_number: 42,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts both-null (event / non-member / historical)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: null,
+      member_number_display: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts both-non-null (membership invoice)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      member_number: 42,
+      member_number_display: 'SCCM-0042',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('makeMemberIdentitySnapshot throws on a half-populated snapshot', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        member_number: 42,
+        member_number_display: null,
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
   });
 });

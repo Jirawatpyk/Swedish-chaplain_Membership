@@ -81,6 +81,7 @@ import { getInvoiceForPayment } from '@/modules/invoicing/application/use-cases/
 import { markPaidFromProcessor } from '@/modules/invoicing/application/use-cases/mark-paid-from-processor';
 import { issueCreditNoteFromRefund } from '@/modules/invoicing/application/use-cases/issue-credit-note-from-refund';
 import { makeGetInvoiceDeps } from '@/modules/invoicing/application/invoicing-deps';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -133,6 +134,7 @@ async function seedInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'Bridge Test Co',
       country: 'TH',
       planId,

@@ -33,6 +33,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('F8 lapsed-portal-scope — integration (T146)', () => {
   let tenantA: TestTenant;
@@ -73,6 +74,7 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
         {
           tenantId: tenantA.ctx.slug,
           memberId: lapsedMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Lapsed Co',
           country: 'TH',
           planId,
@@ -81,6 +83,7 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
         {
           tenantId: tenantA.ctx.slug,
           memberId: activeMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Active Co',
           country: 'TH',
           planId,
@@ -89,6 +92,7 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
         {
           tenantId: tenantA.ctx.slug,
           memberId: memberWithoutCycle,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'No-Cycle Co',
           country: 'TH',
           planId,

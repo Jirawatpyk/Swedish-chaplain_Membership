@@ -64,6 +64,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -197,6 +198,7 @@ describe('T136 concurrent initiatePayment for same invoice (R2-E2)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'T136 Co',
         country: 'TH',
         planId: 't136-plan',

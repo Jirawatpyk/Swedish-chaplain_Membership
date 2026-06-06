@@ -41,6 +41,9 @@ import { db, runInTenant } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+// 055-member-number — allocate the per-tenant human-readable number INSIDE the
+// seed tx (allocator under tenant RLS), mirroring the createMember path.
+import { drizzleMemberNumberAllocator } from '@/modules/members/infrastructure/repos/drizzle-member-number-allocator';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -130,9 +133,14 @@ async function upsertMember(
     if (existing.length > 0) return existing[0]!.memberId;
 
     const memberId = randomUUID();
+    const memberNumber = await drizzleMemberNumberAllocator.allocate(
+      tx,
+      ctx.slug,
+    );
     await tx.insert(members).values({
       tenantId: ctx.slug,
       memberId,
+      memberNumber,
       companyName,
       country: 'TH',
       planId: 'regular',
@@ -306,6 +314,10 @@ async function renderAndUploadPdf(
       address: '99/1 E2E Road, Bangkok',
       primary_contact_name: 'E2E Alpha',
       primary_contact_email: 'e2e-member@swecham.test',
+      // 055-member-number — snapshot now carries member_number + the formatted
+      // member_number_display (both null here = no Member No. line on the PDF).
+      member_number: null,
+      member_number_display: null,
     },
     lines: [
       {

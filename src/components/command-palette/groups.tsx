@@ -16,6 +16,7 @@
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { CommandGroup, CommandItem } from '@/components/ui/command';
+import { Badge } from '@/components/ui/badge';
 import type { PaletteSearchResponse } from './registry';
 
 type Results = PaletteSearchResponse['results'];
@@ -58,10 +59,22 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
           {results.members.map((m) => (
             <CommandItem
               key={`member-${m.member_id}`}
-              value={`member ${m.company_name} ${m.primary_contact_name ?? ''}`}
+              // 055-member-number — include the formatted number in the cmdk
+              // fuzzy-match string so typing `42`, `0042`, or `SCCM-0042`
+              // matches this row in addition to company/contact name.
+              value={`member ${m.company_name} ${m.member_number_display} ${m.primary_contact_name ?? ''}`}
               onSelect={() => handleNavigate(m.url)}
             >
               <span className="truncate">{m.company_name}</span>
+              {/* 055-member-number — show the formatted number so the admin
+                  can confirm which row is #42 when multiple names are similar. */}
+              <Badge
+                variant="outline"
+                className="ml-2 shrink-0 font-mono text-xs"
+                data-testid="palette-member-number-badge"
+              >
+                {m.member_number_display}
+              </Badge>
               {m.primary_contact_name ? (
                 <span className="ml-auto max-w-[12rem] truncate text-xs text-muted-foreground">
                   {m.primary_contact_name}

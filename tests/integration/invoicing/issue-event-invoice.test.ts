@@ -70,6 +70,7 @@ import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -211,6 +212,7 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Gamma Corp',
         country: 'TH',
         taxId: '1111111111111',
@@ -403,12 +405,19 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     const snap = row!.memberIdentitySnapshot as Record<string, unknown>;
     expect(snap.tax_id).toBe('9876543210123');
     // The buyer snapshot is the one PINNED AT DRAFT (issue did not re-resolve it).
+    // 055-member-number — the §105 event/non-member receipt path carries BOTH
+    // member-number fields as null (no F3 member): the bare integer via
+    // makeMemberIdentitySnapshot's zod `.default(null)`, and the formatted
+    // display string likewise null, so the PDF buyer block omits the Member No.
+    // line.
     expect(snap).toEqual({
       legal_name: 'Beta Imports Ltd',
       tax_id: '9876543210123',
       address: '50 Sukhumvit Road, Bangkok 10110',
       primary_contact_name: 'Jane Doe',
       primary_contact_email: 'jane@beta.example',
+      member_number: null,
+      member_number_display: null,
     });
 
     // Audit: non-member → NON-timeline `invoice_issued` (no member_id, has event_registration_id).

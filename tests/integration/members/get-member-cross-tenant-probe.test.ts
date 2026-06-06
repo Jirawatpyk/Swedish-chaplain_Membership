@@ -43,6 +43,7 @@ import {
   createTwoTestTenants,
   type TestTenant,
 } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -98,6 +99,7 @@ async function seedMemberInTenant(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `Probe Test Co ${memberId.slice(0, 8)}`,
       country: 'TH',
       planId,

@@ -29,6 +29,7 @@ import type { ClockPort, PlanDraftInput } from '@/modules/plans/application/port
 import { createActiveTestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 0,
@@ -90,6 +91,7 @@ describe('Integration: soft-delete with attached members (T125)', () => {
       await tx.insert(members).values({
         tenantId: tenantSlug,
         memberId: randomUUID(),
+        memberNumber: nextSeedMemberNumber(),
         companyName: `Test Co ${status}`,
         country: 'TH',
         planId,

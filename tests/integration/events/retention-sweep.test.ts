@@ -26,6 +26,7 @@ import {
   eventRegistrations,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { pseudonymiseStaleNonMemberPii } from '@/modules/events';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
@@ -87,6 +88,7 @@ describe('F6 Phase 10 T117 — pseudonymiseStaleNonMemberPii (FR-032)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Sweep Member Co',
         country: 'TH',
         planId,

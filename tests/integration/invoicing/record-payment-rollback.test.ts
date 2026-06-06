@@ -39,6 +39,7 @@ import { makeRecordPaymentDeps } from '@/modules/invoicing/application/invoicing
 import { receiptPdfRenderEnqueueAdapter } from '@/modules/invoicing/infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -101,6 +102,7 @@ async function seedIssuedInvoice(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'R3-S1 Co',
       country: 'TH',
       planId,

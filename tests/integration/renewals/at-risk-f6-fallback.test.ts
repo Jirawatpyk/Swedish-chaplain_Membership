@@ -48,6 +48,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NOW_MS = Date.now();
@@ -98,6 +99,7 @@ async function seedMember(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'F6 Co',
       country: 'TH',
       planId,

@@ -52,6 +52,7 @@ import { asMemberId, type MemberId } from '@/modules/members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const RUN_PERF = process.env.RUN_PERF === '1';
 const SEED_BROADCASTS = 200;
@@ -141,6 +142,7 @@ describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () 
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: memberUuid,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Perf Co',
         country: 'TH',
         planId,

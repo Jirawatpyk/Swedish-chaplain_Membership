@@ -11,6 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { buildMembersDeps } from '@/modules/members/members-deps';
+import { formatMemberNumber, resolveMemberNumberPrefix } from '@/modules/members';
 import { InvoicesSummaryCard } from './invoices/_components/invoices-summary-card';
 
 /**
@@ -36,12 +39,38 @@ export default async function MemberPortalHomePage() {
   const { user } = await requireSession('member');
   const t = await getTranslations('auth.memberPortal');
 
+  // 055-member-number — resolve the member number for the welcome badge.
+  // Uses the RLS-safe shared prefix resolver (never raw db).
+  const tenant = resolveTenantFromRequest();
+  const deps = buildMembersDeps(tenant);
+  const memberRes = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
+  // Only pay for the prefix lookup when the user is actually linked to a
+  // member — a member-role account with no linked member has no number to
+  // format, so the extra round-trip would be wasted.
+  const memberNumberLabel = memberRes.ok
+    ? formatMemberNumber(
+        await resolveMemberNumberPrefix(tenant, deps.memberSettings),
+        // `member.memberNumber` is already a branded MemberNumber (validated
+        // by rowToMember) — pass it straight through, no re-wrap needed.
+        memberRes.value.memberNumber,
+      )
+    : null;
+
   return (
     <DetailContainer>
       <PageHeader
         title={t('welcome', { name: user.displayName ?? user.email })}
         subtitle={t('intro')}
-        badge={<Badge variant="secondary">{t('versionBadge')}</Badge>}
+        badge={
+          <span className="flex items-center gap-2">
+            {memberNumberLabel ? (
+              <Badge variant="outline" className="font-mono">
+                {memberNumberLabel}
+              </Badge>
+            ) : null}
+            <Badge variant="secondary">{t('versionBadge')}</Badge>
+          </span>
+        }
       />
 
       {/* US7 AS4 — compact invoice summary (latest 3 + view all). */}

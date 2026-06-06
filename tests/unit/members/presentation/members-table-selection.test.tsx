@@ -93,6 +93,7 @@ vi.mock('next/navigation', () => ({
 const testRows: MembersTableRow[] = [
   {
     member_id: 'aaaa-1111-bbbb-2222',
+    member_number_display: 'SCCM-0042',
     company_name: 'Fogmaker AB',
     country: 'SE',
     plan_id: 'plan-1',
@@ -112,6 +113,7 @@ const testRows: MembersTableRow[] = [
   },
   {
     member_id: 'cccc-3333-dddd-4444',
+    member_number_display: 'SCCM-0043',
     company_name: 'IKEA Thailand',
     country: 'TH',
     plan_id: 'plan-2',

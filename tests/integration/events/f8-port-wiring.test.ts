@@ -34,6 +34,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { drizzleEventAttendeesAdapter } from '@/modules/events';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
@@ -67,6 +68,7 @@ describe('F6 Phase 10 T123 — drizzleEventAttendeesAdapter (F8 port wiring)', (
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'F8 Bridge Test Co',
           country: 'TH',
           planId,
@@ -319,6 +321,7 @@ describe('F6 Phase 10 T123 — drizzleEventAttendeesAdapter (F8 port wiring)', (
         await tx.insert(members).values({
           tenantId: tenantA.ctx.slug,
           memberId: memberInA,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'F8 Cross-Tenant Co',
           country: 'TH',
           planId,

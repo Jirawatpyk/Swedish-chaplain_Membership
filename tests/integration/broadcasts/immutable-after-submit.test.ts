@@ -58,6 +58,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const F7_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -111,6 +112,7 @@ describe('F7 immutable-after-submit DB trigger (R6 W-T1)', () => {
       tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'WT1 Member',
         country: 'TH',
         planId,

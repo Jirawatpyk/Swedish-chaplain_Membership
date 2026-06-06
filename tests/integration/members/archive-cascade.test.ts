@@ -26,6 +26,7 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -90,6 +91,7 @@ async function seedMember(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `Archive Co ${Date.now()}`,
       country: 'TH',
       planId,
@@ -267,6 +269,7 @@ describe('archive-member integration (T135, US7)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: `DedupeCo ${Date.now()}`,
         country: 'TH',
         planId,

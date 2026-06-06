@@ -66,6 +66,7 @@ import {
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // Period anchors — pin a future expires_at so the cycle is genuinely
 // in-flight (not lapsed by clock at test time).
@@ -98,6 +99,7 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Cascade Test Co',
         country: 'TH',
         planId,

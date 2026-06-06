@@ -58,6 +58,7 @@ import {
 } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { runImportCsv } from '@/lib/events-csv-import-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -197,6 +198,7 @@ describe('F6.1 R2-1 — state-change quota-debit savepoint atomicity (live Neon)
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'R2-1 Co',
         country: 'TH',
         planId: partnershipPlanId,
@@ -268,6 +270,7 @@ describe('F6.1 R2-1 — state-change quota-debit savepoint atomicity (live Neon)
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'R3-T7 Cultural Co',
         country: 'TH',
         planId: corporatePlanId,

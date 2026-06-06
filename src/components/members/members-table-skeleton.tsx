@@ -12,7 +12,11 @@
  * `withSelection` matches the table's `enableSelection` prop — when
  * the page-level `loading.tsx` runs before auth resolves we cannot
  * know the role, so the page passes the role-derived value through.
- * Default is 9 (no selection — manager + first-paint baseline) so a
+ *
+ * 055-member-number update: a new member-number column was added as
+ * the first data column (ADMIN-4). The real table now emits 11 (no
+ * selection, manager view) or 12 (with selection, admin view).
+ * Default is 11 (no selection — manager + first-paint baseline) so a
  * non-admin always sees CLS 0; admins see at-most a 1-column shift
  * (the narrow select column) on first paint.
  */
@@ -31,13 +35,13 @@ interface MembersTableSkeletonProps {
 export function MembersTableSkeleton({
   withSelection = false,
 }: MembersTableSkeletonProps = {}) {
-  const cols = withSelection ? 10 : 9;
+  const cols = withSelection ? 12 : 11;
   // Build a grid template where the select column (when present) is
   // narrow to match the real `size: 40` checkbox column — visual
   // alignment is closer to the live table than uniform fractions.
   const gridTemplate = withSelection
-    ? '40px repeat(9, minmax(0, 1fr))'
-    : 'repeat(9, minmax(0, 1fr))';
+    ? '40px repeat(11, minmax(0, 1fr))'
+    : 'repeat(11, minmax(0, 1fr))';
 
   return (
     <div className="flex flex-col gap-4" aria-hidden>

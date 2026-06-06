@@ -856,7 +856,7 @@
       "subtitle": "บริษัทสมาชิก + ผู้ติดต่อหลัก",
       "directory": {
         "managerReadOnlyBanner": "มุมมองอ่านอย่างเดียว — ผู้จัดการสามารถดูและค้นหาได้ แต่ไม่สามารถแก้ไข เก็บถาวร หรือดำเนินการแบบกลุ่มได้ ติดต่อผู้ดูแลระบบเพื่อทำการเปลี่ยนแปลง",
-        "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ชื่อผู้ติดต่อ หรืออีเมล",
+        "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
         "filters": {
@@ -882,7 +882,9 @@
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
         "sortByEngagement": "เรียงตามการมีส่วนร่วม",
+        "sortByMemberNumber": "เรียงตามหมายเลขสมาชิก",
         "columns": {
+          "memberNumber": "เลขสมาชิก",
           "company": "บริษัท",
           "country": "ประเทศ",
           "plan": "แพ็กเกจ",
@@ -971,6 +973,7 @@
           "contactStatusBadges": "สถานะผู้ติดต่อ"
         },
         "fields": {
+          "memberNumber": "หมายเลขสมาชิก",
           "memberId": "รหัสสมาชิก",
           "legalEntityType": "ประเภทนิติบุคคล",
           "country": "ประเทศ",
@@ -1001,6 +1004,7 @@
         },
         "copy": {
           "copyMemberId": "คัดลอกรหัสสมาชิก",
+          "copyMemberNumber": "คัดลอกหมายเลขสมาชิก",
           "copyEmail": "คัดลอกอีเมล",
           "copyTaxId": "คัดลอกเลขภาษี",
           "copied": "คัดลอกแล้ว"
@@ -4242,6 +4246,8 @@
         "memberIdHelp": "อ้างอิงรหัสนี้เมื่อติดต่อทีมสนับสนุนหอการค้า",
         "memberIdCopy": "คัดลอกรหัสสมาชิก",
         "memberIdCopied": "คัดลอกรหัสสมาชิกแล้ว",
+        "memberNumber": "หมายเลขสมาชิก",
+        "memberNumberCopy": "คัดลอกหมายเลขสมาชิก",
         "companyName": "ชื่อบริษัท",
         "legalEntityType": "ประเภทนิติบุคคล",
         "country": "ประเทศ",

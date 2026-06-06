@@ -86,6 +86,8 @@ function makeIssuedInvoice(): Invoice {
       address: '123 Road',
       primary_contact_name: 'John',
       primary_contact_email: 'john@acme.example',
+      member_number: null,
+      member_number_display: null,
     },
     paymentMethod: null,
     paymentReference: null,

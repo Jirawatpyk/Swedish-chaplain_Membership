@@ -38,6 +38,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import type { PaymentId } from '@/modules/payments/domain/payment';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -117,6 +118,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Refund Co',
         country: 'TH',
         planId: 'rfnd-plan',

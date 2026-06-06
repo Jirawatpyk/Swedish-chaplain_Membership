@@ -597,6 +597,23 @@ export const REDACT_PATHS = [
   '*.piiPseudonymSalt',
   'pii_pseudonym_salt',
   '*.pii_pseudonym_salt',
+  // --- F-member-number re-linkable PII (spec §9) ---
+  // The admin-list serialiser returns `memberNumber` + `companyName` /
+  // `member_number_display` in the same object. Together they are
+  // re-linkable personal data (number → legal entity identity) under
+  // PDPA Art. 6 "personal data" definition and GDPR Art. 4(1).
+  // Redact at depth 0/1/2 — mirroring `primary_contact_name` /
+  // `payment_reference` precedents above.
+  'member_number',
+  '*.member_number',
+  '*.*.member_number',
+  'memberNumber',
+  '*.memberNumber',
+  '*.*.memberNumber',
+  // Formatted display string (e.g. "SCCM-0042") — same re-linkable info.
+  'member_number_display',
+  '*.member_number_display',
+  '*.*.member_number_display',
 ];
 
 /**

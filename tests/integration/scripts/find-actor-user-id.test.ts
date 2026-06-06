@@ -70,6 +70,7 @@ describe('findActorUserId tenant-scoped JOIN (Phase 6 round-3 I3)', () => {
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,
         memberId: memberAId,
+        memberNumber: 1,
         companyName: 'Tenant A Holdings',
         country: 'TH',
         planId: 'regular',
@@ -108,6 +109,7 @@ describe('findActorUserId tenant-scoped JOIN (Phase 6 round-3 I3)', () => {
       await tx.insert(members).values({
         tenantId: tenantB.ctx.slug,
         memberId: memberBId,
+        memberNumber: 1,
         companyName: 'Tenant B Co',
         country: 'TH',
         planId: 'regular',
@@ -194,6 +196,9 @@ describe('findActorUserId tenant-scoped JOIN (Phase 6 round-3 I3)', () => {
       await tx.insert(members).values({
         tenantId: tenantB.ctx.slug,
         memberId: memberOrphanId,
+        // memberNumber 2 — tenant B already has member #1 above; the
+        // per-tenant UNIQUE index requires a distinct value.
+        memberNumber: 2,
         companyName: 'Orphan Tenant B Co',
         country: 'TH',
         planId: 'regular',

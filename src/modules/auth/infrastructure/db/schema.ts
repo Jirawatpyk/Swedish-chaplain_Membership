@@ -322,6 +322,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     (invoicing audit port) — the F4 enum↔retention parity test
   //     enforces it. ---
   'event_buyer_pii_redacted',
+  // --- 055-member-number (migration 0210) — F3 member lifecycle event.
+  //     Emitted by `createMember` after the human-readable member-number
+  //     allocation INSERT returns (F3 audit adapter, 5y retention).
+  //     Payload: { member_number }. NOT an F1 event — `AUDIT_EVENT_TYPES`
+  //     in domain/audit-event.ts stays at 32. See design doc §9. ---
+  'member_number_assigned',
 ]);
 
 /**

@@ -52,6 +52,8 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
       address: 'TH',
       primary_contact_name: 'John',
       primary_contact_email: 'john@acme.example',
+      member_number: null,
+      member_number_display: null,
     },
     ...overrides,
   };

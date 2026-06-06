@@ -34,6 +34,7 @@ import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/ada
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -109,6 +110,7 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'VAT Source Co',
         country: 'TH',
         planId,
@@ -162,6 +164,8 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
             address: 'Bangkok',
             primary_contact_name: 'n',
             primary_contact_email: 'test@example.com',
+            member_number: null,
+            member_number_display: null,
           },
         })),
         markRegistrationFeePaid: vi.fn(async () => {}),

@@ -59,6 +59,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const F7_ISOLATION_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -129,6 +130,7 @@ describe('F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)', () => {
         tx.insert(members).values({
           tenantId: t.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'F7 Test Member',
           country: 'TH',
           planId,

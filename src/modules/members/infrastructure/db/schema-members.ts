@@ -165,6 +165,13 @@ export const members = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+
+    // F-member-number — human-readable display identifier.
+    // .notNull() is safe now that migration 0209 has applied to live Neon:
+    // the column is backfilled (every row 1..N per tenant), SET NOT NULL,
+    // and carries a positive CHECK + per-tenant UNIQUE index.
+    // See design doc §6 and migration 0094 idempotency comment.
+    memberNumber: integer('member_number').notNull(),
   },
   (table) => [
     primaryKey({

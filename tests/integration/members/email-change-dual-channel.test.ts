@@ -41,6 +41,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 async function seed(args: { tenant: TestTenant; adminUserId: string }) {
   const linkedUser = await createActiveTestUser('member');
@@ -52,6 +53,7 @@ async function seed(args: { tenant: TestTenant; adminUserId: string }) {
     await tx.insert(members).values({
       tenantId: args.tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `Revert Co ${rand}`,
       country: 'TH',
       planId: 'test-plan',

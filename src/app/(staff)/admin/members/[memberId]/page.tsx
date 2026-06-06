@@ -28,7 +28,12 @@ import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { headers } from 'next/headers';
-import { getMember, archiveWindowStatus } from '@/modules/members';
+import {
+  getMember,
+  archiveWindowStatus,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+} from '@/modules/members';
 import type { MemberId, Contact } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -43,6 +48,7 @@ import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
+import { MemberNumberField } from '@/components/members/member-number-field';
 import { CountryDisplay } from '@/components/members/country-display';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
@@ -471,67 +477,81 @@ export default async function MemberDetailPage({
     (c) => !c.isPrimary && c.removedAt === null,
   );
 
-  // C6 round-10 ui-design-specialist — fetch pending portal
-  // invitations and project as a Map<contactId, invitation> so each
-  // ContactBlock can render its own inline badge. Failures downgrade
-  // to an empty Map (no badges shown) — never blocks the page render.
-  let pendingInvitationsByContactId = new Map<string, PendingInvitation>();
-  try {
-    const pendingRes = await deps.memberRepo.findPendingInvitationsForMember(
-      tenant,
-      member.memberId,
-    );
-    if (pendingRes.ok) {
-      // Round-11 review fix — compute `daysUntilExpiry` once per
-      // request rather than inside ContactBlock. Server component
-      // renders once per HTTP request so `Date.now()` returns a
-      // single stable value for the duration of this render pass —
-      // the react-hooks/purity rule's general concern (re-render
-      // instability) does not apply to RSC. Disable inline.
-      // eslint-disable-next-line react-hooks/purity -- RSC: single render per request
-      const nowMs = Date.now();
-      const dayMs = 1000 * 60 * 60 * 24;
-      pendingInvitationsByContactId = new Map(
-        pendingRes.value.map((row) => [
-          row.contactId,
-          {
-            expiresAt: row.expiresAt,
-            daysUntilExpiry: Math.max(
-              0,
-              Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
-            ),
-          },
-        ]),
-      );
-    } else {
-      logger.warn(
-        { event: 'pending_invitations_repo_err', err: pendingRes.error, memberId },
-        '[F3] pending-invitations repo returned err — falling back to empty map',
-      );
-    }
-  } catch (e) {
-    logger.error(
-      {
-        event: 'pending_invitations_threw',
-        err: e instanceof Error ? e.message : String(e),
-        memberId,
-      },
-      '[F3] pending-invitations fetch threw — falling back to empty map',
-    );
-  }
+  // These three reads are independent (all inputs are available after
+  // getMember) and each hits Singapore — running them sequentially cost 3
+  // serial RTTs. Promise.all collapses them to ~1 RTT. Each read keeps its
+  // own failure mode: pending-invitations downgrades to an empty Map
+  // (self-contained try/catch, never rejects), getPlan/getPrefix fall back
+  // to the slug / column DEFAULT respectively.
+  const [pendingInvitationsByContactId, planLookup, memberPrefix] =
+    await Promise.all([
+      // C6 round-10 ui-design-specialist — fetch pending portal invitations
+      // and project as a Map<contactId, invitation> so each ContactBlock can
+      // render its own inline badge. Failures downgrade to an empty Map (no
+      // badges shown) — never blocks the page render.
+      (async (): Promise<Map<string, PendingInvitation>> => {
+        try {
+          const pendingRes =
+            await deps.memberRepo.findPendingInvitationsForMember(
+              tenant,
+              member.memberId,
+            );
+          if (pendingRes.ok) {
+            // Round-11 review fix — compute `daysUntilExpiry` once per
+            // request rather than inside ContactBlock. Server component
+            // renders once per HTTP request so `Date.now()` returns a single
+            // stable value for the duration of this render pass — the
+            // react-hooks/purity rule's general concern (re-render
+            // instability) does not apply to RSC. Disable inline.
+            // eslint-disable-next-line react-hooks/purity -- RSC: single render per request
+            const nowMs = Date.now();
+            const dayMs = 1000 * 60 * 60 * 24;
+            return new Map(
+              pendingRes.value.map((row) => [
+                row.contactId,
+                {
+                  expiresAt: row.expiresAt,
+                  daysUntilExpiry: Math.max(
+                    0,
+                    Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
+                  ),
+                },
+              ]),
+            );
+          }
+          logger.warn(
+            { event: 'pending_invitations_repo_err', err: pendingRes.error, memberId },
+            '[F3] pending-invitations repo returned err — falling back to empty map',
+          );
+          return new Map<string, PendingInvitation>();
+        } catch (e) {
+          logger.error(
+            {
+              event: 'pending_invitations_threw',
+              err: e instanceof Error ? e.message : String(e),
+              memberId,
+            },
+            '[F3] pending-invitations fetch threw — falling back to empty map',
+          );
+          return new Map<string, PendingInvitation>();
+        }
+      })(),
+      // Resolve plan display name via PlanLookupPort (single-plan fetch, no
+      // listPlans). Falls back to the slug if the plan row is missing
+      // (defensive — shouldn't happen for an active member, but keeps the
+      // page resilient to data drift).
+      deps.plans.getPlan(tenant, member.planId, member.planYear),
+      // 055-member-number — resolve the per-tenant prefix via the RLS-safe
+      // shared helper (never raw db). Falls back to 'M' (the column DEFAULT
+      // for tenants provisioned before the settings seed — no visible error).
+      resolveMemberNumberPrefix(tenant, deps.memberSettings),
+    ]);
 
-  // Resolve plan display name via PlanLookupPort (single-plan fetch,
-  // no listPlans). Falls back to the slug if the plan row is missing
-  // (defensive — shouldn't happen for an active member, but keeps the
-  // page resilient to data drift).
-  const planLookup = await deps.plans.getPlan(
-    tenant,
-    member.planId,
-    member.planYear,
-  );
   const planDisplayName = planLookup.ok
     ? planLookup.value.planNameEn
     : member.planId;
+
+  const memberNumberDisplay = formatMemberNumber(memberPrefix, member.memberNumber);
 
   const windowStatus =
     member.status === 'archived' && member.archivedAt
@@ -614,6 +634,7 @@ export default async function MemberDetailPage({
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+              <MemberNumberField formatted={memberNumberDisplay} />
               <Field
                 label={t('fields.memberId')}
                 value={member.memberId}

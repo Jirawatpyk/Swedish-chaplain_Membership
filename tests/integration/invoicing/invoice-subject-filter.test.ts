@@ -34,6 +34,7 @@ import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -122,6 +123,7 @@ describe('invoice listPaged — subject filter (054 Task 13)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: MEMBER_ID,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Subject Filter Co',
         country: 'TH',
         planId: 'sf-plan',

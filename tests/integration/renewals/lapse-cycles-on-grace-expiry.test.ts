@@ -88,9 +88,11 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
     // Two members, each with one cycle past the grace boundary.
     await runInTenant(tenantA.ctx, (tx) =>
       tx.insert(members).values(
-        [memberA, memberB].map((mid) => ({
+        [memberA, memberB].map((mid, i) => ({
           tenantId: tenantA.ctx.slug,
           memberId: mid,
+          // 055-member-number — NOT NULL + per-tenant UNIQUE; map index → 1..N.
+          memberNumber: i + 1,
           companyName: `Lapse Co ${mid.slice(0, 6)}`,
           country: 'TH' as const,
           planId,

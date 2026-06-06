@@ -37,6 +37,7 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const PLAN_ID = 'test-inv-bounce-plan';
 
@@ -102,6 +103,7 @@ async function seedMemberWithContact(
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: `BounceCo ${Date.now()}-${memberId.slice(0, 6)}`,
       country: 'TH',
       planId: PLAN_ID,

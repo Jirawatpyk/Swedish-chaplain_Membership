@@ -50,6 +50,7 @@ import type { ContactId } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
+import { asMemberNumber, parseMemberNumberQuery } from '../../domain/value-objects/member-number';
 
 // --- Row → Domain ------------------------------------------------------------
 
@@ -57,6 +58,10 @@ function rowToMember(row: MemberRow): Member {
   return {
     tenantId: row.tenantId as TenantId,
     memberId: row.memberId as MemberId,
+    // 055-member-number — column is NOT NULL post-backfill (migration 0209).
+    // asMemberNumber throws InvalidMemberNumberError on a <= 0 / non-integer
+    // value: a loud backstop if a direct-INSERT bypass ever writes a bad row.
+    memberNumber: asMemberNumber(row.memberNumber),
     companyName: row.companyName,
     legalEntityType: row.legalEntityType,
     country: row.country as IsoCountryCode,
@@ -163,12 +168,16 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
   return conds;
 }
 
-/** Substring `q` across company_name + non-removed primary-contact name/email. */
+/** Substring `q` across company_name + non-removed primary-contact name/email,
+ *  plus an exact member-number match when `q` parses to a positive integer
+ *  (`SCCM-0042` / `0042` / `42`). The integer branch uses the
+ *  `members_tenant_member_number_uniq` index. */
 function directoryQFilter(q: string) {
   // Escape LIKE metacharacters (% _ \) so a literal `_`/`%` in the term matches
   // literally instead of acting as a wildcard (e.g. searching `john_doe` must
   // not match `johnXdoe`). Postgres ILIKE's default escape char is backslash.
   const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+  const num = parseMemberNumberQuery(q);
   return or(
     ilike(members.companyName, like),
     sql`EXISTS (SELECT 1 FROM contacts c
@@ -178,6 +187,7 @@ function directoryQFilter(q: string) {
                  AND (c.first_name ILIKE ${like}
                       OR c.last_name ILIKE ${like}
                       OR c.email ILIKE ${like}))`,
+    ...(num !== null ? [eq(members.memberNumber, num)] : []),
   )!;
 }
 
@@ -379,6 +389,8 @@ export const drizzleMemberRepo: MemberRepo = {
         .values({
           tenantId: draft.member.tenantId,
           memberId: draft.member.memberId,
+          // 055-member-number — allocated by createMember inside the same tx.
+          memberNumber: draft.member.memberNumber,
           companyName: draft.member.companyName,
           legalEntityType: draft.member.legalEntityType,
           country: draft.member.country,
@@ -646,6 +658,7 @@ export const drizzleMemberRepo: MemberRepo = {
         // FR-007a engagement sort: engagement = 100 − risk, so engagement DESC
         // (healthiest first, default) = risk ASC; engagement ASC = risk DESC.
         // Unscored (null risk) always sorts last; member_id breaks ties.
+        // memberNumber ASC NULLS LAST uses the unique index on (tenant_id, member_number).
         const orderBy =
           filter.sort === 'engagement'
             ? [
@@ -654,7 +667,14 @@ export const drizzleMemberRepo: MemberRepo = {
                   : sql`${members.riskScore} ASC NULLS LAST`,
                 asc(members.memberId),
               ]
-            : [sql`${members.lastActivityAt} DESC NULLS LAST`, asc(members.memberId)];
+            : filter.sort === 'memberNumber'
+              ? [
+                  filter.order === 'desc'
+                    ? sql`${members.memberNumber} DESC NULLS LAST`
+                    : sql`${members.memberNumber} ASC NULLS LAST`,
+                  asc(members.memberId),
+                ]
+              : [sql`${members.lastActivityAt} DESC NULLS LAST`, asc(members.memberId)];
 
         const memberRows = await tx
           .select({

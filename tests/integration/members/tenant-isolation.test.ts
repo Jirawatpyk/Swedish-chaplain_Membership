@@ -27,6 +27,7 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // --- Fixtures -----------------------------------------------------------------
 
@@ -49,6 +50,9 @@ function seedMembersFor(tenantSlug: string, prefix: string) {
   return [0, 1, 2].map((i) => ({
     tenantId: tenantSlug,
     memberId: randomUUID(),
+    // 055-member-number — NOT NULL + per-tenant UNIQUE; one seedMembersFor call
+    // per tenant, so the 0-based index `i + 1` is collision-free 1..3.
+    memberNumber: i + 1,
     companyName: `${prefix} Company ${i}`,
     country: 'TH',
     planId: `${prefix}-plan-0`,
@@ -258,6 +262,7 @@ describe('F3 Tenant isolation — REVIEW GATE BLOCKER (T012)', () => {
         tx.insert(members).values({
           tenantId: tenantB.ctx.slug, // MISMATCHED
           memberId: randomUUID(),
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Forged',
           country: 'TH',
           planId: 'beta-plan-0',

@@ -39,6 +39,7 @@ import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const F7_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -117,6 +118,7 @@ describe('F7 public unsubscribe integration (T138)', () => {
       tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'T138 Member',
         country: 'TH',
         planId,
@@ -386,6 +388,7 @@ describe('F7 public unsubscribe integration (T138)', () => {
         tx.insert(members).values({
           tenantId: tenantB.ctx.slug,
           memberId: memberIdB,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'T138-G2 Member B',
           country: 'TH',
           planId: planIdB,

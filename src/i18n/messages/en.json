@@ -856,7 +856,7 @@
       "subtitle": "Member companies + primary contacts",
       "directory": {
         "managerReadOnlyBanner": "Read-only view — managers can browse and search but cannot edit, archive, or bulk-action members. Contact an admin to make changes.",
-        "searchPlaceholder": "Search by company, contact name, or email",
+        "searchPlaceholder": "Search by company, contact name, email, or member number",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
         "filters": {
@@ -882,7 +882,9 @@
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
         "sortByEngagement": "Sort by engagement",
+        "sortByMemberNumber": "Sort by member number",
         "columns": {
+          "memberNumber": "Member No.",
           "company": "Company",
           "country": "Country",
           "plan": "Plan",
@@ -971,6 +973,7 @@
           "contactStatusBadges": "Contact status"
         },
         "fields": {
+          "memberNumber": "Member Number",
           "memberId": "Member ID",
           "legalEntityType": "Legal entity type",
           "country": "Country",
@@ -1001,6 +1004,7 @@
         },
         "copy": {
           "copyMemberId": "Copy member ID",
+          "copyMemberNumber": "Copy member number",
           "copyEmail": "Copy email",
           "copyTaxId": "Copy tax ID",
           "copied": "Copied!"
@@ -4242,6 +4246,8 @@
         "memberIdHelp": "Reference this ID when contacting chamber support.",
         "memberIdCopy": "Copy member ID",
         "memberIdCopied": "Member ID copied",
+        "memberNumber": "Member Number",
+        "memberNumberCopy": "Copy member number",
         "companyName": "Company Name",
         "legalEntityType": "Legal Entity Type",
         "country": "Country",

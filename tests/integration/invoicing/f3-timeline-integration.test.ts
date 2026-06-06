@@ -36,6 +36,7 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -143,6 +144,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'US7 Co',
         country: 'TH',
         planId: 'us7-plan',

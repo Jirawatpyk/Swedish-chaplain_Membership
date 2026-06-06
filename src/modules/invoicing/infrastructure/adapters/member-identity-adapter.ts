@@ -19,6 +19,7 @@ import type {
   MemberIdentityView,
 } from '../../application/ports/member-identity-port';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { asMemberNumber, formatMemberNumber } from '@/modules/members';
 import type { TenantTx } from '@/lib/db';
 import { makeMemberIdentitySnapshot } from '../../domain/value-objects/member-identity-snapshot';
 import { composeBuyerAddress } from './compose-buyer-address';
@@ -46,6 +47,13 @@ export const memberIdentityAdapter: MemberIdentityPort = {
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
+                   m.member_number,
+                   COALESCE(
+                     (SELECT s.member_number_prefix
+                        FROM tenant_member_settings s
+                       WHERE s.tenant_id = m.tenant_id),
+                     'M'
+                   ) AS member_number_prefix,
                    mp.member_type_scope
               FROM members m
               LEFT JOIN membership_plans mp
@@ -59,6 +67,13 @@ export const memberIdentityAdapter: MemberIdentityPort = {
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
+                   m.member_number,
+                   COALESCE(
+                     (SELECT s.member_number_prefix
+                        FROM tenant_member_settings s
+                       WHERE s.tenant_id = m.tenant_id),
+                     'M'
+                   ) AS member_number_prefix,
                    mp.member_type_scope
               FROM members m
               LEFT JOIN membership_plans mp
@@ -81,6 +96,14 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       archived_at: Date | null;
       registration_date: Date | string;
       registration_fee_paid: boolean;
+      member_number: number | null;
+      // 055-member-number — the tenant's display prefix, resolved RLS-safely in
+      // the SELECT (sub-select on tenant_member_settings under the per-tenant
+      // `tx`, so it only ever reads the current tenant's row). COALESCE → 'M' is
+      // the table-default fallback for a tenant with no explicit settings row.
+      // The two `COALESCE(..., 'M')` SQL literals above are the SQL mirror of
+      // members-domain `DEFAULT_MEMBER_NUMBER_PREFIX` — keep them in sync.
+      member_number_prefix: string;
       member_type_scope: 'company' | 'individual' | 'both' | null;
     }>;
 
@@ -104,6 +127,21 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         ? m.registration_date.toISOString().slice(0, 10)
         : String(m.registration_date).slice(0, 10);
 
+    // 055-member-number — compute the FORMATTED display string at issue time so
+    // it freezes onto the snapshot (FR-038 immutability). `formatMemberNumber`
+    // lives in the members public barrel (Domain VO). The `!== null` guard keeps
+    // the (pre-backfill / non-member) no-number path at null. When a number IS
+    // present, `asMemberNumber` throws on a corrupt (<=0 / non-int) value — and
+    // because this runs INSIDE the issue-invoice / credit-note tx, that throw
+    // ABORTS tax-doc issuance. This is a DELIBERATE issue-blocking fail-loud: we
+    // must NOT issue a §86/4 tax invoice off a corrupt buyer identity. The DB
+    // `CHECK (member_number > 0)` makes a corrupt live value near-unreachable, so
+    // this is a backstop, not an expected branch.
+    const memberNumberDisplay =
+      m.member_number !== null
+        ? formatMemberNumber(m.member_number_prefix, asMemberNumber(m.member_number))
+        : null;
+
     return {
       memberId,
       isActive: m.status === 'active',
@@ -126,6 +164,13 @@ export const memberIdentityAdapter: MemberIdentityPort = {
           ? `${primaryContact.firstName} ${primaryContact.lastName}`
           : '',
         primary_contact_email: primaryContact?.email ?? '',
+        // 055-member-number — surface the buyer's member number on the snapshot
+        // pinned at issue (FR-038). A live member always has a non-null number
+        // post-backfill; the `?? null` is defensive only (pre-backfill window).
+        member_number: m.member_number ?? null,
+        // The FORMATTED display string the PDF renders (`SCCM-0042`) — frozen
+        // here so a later prefix/member change never mutates an issued document.
+        member_number_display: memberNumberDisplay,
       }),
     };
   },

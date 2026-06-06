@@ -68,12 +68,22 @@ const countMembers = (slug: string): Promise<number> =>
     tx.select({ id: members.memberId }).from(members).where(eq(members.tenantId, slug)),
   ).then((r) => r.length);
 
+// 055-member-number — these raw member seeds share their tenant with the
+// `commitMembers` allocator (which starts at 1 and increments). Use a HIGH,
+// monotonic base so seeded `member_number`s never collide with allocator
+// output (low 1..N) nor with each other on the per-tenant UNIQUE index.
+let seedMemberNumberSeq = 900_000;
+function nextSeedMemberNumber(): number {
+  seedMemberNumberSeq += 1;
+  return seedMemberNumberSeq;
+}
+
 // Seed one existing member that owns `email` as its ACTIVE primary contact. Returns its id.
 async function seedActiveContact(t: TestTenant, email: string): Promise<string> {
   const memberId = randomUUID();
   await runInTenant(t.ctx, async (tx) => {
     await tx.insert(members).values({
-      tenantId: t.ctx.slug, memberId, companyName: `Seed ${randomUUID().slice(0, 6)}`,
+      tenantId: t.ctx.slug, memberId, memberNumber: nextSeedMemberNumber(), companyName: `Seed ${randomUUID().slice(0, 6)}`,
       country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01',
       registrationFeePaid: true, status: 'active',
     });
@@ -175,7 +185,7 @@ describe('commitMembers — integration (spec § 5)', () => {
     const seededMemberId = randomUUID();
     await runInTenant(tenantA.ctx, async (tx) => {
       await tx.insert(members).values({
-        tenantId: tenantA.ctx.slug, memberId: seededMemberId, companyName: `Soft Co ${randomUUID().slice(0, 6)}`,
+        tenantId: tenantA.ctx.slug, memberId: seededMemberId, memberNumber: nextSeedMemberNumber(), companyName: `Soft Co ${randomUUID().slice(0, 6)}`,
         country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01',
         registrationFeePaid: true, status: 'active',
       });
@@ -200,7 +210,7 @@ describe('commitMembers — integration (spec § 5)', () => {
     await runInTenant(tenantC.ctx, async (tx) => {
       const oldMember = randomUUID();
       await tx.insert(members).values({
-        tenantId: tenantC.ctx.slug, memberId: oldMember, companyName: `Old ${randomUUID().slice(0, 6)}`,
+        tenantId: tenantC.ctx.slug, memberId: oldMember, memberNumber: nextSeedMemberNumber(), companyName: `Old ${randomUUID().slice(0, 6)}`,
         country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01', registrationFeePaid: true, status: 'active',
       });
       await tx.insert(contacts).values({

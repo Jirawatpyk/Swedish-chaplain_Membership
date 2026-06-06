@@ -49,6 +49,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { ingestWebhookAttendee } from '@/modules/events';
 import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
@@ -127,6 +128,7 @@ describe('T083 — F6 quota concurrency (SC-004 zero-error promise)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: COMPANY_NAME,
         country: 'TH',
         planId: partnershipPlanId,

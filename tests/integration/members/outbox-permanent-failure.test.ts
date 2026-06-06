@@ -42,6 +42,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
   let tenant: TestTenant;
@@ -111,6 +112,7 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: `Outbox Co ${rand}`,
         country: 'TH',
         planId: 'test-plan',

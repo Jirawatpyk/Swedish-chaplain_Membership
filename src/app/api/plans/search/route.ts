@@ -14,7 +14,11 @@ import { errKind } from '@/lib/log-id';
 import { searchPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { LocaleKey } from '@/modules/plans';
-import { directorySearch } from '@/modules/members';
+import {
+  directorySearch,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+} from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   listInvoicesPaged,
@@ -93,13 +97,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     let members: readonly PaletteMemberEntity[] = [];
     try {
       const membersDeps = buildMembersDeps(tenant);
-      const membersResult = await directorySearch(
-        { tenant, memberRepo: membersDeps.memberRepo },
-        {
-          q: parsed.data.q,
-          limit: parsed.data.limit ?? 10,
-        },
-      );
+      const [membersResult, memberPrefix] = await Promise.all([
+        directorySearch(
+          { tenant, memberRepo: membersDeps.memberRepo },
+          {
+            q: parsed.data.q,
+            limit: parsed.data.limit ?? 10,
+          },
+        ),
+        // 055-member-number — resolve the per-tenant display prefix ONCE via
+        // the RLS-safe shared helper (mirrors the admin members-list page).
+        // Falls back to the DEFAULT 'M' from the settings repo when no row exists.
+        resolveMemberNumberPrefix(tenant, membersDeps.memberSettings),
+      ]);
       if (membersResult.ok) {
         members = membersResult.value.items.map((row) => ({
           member_id: row.member.memberId,
@@ -109,6 +119,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             : null,
           status: row.member.status,
           url: `/admin/members/${row.member.memberId}`,
+          // 055-member-number — format the display number (e.g. `SCCM-0042`)
+          // using the prefix resolved above. `row.member.memberNumber` is
+          // already a branded MemberNumber (validated by rowToMember) — pass
+          // it straight through, no re-wrap needed.
+          member_number_display: formatMemberNumber(
+            memberPrefix,
+            row.member.memberNumber,
+          ),
         }));
       }
     } catch (e) {

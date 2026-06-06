@@ -17,7 +17,11 @@ import { CountryDisplay } from '@/components/members/country-display';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { getMember } from '@/modules/members';
+import {
+  getMember,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+} from '@/modules/members';
 import { env } from '@/lib/env';
 
 /**
@@ -88,11 +92,18 @@ export default async function PortalProfilePage() {
   const isPrimary = ownContact?.isPrimary === true;
   const format = await getFormatter();
 
-  // B24 — resolve the plan/tier display name via the existing PlanLookupPort
-  // dep (mirrors admin/members/[memberId]/page.tsx). Falls back to the plan
-  // slug if the row is missing/inactive (defensive against data drift).
-  const planLookup = await deps.plans.getPlan(tenant, m.planId, m.planYear);
+  // B24 — resolve plan display name + member-number prefix in parallel:
+  // both are independent reads (plan lookup vs. member-settings row).
+  // Mirrors the identical Promise.all on admin/members/[memberId]/page.tsx.
+  const [planLookup, memberPrefix] = await Promise.all([
+    deps.plans.getPlan(tenant, m.planId, m.planYear),
+    resolveMemberNumberPrefix(tenant, deps.memberSettings),
+  ]);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
+
+  // 055-member-number — `m.memberNumber` is already a branded MemberNumber
+  // (validated by rowToMember) — no re-wrap needed.
+  const memberNumberFormatted = formatMemberNumber(memberPrefix, m.memberNumber);
 
   return (
     <DetailContainer>
@@ -114,6 +125,23 @@ export default async function PortalProfilePage() {
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* 055-member-number — human-readable member number displayed ABOVE
+                the UUID so callers can quote it to support without needing a
+                copy of the raw UUID (design §8.3 portal affordance). */}
+            <div className="lg:col-span-3">
+              <dt className="text-caption text-muted-foreground">
+                {t('fields.memberNumber')}
+              </dt>
+              <dd className="text-body flex items-center gap-2">
+                <span className="font-mono text-sm font-medium">
+                  {memberNumberFormatted}
+                </span>
+                <CopyButton
+                  value={memberNumberFormatted}
+                  label={t('fields.memberNumberCopy')}
+                />
+              </dd>
+            </div>
             {/* I6 round-10 ui-design-specialist — surface member_id +
                 copy-to-clipboard. Support staff first question when a
                 member calls is "what's your member ID?"; the admin

@@ -78,6 +78,7 @@ const routeParams = Promise.resolve({ memberId: MEMBER_ID });
 const MEMBER_FIXTURE = {
   member: {
     memberId: MEMBER_ID,
+    memberNumber: 42,
     tenantId: 'test-swecham',
     companyName: 'Fogmaker AB',
     legalEntityType: 'limited',
@@ -136,6 +137,9 @@ describe('contract: GET /api/members/[memberId]', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.member_id).toBe(MEMBER_ID);
+    // Human-readable display id — MUST be present in the admin payload
+    // (design §8.3: serializer divergence already bit tax_id once).
+    expect(body.member_number).toBe(42);
     expect(body.contacts).toHaveLength(1);
     expect(body.contacts[0].first_name).toBe('Anna');
   });

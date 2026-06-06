@@ -36,6 +36,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // Use a corporate-tier benefit matrix on the underlying membership_plans
 // row — the partnership-bundles-corporate CHECK constraint requires
@@ -71,6 +72,7 @@ async function seedPartnership(
     await tx.insert(members).values({
       tenantId: tenantA.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'Partnership Co',
       country: 'TH',
       planId,

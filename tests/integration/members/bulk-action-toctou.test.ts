@@ -26,6 +26,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -96,6 +97,7 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
       tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: `TOCTOU ${Date.now()}`,
         country: 'TH',
         planId,

@@ -269,6 +269,11 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       completeness: { truncatedCategories },
       profile: {
         memberId: member.memberId,
+        // 055-member-number — the subject's own human-readable display id.
+        // GDPR Art. 15/20 transparency: the member is entitled to see the
+        // number we assigned them. Stored as a plain integer (no brand
+        // needed here; JSON-serialises as-is, matching portal/admin shape).
+        member_number: member.memberNumber,
         companyName: member.companyName,
         legalEntityType: member.legalEntityType,
         country: member.country,

@@ -35,6 +35,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NOW_MS = Date.now();
@@ -103,6 +104,7 @@ describe('F8 plan_id_at_cycle_start TEXT schema (migration 0113)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Text Round-trip Co',
         country: 'TH',
         planId,
@@ -169,6 +171,7 @@ describe('F8 plan_id_at_cycle_start TEXT schema (migration 0113)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Legacy UUID Co',
         country: 'TH',
         planId,

@@ -40,6 +40,7 @@ async function main() {
       companyName: `Perf Member Co ${i}`,
       country: 'TH',
       status: 'active',
+      memberNumber: i + 1,
     }));
     await tx.insert(members).values(memberRows as unknown as Array<typeof members.$inferInsert>);
 

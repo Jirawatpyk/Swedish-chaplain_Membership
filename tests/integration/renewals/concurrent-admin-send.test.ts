@@ -60,6 +60,7 @@ import {
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const NOW_ISO = '2026-06-15T08:00:00.000Z';
 const EXPIRES_AT = new Date('2026-07-15T00:00:00.000Z');
@@ -91,6 +92,7 @@ describe('F8 concurrent admin send-reminder 409 metadata — Phase 9 / T258e', (
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'T258e Race Co',
         country: 'TH',
         planId,

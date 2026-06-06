@@ -101,6 +101,9 @@ describe.skipIf(!RUN_PERF)('dashboard perf @ 5k members (T098, RUN_PERF=1)', () 
           return {
             tenantId: tenant.ctx.slug,
             memberId: randomUUID(),
+            // 055-member-number — NOT NULL + per-tenant UNIQUE; `i + j` is the
+            // 0-based global member index, so `+ 1` is collision-free 1..N.
+            memberNumber: i + j + 1,
             companyName: `Perf Co ${i + j}`,
             country: 'TH',
             planId,

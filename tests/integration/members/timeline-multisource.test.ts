@@ -38,6 +38,7 @@ import {
   seedMemberAndRenewalCycle,
   type SeededRenewalCycle,
 } from '../helpers/seed-renewal-cycle';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const PLAN_ID = 'regular'; // seedMemberAndRenewalCycle default plan id.
 
@@ -329,6 +330,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId: bareMemberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Bare Co',
         country: 'TH',
         planId: PLAN_ID,
@@ -375,6 +377,7 @@ describe('F9 US3 — keyset tiebreak on identical occurred_at (T052, live Neon)'
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Tiebreak Co',
         country: 'TH',
         planId: PLAN_ID,
@@ -553,6 +556,7 @@ describe('F9 US3 — actorKind classifies member-linked audit actors (code-revie
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Self-Service Co',
         country: 'TH',
         planId: PLAN_ID,

@@ -30,6 +30,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { ingestWebhookAttendee } from '@/modules/events';
 import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
@@ -66,6 +67,7 @@ describe('F6 F6.1-B closure — 5/5 match-type webhook coverage (FR-027)', () =>
         {
           tenantId: tenant.ctx.slug,
           memberId: contactMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Contact Co',
           country: 'TH',
           planId,
@@ -75,6 +77,7 @@ describe('F6 F6.1-B closure — 5/5 match-type webhook coverage (FR-027)', () =>
         {
           tenantId: tenant.ctx.slug,
           memberId: domainMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Domain Co',
           country: 'TH',
           planId,
@@ -84,6 +87,7 @@ describe('F6 F6.1-B closure — 5/5 match-type webhook coverage (FR-027)', () =>
         {
           tenantId: tenant.ctx.slug,
           memberId: fuzzyMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Fuzzy Co',
           country: 'TH',
           planId,

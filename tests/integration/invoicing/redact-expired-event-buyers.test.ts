@@ -49,6 +49,7 @@ import { POST as redactCron } from '@/app/api/cron/invoicing/redact-expired-even
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -204,6 +205,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Member Co',
         country: 'TH',
         taxId: '1111111111111',
@@ -1324,6 +1326,7 @@ describe('invoices_subject_fields_ck — tightened to forbid illegal states (FIX
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'CK Member Co',
         country: 'TH',
         taxId: '2222222222222',

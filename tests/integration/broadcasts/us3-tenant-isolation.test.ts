@@ -28,6 +28,7 @@ import { asBroadcastId } from '@/modules/broadcasts';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -104,6 +105,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
         await tx.insert(members).values({
           tenantId: t.ctx.slug,
           memberId: memberUuid,
+          memberNumber: nextSeedMemberNumber(),
           companyName: `Iso Co ${label}`,
           country: 'TH',
           planId,

@@ -52,9 +52,10 @@ export type DirectoryOffsetFilter = {
    * Sort column (FR-007a). `engagement` orders by the F8 risk score inverted
    * (engagement = 100 − risk): `desc` (default) = healthiest first; `asc` =
    * least-engaged first. Unscored members (null risk) always sort last.
-   * Omitted → default recency order (`last_activity_at DESC`).
+   * `memberNumber` orders by the human-readable member number (ASC NULLS LAST;
+   * `desc` reverses). Omitted → default recency order (`last_activity_at DESC`).
    */
-  readonly sort?: 'engagement';
+  readonly sort?: 'engagement' | 'memberNumber';
   readonly order?: 'asc' | 'desc';
   readonly limit: number;
   readonly offset: number;

@@ -30,6 +30,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { ingestWebhookAttendee } from '@/modules/events';
@@ -102,6 +103,7 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'Archive Test Co',
           country: 'TH',
           planId: partnershipPlanId,
@@ -393,6 +395,7 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
         await tx.insert(members).values({
           tenantId: tenantB.ctx.slug,
           memberId: tenantBMemberId,
+          memberNumber: nextSeedMemberNumber(),
           companyName: 'TenantB Co',
           country: 'TH',
           planId: tenantBPlanId,

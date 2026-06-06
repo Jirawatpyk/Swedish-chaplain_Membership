@@ -42,6 +42,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -155,6 +156,7 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Race Co',
         country: 'TH',
         // S1-P1-16: company member needs a valid TH tax_id to be issued a tax
@@ -249,6 +251,7 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId: opts.memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'Gate Co',
       country: 'TH',
       taxId: opts.taxId,

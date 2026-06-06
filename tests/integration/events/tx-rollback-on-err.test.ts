@@ -39,6 +39,7 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { ingestWebhookAttendee, archiveEvent, toggleEventCategory } from '@/modules/events';
 import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
@@ -129,6 +130,7 @@ describe('CRIT-R2-2 (wave-6) — tx rollback evidence for archive + toggle', () 
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Rollback Test Co',
         country: 'TH',
         planId: partnershipPlanId,

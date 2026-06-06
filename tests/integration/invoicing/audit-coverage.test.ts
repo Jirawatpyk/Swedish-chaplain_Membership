@@ -56,6 +56,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { F4AuditEventType } from '@/modules/invoicing/application/ports/audit-port';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // MVP-reachable subset. 17 of 18 F4AuditEventType values probed at DB
 // level below (`invoice_pdf_regenerated` is absent from this array +
@@ -159,6 +160,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'Audit Co',
         country: 'TH',
         planId: 'audit-plan',
@@ -411,6 +413,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
             address: 'Bangkok',
             primary_contact_name: 'n',
             primary_contact_email: 'test@example.com',
+            member_number: null,
+            member_number_display: null,
           },
         })),
         markRegistrationFeePaid: vi.fn(async () => {}),

@@ -16,6 +16,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { unsafeBrandTenantSlug, type TenantSlug } from '@/modules/tenants';
 import type { IsoCountryCode } from './value-objects/iso-country-code';
+import type { MemberNumber } from './value-objects/member-number';
 import type { TaxId } from './value-objects/tax-id';
 import { isUuid } from './value-objects/uuid';
 
@@ -140,6 +141,7 @@ export function memberLifecycle(
 export type Member = {
   readonly tenantId: TenantId;
   readonly memberId: MemberId;
+  readonly memberNumber: MemberNumber;
   readonly companyName: string;
   readonly legalEntityType: string | null;
   readonly country: IsoCountryCode;

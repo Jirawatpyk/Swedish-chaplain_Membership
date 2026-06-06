@@ -48,6 +48,7 @@ import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoi
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { nextSeedMemberNumber } from '../../integration/helpers/seed-member-number';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -165,6 +166,7 @@ export async function createThrowawayTenant(
       await tx.insert(members).values({
         tenantId: slug,
         memberId,
+        memberNumber: nextSeedMemberNumber(),
         companyName: 'E2E Throwaway Co',
         country: 'TH',
         // 054-event-fee-invoices (Task 9) — every MEMBERSHIP buyer must carry a

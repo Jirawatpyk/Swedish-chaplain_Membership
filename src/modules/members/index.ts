@@ -89,6 +89,15 @@ export {
 } from './domain/value-objects/tax-id';
 
 export {
+  asMemberNumber,
+  formatMemberNumber,
+  parseMemberNumberQuery,
+  InvalidMemberNumberError,
+  DEFAULT_MEMBER_NUMBER_PREFIX,
+  type MemberNumber,
+} from './domain/value-objects/member-number';
+
+export {
   asUserId,
   type UserId,
   type UserIdError,
@@ -444,3 +453,16 @@ export {
   type ResendBouncedInviteOutput,
   type ResendBouncedInviteError,
 } from './application/use-cases/resend-bounced-invite';
+
+// --- 055-member-number — allocator + settings (ALLOC group) -----------------
+
+export { drizzleMemberNumberAllocator } from './infrastructure/repos/drizzle-member-number-allocator';
+export type { MemberNumberAllocatorPort } from './application/ports/member-number-allocator-port';
+
+export { drizzleMemberSettingsRepo } from './infrastructure/repos/drizzle-member-settings-repo';
+export type { MemberSettingsReaderPort } from './application/ports/member-settings-port';
+
+// Shared display-time prefix resolver — wraps the read in `runInTenant`
+// (RLS) so every presentation surface formatting a member number reuses
+// one RLS-safe helper instead of hand-copying the incantation.
+export { resolveMemberNumberPrefix } from './application/use-cases/resolve-member-number-prefix';

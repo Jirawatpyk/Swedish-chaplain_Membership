@@ -19,7 +19,11 @@ import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { directorySearchWithCount } from '@/modules/members';
+import {
+  directorySearchWithCount,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+} from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -73,6 +77,25 @@ const VALID_RISK_BANDS = new Set([
 
 const PAGE_SIZE = 50;
 
+/**
+ * Parse the `?sort=` URL param into the typed sort column the directory
+ * use-case understands. Two server-side sortable columns exist today:
+ *   - `engagement` (F9 FR-007a) — orders by the inverted F8 risk score.
+ *   - `memberNumber` (055-member-number) — orders by the human-readable
+ *     member number (ASC NULLS LAST; `desc` reverses).
+ * Any other value (or absent) falls back to the default recency order.
+ *
+ * Exported + pure so the allow-list is unit-testable in isolation: this
+ * boundary previously dropped `memberNumber`, leaving the "Member No."
+ * column header a dead control (the arrow/aria-sort toggled but the rows
+ * never re-ordered because the value never reached the search).
+ */
+export function parseDirectorySort(
+  raw: string | undefined,
+): 'engagement' | 'memberNumber' | undefined {
+  return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
+}
+
 export default async function MembersListPage({
   searchParams,
 }: {
@@ -112,7 +135,10 @@ export default async function MembersListPage({
   );
 }
 
-async function MembersDirectoryBody({
+// Exported for the page-boundary wiring test (proves `?sort=memberNumber`
+// is forwarded to `directorySearchWithCount`). Not part of the route's
+// public contract — the default export is the only rendered entry point.
+export async function MembersDirectoryBody({
   query,
   isAdmin,
 }: {
@@ -153,8 +179,11 @@ async function MembersDirectoryBody({
     query.show_archived === '1' ||
     riskBand !== undefined;
 
-  // F9 FR-007a — engagement sort (only valid sort column today).
-  const sort = query.sort === 'engagement' ? ('engagement' as const) : undefined;
+  // Sort allow-list: F9 FR-007a engagement column + 055-member-number's
+  // "Member No." column (see parseDirectorySort). Both are server-side sorts
+  // handled by searchDirectoryWithCount; any other value falls back to the
+  // default recency order.
+  const sort = parseDirectorySort(query.sort);
   const order =
     query.order === 'asc' ? ('asc' as const) : query.order === 'desc' ? ('desc' as const) : undefined;
 
@@ -222,6 +251,15 @@ async function MembersDirectoryBody({
     );
   }
 
+  // 055-member-number — resolve the per-tenant prefix ONCE (RLS-safe shared
+  // helper) and format every row's display number (`SCCM-0042`) server-side,
+  // mirroring the admin detail page. Falls back to the column DEFAULT 'M'
+  // when no settings row exists (no visible error).
+  const memberPrefix = await resolveMemberNumberPrefix(
+    tenant,
+    deps.memberSettings,
+  );
+
   const rows: MembersTableRow[] = result.value.items.map((row) => {
     // F9 (G1) — server-side engagement projection (inverse of F8 risk).
     const eng = projectEngagementScore({
@@ -230,6 +268,10 @@ async function MembersDirectoryBody({
     });
     return {
     member_id: row.member.memberId,
+    member_number_display: formatMemberNumber(
+      memberPrefix,
+      row.member.memberNumber,
+    ),
     company_name: row.member.companyName,
     country: row.member.country,
     plan_id: row.member.planId,
@@ -270,7 +312,7 @@ async function MembersDirectoryBody({
       <DirectoryFilters plans={planOptions} />
       {/* C1 round-10 — pass `withSelection={isAdmin}` so the
           shimmer-skeleton column count matches the real table for the
-          current role (admin: 10 cols incl. checkbox; manager: 9). */}
+          current role (admin: 12 cols incl. checkbox; manager: 11). */}
       <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
         <DirectoryWithBulk
           rows={rows}

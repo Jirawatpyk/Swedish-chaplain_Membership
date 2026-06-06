@@ -37,6 +37,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 
 // `at_risk_outreach.createdAt` filter (`hasOutreachWithinDays`) uses
@@ -73,6 +74,7 @@ async function seedMember(
     await tx.insert(members).values({
       tenantId: tenantA.ctx.slug,
       memberId,
+      memberNumber: nextSeedMemberNumber(),
       companyName: 'Pause Co',
       country: 'TH',
       planId,

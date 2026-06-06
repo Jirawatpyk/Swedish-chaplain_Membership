@@ -173,6 +173,8 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
       address: '123 Road, Bangkok',
       primary_contact_name: 'John Doe',
       primary_contact_email: 'john@acme.example',
+      member_number: null,
+      member_number_display: null,
     }),
     ...overrides,
   };
@@ -359,6 +361,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           address: '123 Road, Bangkok',
           primary_contact_name: 'John Doe',
           primary_contact_email: 'john@acme.example',
+          member_number: null,
+          member_number_display: null,
         },
       }),
     );
@@ -383,6 +387,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           address: '123 Road, Bangkok',
           primary_contact_name: 'John Doe',
           primary_contact_email: 'john@acme.example',
+          member_number: null,
+          member_number_display: null,
         },
       }),
     );
@@ -406,6 +412,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           address: '123 Road, Bangkok',
           primary_contact_name: 'Jane',
           primary_contact_email: 'jane@example.com',
+          member_number: null,
+          member_number_display: null,
         },
       }),
     );
@@ -429,6 +437,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           address: '123 Road, Bangkok',
           primary_contact_name: 'Pat',
           primary_contact_email: 'pat@example.com',
+          member_number: null,
+          member_number_display: null,
         },
       }),
     );
@@ -451,6 +461,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           address: '123 Road, Bangkok',
           primary_contact_name: 'Jane',
           primary_contact_email: 'jane@example.com',
+          member_number: null,
+          member_number_display: null,
         },
       }),
     );
@@ -616,6 +628,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       address: '50 Sukhumvit Road, Bangkok 10110',
       primary_contact_name: 'Jane Doe',
       primary_contact_email: 'jane@beta.example',
+      member_number: null,
+      member_number_display: null,
     });
     const nonMemberEventDraft = makeDraftInvoice({
       memberId: null,
@@ -699,6 +713,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
         address: '50 Sukhumvit Road, Bangkok 10110',
         primary_contact_name: 'Buyer',
         primary_contact_email: 'buyer@example.com',
+        member_number: null,
+        member_number_display: null,
       }),
       lines: [eventLine],
     });
@@ -800,6 +816,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           address: '123 Road, Bangkok',
           primary_contact_name: 'John Doe',
           primary_contact_email: 'john@acme.example',
+          member_number: null,
+          member_number_display: null,
         },
       }),
     );
@@ -855,6 +873,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
         address: '50 Sukhumvit Road, Bangkok 10110',
         primary_contact_name: 'Buyer',
         primary_contact_email: contactEmail,
+        member_number: null,
+        member_number_display: null,
       }),
       lines: [eventLine],
     });
