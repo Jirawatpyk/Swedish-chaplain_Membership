@@ -20,8 +20,10 @@ import { ArrowRight, PackageOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 import { UnderUseWarning } from './under-use-warning';
 
 export interface BenefitUsageItem {
@@ -125,10 +127,10 @@ export function BenefitUsageCard({
         {compact && previewHref !== undefined ? (
           <Link
             href={previewHref}
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
           >
             {t('card.fullBenefits')}
-            <ArrowRight aria-hidden="true" className="size-3.5" />
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         ) : (
           staffActions !== undefined && (

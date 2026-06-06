@@ -6,6 +6,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { ClockIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { buttonVariants } from '@/components/ui/button';
@@ -52,13 +53,17 @@ export async function RecentActivitySection({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+      {/* Header matches the admin timeline-preview pattern for app-wide
+          consistency: heading + an outline "view all" link at the project's
+          DEFAULT button size. (The earlier `ghost size=sm min-h-11` 44px link
+          was oversized for a one-line header — it inflated the header row and
+          pushed the content down; the admin convention is `variant:'outline'`
+          default size, ~h-9.) */}
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
         <h2 className="font-heading text-base font-medium leading-snug">{t('title')}</h2>
         {events.length > 0 ? (
-          <Link
-            href="/portal/timeline"
-            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'min-h-11 px-3')}
-          >
+          <Link href="/portal/timeline" className={buttonVariants({ variant: 'outline' })}>
+            <ClockIcon className="size-4" />
             {t('viewAll')}
           </Link>
         ) : null}

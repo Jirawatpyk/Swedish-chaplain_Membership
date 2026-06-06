@@ -159,10 +159,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
         {rows.length > 0 ? (
           <Link
             href="/portal/invoices"
-            className={cn(
-              buttonVariants({ variant: 'ghost', size: 'sm' }),
-              'min-h-11 px-3',
-            )}
+            className={buttonVariants({ variant: 'outline' })}
           >
             {t('summary.viewAll')}
           </Link>
