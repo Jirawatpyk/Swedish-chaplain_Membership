@@ -23,6 +23,17 @@ import {
 // Types (T006)
 // ---------------------------------------------------------------------------
 
+/**
+ * Active-state matching pattern. A template-literal union so a typo'd mode
+ * prefix or a missing leading slash is a COMPILE error (D1 review finding F2):
+ *  - `exact:/path` — exact pathname match
+ *  - `any:/a|/b`   — active if the pathname matches any pipe-separated prefix
+ *  - `/path`       — prefix match (the default mode)
+ * The runtime parser (`isNavItemActive`) is unchanged — this only tightens the
+ * authoring surface so an invalid literal can't be written.
+ */
+export type ActivePattern = `exact:${string}` | `any:${string}` | `/${string}`;
+
 /** A single navigation link. */
 export interface NavItem {
   readonly titleKey: string;
@@ -34,8 +45,8 @@ export interface NavItem {
   readonly shortTitleKey?: string;
   readonly icon: LucideIcon;
   readonly href: string;
-  /** URL prefix for active-state matching. Use `exact:` prefix for exact match. */
-  readonly activePattern: string;
+  /** URL pattern for active-state matching (see {@link ActivePattern}). */
+  readonly activePattern: ActivePattern;
   /** If set, item is visible only to these roles. Type-only for now — filtering
    *  logic deferred until a role-differentiated nav item exists. */
   readonly roles?: ReadonlyArray<Role>;
@@ -67,8 +78,8 @@ export interface NavGroup {
   readonly icon: LucideIcon;
   /** NavGroup has no href — navigation happens through children. */
   readonly href?: never;
-  /** URL prefix — group auto-expands when any child matches. */
-  readonly activePattern: string;
+  /** URL pattern — group auto-expands when any child matches (see {@link ActivePattern}). */
+  readonly activePattern: ActivePattern;
   readonly children: readonly NavItem[];
   readonly roles?: ReadonlyArray<string>;
 }

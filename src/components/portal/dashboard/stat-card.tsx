@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   AlertTriangle,
-  CheckCircle2,
   Info,
   XCircle,
   type LucideIcon,
@@ -20,13 +19,18 @@ import { cn } from '@/lib/utils';
  *
  * Heading rule (spec a11y-6): the label renders as a real `<h2>`, not
  * a CardTitle div, so the dashboard outline is h1 (PageHeader) → h2.
+ *
+ * The variant set is intentionally identical to the route-layer `StatVariant`
+ * (dashboard-stats.ts) — the previously-declared `'ok'` member was dead (no
+ * caller ever produced it; every source goes through `StatVariant` which has
+ * no `'ok'`), so it was removed along with its unreachable icon/colour branches
+ * (D1 review finding F1). Re-add a member here only when a caller produces it.
  */
-export type StatCardVariant = 'neutral' | 'warning' | 'destructive' | 'ok';
+export type StatCardVariant = 'neutral' | 'warning' | 'destructive';
 
 const VARIANT_ICON: Record<Exclude<StatCardVariant, 'neutral'>, LucideIcon> = {
   warning: AlertTriangle,
   destructive: XCircle,
-  ok: CheckCircle2,
 };
 
 const VARIANT_STATUS_CLASS: Record<
@@ -35,7 +39,6 @@ const VARIANT_STATUS_CLASS: Record<
 > = {
   warning: 'text-warning',
   destructive: 'text-destructive',
-  ok: 'text-success',
 };
 
 export interface StatCardProps {
