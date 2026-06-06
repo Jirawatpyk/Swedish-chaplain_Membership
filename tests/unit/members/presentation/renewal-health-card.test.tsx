@@ -1,0 +1,125 @@
+/**
+ * Pass A · Section 1 — `RenewalHealthCard` presentational unit spec.
+ *
+ * Pure client component fed plain serializable props by the async server
+ * wrapper (`MemberRenewalHealthSection`). Covers the three render states
+ * the card must handle: empty (no cycle), populated (status + expiry +
+ * days remaining + engagement), and engagement-absent (F9 flag off).
+ *
+ * Accessibility: status + engagement band carry a visible TEXT label
+ * (never colour-alone) per FR-035 / WCAG 1.4.1.
+ */
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+import { RenewalHealthCard } from '@/components/members/renewal-health-card';
+
+const messages = {
+  admin: {
+    members: {
+      detail: {
+        renewalHealth: {
+          title: 'Renewal & Health',
+          empty: 'No active renewal cycle',
+          status: 'Status',
+          expiry: 'Expiry',
+          daysRemaining: '{days} days remaining',
+          overdueDays: 'Overdue by {days} days',
+          engagement: 'Engagement',
+          viewRenewal: 'View renewal',
+          cycleStatus: {
+            upcoming: 'Upcoming',
+            reminded: 'Reminded',
+            awaiting_payment: 'Awaiting payment',
+            pending_admin_reactivation: 'Pending reactivation',
+            completed: 'Completed',
+            lapsed: 'Lapsed',
+            cancelled: 'Cancelled',
+          },
+        },
+      },
+      directory: {
+        engagementBand: {
+          healthy: 'Healthy',
+          moderate: 'Moderate',
+          warning: 'Watch',
+          critical: 'Critical',
+        },
+      },
+    },
+  },
+};
+
+function renderCard(props: React.ComponentProps<typeof RenewalHealthCard>) {
+  return render(
+    <NextIntlClientProvider
+      locale="en"
+      messages={messages}
+      timeZone="Asia/Bangkok"
+    >
+      <RenewalHealthCard {...props} />
+    </NextIntlClientProvider>,
+  );
+}
+
+describe('RenewalHealthCard (Pass A · Section 1)', () => {
+  it('renders the empty state when there is no cycle', () => {
+    renderCard({
+      status: null,
+      expiryIso: null,
+      daysRemaining: null,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    expect(screen.getByText('No active renewal cycle')).toBeInTheDocument();
+    // No status badge in the empty state.
+    expect(screen.queryByText('Awaiting payment')).not.toBeInTheDocument();
+  });
+
+  it('renders status, expiry, days remaining, and engagement when populated', () => {
+    renderCard({
+      status: 'awaiting_payment',
+      expiryIso: '2026-07-15T00:00:00.000Z',
+      daysRemaining: 20,
+      engagementScore: 82,
+      engagementBand: 'healthy',
+      viewHref: '/admin/renewals',
+    });
+    expect(screen.getByText('Awaiting payment')).toBeInTheDocument();
+    expect(screen.getByText('20 days remaining')).toBeInTheDocument();
+    // Engagement score + band text (band is a text label, not colour-only).
+    expect(screen.getByText('82')).toBeInTheDocument();
+    expect(screen.getByText('Healthy')).toBeInTheDocument();
+    // View-renewal link present.
+    const link = screen.getByRole('link', { name: /View renewal/ });
+    expect(link).toHaveAttribute('href', '/admin/renewals');
+  });
+
+  it('shows an overdue label when days remaining is negative', () => {
+    renderCard({
+      status: 'lapsed',
+      expiryIso: '2026-05-01T00:00:00.000Z',
+      daysRemaining: -12,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    expect(screen.getByText('Lapsed')).toBeInTheDocument();
+    expect(screen.getByText('Overdue by 12 days')).toBeInTheDocument();
+  });
+
+  it('omits the engagement line when engagement is absent (F9 flag off)', () => {
+    renderCard({
+      status: 'upcoming',
+      expiryIso: '2026-09-01T00:00:00.000Z',
+      daysRemaining: 90,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    expect(screen.getByText('Upcoming')).toBeInTheDocument();
+    // No engagement label rendered when score+band are both null.
+    expect(screen.queryByText('Engagement')).not.toBeInTheDocument();
+  });
+});

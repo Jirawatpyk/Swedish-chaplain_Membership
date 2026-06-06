@@ -940,6 +940,25 @@
           "viewAll": "Visa all aktivitet",
           "empty": "Ingen aktivitet ännu."
         },
+        "renewalHealth": {
+          "title": "Förnyelse & hälsa",
+          "empty": "Ingen aktiv förnyelsecykel",
+          "status": "Status",
+          "expiry": "Utgångsdatum",
+          "daysRemaining": "{days} dagar kvar",
+          "overdueDays": "Försenad med {days} dagar",
+          "engagement": "Engagemang",
+          "viewRenewal": "Visa förnyelse",
+          "cycleStatus": {
+            "upcoming": "Kommande",
+            "reminded": "Påmind",
+            "awaiting_payment": "Inväntar betalning",
+            "pending_admin_reactivation": "Väntar på återaktivering",
+            "completed": "Slutförd",
+            "lapsed": "Förfallen",
+            "cancelled": "Avbruten"
+          }
+        },
         "pendingInvitations": {
           "title": "Väntande portalinbjudningar",
           "subtitle": "Inbjudningar skickade men ännu inte inlösta.",

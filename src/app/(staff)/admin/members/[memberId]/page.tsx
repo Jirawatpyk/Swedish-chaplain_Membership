@@ -61,7 +61,10 @@ import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
 import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
-import { MemberEngagementSection } from './_components/member-engagement-section';
+import {
+  MemberRenewalHealthSection,
+  MemberRenewalHealthSkeleton,
+} from './_components/member-renewal-health-section';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -784,6 +787,16 @@ export default async function MemberDetailPage({
           </CardContent>
         </Card>
 
+        {/* Pass A · Section 1 — Renewal & Health (F8 cycle status + expiry +
+            at-risk band, with the F9 engagement score MERGED in). Replaces
+            the thin standalone engagement card. Staff-facing (admin +
+            manager); the engagement line inside is F9-gated by the section
+            itself. Own Suspense boundary so the F8/F9 reads never block the
+            company/contacts paint. */}
+        <Suspense fallback={<MemberRenewalHealthSkeleton />}>
+          <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+        </Suspense>
+
         {/* Single Contacts Card groups primary + secondary contacts
             under one CardTitle — matches the Company section pattern
             so every content group on the page has consistent card
@@ -904,14 +917,6 @@ export default async function MemberDetailPage({
         {env.features.f9Dashboard && session.user.role === 'admin' && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
             <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
-          </Suspense>
-        )}
-
-        {/* B18 / FR-007a — engagement score (staff-facing: admin + manager).
-            F9-gated; isolated Suspense so the risk read never blocks paint. */}
-        {env.features.f9Dashboard && (
-          <Suspense fallback={null}>
-            <MemberEngagementSection tenant={tenant} memberId={member.memberId} />
           </Suspense>
         )}
 
