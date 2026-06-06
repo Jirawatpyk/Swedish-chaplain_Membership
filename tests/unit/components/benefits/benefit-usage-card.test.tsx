@@ -102,4 +102,34 @@ describe('<BenefitUsageCard>', () => {
     renderCard({ membershipYear: 2027, elapsedYearPct: 0 });
     expect(screen.getByText(/2027/)).toBeInTheDocument();
   });
+
+  // --- Pass A · Section 2 — compact preview mode -------------------------
+
+  it('compact: keeps the quota progress bars but hides the live freshness note', () => {
+    renderCard({ compact: true });
+    // Quota readout still shows in compact mode.
+    expect(screen.getByText(/2 of 6 used/i)).toBeInTheDocument();
+    // Freshness note (live-computed caption) is omitted in the compact preview.
+    expect(
+      screen.queryByText(enMessages.benefits.card.liveNote),
+    ).not.toBeInTheDocument();
+  });
+
+  it('compact: suppresses per-benefit action deep links (showActions=false)', () => {
+    renderCard({ compact: true });
+    expect(
+      screen.queryByRole('link', { name: /compose/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('compact: renders the "full benefits" link when previewHref is supplied', () => {
+    renderCard({ compact: true, previewHref: '/admin/members/m1/benefits' });
+    const link = screen.getByRole('link', { name: /full benefits/i });
+    expect(link).toHaveAttribute('href', '/admin/members/m1/benefits');
+  });
+
+  it('compact: hides the active-benefits badge section (summary stays tight)', () => {
+    renderCard({ compact: true, active: [{ key: 'directory_listing' }] });
+    expect(screen.queryByText('Directory listing')).not.toBeInTheDocument();
+  });
 });

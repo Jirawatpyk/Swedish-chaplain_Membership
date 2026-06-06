@@ -18,6 +18,7 @@ import {
   ArrowLeftIcon,
   HelpCircleIcon,
   MailWarningIcon,
+  PackageOpenIcon,
   PencilIcon,
   ClockIcon,
   UserPlusIcon,
@@ -65,6 +66,10 @@ import {
   MemberRenewalHealthSection,
   MemberRenewalHealthSkeleton,
 } from './_components/member-renewal-health-section';
+import {
+  MemberBenefitsPreviewSection,
+  MemberBenefitsPreviewSkeleton,
+} from './_components/member-benefits-preview-section';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -589,6 +594,18 @@ export default async function MemberDetailPage({
               * back navigation at "Admin > Members > [Company]". Duplicating
               * it as an action-row button competed with Edit/Archive for
               * visual attention and diluted the primary-action hierarchy. */}
+            {/* Pass A · Section 2 — link to the (previously orphaned)
+              * benefits page. F9-gated, mirroring the benefits feature flag.
+              * Staff-only is implicit (whole route requires a staff session). */}
+            {env.features.f9Dashboard && (
+              <Link
+                href={`/admin/members/${member.memberId}/benefits`}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                <PackageOpenIcon className="size-4" />
+                {t('sections.benefits')}
+              </Link>
+            )}
             <Link
               href={`/admin/members/${member.memberId}/timeline`}
               className={buttonVariants({ variant: 'outline' })}
@@ -796,6 +813,24 @@ export default async function MemberDetailPage({
         <Suspense fallback={<MemberRenewalHealthSkeleton />}>
           <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
         </Suspense>
+
+        {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
+            cultural-ticket usage at a glance) with a "Full benefits →" link
+            to the dedicated benefits page. F9-gated; staff-only (admin +
+            manager — requireSession('staff') already excludes 'member').
+            Own Suspense boundary so the benefit read never blocks paint. */}
+        {env.features.f9Dashboard &&
+          (session.user.role === 'admin' ||
+            session.user.role === 'manager') && (
+            <Suspense fallback={<MemberBenefitsPreviewSkeleton />}>
+              <MemberBenefitsPreviewSection
+                tenant={tenant}
+                memberId={member.memberId}
+                actorUserId={session.user.id}
+                actorRole={session.user.role}
+              />
+            </Suspense>
+          )}
 
         {/* Single Contacts Card groups primary + secondary contacts
             under one CardTitle — matches the Company section pattern

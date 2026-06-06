@@ -989,7 +989,8 @@
           "secondary": "Övriga kontakter",
           "plan": "Paket",
           "audit": "Senaste aktivitet",
-          "contactStatusBadges": "Kontaktstatus"
+          "contactStatusBadges": "Kontaktstatus",
+          "benefits": "Förmåner"
         },
         "fields": {
           "memberNumber": "Medlemsnummer",
@@ -4826,7 +4827,8 @@
       "lastUsed": "Senast använd {date}",
       "activeHeading": "Inkluderade förmåner",
       "liveNote": "Uppdateras vid laddning · innevarande år",
-      "emptyTitle": "Inga spårade förmåner"
+      "emptyTitle": "Inga spårade förmåner",
+      "fullBenefits": "Alla förmåner"
     },
     "benefit": {
       "eblast": "E-utskick",

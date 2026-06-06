@@ -47,6 +47,18 @@ export interface BenefitUsageCardProps {
   readonly warningActionHref?: string;
   /** Admin-only action controls (rendered in the header on the staff variant). */
   readonly staffActions?: React.ReactNode;
+  /**
+   * Pass A · Section 2 — compact preview mode for the admin member-detail
+   * inline quota summary. Keeps only the quantifiable quota bars and drops
+   * the live-freshness note, per-benefit action deep-links, the
+   * active-benefits badge section, and the empty-state illustration so the
+   * card reads as a tight at-a-glance summary. The full surface lives at
+   * the dedicated `/admin/members/[id]/benefits` page (linked via
+   * `previewHref`).
+   */
+  readonly compact?: boolean;
+  /** "Full benefits →" deep link rendered in the header when `compact`. */
+  readonly previewHref?: string;
 }
 
 function useFormatDate(locale: string): (iso: string) => string {
@@ -64,6 +76,8 @@ export function BenefitUsageCard({
   underUseWarning,
   warningActionHref,
   staffActions,
+  compact = false,
+  previewHref,
 }: BenefitUsageCardProps): React.ReactElement {
   const t = useTranslations('benefits');
   const formatDate = useFormatDate(locale);
@@ -77,11 +91,26 @@ export function BenefitUsageCard({
         <div className="flex flex-col gap-0.5">
           <CardTitle>{t('card.title', { year: membershipYear })}</CardTitle>
           {/* Figures are computed live per request (no cache) — surface the
-              freshness so a viewer knows they are current (spec edge case). */}
-          <p className="text-caption text-muted-foreground">{t('card.liveNote')}</p>
+              freshness so a viewer knows they are current (spec edge case).
+              Omitted in the compact preview to keep the summary tight. */}
+          {!compact && (
+            <p className="text-caption text-muted-foreground">
+              {t('card.liveNote')}
+            </p>
+          )}
         </div>
-        {staffActions !== undefined && (
-          <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+        {compact && previewHref !== undefined ? (
+          <Link
+            href={previewHref}
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {t('card.fullBenefits')}
+            <ArrowRight aria-hidden="true" className="size-3.5" />
+          </Link>
+        ) : (
+          staffActions !== undefined && (
+            <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+          )
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -123,7 +152,7 @@ export function BenefitUsageCard({
                       ? t('card.neverUsed')
                       : t('card.lastUsed', { date: formatDate(b.lastUsedAt) })}
                   </span>
-                  {b.actionHref !== undefined && (
+                  {!compact && b.actionHref !== undefined && (
                     <Link
                       href={b.actionHref}
                       className="inline-flex items-center gap-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -141,7 +170,7 @@ export function BenefitUsageCard({
           </ul>
         )}
 
-        {active.length > 0 && (
+        {!compact && active.length > 0 && (
           <div className="flex flex-col gap-2">
             <Separator />
             <p className="text-caption font-medium text-muted-foreground">

@@ -989,7 +989,8 @@
           "secondary": "ผู้ติดต่ออื่น",
           "plan": "แพ็กเกจ",
           "audit": "กิจกรรมล่าสุด",
-          "contactStatusBadges": "สถานะผู้ติดต่อ"
+          "contactStatusBadges": "สถานะผู้ติดต่อ",
+          "benefits": "สิทธิประโยชน์"
         },
         "fields": {
           "memberNumber": "หมายเลขสมาชิก",
@@ -4826,7 +4827,8 @@
       "lastUsed": "ใช้ล่าสุด {date}",
       "activeHeading": "สิทธิประโยชน์ที่รวมอยู่",
       "liveNote": "อัปเดตเมื่อโหลด · ปีปัจจุบัน",
-      "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม"
+      "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม",
+      "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด"
     },
     "benefit": {
       "eblast": "อีเมลประชาสัมพันธ์ (E-Blast)",
