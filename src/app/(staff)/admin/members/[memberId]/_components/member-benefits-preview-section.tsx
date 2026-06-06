@@ -80,17 +80,20 @@ export async function MemberBenefitsPreviewSection({
   });
 
   return (
-    <BenefitUsageCard
-      locale={locale}
-      membershipYear={usage.membershipYear}
-      elapsedYearPct={usage.elapsedYearPct}
-      quantifiable={usage.quantifiable}
-      active={usage.active}
-      aggregateConsumedPct={usage.aggregateConsumedPct}
-      underUseWarning={usage.underUseWarning}
-      compact
-      previewHref={`/admin/members/${memberId}/benefits`}
-    />
+    <section aria-labelledby="member-benefits-preview-heading">
+      <BenefitUsageCard
+        headingId="member-benefits-preview-heading"
+        locale={locale}
+        membershipYear={usage.membershipYear}
+        elapsedYearPct={usage.elapsedYearPct}
+        quantifiable={usage.quantifiable}
+        active={usage.active}
+        aggregateConsumedPct={usage.aggregateConsumedPct}
+        underUseWarning={usage.underUseWarning}
+        compact
+        previewHref={`/admin/members/${memberId}/benefits`}
+      />
+    </section>
   );
 }
 

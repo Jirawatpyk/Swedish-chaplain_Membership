@@ -50,14 +50,16 @@ const messages = {
   },
 };
 
-function renderCard(props: React.ComponentProps<typeof RenewalHealthCard>) {
+function renderCard(
+  props: Omit<React.ComponentProps<typeof RenewalHealthCard>, 'headingId'>,
+) {
   return render(
     <NextIntlClientProvider
       locale="en"
       messages={messages}
       timeZone="Asia/Bangkok"
     >
-      <RenewalHealthCard {...props} />
+      <RenewalHealthCard headingId="renewal-health-heading" {...props} />
     </NextIntlClientProvider>,
   );
 }
@@ -121,5 +123,23 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     // No engagement label rendered when score+band are both null.
     expect(screen.queryByText('Engagement')).not.toBeInTheDocument();
+  });
+
+  // 056 fix #1 — the title is a real <h2> (not a CardTitle <div>) wired to the
+  // wrapping <section aria-labelledby>, so SR heading-nav can reach the card.
+  it('renders the title as a real <h2> heading with the supplied id', () => {
+    renderCard({
+      status: 'upcoming',
+      expiryIso: '2026-09-01T00:00:00.000Z',
+      daysRemaining: 90,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    const heading = screen.getByRole('heading', {
+      level: 2,
+      name: /Renewal & Health/,
+    });
+    expect(heading).toHaveAttribute('id', 'renewal-health-heading');
   });
 });

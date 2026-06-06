@@ -35,7 +35,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -219,16 +218,19 @@ export async function MemberInvoicesSection({
     <section aria-labelledby="member-invoices-heading">
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle
+          {/* 056 fix #1 — real <h2> (was a CardTitle <div>) so the section
+              appears in the SR heading tree; aria-labelledby on the wrapping
+              <section> resolves to this id. */}
+          <h2
             id="member-invoices-heading"
-            className="text-base flex items-center gap-2"
+            className="flex items-center gap-2 font-heading text-base font-medium leading-snug"
           >
             <ReceiptIcon className="size-4" aria-hidden="true" />
             {t('title')}
             <span className="text-xs text-muted-foreground font-normal">
               {t('count', { count: total })}
             </span>
-          </CardTitle>
+          </h2>
           {/* "New invoice" CTA visible whenever the member already
             * has any invoices (total > 0). MUTUALLY EXCLUSIVE with
             * the empty-state CTA in CardContent (which only renders

@@ -29,7 +29,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -94,9 +93,17 @@ export async function TimelinePreviewSection({
   }
 
   return (
-    <Card>
+    <section aria-labelledby="member-timeline-preview-heading">
+      <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">{t('sections.audit')}</CardTitle>
+        {/* 056 fix #1 — real <h2> so the timeline section is reachable via
+            SR heading navigation under the page <h1>. */}
+        <h2
+          id="member-timeline-preview-heading"
+          className="font-heading text-base font-medium leading-snug"
+        >
+          {t('sections.audit')}
+        </h2>
         <Link
           href={`/admin/members/${memberId}/timeline`}
           className={buttonVariants({ variant: 'outline' })}
@@ -125,7 +132,8 @@ export async function TimelinePreviewSection({
           </ul>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </section>
   );
 }
 

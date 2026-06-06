@@ -24,7 +24,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -32,6 +31,11 @@ import type { CycleStatus } from '@/modules/renewals/client';
 import type { EngagementBand } from '@/modules/insights';
 
 export interface RenewalHealthCardProps {
+  /**
+   * 056 fix #1 — id wired to the wrapping `<section aria-labelledby>` so the
+   * card title is a real `<h2>` in the heading tree (SR heading-nav).
+   */
+  readonly headingId: string;
   /** Cycle status, or null when the member has no renewal cycle. */
   readonly status: CycleStatus | null;
   /** ISO 8601 UTC expiry instant, or null. Localised at render time. */
@@ -66,6 +70,7 @@ function statusVariant(
 }
 
 export function RenewalHealthCard({
+  headingId,
   status,
   expiryIso,
   daysRemaining,
@@ -80,12 +85,19 @@ export function RenewalHealthCard({
   const hasEngagement = engagementScore !== null && engagementBand !== null;
 
   return (
-    <Card>
+    <section aria-labelledby={headingId}>
+      <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <CardTitle className="text-base flex items-center gap-2">
+        {/* 056 fix #1 — real <h2> (not the CardTitle <div>) so this section
+            appears in the SR heading tree under the page <h1>. Carries the
+            CardTitle font classes so the visual is unchanged. */}
+        <h2
+          id={headingId}
+          className="flex items-center gap-2 font-heading text-base font-medium leading-snug"
+        >
           <CalendarClockIcon className="size-4" aria-hidden="true" />
           {t('title')}
-        </CardTitle>
+        </h2>
         <Link
           href={viewHref}
           className={buttonVariants({ variant: 'outline', size: 'sm' })}
@@ -150,6 +162,7 @@ export function RenewalHealthCard({
           </dl>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </section>
   );
 }

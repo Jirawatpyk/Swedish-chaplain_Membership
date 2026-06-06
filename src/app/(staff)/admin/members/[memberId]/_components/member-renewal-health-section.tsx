@@ -89,6 +89,7 @@ export async function MemberRenewalHealthSection({
 
   return (
     <RenewalHealthCard
+      headingId="member-renewal-health-heading"
       status={cycle?.status ?? null}
       expiryIso={cycle?.expiresAt ?? null}
       daysRemaining={

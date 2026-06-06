@@ -989,13 +989,30 @@
         },
         "sections": {
           "company": "Företag",
+          "organisation": "Organisation",
+          "membership": "Medlemskap",
+          "technical": "Tekniskt",
           "contacts": "Kontakter",
+          "contactsEmpty": "Inga kontakter ännu.",
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
           "plan": "Paket",
           "audit": "Senaste aktivitet",
           "contactStatusBadges": "Kontaktstatus",
           "benefits": "Förmåner"
+        },
+        "legalEntityTypes": {
+          "company": "Företag",
+          "limited_company": "Aktiebolag",
+          "public_company": "Publikt aktiebolag",
+          "partnership": "Handelsbolag",
+          "sole_proprietor": "Enskild firma",
+          "individual": "Privatperson",
+          "foundation": "Stiftelse",
+          "association": "Förening",
+          "government": "Myndighet",
+          "branch": "Filialkontor",
+          "representative_office": "Representationskontor"
         },
         "fields": {
           "memberNumber": "Medlemsnummer",
@@ -1004,6 +1021,7 @@
           "country": "Land",
           "taxId": "Skatte-ID",
           "website": "Webbplats",
+          "websiteExternal": "Öppna webbplatsen i en ny flik",
           "description": "Beskrivning",
           "address": "Adress",
           "foundedYear": "Grundat",

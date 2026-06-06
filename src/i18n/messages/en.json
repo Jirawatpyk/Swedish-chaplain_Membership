@@ -989,13 +989,30 @@
         },
         "sections": {
           "company": "Company",
+          "organisation": "Organisation",
+          "membership": "Membership",
+          "technical": "Technical",
           "contacts": "Contacts",
+          "contactsEmpty": "No contacts yet.",
           "primary": "Primary contact",
           "secondary": "Other contacts",
           "plan": "Plan",
           "audit": "Recent activity",
           "contactStatusBadges": "Contact status",
           "benefits": "Benefits"
+        },
+        "legalEntityTypes": {
+          "company": "Company",
+          "limited_company": "Limited company",
+          "public_company": "Public limited company",
+          "partnership": "Partnership",
+          "sole_proprietor": "Sole proprietor",
+          "individual": "Individual",
+          "foundation": "Foundation",
+          "association": "Association",
+          "government": "Government body",
+          "branch": "Branch office",
+          "representative_office": "Representative office"
         },
         "fields": {
           "memberNumber": "Member Number",
@@ -1004,6 +1021,7 @@
           "country": "Country",
           "taxId": "Tax ID",
           "website": "Website",
+          "websiteExternal": "Open website in a new tab",
           "description": "Description",
           "address": "Address",
           "foundedYear": "Founded",

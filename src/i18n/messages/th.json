@@ -989,13 +989,30 @@
         },
         "sections": {
           "company": "ข้อมูลบริษัท",
+          "organisation": "องค์กร",
+          "membership": "การเป็นสมาชิก",
+          "technical": "ข้อมูลทางเทคนิค",
           "contacts": "ผู้ติดต่อ",
+          "contactsEmpty": "ยังไม่มีผู้ติดต่อ",
           "primary": "ผู้ติดต่อหลัก",
           "secondary": "ผู้ติดต่ออื่น",
           "plan": "แพ็กเกจ",
           "audit": "กิจกรรมล่าสุด",
           "contactStatusBadges": "สถานะผู้ติดต่อ",
           "benefits": "สิทธิประโยชน์"
+        },
+        "legalEntityTypes": {
+          "company": "บริษัท",
+          "limited_company": "บริษัทจำกัด",
+          "public_company": "บริษัทมหาชนจำกัด",
+          "partnership": "ห้างหุ้นส่วน",
+          "sole_proprietor": "เจ้าของกิจการคนเดียว",
+          "individual": "บุคคลธรรมดา",
+          "foundation": "มูลนิธิ",
+          "association": "สมาคม",
+          "government": "หน่วยงานรัฐ",
+          "branch": "สำนักงานสาขา",
+          "representative_office": "สำนักงานผู้แทน"
         },
         "fields": {
           "memberNumber": "หมายเลขสมาชิก",
@@ -1004,6 +1021,7 @@
           "country": "ประเทศ",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "website": "เว็บไซต์",
+          "websiteExternal": "เปิดเว็บไซต์ในแท็บใหม่",
           "description": "คำอธิบาย",
           "address": "ที่อยู่",
           "foundedYear": "ปีที่ก่อตั้ง",

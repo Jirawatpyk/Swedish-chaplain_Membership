@@ -18,7 +18,7 @@
 import Link from 'next/link';
 import { ArrowRight, PackageOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Separator } from '@/components/ui/separator';
@@ -59,6 +59,13 @@ export interface BenefitUsageCardProps {
   readonly compact?: boolean;
   /** "Full benefits →" deep link rendered in the header when `compact`. */
   readonly previewHref?: string;
+  /**
+   * 056 fix #1 — when set, the card title renders as a real `<h2 id>` and the
+   * id is wired to a wrapping `<section aria-labelledby>` so the card appears
+   * in the SR heading tree. Omitted on surfaces that don't need section
+   * landmark semantics (the heading still renders as an `<h2>` either way).
+   */
+  readonly headingId?: string;
 }
 
 function useFormatDate(locale: string): (iso: string) => string {
@@ -78,6 +85,7 @@ export function BenefitUsageCard({
   staffActions,
   compact = false,
   previewHref,
+  headingId,
 }: BenefitUsageCardProps): React.ReactElement {
   const t = useTranslations('benefits');
   const formatDate = useFormatDate(locale);
@@ -89,7 +97,14 @@ export function BenefitUsageCard({
     <Card data-testid="benefit-usage-card">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <CardTitle>{t('card.title', { year: membershipYear })}</CardTitle>
+          {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the
+              card lands in the SR heading tree under the page <h1>. */}
+          <h2
+            {...(headingId ? { id: headingId } : {})}
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {t('card.title', { year: membershipYear })}
+          </h2>
           {/* Figures are computed live per request (no cache) — surface the
               freshness so a viewer knows they are current (spec edge case).
               Omitted in the compact preview to keep the summary tight. */}
