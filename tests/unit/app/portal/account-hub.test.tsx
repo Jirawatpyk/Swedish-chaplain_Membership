@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -115,5 +115,43 @@ describe('Account hub — sectioned IA (G2)', () => {
     expect(screen.getByText('jane@example.com')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /forgot your password/i }))
       .toHaveAttribute('href', '/forgot-password');
+  });
+
+  // I1: Whole-page MISSING_KEY sentinel guard — any dropped i18n key that
+  // makeRealTranslator backs (portal.account.*, portal.preferredLocale.*,
+  // shell.roleBadge.*, dataExport.*) surfaces as a sentinel string in the
+  // rendered container, not a thrown error.  This assertion catches them.
+  it('renders no MISSING_KEY/MISSING_NS/NOT_STRING sentinels anywhere in the hub', async () => {
+    const { container } = await renderHub();
+    expect(container.textContent ?? '').not.toMatch(/MISSING_KEY|MISSING_NS|NOT_STRING/);
+  });
+});
+
+// M2: f9Dashboard gated-OFF path.
+//
+// vi.mock('@/lib/env') is module-level (hoisted), so we cannot override it per-test
+// in the same describe. The established repo pattern (snapshot-refresh-tenant-guard.test.ts)
+// mutates the mocked env object directly inside try/finally to avoid vi.doMock + dynamic
+// import churn. We use that same pattern here.
+describe('Account hub — f9Dashboard gated OFF', () => {
+  let envModule: { env: { features: { f9Dashboard: boolean } } };
+
+  beforeEach(async () => {
+    envModule = (await import('@/lib/env')) as { env: { features: { f9Dashboard: boolean } } };
+    envModule.env.features.f9Dashboard = false;
+  });
+
+  afterEach(() => {
+    envModule.env.features.f9Dashboard = true;
+  });
+
+  it('hides #data-privacy and still renders the other three sections', async () => {
+    const { container } = await renderHub();
+    // Data & privacy section must be absent when the flag is off.
+    expect(container.querySelector('#data-privacy')).toBeNull();
+    // The three remaining sections must still render.
+    expect(container.querySelector('#account')).not.toBeNull();
+    expect(container.querySelector('#renewal-prefs')).not.toBeNull();
+    expect(container.querySelector('#appearance')).not.toBeNull();
   });
 });

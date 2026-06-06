@@ -109,6 +109,14 @@ export default async function MemberAccountPage() {
             memberId!,
           ),
         )) ?? false;
+    } else if (memberLookup.error.code !== 'repo.not_found') {
+      // An unexpected repo/RLS error (not the normal "no portal link" case).
+      // Log at warn so infra faults are visible; the page still degrades
+      // gracefully with safe defaults (memberId stays null).
+      logger.warn(
+        { err: memberLookup.error, tenantId: tenant.slug, userId: user.id },
+        'portal.account.member_lookup_failed',
+      );
     }
   } catch (err) {
     logger.warn(
