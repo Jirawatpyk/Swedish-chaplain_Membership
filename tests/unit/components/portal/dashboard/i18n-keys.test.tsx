@@ -15,7 +15,6 @@ const REQUIRED = [
   'activity.empty.title',
   'activity.empty.body',
   'activity.viewAll',
-  'quickActions.title',
 ] as const;
 
 function get(obj: unknown, path: string): unknown {

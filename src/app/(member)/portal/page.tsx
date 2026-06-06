@@ -21,16 +21,12 @@ import {
 } from './_components/membership-stat-section';
 import { OutstandingStatSection } from './_components/outstanding-stat-section';
 import { BenefitsStatSection } from './_components/benefits-stat-section';
-import { QuickActions } from './_components/quick-actions';
 import {
   RecentActivitySection,
   RecentActivitySkeleton,
 } from './_components/recent-activity-section';
-import { isRenewDue, deriveBenefitsStat } from './_lib/dashboard-stats';
-import {
-  loadDashboardRenewalCycle,
-  loadDashboardBenefitUsage,
-} from './_components/dashboard-reads';
+import { deriveBenefitsStat } from './_lib/dashboard-stats';
+import { loadDashboardBenefitUsage } from './_components/dashboard-reads';
 
 const PORTAL_BENEFITS_HREF = '/portal/benefits';
 
@@ -38,7 +34,7 @@ const PORTAL_BENEFITS_HREF = '/portal/benefits';
  * Member portal landing — `/portal` (Dashboard, 057 redesign).
  *
  * Assembles the at-a-glance hub: PageHeader (welcome + member# + status chips)
- * → 3 stat sections (each in its own Suspense boundary) → quick actions
+ * → 3 stat sections (each in its own Suspense boundary)
  * → 2-col latest invoices + benefits quota panel → recent activity.
  *
  * First-run / not-linked members see a friendly localised actionable empty hub
@@ -104,11 +100,6 @@ export default async function MemberPortalHomePage() {
     member.memberNumber,
   );
 
-  // Renew-CTA gating: reuse the per-request cached cycle read (no extra
-  // round-trip). tenantId threaded explicitly so React cache() key works.
-  const cycle = await loadDashboardRenewalCycle(tenant.slug, memberId);
-  const renewDue = isRenewDue(cycle, new Date());
-
   // Benefits quota panel (compact card) — reuse loadDashboardBenefitUsage
   // once; React cache() deduplicates the call for BenefitsStatSection.
   const usage = await loadDashboardBenefitUsage(tenant, memberId);
@@ -150,8 +141,6 @@ export default async function MemberPortalHomePage() {
           <BenefitsStatSection ctx={tenant} memberId={memberId} />
         </Suspense>
       </div>
-
-      <QuickActions memberId={memberId} renewDue={renewDue} />
 
       {/* 2-col: latest invoices | benefits quota. Stacks to 1-col on mobile. */}
       <div className="grid grid-cols-1 gap-[var(--page-section-gap)] lg:grid-cols-2">

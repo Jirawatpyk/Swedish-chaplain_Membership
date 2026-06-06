@@ -3931,13 +3931,6 @@
         "viewAll": "Visa all aktivitet",
         "emptyCta": "Utforska förmåner"
       },
-      "quickActions": {
-        "title": "Snabbåtgärder",
-        "pay": "Betala faktura",
-        "benefits": "Visa förmåner",
-        "renew": "Förnya medlemskap",
-        "editProfile": "Redigera profil"
-      },
       "invoicesPanel": {
         "heading": "Senaste fakturor"
       },

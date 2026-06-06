@@ -3931,13 +3931,6 @@
         "viewAll": "View all activity",
         "emptyCta": "Explore benefits"
       },
-      "quickActions": {
-        "title": "Quick actions",
-        "pay": "Pay invoice",
-        "benefits": "View benefits",
-        "renew": "Renew membership",
-        "editProfile": "Edit profile"
-      },
       "invoicesPanel": {
         "heading": "Latest invoices"
       },
