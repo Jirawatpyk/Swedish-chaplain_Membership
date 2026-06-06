@@ -176,12 +176,19 @@ export interface BenefitsStat {
 }
 
 /**
- * Sentinel the read layer passes when computeBenefitUsage returned !ok —
- * as opposed to a real BenefitUsage value. Keeps the error path distinct from
- * genuine "no benefits" so the section can render a transient-failure
- * placeholder instead of misinforming the member (Defer 1 D1 code review).
+ * What the read layer passes for the benefits stat:
+ *  - a real `BenefitUsage` value — derive under-use vs on-track;
+ *  - `null` — a BENIGN "no plan / member has no benefit basis"
+ *    (`computeBenefitUsage` err `member_not_found`), rendered as the neutral
+ *    `empty` state, NOT a warning (D1 review finding C);
+ *  - `'error'` — a genuine compute FAILURE (`compute_failed` / a throw),
+ *    rendered as the distinct transient-failure `error` state so a real
+ *    failure is not shown as "No benefits yet" (Defer 1 D1 code review).
+ *
+ * Distinguishing `null` from `'error'` stops a plan-less member from seeing a
+ * misleading "Benefits unavailable" warning on every render.
  */
-export type BenefitUsageReadInput = BenefitUsage | 'error';
+export type BenefitUsageReadInput = BenefitUsage | 'error' | null;
 
 /**
  * Under-use HIGHLIGHT (spec §4.1 + review S-1) — a COUNT of benefits lagging
@@ -190,11 +197,17 @@ export type BenefitUsageReadInput = BenefitUsage | 'error';
  * threshold the F9 aggregate uses). Active-only plans (no quantifiable
  * benefit) are always "on-track".
  *
- * Accepts `'error'` sentinel (computeBenefitUsage !ok) → returns kind:'error'.
+ * Accepts the `'error'` sentinel (a genuine compute failure) → kind:'error',
+ * and `null` (a benign no-plan `member_not_found`) → kind:'empty' (neutral).
  */
 export function deriveBenefitsStat(usage: BenefitUsageReadInput): BenefitsStat {
   if (usage === 'error') {
     return { kind: 'error', variant: 'warning', underUseCount: 0 };
+  }
+  // `null` = benign "no benefit basis" (member_not_found) — neutral empty, not
+  // a warning. Falls through to the same empty result as a content-less VO.
+  if (usage === null) {
+    return { kind: 'empty', variant: 'neutral', underUseCount: 0 };
   }
   const hasContent = usage.quantifiable.length > 0 || usage.active.length > 0;
   if (!hasContent) {

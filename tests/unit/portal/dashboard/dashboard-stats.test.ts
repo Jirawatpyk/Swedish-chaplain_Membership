@@ -281,6 +281,17 @@ describe('deriveBenefitsStat', () => {
     expect(stat.variant).toBe('warning');
     expect(stat.underUseCount).toBe(0);
   });
+
+  // 057 D1 review finding C — `member_not_found` is a BENIGN "no plan" empty,
+  // NOT a failure. The read layer maps it to `null` (distinct from the
+  // `'error'` compute-failure sentinel) so a plan-less member sees the neutral
+  // "No benefits yet" empty state rather than a "Benefits unavailable" warning.
+  it('returns empty (neutral) when usage is null — benign no-plan, not a failure', () => {
+    const stat = deriveBenefitsStat(null);
+    expect(stat.kind).toBe('empty');
+    expect(stat.variant).toBe('neutral');
+    expect(stat.underUseCount).toBe(0);
+  });
 });
 
 describe('deriveMembershipStat — lapsed instant-level boundary (Defer 2)', () => {

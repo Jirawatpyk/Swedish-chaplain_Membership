@@ -14,6 +14,8 @@
  * barrels; the underlying Drizzle adapters wrap queries in `runInTenant`.
  */
 import { cache } from 'react';
+import { logger } from '@/lib/logger';
+import { errKind, rootCause } from '@/lib/log-id';
 import {
   loadMemberRenewalStatus,
   makeRenewalsDeps,
@@ -58,22 +60,49 @@ export const loadDashboardRenewalCycle = cache(
 /**
  * Benefit usage VO for the session member.
  *
- * Returns the VO, or the `'error'` sentinel when computeBenefitUsage returned
- * !ok. Previously collapsed to `null` (Defer 1 D1 code review) — `null` is
- * now unused here; the caller distinguishes error from genuine empty via the
- * sentinel so a transient failure is not shown as "No benefits yet".
+ * Three-way result (D1 review finding C):
+ *  - the VO — `computeBenefitUsage` ok;
+ *  - `null` — `member_not_found` (a BENIGN "member has no benefit basis", e.g.
+ *    a plan-less member). This is NOT a failure — the section renders the
+ *    neutral "No benefits yet" empty state. `member_not_found` is NOT logged
+ *    (it is an expected steady state for some members, not an operability
+ *    signal), matching the use-case which does not log it either;
+ *  - `'error'` — a genuine `compute_failed` (or an unexpected throw). Logged
+ *    so operators see the diagnostic; the section renders the distinct
+ *    transient-failure "Benefits unavailable" warning.
  */
 export const loadDashboardBenefitUsage = cache(
   async (
     ctx: TenantContext,
     memberId: string,
-  ): Promise<BenefitUsage | 'error'> => {
-    const res = await computeBenefitUsage(
-      ctx,
-      { memberId },
-      makeComputeBenefitUsageDeps(ctx.slug),
+  ): Promise<BenefitUsage | 'error' | null> => {
+    let res;
+    try {
+      res = await computeBenefitUsage(
+        ctx,
+        { memberId },
+        makeComputeBenefitUsageDeps(ctx.slug),
+      );
+    } catch (e) {
+      logger.warn(
+        { tenantId: ctx.slug, memberId, errKind: errKind(e) },
+        '[dashboard-benefits] computeBenefitUsage threw — Benefits unavailable',
+      );
+      return 'error';
+    }
+    if (res.ok) return res.value;
+    // Benign no-plan → neutral empty (not a warning). Distinct from a real
+    // compute failure so a plan-less member is not shown "Benefits unavailable".
+    if (res.error.code === 'member_not_found') return null;
+    logger.warn(
+      {
+        tenantId: ctx.slug,
+        memberId,
+        errKind: errKind(rootCause(res.error)),
+      },
+      '[dashboard-benefits] computeBenefitUsage failed — Benefits unavailable',
     );
-    return res.ok ? res.value : 'error';
+    return 'error';
   },
 );
 
