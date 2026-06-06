@@ -1,10 +1,11 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
-import { getLocale, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { PackageOpen } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -12,7 +13,6 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { formatMemberNumber, resolveMemberNumberPrefix } from '@/modules/members';
-import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 import Link from 'next/link';
 import { InvoicesSummaryCard } from '@/components/portal/invoices-summary-card';
 import {
@@ -21,12 +21,11 @@ import {
 } from './_components/membership-stat-section';
 import { OutstandingStatSection } from './_components/outstanding-stat-section';
 import { BenefitsStatSection } from './_components/benefits-stat-section';
+import { BenefitsPanelSection } from './_components/benefits-panel-section';
 import {
   RecentActivitySection,
   RecentActivitySkeleton,
 } from './_components/recent-activity-section';
-import { deriveBenefitsStat } from './_lib/dashboard-stats';
-import { loadDashboardBenefitUsage } from './_components/dashboard-reads';
 
 const PORTAL_BENEFITS_HREF = '/portal/benefits';
 
@@ -52,7 +51,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function MemberPortalHomePage() {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.dashboard');
-  const locale = await getLocale();
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
@@ -100,11 +98,6 @@ export default async function MemberPortalHomePage() {
     member.memberNumber,
   );
 
-  // Benefits quota panel (compact card) — reuse loadDashboardBenefitUsage
-  // once; React cache() deduplicates the call for BenefitsStatSection.
-  const usage = await loadDashboardBenefitUsage(tenant, memberId);
-  const benefitsStat = usage !== null ? deriveBenefitsStat(usage) : null;
-
   const statusChipKey =
     member.status === 'archived'
       ? ('archived' as const)
@@ -142,28 +135,35 @@ export default async function MemberPortalHomePage() {
         </Suspense>
       </div>
 
-      {/* 2-col: latest invoices | benefits quota. Stacks to 1-col on mobile. */}
+      {/* 2-col: latest invoices | benefits quota. Stacks to 1-col on mobile.
+          The benefits panel reads the SAME per-request cached usage as
+          BenefitsStatSection (React cache() dedups) inside its OWN Suspense
+          boundary, so the benefit read never blocks the 3 stat cards above
+          (F2 — the page body must not await benefit usage). */}
       <div className="grid grid-cols-1 gap-[var(--page-section-gap)] lg:grid-cols-2">
         <InvoicesSummaryCard user={user} />
-        {usage !== null && benefitsStat !== null && benefitsStat.kind !== 'empty' ? (
-          <BenefitUsageCard
-            locale={locale}
-            membershipYear={usage.membershipYear}
-            elapsedYearPct={usage.elapsedYearPct}
-            quantifiable={usage.quantifiable}
-            active={usage.active}
-            aggregateConsumedPct={usage.aggregateConsumedPct}
-            underUseWarning={usage.underUseWarning}
-            compact
-            previewHref={PORTAL_BENEFITS_HREF}
-            headingId="dashboard-benefits-panel"
-          />
-        ) : null}
+        <Suspense fallback={<BenefitsPanelSkeleton />}>
+          <BenefitsPanelSection ctx={tenant} memberId={memberId} />
+        </Suspense>
       </div>
 
       <Suspense fallback={<RecentActivitySkeleton />}>
         <RecentActivitySection userId={user.id} memberId={memberId} />
       </Suspense>
     </DetailContainer>
+  );
+}
+
+/** Shimmer placeholder for the 2-col benefits quota panel while it streams. */
+function BenefitsPanelSkeleton(): React.JSX.Element {
+  return (
+    <Card aria-busy="true" aria-hidden="true">
+      <CardContent className="flex flex-col gap-4 py-5">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-5/6" />
+        <Skeleton className="h-3 w-2/3" />
+      </CardContent>
+    </Card>
   );
 }
