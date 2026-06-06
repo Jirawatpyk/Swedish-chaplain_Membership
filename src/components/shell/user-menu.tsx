@@ -5,8 +5,11 @@
  *
  * Always-visible header element on every authenticated page. Clicking
  * opens a shadcn dropdown with account settings + sign-out actions.
- * Sign-out is an HTML form posting to `/api/auth/sign-out` so it works
- * without JS (progressive enhancement).
+ * Sign-out is a client-side `fetch('/api/auth/sign-out', { method: 'POST' })`
+ * (this is a `'use client'` component); on success it routes to the
+ * role-appropriate sign-in page via `router.push` + `router.refresh`, and on
+ * failure/network error it shows a toast. It requires JS (no progressive
+ * enhancement) — consistent with the rest of this interactive dropdown.
  *
  * Members get an Account menu linking to Account settings (/portal/account),
  * Renewal reminders (/portal/preferences/renewals), Data & privacy

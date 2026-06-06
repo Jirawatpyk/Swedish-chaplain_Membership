@@ -21,7 +21,10 @@ import { cn } from '@/lib/utils';
  *  - `aria-current="page"` on the active tab
  *  - touch targets ≥44px (`min-h/min-w-[44px]` — WCAG 2.5.8)
  *  - `env(safe-area-inset-bottom)` padding for the iPhone home-bar (review a11y-1);
- *    pairs with `viewport-fit=cover` set in the root layout's viewport export
+ *    pairs with `viewport-fit=cover`, which is scoped to the member portal
+ *    layout's viewport export (`(member)/portal/layout.tsx`) — NOT the root
+ *    layout (where it would leak app-wide and break the admin fixed-bottom
+ *    safe-area).
  */
 export function MemberBottomTabs() {
   const pathname = usePathname();
