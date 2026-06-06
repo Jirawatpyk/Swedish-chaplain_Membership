@@ -57,4 +57,15 @@ describe('<PortalSignOutButton>', () => {
     expect(pushSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
+
+  it('toasts signOutNetworkError on a thrown fetch error and does NOT navigate', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new TypeError('Failed to fetch'));
+    renderButton();
+    fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
+    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    expect(pushSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
 });
