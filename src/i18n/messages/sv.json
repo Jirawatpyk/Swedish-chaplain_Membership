@@ -3882,6 +3882,23 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "dashboard": {
+      "quotaBar": {
+        "readout": "{used} av {max}",
+        "ariaLabel": "{label}: {used} av {max} använt"
+      },
+      "activity": {
+        "title": "Senaste aktivitet",
+        "empty": {
+          "title": "Ingen aktivitet ännu",
+          "body": "Dina fakturor, förmånsanvändning och utskick visas här när du använder portalen."
+        },
+        "viewAll": "Visa all aktivitet"
+      },
+      "quickActions": {
+        "title": "Snabbåtgärder"
+      }
+    },
     "account": {
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",

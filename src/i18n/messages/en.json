@@ -3882,6 +3882,23 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "dashboard": {
+      "quotaBar": {
+        "readout": "{used} of {max}",
+        "ariaLabel": "{label}: {used} of {max} used"
+      },
+      "activity": {
+        "title": "Recent activity",
+        "empty": {
+          "title": "No activity yet",
+          "body": "Your invoices, benefit usage and broadcasts will appear here as you use the portal."
+        },
+        "viewAll": "View all activity"
+      },
+      "quickActions": {
+        "title": "Quick actions"
+      }
+    },
     "account": {
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",
