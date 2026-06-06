@@ -80,13 +80,13 @@ describe('deriveMembershipStat', () => {
     expect(stat.variant).toBe('neutral');
   });
 
-  it.each(['lapsed', 'cancelled', 'completed'] as const)(
+  it.each(['lapsed', 'cancelled'] as const)(
     'returns lapsed (destructive) for a terminal %s cycle expired in the past',
     (status) => {
-      // F11 — a terminal cycle whose coverage has ended MUST NOT read
-      // "Active — in good standing". isOverdue() returns false for terminal
-      // statuses, and the `due` branch excludes terminal too, so without an
-      // explicit branch these fell through to `active` and misinformed.
+      // 057 R2 finding A — only `lapsed`/`cancelled` terminal statuses mean
+      // coverage has ENDED. isOverdue() returns false for terminal statuses,
+      // and the `due` branch excludes terminal too, so without an explicit
+      // branch these fell through to `active` and misinformed.
       const stat = deriveMembershipStat(
         cycle({ status, expiresAt: '2026-05-27T00:00:00.000Z' }),
         NOW,
@@ -94,6 +94,38 @@ describe('deriveMembershipStat', () => {
       expect(stat.kind).toBe('lapsed');
       expect(stat.variant).toBe('destructive');
       expect(stat.status).toBe(status);
+    },
+  );
+
+  it('returns active (neutral) for a `completed` cycle even after its period ends', () => {
+    // 057 R2 finding A (CRITICAL) — `completed` means the member PAID/renewed
+    // (closedReason 'paid'/'completed_offline'/'admin_reactivated'). The
+    // renewals module creates no successor cycle (deferred R3), so a paid
+    // member's `completed` cycle stays the most-recent and, once its period
+    // ends, MUST NOT be shown "Membership lapsed — Renew" (which prompts a
+    // duplicate payment). A completed cycle is in good standing regardless of
+    // whether its period boundary has passed.
+    const stat = deriveMembershipStat(
+      cycle({ status: 'completed', expiresAt: '2026-05-27T00:00:00.000Z' }),
+      NOW,
+    );
+    expect(stat.kind).toBe('active');
+    expect(stat.variant).toBe('neutral');
+    expect(stat.status).toBe('completed');
+  });
+
+  it.each(['lapsed', 'cancelled'] as const)(
+    'returns lapsed for a terminal %s cycle even when expiresAt is unparseable (finding F)',
+    (status) => {
+      // 057 R2 finding F — a terminal lapsed/cancelled cycle with a malformed
+      // expiresAt (Date.parse → NaN) must still resolve to `lapsed`. Previously
+      // `NaN < now` is false, so it fell through to `active` and misinformed.
+      const stat = deriveMembershipStat(
+        cycle({ status, expiresAt: 'not-a-date' }),
+        NOW,
+      );
+      expect(stat.kind).toBe('lapsed');
+      expect(stat.variant).toBe('destructive');
     },
   );
 
