@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
@@ -38,6 +38,13 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
   },
+};
+
+export const viewport: Viewport = {
+  // `cover` lets content extend under the iPhone home-bar so the member
+  // bottom-tab bar's `env(safe-area-inset-bottom)` padding has room to push
+  // the tabs above the home indicator (057 review a11y-1).
+  viewportFit: 'cover',
 };
 
 export default async function RootLayout({

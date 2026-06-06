@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
+import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -74,13 +75,19 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
-      <main className="flex-1" id="main-content">
+      <main
+        className="flex-1 pb-[calc(var(--bottom-tab-height)+env(safe-area-inset-bottom))] lg:pb-0"
+        id="main-content"
+      >
         {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
             Server component returns null when ineligible (member already
             acknowledged, plan has no eblast quota, or feature flag off). */}
         <MarketingAcknowledgementBanner />
         {children}
       </main>
+      {/* 057 — mobile bottom tab bar (hidden ≥ lg). Fixed; <main> reserves
+          equivalent padding-bottom above so it never obscures content. */}
+      <MemberBottomTabs />
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
       <IdleWarningDialog portal="member" />
       {/* T086 — ⌘K member command palette (Pay-invoice shortcut). */}

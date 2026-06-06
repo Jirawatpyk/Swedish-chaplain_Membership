@@ -209,6 +209,7 @@
   --page-padding-y: 1.5rem;           /* 24px */
   --page-section-gap: 1.5rem;         /* 24px — gap between content sections (PageHeader → Card, Card → Card). Owned by layout containers' `flex flex-col gap-*` default. */
   --top-bar-height: 3.5rem;           /* 56px — admin + portal top bar */
+  --bottom-tab-height: 3.5rem;        /* 56px — member mobile tab-bar height (057) */
 
   /* --- Typography scale --- */
   --font-size-h1: 1.875rem;           /* 30px */
