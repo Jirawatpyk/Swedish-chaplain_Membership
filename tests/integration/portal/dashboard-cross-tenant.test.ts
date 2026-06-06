@@ -15,11 +15,21 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { asSatang } from '@/lib/money';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { loadMemberRenewalStatus, makeRenewalsDeps } from '@/modules/renewals';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { computeBenefitUsage, makeComputeBenefitUsageDeps } from '@/modules/insights';
+// D1 review finding E3(a) — drive the ACTUAL Dashboard read wrappers (not just
+// the underlying use-cases) so the cross-tenant guard covers the real read path.
+import {
+  loadDashboardRenewalCycle,
+  loadDashboardOutstanding,
+  loadDashboardBenefitUsage,
+} from '@/app/(member)/portal/_components/dashboard-reads';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -36,6 +46,11 @@ describe('057 dashboard reads — cross-tenant isolation (Principle I)', () => {
   const memberId = randomUUID();
   const cycleId = randomUUID();
   const planId = `dash-${randomUUID().slice(0, 8)}`;
+  const invoiceId = randomUUID();
+  // E3(b) — invoice positive control. THB 1,070.00 issued invoice for the
+  // tenant-A member (overdue: due 30 days ago) so the outstanding read has a
+  // non-empty positive arm in tenant A and a 0-row arm in tenant B.
+  const INVOICE_TOTAL_SATANG = 107_000n;
 
   beforeAll(async () => {
     seedUser = await createActiveTestUser('admin');
@@ -86,10 +101,70 @@ describe('057 dashboard reads — cross-tenant isolation (Principle I)', () => {
         createdAt: new Date(now - 5 * DAY_MS),
       }),
     );
+
+    // E3(b) — seed one ISSUED membership invoice for the tenant-A member. All
+    // `invoices_non_draft_has_snapshots` CHECK fields are populated (the
+    // immutability trigger is BEFORE UPDATE only, so a direct issued INSERT is
+    // fine). issue/due dates are display-only YYYY-MM-DD; storage stays UTC.
+    const dueYmd = new Date(now - 30 * DAY_MS).toISOString().slice(0, 10);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId,
+        planYear: 2026,
+        planId,
+        invoiceSubject: 'membership',
+        status: 'issued',
+        draftByUserId: seedUser.userId,
+        fiscalYear: 2026,
+        sequenceNumber: 1,
+        // DocumentNumber.parse expects PREFIX-FYYY-NNNNNN (the repo throws on a
+        // malformed value). Per-tenant unique, so a fixed value is fine.
+        documentNumber: 'INV-2026-000001',
+        issueDate: new Date(now - 60 * DAY_MS).toISOString().slice(0, 10),
+        dueDate: dueYmd,
+        currency: 'THB',
+        subtotalSatang: 100_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7_000n,
+        totalSatang: INVOICE_TOTAL_SATANG,
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { name: 'Sim Tenant A', taxId: '0000000000000' },
+        // Must satisfy BOTH the non-draft `invoices_snapshot_has_contact_email`
+        // CHECK (migration 0045) AND the row→Domain `memberIdentitySnapshotSchema`
+        // parse (the repo throws MalformedSnapshotError otherwise). Field names
+        // are snake_case per the schema. SIMULATED data only — never real PII.
+        memberIdentitySnapshot: {
+          legal_name: 'Sim Buyer Co., Ltd.',
+          tax_id: '1111111111111',
+          address: '1 Simulated Rd, Bangkok 10110',
+          primary_contact_name: 'Sim Buyer',
+          primary_contact_email: 'sim.buyer@example.com',
+        },
+        pdfBlobKey: `sim/${invoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenantA.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026',
+        descriptionEn: 'Membership 2026',
+        unitPriceSatang: 100_000n,
+        totalSatang: asSatang(100_000n),
+        position: 1,
+      });
+    });
   }, 120_000);
 
   afterAll(async () => {
     for (const t of [tenantA, tenantB]) {
+      await db.delete(invoiceLines).where(eq(invoiceLines.tenantId, t.ctx.slug)).catch(() => {});
+      await db.delete(invoices).where(eq(invoices.tenantId, t.ctx.slug)).catch(() => {});
       await db.delete(renewalCycles).where(eq(renewalCycles.tenantId, t.ctx.slug)).catch(() => {});
     }
     await tenantA.cleanup().catch(() => {});
@@ -155,5 +230,50 @@ describe('057 dashboard reads — cross-tenant isolation (Principle I)', () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.code).toBe('member_not_found');
+  });
+
+  // -------------------------------------------------------------------------
+  // E3(a) — drive the ACTUAL Dashboard read WRAPPERS (loadDashboard*), not just
+  // the underlying use-cases, so the cross-tenant guard covers the real read
+  // path the page renders. E3(b) — invoice positive control on the outstanding
+  // wrapper so the arm is not vacuous.
+  // -------------------------------------------------------------------------
+
+  it('renewal wrapper: tenant A sees its cycle; tenant B sees null', async () => {
+    const a = await loadDashboardRenewalCycle(tenantA.ctx.slug, memberId);
+    expect(a).not.toBe('error');
+    expect(a === 'error' ? null : a?.cycleId).toBe(cycleId);
+
+    const b = await loadDashboardRenewalCycle(tenantB.ctx.slug, memberId);
+    // tenant B has no cycle for this memberId → null (NOT another tenant's row,
+    // NOT the 'error' sentinel).
+    expect(b).toBeNull();
+  });
+
+  it('outstanding wrapper: tenant A sees the seeded invoice; tenant B sees 0 (E3b)', async () => {
+    const a = await loadDashboardOutstanding(tenantA.ctx.slug, memberId);
+    expect(a.error).toBe(false);
+    expect(a.total).toBe(1);
+    expect(a.inputs).toHaveLength(1);
+    expect(a.inputs[0]?.status).toBe('issued');
+    expect(a.inputs[0]?.totalSatang).toBe(INVOICE_TOTAL_SATANG);
+
+    const b = await loadDashboardOutstanding(tenantB.ctx.slug, memberId);
+    expect(b.error).toBe(false);
+    expect(b.total).toBe(0);
+    expect(b.inputs).toHaveLength(0);
+  });
+
+  it('benefit wrapper: tenant A resolves a VO; tenant B resolves null (benign no-plan)', async () => {
+    const a = await loadDashboardBenefitUsage(tenantA.ctx, memberId);
+    // tenant A: a real BenefitUsage VO (never the 'error' sentinel here).
+    expect(a).not.toBe('error');
+    expect(a).not.toBeNull();
+
+    const b = await loadDashboardBenefitUsage(tenantB.ctx, memberId);
+    // tenant B: the member is invisible → computeBenefitUsage member_not_found
+    // → the wrapper maps it to null (benign empty), NOT another tenant's data
+    // and NOT the 'error' sentinel (D1 review finding C).
+    expect(b).toBeNull();
   });
 });

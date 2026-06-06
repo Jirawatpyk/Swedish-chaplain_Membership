@@ -91,6 +91,16 @@ export function deriveMembershipStat(
   if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
     return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
+  // E2 — a NON-TERMINAL cycle whose `expiresAt` is unparseable (days === null
+  // here, after the overdue + ended-terminal branches above) is a data-
+  // integrity defect: we cannot tell whether coverage is current. A corrupt
+  // date must NOT read "in good standing" (which would silence a possibly-
+  // lapsed membership). Surface it honestly as the `error` "Status unavailable"
+  // state rather than falling through to `active`. (A terminal cycle with a
+  // malformed date is already handled by the `isEndedTerminal` branch → lapsed.)
+  if (days === null && !isTerminalCycleStatus(status)) {
+    return { kind: 'error', variant: 'warning', daysRemaining: null, status, expiryIso: cycle.expiresAt };
+  }
   // Far off, completed (paid up), or ended-terminal-but-still-within-period →
   // show membership status, not a stale countdown.
   return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt };

@@ -129,6 +129,24 @@ describe('deriveMembershipStat', () => {
     },
   );
 
+  it.each(['awaiting_payment', 'reminded'] as const)(
+    'returns error (warning), NOT active, for a non-terminal %s cycle with an unparseable expiresAt (E2)',
+    (status) => {
+      // E2 — a corrupt date on a non-terminal cycle (Date.parse → NaN) leaves
+      // `daysUntilExpiry` null and `isOverdue` false, so it previously fell
+      // through to `active` ("in good standing") — silencing a membership whose
+      // real standing is unknown. It must surface the honest "Status unavailable"
+      // error state instead.
+      const stat = deriveMembershipStat(
+        cycle({ status: status as RenewalCycle['status'], expiresAt: 'not-a-date' }),
+        NOW,
+      );
+      expect(stat.kind).toBe('error');
+      expect(stat.variant).toBe('warning');
+      expect(stat.daysRemaining).toBeNull();
+    },
+  );
+
   it('returns error (warning) when the renewal read failed (not first-run)', () => {
     // F4 — a DB-throw collapsed to a different sentinel than a genuine
     // no-cycle member. `'error'` must NOT render the "Welcome aboard"
