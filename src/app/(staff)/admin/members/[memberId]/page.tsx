@@ -679,6 +679,13 @@ export default async function MemberDetailPage({
     tLegalTypes,
   );
 
+  // Compute once so the JSX below can conditionally switch between a 2-col
+  // grid (Renewal + Benefits side-by-side) and full-width Renewal alone.
+  // Benefits only shows when the F9 flag is on AND the actor is admin/manager.
+  const showBenefitsPreview =
+    env.features.f9Dashboard &&
+    (session.user.role === 'admin' || session.user.role === 'manager');
+
   return (
     <DetailContainer>
       <PageHeader
@@ -981,127 +988,28 @@ export default async function MemberDetailPage({
         </Card>
         </section>
 
-        {/* 056 layout C — 2-col row: Renewal & Health beside Contacts on lg+,
-            reflowing to a single column below lg. `items-start` so the two
-            cards top-align even when their heights differ. */}
-        <div className="grid grid-cols-1 items-start gap-[var(--page-section-gap)] lg:grid-cols-2">
-          {/* Pass A · Section 1 — Renewal & Health (F8 cycle status + expiry +
-              at-risk band, with the F9 engagement score MERGED in). Own
-              Suspense boundary so the F8/F9 reads never block the
-              company/contacts paint. */}
-          <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
-          </Suspense>
+        {/* Compact-summary 2-col row: Renewal & Health (left) + Benefits
+            Preview (right) on lg+, reflowing to a single column below lg.
+            `items-start` keeps the two cards top-aligned.
+            When Benefits is NOT shown (F9 flag off or non-admin/manager),
+            `showBenefitsPreview` is false and we omit the grid wrapper so
+            Renewal & Health spans the full page width instead of being
+            stranded at half-width with an empty right column. */}
+        {showBenefitsPreview ? (
+          <div className="grid grid-cols-1 items-start gap-[var(--page-section-gap)] lg:grid-cols-2">
+            {/* Pass A · Section 1 — Renewal & Health (F8 cycle status +
+                expiry + at-risk band, with the F9 engagement score MERGED
+                in). Own Suspense boundary so the F8/F9 reads never block
+                the company/contacts paint. */}
+            <Suspense fallback={<MemberRenewalHealthSkeleton />}>
+              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+            </Suspense>
 
-          {/* Single Contacts Card groups primary + secondary contacts
-              under one heading — matches the Company section pattern
-              so every content group on the page has consistent card
-              framing. Individual contacts render as flat rows inside
-              CardContent (ContactBlock), not as nested cards. */}
-          <section aria-labelledby="member-contacts-heading">
-          <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <SectionHeading id="member-contacts-heading">
-              {t('sections.contacts')}
-            </SectionHeading>
-            {/* T097 — Emergency primary contact transfer helper. Clicking
-                the icon opens a Popover (not a hover Tooltip — we need
-                tap-discoverable on mobile) that explains the two-step
-                procedure per spec Edge Cases: add the new person as a
-                secondary contact, then promote them.
-                056 fix #8 — trigger raised to a 44×44 tap target (was 24×24)
-                per WCAG 2.5.8; the icon stays 16px. */}
-            <Popover>
-              <PopoverTrigger
-                aria-label={t('emergencyPrimary.ariaLabel')}
-                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <HelpCircleIcon className="size-4" aria-hidden="true" />
-              </PopoverTrigger>
-              <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
-                <p className="font-medium">{t('emergencyPrimary.title')}</p>
-                <p className="mt-2 text-muted-foreground">
-                  {t('emergencyPrimary.body')}
-                </p>
-              </PopoverContent>
-            </Popover>
-            {canWrite && member.status !== 'archived' && (
-              <ContactFormDialog
-                memberId={member.memberId}
-                mode="add"
-                trigger={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto gap-2"
-                  >
-                    <UserPlusIcon className="size-4" aria-hidden="true" />
-                    {t('contactActions.add')}
-                  </Button>
-                }
-              />
-            )}
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {primary ? (
-              <ContactBlock
-                contact={primary}
-                memberId={member.memberId}
-                pendingInvitation={pendingInvitationsByContactId.get(
-                  primary.contactId,
-                )}
-                subscribed={!unsubscribedContactIds.has(primary.contactId)}
-                canWrite={canWrite}
-                t={t}
-              />
-            ) : null}
-
-            {secondary.length > 0 && (
-              <>
-                <Separator />
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('sections.secondary')}
-                </h3>
-                {secondary.map((c, i) => (
-                  <div key={c.contactId} className="flex flex-col gap-6">
-                    {i > 0 ? <Separator /> : null}
-                    <ContactBlock
-                      contact={c}
-                      memberId={member.memberId}
-                      pendingInvitation={pendingInvitationsByContactId.get(
-                        c.contactId,
-                      )}
-                      subscribed={!unsubscribedContactIds.has(c.contactId)}
-                      canWrite={canWrite}
-                      t={t}
-                    />
-                  </div>
-                ))}
-              </>
-            )}
-
-            {/* 056 fix #6 — empty state when there is no primary AND no
-                secondary contact (previously the card body rendered empty). */}
-            {!primary && secondary.length === 0 && (
-              <p className="py-2 text-sm text-muted-foreground">
-                {t('sections.contactsEmpty')}
-              </p>
-            )}
-          </CardContent>
-          </Card>
-          </section>
-        </div>
-
-        {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
-            cultural-ticket usage at a glance) with a "Full benefits →" link
-            to the dedicated benefits page. F9-gated; staff-only (admin +
-            manager — requireSession('staff') already excludes 'member').
-            Full width below the 2-col row. Own Suspense boundary so the
-            benefit read never blocks paint. */}
-        {env.features.f9Dashboard &&
-          (session.user.role === 'admin' ||
-            session.user.role === 'manager') && (
+            {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
+                cultural-ticket usage at a glance) with a "Full benefits →"
+                link to the dedicated benefits page. F9-gated; admin/manager
+                only (requireSession('staff') already excludes 'member').
+                Own Suspense boundary so the benefit read never blocks paint. */}
             <Suspense fallback={<MemberBenefitsPreviewSkeleton />}>
               <MemberBenefitsPreviewSection
                 tenant={tenant}
@@ -1110,7 +1018,111 @@ export default async function MemberDetailPage({
                 actorRole={session.user.role}
               />
             </Suspense>
-          )}
+          </div>
+        ) : (
+          /* Benefits not available: Renewal & Health renders full-width. */
+          <Suspense fallback={<MemberRenewalHealthSkeleton />}>
+            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+          </Suspense>
+        )}
+
+        {/* Contacts — full-width below the compact 2-col row. Single Card
+            groups primary + secondary contacts under one heading, matching
+            the Company section pattern. Individual contacts render as flat
+            rows inside CardContent (ContactBlock), not as nested cards. */}
+        <section aria-labelledby="member-contacts-heading">
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2">
+              <SectionHeading id="member-contacts-heading">
+                {t('sections.contacts')}
+              </SectionHeading>
+              {/* T097 — Emergency primary contact transfer helper. Clicking
+                  the icon opens a Popover (not a hover Tooltip — we need
+                  tap-discoverable on mobile) that explains the two-step
+                  procedure per spec Edge Cases: add the new person as a
+                  secondary contact, then promote them.
+                  056 fix #8 — trigger raised to a 44×44 tap target (was 24×24)
+                  per WCAG 2.5.8; the icon stays 16px. */}
+              <Popover>
+                <PopoverTrigger
+                  aria-label={t('emergencyPrimary.ariaLabel')}
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <HelpCircleIcon className="size-4" aria-hidden="true" />
+                </PopoverTrigger>
+                <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
+                  <p className="font-medium">{t('emergencyPrimary.title')}</p>
+                  <p className="mt-2 text-muted-foreground">
+                    {t('emergencyPrimary.body')}
+                  </p>
+                </PopoverContent>
+              </Popover>
+              {canWrite && member.status !== 'archived' && (
+                <ContactFormDialog
+                  memberId={member.memberId}
+                  mode="add"
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto gap-2"
+                    >
+                      <UserPlusIcon className="size-4" aria-hidden="true" />
+                      {t('contactActions.add')}
+                    </Button>
+                  }
+                />
+              )}
+            </CardHeader>
+            <CardContent className="flex flex-col gap-6">
+              {primary ? (
+                <ContactBlock
+                  contact={primary}
+                  memberId={member.memberId}
+                  pendingInvitation={pendingInvitationsByContactId.get(
+                    primary.contactId,
+                  )}
+                  subscribed={!unsubscribedContactIds.has(primary.contactId)}
+                  canWrite={canWrite}
+                  t={t}
+                />
+              ) : null}
+
+              {secondary.length > 0 && (
+                <>
+                  <Separator />
+                  <h3 className="text-sm font-medium text-muted-foreground">
+                    {t('sections.secondary')}
+                  </h3>
+                  {secondary.map((c, i) => (
+                    <div key={c.contactId} className="flex flex-col gap-6">
+                      {i > 0 ? <Separator /> : null}
+                      <ContactBlock
+                        contact={c}
+                        memberId={member.memberId}
+                        pendingInvitation={pendingInvitationsByContactId.get(
+                          c.contactId,
+                        )}
+                        subscribed={!unsubscribedContactIds.has(c.contactId)}
+                        canWrite={canWrite}
+                        t={t}
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* 056 fix #6 — empty state when there is no primary AND no
+                  secondary contact (previously the card body rendered empty). */}
+              {!primary && secondary.length === 0 && (
+                <p className="py-2 text-sm text-muted-foreground">
+                  {t('sections.contactsEmpty')}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </section>
 
         {/* US7 AS1 — Invoice history on member page. Wrapped in its
             own Suspense boundary so member metadata + contacts paint
