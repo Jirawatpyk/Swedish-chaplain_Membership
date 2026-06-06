@@ -81,14 +81,34 @@ export async function OutstandingStatSection({
       ? t('dueSub', { date: formatDueDate(stat.earliestDueDate, locale) })
       : countSub;
 
+  // 057 R2 finding D — when the cap clipped the result the overdue count is
+  // also a floor, so use a "{count} or more" form for the overdue label too.
   const variantLabel = isOverdue
-    ? t('overdueSub', { count: stat.overdueCount })
+    ? read.partial
+      ? t('overdueSubPartial', { count: stat.overdueCount })
+      : t('overdueSub', { count: stat.overdueCount })
     : countSub;
+
+  // 057 R2 finding B — the destructive (red) headline figure must be the
+  // amount that is actually PAST DUE (`overdueSatang`), not the full owed
+  // total (`totalSatang`, which includes not-yet-due invoices). Showing the
+  // total in red over-states the alarming figure (e.g. THB 10,050 red when
+  // only THB 50 is past due). For the calm `due` window the full total is
+  // the right figure to surface.
+  const amountSatang = isOverdue ? stat.overdueSatang : stat.totalSatang;
+  const amount = formatSatangThb(amountSatang, locale);
+
+  // 057 R2 finding D — when the page cap clipped the result the summed amount
+  // is a floor (only the <=100 returned rows are counted). Present it honestly
+  // as "{amount}+" rather than an exact figure, and floor the overdue count.
+  const value = read.partial
+    ? t('valuePartial', { amount })
+    : t('value', { amount });
 
   return (
     <StatCard
       label={t('label')}
-      value={t('value', { amount: formatSatangThb(stat.totalSatang, locale) })}
+      value={value}
       sub={sub}
       variant={isOverdue ? 'destructive' : 'warning'}
       variantLabel={variantLabel}

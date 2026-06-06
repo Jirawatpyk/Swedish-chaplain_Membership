@@ -163,6 +163,11 @@ describe('deriveOutstandingStat', () => {
     expect(stat.overdueCount).toBe(1);
     expect(stat.overdueSatang).toBe(53_50n);
     expect(stat.earliestDueDate).toBe('2026-05-10');
+    // 057 R2 finding B — the red headline figure must be the past-due subset
+    // (`overdueSatang`), NOT the full owed total. They must differ whenever a
+    // not-yet-due invoice is present, so the section can show only THB 53.50
+    // in red rather than the THB 1,123.50 total (over-alarming).
+    expect(stat.overdueSatang).toBeLessThan(stat.totalSatang);
   });
 
   it('returns `due` (not destructive) when owing but nothing is overdue yet', () => {

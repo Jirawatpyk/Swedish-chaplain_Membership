@@ -3908,9 +3908,11 @@
       "outstanding": {
         "label": "Outstanding balance",
         "value": "{amount}",
+        "valuePartial": "{amount}+",
         "countSub": "{count, plural, one {# unpaid invoice} other {# unpaid invoices}}",
         "countSubPartial": "{count, plural, one {# or more unpaid invoice} other {# or more unpaid invoices}}",
         "overdueSub": "{count, plural, one {# overdue invoice} other {# overdue invoices}}",
+        "overdueSubPartial": "{count, plural, one {# or more overdue invoice} other {# or more overdue invoices}}",
         "dueSub": "Earliest due {date}",
         "clearValue": "All paid",
         "clearSub": "You have no outstanding invoices.",

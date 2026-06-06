@@ -3908,9 +3908,11 @@
       "outstanding": {
         "label": "Utestående saldo",
         "value": "{amount}",
+        "valuePartial": "{amount}+",
         "countSub": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}}",
         "countSubPartial": "{count, plural, one {# eller fler obetald faktura} other {# eller fler obetalda fakturor}}",
         "overdueSub": "{count, plural, one {# förfallen faktura} other {# förfallna fakturor}}",
+        "overdueSubPartial": "{count, plural, one {# eller fler förfallen faktura} other {# eller fler förfallna fakturor}}",
         "dueSub": "Förfaller tidigast {date}",
         "clearValue": "Allt betalt",
         "clearSub": "Du har inga utestående fakturor.",

@@ -3908,9 +3908,11 @@
       "outstanding": {
         "label": "ยอดค้างชำระ",
         "value": "{amount}",
+        "valuePartial": "{amount}+",
         "countSub": "{count, plural, other {ใบแจ้งหนี้ค้างชำระ # ใบ}}",
         "countSubPartial": "{count, plural, other {ใบแจ้งหนี้ค้างชำระอย่างน้อย # ใบ}}",
         "overdueSub": "{count, plural, other {ใบแจ้งหนี้เกินกำหนด # ใบ}}",
+        "overdueSubPartial": "{count, plural, other {ใบแจ้งหนี้เกินกำหนดอย่างน้อย # ใบ}}",
         "dueSub": "กำหนดชำระเร็วสุด {date}",
         "clearValue": "ชำระครบแล้ว",
         "clearSub": "คุณไม่มีใบแจ้งหนี้ค้างชำระ",
