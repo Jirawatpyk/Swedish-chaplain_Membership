@@ -3918,25 +3918,13 @@
         "emptyValue": "No benefits yet",
         "emptySub": "Your plan's benefits will show up here."
       },
-      "quotaBar": {
-        "readout": "{used} of {max}",
-        "ariaLabel": "{label}: {used} of {max} used"
-      },
       "activity": {
         "title": "Recent activity",
         "empty": {
-          "title": "No activity yet",
-          "body": "Your invoices, benefit usage and broadcasts will appear here as you use the portal."
+          "title": "No activity yet"
         },
         "viewAll": "View all activity",
         "emptyCta": "Explore benefits"
-      },
-      "invoicesPanel": {
-        "heading": "Latest invoices"
-      },
-      "benefitsPanel": {
-        "heading": "Benefits usage",
-        "viewAll": "View all benefits"
       },
       "firstRun": {
         "title": "Welcome to the {tenant} member portal",

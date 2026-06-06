@@ -3918,25 +3918,13 @@
         "emptyValue": "Inga förmåner ännu",
         "emptySub": "Din plans förmåner visas här."
       },
-      "quotaBar": {
-        "readout": "{used} av {max}",
-        "ariaLabel": "{label}: {used} av {max} använt"
-      },
       "activity": {
         "title": "Senaste aktivitet",
         "empty": {
-          "title": "Ingen aktivitet ännu",
-          "body": "Dina fakturor, förmånsanvändning och utskick visas här när du använder portalen."
+          "title": "Ingen aktivitet ännu"
         },
         "viewAll": "Visa all aktivitet",
         "emptyCta": "Utforska förmåner"
-      },
-      "invoicesPanel": {
-        "heading": "Senaste fakturor"
-      },
-      "benefitsPanel": {
-        "heading": "Förmånsanvändning",
-        "viewAll": "Visa alla förmåner"
       },
       "firstRun": {
         "title": "Välkommen till {tenant}s medlemsportal",

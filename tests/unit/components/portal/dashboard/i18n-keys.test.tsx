@@ -4,16 +4,19 @@ import th from '@/i18n/messages/th.json';
 import sv from '@/i18n/messages/sv.json';
 
 /**
- * Locks the portal.dashboard i18n surface for the G2 primitives across
+ * Locks the portal.dashboard i18n surface for the live primitives across
  * all three locales. Missing keys would surface as raw key paths in the
  * UI (EN) or fail `pnpm check:i18n` on release branches (TH/SV).
+ *
+ * Keys removed from this list (catch-up review 2026-06-06):
+ *  - quotaBar.readout / quotaBar.ariaLabel  (dead: QuotaBar component deleted)
+ *  - activity.empty.body  (dead: portal ActivityFeed primitive deleted;
+ *    RecentActivitySection uses only empty.title + emptyCta)
  */
 const REQUIRED = [
-  'quotaBar.readout',
-  'quotaBar.ariaLabel',
   'activity.title',
   'activity.empty.title',
-  'activity.empty.body',
+  'activity.emptyCta',
   'activity.viewAll',
 ] as const;
 

@@ -33,7 +33,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -89,7 +88,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t('summary.heading')}</CardTitle>
+          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
           <CardDescription>{t('summary.description')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -139,7 +138,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t('summary.heading')}</CardTitle>
+          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
           <CardDescription>{t('summary.description')}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -154,7 +153,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle>{t('summary.heading')}</CardTitle>
+          <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
           <CardDescription>{t('summary.description')}</CardDescription>
         </div>
         {rows.length > 0 ? (

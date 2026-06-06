@@ -195,4 +195,35 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     const html = renderToStaticMarkup(tree as ReactElement);
     expect(html).toContain('notLinked');
   });
+
+  it('f9Dashboard:true — renders 4 <h2> sections including the Directory section', async () => {
+    // Flip the feature flag on for this test only.
+    const envMod = await import('@/lib/env');
+    // @ts-expect-error — override readonly features for test isolation
+    envMod.env.features.f9Dashboard = true;
+    try {
+      const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+      const html = renderToStaticMarkup(tree as ReactElement);
+      // Organisation + Membership + Contacts + Directory = 4 headings.
+      const h2Count = (html.match(/<h2/g) ?? []).length;
+      expect(h2Count).toBe(4);
+      // The Directory section heading key comes from directorySettings.title.
+      expect(html).toContain('title');
+    } finally {
+      // @ts-expect-error — restore
+      envMod.env.features.f9Dashboard = false;
+    }
+  });
+
+  it('isPrimary:false — Invite Colleague button is absent', async () => {
+    const nonPrimaryContact = { ...ownContact, isPrimary: false };
+    getMemberMock.mockResolvedValueOnce({
+      ok: true,
+      value: { member, contacts: [nonPrimaryContact] },
+    });
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const html = renderToStaticMarkup(tree as ReactElement);
+    // The invite button renders only when ownContact.isPrimary === true.
+    expect(html).not.toContain('inviteColleague');
+  });
 });
