@@ -45,7 +45,7 @@
  * authoritative run is the preview deploy; this honours the prompt's
  * "make the test reflect REAL behavior" guidance.)
  *
- * Dev-profiler pageerror (DEV-ONLY noise — scoped opt-out below): under
+ * Dev-profiler pageerror (DEV-ONLY noise — NARROW scoped opt-out below): under
  * `next dev`, navigating to the `RenewalPreferencesPage` redirect-only Server
  * Component DETERMINISTICALLY throws
  * `Failed to execute 'measure' on 'Performance': 'RenewalPreferencesPage'
@@ -57,11 +57,26 @@
  * authoritative preview deploy. The shared `../fixtures` pageerror auto-fail
  * (fixtures.ts) only carves out messages containing `__nextjs`, and this
  * profiler error's message is the bare `Performance.measure` TypeError, so it
- * would trip the fixture. fixtures.ts documents `E2E_PAGEERROR_IGNORE=true` as
- * THE opt-out for exactly this dev-server case; the beforeAll/afterAll below
- * sets it for THIS spec's worker only (and restores it) so the opt-out does not
- * leak to other specs sharing the worker. The status + heading assertions
- * remain the loud, genuine-regression detectors regardless.
+ * would trip the fixture.
+ *
+ * We deliberately do NOT use the blanket `E2E_PAGEERROR_IGNORE=true` opt-out
+ * here: a blanket suppression would silently swallow a REAL deferred
+ * `MISSING_MESSAGE` / hydration crash on the account hub (the exact bug class
+ * this project most cares about). Instead, the beforeAll/afterAll below sets
+ * the NARROW `E2E_PAGEERROR_IGNORE_PATTERN` regex env var (added to fixtures.ts)
+ * to a pattern that matches ONLY this profiler error. The pattern is anchored
+ * on the React-internal stack frame `flushComponentPerformance` rather than the
+ * message, because the SAME error has engine-specific messages: chromium /
+ * mobile-chrome emit the descriptive `… 'Performance': '…' cannot have a
+ * negative time stamp`, while WebKit / mobile-safari emit only the bare,
+ * uninformative `Type error` whose ONLY stable discriminator is that stack
+ * frame. fixtures.ts therefore tests the pattern against `message + '\n' +
+ * stack`. `flushComponentPerformance` is a React dev-profiler internal that
+ * never appears in app error stacks, so every other pageerror — including
+ * `MISSING_MESSAGE`, app `TypeError`, and hydration mismatches — still fails
+ * the test. The var is set for THIS spec's worker only and restored in afterAll
+ * so the opt-out does not leak to other specs sharing the worker. The status +
+ * heading assertions remain the loud, genuine-regression detectors regardless.
  *
  * Hub <h2> accessible names (en.json `portal.account.sections`):
  *   - renewalPrefs = "Renewal preferences" → /renewal preferences/i
@@ -83,19 +98,32 @@ import { signInAsMember } from '../helpers/member-session';
 test.describe('@route-safety Account-hub legacy routes resolve to anchors', () => {
   // Scope the dev-profiler pageerror opt-out (see header note) to THIS spec's
   // worker process — the shared fixtures.ts pageerror auto-fail reads
-  // `process.env.E2E_PAGEERROR_IGNORE` at teardown, so toggling it here is
-  // honoured per-test, and restoring it in afterAll prevents leakage into other
-  // specs that may run in the same `--workers=1` process.
-  let prevPageErrorIgnore: string | undefined;
+  // `process.env.E2E_PAGEERROR_IGNORE_PATTERN` at teardown, so toggling it here
+  // is honoured per-test, and restoring it in afterAll prevents leakage into
+  // other specs that may run in the same `--workers=1` process.
+  //
+  // NARROW pattern (not the blanket flag): matches ONLY the Next.js 16
+  // dev-profiler error, anchored on the React-internal stack frame
+  // `flushComponentPerformance`. fixtures.ts tests this pattern against
+  // `message + '\n' + stack`, which is required because the SAME error has
+  // engine-specific messages: chromium/mobile-chrome emit the descriptive
+  // `Failed to execute 'measure' on 'Performance': '…' cannot have a negative
+  // time stamp`, while WebKit/mobile-safari emit only the uninformative bare
+  // `Type error` — the `flushComponentPerformance` frame is the sole stable
+  // discriminator across both. `flushComponentPerformance` is a React
+  // dev-profiler internal that NEVER appears in an app-level error stack, so it
+  // can NOT mask a real `MISSING_MESSAGE`, app `TypeError`, or hydration-mismatch
+  // pageerror — each of those has a different stack and would still fail loudly.
+  let prevPageErrorIgnorePattern: string | undefined;
   test.beforeAll(() => {
-    prevPageErrorIgnore = process.env.E2E_PAGEERROR_IGNORE;
-    process.env.E2E_PAGEERROR_IGNORE = 'true';
+    prevPageErrorIgnorePattern = process.env.E2E_PAGEERROR_IGNORE_PATTERN;
+    process.env.E2E_PAGEERROR_IGNORE_PATTERN = 'flushComponentPerformance';
   });
   test.afterAll(() => {
-    if (prevPageErrorIgnore === undefined) {
-      delete process.env.E2E_PAGEERROR_IGNORE;
+    if (prevPageErrorIgnorePattern === undefined) {
+      delete process.env.E2E_PAGEERROR_IGNORE_PATTERN;
     } else {
-      process.env.E2E_PAGEERROR_IGNORE = prevPageErrorIgnore;
+      process.env.E2E_PAGEERROR_IGNORE_PATTERN = prevPageErrorIgnorePattern;
     }
   });
 
