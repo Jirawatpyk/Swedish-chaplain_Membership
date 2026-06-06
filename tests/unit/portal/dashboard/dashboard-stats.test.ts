@@ -232,4 +232,59 @@ describe('deriveBenefitsStat', () => {
     const stat = deriveBenefitsStat(usage({ active: [{ key: 'logo_listing' }] }));
     expect(stat.kind).toBe('on-track');
   });
+
+  // Defer 1 — error sentinel (mirrors membership / outstanding error branches)
+  it('returns error (warning) when the benefit read failed — sentinel distinct from empty', () => {
+    // A computeBenefitUsage result-not-ok must NOT render "No benefits yet"
+    // (which implies the plan has no benefits), nor silently show on-track.
+    // It must produce kind:'error' / variant:'warning' so the section renders
+    // a transient-failure placeholder ("Benefits unavailable").
+    const stat = deriveBenefitsStat('error');
+    expect(stat.kind).toBe('error');
+    expect(stat.variant).toBe('warning');
+    expect(stat.underUseCount).toBe(0);
+  });
+});
+
+describe('deriveMembershipStat — lapsed instant-level boundary (Defer 2)', () => {
+  // Construct a terminal-cycle factory scoped to this describe.
+  function terminalCycle(expiresAt: string, status: 'lapsed' | 'cancelled' | 'completed' = 'lapsed'): import('@/modules/renewals').RenewalCycle {
+    return {
+      tenantId: 't',
+      cycleId: 'c2',
+      memberId: 'm2',
+      status,
+      periodFrom: '2026-01-01T00:00:00.000Z',
+      periodTo: expiresAt,
+      expiresAt,
+      cycleLengthMonths: 12,
+      tierAtCycleStart: 'regular',
+      planIdAtCycleStart: 'p1',
+      frozenPlanPriceThb: '50000.00',
+      frozenPlanTermMonths: 12,
+      frozenPlanCurrency: 'THB',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      closedAt: null,
+      closedReason: null,
+    } as import('@/modules/renewals').RenewalCycle;
+  }
+
+  it('flips to lapsed the instant expiry passes — same millisecond semantics as isOverdue', () => {
+    // Expiry at 08:00 BKK (01:00 UTC); now is 14:00 BKK (07:00 UTC) same day.
+    // Math.ceil day-granularity gives days=0 (stays active); instant comparison
+    // gives lapsed. This is the Defer 2 boundary case.
+    const expiresAt = '2026-06-06T01:00:00.000Z'; // 08:00 Asia/Bangkok
+    const now = new Date('2026-06-06T07:00:00.000Z'); // 14:00 Asia/Bangkok
+    const stat = deriveMembershipStat(terminalCycle(expiresAt, 'lapsed'), now);
+    expect(stat.kind).toBe('lapsed');
+    expect(stat.variant).toBe('destructive');
+  });
+
+  it('stays active for a terminal cycle whose expiry is in the future (instant)', () => {
+    // now is 06:00 UTC; expiry is 08:00 UTC same day → not yet past
+    const expiresAt = '2026-06-06T08:00:00.000Z';
+    const now = new Date('2026-06-06T06:00:00.000Z');
+    const stat = deriveMembershipStat(terminalCycle(expiresAt, 'completed'), now);
+    expect(stat.kind).toBe('active');
+  });
 });
