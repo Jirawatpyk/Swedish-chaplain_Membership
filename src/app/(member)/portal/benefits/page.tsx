@@ -1,16 +1,16 @@
 /**
- * F9 US4 (T065) — /portal/benefits (member's own benefit usage dashboard).
+ * 058 G1 — /portal/benefits with tabs [Benefits] [Broadcasts] (spec §4.4).
  *
- * The member sees, for the current membership year, their consumption vs
- * entitlement for each quantifiable benefit + the under-use warning + their
- * active/unlimited benefits (FR-019–FR-023). The member is resolved from the
- * session (`findByLinkedUserId`), never the URL — a member can only ever see
- * their own benefits (mirrors the /portal/timeline self-scoping).
+ * Active tab driven by ?tab=benefits|broadcasts (default benefits). The active
+ * panel is rendered SERVER-side; the client <BenefitsTabs> supplies the tab
+ * chrome + writes ?tab= on switch (so deep-link / back / share work). memberId
+ * comes from the session (`findByLinkedUserId`), never the URL — a member can
+ * only ever see their own benefits (mirrors the /portal/timeline self-scoping).
  *
- * A genuine compute failure throws to the error boundary (never masked as an
- * empty view); an unlinked account renders the benign empty state. Emits the
- * SC-012 self-view adoption metric (no PII-read audit — a member reading their
- * own benefits is not a third-party PII access).
+ * A genuine member-lookup or benefit-usage compute failure throws to the error
+ * boundary (never masked as an empty view); an unlinked account renders the
+ * benign empty state. Emits the SC-012 self-view adoption metric (no PII-read
+ * audit — a member reading their own benefits is not a third-party PII access).
  */
 import type { Metadata } from 'next';
 import { UserX } from 'lucide-react';
@@ -29,19 +29,41 @@ import {
   BenefitUsageCard,
   type BenefitUsageItem,
 } from '@/components/benefits/benefit-usage-card';
+import { BenefitsTabs } from './_components/benefits-tabs';
+import { BroadcastsPanel } from './_components/broadcasts-panel';
+import { resolveBenefitsTab, BENEFITS_TAB } from './_helpers/tabs';
 
-const EBLAST_COMPOSE_HREF = '/portal/benefits/e-blasts';
+// E-Blast compose target. The former e-blasts page (now becoming a thin
+// redirect, T6) routed its Compose CTA at /portal/broadcasts/new — point the
+// benefit-card eblast action + the under-use warning there directly so they
+// land on the live compose surface rather than a redirect hop.
+const EBLAST_COMPOSE_HREF = '/portal/broadcasts/new';
+
+/** 60-second segment-level revalidate — carried forward from the former
+ *  /portal/benefits/e-blasts page (CHK056). Keeps the composite Benefits page
+ *  within the §10 TTFB budget. */
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('benefits.page');
   return { title: t('title') };
 }
 
-export default async function PortalBenefitsPage() {
+export default async function PortalBenefitsPage(props: {
+  searchParams: Promise<{ tab?: string; page?: string }>;
+}) {
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('benefits.page');
   const locale = await getLocale();
+  const { tab, page } = await props.searchParams;
+  const activeTab = resolveBenefitsTab(tab);
+
+  // Broadcast-tab pagination param. Clamp to [1, 1000] so a hand-crafted
+  // ?page=-5 / ?page=99999 can't drive an out-of-range DB offset; the panel
+  // itself derives totalPages and renders the empty-state past the last page.
+  const rawPage = Number(page ?? '1') || 1;
+  const requestedPage = Math.min(1_000, Math.max(1, rawPage));
 
   const deps = buildMembersDeps(tenant);
   const memberResult = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
@@ -68,28 +90,28 @@ export default async function PortalBenefitsPage() {
   }
   const member = memberResult.value;
 
-  const result = await computeBenefitUsage(
-    tenant,
-    { memberId: member.memberId },
-    makeComputeBenefitUsageDeps(tenant.slug),
-  );
-  if (!result.ok) {
-    // member_not_found is impossible here (we just resolved the member); any
-    // failure is a genuine compute error → error boundary, never empty.
-    throw new Error(`computeBenefitUsage failed: ${result.error.code}`);
-  }
-  const usage = result.value;
-  insightsMetrics.benefitViewed('member', tenant.slug);
+  // Render only the ACTIVE panel server-side. The inactive panel stays null so
+  // we never do the other tab's DB roundtrips on a page that won't show them.
+  let benefitsPanel: React.ReactNode = null;
+  if (activeTab === BENEFITS_TAB.benefits) {
+    const result = await computeBenefitUsage(
+      tenant,
+      { memberId: member.memberId },
+      makeComputeBenefitUsageDeps(tenant.slug),
+    );
+    if (!result.ok) {
+      // member_not_found is impossible here (we just resolved the member); any
+      // failure is a genuine compute error → error boundary, never empty.
+      throw new Error(`computeBenefitUsage failed: ${result.error.code}`);
+    }
+    const usage = result.value;
+    insightsMetrics.benefitViewed('member', tenant.slug);
 
-  const quantifiable: BenefitUsageItem[] = usage.quantifiable.map((b) =>
-    b.key === 'eblast'
-      ? { ...b, actionHref: EBLAST_COMPOSE_HREF }
-      : { ...b },
-  );
+    const quantifiable: BenefitUsageItem[] = usage.quantifiable.map((b) =>
+      b.key === 'eblast' ? { ...b, actionHref: EBLAST_COMPOSE_HREF } : { ...b },
+    );
 
-  return (
-    <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
+    benefitsPanel = (
       <BenefitUsageCard
         locale={locale}
         membershipYear={usage.membershipYear}
@@ -99,6 +121,23 @@ export default async function PortalBenefitsPage() {
         aggregateConsumedPct={usage.aggregateConsumedPct}
         underUseWarning={usage.underUseWarning}
         warningActionHref={EBLAST_COMPOSE_HREF}
+        headingId="benefits-panel-heading"
+      />
+    );
+  }
+
+  const broadcastsPanel =
+    activeTab === BENEFITS_TAB.broadcasts ? (
+      <BroadcastsPanel requestedPage={requestedPage} />
+    ) : null;
+
+  return (
+    <DetailContainer>
+      <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
+      <BenefitsTabs
+        active={activeTab}
+        benefitsPanel={benefitsPanel}
+        broadcastsPanel={broadcastsPanel}
       />
     </DetailContainer>
   );
