@@ -325,6 +325,11 @@ export async function PortalProfileBody({
                       <p className="text-caption text-muted-foreground">
                         {contact.email}
                       </p>
+                      {contact.phone ? (
+                        <p className="text-caption text-muted-foreground">
+                          {contact.phone}
+                        </p>
+                      ) : null}
                       {contact.roleTitle ? (
                         <p className="text-caption text-muted-foreground">
                           {contact.roleTitle}
