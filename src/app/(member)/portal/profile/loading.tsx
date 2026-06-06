@@ -14,7 +14,7 @@ import {
 
 /**
  * Portal profile loading skeleton — matches the shape of
- * `/portal/profile/page.tsx` (Company Info + Plan + Contacts).
+ * `/portal/profile/page.tsx` (Organisation + Membership + Contacts).
  * Wraps in DetailContainer (72rem) to mirror the real page.
  */
 export default async function Loading() {
@@ -28,10 +28,10 @@ export default async function Loading() {
           subtitle={<SkeletonBlock className="h-4 w-48" />}
           actions={<SkeletonBlock className="h-9 w-28" />}
         />
-        {/* Company Info */}
+        {/* Organisation */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('companySection')}</CardTitle>
+            <CardTitle>{t('organisationSection')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -45,10 +45,10 @@ export default async function Loading() {
           </CardContent>
         </Card>
 
-        {/* Plan */}
+        {/* Membership */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('planSection')}</CardTitle>
+            <CardTitle>{t('membershipSection')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
