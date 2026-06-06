@@ -28,6 +28,13 @@ const REQUIRED = [
   'outstanding.countSubPartial',
   'outstanding.errorValue',
   'outstanding.errorSub',
+  // 057 R2 finding D — partial-floor amount + overdue-count forms.
+  'outstanding.valuePartial',
+  'outstanding.overdueSubPartial',
+  // 057 R2 finding E — BenefitsStatSection renders these; lock parity (symmetry
+  // with membership.error* and outstanding.error*).
+  'benefits.errorValue',
+  'benefits.errorSub',
 ] as const;
 
 function get(obj: unknown, path: string): unknown {
