@@ -26,8 +26,8 @@
  * therefore presses ArrowRight THEN Enter, and the `?tab=broadcasts` URL is the
  * canonical source-of-truth assertion.
  */
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '../fixtures';
+import { runAxeScan } from '../helpers/axe-scan';
 import { signInAsMember } from '../helpers/member-session';
 
 // Tab-label matchers cover all three shipped locales so the spec passes
@@ -46,9 +46,9 @@ test.describe('Benefits tabs @a11y', () => {
     await expect(
       page.getByRole('tab', { name: BENEFITS_TAB_NAME }).first(),
     ).toHaveAttribute('aria-selected', 'true');
-    // BenefitUsageCard renders <h2 id="benefits-panel-heading"> even in its
-    // empty state, so this holds whether or not the seeded member has
-    // quantifiable benefits.
+    // Requires the e2e-member seed to be linked to a member row. An unlinked
+    // account renders the UserX empty-state card (no #benefits-panel-heading) and
+    // this assertion would time out — that is a seed/fixture issue, not a regression.
     await expect(page.locator('#benefits-panel-heading')).toBeVisible();
   });
 
@@ -108,17 +108,6 @@ test.describe('Benefits tabs @a11y', () => {
     await page.getByTestId('quota-display').waitFor();
     await expect(page.locator('#broadcasts-panel-heading')).toBeVisible();
 
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .analyze();
-
-    // Local dev e2e emits EXPECTED moderate noise (320px reflow / target-size /
-    // contrast) that is preview-only signal per project memory; gate on
-    // serious+critical so the tab-association contract is enforced without
-    // chasing known local noise. (Mirrors the helpers/axe-scan.ts default.)
-    const seriousOrCritical = results.violations.filter(
-      (v) => v.impact === 'serious' || v.impact === 'critical',
-    );
-    expect(seriousOrCritical, 'axe-core serious+critical violations').toEqual([]);
+    await runAxeScan(page, test.info());
   });
 });
