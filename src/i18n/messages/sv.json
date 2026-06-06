@@ -4354,18 +4354,23 @@
       "title": "Min profil",
       "pageTitle": "Min profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
-      "loadError": "Kunde inte ladda din profil. Försök igen.",
+      "loadError": "Det gick inte att läsa in din profil. Försök igen.",
       "editButton": "Redigera profil",
-      "companySection": "Företagsinformation",
-      "planSection": "Medlemsplan",
+      "organisationSection": "Organisation",
+      "membershipSection": "Medlemskap",
       "contactsSection": "Kontakter",
       "inviteColleague": "Bjud in kollega",
       "primaryBadge": "Primär",
-      "portalLinked": "Portalkopplad",
+      "portalLinked": "Portal kopplad",
       "noContacts": "Inga kontakter hittades.",
+      "statusBadge": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "archived": "Arkiverad"
+      },
       "fields": {
         "memberId": "Medlems-ID",
-        "memberIdHelp": "Ange detta ID när du kontaktar kammarens support.",
+        "memberIdHelp": "Ange detta ID när du kontaktar handelskammarens support.",
         "memberIdCopy": "Kopiera medlems-ID",
         "memberIdCopied": "Medlems-ID kopierat",
         "memberNumber": "Medlemsnummer",
@@ -4375,15 +4380,15 @@
         "country": "Land",
         "website": "Webbplats",
         "description": "Beskrivning",
-        "planName": "Paketnamn",
-        "planYear": "Paketår",
+        "taxId": "Skatte-ID",
+        "foundedYear": "Grundat",
+        "turnoverThb": "Årsomsättning",
+        "address": "Adress",
+        "planName": "Plannamn",
+        "planYear": "Planår",
         "registrationDate": "Registreringsdatum",
+        "lastActivityAt": "Senaste aktivitet",
         "status": "Status"
-      },
-      "status": {
-        "active": "Aktiv",
-        "inactive": "Inaktiv",
-        "archived": "Arkiverad"
       }
     },
     "edit": {

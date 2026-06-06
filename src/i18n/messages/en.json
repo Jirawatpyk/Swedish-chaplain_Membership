@@ -4356,13 +4356,18 @@
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loadError": "Could not load your profile. Please try again.",
       "editButton": "Edit Profile",
-      "companySection": "Company Information",
-      "planSection": "Membership Plan",
+      "organisationSection": "Organisation",
+      "membershipSection": "Membership",
       "contactsSection": "Contacts",
       "inviteColleague": "Invite Colleague",
       "primaryBadge": "Primary",
       "portalLinked": "Portal linked",
       "noContacts": "No contacts found.",
+      "statusBadge": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "archived": "Archived"
+      },
       "fields": {
         "memberId": "Member ID",
         "memberIdHelp": "Reference this ID when contacting chamber support.",
@@ -4375,15 +4380,15 @@
         "country": "Country",
         "website": "Website",
         "description": "Description",
+        "taxId": "Tax ID",
+        "foundedYear": "Founded",
+        "turnoverThb": "Annual turnover",
+        "address": "Address",
         "planName": "Plan Name",
         "planYear": "Plan Year",
         "registrationDate": "Registration Date",
+        "lastActivityAt": "Last activity",
         "status": "Status"
-      },
-      "status": {
-        "active": "Active",
-        "inactive": "Inactive",
-        "archived": "Archived"
       }
     },
     "edit": {

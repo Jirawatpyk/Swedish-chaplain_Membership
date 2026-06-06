@@ -4353,19 +4353,24 @@
     "profile": {
       "title": "โปรไฟล์ของฉัน",
       "pageTitle": "โปรไฟล์ของฉัน",
-      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก กรุณาติดต่อผู้ดูแลระบบ",
-      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้ กรุณาลองอีกครั้ง",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมโยงกับสมาชิก กรุณาติดต่อผู้ดูแลระบบ",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้ กรุณาลองใหม่อีกครั้ง",
       "editButton": "แก้ไขโปรไฟล์",
-      "companySection": "ข้อมูลบริษัท",
-      "planSection": "แพ็กเกจสมาชิก",
+      "organisationSection": "องค์กร",
+      "membershipSection": "การเป็นสมาชิก",
       "contactsSection": "ผู้ติดต่อ",
       "inviteColleague": "เชิญเพื่อนร่วมงาน",
       "primaryBadge": "หลัก",
-      "portalLinked": "เชื่อมต่อพอร์ทัลแล้ว",
+      "portalLinked": "เชื่อมโยงพอร์ทัลแล้ว",
       "noContacts": "ไม่พบผู้ติดต่อ",
+      "statusBadge": {
+        "active": "ใช้งานอยู่",
+        "inactive": "ไม่ได้ใช้งาน",
+        "archived": "เก็บถาวร"
+      },
       "fields": {
         "memberId": "รหัสสมาชิก",
-        "memberIdHelp": "อ้างอิงรหัสนี้เมื่อติดต่อทีมสนับสนุนหอการค้า",
+        "memberIdHelp": "อ้างอิงรหัสนี้เมื่อติดต่อฝ่ายสนับสนุนของหอการค้า",
         "memberIdCopy": "คัดลอกรหัสสมาชิก",
         "memberIdCopied": "คัดลอกรหัสสมาชิกแล้ว",
         "memberNumber": "หมายเลขสมาชิก",
@@ -4374,16 +4379,16 @@
         "legalEntityType": "ประเภทนิติบุคคล",
         "country": "ประเทศ",
         "website": "เว็บไซต์",
-        "description": "รายละเอียด",
+        "description": "คำอธิบาย",
+        "taxId": "เลขประจำตัวผู้เสียภาษี",
+        "foundedYear": "ก่อตั้งเมื่อ",
+        "turnoverThb": "รายได้ต่อปี",
+        "address": "ที่อยู่",
         "planName": "ชื่อแพ็กเกจ",
-        "planYear": "ปีแพ็กเกจ",
+        "planYear": "ปีของแพ็กเกจ",
         "registrationDate": "วันที่ลงทะเบียน",
+        "lastActivityAt": "กิจกรรมล่าสุด",
         "status": "สถานะ"
-      },
-      "status": {
-        "active": "ใช้งาน",
-        "inactive": "ไม่ใช้งาน",
-        "archived": "เก็บถาวร"
       }
     },
     "edit": {
