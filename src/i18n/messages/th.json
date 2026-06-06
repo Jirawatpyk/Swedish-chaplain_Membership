@@ -959,6 +959,11 @@
             "cancelled": "ยกเลิกแล้ว"
           }
         },
+        "subscription": {
+          "subscribed": "รับข่าวสาร",
+          "unsubscribed": "ยกเลิกรับข่าวสาร",
+          "unsubscribedAria": "ผู้ติดต่อนี้ได้ยกเลิกการรับอีเมลข่าวสาร (E-Blast)"
+        },
         "pendingInvitations": {
           "title": "คำเชิญพอร์ทัลที่รอดำเนินการ",
           "subtitle": "คำเชิญที่ส่งแล้วแต่ยังไม่ได้ตอบรับ",

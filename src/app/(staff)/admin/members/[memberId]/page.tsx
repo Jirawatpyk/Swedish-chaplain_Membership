@@ -37,6 +37,13 @@ import {
 } from '@/modules/members';
 import type { MemberId, Contact } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+// Pass A · Section 3 — F7 marketing-suppression read (cross-context via the
+// broadcasts public barrel; the Drizzle repo wraps queries in runInTenant).
+import {
+  makeDrizzleMarketingUnsubscribesRepo,
+  asEmailLower,
+  type EmailLower,
+} from '@/modules/broadcasts';
 import {
   Card,
   CardContent,
@@ -57,6 +64,7 @@ import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { ContactFormDialog } from '@/components/members/contact-form-dialog';
 import { ContactActions } from '@/components/members/contact-actions';
+import { SubscriptionBadge } from '@/components/members/subscription-badge';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
@@ -250,12 +258,20 @@ function ContactBlock({
   contact,
   memberId,
   pendingInvitation,
+  subscribed,
   canWrite,
   t,
 }: {
   contact: Contact;
   memberId: string;
   pendingInvitation?: PendingInvitation | undefined;
+  /**
+   * Pass A · Section 3 — F7 marketing-subscription status. `true` when the
+   * contact's email is NOT in `marketing_unsubscribes`; `false` when they
+   * have unsubscribed from E-Blasts (PDPA/GDPR). Always rendered as a text
+   * label so admins see reachability at a glance.
+   */
+  subscribed: boolean;
   /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
   canWrite: boolean;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
@@ -337,6 +353,10 @@ function ContactBlock({
                 <span>{t('inviteBounced.badge')}</span>
               </Badge>
             )}
+            {/* Pass A · Section 3 — E-Blast subscription status. Only shown
+                for contacts that HAVE an email (no email = no E-Blast
+                target, so the badge would be meaningless). */}
+            {contact.email && <SubscriptionBadge subscribed={subscribed} />}
           </div>
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
@@ -485,14 +505,18 @@ export default async function MemberDetailPage({
     (c) => !c.isPrimary && c.removedAt === null,
   );
 
-  // These three reads are independent (all inputs are available after
-  // getMember) and each hits Singapore — running them sequentially cost 3
-  // serial RTTs. Promise.all collapses them to ~1 RTT. Each read keeps its
-  // own failure mode: pending-invitations downgrades to an empty Map
-  // (self-contained try/catch, never rejects), getPlan/getPrefix fall back
-  // to the slug / column DEFAULT respectively.
-  const [pendingInvitationsByContactId, planLookup, memberPrefix] =
-    await Promise.all([
+  // These reads are independent (all inputs are available after getMember)
+  // and each hits Singapore — running them sequentially cost serial RTTs.
+  // Promise.all collapses them to ~1 RTT. Each read keeps its own failure
+  // mode: pending-invitations + unsubscribed downgrade to empty sets
+  // (self-contained try/catch, never reject), getPlan/getPrefix fall back to
+  // the slug / column DEFAULT respectively.
+  const [
+    pendingInvitationsByContactId,
+    planLookup,
+    memberPrefix,
+    unsubscribedContactIds,
+  ] = await Promise.all([
       // C6 round-10 ui-design-specialist — fetch pending portal invitations
       // and project as a Map<contactId, invitation> so each ContactBlock can
       // render its own inline badge. Failures downgrade to an empty Map (no
@@ -553,6 +577,53 @@ export default async function MemberDetailPage({
       // shared helper (never raw db). Falls back to 'M' (the column DEFAULT
       // for tenants provisioned before the settings seed — no visible error).
       resolveMemberNumberPrefix(tenant, deps.memberSettings),
+      // Pass A · Section 3 — F7 marketing-suppression status per contact.
+      // Batch-look-up every non-removed contact email against
+      // `marketing_unsubscribes` (RLS-safe: the repo wraps `lookupBatch` in
+      // runInTenant) and project to a Set<contactId> of UNSUBSCRIBED
+      // contacts. A read failure downgrades to an empty Set (every contact
+      // shown as Subscribed) — a missing badge never blocks the page, and
+      // "Subscribed" is the safe default since the dispatch boundary
+      // re-checks suppression before any send anyway.
+      (async (): Promise<ReadonlySet<string>> => {
+        try {
+          const liveContacts = contacts.filter(
+            (c) => c.removedAt === null && c.email,
+          );
+          if (liveContacts.length === 0) return new Set<string>();
+          // contact.email is a branded Email; lower-case + brand to EmailLower.
+          // Skip any that fail the EmailLower parse (defensive — domain Email
+          // is already validated, but the suppression key demands a clean
+          // lower-case value).
+          const emailByContact = new Map<string, EmailLower>();
+          for (const c of liveContacts) {
+            const parsed = asEmailLower(String(c.email).toLowerCase());
+            if (parsed.ok) emailByContact.set(c.contactId, parsed.value);
+          }
+          const suppressionRepo = makeDrizzleMarketingUnsubscribesRepo(
+            tenant.slug,
+          );
+          const suppressedEmails = await suppressionRepo.lookupBatch(
+            tenant.slug,
+            [...emailByContact.values()],
+          );
+          const out = new Set<string>();
+          for (const [contactId, email] of emailByContact) {
+            if (suppressedEmails.has(email)) out.add(contactId);
+          }
+          return out;
+        } catch (e) {
+          logger.warn(
+            {
+              event: 'marketing_unsubscribe_lookup_threw',
+              err: e instanceof Error ? e.message : String(e),
+              memberId,
+            },
+            '[Pass A] marketing-suppression lookup threw — defaulting all contacts to Subscribed',
+          );
+          return new Set<string>();
+        }
+      })(),
     ]);
 
   const planDisplayName = planLookup.ok
@@ -885,6 +956,7 @@ export default async function MemberDetailPage({
                 pendingInvitation={pendingInvitationsByContactId.get(
                   primary.contactId,
                 )}
+                subscribed={!unsubscribedContactIds.has(primary.contactId)}
                 canWrite={canWrite}
                 t={t}
               />
@@ -905,6 +977,7 @@ export default async function MemberDetailPage({
                       pendingInvitation={pendingInvitationsByContactId.get(
                         c.contactId,
                       )}
+                      subscribed={!unsubscribedContactIds.has(c.contactId)}
                       canWrite={canWrite}
                       t={t}
                     />

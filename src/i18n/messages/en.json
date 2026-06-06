@@ -959,6 +959,11 @@
             "cancelled": "Cancelled"
           }
         },
+        "subscription": {
+          "subscribed": "Subscribed",
+          "unsubscribed": "Unsubscribed",
+          "unsubscribedAria": "This contact has unsubscribed from E-Blasts"
+        },
         "pendingInvitations": {
           "title": "Pending portal invitations",
           "subtitle": "Invitations sent but not yet redeemed.",

@@ -959,6 +959,11 @@
             "cancelled": "Avbruten"
           }
         },
+        "subscription": {
+          "subscribed": "Prenumererar",
+          "unsubscribed": "Avregistrerad",
+          "unsubscribedAria": "Den här kontakten har avregistrerat sig från E-Blasts"
+        },
         "pendingInvitations": {
           "title": "Väntande portalinbjudningar",
           "subtitle": "Inbjudningar skickade men ännu inte inlösta.",
