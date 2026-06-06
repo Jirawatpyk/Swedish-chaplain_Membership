@@ -278,19 +278,14 @@ export async function MembersDirectoryBody({
     plan_year: row.member.planYear,
     plan_display_name: row.planDisplayName,
     status: row.member.status,
-    // F8 Phase 6 Wave H — wire risk score into the F3 column
-    // placeholder. Null when at-risk recompute hasn't run yet (FR-035
-    // min-tenure gate skips fresh members) → column renders "—".
-    member_risk_flag:
-      row.riskScore !== null && row.riskScoreBand !== null
-        ? { score: row.riskScore, band: row.riskScoreBand }
-        : null,
+    // 056-members-table-compact — engagement (the positive-framed inverse of
+    // the F8 risk score) is now the sole at-risk surface in the table; the raw
+    // risk score is no longer wired into the row (the Risk column was dropped).
     engagement:
       eng.score !== null && eng.band !== null
         ? { score: eng.score, band: eng.band }
         : null,
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,
-    notes: row.member.notes,
     primary_contact: row.primaryContact
       ? {
           contact_id: row.primaryContact.contactId,
@@ -312,7 +307,8 @@ export async function MembersDirectoryBody({
       <DirectoryFilters plans={planOptions} />
       {/* C1 round-10 — pass `withSelection={isAdmin}` so the
           shimmer-skeleton column count matches the real table for the
-          current role (admin: 12 cols incl. checkbox; manager: 11). */}
+          current role. 056-members-table-compact: admin 8 cols incl.
+          checkbox; manager 7. */}
       <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
         <DirectoryWithBulk
           rows={rows}

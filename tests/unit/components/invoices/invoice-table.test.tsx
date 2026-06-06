@@ -55,6 +55,7 @@ const messages = {
         creditedAria: '{count} credit notes, {amount} credited',
         receiptNumberCombinedTooltip: 'Combined mode',
         receiptNumberCombinedAria: 'Combined mode',
+        tableCaption: 'List of invoices for the selected filters.',
         actions: {
           download: 'Invoice',
           downloadReceipt: 'Receipt',

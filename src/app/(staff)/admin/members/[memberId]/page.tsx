@@ -13,13 +13,14 @@ import type { Metadata } from 'next';
 import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getTranslations, getFormatter } from 'next-intl/server';
+import { getTranslations, getFormatter, getLocale } from 'next-intl/server';
 import {
   ArrowLeftIcon,
+  ExternalLinkIcon,
   HelpCircleIcon,
   MailWarningIcon,
+  PackageOpenIcon,
   PencilIcon,
-  ClockIcon,
   UserPlusIcon,
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
@@ -27,6 +28,8 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { headers } from 'next/headers';
 import {
   getMember,
@@ -36,11 +39,15 @@ import {
 } from '@/modules/members';
 import type { MemberId, Contact } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+// Pass A · Section 3 — F7 marketing-suppression read (cross-context via the
+// broadcasts public barrel; the Drizzle repo wraps queries in runInTenant).
+import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts';
+// S1 — extracted resolver owns the parse + projection + degraded branching.
+import { resolveContactSubscriptions } from './_lib/resolve-contact-subscriptions';
 import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -48,6 +55,7 @@ import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
+import { DetailField } from '@/components/members/detail-field';
 import { MemberNumberField } from '@/components/members/member-number-field';
 import { CountryDisplay } from '@/components/members/country-display';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
@@ -56,12 +64,20 @@ import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { ContactFormDialog } from '@/components/members/contact-form-dialog';
 import { ContactActions } from '@/components/members/contact-actions';
+import { SubscriptionBadge } from '@/components/members/subscription-badge';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
 import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
-import { MemberEngagementSection } from './_components/member-engagement-section';
+import {
+  MemberRenewalHealthSection,
+  MemberRenewalHealthSkeleton,
+} from './_components/member-renewal-health-section';
+import {
+  MemberBenefitsPreviewSection,
+  MemberBenefitsPreviewSkeleton,
+} from './_components/member-benefits-preview-section';
 import {
   TimelinePreviewSection,
   TimelinePreviewSkeleton,
@@ -152,36 +168,64 @@ export async function generateMetadata({
   };
 }
 
-function Field({
-  label,
-  value,
-  fallback = '—',
-  mono = false,
-  extra,
+/**
+ * 056 fix #5 — resolve a free-text `legal_entity_type` (admin types it into
+ * a free Input, so the value is NOT a fixed enum) to a localised label.
+ * Normalises the stored value to a key (`lower_snake_case`) and looks it up
+ * in `legalEntityTypes.*`; falls back to the raw stored value when no key
+ * matches (mirrors the `t.has()` guard pattern in timeline-event-item.tsx —
+ * a `t()` miss logs a noisy MISSING_MESSAGE, so guard with `.has` first).
+ */
+function resolveLegalEntityTypeLabel(
+  raw: string | null,
+  tTypes: Awaited<
+    ReturnType<typeof getTranslations<'admin.members.detail.legalEntityTypes'>>
+  >,
+): string | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const key = trimmed.toLowerCase().replace(/[\s-]+/g, '_');
+  return tTypes.has(key as 'company') ? tTypes(key as 'company') : trimmed;
+}
+
+/**
+ * 056 fix #1 — section heading rendered as a real `<h2>` (not a CardTitle
+ * `<div>`) so every content group is reachable via SR heading navigation
+ * under the page `<h1>`. Carries the CardTitle font classes so the visual
+ * is unchanged. The `id` is wired to the wrapping `<section aria-labelledby>`.
+ */
+function SectionHeading({
+  id,
+  children,
+  className,
 }: {
-  label: string;
-  value: string | number | null | undefined;
-  fallback?: string;
-  mono?: boolean;
-  extra?: React.ReactNode;
+  id: string;
+  children: React.ReactNode;
+  className?: string;
 }) {
-  const v = value === null || value === undefined || value === '' ? null : String(value);
   return (
-    <div className="flex flex-col gap-1 py-2">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="flex items-center gap-2 text-sm">
-        {v !== null && (
-          <span className={mono ? 'font-mono text-xs' : ''}>{v}</span>
-        )}
-        {v === null && extra === undefined && (
-          <span className="text-muted-foreground">{fallback}</span>
-        )}
-        {/* `extra` always renders — it may be the sole content (e.g. a
-            StatusBadge passed without a value). Previously gated on `v`
-            which hid the badge when the value was null. */}
-        {extra}
-      </dd>
-    </div>
+    <h2
+      id={id}
+      className={`font-heading text-base font-medium leading-snug ${className ?? ''}`}
+    >
+      {children}
+    </h2>
+  );
+}
+
+/**
+ * 056 — small uppercase subgroup label inside the Company card (Organisation
+ * / Membership). Renders as a `<p>` not a heading: these are visual grouping
+ * dividers WITHIN the Company section, not standalone sections, so promoting
+ * them to `<h3>` would add noise to the heading tree (the Company `<h2>`
+ * already names the section).
+ */
+function SubGroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
+      {children}
+    </p>
   );
 }
 
@@ -242,14 +286,31 @@ function ContactBlock({
   contact,
   memberId,
   pendingInvitation,
+  subscribed,
   canWrite,
+  locale,
   t,
 }: {
   contact: Contact;
   memberId: string;
   pendingInvitation?: PendingInvitation | undefined;
+  /**
+   * Pass A · Section 3 / S1 — F7 marketing-subscription tri-state. `true`
+   * when the contact's email is NOT in `marketing_unsubscribes`; `false`
+   * when they have unsubscribed from E-Blasts (PDPA/GDPR); `'unknown'` when
+   * the suppression read was degraded (marketing-DB outage) so the badge
+   * shows a neutral "Status unavailable" instead of a misleading default.
+   * Always rendered as a text label so admins see reachability at a glance.
+   */
+  subscribed: boolean | 'unknown';
   /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
   canWrite: boolean;
+  /**
+   * FIX 5 (056 polish) — active locale passed from the page-level
+   * `getLocale()` call so the pending-invitation badge title renders
+   * BE year for th-TH users instead of raw ค.ศ. ISO date.
+   */
+  locale: string;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
 }) {
   // "Invite to portal" is only shown when the contact has an email and
@@ -295,9 +356,13 @@ function ContactBlock({
                 variant="outline"
                 className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
                 title={t('pendingInvitations.expiresAt', {
-                  date: pendingInvitation.expiresAt
-                    .toISOString()
-                    .slice(0, 10),
+                  // FIX 5 — use the shared Buddhist-aware helper so th-TH
+                  // users see พ.ศ. (BE) in the hover tooltip, not raw ค.ศ.
+                  date: formatLocalisedDate(
+                    pendingInvitation.expiresAt.toISOString(),
+                    locale,
+                    { dateStyle: 'medium' },
+                  ),
                 })}
               >
                 <MailWarningIcon
@@ -329,6 +394,10 @@ function ContactBlock({
                 <span>{t('inviteBounced.badge')}</span>
               </Badge>
             )}
+            {/* Pass A · Section 3 — E-Blast subscription status. Only shown
+                for contacts that HAVE an email (no email = no E-Blast
+                target, so the badge would be meaningless). */}
+            {contact.email && <SubscriptionBadge subscribed={subscribed} />}
           </div>
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
@@ -364,16 +433,16 @@ function ContactBlock({
         )}
       </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
-        <Field
+        <DetailField
           label={t('fields.email')}
           value={contact.email}
           extra={
             <CopyButton value={contact.email} label={t('copy.copyEmail')} />
           }
         />
-        <Field label={t('fields.phone')} value={contact.phone} />
-        <Field label={t('fields.roleTitle')} value={contact.roleTitle} />
-        <Field
+        <DetailField label={t('fields.phone')} value={contact.phone} />
+        <DetailField label={t('fields.roleTitle')} value={contact.roleTitle} />
+        <DetailField
           label={t('fields.preferredLanguage')}
           value={contact.preferredLanguage.toUpperCase()}
         />
@@ -431,11 +500,19 @@ export default async function MemberDetailPage({
     deps,
   );
   const t = await getTranslations('admin.members.detail');
+  // 056 fix #5 — free-text legal-entity-type → localised label map.
+  const tLegalTypes = await getTranslations(
+    'admin.members.detail.legalEntityTypes',
+  );
   // H1: status label for StatusBadge — reuse existing directory filter keys
   // rather than duplicating active/inactive/archived strings in a new namespace.
   const tDir = await getTranslations('admin.members.directory');
   // H2: locale-aware number formatter (respects active locale for digit grouping).
   const format = await getFormatter();
+  // 056 fix #2 — active locale for the shared Buddhist-aware date helper
+  // (`formatLocalisedDate` maps th → th-TH-u-ca-buddhist). NO raw .toISOString()
+  // in display; storage stays Gregorian ISO.
+  const locale = await getLocale();
 
   if (!result.ok) {
     if (result.error.type === 'not_found') {
@@ -477,14 +554,18 @@ export default async function MemberDetailPage({
     (c) => !c.isPrimary && c.removedAt === null,
   );
 
-  // These three reads are independent (all inputs are available after
-  // getMember) and each hits Singapore — running them sequentially cost 3
-  // serial RTTs. Promise.all collapses them to ~1 RTT. Each read keeps its
-  // own failure mode: pending-invitations downgrades to an empty Map
-  // (self-contained try/catch, never rejects), getPlan/getPrefix fall back
-  // to the slug / column DEFAULT respectively.
-  const [pendingInvitationsByContactId, planLookup, memberPrefix] =
-    await Promise.all([
+  // These reads are independent (all inputs are available after getMember)
+  // and each hits Singapore — running them sequentially cost serial RTTs.
+  // Promise.all collapses them to ~1 RTT. Each read keeps its own failure
+  // mode: pending-invitations + unsubscribed downgrade to empty sets
+  // (self-contained try/catch, never reject), getPlan/getPrefix fall back to
+  // the slug / column DEFAULT respectively.
+  const [
+    pendingInvitationsByContactId,
+    planLookup,
+    memberPrefix,
+    subscriptionResult,
+  ] = await Promise.all([
       // C6 round-10 ui-design-specialist — fetch pending portal invitations
       // and project as a Map<contactId, invitation> so each ContactBlock can
       // render its own inline badge. Failures downgrade to an empty Map (no
@@ -528,7 +609,9 @@ export default async function MemberDetailPage({
           logger.error(
             {
               event: 'pending_invitations_threw',
-              err: e instanceof Error ? e.message : String(e),
+              // errKind logs only the error class name — never e.message
+              // (Postgres errors carry SQL params; Upstash errors carry keys).
+              errKind: errKind(e),
               memberId,
             },
             '[F3] pending-invitations fetch threw — falling back to empty map',
@@ -545,7 +628,37 @@ export default async function MemberDetailPage({
       // shared helper (never raw db). Falls back to 'M' (the column DEFAULT
       // for tenants provisioned before the settings seed — no visible error).
       resolveMemberNumberPrefix(tenant, deps.memberSettings),
+      // Pass A · Section 3 / S1 — F7 marketing-suppression status per contact.
+      // Batch-look-up every non-removed contact email against
+      // `marketing_unsubscribes` (RLS-safe: the repo wraps `lookupBatch` in
+      // runInTenant). Returns a DISCRIMINATED result: on success a Set of
+      // UNSUBSCRIBED contact ids; on a marketing-DB outage `{ degraded:
+      // true }` so each badge renders a neutral "Status unavailable" state
+      // instead of silently defaulting to "Subscribed" (UI-honesty fix — NOT
+      // a compliance change: the dispatch boundary always re-resolves
+      // suppression before any send). Resolver extracted to `_lib` so the
+      // fail-open / fail-degraded branching is unit-testable without live
+      // Neon.
+      resolveContactSubscriptions({
+        contacts,
+        memberId,
+        lookupBatch: (emailLowers) =>
+          makeDrizzleMarketingUnsubscribesRepo(tenant.slug).lookupBatch(
+            tenant.slug,
+            emailLowers,
+          ),
+        logger,
+        errKind,
+      }),
     ]);
+
+  // S1 — derive each contact's tri-state subscription from the discriminated
+  // result. On a degraded read every contact resolves to 'unknown' (neutral
+  // "Status unavailable" badge); otherwise `subscribed = !unsubscribed.has(id)`.
+  const subscriptionFor = (contactId: string): boolean | 'unknown' =>
+    subscriptionResult.degraded
+      ? 'unknown'
+      : !subscriptionResult.unsubscribed.has(contactId);
 
   const planDisplayName = planLookup.ok
     ? planLookup.value.planNameEn
@@ -558,10 +671,36 @@ export default async function MemberDetailPage({
       ? archiveWindowStatus(member.archivedAt, new Date())
       : null;
 
+  const legalEntityLabel = resolveLegalEntityTypeLabel(
+    member.legalEntityType,
+    tLegalTypes,
+  );
+
+  // Compute once so the JSX below can conditionally switch between a 2-col
+  // grid (Renewal + Benefits side-by-side) and full-width Renewal alone.
+  // Benefits only shows when the F9 flag is on AND the actor is admin/manager.
+  const showBenefitsPreview =
+    env.features.f9Dashboard &&
+    (session.user.role === 'admin' || session.user.role === 'manager');
+
   return (
     <DetailContainer>
       <PageHeader
         title={member.companyName}
+        /* 056 layout C — surface status + member number ABOVE the fold in the
+           header badge slot (justified duplication of the values also shown in
+           the Company grid). */
+        badge={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge
+              status={member.status}
+              label={tDir(`filters.status.${member.status}`)}
+            />
+            <Badge variant="outline" className="font-mono">
+              {memberNumberDisplay}
+            </Badge>
+          </div>
+        }
         /* C2 round-10 ui-design-specialist — previous subtitle was the
            generic directory blurb ("Manage chamber members…") which made
            every member detail page look identical. Now: "{Plan} · Year
@@ -583,16 +722,21 @@ export default async function MemberDetailPage({
           <>
             {/* "Back to members" button removed per ux-standards.md § 11/19
               * — the global BreadcrumbNav (admin/layout.tsx) already exposes
-              * back navigation at "Admin > Members > [Company]". Duplicating
-              * it as an action-row button competed with Edit/Archive for
-              * visual attention and diluted the primary-action hierarchy. */}
-            <Link
-              href={`/admin/members/${member.memberId}/timeline`}
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <ClockIcon className="size-4" />
-              {t('sections.audit')}
-            </Link>
+              * back navigation. The "Recent activity" action was also removed
+              * (056 layout C) — it duplicated the Timeline card's "View all";
+              * the Timeline card stays. */}
+            {/* Pass A · Section 2 — link to the (previously orphaned)
+              * benefits page. F9-gated, mirroring the benefits feature flag.
+              * Staff-only is implicit (whole route requires a staff session). */}
+            {env.features.f9Dashboard && (
+              <Link
+                href={`/admin/members/${member.memberId}/benefits`}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                <PackageOpenIcon className="size-4" />
+                {t('sections.benefits')}
+              </Link>
+            )}
             {canWrite && member.status !== 'archived' && (
               <>
                 {/* Destructive action sits LEFT of the primary — Fitts's
@@ -628,119 +772,175 @@ export default async function MemberDetailPage({
               windowStatus={windowStatus}
             />
           )}
+        <section aria-labelledby="member-company-heading">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t('sections.company')}</CardTitle>
+            <SectionHeading id="member-company-heading">
+              {t('sections.company')}
+            </SectionHeading>
           </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
-              <MemberNumberField formatted={memberNumberDisplay} />
-              <Field
-                label={t('fields.memberId')}
-                value={member.memberId}
-                mono
-                extra={
-                  <CopyButton
-                    value={member.memberId}
-                    label={t('copy.copyMemberId')}
-                  />
-                }
-              />
-              <Field
-                label={t('fields.status')}
-                value={null}
-                extra={
-                  <StatusBadge
-                    status={member.status}
-                    label={tDir(`filters.status.${member.status}`)}
-                  />
-                }
-              />
-              <Field
-                label={t('fields.country')}
-                /* C4 round-10 ui-design-specialist — flag + localised name
-                   instead of raw "TH" / "SE". `value=null` + the
-                   CountryDisplay rendered in `extra` keeps the Field
-                   primitive's label/value layout intact. */
-                value={null}
-                extra={<CountryDisplay code={member.country} />}
-              />
-              <Field
-                label={t('fields.legalEntityType')}
-                value={member.legalEntityType}
-              />
-              <Field
-                label={t('fields.taxId')}
-                value={member.taxId}
-                mono
-                {...(member.taxId
-                  ? {
-                      extra: (
-                        <CopyButton
-                          value={member.taxId}
-                          label={t('copy.copyTaxId')}
-                        />
-                      ),
-                    }
-                  : {})}
-              />
-              <Field label={t('fields.website')} value={member.website} />
-              <Field
-                label={t('fields.foundedYear')}
-                value={member.foundedYear}
-              />
-              <Field
-                label={t('fields.turnoverThb')}
-                value={
-                  member.turnoverThb !== null
-                    ? format.number(member.turnoverThb)
-                    : null
-                }
-              />
-              <Field
-                label={t('fields.registrationDate')}
-                value={member.registrationDate.toISOString().slice(0, 10)}
-              />
-              <Field
-                label={t('fields.registrationFeePaid')}
-                value={
-                  member.registrationFeePaid
-                    ? t('fields.registrationFeePaidYes')
-                    : t('fields.registrationFeePaidNo')
-                }
-              />
-              <Field
-                label={t('fields.plan')}
-                value={planDisplayName}
-              />
-              <Field label={t('fields.planYear')} value={member.planYear} />
-              <Field
-                label={t('fields.planId')}
-                value={member.planId}
-                mono
-              />
-              <Field
-                label={t('fields.lastActivityAt')}
-                // ISO string ensures server + client render the same text;
-                // localised display belongs in a Client Component hydrated
-                // after mount (deferred to US6 Timeline).
-                value={
-                  member.lastActivityAt
-                    ? member.lastActivityAt.toISOString().replace('T', ' ').slice(0, 16)
-                    : null
-                }
-              />
-              {member.status === 'archived' && (
-                <Field
-                  label={t('fields.archivedAt')}
+          <CardContent className="flex flex-col gap-6">
+            {/* 056 layout C — subgroup ORGANISATION (who the member is). */}
+            <div className="flex flex-col gap-2">
+              <SubGroupLabel>{t('sections.organisation')}</SubGroupLabel>
+              <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+                <DetailField
+                  label={t('fields.country')}
+                  /* C4 round-10 — flag + localised name instead of raw "TH". */
+                  value={null}
+                  extra={<CountryDisplay code={member.country} />}
+                />
+                <DetailField
+                  label={t('fields.legalEntityType')}
+                  value={legalEntityLabel}
+                />
+                <DetailField
+                  label={t('fields.taxId')}
+                  value={member.taxId}
+                  mono
+                  {...(member.taxId
+                    ? {
+                        extra: (
+                          <CopyButton
+                            value={member.taxId}
+                            label={t('copy.copyTaxId')}
+                          />
+                        ),
+                      }
+                    : {})}
+                />
+                {/* 056 fix #4 — website as a real external link, not plain text.
+                    value=null so the link (or the "—" fallback) is the sole
+                    content; `extra` carries the anchor when a website exists. */}
+                <DetailField
+                  label={t('fields.website')}
+                  value={null}
+                  {...(member.website
+                    ? {
+                        extra: (
+                          <a
+                            href={member.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={t('fields.websiteExternal')}
+                            className="inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          >
+                            <span className="truncate">{member.website}</span>
+                            <ExternalLinkIcon
+                              aria-hidden="true"
+                              className="size-3.5 shrink-0"
+                            />
+                          </a>
+                        ),
+                      }
+                    : {})}
+                />
+                <DetailField
+                  label={t('fields.foundedYear')}
+                  value={member.foundedYear}
+                />
+                {/* 056 fix #3 — turnover as THB currency (grouping + symbol). */}
+                <DetailField
+                  label={t('fields.turnoverThb')}
                   value={
-                    member.archivedAt
-                      ? member.archivedAt.toISOString().replace('T', ' ').slice(0, 16)
+                    member.turnoverThb !== null
+                      ? format.number(member.turnoverThb, {
+                          style: 'currency',
+                          currency: 'THB',
+                        })
                       : null
                   }
                 />
-              )}
-            </dl>
+              </dl>
+            </div>
+
+            {/* 056 layout C — subgroup MEMBERSHIP (the chamber relationship). */}
+            <div className="flex flex-col gap-2 border-t pt-4">
+              <SubGroupLabel>{t('sections.membership')}</SubGroupLabel>
+              <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+                <DetailField label={t('fields.plan')} value={planDisplayName} />
+                <DetailField
+                  label={t('fields.planYear')}
+                  value={member.planYear}
+                />
+                {/* 056 fix #2 — Buddhist-aware localised date (no raw .toISOString()). */}
+                <DetailField
+                  label={t('fields.registrationDate')}
+                  value={formatLocalisedDate(
+                    member.registrationDate.toISOString(),
+                    locale,
+                    { dateStyle: 'medium' },
+                  )}
+                />
+                <DetailField
+                  label={t('fields.registrationFeePaid')}
+                  value={
+                    member.registrationFeePaid
+                      ? t('fields.registrationFeePaidYes')
+                      : t('fields.registrationFeePaidNo')
+                  }
+                />
+                <DetailField
+                  label={t('fields.lastActivityAt')}
+                  value={
+                    member.lastActivityAt
+                      ? formatLocalisedDate(
+                          member.lastActivityAt.toISOString(),
+                          locale,
+                          {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          },
+                        )
+                      : null
+                  }
+                />
+                {/* 056 fix #9 — only show archivedAt in the grid when the
+                    ArchivedBanner is NOT rendered (banner already shows the
+                    date). Banner renders for within_window / window_expired. */}
+                {member.status === 'archived' &&
+                  windowStatus === null &&
+                  member.archivedAt && (
+                    <DetailField
+                      label={t('fields.archivedAt')}
+                      value={formatLocalisedDate(
+                        member.archivedAt.toISOString(),
+                        locale,
+                        { dateStyle: 'medium', timeStyle: 'short' },
+                      )}
+                    />
+                  )}
+              </dl>
+            </div>
+
+            {/* 056 layout C — Technical collapse: the raw UUIDs scan as noise
+                in the grid, so tuck them behind a <details>. The member number
+                (human-readable) stays in the header chip; the copy-to-clipboard
+                UUID affordances (FR-030) move here. */}
+            <details className="border-t pt-4">
+              <summary className="cursor-pointer text-caption font-medium uppercase tracking-wide text-muted-foreground marker:text-muted-foreground">
+                {t('sections.technical')}
+              </summary>
+              <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
+                <MemberNumberField formatted={memberNumberDisplay} />
+                <DetailField
+                  label={t('fields.memberId')}
+                  value={member.memberId}
+                  mono
+                  extra={
+                    <CopyButton
+                      value={member.memberId}
+                      label={t('copy.copyMemberId')}
+                    />
+                  }
+                />
+                <DetailField
+                  label={t('fields.planId')}
+                  value={member.planId}
+                  mono
+                />
+              </dl>
+            </details>
             {(() => {
               const cityLine = [member.city, member.province, member.postalCode]
                 .filter((p) => p && p.trim().length > 0)
@@ -783,89 +983,145 @@ export default async function MemberDetailPage({
             )}
           </CardContent>
         </Card>
+        </section>
 
-        {/* Single Contacts Card groups primary + secondary contacts
-            under one CardTitle — matches the Company section pattern
-            so every content group on the page has consistent card
-            framing. Individual contacts render as bordered rows inside
-            CardContent (ContactBlock), not as nested cards. */}
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <CardTitle className="text-base">{t('sections.contacts')}</CardTitle>
-            {/* T097 — Emergency primary contact transfer helper. Clicking
-                the icon opens a Popover (not a hover Tooltip — we need
-                tap-discoverable on mobile) that explains the two-step
-                procedure per spec Edge Cases: add the new person as a
-                secondary contact, then promote them. */}
-            <Popover>
-              <PopoverTrigger
-                aria-label={t('emergencyPrimary.ariaLabel')}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <HelpCircleIcon className="size-4" aria-hidden="true" />
-              </PopoverTrigger>
-              <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
-                <p className="font-medium">{t('emergencyPrimary.title')}</p>
-                <p className="mt-2 text-muted-foreground">
-                  {t('emergencyPrimary.body')}
+        {/* Compact-summary 2-col row: Renewal & Health (left) + Benefits
+            Preview (right) on lg+, reflowing to a single column below lg.
+            `items-start` keeps the two cards top-aligned.
+            When Benefits is NOT shown (F9 flag off or non-admin/manager),
+            `showBenefitsPreview` is false and we omit the grid wrapper so
+            Renewal & Health spans the full page width instead of being
+            stranded at half-width with an empty right column. */}
+        {showBenefitsPreview ? (
+          <div className="grid grid-cols-1 items-stretch gap-[var(--page-section-gap)] lg:grid-cols-2">
+            {/* Pass A · Section 1 — Renewal & Health (F8 cycle status +
+                expiry + at-risk band, with the F9 engagement score MERGED
+                in). Own Suspense boundary so the F8/F9 reads never block
+                the company/contacts paint. */}
+            <Suspense fallback={<MemberRenewalHealthSkeleton />}>
+              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+            </Suspense>
+
+            {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
+                cultural-ticket usage at a glance) with a "Full benefits →"
+                link to the dedicated benefits page. F9-gated; admin/manager
+                only (requireSession('staff') already excludes 'member').
+                Own Suspense boundary so the benefit read never blocks paint. */}
+            <Suspense fallback={<MemberBenefitsPreviewSkeleton />}>
+              <MemberBenefitsPreviewSection
+                tenant={tenant}
+                memberId={member.memberId}
+                actorUserId={session.user.id}
+                actorRole={session.user.role}
+              />
+            </Suspense>
+          </div>
+        ) : (
+          /* Benefits not available: Renewal & Health renders full-width. */
+          <Suspense fallback={<MemberRenewalHealthSkeleton />}>
+            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+          </Suspense>
+        )}
+
+        {/* Contacts — full-width below the compact 2-col row. Single Card
+            groups primary + secondary contacts under one heading, matching
+            the Company section pattern. Individual contacts render as flat
+            rows inside CardContent (ContactBlock), not as nested cards. */}
+        <section aria-labelledby="member-contacts-heading">
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2">
+              <SectionHeading id="member-contacts-heading">
+                {t('sections.contacts')}
+              </SectionHeading>
+              {/* T097 — Emergency primary contact transfer helper. Clicking
+                  the icon opens a Popover (not a hover Tooltip — we need
+                  tap-discoverable on mobile) that explains the two-step
+                  procedure per spec Edge Cases: add the new person as a
+                  secondary contact, then promote them.
+                  056 fix #8 — trigger raised to a 44×44 tap target (was 24×24)
+                  per WCAG 2.5.8; the icon stays 16px. */}
+              <Popover>
+                <PopoverTrigger
+                  aria-label={t('emergencyPrimary.ariaLabel')}
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <HelpCircleIcon className="size-4" aria-hidden="true" />
+                </PopoverTrigger>
+                <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
+                  <p className="font-medium">{t('emergencyPrimary.title')}</p>
+                  <p className="mt-2 text-muted-foreground">
+                    {t('emergencyPrimary.body')}
+                  </p>
+                </PopoverContent>
+              </Popover>
+              {canWrite && member.status !== 'archived' && (
+                <ContactFormDialog
+                  memberId={member.memberId}
+                  mode="add"
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto gap-2"
+                    >
+                      <UserPlusIcon className="size-4" aria-hidden="true" />
+                      {t('contactActions.add')}
+                    </Button>
+                  }
+                />
+              )}
+            </CardHeader>
+            <CardContent className="flex flex-col gap-6">
+              {primary ? (
+                <ContactBlock
+                  contact={primary}
+                  memberId={member.memberId}
+                  pendingInvitation={pendingInvitationsByContactId.get(
+                    primary.contactId,
+                  )}
+                  subscribed={subscriptionFor(primary.contactId)}
+                  canWrite={canWrite}
+                  locale={locale}
+                  t={t}
+                />
+              ) : null}
+
+              {secondary.length > 0 && (
+                <>
+                  <Separator />
+                  <h3 className="text-sm font-medium text-muted-foreground">
+                    {t('sections.secondary')}
+                  </h3>
+                  {secondary.map((c, i) => (
+                    <div key={c.contactId} className="flex flex-col gap-6">
+                      {i > 0 ? <Separator /> : null}
+                      <ContactBlock
+                        contact={c}
+                        memberId={member.memberId}
+                        pendingInvitation={pendingInvitationsByContactId.get(
+                          c.contactId,
+                        )}
+                        subscribed={subscriptionFor(c.contactId)}
+                        canWrite={canWrite}
+                        locale={locale}
+                        t={t}
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* 056 fix #6 — empty state when there is no primary AND no
+                  secondary contact (previously the card body rendered empty). */}
+              {!primary && secondary.length === 0 && (
+                <p className="py-2 text-sm text-muted-foreground">
+                  {t('sections.contactsEmpty')}
                 </p>
-              </PopoverContent>
-            </Popover>
-            {canWrite && member.status !== 'archived' && (
-              <ContactFormDialog
-                memberId={member.memberId}
-                mode="add"
-                trigger={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto gap-2"
-                  >
-                    <UserPlusIcon className="size-4" aria-hidden="true" />
-                    {t('contactActions.add')}
-                  </Button>
-                }
-              />
-            )}
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {primary ? (
-              <ContactBlock
-                contact={primary}
-                memberId={member.memberId}
-                pendingInvitation={pendingInvitationsByContactId.get(
-                  primary.contactId,
-                )}
-                canWrite={canWrite}
-                t={t}
-              />
-            ) : null}
-
-            {secondary.length > 0 && (
-              <>
-                <Separator />
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('sections.secondary')}
-                </h3>
-                {secondary.map((c, i) => (
-                  <div key={c.contactId} className="flex flex-col gap-6">
-                    {i > 0 ? <Separator /> : null}
-                    <ContactBlock
-                      contact={c}
-                      memberId={member.memberId}
-                      pendingInvitation={pendingInvitationsByContactId.get(
-                        c.contactId,
-                      )}
-                      canWrite={canWrite}
-                      t={t}
-                    />
-                  </div>
-                ))}
-              </>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </section>
 
         {/* US7 AS1 — Invoice history on member page. Wrapped in its
             own Suspense boundary so member metadata + contacts paint
@@ -904,14 +1160,6 @@ export default async function MemberDetailPage({
         {env.features.f9Dashboard && session.user.role === 'admin' && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
             <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
-          </Suspense>
-        )}
-
-        {/* B18 / FR-007a — engagement score (staff-facing: admin + manager).
-            F9-gated; isolated Suspense so the risk read never blocks paint. */}
-        {env.features.f9Dashboard && (
-          <Suspense fallback={null}>
-            <MemberEngagementSection tenant={tenant} memberId={member.memberId} />
           </Suspense>
         )}
 

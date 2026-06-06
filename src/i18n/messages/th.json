@@ -940,6 +940,32 @@
           "viewAll": "ดูกิจกรรมทั้งหมด",
           "empty": "ยังไม่มีกิจกรรมล่าสุด"
         },
+        "renewalHealth": {
+          "title": "การต่ออายุและสุขภาพสมาชิก",
+          "empty": "ไม่มีรอบการต่ออายุที่ใช้งานอยู่",
+          "status": "สถานะ",
+          "expiry": "วันหมดอายุ",
+          "daysRemaining": "เหลืออีก {days} วัน",
+          "overdueDays": "เกินกำหนด {days} วัน",
+          "engagement": "ความผูกพัน",
+          "viewRenewal": "ดูการต่ออายุ",
+          "cycleStatus": {
+            "upcoming": "กำลังจะถึง",
+            "reminded": "แจ้งเตือนแล้ว",
+            "awaiting_payment": "รอชำระเงิน",
+            "pending_admin_reactivation": "รอเปิดใช้งานอีกครั้ง",
+            "completed": "เสร็จสมบูรณ์",
+            "lapsed": "หมดอายุ",
+            "cancelled": "ยกเลิกแล้ว"
+          }
+        },
+        "subscription": {
+          "subscribed": "รับข่าวสาร",
+          "unsubscribed": "ยกเลิกรับข่าวสาร",
+          "unsubscribedAria": "ผู้ติดต่อนี้ได้ยกเลิกการรับอีเมลข่าวสาร (E-Blast)",
+          "unknown": "ไม่ทราบสถานะ",
+          "unknownAria": "ไม่สามารถดึงสถานะการรับข่าวสารได้ชั่วคราว"
+        },
         "pendingInvitations": {
           "title": "คำเชิญพอร์ทัลที่รอดำเนินการ",
           "subtitle": "คำเชิญที่ส่งแล้วแต่ยังไม่ได้ตอบรับ",
@@ -965,12 +991,30 @@
         },
         "sections": {
           "company": "ข้อมูลบริษัท",
+          "organisation": "องค์กร",
+          "membership": "การเป็นสมาชิก",
+          "technical": "ข้อมูลทางเทคนิค",
           "contacts": "ผู้ติดต่อ",
+          "contactsEmpty": "ยังไม่มีผู้ติดต่อ",
           "primary": "ผู้ติดต่อหลัก",
           "secondary": "ผู้ติดต่ออื่น",
           "plan": "แพ็กเกจ",
           "audit": "กิจกรรมล่าสุด",
-          "contactStatusBadges": "สถานะผู้ติดต่อ"
+          "contactStatusBadges": "สถานะผู้ติดต่อ",
+          "benefits": "สิทธิประโยชน์"
+        },
+        "legalEntityTypes": {
+          "company": "บริษัท",
+          "limited_company": "บริษัทจำกัด",
+          "public_company": "บริษัทมหาชนจำกัด",
+          "partnership": "ห้างหุ้นส่วน",
+          "sole_proprietor": "เจ้าของกิจการคนเดียว",
+          "individual": "บุคคลธรรมดา",
+          "foundation": "มูลนิธิ",
+          "association": "สมาคม",
+          "government": "หน่วยงานรัฐ",
+          "branch": "สำนักงานสาขา",
+          "representative_office": "สำนักงานผู้แทน"
         },
         "fields": {
           "memberNumber": "หมายเลขสมาชิก",
@@ -979,6 +1023,7 @@
           "country": "ประเทศ",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "website": "เว็บไซต์",
+          "websiteExternal": "เปิดเว็บไซต์ในแท็บใหม่",
           "description": "คำอธิบาย",
           "address": "ที่อยู่",
           "foundedYear": "ปีที่ก่อตั้ง",
@@ -1575,7 +1620,7 @@
           "issueDate": "วันที่ออก",
           "dueDate": "ครบกำหนด",
           "total": "ยอดรวม",
-          "actions": "",
+          "actions": "การดำเนินการ",
           "buyer": "ผู้ซื้อ",
           "method": "ช่องทางชำระ",
           "receiptNumber": "เลขใบเสร็จ"
@@ -1614,7 +1659,8 @@
         "creditedTooltip": "ใบลดหนี้ {count} ฉบับ · ลดหนี้ไปแล้ว {amount} บาท",
         "creditedAria": "ใบแจ้งหนี้นี้มีการออกใบลดหนี้ {count} ฉบับ ลดหนี้ไปแล้ว {amount} บาท",
         "receiptNumberCombinedTooltip": "โหมดรวมเอกสาร — ใบเสร็จใช้เลขเดียวกับใบแจ้งหนี้",
-        "receiptNumberCombinedAria": "ใบเสร็จใช้เลขที่ใบแจ้งหนี้ (โหมดรวมเอกสาร)"
+        "receiptNumberCombinedAria": "ใบเสร็จใช้เลขที่ใบแจ้งหนี้ (โหมดรวมเอกสาร)",
+        "tableCaption": "รายการใบแจ้งหนี้ตามตัวกรองที่เลือก"
       },
       "csvExport": {
         "trigger": "ส่งออก CSV",
@@ -4806,7 +4852,8 @@
       "lastUsed": "ใช้ล่าสุด {date}",
       "activeHeading": "สิทธิประโยชน์ที่รวมอยู่",
       "liveNote": "อัปเดตเมื่อโหลด · ปีปัจจุบัน",
-      "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม"
+      "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม",
+      "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด"
     },
     "benefit": {
       "eblast": "อีเมลประชาสัมพันธ์ (E-Blast)",

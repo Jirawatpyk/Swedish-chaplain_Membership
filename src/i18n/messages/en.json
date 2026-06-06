@@ -940,6 +940,32 @@
           "viewAll": "View all activity",
           "empty": "No recent activity yet."
         },
+        "renewalHealth": {
+          "title": "Renewal & Health",
+          "empty": "No active renewal cycle",
+          "status": "Status",
+          "expiry": "Expiry",
+          "daysRemaining": "{days} days remaining",
+          "overdueDays": "Overdue by {days} days",
+          "engagement": "Engagement",
+          "viewRenewal": "View renewal",
+          "cycleStatus": {
+            "upcoming": "Upcoming",
+            "reminded": "Reminded",
+            "awaiting_payment": "Awaiting payment",
+            "pending_admin_reactivation": "Pending reactivation",
+            "completed": "Completed",
+            "lapsed": "Lapsed",
+            "cancelled": "Cancelled"
+          }
+        },
+        "subscription": {
+          "subscribed": "Subscribed",
+          "unsubscribed": "Unsubscribed",
+          "unsubscribedAria": "This contact has unsubscribed from E-Blasts",
+          "unknown": "Status unavailable",
+          "unknownAria": "Subscription status is temporarily unavailable"
+        },
         "pendingInvitations": {
           "title": "Pending portal invitations",
           "subtitle": "Invitations sent but not yet redeemed.",
@@ -965,12 +991,30 @@
         },
         "sections": {
           "company": "Company",
+          "organisation": "Organisation",
+          "membership": "Membership",
+          "technical": "Technical",
           "contacts": "Contacts",
+          "contactsEmpty": "No contacts yet.",
           "primary": "Primary contact",
           "secondary": "Other contacts",
           "plan": "Plan",
           "audit": "Recent activity",
-          "contactStatusBadges": "Contact status"
+          "contactStatusBadges": "Contact status",
+          "benefits": "Benefits"
+        },
+        "legalEntityTypes": {
+          "company": "Company",
+          "limited_company": "Limited company",
+          "public_company": "Public limited company",
+          "partnership": "Partnership",
+          "sole_proprietor": "Sole proprietor",
+          "individual": "Individual",
+          "foundation": "Foundation",
+          "association": "Association",
+          "government": "Government body",
+          "branch": "Branch office",
+          "representative_office": "Representative office"
         },
         "fields": {
           "memberNumber": "Member Number",
@@ -979,6 +1023,7 @@
           "country": "Country",
           "taxId": "Tax ID",
           "website": "Website",
+          "websiteExternal": "Open website in a new tab",
           "description": "Description",
           "address": "Address",
           "foundedYear": "Founded",
@@ -1614,7 +1659,8 @@
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
         "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
-        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)"
+        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
+        "tableCaption": "List of invoices for the selected filters."
       },
       "csvExport": {
         "trigger": "Export CSV",
@@ -4806,7 +4852,8 @@
       "lastUsed": "Last used {date}",
       "activeHeading": "Included benefits",
       "liveNote": "Updated on load · current year",
-      "emptyTitle": "No tracked benefits"
+      "emptyTitle": "No tracked benefits",
+      "fullBenefits": "Full benefits"
     },
     "benefit": {
       "eblast": "E-Blasts",

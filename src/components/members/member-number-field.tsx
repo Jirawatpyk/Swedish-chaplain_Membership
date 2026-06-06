@@ -7,37 +7,18 @@
  * The formatted string is computed server-side via
  * `formatMemberNumber(prefix, member.memberNumber)` and passed as a prop
  * so this client component never imports the tenant prefix.
+ *
+ * 056 fix #7 — consumes the shared `DetailField` instead of a private copy.
  */
 
 import { useTranslations } from 'next-intl';
 import { CopyButton } from './copy-button';
-
-function Field({
-  label,
-  value,
-  mono = false,
-  extra,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  extra?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1 py-2">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="flex items-center gap-2 text-sm">
-        <span className={mono ? 'font-mono text-xs' : ''}>{value}</span>
-        {extra}
-      </dd>
-    </div>
-  );
-}
+import { DetailField } from './detail-field';
 
 export function MemberNumberField({ formatted }: { readonly formatted: string }) {
   const t = useTranslations('admin.members.detail');
   return (
-    <Field
+    <DetailField
       label={t('fields.memberNumber')}
       value={formatted}
       mono

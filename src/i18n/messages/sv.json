@@ -940,6 +940,32 @@
           "viewAll": "Visa all aktivitet",
           "empty": "Ingen aktivitet ännu."
         },
+        "renewalHealth": {
+          "title": "Förnyelse & hälsa",
+          "empty": "Ingen aktiv förnyelsecykel",
+          "status": "Status",
+          "expiry": "Utgångsdatum",
+          "daysRemaining": "{days} dagar kvar",
+          "overdueDays": "Försenad med {days} dagar",
+          "engagement": "Engagemang",
+          "viewRenewal": "Visa förnyelse",
+          "cycleStatus": {
+            "upcoming": "Kommande",
+            "reminded": "Påmind",
+            "awaiting_payment": "Inväntar betalning",
+            "pending_admin_reactivation": "Väntar på återaktivering",
+            "completed": "Slutförd",
+            "lapsed": "Förfallen",
+            "cancelled": "Avbruten"
+          }
+        },
+        "subscription": {
+          "subscribed": "Prenumererar",
+          "unsubscribed": "Avregistrerad",
+          "unsubscribedAria": "Den här kontakten har avregistrerat sig från E-Blasts",
+          "unknown": "Status ej tillgänglig",
+          "unknownAria": "Prenumerationsstatus är tillfälligt otillgänglig"
+        },
         "pendingInvitations": {
           "title": "Väntande portalinbjudningar",
           "subtitle": "Inbjudningar skickade men ännu inte inlösta.",
@@ -965,12 +991,30 @@
         },
         "sections": {
           "company": "Företag",
+          "organisation": "Organisation",
+          "membership": "Medlemskap",
+          "technical": "Tekniskt",
           "contacts": "Kontakter",
+          "contactsEmpty": "Inga kontakter ännu.",
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
           "plan": "Paket",
           "audit": "Senaste aktivitet",
-          "contactStatusBadges": "Kontaktstatus"
+          "contactStatusBadges": "Kontaktstatus",
+          "benefits": "Förmåner"
+        },
+        "legalEntityTypes": {
+          "company": "Företag",
+          "limited_company": "Aktiebolag",
+          "public_company": "Publikt aktiebolag",
+          "partnership": "Handelsbolag",
+          "sole_proprietor": "Enskild firma",
+          "individual": "Privatperson",
+          "foundation": "Stiftelse",
+          "association": "Förening",
+          "government": "Myndighet",
+          "branch": "Filialkontor",
+          "representative_office": "Representationskontor"
         },
         "fields": {
           "memberNumber": "Medlemsnummer",
@@ -979,6 +1023,7 @@
           "country": "Land",
           "taxId": "Skatte-ID",
           "website": "Webbplats",
+          "websiteExternal": "Öppna webbplatsen i en ny flik",
           "description": "Beskrivning",
           "address": "Adress",
           "foundedYear": "Grundat",
@@ -1575,7 +1620,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "total": "Totalt",
-          "actions": "",
+          "actions": "Åtgärder",
           "buyer": "Köpare",
           "method": "Metod",
           "receiptNumber": "Kvittonr."
@@ -1614,7 +1659,8 @@
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
         "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
-        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)"
+        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
+        "tableCaption": "Lista över fakturor för de valda filtren."
       },
       "csvExport": {
         "trigger": "Exportera CSV",
@@ -4806,7 +4852,8 @@
       "lastUsed": "Senast använd {date}",
       "activeHeading": "Inkluderade förmåner",
       "liveNote": "Uppdateras vid laddning · innevarande år",
-      "emptyTitle": "Inga spårade förmåner"
+      "emptyTitle": "Inga spårade förmåner",
+      "fullBenefits": "Alla förmåner"
     },
     "benefit": {
       "eblast": "E-utskick",

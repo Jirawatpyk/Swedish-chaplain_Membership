@@ -9,7 +9,7 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 import { listMemberDataExports } from '@/modules/insights';
 import type { TenantContext } from '@/modules/tenants';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
 import {
   buildDataExportLabels,
@@ -29,19 +29,28 @@ export async function MemberDataExportSection({
   const base = `/api/admin/members/${memberId}/data-export`;
 
   return (
-    <Card data-testid="member-data-export-card">
-      <CardHeader>
-        <CardTitle className="text-base">{t('adminHeading')}</CardTitle>
-        <CardDescription>{t('adminDescription')}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <DataExportPanel
-          rows={buildDataExportRows(jobs, t, locale)}
-          requestUrl={base}
-          downloadUrlBase={base}
-          labels={buildDataExportLabels(t)}
-        />
-      </CardContent>
-    </Card>
+    <section aria-labelledby="member-data-export-heading">
+      <Card data-testid="member-data-export-card">
+        <CardHeader>
+          {/* 056 fix #1 — real <h2> so the export section is reachable via
+              SR heading navigation under the page <h1>. */}
+          <h2
+            id="member-data-export-heading"
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {t('adminHeading')}
+          </h2>
+          <CardDescription>{t('adminDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataExportPanel
+            rows={buildDataExportRows(jobs, t, locale)}
+            requestUrl={base}
+            downloadUrlBase={base}
+            labels={buildDataExportLabels(t)}
+          />
+        </CardContent>
+      </Card>
+    </section>
   );
 }

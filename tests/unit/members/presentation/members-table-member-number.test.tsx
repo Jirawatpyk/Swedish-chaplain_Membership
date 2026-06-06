@@ -45,21 +45,13 @@ const messages = {
         columns: {
           memberNumber: 'Member No.',
           company: 'Company',
-          country: 'Country',
           plan: 'Plan',
-          year: 'Year',
           primaryContact: 'Primary contact',
           status: 'Status',
-          risk: 'Risk',
           engagement: 'Engagement',
           lastActivity: 'Last activity',
-          notes: 'Notes',
         },
         engagementBand: { healthy: 'H', moderate: 'M', warning: 'W', critical: 'C' },
-        riskNotComputed: 'Not yet scored',
-        riskNotComputedAria: 'Risk score not yet computed',
-        riskNotComputedTooltip: 'later',
-        riskPlaceholder: '—',
         rowAriaLabel: 'Open {company} details',
         noPrimary: 'No primary',
         loadMore: 'Load more',
@@ -80,8 +72,6 @@ const messages = {
       inlineEdit: {
         columnHeaderHintTooltip: 'edit',
         statusLabel: 'Status',
-        countryLabel: 'Country',
-        notesLabel: 'Notes',
         saveButton: 'Save',
         cancelButton: 'Cancel',
         savedAria: 'Saved',
@@ -104,10 +94,8 @@ const row: MembersTableRow = {
   plan_year: 2026,
   plan_display_name: 'Corporate',
   status: 'active',
-  member_risk_flag: null,
   engagement: null,
   last_activity_at: null,
-  notes: null,
   primary_contact: null,
 };
 
@@ -127,6 +115,55 @@ describe('MembersTable member number column', () => {
     expect(
       screen.getByRole('button', { name: 'Sort by member number' }),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 056-members-table-compact — the lean layout folds the former Country column
+// into the Company cell (leading flag) and merges Plan + Year into one cell.
+// ---------------------------------------------------------------------------
+describe('MembersTable compact layout (056)', () => {
+  it('renders the country flag inside the Company cell (before the name)', () => {
+    searchParamsMock.current = new URLSearchParams();
+    renderTable();
+    // The company name and its leading flag live in the same cell. The flag
+    // (CountryDisplay variant="flag-only") exposes the localised country name
+    // via aria-label/title — i18n-iso-countries registers EN eagerly, so the
+    // TH flag resolves to "Thailand". We assert the flag element sits in the
+    // same cell as the company name (the visible flag emoji is aria-hidden).
+    const companyCell = screen.getByText('Zeta Holdings').closest('td');
+    expect(companyCell).not.toBeNull();
+    // The flag wrapper carries the resolved country name as its title.
+    const flag = companyCell!.querySelector('[title="Thailand"]');
+    expect(flag).not.toBeNull();
+    // Flag precedes the company name in DOM order.
+    const nameEl = screen.getByText('Zeta Holdings');
+    expect(
+      flag!.compareDocumentPosition(nameEl) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders a merged "Plan · Year" cell', () => {
+    searchParamsMock.current = new URLSearchParams();
+    renderTable();
+    // plan_display_name="Corporate" + plan_year=2026 → "Corporate · 2026".
+    // The cell keeps `title={plan_id}` ("corporate") — target that span so
+    // the matcher doesn't also match the enclosing <td>/<tr>.
+    const planSpan = document.querySelector('[title="corporate"]');
+    expect(planSpan).not.toBeNull();
+    expect(planSpan!.textContent).toBe('Corporate · 2026');
+  });
+
+  it('does NOT render a standalone Country, Year, Risk, or Notes column header', () => {
+    searchParamsMock.current = new URLSearchParams();
+    renderTable();
+    expect(
+      screen.queryByRole('columnheader', { name: /^Country$/ }),
+    ).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: /^Year$/ })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: /^Risk$/ })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: /^Notes$/ })).toBeNull();
   });
 });
 

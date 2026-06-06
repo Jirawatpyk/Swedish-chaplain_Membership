@@ -12,14 +12,16 @@ import { MemberDetailSkeleton } from '@/components/members/member-detail-skeleto
 export default async function Loading() {
   const t = await getTranslations('admin.members');
   return (
-    <DetailContainer>
+    <DetailContainer aria-busy="true">
       <PageHeader
         title={<Skeleton className="h-8 w-64" />}
+        // 056 layout C — status + member-number chip live in the badge slot.
+        badge={<Skeleton className="h-6 w-28" />}
         subtitle={t('subtitle')}
         actions={
           <>
-            {/* Recent activity (US6 timeline) */}
-            <Skeleton className="h-9 w-36" />
+            {/* Benefits link */}
+            <Skeleton className="h-9 w-28" />
             {/* Archive member (US7) — destructive, left of primary */}
             <Skeleton className="h-9 w-36" />
             {/* Edit (primary, rightmost per Fitts's Law) */}

@@ -301,7 +301,7 @@ export function InvoicesTable({
     // so the cue stays visible — the rgba(0,0,0,0.08) ink disappears
     // on `bg-card` dark surfaces alone.
     <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
-      <Table>
+      <Table aria-label={t('tableCaption')}>
         <TableHeader>
           <TableRow>
             <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
@@ -348,7 +348,7 @@ export function InvoicesTable({
               <TableCell className="align-middle whitespace-nowrap">
                 <Link
                   href={`/admin/invoices/${r.invoiceId}`}
-                  className="cursor-pointer font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                 >
                   {r.documentNumber}
                 </Link>
@@ -359,36 +359,25 @@ export function InvoicesTable({
                     {r.receiptDocumentNumberRaw}
                   </span>
                 ) : r.status === 'paid' ? (
-                  // Paid + null = combined-mode (receipt reuses invoice
-                  // number). Em-dash + Info icon → admin sees the
-                  // affordance on touch (no hover state needed) and
-                  // can long-press / focus to read the explanation.
-                  <TooltipProvider delay={200}>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                          <span
-                            {...props}
-                            className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground cursor-help"
-                            aria-label={t('receiptNumberCombinedAria')}
-                          >
-                            —
-                            {/* `min-h-6` brings the TooltipTrigger
-                                surface to WCAG 2.2 SC 2.5.8 (≥24×24px
-                                touch target); text-sm line-height alone
-                                resolves to only ~20px on mobile. */}
-                            <InfoIcon
-                              className="size-3.5"
-                              aria-hidden="true"
-                            />
-                          </span>
-                        )}
-                      />
-                      <TooltipContent>
-                        {t('receiptNumberCombinedTooltip')}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  // Paid + null = combined-mode (receipt reuses the
+                  // invoice number per Thai RD §86/4 + §105ทวิ). The
+                  // hover-only tooltip was removed: its `<span>` trigger
+                  // was not keyboard-focusable and not touch-reachable
+                  // (base-ui tooltips are hover/focus only), so the hint
+                  // never surfaced on touch or keyboard — only desktop
+                  // mouse. The `aria-label` already conveys the full
+                  // combined-mode explanation to assistive tech, so SR
+                  // users keep complete coverage; we drop the redundant
+                  // dead-on-touch tooltip rather than inject a
+                  // non-actionable tab stop. Mirrors the members table's
+                  // dead edit-hint tooltip removal.
+                  <span
+                    className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground"
+                    aria-label={t('receiptNumberCombinedAria')}
+                  >
+                    —
+                    <InfoIcon className="size-3.5" aria-hidden="true" />
+                  </span>
                 ) : (
                   <span className="text-sm text-muted-foreground">—</span>
                 )}
@@ -408,7 +397,7 @@ export function InvoicesTable({
                     {r.buyerHasMemberLink ? (
                       <Link
                         href={`/admin/members/${r.memberId}`}
-                        className="hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                        className="focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                       >
                         {r.memberName}
                       </Link>

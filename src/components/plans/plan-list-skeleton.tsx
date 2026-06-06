@@ -42,10 +42,33 @@ function getServerReducedMotion(): boolean {
 
 export interface PlanListSkeletonProps {
   readonly rowCount?: number;
+  /**
+   * Whether the real table will render the trailing row-actions column
+   * (admin view — the `⋯` dropdown). The live table emits 7 columns for
+   * admins (name · category · annualFee · memberType · year · status ·
+   * actions) and 6 for managers (no actions). Defaults to `false` so the
+   * skeleton matches the manager + first-paint baseline: a non-admin
+   * always sees CLS 0, and admins see at-most a 1-column shift (the
+   * narrow `80px` actions column) on first paint. Mirrors the
+   * members-table-skeleton `withSelection` strategy.
+   */
+  readonly withActions?: boolean;
 }
 
-export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkeletonProps) {
+// Column grid templates kept 1:1 with the real <PlansTable> column set
+// so the loading → loaded transition holds CLS at 0. The 6-column
+// (manager) template is the no-actions baseline; the 7-column (admin)
+// template appends a narrow `80px` track for the row-actions `⋯` cell.
+const GRID_TEMPLATE_MANAGER = 'grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]';
+const GRID_TEMPLATE_ADMIN = 'grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_80px]';
+
+export function PlanListSkeleton({
+  rowCount = DEFAULT_ROW_COUNT,
+  withActions = false,
+}: PlanListSkeletonProps) {
   const t = useTranslations('admin.plans.create.labels');
+  const gridTemplate = withActions ? GRID_TEMPLATE_ADMIN : GRID_TEMPLATE_MANAGER;
+  const columnCount = withActions ? 7 : 6;
   // `useSyncExternalStore` is the React-recommended pattern for
   // reading a browser media-query preference into state without the
   // "setState in effect" cascading-render warning (lint rule
@@ -65,15 +88,13 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
       aria-busy="true"
       className="w-full"
     >
-      {/* Header row */}
+      {/* Header row — column count + grid track widths mirror the real
+          <PlansTable> header so the shell never shifts on data land. */}
       <div className="border-b border-border bg-muted/30 px-4 py-3">
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4">
-          <SkeletonCell className="h-4" />
-          <SkeletonCell className="h-4 w-24" />
-          <SkeletonCell className="h-4 w-28" />
-          <SkeletonCell className="h-4 w-24" />
-          <SkeletonCell className="h-4 w-16" />
-          <SkeletonCell className="h-4 w-12" />
+        <div className={cn('grid gap-4', gridTemplate)}>
+          {Array.from({ length: columnCount }).map((_, c) => (
+            <SkeletonCell key={c} className="h-4" />
+          ))}
         </div>
       </div>
 
@@ -83,13 +104,10 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
           key={idx}
           className="border-b border-border px-4 py-4 last:border-b-0"
         >
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4">
-            <SkeletonCell className="h-5 w-48" />
-            <SkeletonCell className="h-5 w-24" />
-            <SkeletonCell className="h-5 w-28" />
-            <SkeletonCell className="h-5 w-20" />
-            <SkeletonCell className="h-5 w-16" />
-            <SkeletonCell className="h-5 w-8" />
+          <div className={cn('grid gap-4', gridTemplate)}>
+            {Array.from({ length: columnCount }).map((_, c) => (
+              <SkeletonCell key={c} className="h-5" />
+            ))}
           </div>
         </div>
       ))}

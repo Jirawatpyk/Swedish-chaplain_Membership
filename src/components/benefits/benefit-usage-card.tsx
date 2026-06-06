@@ -18,7 +18,7 @@
 import Link from 'next/link';
 import { ArrowRight, PackageOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Separator } from '@/components/ui/separator';
@@ -47,6 +47,32 @@ export interface BenefitUsageCardProps {
   readonly warningActionHref?: string;
   /** Admin-only action controls (rendered in the header on the staff variant). */
   readonly staffActions?: React.ReactNode;
+  /**
+   * Pass A · Section 2 — compact preview mode for the admin member-detail
+   * inline quota summary. Keeps only the quantifiable quota bars and drops
+   * the live-freshness note, per-benefit action deep-links, the
+   * active-benefits badge section, and the empty-state illustration so the
+   * card reads as a tight at-a-glance summary. The full surface lives at
+   * the dedicated `/admin/members/[id]/benefits` page (linked via
+   * `previewHref`).
+   */
+  readonly compact?: boolean;
+  /** "Full benefits →" deep link rendered in the header when `compact`. */
+  readonly previewHref?: string;
+  /**
+   * 056 fix #1 — when set, the card title renders as a real `<h2 id>` and the
+   * id is wired to a wrapping `<section aria-labelledby>` so the card appears
+   * in the SR heading tree. Omitted on surfaces that don't need section
+   * landmark semantics (the heading still renders as an `<h2>` either way).
+   */
+  readonly headingId?: string;
+  /**
+   * Additional CSS classes forwarded to the root `<Card>`. Used by the
+   * compact preview wrapper to add `h-full flex flex-col` for equal-height
+   * alignment in the 2-col grid on the member-detail page. Not applied on
+   * the standalone benefits page or the portal (they don't pass this prop).
+   */
+  readonly className?: string;
 }
 
 function useFormatDate(locale: string): (iso: string) => string {
@@ -64,6 +90,10 @@ export function BenefitUsageCard({
   underUseWarning,
   warningActionHref,
   staffActions,
+  compact = false,
+  previewHref,
+  headingId,
+  className,
 }: BenefitUsageCardProps): React.ReactElement {
   const t = useTranslations('benefits');
   const formatDate = useFormatDate(locale);
@@ -72,16 +102,38 @@ export function BenefitUsageCard({
   return (
     // Stable settle hook for the a11y e2e scan: the Suspense skeleton has no such
     // testid, so a scan can wait for the LOADED card before running axe (F9-QA-03).
-    <Card data-testid="benefit-usage-card">
+    <Card data-testid="benefit-usage-card" className={className}>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <CardTitle>{t('card.title', { year: membershipYear })}</CardTitle>
+          {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the
+              card lands in the SR heading tree under the page <h1>. */}
+          <h2
+            {...(headingId ? { id: headingId } : {})}
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {t('card.title', { year: membershipYear })}
+          </h2>
           {/* Figures are computed live per request (no cache) — surface the
-              freshness so a viewer knows they are current (spec edge case). */}
-          <p className="text-caption text-muted-foreground">{t('card.liveNote')}</p>
+              freshness so a viewer knows they are current (spec edge case).
+              Omitted in the compact preview to keep the summary tight. */}
+          {!compact && (
+            <p className="text-caption text-muted-foreground">
+              {t('card.liveNote')}
+            </p>
+          )}
         </div>
-        {staffActions !== undefined && (
-          <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+        {compact && previewHref !== undefined ? (
+          <Link
+            href={previewHref}
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {t('card.fullBenefits')}
+            <ArrowRight aria-hidden="true" className="size-3.5" />
+          </Link>
+        ) : (
+          staffActions !== undefined && (
+            <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
+          )
         )}
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -123,7 +175,7 @@ export function BenefitUsageCard({
                       ? t('card.neverUsed')
                       : t('card.lastUsed', { date: formatDate(b.lastUsedAt) })}
                   </span>
-                  {b.actionHref !== undefined && (
+                  {!compact && b.actionHref !== undefined && (
                     <Link
                       href={b.actionHref}
                       className="inline-flex items-center gap-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -141,7 +193,7 @@ export function BenefitUsageCard({
           </ul>
         )}
 
-        {active.length > 0 && (
+        {!compact && active.length > 0 && (
           <div className="flex flex-col gap-2">
             <Separator />
             <p className="text-caption font-medium text-muted-foreground">
