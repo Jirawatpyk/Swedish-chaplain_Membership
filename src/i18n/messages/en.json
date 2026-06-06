@@ -5007,7 +5007,6 @@
     "colRequested": "Requested",
     "adminHeading": "Data export (GDPR)",
     "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you.",
-    "alreadyPending": "An export is already being prepared — see its status below.",
-    "open": "Go to data export"
+    "alreadyPending": "An export is already being prepared — see its status below."
   }
 }
