@@ -80,7 +80,7 @@ export async function MemberBenefitsPreviewSection({
   });
 
   return (
-    <section aria-labelledby="member-benefits-preview-heading">
+    <section aria-labelledby="member-benefits-preview-heading" className="h-full">
       <BenefitUsageCard
         headingId="member-benefits-preview-heading"
         locale={locale}
@@ -92,6 +92,7 @@ export async function MemberBenefitsPreviewSection({
         underUseWarning={usage.underUseWarning}
         compact
         previewHref={`/admin/members/${memberId}/benefits`}
+        className="h-full flex flex-col"
       />
     </section>
   );
@@ -103,7 +104,7 @@ export async function MemberBenefitsPreviewSection({
  */
 export function MemberBenefitsPreviewSkeleton(): React.JSX.Element {
   return (
-    <Card aria-busy="true" aria-hidden="true">
+    <Card aria-busy="true" aria-hidden="true" className="h-full">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <Skeleton className="h-5 w-40" />
         <Skeleton className="h-5 w-24" />

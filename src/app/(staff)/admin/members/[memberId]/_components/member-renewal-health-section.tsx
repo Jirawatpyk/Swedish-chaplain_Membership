@@ -113,7 +113,7 @@ export async function MemberRenewalHealthSection({
  */
 export function MemberRenewalHealthSkeleton(): React.JSX.Element {
   return (
-    <Card aria-busy="true" aria-hidden="true">
+    <Card aria-busy="true" aria-hidden="true" className="h-full">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <Skeleton className="h-5 w-40" />
         <Skeleton className="h-8 w-28" />

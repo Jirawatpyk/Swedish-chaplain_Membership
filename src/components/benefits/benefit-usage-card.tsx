@@ -66,6 +66,13 @@ export interface BenefitUsageCardProps {
    * landmark semantics (the heading still renders as an `<h2>` either way).
    */
   readonly headingId?: string;
+  /**
+   * Additional CSS classes forwarded to the root `<Card>`. Used by the
+   * compact preview wrapper to add `h-full flex flex-col` for equal-height
+   * alignment in the 2-col grid on the member-detail page. Not applied on
+   * the standalone benefits page or the portal (they don't pass this prop).
+   */
+  readonly className?: string;
 }
 
 function useFormatDate(locale: string): (iso: string) => string {
@@ -86,6 +93,7 @@ export function BenefitUsageCard({
   compact = false,
   previewHref,
   headingId,
+  className,
 }: BenefitUsageCardProps): React.ReactElement {
   const t = useTranslations('benefits');
   const formatDate = useFormatDate(locale);
@@ -94,7 +102,7 @@ export function BenefitUsageCard({
   return (
     // Stable settle hook for the a11y e2e scan: the Suspense skeleton has no such
     // testid, so a scan can wait for the LOADED card before running axe (F9-QA-03).
-    <Card data-testid="benefit-usage-card">
+    <Card data-testid="benefit-usage-card" className={className}>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
           {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the

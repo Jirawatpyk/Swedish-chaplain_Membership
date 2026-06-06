@@ -85,8 +85,8 @@ export function RenewalHealthCard({
   const hasEngagement = engagementScore !== null && engagementBand !== null;
 
   return (
-    <section aria-labelledby={headingId}>
-      <Card>
+    <section aria-labelledby={headingId} className="h-full">
+      <Card className="h-full flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         {/* 056 fix #1 — real <h2> (not the CardTitle <div>) so this section
             appears in the SR heading tree under the page <h1>. Carries the

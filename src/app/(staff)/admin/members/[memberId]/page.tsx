@@ -996,7 +996,7 @@ export default async function MemberDetailPage({
             Renewal & Health spans the full page width instead of being
             stranded at half-width with an empty right column. */}
         {showBenefitsPreview ? (
-          <div className="grid grid-cols-1 items-start gap-[var(--page-section-gap)] lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-stretch gap-[var(--page-section-gap)] lg:grid-cols-2">
             {/* Pass A · Section 1 — Renewal & Health (F8 cycle status +
                 expiry + at-risk band, with the F9 engagement score MERGED
                 in). Own Suspense boundary so the F8/F9 reads never block
