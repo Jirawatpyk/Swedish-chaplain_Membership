@@ -41,11 +41,9 @@ import type { MemberId, Contact } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 // Pass A · Section 3 — F7 marketing-suppression read (cross-context via the
 // broadcasts public barrel; the Drizzle repo wraps queries in runInTenant).
-import {
-  makeDrizzleMarketingUnsubscribesRepo,
-  asEmailLower,
-  type EmailLower,
-} from '@/modules/broadcasts';
+import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts';
+// S1 — extracted resolver owns the parse + projection + degraded branching.
+import { resolveContactSubscriptions } from './_lib/resolve-contact-subscriptions';
 import {
   Card,
   CardContent,
@@ -297,12 +295,14 @@ function ContactBlock({
   memberId: string;
   pendingInvitation?: PendingInvitation | undefined;
   /**
-   * Pass A · Section 3 — F7 marketing-subscription status. `true` when the
-   * contact's email is NOT in `marketing_unsubscribes`; `false` when they
-   * have unsubscribed from E-Blasts (PDPA/GDPR). Always rendered as a text
-   * label so admins see reachability at a glance.
+   * Pass A · Section 3 / S1 — F7 marketing-subscription tri-state. `true`
+   * when the contact's email is NOT in `marketing_unsubscribes`; `false`
+   * when they have unsubscribed from E-Blasts (PDPA/GDPR); `'unknown'` when
+   * the suppression read was degraded (marketing-DB outage) so the badge
+   * shows a neutral "Status unavailable" instead of a misleading default.
+   * Always rendered as a text label so admins see reachability at a glance.
    */
-  subscribed: boolean;
+  subscribed: boolean | 'unknown';
   /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
   canWrite: boolean;
   /**
@@ -564,7 +564,7 @@ export default async function MemberDetailPage({
     pendingInvitationsByContactId,
     planLookup,
     memberPrefix,
-    unsubscribedContactIds,
+    subscriptionResult,
   ] = await Promise.all([
       // C6 round-10 ui-design-specialist — fetch pending portal invitations
       // and project as a Map<contactId, invitation> so each ContactBlock can
@@ -628,77 +628,37 @@ export default async function MemberDetailPage({
       // shared helper (never raw db). Falls back to 'M' (the column DEFAULT
       // for tenants provisioned before the settings seed — no visible error).
       resolveMemberNumberPrefix(tenant, deps.memberSettings),
-      // Pass A · Section 3 — F7 marketing-suppression status per contact.
+      // Pass A · Section 3 / S1 — F7 marketing-suppression status per contact.
       // Batch-look-up every non-removed contact email against
       // `marketing_unsubscribes` (RLS-safe: the repo wraps `lookupBatch` in
-      // runInTenant) and project to a Set<contactId> of UNSUBSCRIBED
-      // contacts. A read failure downgrades to an empty Set (every contact
-      // shown as Subscribed) — a missing badge never blocks the page, and
-      // "Subscribed" is the safe default since the dispatch boundary
-      // re-checks suppression before any send anyway.
-      (async (): Promise<ReadonlySet<string>> => {
-        try {
-          const liveContacts = contacts.filter(
-            (c) => c.removedAt === null && c.email,
-          );
-          if (liveContacts.length === 0) return new Set<string>();
-          // contact.email is a branded Email; lower-case + brand to EmailLower.
-          // Skip any that fail the EmailLower parse (defensive — domain Email
-          // is already validated, but the suppression key demands a clean
-          // lower-case value).
-          const emailByContact = new Map<string, EmailLower>();
-          for (const c of liveContacts) {
-            const parsed = asEmailLower(String(c.email).toLowerCase());
-            if (parsed.ok) {
-              emailByContact.set(c.contactId, parsed.value);
-            } else {
-              // FIX 4 — log a debug breadcrumb when a contact email fails the
-              // EmailLower parse (data drift / non-standard character in a
-              // stored address). The contact is silently skipped → defaults
-              // to "Subscribed". Mirrors the `metadata_company_name_lookup_failed`
-              // pattern (page.tsx ~line 140) so future data-drift is observable.
-              logger.debug(
-                {
-                  event: 'contact_email_lower_parse_failed',
-                  contactId: c.contactId,
-                  memberId,
-                },
-                '[Pass A] asEmailLower parse failed — contact defaults to Subscribed',
-              );
-            }
-          }
-          const suppressionRepo = makeDrizzleMarketingUnsubscribesRepo(
+      // runInTenant). Returns a DISCRIMINATED result: on success a Set of
+      // UNSUBSCRIBED contact ids; on a marketing-DB outage `{ degraded:
+      // true }` so each badge renders a neutral "Status unavailable" state
+      // instead of silently defaulting to "Subscribed" (UI-honesty fix — NOT
+      // a compliance change: the dispatch boundary always re-resolves
+      // suppression before any send). Resolver extracted to `_lib` so the
+      // fail-open / fail-degraded branching is unit-testable without live
+      // Neon.
+      resolveContactSubscriptions({
+        contacts,
+        memberId,
+        lookupBatch: (emailLowers) =>
+          makeDrizzleMarketingUnsubscribesRepo(tenant.slug).lookupBatch(
             tenant.slug,
-          );
-          const suppressedEmails = await suppressionRepo.lookupBatch(
-            tenant.slug,
-            [...emailByContact.values()],
-          );
-          const out = new Set<string>();
-          for (const [contactId, email] of emailByContact) {
-            if (suppressedEmails.has(email)) out.add(contactId);
-          }
-          return out;
-        } catch (e) {
-          logger.warn(
-            {
-              event: 'marketing_unsubscribe_lookup_threw',
-              // errKind logs only the error class name — never e.message
-              // (Postgres errors carry SQL params / table names).
-              errKind: errKind(e),
-              memberId,
-            },
-            '[Pass A] marketing-suppression lookup threw — defaulting all contacts to Subscribed',
-          );
-          // TODO(056-followup): on marketing-DB outage the lookup returns an
-          // empty Set → all badges show "Subscribed" (fail-open). Reviewer
-          // confirmed this is NOT a compliance bug (send path re-resolves
-          // suppression independently). A proper "unknown/degraded" badge
-          // state is a separate follow-up task.
-          return new Set<string>();
-        }
-      })(),
+            emailLowers,
+          ),
+        logger,
+        errKind,
+      }),
     ]);
+
+  // S1 — derive each contact's tri-state subscription from the discriminated
+  // result. On a degraded read every contact resolves to 'unknown' (neutral
+  // "Status unavailable" badge); otherwise `subscribed = !unsubscribed.has(id)`.
+  const subscriptionFor = (contactId: string): boolean | 'unknown' =>
+    subscriptionResult.degraded
+      ? 'unknown'
+      : !subscriptionResult.unsubscribed.has(contactId);
 
   const planDisplayName = planLookup.ok
     ? planLookup.value.planNameEn
@@ -1120,7 +1080,7 @@ export default async function MemberDetailPage({
                   pendingInvitation={pendingInvitationsByContactId.get(
                     primary.contactId,
                   )}
-                  subscribed={!unsubscribedContactIds.has(primary.contactId)}
+                  subscribed={subscriptionFor(primary.contactId)}
                   canWrite={canWrite}
                   locale={locale}
                   t={t}
@@ -1142,7 +1102,7 @@ export default async function MemberDetailPage({
                         pendingInvitation={pendingInvitationsByContactId.get(
                           c.contactId,
                         )}
-                        subscribed={!unsubscribedContactIds.has(c.contactId)}
+                        subscribed={subscriptionFor(c.contactId)}
                         canWrite={canWrite}
                         locale={locale}
                         t={t}

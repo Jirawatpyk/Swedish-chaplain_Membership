@@ -962,7 +962,9 @@
         "subscription": {
           "subscribed": "Subscribed",
           "unsubscribed": "Unsubscribed",
-          "unsubscribedAria": "This contact has unsubscribed from E-Blasts"
+          "unsubscribedAria": "This contact has unsubscribed from E-Blasts",
+          "unknown": "Status unavailable",
+          "unknownAria": "Subscription status is temporarily unavailable"
         },
         "pendingInvitations": {
           "title": "Pending portal invitations",
