@@ -5,16 +5,28 @@
  * returns member B's (other-tenant) broadcasts or quota. Live Neon Singapore.
  * All seed data is SIMULATED — never real PII.
  *
- * RLS at the DB layer protects raw table queries; this test exercises the
- * Application boundary (barrel use-case → port → adapter → SQL) which
- * re-derives tenant scoping in its WHERE clause. A dropped predicate or a
- * mis-wired tenant context would leak cross-tenant rows here even with RLS
- * intact at the row level, so the assertions below are an explicit
- * defence-in-depth check on the two reads the redesigned Broadcasts tab
- * depends on.
+ * This suite proves BOTH layers of Principle I tenant isolation:
+ *   1. Application layer — the barrel use-cases (listMemberBroadcasts +
+ *      computeQuotaCounter → port → adapter → SQL) re-derive tenant scoping
+ *      in their WHERE clause. A dropped predicate or a mis-wired tenant
+ *      context would leak cross-tenant rows here even with RLS intact at the
+ *      row level, so those reads are an explicit defence-in-depth check on
+ *      the two reads the redesigned Broadcasts tab depends on.
+ *   2. Postgres RLS layer — the raw-tx probe at the bottom issues a SELECT
+ *      with NO application tenant predicate (only the RLS+FORCE policy on
+ *      `broadcasts` governs visibility) under tenantA's context via
+ *      runInTenant (app role, subject to RLS). If it returned tenantB's row,
+ *      the DB-layer policy would be broken. The app-layer reads alone cannot
+ *      prove this because their explicit `tenantId` predicate would hide the
+ *      leak even with RLS disabled.
+ *
+ * A computeQuotaCounter positive control proves the cross-tenant not-found is
+ * specifically RLS-driven (plans-bridge folds server_error → member_not_found,
+ * so a genuinely-broken call would otherwise pass for the wrong reason).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -155,35 +167,44 @@ describe('058 G1 Benefits→Broadcasts tab tenant isolation (Principle I)', () =
     await tenantB.cleanup().catch(() => {});
   });
 
+  // I2 (2026-06-07 follow-up): the use-cases are called DIRECTLY — no outer
+  // `runInTenant` wrapper. The deps factories carry the tenant slug and the
+  // repo opens its OWN `runInTenant(ctx)` internally; the Neon driver does
+  // NOT nest `db.transaction` as a savepoint, so an outer wrapper's
+  // `SET LOCAL app.current_tenant` would apply to a transaction the read
+  // never uses (dead code that misrepresents what enforces isolation).
   it('listMemberBroadcasts — tenantA context, tenantB memberId → empty (no leak)', async () => {
-    const result = await runInTenant(tenantA.ctx, async () =>
-      listMemberBroadcasts(makeListMemberBroadcastsDeps(tenantA.ctx.slug), {
+    const result = await listMemberBroadcasts(
+      makeListMemberBroadcastsDeps(tenantA.ctx.slug),
+      {
         memberId: asMemberId(bMemberId),
         page: 1,
         perPage: 10,
-      }),
+      },
     );
     expect(result.total).toBe(0);
     expect(result.rows).toHaveLength(0);
   });
 
   it('listMemberBroadcasts — tenantA sees its own member broadcast', async () => {
-    const result = await runInTenant(tenantA.ctx, async () =>
-      listMemberBroadcasts(makeListMemberBroadcastsDeps(tenantA.ctx.slug), {
+    const result = await listMemberBroadcasts(
+      makeListMemberBroadcastsDeps(tenantA.ctx.slug),
+      {
         memberId: asMemberId(aMemberId),
         page: 1,
         perPage: 10,
-      }),
+      },
     );
     expect(result.total).toBe(1);
     expect(result.rows[0]?.broadcastId as string).toBe(aBroadcastId);
   });
 
   it('computeQuotaCounter — tenantA context, tenantB memberId → no cross-tenant quota', async () => {
-    const result = await runInTenant(tenantA.ctx, async () =>
-      computeQuotaCounter(makeComputeQuotaDeps(tenantA.ctx.slug), {
+    const result = await computeQuotaCounter(
+      makeComputeQuotaDeps(tenantA.ctx.slug),
+      {
         memberId: asMemberId(bMemberId),
-      }),
+      },
     );
     if (result.ok) {
       // Member B is invisible under tenantA's context; if the use-case still
@@ -193,5 +214,41 @@ describe('058 G1 Benefits→Broadcasts tab tenant isolation (Principle I)', () =
       // Expected path: member-not-found under tenantA's context.
       expect(result.error.kind).toMatch(/not_found/);
     }
+  });
+
+  // I1 (2026-06-07 follow-up) — positive control. The cross-tenant
+  // not-found above asserts only `error.kind` matches /not_found/, but
+  // plans-bridge.ts folds plan_lookup.server_error → member_not_found
+  // (and get-plan-for-member emits server_error on ANY thrown/non-not-found
+  // failure), so a genuinely BROKEN call would ALSO surface as
+  // member_not_found and the cross-tenant assertion could pass for the
+  // wrong reason. This control proves the SAME call SUCCEEDS for the
+  // member's own tenant, so the cross-tenant not-found is specifically
+  // RLS-driven, not a wiring fault.
+  it('computeQuotaCounter — tenantA sees its own member quota (positive control)', async () => {
+    const result = await computeQuotaCounter(makeComputeQuotaDeps(tenantA.ctx.slug), {
+      memberId: asMemberId(aMemberId),
+    });
+    expect(result.ok).toBe(true);
+    // Member A consumed exactly one 'sent' broadcast this quota year (cap = 3).
+    if (result.ok) {
+      expect(result.value.counter.used).toBe(1);
+    }
+  });
+
+  // I3 (2026-06-07 follow-up) — DB-layer RLS probe. The app-layer reads
+  // above filter with an explicit `eq(broadcasts.tenantId, ...)` predicate,
+  // so `total 0` is guaranteed by the WHERE clause even if RLS were
+  // disabled — that proves the application layer but NOT the Postgres RLS
+  // policy. This raw query carries NO tenant predicate (only RLS governs
+  // it) and runs as the app role via `runInTenant` (subject to RLS+FORCE),
+  // NOT the owner `db` (which bypasses RLS). If it returns B's row, the
+  // RLS+FORCE policy on `broadcasts` is broken.
+  it('RLS layer — raw query under tenantA context cannot see tenantB broadcast (DB-layer isolation)', async () => {
+    const rows = await runInTenant(tenantA.ctx, async (tx) =>
+      tx.select().from(broadcasts).where(eq(broadcasts.requestedByMemberId, bMemberId)),
+    );
+    // No tenantId predicate here — if this returns B's row, RLS+FORCE is broken.
+    expect(rows).toHaveLength(0);
   });
 });
