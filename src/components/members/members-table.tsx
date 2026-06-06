@@ -53,18 +53,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from '@/components/ui/tooltip';
-import {
   ArchiveIcon,
   ArrowDownIcon,
   ArrowUpDownIcon,
   ArrowUpIcon,
   PencilIcon,
-  PencilLineIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
@@ -267,52 +260,6 @@ function EngagementSortHeader() {
       {t('columns.engagement')}
       <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
     </button>
-  );
-}
-
-/**
- * C7 round-10 ui-design-specialist — column-header affordance for an
- * editable cell. Renders the label + a small pencil icon; hovering /
- * focusing the icon surfaces the inline-edit instruction. Only mounted
- * when the caller passes `editable={true}` — manager view drops it.
- *
- * 056-members-table-compact — the only remaining inline-editable column is
- * Status (the country/notes inline cells were removed; those fields are now
- * edited on the member detail page).
- *
- * Icon-only (no "Editable" text) per maintainer feedback — keeps the
- * column header compact. `aria-label` + Tooltip carry the meaning for
- * sighted + SR users.
- */
-function EditableColumnHeader({
-  label,
-  editable,
-}: {
-  label: string;
-  editable: boolean;
-}) {
-  const t = useTranslations('admin.members.inlineEdit');
-  if (!editable) return <>{label}</>;
-  // Round-11 review fix — TooltipProvider HOISTED to MembersTable root.
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span>{label}</span>
-      {/* WCAG 2.2 SC 2.5.8: tap target ≥ 24×24 px — raised from size-4 (16px) to min size-6 (24px). */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              aria-label={t('columnHeaderHintTooltip')}
-            />
-          }
-        >
-          <PencilLineIcon aria-hidden="true" className="size-3" />
-        </TooltipTrigger>
-        <TooltipContent>{t('columnHeaderHintTooltip')}</TooltipContent>
-      </Tooltip>
-    </span>
   );
 }
 
@@ -557,7 +504,9 @@ export function MembersTable({
         const label = displayName ?? row.plan_id;
         return (
           <span title={row.plan_id} className="text-sm whitespace-nowrap">
-            {label} · {row.plan_year}
+            {label}
+            <span aria-hidden="true"> · </span>
+            {row.plan_year}
           </span>
         );
       },
@@ -573,12 +522,7 @@ export function MembersTable({
       },
     }),
     columnHelper.accessor('status', {
-      header: () => (
-        <EditableColumnHeader
-          label={t('columns.status')}
-          editable={enableSelection}
-        />
-      ),
+      header: () => t('columns.status'),
       cell: (info) =>
         enableSelection ? (
           <InlineStatusCell
@@ -697,11 +641,6 @@ export function MembersTable({
   }, [enableSelection]);
 
   return (
-    /* Round-11 review fix — single TooltipProvider hoisted here so
-       `EditableColumnHeader` (×3 in admin view) + risk-cell tooltip
-       (×N rows with null band) don't each instantiate their own
-       provider per render. Tooltip race + Tab order noise resolved. */
-    <TooltipProvider>
     <div className="flex flex-col gap-4" ref={tableContainerRef}>
       {enableSelection && selectedCount > 0 && (
         <div
@@ -824,7 +763,6 @@ export function MembersTable({
         </div>
       )}
     </div>
-    </TooltipProvider>
   );
 }
 
