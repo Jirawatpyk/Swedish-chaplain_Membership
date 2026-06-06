@@ -19,11 +19,12 @@ export type StatVariant = 'neutral' | 'warning' | 'destructive';
 
 export interface MembershipStat {
   /**
-   * `empty` = first-run (no cycle); `active` = far off / still-covered;
-   * `due`/`overdue` = act on a non-terminal cycle; `lapsed` = terminal
-   * (completed/lapsed/cancelled) AND coverage has ended → must renew;
-   * `error` = the renewal read failed (transient) — distinct from `empty`
-   * so a DB-throw is never shown as the "Welcome aboard" first-run state.
+   * `empty` = first-run (no cycle); `active` = far off / still-covered / paid
+   * up (`completed`); `due`/`overdue` = act on a non-terminal cycle;
+   * `lapsed` = an ENDED-terminal cycle (`lapsed`/`cancelled`, NOT `completed`)
+   * whose coverage has ended → must renew; `error` = the renewal read failed
+   * (transient) — distinct from `empty` so a DB-throw is never shown as the
+   * "Welcome aboard" first-run state.
    */
   readonly kind: 'empty' | 'active' | 'due' | 'overdue' | 'lapsed' | 'error';
   readonly variant: StatVariant;
@@ -58,25 +59,40 @@ export function deriveMembershipStat(
   if (isOverdue(cycle, now)) {
     return { kind: 'overdue', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
-  // F11 — a TERMINAL cycle (completed/lapsed/cancelled) whose expiry is in
-  // the past has no live coverage. `isOverdue` returns false for terminal
-  // statuses and the `due` branch excludes them, so previously these fell
-  // through to `active` and rendered "Active — in good standing", which
-  // MISINFORMS. Surface a destructive "membership lapsed / renew" instead.
-  // (A terminal cycle still within its period — expiry in the future —
-  // stays `active`: the member is paid up and covered.)
+  // 057 R2 finding A (CRITICAL) — `completed` is a terminal status but means
+  // the member PAID/renewed (closedReason 'paid'/'completed_offline'/
+  // 'admin_reactivated'), i.e. in good standing. The renewals module creates
+  // NO successor cycle (deferred R3), so a paid member's `completed` cycle
+  // stays the most-recent; once its period ends it must STILL read good
+  // standing, NOT "Membership lapsed — Renew" (which prompts a duplicate
+  // payment). So only the ENDED terminal statuses — `lapsed` and `cancelled`
+  // — represent coverage that has genuinely ended.
   //
-  // Defer 2: use an instant-level comparison (same `<` semantics as
-  // `isOverdue`) rather than `days < 0` (Math.ceil day-granularity). With
-  // day-granularity a cycle expiring at 08:00 BKK is still days=0 at 14:00
-  // BKK, so it fell through to `active` for the rest of the expiry day.
-  if (isTerminalCycleStatus(status) && Date.parse(cycle.expiresAt) < now.getTime()) {
-    return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+  // `cancelled` (closedReason 'cancelled' | 'admin_rejected_with_refund')
+  // shares the lapsed kind for now. The 'admin_rejected_with_refund' refund
+  // sub-case shown "Renew to restore your benefits" is slightly off, but a
+  // dedicated copy variant is deferred (057 R2 finding #6) — low value for a
+  // ~131-member org; the destructive/renew framing is acceptable meanwhile.
+  const isEndedTerminal =
+    isTerminalCycleStatus(status) && status !== 'completed';
+  // Finding F — an ended-terminal cycle (lapsed/cancelled) has no live
+  // coverage regardless of `expiresAt`. Resolve it to `lapsed` even when
+  // `expiresAt` is unparseable (Date.parse → NaN, where `NaN < now` is false
+  // and previously fell through to `active`). When the date IS parseable, use
+  // an instant-level comparison (same `<` semantics as `isOverdue`, not the
+  // Math.ceil day-granularity of `days < 0`) so a cycle expiring at 08:00 BKK
+  // is treated as ended at 14:00 BKK that same day (057 Defer 2).
+  if (isEndedTerminal) {
+    const expiresMs = Date.parse(cycle.expiresAt);
+    if (!Number.isFinite(expiresMs) || expiresMs < now.getTime()) {
+      return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+    }
   }
   if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
     return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
-  // Far off OR terminal-but-still-covered → show membership status, not a stale countdown.
+  // Far off, completed (paid up), or ended-terminal-but-still-within-period →
+  // show membership status, not a stale countdown.
   return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt };
 }
 
