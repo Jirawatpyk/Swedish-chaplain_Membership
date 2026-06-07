@@ -226,7 +226,7 @@ export async function BroadcastsPanel({
   const composeDisabled = quota !== null && quota.remaining === 0;
 
   return (
-    <section aria-labelledby="broadcasts-panel-heading">
+    <section aria-labelledby="broadcasts-panel-heading" className="flex flex-col gap-6">
       {/* Panel heading + Compose CTA. The <h2> replaces the e-blasts page
           PageHeader title (058 G1 change (d)); the Compose CTA preserves
           the e-blasts PageHeader.actions slot logic verbatim (enabled

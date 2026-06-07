@@ -29,13 +29,15 @@ export default function Loading() {
         <Skeleton className="mt-1 h-4 w-64" />
       </div>
 
-      {/* Tab strip (TabsList variant="line": h-8 line of triggers under a
-          bottom border) followed by the active-panel card. The 8px gap (gap-2
-          on the real <Tabs>) + the TabsContent pt-4 (16px) reproduce the
+      {/* Tab strip + active-panel card. The real TabsList variant="line" is a
+          w-fit, transparent, gap-1 row of triggers with NO full-width bottom
+          border — only the active tab gets a short 2px ::after underline. So
+          the skeleton is two pills in a w-fit row (no border-b). The 8px gap
+          (gap-2 on the real <Tabs>) + the TabsContent pt-4 (16px) reproduce the
           tabs → card spacing. */}
       <div className="flex flex-col gap-2">
-        <div className="flex h-8 items-center gap-1 border-b">
-          <Skeleton className="h-7 w-24 rounded-sm" />
+        <div className="flex h-8 w-fit items-center gap-1">
+          <Skeleton className="h-7 w-20 rounded-sm" />
           <Skeleton className="h-7 w-24 rounded-sm" />
         </div>
         <div className="pt-4">
