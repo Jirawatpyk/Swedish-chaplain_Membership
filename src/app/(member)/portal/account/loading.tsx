@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { ChangePasswordFormSkeleton } from '@/components/auth/change-password-form-skeleton';
+import { env } from '@/lib/env';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -12,12 +13,25 @@ import {
 /**
  * Portal account-hub loading skeleton (058 D2).
  *
- * Mirrors the four-section hub in `page.tsx` (Account → Renewal preferences
- * → Data & privacy → Appearance) so the shimmer→content swap doesn't pop
- * three extra sections into existence (CLS = 0, ux-standards § 2.1). Each
- * section is an <h2>-height SkeletonBlock + a Card placeholder; the Account
- * section keeps the two-card shape (change-password + preferred-locale).
- * FormContainer matches the real page (42rem) so width never reflows.
+ * Mirrors the account hub in `page.tsx` (Account → Renewal preferences →
+ * Data & privacy → Appearance) so the shimmer→content swap doesn't pop extra
+ * sections into existence (CLS = 0, ux-standards § 2.1). Each section is an
+ * <h2>-height SkeletonBlock + a Card placeholder; the Account section keeps
+ * the two-card shape (change-password + preferred-locale). FormContainer
+ * matches the real page (42rem) so width never reflows.
+ *
+ * Flag-gated sections (R2-1): the page renders Data & privacy only when
+ * `env.features.f9Dashboard && memberId` — `FEATURE_F9_DASHBOARD` defaults
+ * FALSE, so an ungated skeleton would show a 4th section that then collapses
+ * (CLS). A route `loading.tsx` is a server component and can read `env`
+ * synchronously, so we gate the Data & privacy skeleton on the SAME flag.
+ *
+ * Unlinked-user caveat (accepted): the page also hides Renewal + Data &
+ * privacy when `memberId === null` (e.g. a pending invitation), but a
+ * `loading.tsx` receives NO props and cannot resolve memberId without a DB
+ * call (which would defeat a fast skeleton). Linked members are the common
+ * case, so the Renewal skeleton stays always-rendered to match them; the rare
+ * unlinked-user CLS on Renewal/Data&privacy is knowingly accepted.
  */
 function SectionSkeleton({ children }: { children: React.ReactNode }) {
   return (
@@ -56,10 +70,13 @@ export default async function Loading() {
           <CardSkeleton withDescription={false} rows={2} />
         </SectionSkeleton>
 
-        {/* Data & privacy. */}
-        <SectionSkeleton>
-          <CardSkeleton rows={3} />
-        </SectionSkeleton>
+        {/* Data & privacy — f9-gated, mirroring the page's
+            `env.features.f9Dashboard && memberId` gate (R2-1). */}
+        {env.features.f9Dashboard ? (
+          <SectionSkeleton>
+            <CardSkeleton rows={3} />
+          </SectionSkeleton>
+        ) : null}
 
         {/* Appearance. */}
         <SectionSkeleton>

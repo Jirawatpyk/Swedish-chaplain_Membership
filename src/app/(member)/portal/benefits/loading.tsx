@@ -14,8 +14,17 @@
  * skeleton briefly, then the broadcasts panel swaps in (a minor, accepted shape
  * difference — not zero CLS). The default `?tab=benefits` load is shape-matched.
  * xhigh #11.
+ *
+ * R2-2: the tab strip now matches the F7 flag. The page passes
+ * `showBroadcastsTab={env.features.f7Broadcasts}` to `<BenefitsTabs>`, which
+ * renders the Broadcasts `TabsTrigger` only when true. `FEATURE_F7_BROADCASTS`
+ * defaults FALSE, so an unconditional 2-pill skeleton would collapse to a
+ * 1-tab strip on the swap (width CLS). A `loading.tsx` is a server component
+ * and reads `env` synchronously, so we gate the SECOND (Broadcasts) pill on the
+ * SAME flag; the first (Benefits) pill always renders.
  */
 import { DetailContainer } from '@/components/layout';
+import { env } from '@/lib/env';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BenefitUsageSkeleton } from '@/components/benefits/benefit-usage-skeleton';
 
@@ -37,8 +46,13 @@ export default function Loading() {
           tabs → card spacing. */}
       <div className="flex flex-col gap-2">
         <div className="flex h-8 w-fit items-center gap-1">
+          {/* Benefits pill — always rendered. */}
           <Skeleton className="h-7 w-20 rounded-sm" />
-          <Skeleton className="h-7 w-24 rounded-sm" />
+          {/* Broadcasts pill — only when F7 is on, matching the page's
+              `showBroadcastsTab={env.features.f7Broadcasts}` gate (R2-2). */}
+          {env.features.f7Broadcasts ? (
+            <Skeleton className="h-7 w-24 rounded-sm" />
+          ) : null}
         </div>
         <div className="pt-4">
           {/* Card only — the PageHeader above already supplies the page title,
