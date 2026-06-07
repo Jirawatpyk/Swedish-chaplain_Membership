@@ -19,6 +19,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind, hashId, rootCause } from '@/lib/log-id';
 import {
   getMemberPreferredLocale,
   f3DrizzleMemberRepo,
@@ -57,6 +58,38 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 
+/**
+ * Inner chrome for one anchored hub section. Derives the h2 `id` from the
+ * section `id` (`${id}-heading`) and reuses it for `aria-labelledby` so the
+ * heading↔section pairing can't drift across the four sections. The
+ * CONDITIONAL wrapping (`{memberId ? ... : null}`, the f9 gate) stays at the
+ * call site — this helper only renders the section/heading/spacing chrome,
+ * never the gate.
+ */
+function HubSection({
+  id,
+  title,
+  children,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly children: React.ReactNode;
+}) {
+  const headingId = `${id}-heading`;
+  return (
+    <section
+      id={id}
+      aria-labelledby={headingId}
+      className="scroll-mt-24 space-y-4"
+    >
+      <h2 id={headingId} className="text-lg font-semibold">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 export default async function MemberAccountPage() {
   const { user } = await requireSession('member');
   const tPage = await getTranslations('portal.account');
@@ -81,17 +114,25 @@ export default async function MemberAccountPage() {
       user.id,
     );
     if (memberLookup.ok) {
-      memberId = memberLookup.value.memberId;
+      // Capture the branded id in a local so downstream seeds don't need a
+      // non-null assertion on the outer `memberId` (which TS still widens to
+      // `MemberId | null` inside the closure).
+      const linkedMemberId = memberLookup.value.memberId;
+      memberId = linkedMemberId;
 
       const localeResult = await getMemberPreferredLocale(
         { tenant, memberRepo: f3DrizzleMemberRepo },
-        memberId,
+        linkedMemberId,
       );
       if (localeResult.ok) {
         initialLocale = localeResult.value;
       } else {
         logger.warn(
-          { err: localeResult.error, tenantId: tenant.slug, userId: user.id },
+          {
+            err: errKind(rootCause(localeResult.error)),
+            tenantId: tenant.slug,
+            userIdHash: hashId(user.id),
+          },
           'portal.account.preferred_locale_lookup_failed',
         );
       }
@@ -100,27 +141,57 @@ export default async function MemberAccountPage() {
       // `renewal_reminders_opted_out` column, so the seed goes through
       // the F8 MemberRenewalFlagsRepo port (mirrors the legacy
       // /portal/preferences/renewals page).
-      const renewalsDeps = makeRenewalsDeps(tenant.slug);
-      initialOptedOut =
-        (await runInTenant(tenant, (tx) =>
-          renewalsDeps.memberRenewalFlagsRepo.readRenewalRemindersOptedOut(
-            tx,
-            tenant.slug,
-            memberId!,
-          ),
-        )) ?? false;
+      //
+      // S-renewal-breadcrumb: this read gets its OWN try/catch with a
+      // distinct log key. If it threw under the broad outer catch, the
+      // generic `hub_seed_failed` would fire and `initialOptedOut` would
+      // silently fall back to `false` — an opted-OUT member would then see
+      // the toggle opted-IN with no independently observable signal. Scope
+      // the failure here so a regression in the renewal-flags read is
+      // alertable on its own log key; degrade to the safe default (false).
+      try {
+        const renewalsDeps = makeRenewalsDeps(tenant.slug);
+        initialOptedOut =
+          (await runInTenant(tenant, (tx) =>
+            renewalsDeps.memberRenewalFlagsRepo.readRenewalRemindersOptedOut(
+              tx,
+              tenant.slug,
+              linkedMemberId,
+            ),
+          )) ?? false;
+      } catch (err) {
+        logger.error(
+          {
+            err: errKind(err),
+            tenantId: tenant.slug,
+            userIdHash: hashId(user.id),
+          },
+          'portal.account.renewal_flags_read_failed',
+        );
+      }
     } else if (memberLookup.error.code !== 'repo.not_found') {
-      // An unexpected repo/RLS error (not the normal "no portal link" case).
-      // Log at warn so infra faults are visible; the page still degrades
-      // gracefully with safe defaults (memberId stays null).
-      logger.warn(
-        { err: memberLookup.error, tenantId: tenant.slug, userId: user.id },
+      // A genuine repo/RLS/infra fault (NOT the normal "no portal link"
+      // case, which is `repo.not_found` and stays silent below). Log at
+      // ERROR so it is alertable — a transient Neon/RLS fault silently drops
+      // the Renewal + Data&privacy sections and otherwise looks identical to
+      // an unlinked user. The page still degrades gracefully with safe
+      // defaults (memberId stays null) — the never-500 contract holds.
+      logger.error(
+        {
+          err: errKind(rootCause(memberLookup.error)),
+          tenantId: tenant.slug,
+          userIdHash: hashId(user.id),
+        },
         'portal.account.member_lookup_failed',
       );
     }
   } catch (err) {
-    logger.warn(
-      { err, tenantId: tenant.slug, userId: user.id },
+    logger.error(
+      {
+        err: errKind(err),
+        tenantId: tenant.slug,
+        userIdHash: hashId(user.id),
+      },
       'portal.account.hub_seed_failed',
     );
   }
@@ -133,7 +204,11 @@ export default async function MemberAccountPage() {
       exportJobs = await listMemberDataExports(tenant, memberId);
     } catch (err) {
       logger.warn(
-        { err, tenantId: tenant.slug, userId: user.id },
+        {
+          err: errKind(err),
+          tenantId: tenant.slug,
+          userIdHash: hashId(user.id),
+        },
         'portal.account.data_export_list_failed',
       );
     }
@@ -147,14 +222,7 @@ export default async function MemberAccountPage() {
         badge={<Badge variant="outline">{tShell(user.role)}</Badge>}
       />
 
-      <section
-        id="account"
-        aria-labelledby="account-heading"
-        className="scroll-mt-24 space-y-4"
-      >
-        <h2 id="account-heading" className="text-lg font-semibold">
-          {tPage('sections.account')}
-        </h2>
+      <HubSection id="account" title={tPage('sections.account')}>
         <Card>
           <CardContent className="space-y-4 pt-6">
             <p className="text-sm text-muted-foreground">{user.email}</p>
@@ -176,7 +244,7 @@ export default async function MemberAccountPage() {
             <PreferredLocaleForm initialValue={initialLocale} />
           </CardContent>
         </Card>
-      </section>
+      </HubSection>
 
       {/*
         Renewal preferences + Data & privacy are MEMBER-SPECIFIC: their writes
@@ -187,31 +255,17 @@ export default async function MemberAccountPage() {
         but keep Account + Appearance (which work without a member).
       */}
       {memberId ? (
-        <section
-          id="renewal-prefs"
-          aria-labelledby="renewal-prefs-heading"
-          className="scroll-mt-24 space-y-4"
-        >
-          <h2 id="renewal-prefs-heading" className="text-lg font-semibold">
-            {tPage('sections.renewalPrefs')}
-          </h2>
+        <HubSection id="renewal-prefs" title={tPage('sections.renewalPrefs')}>
           <Card>
             <CardContent className="pt-6">
               <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
             </CardContent>
           </Card>
-        </section>
+        </HubSection>
       ) : null}
 
       {env.features.f9Dashboard && memberId ? (
-        <section
-          id="data-privacy"
-          aria-labelledby="data-privacy-heading"
-          className="scroll-mt-24 space-y-4"
-        >
-          <h2 id="data-privacy-heading" className="text-lg font-semibold">
-            {tPage('sections.dataPrivacy')}
-          </h2>
+        <HubSection id="data-privacy" title={tPage('sections.dataPrivacy')}>
           <Card>
             <CardContent className="space-y-4 pt-6">
               <p className="max-w-prose text-sm text-muted-foreground">
@@ -223,24 +277,17 @@ export default async function MemberAccountPage() {
               />
             </CardContent>
           </Card>
-        </section>
+        </HubSection>
       ) : null}
 
-      <section
-        id="appearance"
-        aria-labelledby="appearance-heading"
-        className="scroll-mt-24 space-y-4"
-      >
-        <h2 id="appearance-heading" className="text-lg font-semibold">
-          {tPage('sections.appearance')}
-        </h2>
+      <HubSection id="appearance" title={tPage('sections.appearance')}>
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
             <ThemeToggle />
             <PortalSignOutButton />
           </CardContent>
         </Card>
-      </section>
+      </HubSection>
     </FormContainer>
   );
 }

@@ -68,13 +68,21 @@ vi.mock('@/lib/tenant-context', () => ({
 }));
 vi.mock('@/lib/env', () => ({ env: { features: { f9Dashboard: true } } }));
 vi.mock('@/lib/db', () => ({ runInTenant: async (_t: unknown, fn: (tx: unknown) => unknown) => fn({}) }));
-vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
+// Hoisted logger spy so the throw-path suites can assert which level fired
+// (warn vs error) on each best-effort seed failure.
+const logger = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
+vi.mock('@/lib/logger', () => ({ logger }));
+
+// Hoist the controllable mocks so the throw-path suites can mutate them
+// (reject / return a non-not_found error) without vi.doMock + dynamic-import
+// churn (matches the env-mutation pattern above).
+const getMemberPreferredLocale = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ ok: true, value: 'en' }),
+);
 vi.mock('@/modules/members', () => ({
-  getMemberPreferredLocale: vi.fn().mockResolvedValue({ ok: true, value: 'en' }),
+  getMemberPreferredLocale,
   f3DrizzleMemberRepo: {},
 }));
-// Hoist a stable vi.fn() so tests can mutate its resolved value without
-// vi.doMock + dynamic-import churn (matches the env-mutation pattern above).
 const findByLinkedUserId = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ ok: true, value: { memberId: 'm1' } }),
 );
@@ -83,12 +91,16 @@ vi.mock('@/modules/members/members-deps', () => ({
     memberRepo: { findByLinkedUserId },
   }),
 }));
+const readRenewalRemindersOptedOut = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(false),
+);
 vi.mock('@/modules/renewals', () => ({
   makeRenewalsDeps: () => ({
-    memberRenewalFlagsRepo: { readRenewalRemindersOptedOut: vi.fn().mockResolvedValue(false) },
+    memberRenewalFlagsRepo: { readRenewalRemindersOptedOut },
   }),
 }));
-vi.mock('@/modules/insights', () => ({ listMemberDataExports: vi.fn().mockResolvedValue([]) }));
+const listMemberDataExports = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+vi.mock('@/modules/insights', () => ({ listMemberDataExports }));
 
 import MemberAccountPage from '@/app/(member)/portal/account/page';
 
@@ -199,5 +211,118 @@ describe('Account hub — f9Dashboard gated OFF', () => {
     expect(container.querySelector('#account')).not.toBeNull();
     expect(container.querySelector('#renewal-prefs')).not.toBeNull();
     expect(container.querySelector('#appearance')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// I3: never-500 contract — the hub MUST keep rendering Account + Appearance
+// (the account-management / sign-out surface) even when a member-data seed
+// read fails transiently. Each test drives one seed path into a throw/genuine-
+// error and asserts: (a) the page still returns markup (NOT a thrown error —
+// remove the corresponding try/catch and `await MemberAccountPage()` would
+// reject, failing the render); (b) the expected log level fired on the
+// expected key; (c) the dependent section degrades.
+//
+// Reuses the file's hoisted-mock-mutation harness. Each suite restores the
+// happy-path default in afterEach so later suites stay green.
+// ---------------------------------------------------------------------------
+describe('Account hub — never-500 throw paths (I3)', () => {
+  beforeEach(() => {
+    logger.warn.mockClear();
+    logger.error.mockClear();
+  });
+
+  describe('member lookup returns a genuine (non-not_found) error', () => {
+    beforeEach(() => {
+      // A real Neon/RLS fault wrapped as a Result error — NOT repo.not_found.
+      findByLinkedUserId.mockResolvedValue({
+        ok: false,
+        error: { code: 'repo.unexpected', cause: new Error('connection reset') },
+      });
+    });
+    afterEach(() => {
+      findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
+    });
+
+    it('still renders #account + #appearance, logs error, drops member sections', async () => {
+      // If the seed try/catch were removed this `await` would reject and the
+      // assertions below would never run — the test would error, not pass.
+      const { container } = await renderHub();
+      expect(container.querySelector('#account')).not.toBeNull();
+      expect(container.querySelector('#appearance')).not.toBeNull();
+      // memberId stays null → member-specific sections absent.
+      expect(container.querySelector('#renewal-prefs')).toBeNull();
+      expect(container.querySelector('#data-privacy')).toBeNull();
+      // I1: genuine fault is alertable at ERROR (not warn).
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(String) }),
+        'portal.account.member_lookup_failed',
+      );
+    });
+  });
+
+  describe('member lookup rejects (throws)', () => {
+    beforeEach(() => {
+      findByLinkedUserId.mockRejectedValue(new Error('socket hang up'));
+    });
+    afterEach(() => {
+      findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
+    });
+
+    it('still renders #account + #appearance and logs the outer hub-seed error', async () => {
+      const { container } = await renderHub();
+      expect(container.querySelector('#account')).not.toBeNull();
+      expect(container.querySelector('#appearance')).not.toBeNull();
+      expect(container.querySelector('#renewal-prefs')).toBeNull();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(String) }),
+        'portal.account.hub_seed_failed',
+      );
+    });
+  });
+
+  describe('readRenewalRemindersOptedOut throws', () => {
+    beforeEach(() => {
+      readRenewalRemindersOptedOut.mockRejectedValue(new Error('RLS denied'));
+    });
+    afterEach(() => {
+      readRenewalRemindersOptedOut.mockResolvedValue(false);
+    });
+
+    it('still renders the hub, fires the dedicated renewal-read log, safe-defaults the toggle', async () => {
+      const { container } = await renderHub();
+      // The member IS linked, so the renewal section still renders (with the
+      // safe-default initialOptedOut=false) — the read failure must not drop it.
+      expect(container.querySelector('#account')).not.toBeNull();
+      expect(container.querySelector('#renewal-prefs')).not.toBeNull();
+      expect(container.querySelector('#appearance')).not.toBeNull();
+      // S-renewal-breadcrumb: independently observable on its own key.
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(String) }),
+        'portal.account.renewal_flags_read_failed',
+      );
+    });
+  });
+
+  describe('listMemberDataExports throws', () => {
+    beforeEach(() => {
+      listMemberDataExports.mockRejectedValue(new Error('blob list timeout'));
+    });
+    afterEach(() => {
+      listMemberDataExports.mockResolvedValue([]);
+    });
+
+    it('still renders the hub + the data-privacy section (degraded, no crash)', async () => {
+      const { container } = await renderHub();
+      expect(container.querySelector('#account')).not.toBeNull();
+      expect(container.querySelector('#appearance')).not.toBeNull();
+      // f9 ON + linked member → section renders; the export list degrades to []
+      // inside the panel rather than 500-ing the page.
+      expect(container.querySelector('#data-privacy')).not.toBeNull();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(String) }),
+        'portal.account.data_export_list_failed',
+      );
+    });
   });
 });

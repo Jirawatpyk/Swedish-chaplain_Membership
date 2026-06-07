@@ -30,6 +30,8 @@ import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/rene
  * `startsWith`. A lapsed member can:
  *   - Open `/portal/renewal/[memberId]` to renew (FR-005a)
  *   - Toggle `/portal/preferences/renewals` opt-out (FR-016)
+ *   - Use the `/portal/account` hub (058 D2) — covers the FR-016 renewal
+ *     opt-out + the GDPR/PDPA data export at `/portal/account/data-export`
  *   - Sign out from anywhere (auth-public sign-out endpoint)
  *   - View `/portal/sign-in` and `/forgot-password` (auth-public)
  *
