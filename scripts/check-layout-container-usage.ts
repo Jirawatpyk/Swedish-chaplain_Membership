@@ -23,14 +23,20 @@ const LAYOUT_IMPORT_RE =
 
 // Redirect-only page detection.
 //   - imports a control-flow helper from `next/navigation`
-//     (`redirect` / `permanentRedirect` (058 D2 switched legacy routes to 308)
-//      / `notFound` (the data-export route 404s when FEATURE_F9_DASHBOARD is
-//      dark, then permanentRedirects when on))
+//     (`redirect` (307 — the F9-flag-gated data-export route, R2-5) /
+//      `permanentRedirect` (308 — 058 D2 switched the UNCONDITIONAL legacy
+//      routes to a cacheable permanent redirect) / `notFound` (the data-export
+//      route 404s when FEATURE_F9_DASHBOARD is dark, then redirects when on))
 //   - calls one of those helpers
-// NOTE: `\bredirect\b` matches `redirect` but NOT `permanentRedirect` (the
-// embedded `Redirect` has an uppercase R), so both alternatives are listed
-// explicitly. `permanentRedirect` is listed before `redirect` so the regex
-// engine prefers the longer token.
+// NOTE: the alternation order is IRRELEVANT here. The group is wrapped in `\b`
+// word-boundary anchors — `\b(?:permanentRedirect|redirect|notFound)\b`. Inside
+// `permanentRedirect`, the `redirect` alternative cannot match the trailing
+// `Redirect` substring (it starts with an uppercase `R`, so it's literally a
+// different string) NOR the lowercase tail, because there is no word boundary
+// before `...tRedirect` (the preceding `t` is a word char). So `redirect` only
+// matches a standalone `redirect` token, never the inner part of
+// `permanentRedirect`. (This is the `\b` anchors doing the work — NOT
+// longest-match: JS regex alternation is first-match, left-to-right.)
 const REDIRECT_IMPORT_RE =
   /import\s*\{[^}]*\b(?:permanentRedirect|redirect|notFound)\b[^}]*\}\s*from\s*['"]next\/navigation['"]/;
 const REDIRECT_CALL_RE = /\b(?:permanentRedirect|redirect|notFound)\s*\(/;
@@ -75,10 +81,12 @@ function findContainers(source: string): Container[] {
  * /portal/account#renewal-prefs). Such a page has no container to require, so
  * it is exempt from the layout-container rule.
  *
- * The redirect helper may be `redirect` (307), `permanentRedirect` (308 — 058
- * D2 switched the legacy routes to a cacheable permanent redirect), or
- * `notFound` (the data-export route 404s when FEATURE_F9_DASHBOARD is dark,
- * then permanentRedirects when on — still no layout in either branch).
+ * The redirect helper may be `redirect` (307 — the F9-flag-gated data-export
+ * route, which redirects when F9 is on; R2-5), `permanentRedirect` (308 — 058
+ * D2 switched the UNCONDITIONAL legacy routes to a cacheable permanent
+ * redirect), or `notFound` (the data-export route 404s when
+ * FEATURE_F9_DASHBOARD is dark, then redirects when on — still no layout in
+ * either branch).
  *
  * The heuristic is deliberately PRECISE so it never exempts a real page that
  * conditionally calls one of these helpers while ALSO rendering a layout (e.g.

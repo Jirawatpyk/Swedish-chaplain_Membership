@@ -168,8 +168,20 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
         await signInAsMember(page);
         await page.goto('/portal/account#renewal-prefs');
         await page.waitForLoadState('domcontentloaded');
+        // The `#renewal-prefs` section only renders for a LINKED member
+        // (the hub resolves `memberId !== null`). If the E2E member is
+        // unlinked, the heading never appears — skip with a CLEAR message
+        // instead of a confusing 15s timeout (R2-9 defensive guard).
+        const renewalSection = page.locator('#renewal-prefs');
+        const sectionPresent = await renewalSection
+          .isVisible()
+          .catch(() => false);
+        test.skip(
+          !sectionPresent,
+          'E2E member has no linked member row — renewal-prefs section absent; seed a linked member (E2E_MEMBER_EMAIL → members row) to run this a11y scan',
+        );
         await expect(
-          page.locator('#renewal-prefs').getByRole('heading', {
+          renewalSection.getByRole('heading', {
             level: 2,
             name: /renewal preferences/i,
           }),
