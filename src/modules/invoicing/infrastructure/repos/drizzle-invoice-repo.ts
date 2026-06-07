@@ -468,7 +468,11 @@ export function makeDrizzleInvoiceRepo(
         const filters = [eq(invoices.tenantId, tenantIdArg)];
 
         const includeDrafts = opts.includeDrafts ?? false;
-        if (!includeDrafts && !opts.status) {
+        // Same draft-exclusion guard as `listPaged` (kept in lockstep). 'all'
+        // is treated as an absent status so `{ includeDrafts: false,
+        // status: 'all' }` excludes drafts instead of leaking them through the
+        // gap between this predicate and the `status !== 'all'` branch below.
+        if (!includeDrafts && (!opts.status || opts.status === 'all')) {
           filters.push(sql`${invoices.status} != 'draft'`);
         }
         if (opts.status && opts.status !== 'all') {
@@ -569,7 +573,17 @@ export function makeDrizzleInvoiceRepo(
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];
         const includeDrafts = opts.includeDrafts ?? false;
-        if (!includeDrafts && !opts.status) {
+        // Draft-exclusion guard. The member portal calls with
+        // `{ includeDrafts: false, status: 'all' }`; 'all' is truthy, so the
+        // old `!opts.status` predicate skipped this filter AND the
+        // specific-status branch below (`status !== 'all'`) also did not fire —
+        // leaking DRAFT invoices into the member list. Treat 'all' the same as
+        // an absent status: when drafts are not opted-in, exclude them for BOTH
+        // `status: undefined` and `status: 'all'`. A specific stored status
+        // (issued/paid/…) or 'overdue' takes its own branch below and can never
+        // match a draft anyway; `includeDrafts: true` (admin member-detail /
+        // GDPR export) short-circuits here so those draft paths are unchanged.
+        if (!includeDrafts && (!opts.status || opts.status === 'all')) {
           filters.push(sql`${invoices.status} != 'draft'`);
         }
         if (opts.status === 'overdue') {
