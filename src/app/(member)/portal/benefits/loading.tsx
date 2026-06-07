@@ -1,12 +1,19 @@
 /**
  * Route-level loading skeleton for `/portal/benefits` (ux-standards § 2.1).
  *
+ * Mirrors the real page's top-to-bottom shape to keep CLS ≈ 0:
+ *   PageHeader (title + subtitle)  →  [Benefits] [Broadcasts] tab strip  →  card.
+ * The real page renders `<PageHeader>` then `<BenefitsTabs>` (TabsList variant
+ * "line" + a `pt-4` TabsContent holding `<BenefitUsageCard>`), so we replicate
+ * that order inside the same `<DetailContainer>` wrapper (its `flex flex-col
+ * gap-[--page-section-gap]` owns the header → tabs spacing, matching the page).
+ *
  * 058 G1: a route-level `loading.tsx` receives NO props, so it cannot read
- * `?tab=` — it renders a NEUTRAL two-tab chrome + a single benefits-shaped
- * panel skeleton. On a `?tab=broadcasts` cold-load the user therefore sees
- * this neutral panel skeleton briefly, then the broadcasts panel swaps in
- * (a minor, accepted shape difference — not zero CLS). The default
- * `?tab=benefits` load is shape-matched. xhigh #11.
+ * `?tab=` — it always renders the default (benefits) card body. On a
+ * `?tab=broadcasts` cold-load the user therefore sees the benefits-card
+ * skeleton briefly, then the broadcasts panel swaps in (a minor, accepted shape
+ * difference — not zero CLS). The default `?tab=benefits` load is shape-matched.
+ * xhigh #11.
  */
 import { DetailContainer } from '@/components/layout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,12 +21,29 @@ import { BenefitUsageSkeleton } from '@/components/benefits/benefit-usage-skelet
 
 export default function Loading() {
   return (
-    <DetailContainer>
-      <div className="flex gap-2 border-b pb-0 mb-4" aria-hidden>
-        <Skeleton className="h-9 w-24 rounded-sm" />
-        <Skeleton className="h-9 w-24 rounded-sm" />
+    <DetailContainer aria-busy="true">
+      {/* PageHeader-shaped block: h1 (text-h1 ≈ 30px) + subtitle (text-body,
+          mt-1 = 0.25rem) — matches <PageHeader title subtitle /> at the top. */}
+      <div className="flex flex-col">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="mt-1 h-4 w-64" />
       </div>
-      <BenefitUsageSkeleton />
+
+      {/* Tab strip (TabsList variant="line": h-8 line of triggers under a
+          bottom border) followed by the active-panel card. The 8px gap (gap-2
+          on the real <Tabs>) + the TabsContent pt-4 (16px) reproduce the
+          tabs → card spacing. */}
+      <div className="flex flex-col gap-2">
+        <div className="flex h-8 items-center gap-1 border-b">
+          <Skeleton className="h-7 w-24 rounded-sm" />
+          <Skeleton className="h-7 w-24 rounded-sm" />
+        </div>
+        <div className="pt-4">
+          {/* Card only — the PageHeader above already supplies the page title,
+              so suppress the shared skeleton's leading title/subtitle block. */}
+          <BenefitUsageSkeleton withPageTitle={false} />
+        </div>
+      </div>
     </DetailContainer>
   );
 }
