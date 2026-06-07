@@ -30,9 +30,9 @@ import {
   BenefitUsageCard,
   type BenefitUsageItem,
 } from '@/components/benefits/benefit-usage-card';
-import { BenefitsTabs } from './_components/benefits-tabs';
+import { BenefitsTabs, type BenefitsTabsProps } from './_components/benefits-tabs';
 import { BroadcastsPanel } from './_components/broadcasts-panel';
-import { resolveBenefitsTab, BENEFITS_TAB } from './_helpers/tabs';
+import { resolveBenefitsTab, clampBenefitsPage, BENEFITS_TAB } from './_helpers/tabs';
 
 // E-Blast compose target. The former e-blasts page (now becoming a thin
 // redirect, T6) routed its Compose CTA at /portal/broadcasts/new — point the
@@ -71,11 +71,11 @@ export default async function PortalBenefitsPage(props: {
   const f7Enabled = env.features.f7Broadcasts;
   const activeTab = f7Enabled ? resolveBenefitsTab(tab) : BENEFITS_TAB.benefits;
 
-  // Broadcast-tab pagination param. Clamp to [1, 1000] so a hand-crafted
-  // ?page=-5 / ?page=99999 can't drive an out-of-range DB offset; the panel
+  // Broadcast-tab pagination param. Clamped to [1, 1000] by the shared
+  // `clampBenefitsPage` helper so a hand-crafted ?page=-5 / ?page=99999 /
+  // ?page=2.9 can't drive an out-of-range (or fractional) DB offset; the panel
   // itself derives totalPages and renders the empty-state past the last page.
-  const rawPage = Number(page ?? '1') || 1;
-  const requestedPage = Math.min(1_000, Math.max(1, rawPage));
+  const requestedPage = clampBenefitsPage(page);
 
   const deps = buildMembersDeps(tenant);
   const memberResult = await deps.memberRepo.findByLinkedUserId(tenant, user.id);
@@ -152,15 +152,28 @@ export default async function PortalBenefitsPage(props: {
       <BroadcastsPanel requestedPage={requestedPage} memberId={member.memberId} />
     ) : null;
 
+  // Build the discriminated-union props (I6). When F7 is off, the false-arm
+  // pins `active` to benefits and omits `broadcastsPanel` entirely — the type
+  // makes the illegal `{ showBroadcastsTab: false, active: 'broadcasts' }`
+  // combination unrepresentable, and `activeTab` is already forced to benefits
+  // on that path above so the `active: BENEFITS_TAB.benefits` literal holds.
+  const tabsProps: BenefitsTabsProps = f7Enabled
+    ? {
+        showBroadcastsTab: true,
+        active: activeTab,
+        benefitsPanel,
+        broadcastsPanel,
+      }
+    : {
+        showBroadcastsTab: false,
+        active: BENEFITS_TAB.benefits,
+        benefitsPanel,
+      };
+
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
-      <BenefitsTabs
-        active={activeTab}
-        showBroadcastsTab={f7Enabled}
-        benefitsPanel={benefitsPanel}
-        broadcastsPanel={broadcastsPanel}
-      />
+      <BenefitsTabs {...tabsProps} />
     </DetailContainer>
   );
 }
