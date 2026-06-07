@@ -57,4 +57,17 @@ describe('parseStatusFilter (member portal)', () => {
     expect(parseStatusFilter('all')).toBe('all');
     expect(parseStatusFilter('nonsense')).toBe('all');
   });
+
+  it('falls back to all when Next delivers status as a string[] (repeated query key)', () => {
+    // Next.js can hand `searchParams.status` as a `string[]` when the key
+    // appears more than once (e.g. `?status=draft&status=paid`). The signature
+    // is typed `string | undefined`, but at runtime an array slips through the
+    // `(PORTAL_STATUS_OPTIONS as string[]).includes(arr)` check (an array never
+    // equals a string element) → falls through to the safe 'all' default.
+    // Robustness pin: the page must never crash or mis-filter on a multi-valued
+    // status param.
+    expect(
+      parseStatusFilter(['draft', 'paid'] as unknown as string),
+    ).toBe('all');
+  });
 });
