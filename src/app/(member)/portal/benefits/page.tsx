@@ -102,12 +102,6 @@ export default async function PortalBenefitsPage(props: {
   }
   const member = memberResult.value;
 
-  // SC-012 self-view adoption metric — fire once after the member is resolved,
-  // for ANY tab. A `?tab=broadcasts` visit is still a benefits-page view, so
-  // emitting it here (not inside the benefits arm) restores the original main-
-  // branch semantics where every member visit counted. xhigh #13.
-  insightsMetrics.benefitViewed('member', tenant.slug);
-
   // Render only the ACTIVE panel server-side. The inactive panel stays null so
   // we never do the other tab's DB roundtrips on a page that won't show them.
   let benefitsPanel: React.ReactNode = null;
@@ -123,6 +117,13 @@ export default async function PortalBenefitsPage(props: {
       throw new Error(`computeBenefitUsage failed: ${result.error.code}`);
     }
     const usage = result.value;
+
+    // SC-012 self-view adoption metric — fire ONLY when the benefits usage has
+    // actually been computed (i.e. the Benefits tab is active and the
+    // BenefitUsageCard will render). The metric means "the member viewed their
+    // benefit USAGE"; a `?tab=broadcasts` visit never computes usage and must
+    // not inflate the adoption KPI. Scoped to the benefits arm by design (R2-3).
+    insightsMetrics.benefitViewed('member', tenant.slug);
 
     const quantifiable: BenefitUsageItem[] = usage.quantifiable.map((b) =>
       b.key === 'eblast' ? { ...b, actionHref: EBLAST_COMPOSE_HREF } : { ...b },

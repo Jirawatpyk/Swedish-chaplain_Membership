@@ -23,7 +23,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
-import { BENEFITS_TAB } from '@/app/(member)/portal/benefits/_helpers/tabs';
+import { BENEFITS_TAB, type BenefitsTab } from '@/app/(member)/portal/benefits/_helpers/tabs';
 
 // ---------------------------------------------------------------------------
 // next/navigation mock — BenefitsTabs calls useRouter().replace on tab change
@@ -38,16 +38,25 @@ vi.mock('next/navigation', () => ({
 // ---------------------------------------------------------------------------
 
 function renderTabs({
+  active = BENEFITS_TAB.benefits,
   showBroadcastsTab,
   broadcastsPanel,
 }: {
+  /**
+   * Which tab is active server-side. Defaults to Benefits (the common case).
+   * MUST be passed as 'broadcasts' when locking the F7 kill-switch on the
+   * panel, otherwise BenefitsTabs' inner guard (`active === broadcasts ?
+   * panel : null`) suppresses the panel regardless of `showBroadcastsTab` —
+   * making the kill-switch assertion pass for the wrong reason (R2-4).
+   */
+  active?: BenefitsTab;
   showBroadcastsTab: boolean;
   broadcastsPanel?: React.ReactNode;
 }) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <BenefitsTabs
-        active={BENEFITS_TAB.benefits}
+        active={active}
         showBroadcastsTab={showBroadcastsTab}
         benefitsPanel={<div data-testid="benefits-body">benefits body</div>}
         broadcastsPanel={broadcastsPanel ?? <div data-testid="bp">broadcasts panel</div>}
@@ -105,12 +114,33 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
     expect(screen.queryByRole('tab', { name: /broadcasts/i })).toBeNull();
   });
 
-  it('showBroadcastsTab=false → broadcasts panel content is NOT rendered', () => {
+  // Kill-switch lock — render with active=broadcasts so BenefitsTabs' inner
+  // active-guard (`active === broadcasts ? panel : null`) is NEUTRALIZED and
+  // ONLY the `showBroadcastsTab` outer guard can suppress the panel + trigger.
+  // If the kill-switch (showBroadcastsTab gating) were deleted, the panel WOULD
+  // render under active=broadcasts and this test would FAIL — which is the point
+  // (the prior active=benefits version passed for the wrong reason). R2-4.
+  it('showBroadcastsTab=false + active=broadcasts → kill-switch hides BOTH the broadcasts trigger AND panel', () => {
     renderTabs({
+      active: BENEFITS_TAB.broadcasts,
       showBroadcastsTab: false,
       broadcastsPanel: <div data-testid="bp">broadcasts panel</div>,
     });
     expect(screen.queryByTestId('bp')).toBeNull();
+    expect(screen.queryByRole('tab', { name: /broadcasts/i })).toBeNull();
+  });
+
+  // Positive control — proves the kill-switch lock above isn't always-null:
+  // with the kill-switch ON (showBroadcastsTab=true) and the broadcasts tab
+  // active, the panel DOES render. Without this, the false-test could pass
+  // simply because the panel never renders under any condition. R2-4.
+  it('showBroadcastsTab=true + active=broadcasts → broadcasts panel content IS rendered', () => {
+    renderTabs({
+      active: BENEFITS_TAB.broadcasts,
+      showBroadcastsTab: true,
+      broadcastsPanel: <div data-testid="bp">broadcasts panel</div>,
+    });
+    expect(screen.getByTestId('bp')).toBeInTheDocument();
   });
 
   it('showBroadcastsTab=false → benefits panel body is still present', () => {

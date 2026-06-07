@@ -44,7 +44,7 @@ import {
   makeComputeQuotaDeps,
   makeListMemberBroadcastsDeps,
 } from '@/modules/broadcasts';
-import { asMemberId, type MemberId } from '@/modules/members';
+import { type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { intlLocale, shouldShowPlanChangedExplainer } from '../e-blasts/_helpers/quota-banner';
@@ -120,7 +120,7 @@ export async function BroadcastsPanel({
     // and the shell + content arrive together.
     const [quotaResultS, planLookupS, listResultS] = await Promise.allSettled([
       computeQuotaCounter(makeComputeQuotaDeps(tenant.slug), { memberId }),
-      membersDeps.memberRepo.findLastPlanChangedAt(tenant, asMemberId(memberId)),
+      membersDeps.memberRepo.findLastPlanChangedAt(tenant, memberId),
       listMemberBroadcasts(makeListMemberBroadcastsDeps(tenant.slug), {
         memberId,
         page: requestedPage,
