@@ -73,9 +73,14 @@ vi.mock('@/modules/members', () => ({
   getMemberPreferredLocale: vi.fn().mockResolvedValue({ ok: true, value: 'en' }),
   f3DrizzleMemberRepo: {},
 }));
+// Hoist a stable vi.fn() so tests can mutate its resolved value without
+// vi.doMock + dynamic-import churn (matches the env-mutation pattern above).
+const findByLinkedUserId = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ ok: true, value: { memberId: 'm1' } }),
+);
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({
-    memberRepo: { findByLinkedUserId: vi.fn().mockResolvedValue({ ok: true, value: { memberId: 'm1' } }) },
+    memberRepo: { findByLinkedUserId },
   }),
 }));
 vi.mock('@/modules/renewals', () => ({
@@ -124,6 +129,47 @@ describe('Account hub — sectioned IA (G2)', () => {
   it('renders no MISSING_KEY/MISSING_NS/NOT_STRING sentinels anywhere in the hub', async () => {
     const { container } = await renderHub();
     expect(container.textContent ?? '').not.toMatch(/MISSING_KEY|MISSING_NS|NOT_STRING/);
+  });
+});
+
+// M3: Unlinked user — no member row (findByLinkedUserId → repo.not_found).
+//
+// The page treats `!memberLookup.ok && error.code === 'repo.not_found'` as the
+// normal "pending invite / unlinked account" case: memberId stays null and the
+// gate at `{memberId ? ... : null}` hides both #renewal-prefs and #data-privacy.
+// We override the `buildMembersDeps` factory mock in beforeEach using the same
+// module-mutation technique as the f9Dashboard block above.
+describe('Account hub — unlinked user (no member row)', () => {
+  // Mutate the hoisted findByLinkedUserId mock to return the unlinked result.
+  // The vi.hoisted() reference is stable across calls, so beforeEach/afterEach
+  // can flip it without vi.doMock + dynamic-import churn (same pattern as the
+  // env-mutation block below for f9Dashboard).
+  beforeEach(() => {
+    findByLinkedUserId.mockResolvedValue({
+      ok: false,
+      error: { code: 'repo.not_found' },
+    });
+  });
+
+  afterEach(() => {
+    // Restore the default "linked member" result for subsequent suites.
+    findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
+  });
+
+  it('still renders #account and #appearance when memberId is null', async () => {
+    const { container } = await renderHub();
+    expect(container.querySelector('#account')).not.toBeNull();
+    expect(container.querySelector('#appearance')).not.toBeNull();
+  });
+
+  it('hides #renewal-prefs when the user has no linked member', async () => {
+    const { container } = await renderHub();
+    expect(container.querySelector('#renewal-prefs')).toBeNull();
+  });
+
+  it('hides #data-privacy when the user has no linked member', async () => {
+    const { container } = await renderHub();
+    expect(container.querySelector('#data-privacy')).toBeNull();
   });
 });
 
