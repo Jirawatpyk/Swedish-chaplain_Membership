@@ -37,6 +37,7 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { logger } from '@/lib/logger';
+import { errKind, hashId, rootCause } from '@/lib/log-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   computeQuotaCounter,
@@ -47,7 +48,7 @@ import {
 import { type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { intlLocale, shouldShowPlanChangedExplainer } from '../e-blasts/_helpers/quota-banner';
+import { intlLocale, shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
 
 const PER_PAGE = 10;
 
@@ -80,6 +81,13 @@ export async function BroadcastsPanel({
   const dateOnlyFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
     dateStyle: 'long',
   });
+
+  // Defensive re-clamp: `requestedPage` is documented as already clamped to
+  // [1, 1000] by the Benefits page caller, but the `number` type doesn't
+  // guarantee it. Re-clamp here (belt-and-suspenders) so a future second
+  // caller can't drive an out-of-range / fractional DB offset; behaviour is
+  // identical for the current (already-clamped) caller.
+  const safePage = Math.max(1, Math.trunc(requestedPage));
 
   // `memberId` is supplied by the page (resolved once via the session).
   // `membersDeps` is still needed for the F3 `findLastPlanChangedAt` port.
@@ -123,7 +131,7 @@ export async function BroadcastsPanel({
       membersDeps.memberRepo.findLastPlanChangedAt(tenant, memberId),
       listMemberBroadcasts(makeListMemberBroadcastsDeps(tenant.slug), {
         memberId,
-        page: requestedPage,
+        page: safePage,
         perPage: PER_PAGE,
       }),
     ]);
@@ -157,7 +165,11 @@ export async function BroadcastsPanel({
         // change". Log so an audit-log read regression is observable;
         // continue with `null` so the explainer is suppressed.
         logger.error(
-          { err: planLookup.error, tenantId: tenant.slug, memberId },
+          {
+            errKind: errKind(rootCause(planLookup.error)),
+            tenantId: tenant.slug,
+            memberIdHash: hashId(memberId),
+          },
           'broadcasts.benefits_page.find_last_plan_changed_at_failed',
         );
       }
@@ -179,15 +191,22 @@ export async function BroadcastsPanel({
       }
     } else {
       // Quota query failure (rejected promise OR Result.err) must not
-      // silently render zero counters with the Compose CTA enabled.
-      const err =
+      // silently render zero counters with the Compose CTA enabled. Log only
+      // the error CLASS (PII/PDPA-safe): a rejected promise carries the raw
+      // thrown Error; a Result.err is a wrapper whose real cause is one
+      // `.cause` deep (rootCause). Either way → `errKind` never `.message`.
+      const errClass =
         quotaResultS.status === 'rejected'
-          ? quotaResultS.reason
+          ? errKind(quotaResultS.reason)
           : quotaResult && !quotaResult.ok
-            ? quotaResult.error
-            : null;
+            ? errKind(rootCause(quotaResult.error))
+            : 'unknown';
       logger.error(
-        { err, tenantId: tenant.slug, memberId },
+        {
+          errKind: errClass,
+          tenantId: tenant.slug,
+          memberIdHash: hashId(memberId),
+        },
         'broadcasts.benefits_page.compute_quota_counter_failed',
       );
     }
@@ -213,10 +232,10 @@ export async function BroadcastsPanel({
       // to the AS4 empty-state.
       logger.error(
         {
-          err: listResultS.reason,
+          errKind: errKind(listResultS.reason),
           tenantId: tenant.slug,
-          memberId,
-          page: requestedPage,
+          memberIdHash: hashId(memberId),
+          page: safePage,
         },
         'broadcasts.benefits_page.list_history_failed',
       );

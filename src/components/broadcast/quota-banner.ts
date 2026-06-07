@@ -1,8 +1,15 @@
 /**
- * Pure presentation helpers for the F7 US3 benefits page.
+ * Pure presentation helpers for the F7 US3 broadcast quota surface.
  *
  * Spec authority: spec.md US3 AS1, AS2, AS4 + contracts/broadcasts-api.md
  * § 1.7 (`nextResetAt` + `tenantTimezone`).
+ *
+ * Lives under `@/components/broadcast/` (a neutral home) so its live
+ * cross-route consumers — the Benefits-page `BroadcastsPanel` and the
+ * broadcast detail page — share a single import surface without reaching
+ * into another route segment's private `_helpers` folder. (Relocated from
+ * `(member)/portal/benefits/e-blasts/_helpers/` after that route became a
+ * thin redirect; 058 G1.)
  *
  * Tested by tests/unit/broadcasts/benefits-page-helpers.test.ts (T128, 14
  * cases). Kept Domain-pure (no React, no Drizzle, no fetch) so the page

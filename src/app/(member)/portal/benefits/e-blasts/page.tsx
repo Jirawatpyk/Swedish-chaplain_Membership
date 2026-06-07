@@ -5,8 +5,10 @@
  * we permanently redirect to the Broadcasts tab. Internal navigation now links
  * straight at `?tab=broadcasts` to avoid a chain redirect.
  *
- * The `_helpers/quota-banner.ts` module stays — BroadcastsPanel + the broadcast
- * detail page still import it.
+ * The shared quota helpers (`intlLocale`, `shouldShowPlanChangedExplainer`)
+ * relocated to `@/components/broadcast/quota-banner` (a neutral home) when this
+ * route became a thin redirect — BroadcastsPanel + the broadcast detail page
+ * import them from there.
  */
 import { permanentRedirect } from 'next/navigation';
 
