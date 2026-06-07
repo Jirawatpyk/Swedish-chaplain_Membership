@@ -252,6 +252,17 @@ describe('toInvoiceRowViewModel — credited receipt-number visibility (D3 invar
     expect(vm.receiptNumber).toBe('RCP-2026-0001');
     // Credited is not combined-paid either (needs status 'paid').
     expect(vm.isCombinedPaid).toBe(false);
+    // R6 mutation guard: a credited invoice with its (issue-time) PDF STILL
+    // offers the invoice download + resend, and therefore is NOT an
+    // empty-action row. `showInvoice` is gated on `pdf !== null && !combinedPaid`
+    // and `resendable` on `status !== 'void' && pdf !== null` — neither is
+    // gated on `status === 'issued'`. A future change narrowing `showInvoice`
+    // to issued-only would silently drop the credited row's invoice button
+    // (and, via the OR, could flip `hasAnyAction` to false → '—' sentinel) with
+    // no test catching it. These pin the correct credited+PDF values.
+    expect(vm.showInvoice).toBe(true);
+    expect(vm.resendable).toBe(true);
+    expect(vm.hasAnyAction).toBe(true);
   });
 
   it('partially_credited + receiptNumber + rendered → showReceipt false, receiptNumber preserved', () => {
@@ -266,6 +277,12 @@ describe('toInvoiceRowViewModel — credited receipt-number visibility (D3 invar
     expect(vm.showReceipt).toBe(false);
     expect(vm.receiptNumber).toBe('RCP-2026-0001');
     expect(vm.isCombinedPaid).toBe(false);
+    // R6 mutation guard (see the credited case above) — identical reasoning:
+    // partially_credited + its PDF keeps invoice download + resend live, so the
+    // row is never an empty-action '—' sentinel.
+    expect(vm.showInvoice).toBe(true);
+    expect(vm.resendable).toBe(true);
+    expect(vm.hasAnyAction).toBe(true);
   });
 });
 
@@ -301,6 +318,24 @@ describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel 
     // Void suppresses resend but the voided-invoice download stays.
     expect(vm.resendable).toBe(false);
     expect(vm.showInvoice).toBe(true);
+    expect(vm.hasAnyAction).toBe(true);
+  });
+
+  it('true when receiptPending is the SOLE contributor (paid + pdf null + receipt mid-render)', () => {
+    // R7 mutation guard: a paid invoice whose issue-time PDF is absent but whose
+    // §105ทวิ receipt is still rendering. Only `receiptPending` fires —
+    // showInvoice (pdf null), showReceipt (not 'rendered') and resendable (pdf
+    // null) are all false — so this row's "Preparing receipt…" affordance hangs
+    // ENTIRELY off receiptPending in the OR. A refactor dropping receiptPending
+    // from `hasAnyAction` would silently render this row as the '—' sentinel.
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ status: 'paid', pdf: null, receiptPdfStatus: 'pending' }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.resendable).toBe(false);
+    expect(vm.receiptPending).toBe(true);
     expect(vm.hasAnyAction).toBe(true);
   });
 });

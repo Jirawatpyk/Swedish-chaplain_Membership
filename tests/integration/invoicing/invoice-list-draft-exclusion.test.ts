@@ -43,7 +43,12 @@
  *      draft (the legitimate opted-in way to fetch drafts).
  *   6. cursor list `{ status: 'all', includeDrafts: false }` → NO draft (the
  *      regression guard for the cursor path used by `GET /api/invoices`).
- *   7. cursor list `{ includeDrafts: true }` → INCLUDES the draft.
+ *   7. cursor list `{ status: 'draft', includeDrafts: false }` → EMPTY (#15 for
+ *      the cursor path: a raw draft request without the flag must not leak —
+ *      this case is the one that flips RED if the cursor guard is reverted to
+ *      the old `(!opts.status || opts.status === 'all')` form, since that revert
+ *      only breaks the specific `status='draft'` branch, not 'all'/no-status).
+ *   8. cursor list `{ includeDrafts: true }` → INCLUDES the draft.
  *
  * Lives in tests/integration/** → hits live Neon via runInTenant (RLS); seeds
  * with `tx` from runInTenant, never the global db singleton.
@@ -333,6 +338,31 @@ describe('invoice list — draft exclusion when includeDrafts=false (060-D4 / #1
     for (const row of result.value.rows) {
       expect(row.status).not.toBe('draft');
     }
+  });
+
+  // #15 mutation-sensitivity guard for the CURSOR path. The cursor `list`
+  // received the identical unconditional draft-exclusion fix as `listPaged`,
+  // but the only cursor cases above use `status: 'all'` / `includeDrafts: true`
+  // — NEITHER flips if the cursor guard regresses to the pre-#15 form
+  //   `if (!includeDrafts && (!opts.status || opts.status === 'all')) { ... }`
+  // because the specific `status: 'draft'` branch then fires `eq(status,'draft')`
+  // and leaks drafts. This case (mirroring paged case-4 for the cursor surface,
+  // no offset/total) is the one that turns RED on that revert: with the correct
+  // unconditional guard, `eq(status,'draft')` AND `status != 'draft'` → no rows.
+  it('cursor list: status=draft + includeDrafts:false → EMPTY (#15 cursor-path mutation guard)', async () => {
+    const result = await listInvoices(makeListInvoicesDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      pageSize: 50,
+      includeDrafts: false,
+      memberId: MEMBER_ID,
+      status: 'draft',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // eq(status,'draft') AND status != 'draft' → no rows. The only way to fetch
+    // drafts on the cursor path is to opt in via includeDrafts:true (next case).
+    expect(result.value.rows).toEqual([]);
   });
 
   it('cursor list: includeDrafts:true → INCLUDES the draft', async () => {
