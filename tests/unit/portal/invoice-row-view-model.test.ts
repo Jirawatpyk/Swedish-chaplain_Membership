@@ -57,14 +57,39 @@ function docNum(): DocumentNumber {
  * Full membership `Invoice` fixture. Defaults to a plain `issued`
  * invoice with a rendered PDF, no payment, no receipt — overrides tune
  * the fields each boundary test cares about.
+ *
+ * The membership discriminant fields (`invoiceSubject: 'membership'`,
+ * `vatInclusive: false`, `eventId`/`eventRegistrationId: null`) are set so
+ * the object STRUCTURALLY satisfies the `Invoice` discriminated union with
+ * NO `as Invoice` cast — narrowing on `invoiceSubject === 'membership'`
+ * then guarantees `memberId`/`planId`/`planYear` non-null and the event
+ * fields null, which is exactly the shape this fixture builds.
+ *
+ * `overrides` is typed `Partial<Extract<Invoice, { invoiceSubject:
+ * 'membership' }>>` — i.e. partial of the MEMBERSHIP arm only, not of the
+ * raw `Invoice` union. `Partial<Invoice>` distributes to `Partial<member>
+ * | Partial<event>`, and spreading that widens the result's
+ * `invoiceSubject` to `'membership' | 'event'` (and `vatInclusive` to
+ * `boolean`), so the literal no longer narrows to a single arm and stops
+ * matching `Invoice` (the old reason `as Invoice` was needed). Pinning the
+ * override type to the membership arm keeps the discriminants narrow, so
+ * the returned object satisfies `Invoice` with no cast. Every test
+ * override only tweaks shared lifecycle/PDF fields, never the subject
+ * discriminant, so the narrower type is fully sufficient.
  */
-function buildInvoice(overrides: Partial<Invoice> = {}): Invoice {
+function buildInvoice(
+  overrides: Partial<Extract<Invoice, { invoiceSubject: 'membership' }>> = {},
+): Invoice {
   return {
     tenantId: 't',
     invoiceId: asInvoiceId(INVOICE_UUID),
+    invoiceSubject: 'membership',
     memberId: 'm',
     planId: 'p',
     planYear: 2026,
+    eventId: null,
+    eventRegistrationId: null,
+    vatInclusive: false,
     status: 'issued',
     draftByUserId: 'u',
     fiscalYear: asFiscalYearUnsafe(2026),
@@ -115,7 +140,7 @@ function buildInvoice(overrides: Partial<Invoice> = {}): Invoice {
     createdAt: '2026-04-01T00:00:00Z',
     updatedAt: '2026-04-01T00:00:00Z',
     ...overrides,
-  } as Invoice;
+  };
 }
 
 describe('toInvoiceRowViewModel — displayStatus / overdue derivation', () => {
@@ -203,6 +228,80 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
     // PDF exists and it is not combined-paid → invoice download shown.
     expect(vm.showInvoice).toBe(true);
     expect(vm.showReceipt).toBe(false);
+  });
+});
+
+describe('toInvoiceRowViewModel — credited receipt-number visibility (D3 invariant)', () => {
+  // D3 receipt-visibility invariant: `showReceipt` is gated on
+  // `status === 'paid'`, so a CREDITED / PARTIALLY_CREDITED invoice that
+  // happens to carry a separate-mode receipt number must NOT offer a
+  // receipt download — but its raw receipt number STILL passes through to
+  // `vm.receiptNumber` (the column displays it; only the download is
+  // withheld). These pin that pair against a future broadening of
+  // `showReceipt` that would leak a receipt action on a credited row.
+  it('credited + receiptNumber + rendered → showReceipt false, receiptNumber preserved', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'credited',
+        receiptDocumentNumberRaw: 'RCP-2026-0001',
+        receiptPdfStatus: 'rendered',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptNumber).toBe('RCP-2026-0001');
+    // Credited is not combined-paid either (needs status 'paid').
+    expect(vm.isCombinedPaid).toBe(false);
+  });
+
+  it('partially_credited + receiptNumber + rendered → showReceipt false, receiptNumber preserved', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'partially_credited',
+        receiptDocumentNumberRaw: 'RCP-2026-0001',
+        receiptPdfStatus: 'rendered',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptNumber).toBe('RCP-2026-0001');
+    expect(vm.isCombinedPaid).toBe(false);
+  });
+});
+
+describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel gate)', () => {
+  // `hasAnyAction` is the OR of the four action flags; both the desktop
+  // table cell and the mobile card branch on `!vm.hasAnyAction` to render
+  // the em-dash sentinel instead of an (empty) action group.
+  it('true when there is something to download (paid + rendered receipt)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ status: 'paid', receiptPdfStatus: 'rendered' }),
+      NOW_PAST_DUE,
+    );
+    // showReceipt + resendable both fire → hasAnyAction true.
+    expect(vm.hasAnyAction).toBe(true);
+  });
+
+  it('false when an issued invoice has no PDF and no receipt state (all four flags off)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ status: 'issued', pdf: null, receiptPdfStatus: null }),
+      NOW_BEFORE_DUE,
+    );
+    // No PDF → showInvoice/resendable false; not paid → showReceipt/
+    // receiptPending false. Nothing to show → sentinel.
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptPending).toBe(false);
+    expect(vm.resendable).toBe(false);
+    expect(vm.hasAnyAction).toBe(false);
+  });
+
+  it('true for a void invoice that still has its PDF (via showInvoice)', () => {
+    const vm = toInvoiceRowViewModel(buildInvoice({ status: 'void' }), NOW_PAST_DUE);
+    // Void suppresses resend but the voided-invoice download stays.
+    expect(vm.resendable).toBe(false);
+    expect(vm.showInvoice).toBe(true);
+    expect(vm.hasAnyAction).toBe(true);
   });
 });
 
