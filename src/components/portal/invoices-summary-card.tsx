@@ -206,7 +206,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   >
                     {r.documentNumber?.raw ?? '—'}
                   </Link>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {(() => {
                       const Icon = STATUS_ICON_MAP[statusIconName(r.status)];
                       return (
@@ -219,7 +219,11 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                         </Badge>
                       );
                     })()}
-                    <span className="text-caption text-muted-foreground">
+                    {/* whitespace-nowrap so the date wraps as a UNIT below the
+                        badge (not mid-date "Apr 27, / 2026") when the row is
+                        tight on a narrow phone; flex-wrap on the parent lets it
+                        drop to its own line. */}
+                    <span className="text-caption text-muted-foreground whitespace-nowrap">
                       {formatDate(r.issueDate, userLocale)}
                     </span>
                   </div>
