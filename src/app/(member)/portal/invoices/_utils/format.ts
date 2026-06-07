@@ -24,6 +24,27 @@
 // will update to the canonical lib path in a follow-up.
 export { formatSatangThb } from '@/lib/format-thb';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import type { InvoiceStatus } from '@/modules/invoicing';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Clock,
+  FileText,
+  type LucideIcon,
+} from 'lucide-react';
+
+/**
+ * Presentation status surfaced to an invoice row/badge — the stored
+ * {@link InvoiceStatus} widened with the derived `'overdue'` value
+ * (T109 / FR-028). `'overdue'` is presentation-only; the stored status is
+ * never `'overdue'`. Defined here (the leaf presentation util) so the
+ * status-helper params below can be tied to the union, and re-exported
+ * from `invoice-row-view-model.ts` (which builds `displayStatus`) so its
+ * public surface is unchanged. Single source of truth for the row status
+ * vocabulary — passing a stale/typo status to a helper is a COMPILE error.
+ */
+export type InvoiceRowDisplayStatus = InvoiceStatus | 'overdue';
 
 /**
  * Medium-style date formatter tolerant of null inputs. Routes the locale
@@ -53,7 +74,9 @@ export type InvoiceStatusBadgeVariant =
  * callers MUST pair the badge with a `lucide-react` status icon —
  * see `statusIconName` below.
  */
-export function statusBadgeVariant(status: string): InvoiceStatusBadgeVariant {
+export function statusBadgeVariant(
+  status: InvoiceRowDisplayStatus,
+): InvoiceStatusBadgeVariant {
   switch (status) {
     case 'paid':
       return 'default';
@@ -79,7 +102,9 @@ export type InvoiceStatusIconName =
   | 'FileText'
   | 'Ban';
 
-export function statusIconName(status: string): InvoiceStatusIconName {
+export function statusIconName(
+  status: InvoiceRowDisplayStatus,
+): InvoiceStatusIconName {
   switch (status) {
     case 'paid':
       return 'CheckCircle2';
@@ -92,4 +117,29 @@ export function statusIconName(status: string): InvoiceStatusIconName {
     default:
       return 'FileText';
   }
+}
+
+/**
+ * Maps each {@link InvoiceStatusIconName} to its `lucide-react` component.
+ * Single source of truth — every portal invoice surface (list table,
+ * mobile card list, summary card, detail page) resolves its status icon
+ * through {@link statusIcon} below instead of redeclaring this map, so the
+ * status → icon pairing can never drift between surfaces.
+ */
+const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  FileText,
+  Ban,
+};
+
+/**
+ * Resolve the `lucide-react` icon component for an invoice row status.
+ * Callers render it at ~14px inside the Badge with `aria-hidden` (the text
+ * label is already present). Tied to {@link InvoiceRowDisplayStatus} so a
+ * stale/typo status is a compile error at the render site.
+ */
+export function statusIcon(status: InvoiceRowDisplayStatus): LucideIcon {
+  return STATUS_ICON_MAP[statusIconName(status)];
 }

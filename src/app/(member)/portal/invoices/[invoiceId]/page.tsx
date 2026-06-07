@@ -73,13 +73,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Ban, CheckCircle2, Clock, FileText, type LucideIcon } from 'lucide-react';
 import {
   formatDate,
   formatSatangThb,
   statusBadgeVariant,
-  statusIconName,
-  type InvoiceStatusIconName,
+  statusIcon,
 } from '../_utils/format';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
 import {
@@ -89,14 +87,6 @@ import {
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
-
-const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  FileText,
-  Ban,
-};
 
 interface RouteParams {
   readonly invoiceId: string;
@@ -181,7 +171,7 @@ export default async function PortalInvoiceDetailPage({
   // are not allowed across the server→client boundary, so we pass the
   // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
   const renderStatusBadge = (status: typeof displayStatus | 'paid') => {
-    const Icon = STATUS_ICON_MAP[statusIconName(status)];
+    const Icon = statusIcon(status);
     return (
       <Badge variant={statusBadgeVariant(status)} className="inline-flex items-center gap-1">
         <Icon className="size-3.5" aria-hidden="true" />

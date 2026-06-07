@@ -3,10 +3,9 @@
  * invoice LIST.
  *
  * Single source of truth for the per-row presentation flags that the
- * desktop `<table>` and the upcoming mobile card list both render. Both
- * surfaces MUST consume `toInvoiceRowViewModel(...)` so they can never
- * drift apart (a flag fixed for the table is fixed for the card, and
- * vice versa).
+ * desktop `<table>` and the mobile card list both render. Both surfaces
+ * MUST consume `toInvoiceRowViewModel(...)` so they can never drift apart
+ * (a flag fixed for the table is fixed for the card, and vice versa).
  *
  * PURITY CONTRACT (project convention — avoid impure time in testable
  * units): this function NEVER calls `new Date()` / `Date.now()`. The
@@ -20,23 +19,28 @@
  * map — do not "improve" the boolean conditions; the desktop table's
  * rendered output must stay identical.
  *
- * i18n decision (for the upcoming mobile card): NO new keys added. The
- * existing column labels already read as inline card labels — EN
+ * i18n decision (for the mobile card): NO new keys added. The existing
+ * column labels already read as inline card labels — EN
  * `portal.invoices.columns.issueDate` = "Issued" and `columns.dueDate`
  * = "Due" (TH "วันที่ออก"/"ครบกำหนด", SV "Utfärdad"/"Förfaller"). Adding
  * `card.issued`/`card.due` would duplicate identical values (Principle X
  * — Simplicity; Reusable Components). The card reuses the column keys.
  */
-import type { Invoice, InvoiceStatus } from '@/modules/invoicing';
+import type { Invoice } from '@/modules/invoicing';
 import { computeIsOverdue } from '@/modules/invoicing';
 import type { Money } from '@/modules/invoicing';
+import type { InvoiceRowDisplayStatus } from './format';
 
 /**
- * Presentation status surfaced to the row — the stored {@link InvoiceStatus}
+ * Presentation status surfaced to the row — the stored `InvoiceStatus`
  * widened with the derived `'overdue'` value (T109 / FR-028). `'overdue'`
  * is presentation-only; the stored status is never `'overdue'`.
+ *
+ * Defined in `./format` (the leaf presentation util whose status helpers
+ * are tied to this union) and re-exported here so this module's public
+ * surface — and the `displayStatus` field below — stay unchanged.
  */
-export type InvoiceRowDisplayStatus = InvoiceStatus | 'overdue';
+export type { InvoiceRowDisplayStatus };
 
 /**
  * Everything a single invoice list row needs to render, computed once
@@ -70,16 +74,21 @@ export interface InvoiceRowViewModel {
   readonly receiptPending: boolean;
   /** Resend the invoice email (not void + invoice PDF exists). */
   readonly resendable: boolean;
-  /**
-   * Whether the row has ANY document/action to render in its action cell
-   * — a plain OR of the four action flags
-   * (`showInvoice || showReceipt || receiptPending || resendable`). When
-   * false the row has no downloadable document and no pending receipt and
-   * is not resendable, so both the desktop table cell AND the mobile card
-   * render the em-dash sentinel `—` instead of an (empty) action group.
-   */
-  readonly hasAnyAction: boolean;
 }
+
+/**
+ * Whether the row has ANY document/action to render in its action cell —
+ * a pure OR of the four action flags. When false the row has no
+ * downloadable document, no pending receipt, and is not resendable, so
+ * both the desktop table cell AND the mobile card render the em-dash
+ * sentinel `—` instead of an (empty) action group.
+ *
+ * Derived on demand (not stored on the view-model) so it can never drift
+ * out of sync with the four flags it summarises — a literal can't set a
+ * stale `hasAnyAction` that contradicts the action flags.
+ */
+export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
+  vm.showInvoice || vm.showReceipt || vm.receiptPending || vm.resendable;
 
 /**
  * Pure mapper. `nowUtcIso` MUST be supplied by the caller (do NOT call
@@ -119,12 +128,6 @@ export function toInvoiceRowViewModel(
 
   const resendable = row.status !== 'void' && row.pdf !== null;
 
-  // True iff the row has any document/action to surface. Mirrors the OR
-  // the desktop action cell + mobile card both branch on to decide between
-  // rendering the action group and the em-dash sentinel — see the field
-  // doc on `InvoiceRowViewModel.hasAnyAction`.
-  const hasAnyAction = showInvoice || showReceipt || receiptPending || resendable;
-
   return {
     invoiceId: row.invoiceId,
     documentNumber: row.documentNumber?.raw ?? null,
@@ -138,6 +141,5 @@ export function toInvoiceRowViewModel(
     showReceipt,
     receiptPending,
     resendable,
-    hasAnyAction,
   };
 }

@@ -98,7 +98,9 @@ export function InvoiceFilters({
   // Select value + the active-filter computation honest. No-op for admin:
   // its default `statusOptions` is the full list, so 'draft' clamps to
   // itself. Mirrors the `paidOnlineActive` guard below.
-  const effectiveStatus = statusOptions.some((s) => s === currentStatus)
+  const effectiveStatus = (statusOptions as readonly string[]).includes(
+    currentStatus,
+  )
     ? currentStatus
     : 'all';
   // When the chip is hidden (member portal) the paid-online filter is not

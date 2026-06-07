@@ -3,7 +3,7 @@
  *
  * The pure view-model is the SINGLE source of truth for the per-row
  * presentation flags rendered by the member-portal invoice desktop
- * table and the upcoming mobile card list. These boundary tests pin the
+ * table and the mobile card list. These boundary tests pin the
  * EXACT flag logic that was extracted verbatim from `page.tsx`'s inline
  * `<TableBody>` row map — any future "improvement" to a boolean that
  * silently diverges the table from the card fails here.
@@ -17,6 +17,8 @@
  *   - showInvoice / showReceipt / receiptPending across the receipt PDF
  *     state machine (null / pending / failed / rendered)
  *   - resendable: false on void, true on non-void with a PDF
+ *   - rowHasAnyAction: derived OR of the four action flags (the shared
+ *     empty-actions sentinel gate)
  *   - raw field passthrough (documentNumber / receiptNumber / dates /
  *     total / invoiceId)
  *
@@ -24,7 +26,10 @@
  * the wall clock.
  */
 import { describe, expect, it } from 'vitest';
-import { toInvoiceRowViewModel } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
+import {
+  toInvoiceRowViewModel,
+  rowHasAnyAction,
+} from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
@@ -258,11 +263,11 @@ describe('toInvoiceRowViewModel — credited receipt-number visibility (D3 invar
     // and `resendable` on `status !== 'void' && pdf !== null` — neither is
     // gated on `status === 'issued'`. A future change narrowing `showInvoice`
     // to issued-only would silently drop the credited row's invoice button
-    // (and, via the OR, could flip `hasAnyAction` to false → '—' sentinel) with
-    // no test catching it. These pin the correct credited+PDF values.
+    // (and, via the OR, could flip `rowHasAnyAction` to false → '—' sentinel)
+    // with no test catching it. These pin the correct credited+PDF values.
     expect(vm.showInvoice).toBe(true);
     expect(vm.resendable).toBe(true);
-    expect(vm.hasAnyAction).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 
   it('partially_credited + receiptNumber + rendered → showReceipt false, receiptNumber preserved', () => {
@@ -282,21 +287,21 @@ describe('toInvoiceRowViewModel — credited receipt-number visibility (D3 invar
     // row is never an empty-action '—' sentinel.
     expect(vm.showInvoice).toBe(true);
     expect(vm.resendable).toBe(true);
-    expect(vm.hasAnyAction).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 });
 
-describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel gate)', () => {
-  // `hasAnyAction` is the OR of the four action flags; both the desktop
-  // table cell and the mobile card branch on `!vm.hasAnyAction` to render
-  // the em-dash sentinel instead of an (empty) action group.
+describe('rowHasAnyAction (shared empty-actions sentinel gate)', () => {
+  // `rowHasAnyAction(vm)` is the derived OR of the four action flags; both
+  // the desktop table cell and the mobile card branch on `!rowHasAnyAction(vm)`
+  // to render the em-dash sentinel instead of an (empty) action group.
   it('true when there is something to download (paid + rendered receipt)', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({ status: 'paid', receiptPdfStatus: 'rendered' }),
       NOW_PAST_DUE,
     );
-    // showReceipt + resendable both fire → hasAnyAction true.
-    expect(vm.hasAnyAction).toBe(true);
+    // showReceipt + resendable both fire → rowHasAnyAction true.
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 
   it('false when an issued invoice has no PDF and no receipt state (all four flags off)', () => {
@@ -310,7 +315,7 @@ describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel 
     expect(vm.showReceipt).toBe(false);
     expect(vm.receiptPending).toBe(false);
     expect(vm.resendable).toBe(false);
-    expect(vm.hasAnyAction).toBe(false);
+    expect(rowHasAnyAction(vm)).toBe(false);
   });
 
   it('true for a void invoice that still has its PDF (via showInvoice)', () => {
@@ -318,7 +323,7 @@ describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel 
     // Void suppresses resend but the voided-invoice download stays.
     expect(vm.resendable).toBe(false);
     expect(vm.showInvoice).toBe(true);
-    expect(vm.hasAnyAction).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 
   it('true when receiptPending is the SOLE contributor (paid + pdf null + receipt mid-render)', () => {
@@ -327,7 +332,7 @@ describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel 
     // showInvoice (pdf null), showReceipt (not 'rendered') and resendable (pdf
     // null) are all false — so this row's "Preparing receipt…" affordance hangs
     // ENTIRELY off receiptPending in the OR. A refactor dropping receiptPending
-    // from `hasAnyAction` would silently render this row as the '—' sentinel.
+    // from `rowHasAnyAction` would silently render this row as the '—' sentinel.
     const vm = toInvoiceRowViewModel(
       buildInvoice({ status: 'paid', pdf: null, receiptPdfStatus: 'pending' }),
       NOW_PAST_DUE,
@@ -336,7 +341,7 @@ describe('toInvoiceRowViewModel — hasAnyAction (shared empty-actions sentinel 
     expect(vm.showReceipt).toBe(false);
     expect(vm.resendable).toBe(false);
     expect(vm.receiptPending).toBe(true);
-    expect(vm.hasAnyAction).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
   });
 });
 

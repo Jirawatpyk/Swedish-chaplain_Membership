@@ -43,16 +43,20 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { AlertTriangle, Ban, CheckCircle2, Clock, FileText, type LucideIcon } from 'lucide-react';
 import {
   formatDate,
   formatSatangThb,
   statusBadgeVariant,
-  statusIconName,
-  type InvoiceStatusIconName,
+  statusIcon,
 } from './_utils/format';
-import { toInvoiceRowViewModel } from './_utils/invoice-row-view-model';
-import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
+import {
+  toInvoiceRowViewModel,
+  rowHasAnyAction,
+} from './_utils/invoice-row-view-model';
+import {
+  InvoiceFilters,
+  type InvoiceStatusFilterValue,
+} from '@/app/(staff)/admin/invoices/_components/invoice-filters';
 import { ResendInvoiceButton } from './_components/resend-invoice-button';
 import {
   PortalInvoiceDownloadButton,
@@ -63,14 +67,6 @@ import { EmptyCell } from './_components/empty-cell';
 import { PortalInvoiceCardList } from './_components/portal-invoice-card-list';
 
 const PAGE_SIZE = 20;
-
-const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  FileText,
-  Ban,
-};
 
 interface SearchParams {
   readonly page?: string;
@@ -89,32 +85,33 @@ interface SearchParams {
   readonly subject?: string;
 }
 
+// The non-`all` status values the portal exposes — the SINGLE source for the
+// `StatusFilter` union, the `parseStatusFilter` accept-set, and the
+// `statusOptions` passed to <InvoiceFilters>, so the three can never diverge.
+// `satisfies readonly InvoiceStatusFilterValue[]` ties the list to the shared
+// filter vocabulary (a typo / a value the control can't render is a compile
+// error). `'draft'` is intentionally excluded — members never see drafts.
+//
 // 'overdue' is a DERIVED filter (issued + Bangkok-today past dueDate), not a
 // stored status. `listInvoicesPaged` accepts it and the repo translates it to
 // `status='issued' AND dueDate < today`. It MUST be honoured here — demoting it
 // to 'all' (the previous behaviour) silently returned EVERY non-draft invoice
 // when a member selected Overdue, never reaching the repo's overdue branch.
-export type StatusFilter =
-  | 'all'
-  | 'issued'
-  | 'paid'
-  | 'overdue'
-  | 'void'
-  | 'credited'
-  | 'partially_credited';
+const PORTAL_STATUS_OPTIONS = [
+  'issued',
+  'paid',
+  'overdue',
+  'void',
+  'credited',
+  'partially_credited',
+] as const satisfies readonly InvoiceStatusFilterValue[];
+
+export type StatusFilter = (typeof PORTAL_STATUS_OPTIONS)[number] | 'all';
 
 export function parseStatusFilter(raw: string | undefined): StatusFilter {
-  switch (raw) {
-    case 'issued':
-    case 'paid':
-    case 'overdue':
-    case 'void':
-    case 'credited':
-    case 'partially_credited':
-      return raw;
-    default:
-      return 'all';
-  }
+  return (PORTAL_STATUS_OPTIONS as readonly string[]).includes(raw ?? '')
+    ? (raw as StatusFilter)
+    : 'all';
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -260,13 +257,14 @@ export default async function PortalInvoicesPage({
   // per-row inserts on self-service page loads.
   //
   // 060-member-portal-d4 — per-row presentation flags (displayStatus,
-  // isCombinedPaid, showInvoice/showReceipt, receiptPending, resendable,
-  // hasAnyAction) are derived ONCE here into a shared view-model so the
-  // desktop table (below) and the mobile card list consume one source of
-  // truth and can never drift apart. The raw repo row is NOT carried on
-  // these entries — every action/label/hint/sentinel decision on both
-  // surfaces reads `vm.*` only, so the card can never re-derive a flag
-  // the table didn't (and vice versa).
+  // isCombinedPaid, showInvoice/showReceipt, receiptPending, resendable)
+  // are derived ONCE here into a shared view-model so the desktop table
+  // (below) and the mobile card list consume one source of truth and can
+  // never drift apart. The "has any action" decision is derived on demand
+  // from those flags via `rowHasAnyAction(vm)` (not stored, so it can't go
+  // stale). The raw repo row is NOT carried on these entries — every
+  // action/label/hint/sentinel decision on both surfaces reads `vm.*` only,
+  // so the card can never re-derive a flag the table didn't (and vice versa).
   const nowUtcIso = new Date().toISOString();
   const rows = rawRows.map((r) => ({
     vm: toInvoiceRowViewModel(r, nowUtcIso),
@@ -294,14 +292,7 @@ export default async function PortalInvoicesPage({
                 reconciliation filter; a member who paid OFFLINE would see
                 their legitimate invoices vanish, so it is meaningless here. */}
           <InvoiceFilters
-            statusOptions={[
-              'issued',
-              'paid',
-              'overdue',
-              'void',
-              'credited',
-              'partially_credited',
-            ]}
+            statusOptions={PORTAL_STATUS_OPTIONS}
             showPaidOnlineChip={false}
           />
           {rows.length === 0 ? (
@@ -402,8 +393,12 @@ export default async function PortalInvoicesPage({
                             // still rendering (`receiptPdfStatus = 'pending'`)
                             // must NOT show the "receipt = invoice number" hint
                             // prematurely — the action cell shows "Preparing
-                            // receipt…" in that window. Matches the card, which
-                            // shows the combined hint only when isCombinedPaid.
+                            // receipt…" in that window. The card has NO
+                            // receipt-number cell at all (it omits the
+                            // receipt-number line entirely), so it carries no
+                            // combined receipt-number hint to match here; only
+                            // the combined RECEIPT-DOWNLOAD label is gated on
+                            // `isCombinedPaid` on both surfaces.
                             // Em-dash + InfoIcon affordance with min-h-6 hit
                             // area for WCAG 2.2 SC 2.5.8 (R5-UX-M2).
                             // F5R6+ — extracted to a Client Component
@@ -423,7 +418,7 @@ export default async function PortalInvoicesPage({
                         </TableCell>
                         <TableCell className="align-middle">
                           {(() => {
-                            const Icon = STATUS_ICON_MAP[statusIconName(vm.displayStatus)];
+                            const Icon = statusIcon(vm.displayStatus);
                             return (
                               <Badge
                                 variant={statusBadgeVariant(vm.displayStatus)}
@@ -448,7 +443,7 @@ export default async function PortalInvoicesPage({
                           {(() => {
                             // 060-member-portal-d4 — per-row flags are now
                             // derived once into `vm` (toInvoiceRowViewModel)
-                            // and shared with the upcoming mobile card list.
+                            // and shared with the mobile card list.
                             //
                             // Combined-paid rows: the invoice PDF *is*
                             // the receipt — hide the (now-stale) invoice
@@ -460,12 +455,13 @@ export default async function PortalInvoicesPage({
                             // surface a compact "preparing" affordance
                             // alongside any visible download button.
                             // 060-member-portal-d4 (F4) — guard on the shared
-                            // `vm.hasAnyAction` (= OR of the four action flags)
-                            // instead of the raw `r.pdf === null` proxy, so the
+                            // `rowHasAnyAction(vm)` (= OR of the four action
+                            // flags) instead of the former multi-term guard
+                            // whose final term was `r.pdf === null`, so the
                             // mobile card (which only receives the VM) applies
                             // the IDENTICAL "nothing to show → em-dash" rule and
                             // never renders an empty action group.
-                            if (!vm.hasAnyAction) {
+                            if (!rowHasAnyAction(vm)) {
                               return <EmptyCell />;
                             }
                             return (

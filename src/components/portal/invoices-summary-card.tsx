@@ -39,31 +39,14 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  Clock,
-  FileText,
-  type LucideIcon,
-} from 'lucide-react';
-import {
   formatDate,
   formatSatangThb,
   statusBadgeVariant,
-  statusIconName,
-  type InvoiceStatusIconName,
+  statusIcon,
 } from '@/app/(member)/portal/invoices/_utils/format';
 import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
 
 const SUMMARY_LIMIT = 3;
-
-const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  FileText,
-  Ban,
-};
 
 export interface InvoicesSummaryCardProps {
   /** The authenticated member-role user from `requireSession('member')`. */
@@ -219,13 +202,15 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
             {rows.map((r) => (
               <li
                 key={r.invoiceId}
-                /* items-start aligns the two columns into a clean 2x2 grid
-                   (doc#+badge ↔ total on the top row, date ↔ download on the
-                   bottom row) instead of vertically centring the trailing
-                   total/button against the 2-line left block. No flex-wrap, so
-                   on a narrow phone the right column stacks under nothing — the
-                   two columns stay side-by-side down to 320px (the labels are
-                   short: doc# + "Invoice"/"Voided invoice"). */
+                /* items-start aligns the two stacked columns at their tops
+                   instead of vertically centring the trailing total/button
+                   against the 2-line left block. Each column is a flex-col:
+                   the LEFT column is doc# (row 1) above the badge+date pair
+                   (row 2); the RIGHT column is the total (row 1) above the
+                   download button (row 2). No flex-wrap, so on a narrow phone
+                   the right column stacks under nothing — the two columns stay
+                   side-by-side down to 320px (the labels are short: doc# +
+                   "Invoice"/"Voided invoice"). */
                 className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
                 <div className="flex min-w-0 flex-col gap-1">
@@ -238,7 +223,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   </Link>
                   <div className="flex flex-wrap items-center gap-2">
                     {(() => {
-                      const Icon = STATUS_ICON_MAP[statusIconName(r.status)];
+                      const Icon = statusIcon(r.status);
                       return (
                         <Badge
                           variant={statusBadgeVariant(r.status)}
