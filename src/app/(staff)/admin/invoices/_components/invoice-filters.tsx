@@ -87,6 +87,20 @@ export function InvoiceFilters({
   const tReconciliation = useTranslations('admin.paymentReconciliation.filterChip');
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
+  // Clamp the URL status to the options THIS call site actually renders.
+  // The portal passes `statusOptions` WITHOUT 'draft' (members never see
+  // drafts), so a stale/hand-typed `?status=draft` has no matching
+  // `<SelectItem>`. Without this clamp the trigger would still translate +
+  // show "Draft" AND `hasAnyFilter` would flip true (phantom clear-all)
+  // while the server's `parseStatusFilter('draft')` falls back to 'all' and
+  // returns an UNFILTERED list — a split-brain (UI says Draft+clear-all,
+  // data is unfiltered). Clamping to the permitted vocabulary keeps the
+  // Select value + the active-filter computation honest. No-op for admin:
+  // its default `statusOptions` is the full list, so 'draft' clamps to
+  // itself. Mirrors the `paidOnlineActive` guard below.
+  const effectiveStatus = statusOptions.some((s) => s === currentStatus)
+    ? currentStatus
+    : 'all';
   // When the chip is hidden (member portal) the paid-online filter is not
   // reachable, so a stray `?paidOnline=1` (hand-typed URL / stale link) must
   // NOT count as an active filter here — otherwise the clear-all button would
@@ -126,7 +140,7 @@ export function InvoiceFilters({
 
   const hasAnyFilter =
     currentQ !== '' ||
-    currentStatus !== 'all' ||
+    effectiveStatus !== 'all' ||
     currentSubject !== 'all' ||
     paidOnlineActive;
 
@@ -155,7 +169,7 @@ export function InvoiceFilters({
         />
       </div>
       <Select
-        value={currentStatus}
+        value={effectiveStatus}
         onValueChange={(v) =>
           pushUrl({ status: v && v !== 'all' ? v : null })
         }

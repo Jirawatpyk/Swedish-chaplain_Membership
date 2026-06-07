@@ -30,9 +30,13 @@ import enMessages from '@/i18n/messages/en.json';
 // The client component reads URL state + pushes via the app router. Stub the
 // navigation hooks the Next app shell would provide (no real router in jsdom).
 const replace = vi.fn();
+// Mutable so a test can seed the URL the component reads (e.g. a stale/
+// hand-typed `?status=draft`). Reset to empty in beforeEach so each test
+// starts from a clean URL. Default (empty) preserves the prior behaviour.
+let searchParamsStub = new URLSearchParams();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace, refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParamsStub,
   usePathname: () => '/portal/invoices',
 }));
 
@@ -78,7 +82,10 @@ function optionValues(): string[] {
 }
 
 describe('<InvoiceFilters> — admin defaults (unchanged)', () => {
-  beforeEach(() => replace.mockClear());
+  beforeEach(() => {
+    replace.mockClear();
+    searchParamsStub = new URLSearchParams();
+  });
 
   it('renders the full status vocabulary incl. draft + overdue by default', () => {
     renderFilters();
@@ -105,7 +112,10 @@ describe('<InvoiceFilters> — admin defaults (unchanged)', () => {
 });
 
 describe('<InvoiceFilters> — member portal config', () => {
-  beforeEach(() => replace.mockClear());
+  beforeEach(() => {
+    replace.mockClear();
+    searchParamsStub = new URLSearchParams();
+  });
 
   it('omits the draft option but keeps overdue when statusOptions excludes draft', () => {
     renderFilters({
@@ -134,5 +144,48 @@ describe('<InvoiceFilters> — member portal config', () => {
   it('does NOT render the Paid online chip when showPaidOnlineChip is false', () => {
     renderFilters({ showPaidOnlineChip: false });
     expect(screen.queryByTestId('paid-online-filter-chip')).not.toBeInTheDocument();
+  });
+
+  // R1 — split-brain regression. The portal's statusOptions excludes
+  // 'draft', so a stale/hand-typed `?status=draft` URL has no matching
+  // `<SelectItem>`. The component must CLAMP it to 'all' before driving the
+  // Select value + the active-filter computation — otherwise it would show
+  // a phantom "Clear filters" button (hasAnyFilter true) while the server
+  // returns an UNFILTERED list (parseStatusFilter('draft') → 'all').
+  // Mutation-sensitive: if the clamp were removed, `currentStatus !== 'all'`
+  // would be true and this clear-all assertion would fail.
+  it('clamps a stale ?status=draft to all on the portal (no phantom clear-all)', () => {
+    searchParamsStub = new URLSearchParams('status=draft');
+    renderFilters({
+      statusOptions: [
+        'issued',
+        'paid',
+        'overdue',
+        'void',
+        'credited',
+        'partially_credited',
+      ],
+      showPaidOnlineChip: false,
+    });
+    // No phantom clear-all: 'draft' is not in the portal's statusOptions, so
+    // the effective status clamps to 'all' → no active filter → no button.
+    expect(
+      screen.queryByRole('button', { name: 'Clear filters' }),
+    ).not.toBeInTheDocument();
+  });
+
+  // R8 — pins the pre-existing `paidOnlineActive` guard (was untested
+  // because the mock always returned an empty URLSearchParams). When the
+  // chip is hidden (portal), a stray `?paidOnline=1` (hand-typed / stale
+  // link) must NOT surface the clear-all button — the param is unreachable
+  // from the UI, so it cannot count as an active filter.
+  // Mutation-sensitive: if the `showPaidOnlineChip &&` guard were dropped,
+  // `paidOnlineActive` would be true and this assertion would fail.
+  it('ignores a stray ?paidOnline=1 when the chip is hidden (no clear-all)', () => {
+    searchParamsStub = new URLSearchParams('paidOnline=1');
+    renderFilters({ showPaidOnlineChip: false });
+    expect(
+      screen.queryByRole('button', { name: 'Clear filters' }),
+    ).not.toBeInTheDocument();
   });
 });

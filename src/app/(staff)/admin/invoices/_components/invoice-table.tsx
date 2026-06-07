@@ -358,9 +358,22 @@ export function InvoicesTable({
                   <span className="font-mono text-sm tabular-nums">
                     {r.receiptDocumentNumberRaw}
                   </span>
-                ) : r.status === 'paid' ? (
-                  // Paid + null = combined-mode (receipt reuses the
-                  // invoice number per Thai RD §86/4 + §105ทวิ). The
+                ) : r.hasReceiptPdf && r.status === 'paid' ? (
+                  // Combined-mode (receipt reuses the invoice number per
+                  // Thai RD §86/4 + §105ทวิ). Gate on the SAME condition as
+                  // the action cell's `isCombinedPaid` (= `hasReceiptPdf &&
+                  // status === 'paid' && !receiptDocumentNumberRaw`;
+                  // `hasReceiptPdf` is `paid && receiptPdf !== null`, i.e.
+                  // the receipt PDF has actually rendered). The
+                  // `receiptDocumentNumberRaw` falsy branch above already
+                  // supplies the `&& !receiptDocumentNumberRaw` clause.
+                  // Previously this gated on the raw `r.status === 'paid'`,
+                  // so a paid combined-mode invoice whose receipt PDF was
+                  // still rendering (`receiptPdfStatus = 'pending'`) showed
+                  // the "receipt = invoice number" hint PREMATURELY while
+                  // the action cell correctly showed "Preparing receipt…".
+                  // Now both gate on the rendered receipt — matching the
+                  // member portal fix (060-member-portal-d4). The
                   // hover-only tooltip was removed: its `<span>` trigger
                   // was not keyboard-focusable and not touch-reachable
                   // (base-ui tooltips are hover/focus only), so the hint
