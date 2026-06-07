@@ -125,10 +125,19 @@ export default async function MemberAccountPage() {
     );
   }
 
-  const exportJobs =
-    env.features.f9Dashboard && memberId
-      ? await listMemberDataExports(tenant, memberId)
-      : [];
+  // Best-effort, like the seeds above: a transient Neon/RLS error here must
+  // NOT 500 the whole hub (the doc-comment promise). Fall back to [] + warn.
+  let exportJobs: Awaited<ReturnType<typeof listMemberDataExports>> = [];
+  if (env.features.f9Dashboard && memberId) {
+    try {
+      exportJobs = await listMemberDataExports(tenant, memberId);
+    } catch (err) {
+      logger.warn(
+        { err, tenantId: tenant.slug, userId: user.id },
+        'portal.account.data_export_list_failed',
+      );
+    }
+  }
 
   return (
     <FormContainer>
@@ -169,22 +178,32 @@ export default async function MemberAccountPage() {
         </Card>
       </section>
 
-      <section
-        id="renewal-prefs"
-        aria-labelledby="renewal-prefs-heading"
-        className="scroll-mt-24 space-y-4"
-      >
-        <h2 id="renewal-prefs-heading" className="text-lg font-semibold">
-          {tPage('sections.renewalPrefs')}
-        </h2>
-        <Card>
-          <CardContent className="pt-6">
-            <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
-          </CardContent>
-        </Card>
-      </section>
+      {/*
+        Renewal preferences + Data & privacy are MEMBER-SPECIFIC: their writes
+        target the session-resolved member row. An authenticated user with NO
+        linked member (e.g. a pending invitation) has memberId === null — the
+        toggle's POST and the export request would 404. Mirror the legacy
+        per-route notFound() at the section level: hide these when unlinked,
+        but keep Account + Appearance (which work without a member).
+      */}
+      {memberId ? (
+        <section
+          id="renewal-prefs"
+          aria-labelledby="renewal-prefs-heading"
+          className="scroll-mt-24 space-y-4"
+        >
+          <h2 id="renewal-prefs-heading" className="text-lg font-semibold">
+            {tPage('sections.renewalPrefs')}
+          </h2>
+          <Card>
+            <CardContent className="pt-6">
+              <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
-      {env.features.f9Dashboard ? (
+      {env.features.f9Dashboard && memberId ? (
         <section
           id="data-privacy"
           aria-labelledby="data-privacy-heading"
