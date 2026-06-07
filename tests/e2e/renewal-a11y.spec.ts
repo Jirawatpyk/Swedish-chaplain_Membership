@@ -13,7 +13,10 @@
  *   - /admin/renewals/tasks                  (US6 escalation queue)
  *   - /admin/renewals/tier-upgrades          (US5 tier-upgrade queue)
  *   - /portal/renewal/[memberId]             (US3 self-service entry)
- *   - /portal/preferences/renewals           (US3 reminder preferences)
+ *   - /portal/account#renewal-prefs          (US3 reminder preferences —
+ *       058 D2 moved the opt-out into the Account hub; scan scoped to
+ *       the `#renewal-prefs` section so attribution stays on the renewal
+ *       surface, not the whole hub)
  *
  * Tests skip at runtime when E2E_ADMIN_EMAIL / E2E_MEMBER_EMAIL are
  * absent (CI-skip pattern matching the rest of F8 e2e suite).
@@ -34,10 +37,23 @@ const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 const E2E_RENEWAL_CYCLE_ID = process.env.E2E_RENEWAL_CYCLE_ID;
 const E2E_MEMBER_ID = process.env.E2E_MEMBER_ID;
 
-async function expectNoAxeViolations(page: Page, surface: string): Promise<void> {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    .analyze();
+async function expectNoAxeViolations(
+  page: Page,
+  surface: string,
+  // Optional CSS selector to scope the scan to a subtree (058 D2: the
+  // renewal opt-out moved into the Account hub, so its a11y scan is
+  // scoped to `#renewal-prefs` to keep attribution to the renewal
+  // surface — mirrors at-risk-widget.spec.ts `.include(...)`).
+  include?: string,
+): Promise<void> {
+  let builder = new AxeBuilder({ page }).withTags([
+    'wcag2a',
+    'wcag2aa',
+    'wcag21a',
+    'wcag21aa',
+  ]);
+  if (include) builder = builder.include(include);
+  const results = await builder.analyze();
   const seriousOrWorse = results.violations.filter(
     (v) => v.impact === 'serious' || v.impact === 'critical',
   );
@@ -137,14 +153,31 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
     );
 
     for (const theme of ['light', 'dark'] as const) {
-      test(`/portal/preferences/renewals (${theme})`, async ({ page }) => {
+      test(`account hub renewal opt-out (#renewal-prefs) (${theme})`, async ({
+        page,
+      }) => {
+        // 058 D2: the FR-016 renewal opt-out moved from the standalone
+        // `/portal/preferences/renewals` page (now a 308 redirect) into
+        // the Account hub. Go to the canonical, non-redirecting hub URL
+        // so the test label matches what is actually scanned, and scope
+        // the axe scan to the `#renewal-prefs` section so this keeps
+        // asserting the RENEWAL surface specifically (ChangePasswordForm
+        // / DataExportPanel / ThemeToggle on the hub have their own a11y
+        // specs: change-password-a11y / f9-a11y).
         await setTheme(page, theme);
         await signInAsMember(page);
-        await page.goto('/portal/preferences/renewals');
+        await page.goto('/portal/account#renewal-prefs');
         await page.waitForLoadState('domcontentloaded');
+        await expect(
+          page.locator('#renewal-prefs').getByRole('heading', {
+            level: 2,
+            name: /renewal preferences/i,
+          }),
+        ).toBeVisible({ timeout: 15_000 });
         await expectNoAxeViolations(
           page,
-          `/portal/preferences/renewals (${theme})`,
+          `account hub #renewal-prefs (${theme})`,
+          '#renewal-prefs',
         );
       });
 
