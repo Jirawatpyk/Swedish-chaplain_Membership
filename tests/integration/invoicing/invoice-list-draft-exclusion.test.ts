@@ -1,10 +1,10 @@
 /**
- * Integration — `listInvoicesPaged` draft-exclusion guard (060-member-portal-d4).
+ * Integration — invoice list draft-exclusion guard (060-member-portal-d4).
  *
  * Pre-existing bug (present at 059, not a D4 regression): the member portal
  * invoice list (`src/app/(member)/portal/invoices/page.tsx`) calls
  * `listInvoicesPaged` with `{ includeDrafts: false, status: 'all' }` (the
- * default, when no `?status=` filter is set). The old repo guard
+ * default, when no `?status=` filter is set). The original repo guard
  *
  *     if (!includeDrafts && !opts.status) { status != 'draft' }
  *     ...
@@ -15,20 +15,35 @@
  * (`status !== 'all'` is false) — so DRAFT invoices leaked into the member
  * portal list (badge "Draft"). Members must never see their own draft invoices.
  *
- * The fix treats 'all' the same as an absent status when `includeDrafts: false`:
+ * The first D4 fix treated 'all' the same as an absent status:
  *
  *     if (!includeDrafts && (!opts.status || opts.status === 'all')) { ... }
  *
- * This test locks the behaviour against live Neon. It seeds one DRAFT + one
- * ISSUED + one PAID membership invoice for a single member, then asserts:
- *   1. `{ includeDrafts: false, status: 'all' }` → issued + paid, NEVER draft
- *      (the regression guard — FAILS on the old code).
- *   2. `{ includeDrafts: false }` (no status) → also excludes the draft
- *      (unchanged behaviour).
- *   3. `{ includeDrafts: true, status: 'all' }` → INCLUDES the draft
+ * but #15 found that STILL let `status: 'draft'` bypass: the specific-status
+ * branch fired `eq(status, 'draft')`, returning drafts even with
+ * `includeDrafts: false` (reachable via `GET /api/invoices?status=draft` with
+ * no `includeDrafts=true`). The final fix makes the exclusion UNCONDITIONAL
+ * whenever drafts are not opted-in — correct for every status because the
+ * filters array is AND-combined:
+ *
+ *     if (!includeDrafts) { status != 'draft' }
+ *
+ * This test locks the behaviour against live Neon for BOTH the offset-paged
+ * `listInvoicesPaged` and the cursor `listInvoices` (which got the identical
+ * fix). It seeds one DRAFT + one ISSUED + one PAID membership invoice for a
+ * single member, then asserts:
+ *   1. listPaged `{ includeDrafts: false, status: 'all' }` → issued + paid,
+ *      NEVER draft (the original regression guard).
+ *   2. listPaged `{ includeDrafts: false }` (no status) → also excludes draft.
+ *   3. listPaged `{ includeDrafts: true, status: 'all' }` → INCLUDES the draft
  *      (admin / full-history path preserved).
- *   4. `{ status: 'draft', includeDrafts: false }` → returns ONLY the draft
- *      (explicit draft request still works via the specific-status branch).
+ *   4. listPaged `{ status: 'draft', includeDrafts: false }` → EMPTY (#15: a
+ *      raw draft request without the flag must not leak drafts).
+ *   5. listPaged `{ status: 'draft', includeDrafts: true }` → returns ONLY the
+ *      draft (the legitimate opted-in way to fetch drafts).
+ *   6. cursor list `{ status: 'all', includeDrafts: false }` → NO draft (the
+ *      regression guard for the cursor path used by `GET /api/invoices`).
+ *   7. cursor list `{ includeDrafts: true }` → INCLUDES the draft.
  *
  * Lives in tests/integration/** → hits live Neon via runInTenant (RLS); seeds
  * with `tx` from runInTenant, never the global db singleton.
@@ -40,7 +55,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
-import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import { listInvoices, listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -77,7 +92,7 @@ const SNAP_MEMBER = {
 
 const MEMBER_ID = '00000000-0000-4000-8000-0000000000f4';
 
-describe('invoice listPaged — draft exclusion when status=all (060-D4)', () => {
+describe('invoice list — draft exclusion when includeDrafts=false (060-D4 / #15)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   const draftInv = randomUUID();
@@ -260,12 +275,30 @@ describe('invoice listPaged — draft exclusion when status=all (060-D4)', () =>
     expect(result.value.total).toBe(3);
   });
 
-  it('status=draft + includeDrafts:false → returns ONLY the draft (explicit draft request still works)', async () => {
+  it('status=draft + includeDrafts:false → EMPTY (#15: raw draft request without the flag must not leak drafts)', async () => {
     const result = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       offset: 0,
       pageSize: 50,
       includeDrafts: false,
+      memberId: MEMBER_ID,
+      status: 'draft',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // eq(status,'draft') AND status != 'draft' → no rows. The only way to fetch
+    // drafts is to opt in via includeDrafts:true (see the next case).
+    expect(result.value.rows).toEqual([]);
+    expect(result.value.total).toBe(0);
+  });
+
+  it('status=draft + includeDrafts:true → returns ONLY the draft (legitimate opted-in draft fetch)', async () => {
+    const result = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      offset: 0,
+      pageSize: 50,
+      includeDrafts: true,
       memberId: MEMBER_ID,
       status: 'draft',
     });
@@ -278,5 +311,42 @@ describe('invoice listPaged — draft exclusion when status=all (060-D4)', () =>
     for (const row of result.value.rows) {
       expect(row.status).toBe('draft');
     }
+  });
+
+  // F7 — cursor `list` coverage. The cursor path got the identical unconditional
+  // draft-exclusion fix but had NO test. `GET /api/invoices` routes to this path
+  // (listInvoices), so it is exactly the surface #15 reported.
+  it('cursor list: status=all + includeDrafts:false → NO draft (regression guard for the cursor path)', async () => {
+    const result = await listInvoices(makeListInvoicesDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      pageSize: 50,
+      includeDrafts: false,
+      memberId: MEMBER_ID,
+      status: 'all',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const ids = result.value.rows.map((r) => r.invoiceId).sort();
+    expect(ids).toEqual([issuedInv, paidInv].sort());
+    expect(ids).not.toContain(draftInv);
+    for (const row of result.value.rows) {
+      expect(row.status).not.toBe('draft');
+    }
+  });
+
+  it('cursor list: includeDrafts:true → INCLUDES the draft', async () => {
+    const result = await listInvoices(makeListInvoicesDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      pageSize: 50,
+      includeDrafts: true,
+      memberId: MEMBER_ID,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const ids = result.value.rows.map((r) => r.invoiceId).sort();
+    expect(ids).toEqual([draftInv, issuedInv, paidInv].sort());
+    expect(ids).toContain(draftInv);
   });
 });
