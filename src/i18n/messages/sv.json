@@ -4056,6 +4056,7 @@
           "lineTotal": "Summa"
         },
         "totals": {
+          "heading": "Sammanfattning",
           "subtotal": "Delsumma",
           "vat": "Moms",
           "total": "Totalt"

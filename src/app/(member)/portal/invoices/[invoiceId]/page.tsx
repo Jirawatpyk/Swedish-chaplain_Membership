@@ -61,7 +61,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
@@ -256,7 +256,7 @@ export default async function PortalInvoiceDetailPage({
                   documentNumber={documentNumber}
                   variant="ghost"
                   layout="full"
-                  className="min-h-11 px-3"
+                  size="default"
                 />
               ) : null}
               {(() => {
@@ -313,8 +313,8 @@ export default async function PortalInvoiceDetailPage({
                             : tList('actions.downloadInvoiceAria', { number: documentNumber })
                         }`}
                         className={cn(
-                          buttonVariants({ variant: 'default', size: 'sm' }),
-                          'min-h-11 px-4',
+                          buttonVariants({ variant: 'default', size: 'default' }),
+                          'px-4',
                         )}
                         data-testid="portal-download-invoice"
                       />
@@ -334,9 +334,9 @@ export default async function PortalInvoiceDetailPage({
                         className={cn(
                           buttonVariants({
                             variant: isCombinedPaid ? 'default' : 'outline',
-                            size: 'sm',
+                            size: 'default',
                           }),
-                          'min-h-11 px-4',
+                          'px-4',
                         )}
                         data-testid="portal-download-receipt"
                       />
@@ -347,8 +347,8 @@ export default async function PortalInvoiceDetailPage({
                         aria-live="polite"
                         aria-busy="true"
                         className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-4 cursor-progress',
+                          buttonVariants({ variant: 'outline', size: 'default' }),
+                          'px-4 cursor-progress',
                         )}
                       >
                         {t('pdf.preparing')}
@@ -383,7 +383,7 @@ export default async function PortalInvoiceDetailPage({
             {invoice.voidReason ? (
               <>
                 <dt className="text-muted-foreground">{t('void.reasonLabel')}</dt>
-                <dd className="whitespace-pre-wrap">{invoice.voidReason}</dd>
+                <dd className="whitespace-pre-wrap break-words">{invoice.voidReason}</dd>
               </>
             ) : null}
           </dl>
@@ -476,8 +476,12 @@ export default async function PortalInvoiceDetailPage({
       </Card>
 
       <Card>
+        <CardHeader>
+          <h2 className="font-heading text-base font-medium leading-snug">
+            {t('linesHeading')}
+          </h2>
+        </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <h2 className="text-h4">{t('linesHeading')}</h2>
           <div className="overflow-x-auto">
             <Table aria-label={t('linesHeading')}>
               <TableHeader>
@@ -548,6 +552,11 @@ export default async function PortalInvoiceDetailPage({
       </Card>
 
       <Card>
+        <CardHeader>
+          <h2 className="font-heading text-base font-medium leading-snug">
+            {t('totals.heading')}
+          </h2>
+        </CardHeader>
         {/* dl/dt/dd preserves the semantic label-value pairing for
             screen readers; the previous `div.contents` flattening
             caused VoiceOver/NVDA to read the six cells as loose
@@ -615,8 +624,12 @@ export default async function PortalInvoiceDetailPage({
 
       {portalCreditNotes.length > 0 && (
         <Card>
+          <CardHeader>
+            <h2 className="font-heading text-base font-medium leading-snug">
+              {t('creditNotes.heading')}
+            </h2>
+          </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <h2 className="text-h4">{t('creditNotes.heading')}</h2>
             <p className="text-caption text-muted-foreground">{t('creditNotes.description')}</p>
             <ul role="list" className="flex flex-col gap-2">
               {portalCreditNotes.map((pcn) => (
