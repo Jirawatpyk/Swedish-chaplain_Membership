@@ -4056,6 +4056,7 @@
           "lineTotal": "Total"
         },
         "totals": {
+          "heading": "Summary",
           "subtotal": "Subtotal",
           "vat": "VAT",
           "total": "Total"
