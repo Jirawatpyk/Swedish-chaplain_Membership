@@ -20,7 +20,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { listInvoicesPaged, makeListInvoicesDeps, computeIsOverdue } from '@/modules/invoicing';
+import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -46,6 +46,7 @@ import {
   statusIconName,
   type InvoiceStatusIconName,
 } from './_utils/format';
+import { toInvoiceRowViewModel } from './_utils/invoice-row-view-model';
 import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
 import { ResendInvoiceButton } from './_components/resend-invoice-button';
 import {
@@ -166,15 +167,22 @@ export default async function PortalInvoicesPage({
   }
   const rawRows = invoicesResult.value.rows;
   const total = invoicesResult.value.total;
-  // T109 — presentation-only overdue derivation (FR-028). Each row
-  // carries a `displayStatus` that swaps `'issued'` for `'overdue'`
-  // when Bangkok-today has passed dueDate. Audit emit is NOT done on
-  // portal list reads — the admin surface handles that opportunistically
-  // to avoid multiplying per-row inserts on self-service page loads.
+  // T109 — presentation-only overdue derivation (FR-028). Each row's
+  // view-model swaps `'issued'` for `'overdue'` (via `toInvoiceRowViewModel`,
+  // which calls `computeIsOverdue` internally) when Bangkok-today has
+  // passed dueDate. Audit emit is NOT done on portal list reads — the
+  // admin surface handles that opportunistically to avoid multiplying
+  // per-row inserts on self-service page loads.
+  //
+  // 060-member-portal-d4 — per-row presentation flags (displayStatus,
+  // isCombinedPaid, showInvoice/showReceipt, receiptPending, resendable)
+  // are derived ONCE here into a shared view-model so the desktop table
+  // (below) and the upcoming mobile card list consume one source of
+  // truth and can never drift apart.
   const nowUtcIso = new Date().toISOString();
   const rows = rawRows.map((r) => ({
     row: r,
-    displayStatus: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
+    vm: toInvoiceRowViewModel(r, nowUtcIso),
   }));
 
   const hasActiveFilter = searchTerm.length > 0 || statusFilter !== 'all';
@@ -251,21 +259,21 @@ export default async function PortalInvoicesPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map(({ row: r, displayStatus }) => (
-                      <TableRow key={r.invoiceId}>
+                    {rows.map(({ row: r, vm }) => (
+                      <TableRow key={vm.invoiceId}>
                         <TableCell className="align-middle font-mono text-xs">
                           <Link
-                            href={`/portal/invoices/${r.invoiceId}`}
+                            href={`/portal/invoices/${vm.invoiceId}`}
                             className="underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                            aria-label={`${t('actions.viewDetail')} ${r.documentNumber?.raw ?? r.invoiceId}`}
+                            aria-label={`${t('actions.viewDetail')} ${vm.documentNumber ?? vm.invoiceId}`}
                           >
-                            {r.documentNumber?.raw ?? '—'}
+                            {vm.documentNumber ?? '—'}
                           </Link>
                         </TableCell>
                         <TableCell className="align-middle whitespace-nowrap">
-                          {r.receiptDocumentNumberRaw ? (
+                          {vm.receiptNumber ? (
                             <span className="font-mono text-sm tabular-nums">
-                              {r.receiptDocumentNumberRaw}
+                              {vm.receiptNumber}
                             </span>
                           ) : r.status === 'paid' ? (
                             // Combined-mode = receipt reuses invoice number.
@@ -288,71 +296,65 @@ export default async function PortalInvoicesPage({
                         </TableCell>
                         <TableCell className="align-middle">
                           {(() => {
-                            const Icon = STATUS_ICON_MAP[statusIconName(displayStatus)];
+                            const Icon = STATUS_ICON_MAP[statusIconName(vm.displayStatus)];
                             return (
                               <Badge
-                                variant={statusBadgeVariant(displayStatus)}
+                                variant={statusBadgeVariant(vm.displayStatus)}
                                 className="inline-flex items-center gap-1"
                               >
                                 <Icon className="size-3.5" aria-hidden="true" />
-                                {tStatus(displayStatus)}
+                                {tStatus(vm.displayStatus)}
                               </Badge>
                             );
                           })()}
                         </TableCell>
                         <TableCell className="align-middle">
-                          {formatDate(r.issueDate, userLocale)}
+                          {formatDate(vm.issueDate, userLocale)}
                         </TableCell>
                         <TableCell className="align-middle">
-                          {formatDate(r.dueDate, userLocale)}
+                          {formatDate(vm.dueDate, userLocale)}
                         </TableCell>
                         <TableCell className="align-middle text-right tabular-nums">
-                          {formatSatangThb(r.total?.satang ?? null, userLocale)}
+                          {formatSatangThb(vm.total?.satang ?? null, userLocale)}
                         </TableCell>
                         <TableCell className="align-middle text-right">
                           {(() => {
+                            // 060-member-portal-d4 — per-row flags are now
+                            // derived once into `vm` (toInvoiceRowViewModel)
+                            // and shared with the upcoming mobile card list.
+                            //
                             // Combined-paid rows: the invoice PDF *is*
                             // the receipt — hide the (now-stale) invoice
                             // anchor + show only "Receipt" so the legal
                             // §86/4+§105ทวิ document is what the member
                             // grabs. Separate-paid: show both.
-                            const isCombinedPaid =
-                              r.status === 'paid' &&
-                              r.receiptDocumentNumberRaw === null &&
-                              r.receiptPdfStatus === 'rendered';
-                            const showInvoice = r.pdf !== null && !isCombinedPaid;
-                            const showReceipt =
-                              r.status === 'paid' && r.receiptPdfStatus === 'rendered';
-                            // R7-M5 — async receipt-PDF gate. When the
-                            // receipt is mid-render (status pending/failed
-                            // /null on a paid invoice), surface a compact
-                            // "preparing" affordance alongside any visible
-                            // download button. Detail page already does
-                            // this; the list page previously showed only
-                            // the invoice button with no signal that the
-                            // legal §105ทวิ receipt is on its way.
-                            const receiptPending =
-                              r.status === 'paid' &&
-                              r.receiptPdfStatus !== null &&
-                              r.receiptPdfStatus !== 'rendered';
-                            if (!showInvoice && !showReceipt && !receiptPending && r.pdf === null) {
+                            // R7-M5 — async receipt-PDF gate: when the
+                            // receipt is mid-render (`receiptPending`),
+                            // surface a compact "preparing" affordance
+                            // alongside any visible download button.
+                            if (
+                              !vm.showInvoice &&
+                              !vm.showReceipt &&
+                              !vm.receiptPending &&
+                              r.pdf === null
+                            ) {
                               return <span className="text-sm text-muted-foreground">—</span>;
                             }
                             return (
                               <div className="flex items-center justify-end gap-1">
-                                {r.status !== 'void' && r.pdf !== null ? (
+                                {vm.resendable ? (
                                   <ResendInvoiceButton
-                                    invoiceId={r.invoiceId}
-                                    documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                                    invoiceId={vm.invoiceId}
+                                    documentNumber={vm.documentNumber ?? vm.invoiceId}
                                     variant="ghost"
                                     layout="compact"
                                     className="min-h-11 min-w-11"
                                   />
                                 ) : null}
-                                {showInvoice && (
+                                {vm.showInvoice && (
                                   <PortalInvoiceDownloadButton
-                                    invoiceId={r.invoiceId}
-                                    documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                                    invoiceId={vm.invoiceId}
+                                    documentNumber={vm.documentNumber ?? vm.invoiceId}
                                     label={
                                       r.status === 'void'
                                         ? t('actions.downloadVoided')
@@ -363,7 +365,7 @@ export default async function PortalInvoicesPage({
                                         ? 'actions.downloadVoidedAria'
                                         : 'actions.downloadInvoiceAria',
                                       {
-                                        number: r.documentNumber?.raw ?? r.invoiceId,
+                                        number: vm.documentNumber ?? vm.invoiceId,
                                       },
                                     )}
                                     className={cn(
@@ -372,24 +374,24 @@ export default async function PortalInvoicesPage({
                                     )}
                                   />
                                 )}
-                                {showReceipt && (
+                                {vm.showReceipt && (
                                   <PortalReceiptDownloadButton
-                                    invoiceId={r.invoiceId}
+                                    invoiceId={vm.invoiceId}
                                     documentNumber={
-                                      r.receiptDocumentNumberRaw ??
-                                      r.documentNumber?.raw ??
-                                      r.invoiceId
+                                      vm.receiptNumber ??
+                                      vm.documentNumber ??
+                                      vm.invoiceId
                                     }
                                     label={
-                                      isCombinedPaid
+                                      vm.isCombinedPaid
                                         ? t('actions.downloadCombined')
                                         : t('actions.downloadReceipt')
                                     }
                                     ariaLabel={t('actions.downloadReceiptAria', {
                                       number:
-                                        r.receiptDocumentNumberRaw ??
-                                        r.documentNumber?.raw ??
-                                        r.invoiceId,
+                                        vm.receiptNumber ??
+                                        vm.documentNumber ??
+                                        vm.invoiceId,
                                     })}
                                     className={cn(
                                       buttonVariants({ variant: 'ghost', size: 'sm' }),
@@ -397,7 +399,7 @@ export default async function PortalInvoicesPage({
                                     )}
                                   />
                                 )}
-                                {receiptPending && (
+                                {vm.receiptPending && (
                                   <span
                                     role="status"
                                     aria-live="polite"
