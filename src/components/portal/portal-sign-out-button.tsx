@@ -31,7 +31,7 @@ export function PortalSignOutButton() {
   };
 
   return (
-    <Button variant="outline" className="min-h-11" onClick={handleSignOut}>
+    <Button variant="outline" onClick={handleSignOut}>
       <LogOutIcon className="size-4" aria-hidden />
       {t('signOut')}
     </Button>
