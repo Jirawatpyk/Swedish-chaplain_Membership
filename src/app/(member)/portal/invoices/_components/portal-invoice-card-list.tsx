@@ -164,17 +164,15 @@ export function PortalInvoiceCardList({
                 </p>
 
                 {/* Actions — SAME conditional set + props as the table cell,
-                    driven by vm.* flags. Wraps on a 320px card. */}
+                    driven by vm.* flags. Wraps on a 320px card.
+
+                    Order (D4): the TEXT download buttons (Invoice / Receipt)
+                    come first, then the icon-only resend square LAST. An
+                    icon-only square at the END of a row of text buttons is the
+                    conventional placement (mirrors the desktop table's
+                    trailing ghost resend) and keeps the primary "grab my
+                    document" CTAs leftmost where the eye lands first. */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {vm.resendable ? (
-                    <ResendInvoiceButton
-                      invoiceId={vm.invoiceId}
-                      documentNumber={vm.documentNumber ?? vm.invoiceId}
-                      variant="outline"
-                      layout="full"
-                      className="min-h-11"
-                    />
-                  ) : null}
                   {vm.showInvoice && (
                     <PortalInvoiceDownloadButton
                       invoiceId={vm.invoiceId}
@@ -202,17 +200,34 @@ export function PortalInvoiceCardList({
                       documentNumber={
                         vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId
                       }
+                      // Card label: combined-mode uses the SHORT verb-less
+                      // `card.combinedReceipt` ("Tax invoice / Receipt") — the
+                      // download icon already conveys "download", and the full
+                      // `actions.downloadCombined` ("Download Tax Invoice /
+                      // Receipt") overflows a 320px card. Separate-mode keeps
+                      // the existing short "Receipt". The full combined aria
+                      // label is preserved below for SR users.
                       label={
                         vm.isCombinedPaid
-                          ? t('actions.downloadCombined')
+                          ? t('card.combinedReceipt')
                           : t('actions.downloadReceipt')
                       }
-                      ariaLabel={t('actions.downloadReceiptAria', {
-                        number: vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId,
-                      })}
+                      ariaLabel={t(
+                        vm.isCombinedPaid
+                          ? 'actions.downloadCombinedAria'
+                          : 'actions.downloadReceiptAria',
+                        { number: vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId },
+                      )}
                       className={cn(
                         buttonVariants({ variant: 'outline', size: 'sm' }),
                         'min-h-11 px-3',
+                        // Allow the combined label to WRAP to 2 lines within
+                        // the card instead of clipping (Button defaults to
+                        // `whitespace-nowrap` + the Card is `overflow-hidden`,
+                        // which silently clipped the legally-required CTA).
+                        // `h-auto` lets the button grow past its fixed sm
+                        // height; `min-h-11` keeps the ≥44px tap target.
+                        vm.isCombinedPaid && 'h-auto min-h-11 whitespace-normal text-left',
                       )}
                     />
                   )}
@@ -229,6 +244,21 @@ export function PortalInvoiceCardList({
                       {t('actions.receiptPreparing')}
                     </span>
                   )}
+                  {/* Resend ("Email me a copy") — icon-only square LAST in the
+                      row (matches the desktop table's compact ghost resend).
+                      `layout="compact"` renders the Mail icon only; the
+                      component already sets `aria-label` (emailCopyAria) so the
+                      icon-only control keeps an accessible name. `min-h-11
+                      min-w-11` keeps the ≥44px square tap target (§9.1). */}
+                  {vm.resendable ? (
+                    <ResendInvoiceButton
+                      invoiceId={vm.invoiceId}
+                      documentNumber={vm.documentNumber ?? vm.invoiceId}
+                      variant="outline"
+                      layout="compact"
+                      className="min-h-11 min-w-11"
+                    />
+                  ) : null}
                 </div>
               </CardContent>
             </Card>

@@ -4005,6 +4005,9 @@
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
       },
+      "card": {
+        "combinedReceipt": "Tax invoice / Receipt"
+      },
       "filters": {
         "noMatch": "No invoices match your filters."
       },

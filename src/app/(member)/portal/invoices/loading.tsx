@@ -53,9 +53,12 @@ export default async function Loading() {
               ))}
             </div>
             {/* Mobile card skeleton (< md) — 5 cards, each matching the real
-                card height: header (doc# + status pill), dates line, total
-                line, action-button row (h-11). Keeps CLS-0 when real cards
-                paint. */}
+                card height + action-row shape: header (doc# + status pill),
+                dates line, total line, then the action row = a TEXT download
+                button skeleton (h-11) + an ICON-ONLY square resend skeleton
+                (h-11 w-11) LAST — mirroring the real card's "text buttons
+                first, icon-only resend last" order (D4). Keeps CLS-0 when the
+                real cards paint. */}
             <ul role="list" className="flex flex-col gap-3 md:hidden">
               {Array.from({ length: 5 }).map((_, i) => (
                 <li key={i}>
@@ -68,9 +71,9 @@ export default async function Loading() {
                       <SkeletonBlock className="h-4 w-56" />
                       <Separator />
                       <SkeletonBlock className="h-6 w-28" />
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <SkeletonBlock className="h-11 w-24" />
-                        <SkeletonBlock className="h-11 w-24" />
+                        <SkeletonBlock className="h-11 w-11" />
                       </div>
                     </CardContent>
                   </Card>

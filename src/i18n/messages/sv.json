@@ -4005,6 +4005,9 @@
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
       },
+      "card": {
+        "combinedReceipt": "Faktura / kvitto"
+      },
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
       },
