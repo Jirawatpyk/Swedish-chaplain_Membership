@@ -3994,6 +3994,8 @@
       "actions": {
         "download": "Invoice",
         "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
+        "downloadVoided": "Voided invoice",
+        "downloadVoidedAria": "Download voided invoice PDF (VOID-stamped) for {number}",
         "downloadReceipt": "Receipt",
         "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
         "downloadCombined": "Download Tax Invoice / Receipt",

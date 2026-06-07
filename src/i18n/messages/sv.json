@@ -3994,6 +3994,8 @@
       "actions": {
         "download": "Faktura",
         "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+        "downloadVoided": "Annullerad faktura",
+        "downloadVoidedAria": "Ladda ner annullerad faktura-PDF (VOID-stämplad) för {number}",
         "downloadReceipt": "Kvitto",
         "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
         "downloadCombined": "Ladda ner faktura / kvitto",
