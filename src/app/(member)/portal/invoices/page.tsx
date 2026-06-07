@@ -194,13 +194,15 @@ export default async function PortalInvoicesPage({
   // per-row inserts on self-service page loads.
   //
   // 060-member-portal-d4 — per-row presentation flags (displayStatus,
-  // isCombinedPaid, showInvoice/showReceipt, receiptPending, resendable)
-  // are derived ONCE here into a shared view-model so the desktop table
-  // (below) and the upcoming mobile card list consume one source of
-  // truth and can never drift apart.
+  // isCombinedPaid, showInvoice/showReceipt, receiptPending, resendable,
+  // hasAnyAction) are derived ONCE here into a shared view-model so the
+  // desktop table (below) and the mobile card list consume one source of
+  // truth and can never drift apart. The raw repo row is NOT carried on
+  // these entries — every action/label/hint/sentinel decision on both
+  // surfaces reads `vm.*` only, so the card can never re-derive a flag
+  // the table didn't (and vice versa).
   const nowUtcIso = new Date().toISOString();
   const rows = rawRows.map((r) => ({
-    row: r,
     vm: toInvoiceRowViewModel(r, nowUtcIso),
   }));
 
@@ -289,7 +291,12 @@ export default async function PortalInvoicesPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map(({ row: r, vm }) => (
+                    {/* 060-member-portal-d4 — the row map reads ONLY `vm.*`
+                        (the shared view-model) for every action/label/hint/
+                        sentinel decision; the raw repo row is no longer
+                        destructured here so the table can never drift from the
+                        mobile card. */}
+                    {rows.map(({ vm }) => (
                       <TableRow key={vm.invoiceId}>
                         <TableCell className="align-middle font-mono text-xs">
                           <Link
@@ -305,8 +312,17 @@ export default async function PortalInvoicesPage({
                             <span className="font-mono text-sm tabular-nums">
                               {vm.receiptNumber}
                             </span>
-                          ) : r.status === 'paid' ? (
+                          ) : vm.isCombinedPaid ? (
                             // Combined-mode = receipt reuses invoice number.
+                            // 060-member-portal-d4 (F3) — gate on
+                            // `vm.isCombinedPaid` (paid AND receiptPdfStatus
+                            // 'rendered'), NOT the raw `r.status === 'paid'`.
+                            // A paid combined-mode invoice whose receipt is
+                            // still rendering (`receiptPdfStatus = 'pending'`)
+                            // must NOT show the "receipt = invoice number" hint
+                            // prematurely — the action cell shows "Preparing
+                            // receipt…" in that window. Matches the card, which
+                            // shows the combined hint only when isCombinedPaid.
                             // Em-dash + InfoIcon affordance with min-h-6 hit
                             // area for WCAG 2.2 SC 2.5.8 (R5-UX-M2).
                             // F5R6+ — extracted to a Client Component
@@ -362,12 +378,13 @@ export default async function PortalInvoicesPage({
                             // receipt is mid-render (`receiptPending`),
                             // surface a compact "preparing" affordance
                             // alongside any visible download button.
-                            if (
-                              !vm.showInvoice &&
-                              !vm.showReceipt &&
-                              !vm.receiptPending &&
-                              r.pdf === null
-                            ) {
+                            // 060-member-portal-d4 (F4) — guard on the shared
+                            // `vm.hasAnyAction` (= OR of the four action flags)
+                            // instead of the raw `r.pdf === null` proxy, so the
+                            // mobile card (which only receives the VM) applies
+                            // the IDENTICAL "nothing to show → em-dash" rule and
+                            // never renders an empty action group.
+                            if (!vm.hasAnyAction) {
                               return <span className="text-sm text-muted-foreground">—</span>;
                             }
                             return (
@@ -386,12 +403,12 @@ export default async function PortalInvoicesPage({
                                     invoiceId={vm.invoiceId}
                                     documentNumber={vm.documentNumber ?? vm.invoiceId}
                                     label={
-                                      r.status === 'void'
+                                      vm.displayStatus === 'void'
                                         ? t('actions.downloadVoided')
                                         : t('actions.download')
                                     }
                                     ariaLabel={t(
-                                      r.status === 'void'
+                                      vm.displayStatus === 'void'
                                         ? 'actions.downloadVoidedAria'
                                         : 'actions.downloadInvoiceAria',
                                       {
@@ -417,12 +434,24 @@ export default async function PortalInvoicesPage({
                                         ? t('actions.downloadCombined')
                                         : t('actions.downloadReceipt')
                                     }
-                                    ariaLabel={t('actions.downloadReceiptAria', {
-                                      number:
-                                        vm.receiptNumber ??
-                                        vm.documentNumber ??
-                                        vm.invoiceId,
-                                    })}
+                                    // 060-member-portal-d4 (F2) — branch the aria
+                                    // on `vm.isCombinedPaid` so the SR name matches
+                                    // the visible combined label ("Tax invoice /
+                                    // Receipt"). Previously hardcoded to
+                                    // `downloadReceiptAria` ("Download tax receipt
+                                    // PDF"), contradicting the combined visible
+                                    // text. Mirrors the card.
+                                    ariaLabel={t(
+                                      vm.isCombinedPaid
+                                        ? 'actions.downloadCombinedAria'
+                                        : 'actions.downloadReceiptAria',
+                                      {
+                                        number:
+                                          vm.receiptNumber ??
+                                          vm.documentNumber ??
+                                          vm.invoiceId,
+                                      },
+                                    )}
                                     className={cn(
                                       buttonVariants({ variant: 'ghost', size: 'sm' }),
                                       'min-h-11 px-3',

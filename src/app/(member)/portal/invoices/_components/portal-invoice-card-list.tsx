@@ -171,7 +171,15 @@ export function PortalInvoiceCardList({
                     icon-only square at the END of a row of text buttons is the
                     conventional placement (mirrors the desktop table's
                     trailing ghost resend) and keeps the primary "grab my
-                    document" CTAs leftmost where the eye lands first. */}
+                    document" CTAs leftmost where the eye lands first.
+
+                    060-member-portal-d4 (F4) — when there is NO action to show
+                    (`!vm.hasAnyAction`: an issued invoice whose PDF hasn't
+                    rendered → all four flags false) render the SAME em-dash
+                    sentinel the desktop table renders, INSTEAD of an empty
+                    action group (which previously left a blank gap after the
+                    Separator). */}
+                {vm.hasAnyAction ? (
                 <div className="flex flex-wrap items-center gap-2">
                   {vm.showInvoice && (
                     <PortalInvoiceDownloadButton
@@ -260,6 +268,11 @@ export function PortalInvoiceCardList({
                     />
                   ) : null}
                 </div>
+                ) : (
+                  // No document/action to show — mirror the desktop table's
+                  // em-dash sentinel instead of an empty action group.
+                  <span className="text-sm text-muted-foreground">—</span>
+                )}
               </CardContent>
             </Card>
           </li>
