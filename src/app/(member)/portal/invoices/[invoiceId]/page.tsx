@@ -477,13 +477,20 @@ export default async function PortalInvoiceDetailPage({
 
       <Card>
         <CardHeader>
-          <h2 className="font-heading text-base font-medium leading-snug">
+          <h2
+            id="invoice-lines-heading"
+            className="font-heading text-base font-medium leading-snug"
+          >
             {t('linesHeading')}
           </h2>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="overflow-x-auto">
-            <Table aria-label={t('linesHeading')}>
+            {/* aria-labelledby (not aria-label) so the table's accessible name
+                reuses the visible <h2> instead of announcing the same string
+                twice (heading + table name) — mirrors the void/auto-refund
+                sections above. */}
+            <Table aria-labelledby="invoice-lines-heading">
               <TableHeader>
                 <TableRow>
                   <TableHead scope="col">{t('lines.description')}</TableHead>
