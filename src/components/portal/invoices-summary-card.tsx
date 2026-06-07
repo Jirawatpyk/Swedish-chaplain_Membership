@@ -26,7 +26,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, hashId, rootCause } from '@/lib/log-id';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -84,6 +84,36 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
   );
 
   if (!memberResult.ok) {
+    // 060-member-portal-d4 (I5) — `findByLinkedUserId` returns TWO distinct
+    // errors: `repo.not_found` (no contact links this session user — genuine,
+    // expected) and `repo.unexpected` (a DB/RLS error THREW, wrapped by the
+    // repo). Previously both collapsed to the "not linked" card with no log, so
+    // a transient DB failure told a legitimately-linked member their account
+    // wasn't linked (wrong + unactionable) and gave operators zero signal.
+    // Discriminate on the code: anything other than `repo.not_found` is a real
+    // failure → log the CLASS (errKind) + a hashed user id (never the raw id —
+    // CLAUDE.md § Secrets) and render the loadFailed variant.
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.warn(
+        {
+          tenantId: tenantCtx.slug,
+          userIdHash: hashId(user.id),
+          errKind: errKind(rootCause(memberResult.error)),
+        },
+        '[portal-invoices-summary] member lookup failed — rendering error variant',
+      );
+      return (
+        <Card>
+          <CardHeader>
+            <h2 className="font-heading text-base font-medium leading-snug">{t('summary.heading')}</h2>
+            <CardDescription>{t('summary.description')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-caption text-muted-foreground">{t('loadFailed')}</p>
+          </CardContent>
+        </Card>
+      );
+    }
     // Not-linked state: surface the same copy the full list uses so
     // members don't get conflicting signals across portal surfaces.
     return (

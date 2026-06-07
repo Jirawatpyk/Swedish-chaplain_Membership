@@ -56,13 +56,11 @@ vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
 }));
 
+const findByLinkedUserIdMock = vi.fn();
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({
     memberRepo: {
-      findByLinkedUserId: vi.fn().mockResolvedValue({
-        ok: true,
-        value: { memberId: 'm1' },
-      }),
+      findByLinkedUserId: (...args: unknown[]) => findByLinkedUserIdMock(...args),
     },
   }),
 }));
@@ -85,6 +83,10 @@ describe('<InvoicesSummaryCard> — read-throw resilience (finding B3)', () => {
   beforeEach(() => {
     warnSpy.mockClear();
     listInvoicesPagedMock.mockReset();
+    findByLinkedUserIdMock.mockReset();
+    // Default: the session user IS linked to a member (the I5 tests below
+    // override this per-case).
+    findByLinkedUserIdMock.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
   });
 
   it('renders the error variant (loadFailed) when the invoice read THROWS — not a crash', async () => {
@@ -108,5 +110,54 @@ describe('<InvoicesSummaryCard> — read-throw resilience (finding B3)', () => {
     expect(ctx).not.toHaveProperty('error');
     expect(ctx).not.toHaveProperty('message');
     expect(msg).toContain('portal-invoices-summary');
+  });
+});
+
+describe('<InvoicesSummaryCard> — member lookup error vs not-linked (finding I5)', () => {
+  beforeEach(() => {
+    warnSpy.mockClear();
+    listInvoicesPagedMock.mockReset();
+    // The member lookup fails BEFORE the invoice read in every I5 case, so the
+    // invoice read is never reached; resolve OK as a defensive default.
+    listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows: [] } });
+    findByLinkedUserIdMock.mockReset();
+  });
+
+  it('repo.not_found → renders notLinked (genuine, expected) and does NOT log', async () => {
+    findByLinkedUserIdMock.mockResolvedValue({ ok: false, error: { code: 'repo.not_found' } });
+    const html = await renderCard();
+    expect(html).toContain(en.portal.invoices.notLinked);
+    // Not a DB failure → no diagnostic.
+    expect(warnSpy).not.toHaveBeenCalled();
+    // Must NOT render the loadFailed error variant for a genuine no-link.
+    expect(html).not.toContain('load your invoices right now');
+    expect(html).not.toContain('MISSING_KEY:');
+  });
+
+  it('repo.unexpected (DB/RLS error) → renders loadFailed (NOT notLinked) + logs errKind only', async () => {
+    findByLinkedUserIdMock.mockResolvedValue({
+      ok: false,
+      error: { code: 'repo.unexpected', cause: new TypeError('boom') },
+    });
+    const html = await renderCard();
+    // A transient DB error must NOT tell a linked member "not linked".
+    expect(html).not.toContain(en.portal.invoices.notLinked);
+    // It renders the distinct error variant instead.
+    expect(html).toContain('load your invoices right now');
+    expect(html).not.toContain('MISSING_KEY:');
+    // And it logs the failure CLASS only — never the raw error / PII / raw id.
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [ctx, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
+    expect(ctx).toMatchObject({ tenantId: 'tenant-a' });
+    expect(ctx.errKind).toBe('TypeError');
+    // The user id is HASHED, never raw.
+    expect(ctx).toHaveProperty('userIdHash');
+    expect(ctx.userIdHash).not.toBe('u1');
+    expect(ctx).not.toHaveProperty('userId');
+    expect(ctx).not.toHaveProperty('err');
+    expect(ctx).not.toHaveProperty('error');
+    expect(ctx).not.toHaveProperty('message');
+    expect(msg).toContain('portal-invoices-summary');
+    expect(msg).toContain('member lookup failed');
   });
 });

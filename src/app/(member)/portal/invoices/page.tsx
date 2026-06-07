@@ -20,7 +20,12 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import { errKind, hashId, rootCause } from '@/lib/log-id';
+import {
+  listInvoicesPaged,
+  makeListInvoicesDeps,
+  type ListInvoicesPagedOutput,
+} from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -133,8 +138,38 @@ export default async function PortalInvoicesPage({
   // Resolve the member linked to this user — if none, surface the
   // "not linked" empty state instead of listing zero rows (which
   // would be indistinguishable from "member with no invoices").
+  //
+  // 060-member-portal-d4 (I5) — `findByLinkedUserId` returns TWO distinct
+  // errors: `repo.not_found` (no contact links this session user — genuine,
+  // expected) and `repo.unexpected` (a DB/RLS error THREW, wrapped by the
+  // repo). Previously both collapsed to the "not linked" card with no log, so
+  // a transient DB failure told a legitimately-linked member their account
+  // wasn't linked (wrong + unactionable) and gave operators zero signal. Now
+  // we discriminate: `repo.not_found` → notLinked (no log); ANY OTHER code →
+  // log the failure CLASS (errKind) + a hashed user id (never the raw id —
+  // CLAUDE.md § Secrets) and render the loadFailed card.
   const memberResult = await memberDeps.memberRepo.findByLinkedUserId(tenantCtx, user.id);
   if (!memberResult.ok) {
+    if (memberResult.error.code !== 'repo.not_found') {
+      logger.warn(
+        {
+          tenantId: tenantCtx.slug,
+          userIdHash: hashId(user.id),
+          errKind: errKind(rootCause(memberResult.error)),
+        },
+        '[portal-invoices-list] member lookup failed — rendering error state',
+      );
+      return (
+        <DetailContainer>
+          <PageHeader title={t('title')} subtitle={t('subtitle')} />
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">{t('loadFailed')}</p>
+            </CardContent>
+          </Card>
+        </DetailContainer>
+      );
+    }
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
@@ -164,31 +199,45 @@ export default async function PortalInvoicesPage({
       ? query.subject
       : undefined;
 
-  const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
-    tenantId: tenantCtx.slug,
-    offset,
-    pageSize: PAGE_SIZE,
-    includeDrafts: false, // members never see drafts
-    memberId: member.memberId,
-    search: searchTerm.length > 0 ? searchTerm : undefined,
-    status: statusFilter,
-    ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
-  });
-
   // R7-M3 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
   // Empty fallback is indistinguishable from "no invoices" — members
   // saw a clean empty state on backend failures (DB outage, RLS misconfig,
   // repo bug). Now we log the error AND render an explicit error card
   // with a retry affordance so operators see the diagnostic AND members
   // know to retry instead of assuming their account is empty.
-  if (!invoicesResult.ok) {
+  //
+  // 060-member-portal-d4 (C1) — `listInvoicesPaged` is typed `Result<…, never>`
+  // and the repo's `listPaged` runs inside `runInTenant` with NO try/catch, so
+  // a DB outage / RLS error / SQL bug THROWS rather than returning `!ok`. The
+  // old `if (!invoicesResult.ok)` block was therefore UNREACHABLE — the
+  // member-scoped diagnostic never ran and a real failure bubbled to
+  // `error.tsx` (which logs WITHOUT tenantId/memberId). Wrap the call so a
+  // thrown read renders the loadFailed card and logs the failure CLASS only
+  // (errKind — never the raw error / SQL / PII). The `!ok` narrow is kept for
+  // type-completeness (the union still carries `Err<never>`) but is
+  // unreachable-by-design: it throws into the same catch.
+  let pageData: ListInvoicesPagedOutput;
+  try {
+    const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
+      tenantId: tenantCtx.slug,
+      offset,
+      pageSize: PAGE_SIZE,
+      includeDrafts: false, // members never see drafts
+      memberId: member.memberId,
+      search: searchTerm.length > 0 ? searchTerm : undefined,
+      status: statusFilter,
+      ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
+    });
+    if (!invoicesResult.ok) throw new Error('unreachable');
+    pageData = invoicesResult.value;
+  } catch (e) {
     logger.warn(
       {
         tenantId: tenantCtx.slug,
         memberId: member.memberId,
-        err: invoicesResult.error,
+        errKind: errKind(e),
       },
-      '[portal-invoices-list] listInvoicesPaged failed — rendering error state',
+      '[portal-invoices-list] listInvoicesPaged threw — rendering error state',
     );
     return (
       <DetailContainer>
@@ -201,8 +250,8 @@ export default async function PortalInvoicesPage({
       </DetailContainer>
     );
   }
-  const rawRows = invoicesResult.value.rows;
-  const total = invoicesResult.value.total;
+  const rawRows = pageData.rows;
+  const total = pageData.total;
   // T109 — presentation-only overdue derivation (FR-028). Each row's
   // view-model swaps `'issued'` for `'overdue'` (via `toInvoiceRowViewModel`,
   // which calls `computeIsOverdue` internally) when Bangkok-today has
