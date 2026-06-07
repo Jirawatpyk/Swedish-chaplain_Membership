@@ -70,6 +70,13 @@ interface SearchParams {
   readonly page?: string;
   readonly q?: string;
   readonly status?: string;
+  // 054-event-fee-invoices — subject (membership/event) + paid-online filters.
+  // The shared InvoiceFilters control writes ?subject= / ?paidOnline=1 to the
+  // URL; the portal page must read + thread them. Pre-existing gap: 054 wired
+  // these on the admin list but NOT the member portal, so both controls were
+  // dead here (the dropdown changed the URL but the list never filtered).
+  readonly subject?: string;
+  readonly paidOnline?: string;
 }
 
 type StatusFilter = 'all' | 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited';
@@ -129,6 +136,15 @@ export default async function PortalInvoicesPage({
   const offset = (page - 1) * PAGE_SIZE;
   const searchTerm = (query.q ?? '').trim().slice(0, 100);
   const statusFilter = parseStatusFilter(query.status);
+  // 054-event-fee-invoices — subject (membership/event) + paid-online filters,
+  // mirroring the admin list (admin/invoices/page.tsx) so the portal honours
+  // the same InvoiceFilters controls. Only the two known subjects are honoured;
+  // anything else falls through to "all subjects".
+  const subjectFilter =
+    query.subject === 'membership' || query.subject === 'event'
+      ? query.subject
+      : undefined;
+  const paidOnlineOnly = query.paidOnline === '1';
 
   const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
@@ -138,6 +154,8 @@ export default async function PortalInvoicesPage({
     memberId: member.memberId,
     search: searchTerm.length > 0 ? searchTerm : undefined,
     status: statusFilter,
+    ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
+    ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
   });
 
   // R7-M3 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
@@ -186,7 +204,11 @@ export default async function PortalInvoicesPage({
     vm: toInvoiceRowViewModel(r, nowUtcIso),
   }));
 
-  const hasActiveFilter = searchTerm.length > 0 || statusFilter !== 'all';
+  const hasActiveFilter =
+    searchTerm.length > 0 ||
+    statusFilter !== 'all' ||
+    subjectFilter !== undefined ||
+    paidOnlineOnly;
 
   return (
     <DetailContainer>
