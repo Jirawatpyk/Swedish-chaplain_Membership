@@ -255,7 +255,7 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       expect(container.querySelector('#data-privacy')).toBeNull();
       // I1: genuine fault is alertable at ERROR (not warn).
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(String) }),
+        expect.objectContaining({ errKind: expect.any(String) }),
         'portal.account.member_lookup_failed',
       );
     });
@@ -275,7 +275,7 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       expect(container.querySelector('#appearance')).not.toBeNull();
       expect(container.querySelector('#renewal-prefs')).toBeNull();
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(String) }),
+        expect.objectContaining({ errKind: expect.any(String) }),
         'portal.account.hub_seed_failed',
       );
     });
@@ -298,7 +298,7 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       expect(container.querySelector('#appearance')).not.toBeNull();
       // S-renewal-breadcrumb: independently observable on its own key.
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(String) }),
+        expect.objectContaining({ errKind: expect.any(String) }),
         'portal.account.renewal_flags_read_failed',
       );
     });
@@ -320,7 +320,7 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       // inside the panel rather than 500-ing the page.
       expect(container.querySelector('#data-privacy')).not.toBeNull();
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(String) }),
+        expect.objectContaining({ errKind: expect.any(String) }),
         'portal.account.data_export_list_failed',
       );
     });

@@ -2,8 +2,9 @@
  * `/portal/preferences/renewals` — PRESERVED route (spec §4.5 + §97).
  *
  * Renewal-reminder emails hardcode `${baseUrl}/portal/preferences/renewals`
- * (renewals/.../dispatch-one-cycle.ts + retry-failed-reminders.ts +
- * base-renewal-layout.tsx). This route is PERMANENTLY moved — the opt-out UI
+ * (in renewals/.../dispatch-one-cycle.ts + retry-failed-reminders.ts;
+ * base-renewal-layout.tsx receives it via its `preferencesUrl` prop, it does
+ * NOT hardcode it). This route is PERMANENTLY moved — the opt-out UI
  * now lives in the consolidated
  * Account hub, so this route permanently redirects (308, browser-cacheable)
  * to that section. A 404 here would break the PDPA opt-out path (ship

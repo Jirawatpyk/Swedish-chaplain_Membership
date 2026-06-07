@@ -129,7 +129,7 @@ export default async function MemberAccountPage() {
       } else {
         logger.warn(
           {
-            err: errKind(rootCause(localeResult.error)),
+            errKind: errKind(rootCause(localeResult.error)),
             tenantId: tenant.slug,
             userIdHash: hashId(user.id),
           },
@@ -162,7 +162,7 @@ export default async function MemberAccountPage() {
       } catch (err) {
         logger.error(
           {
-            err: errKind(err),
+            errKind: errKind(err),
             tenantId: tenant.slug,
             userIdHash: hashId(user.id),
           },
@@ -178,7 +178,7 @@ export default async function MemberAccountPage() {
       // defaults (memberId stays null) — the never-500 contract holds.
       logger.error(
         {
-          err: errKind(rootCause(memberLookup.error)),
+          errKind: errKind(rootCause(memberLookup.error)),
           tenantId: tenant.slug,
           userIdHash: hashId(user.id),
         },
@@ -188,7 +188,7 @@ export default async function MemberAccountPage() {
   } catch (err) {
     logger.error(
       {
-        err: errKind(err),
+        errKind: errKind(err),
         tenantId: tenant.slug,
         userIdHash: hashId(user.id),
       },
@@ -205,7 +205,7 @@ export default async function MemberAccountPage() {
     } catch (err) {
       logger.warn(
         {
-          err: errKind(err),
+          errKind: errKind(err),
           tenantId: tenant.slug,
           userIdHash: hashId(user.id),
         },

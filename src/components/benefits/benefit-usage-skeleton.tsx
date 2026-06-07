@@ -21,7 +21,8 @@ export function BenefitUsageSkeleton({
     <Card>
       <CardHeader>
         {/* CardHeader on the real card holds an <h2> title row + a caption
-            ("live figures") line — mirror both so the header height matches. */}
+            (the liveNote "Updated on load · current year" line) — mirror both
+            so the header height matches. */}
         <div className="flex items-center justify-between gap-3">
           <Skeleton className="h-5 w-48" />
         </div>
