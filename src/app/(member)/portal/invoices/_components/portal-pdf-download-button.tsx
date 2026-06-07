@@ -24,7 +24,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
 import { downloadPdf, type PdfDownloadToasts } from '@/lib/download-pdf-client';
 import { cn } from '@/lib/utils';
 
@@ -126,11 +126,16 @@ function PortalPdfDownloadButton({
       className={cn('inline-flex items-center justify-center gap-1', className)}
       {...(testId !== undefined && { 'data-testid': testId })}
     >
-      {loading && (
+      {/* Download affordance: a static download icon when idle, swapped for a
+          spinner while the PDF is being fetched. Signals the action + balances
+          the icon-only resend button in the same action row. */}
+      {loading ? (
         <Loader2
           className="size-4 motion-safe:animate-spin"
           aria-hidden="true"
         />
+      ) : (
+        <Download className="size-4" aria-hidden="true" />
       )}
       {label}
     </button>
