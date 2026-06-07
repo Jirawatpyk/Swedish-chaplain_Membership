@@ -90,10 +90,10 @@ export function PayNowButton({
         <Button
           type="button"
           variant="default"
-          size="default"
+          size="sm"
           onClick={() => setOpen(true)}
           data-testid="pay-now-button"
-          className="px-4"
+          className="min-h-11 px-4"
         >
           {t('payNow')}
         </Button>
