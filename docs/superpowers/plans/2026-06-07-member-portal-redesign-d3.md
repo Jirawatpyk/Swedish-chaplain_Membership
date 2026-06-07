@@ -52,6 +52,13 @@ Page-header action rows use `h-9` (36px) per § 19 ("Pay / Issue / Void / Downlo
 Update `[invoiceId]/loading.tsx` so the lines + totals skeleton cards carry their title skeleton **inside** `CardHeader` and the header action skeleton is `h-9`. Add `totals.heading` to all three locales; `pnpm check:i18n` green (parity) + code-ref grep (every touched `t()` resolves in en.json).
 - **Acceptance:** skeleton card shape matches the real cards (no shimmer→content shift); `check:i18n` OK; `check:layout` OK.
 
+### Task 5 — invoice-download button label parallelism — `- [x]` DONE
+The invoice-PDF download button rendered `portal.invoices.actions.download` = **"PDF"** while the receipt button beside it rendered `downloadReceipt` = **"Receipt"** — a format-vs-document-type mismatch (both download a PDF; only the document type distinguishes them). Audit confirmed every consumer of `portal.invoices.actions.download` is an invoice-download button (list, detail, dashboard summary-card; renewal-success uses aria-only; credit-notes uses its own `portal.creditNotes` namespace), so the value is safe to change. Relabel to the document type, matching the existing `downloadCombined` ("Tax Invoice / Receipt") terminology:
+- EN "PDF" → **"Invoice"** (pairs with "Receipt")
+- TH "PDF" → **"ใบกำกับภาษี"** (pairs with "ใบเสร็จ")
+- SV "PDF" → **"Faktura"** (pairs with "Kvitto")
+- **Acceptance:** the two download buttons read as a parallel "Invoice" / "Receipt" pair in all three locales; `check:i18n` OK; no other consumer regressed (aria labels unchanged).
+
 ---
 
 ## Deferred / follow-up (NOT in D3)

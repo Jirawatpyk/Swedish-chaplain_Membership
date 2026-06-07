@@ -3992,7 +3992,7 @@
         "actions": "Åtgärder"
       },
       "actions": {
-        "download": "PDF",
+        "download": "Faktura",
         "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
         "downloadReceipt": "Kvitto",
         "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",

@@ -3992,7 +3992,7 @@
         "actions": "Actions"
       },
       "actions": {
-        "download": "PDF",
+        "download": "Invoice",
         "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
         "downloadReceipt": "Receipt",
         "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
