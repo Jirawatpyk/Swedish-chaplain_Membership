@@ -37,7 +37,6 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   computeQuotaCounter,
@@ -45,7 +44,7 @@ import {
   makeComputeQuotaDeps,
   makeListMemberBroadcastsDeps,
 } from '@/modules/broadcasts';
-import { asMemberId } from '@/modules/members';
+import { asMemberId, type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { intlLocale, shouldShowPlanChangedExplainer } from '../e-blasts/_helpers/quota-banner';
@@ -54,8 +53,19 @@ const PER_PAGE = 10;
 
 export async function BroadcastsPanel({
   requestedPage,
+  memberId,
 }: {
   readonly requestedPage: number;
+  /**
+   * The signed-in member's id, resolved ONCE by the Benefits page
+   * (`findByLinkedUserId`) and threaded down. The page renders its
+   * not-found empty card BEFORE this panel, so `memberId` is guaranteed
+   * non-null here — the panel no longer re-derives the session/member
+   * (removes 4 duplicate DB roundtrips per load and the bug where a
+   * transient lookup failure silently fell into the "unlinked" path,
+   * leaving the Compose CTA enabled with zeroed quota). xhigh #2/#3.
+   */
+  readonly memberId: MemberId;
 }): Promise<React.ReactElement> {
   const t = await getTranslations('portal.broadcasts.list');
   const tStatus = await getTranslations('portal.broadcasts.list.status');
@@ -71,11 +81,10 @@ export async function BroadcastsPanel({
     dateStyle: 'long',
   });
 
-  const session = await requireSession('member');
+  // `memberId` is supplied by the page (resolved once via the session).
+  // `membersDeps` is still needed for the F3 `findLastPlanChangedAt` port.
   const tenant = resolveTenantFromRequest();
   const membersDeps = buildMembersDeps(tenant);
-  const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, session.user.id);
-  const memberId = memberLookup.ok ? memberLookup.value.memberId : null;
 
   let quota: {
     used: number;
@@ -98,7 +107,11 @@ export async function BroadcastsPanel({
   }> = [];
   let pagination = { page: 1, totalPages: 0, total: 0 };
 
-  if (memberId !== null) {
+  {
+    // `memberId` is always present (page-resolved). Bare block scope keeps
+    // the parallel-fetch locals from leaking — the outer `let`s above are
+    // the panel's render inputs. xhigh #2/#3.
+    //
     // Parallelise the 3 independent DB roundtrips (quota + plan-changed
     // audit + history) via Promise.allSettled. Previously sequential
     // (~260ms total Neon Singapore) which crossed the streaming

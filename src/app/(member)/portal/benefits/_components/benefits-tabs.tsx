@@ -22,10 +22,19 @@ import { BENEFITS_TAB, type BenefitsTab } from '../_helpers/tabs';
 
 export function BenefitsTabs({
   active,
+  showBroadcastsTab,
   benefitsPanel,
   broadcastsPanel,
 }: {
   readonly active: BenefitsTab;
+  /**
+   * F7 kill-switch (break-glass). When false, the Broadcasts trigger + panel
+   * are not rendered at all and only the Benefits tab is shown. The page
+   * already forces `active` back to `benefits` when F7 is off, so a hand-
+   * crafted `?tab=broadcasts` cannot reach the broadcasts panel. Normally
+   * true (F7 is shipped). xhigh #12.
+   */
+  readonly showBroadcastsTab: boolean;
   readonly benefitsPanel: React.ReactNode;
   readonly broadcastsPanel: React.ReactNode;
 }): React.ReactElement {
@@ -45,14 +54,18 @@ export function BenefitsTabs({
     <Tabs value={active} onValueChange={onValueChange} aria-busy={isPending}>
       <TabsList aria-label={t('ariaLabel')} variant="line">
         <TabsTrigger value={BENEFITS_TAB.benefits}>{t('benefits')}</TabsTrigger>
-        <TabsTrigger value={BENEFITS_TAB.broadcasts}>{t('broadcasts')}</TabsTrigger>
+        {showBroadcastsTab ? (
+          <TabsTrigger value={BENEFITS_TAB.broadcasts}>{t('broadcasts')}</TabsTrigger>
+        ) : null}
       </TabsList>
       <TabsContent value={BENEFITS_TAB.benefits} className="pt-4">
         {active === BENEFITS_TAB.benefits ? benefitsPanel : null}
       </TabsContent>
-      <TabsContent value={BENEFITS_TAB.broadcasts} className="pt-4">
-        {active === BENEFITS_TAB.broadcasts ? broadcastsPanel : null}
-      </TabsContent>
+      {showBroadcastsTab ? (
+        <TabsContent value={BENEFITS_TAB.broadcasts} className="pt-4">
+          {active === BENEFITS_TAB.broadcasts ? broadcastsPanel : null}
+        </TabsContent>
+      ) : null}
     </Tabs>
   );
 }

@@ -17,6 +17,7 @@ import { UserX } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
@@ -57,7 +58,18 @@ export default async function PortalBenefitsPage(props: {
   const t = await getTranslations('benefits.page');
   const locale = await getLocale();
   const { tab, page } = await props.searchParams;
-  const activeTab = resolveBenefitsTab(tab);
+
+  // F7 kill-switch (break-glass) — gate the Broadcasts tab server-side using
+  // the SAME flag the proxy checks (`env.features.f7Broadcasts`). The proxy is
+  // pathname-based and blocks `/portal/broadcasts/**` + `/portal/benefits/
+  // e-blasts`, but the broadcasts CONTENT lives at `/portal/benefits?tab=
+  // broadcasts` — a query param the proxy can't see. So when F7 is OFF we must
+  // hide the surface here: force the active tab back to Benefits (so a hand-
+  // crafted `?tab=broadcasts` falls back), don't build the broadcasts panel,
+  // and never call computeQuotaCounter / listMemberBroadcasts. F7 is normally
+  // ON (shipped); this only fires on the operator break-glass path. xhigh #12.
+  const f7Enabled = env.features.f7Broadcasts;
+  const activeTab = f7Enabled ? resolveBenefitsTab(tab) : BENEFITS_TAB.benefits;
 
   // Broadcast-tab pagination param. Clamp to [1, 1000] so a hand-crafted
   // ?page=-5 / ?page=99999 can't drive an out-of-range DB offset; the panel
@@ -90,6 +102,12 @@ export default async function PortalBenefitsPage(props: {
   }
   const member = memberResult.value;
 
+  // SC-012 self-view adoption metric — fire once after the member is resolved,
+  // for ANY tab. A `?tab=broadcasts` visit is still a benefits-page view, so
+  // emitting it here (not inside the benefits arm) restores the original main-
+  // branch semantics where every member visit counted. xhigh #13.
+  insightsMetrics.benefitViewed('member', tenant.slug);
+
   // Render only the ACTIVE panel server-side. The inactive panel stays null so
   // we never do the other tab's DB roundtrips on a page that won't show them.
   let benefitsPanel: React.ReactNode = null;
@@ -105,7 +123,6 @@ export default async function PortalBenefitsPage(props: {
       throw new Error(`computeBenefitUsage failed: ${result.error.code}`);
     }
     const usage = result.value;
-    insightsMetrics.benefitViewed('member', tenant.slug);
 
     const quantifiable: BenefitUsageItem[] = usage.quantifiable.map((b) =>
       b.key === 'eblast' ? { ...b, actionHref: EBLAST_COMPOSE_HREF } : { ...b },
@@ -126,9 +143,12 @@ export default async function PortalBenefitsPage(props: {
     );
   }
 
+  // Only built when F7 is enabled AND the broadcasts tab is active — so on the
+  // break-glass path (activeTab forced to benefits) this stays null and the
+  // broadcasts quota/history reads never run. xhigh #12.
   const broadcastsPanel =
     activeTab === BENEFITS_TAB.broadcasts ? (
-      <BroadcastsPanel requestedPage={requestedPage} />
+      <BroadcastsPanel requestedPage={requestedPage} memberId={member.memberId} />
     ) : null;
 
   return (
@@ -136,6 +156,7 @@ export default async function PortalBenefitsPage(props: {
       <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
       <BenefitsTabs
         active={activeTab}
+        showBroadcastsTab={f7Enabled}
         benefitsPanel={benefitsPanel}
         broadcastsPanel={broadcastsPanel}
       />

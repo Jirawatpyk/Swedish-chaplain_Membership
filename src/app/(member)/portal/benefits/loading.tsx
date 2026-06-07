@@ -1,7 +1,12 @@
 /**
  * Route-level loading skeleton for `/portal/benefits` (ux-standards § 2.1).
- * Updated for 058 G1: shows a two-tab shimmer + panel skeleton so a
- * ?tab=broadcasts deep-link doesn't flash the wrong shape (CLS = 0 per §10).
+ *
+ * 058 G1: a route-level `loading.tsx` receives NO props, so it cannot read
+ * `?tab=` — it renders a NEUTRAL two-tab chrome + a single benefits-shaped
+ * panel skeleton. On a `?tab=broadcasts` cold-load the user therefore sees
+ * this neutral panel skeleton briefly, then the broadcasts panel swaps in
+ * (a minor, accepted shape difference — not zero CLS). The default
+ * `?tab=benefits` load is shape-matched. xhigh #11.
  */
 import { DetailContainer } from '@/components/layout';
 import { Skeleton } from '@/components/ui/skeleton';
