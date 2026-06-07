@@ -22,11 +22,18 @@ const LAYOUT_IMPORT_RE =
   /import\s*\{[^}]+\}\s*from\s*['"]@\/components\/layout(?:\/[^'"]+)?['"]/g;
 
 // Redirect-only page detection.
-//   - imports `redirect` from `next/navigation`
-//   - calls `redirect(`
+//   - imports a control-flow helper from `next/navigation`
+//     (`redirect` / `permanentRedirect` (058 D2 switched legacy routes to 308)
+//      / `notFound` (the data-export route 404s when FEATURE_F9_DASHBOARD is
+//      dark, then permanentRedirects when on))
+//   - calls one of those helpers
+// NOTE: `\bredirect\b` matches `redirect` but NOT `permanentRedirect` (the
+// embedded `Redirect` has an uppercase R), so both alternatives are listed
+// explicitly. `permanentRedirect` is listed before `redirect` so the regex
+// engine prefers the longer token.
 const REDIRECT_IMPORT_RE =
-  /import\s*\{[^}]*\bredirect\b[^}]*\}\s*from\s*['"]next\/navigation['"]/;
-const REDIRECT_CALL_RE = /\bredirect\s*\(/;
+  /import\s*\{[^}]*\b(?:permanentRedirect|redirect|notFound)\b[^}]*\}\s*from\s*['"]next\/navigation['"]/;
+const REDIRECT_CALL_RE = /\b(?:permanentRedirect|redirect|notFound)\s*\(/;
 // A real page returns a JSX tree: `return (` followed (soon) by `<`.
 // Used as the negative guard so a real page that *conditionally* redirects
 // while ALSO rendering a layout is NOT mistaken for a redirect-only page.
@@ -68,12 +75,19 @@ function findContainers(source: string): Container[] {
  * /portal/account#renewal-prefs). Such a page has no container to require, so
  * it is exempt from the layout-container rule.
  *
+ * The redirect helper may be `redirect` (307), `permanentRedirect` (308 — 058
+ * D2 switched the legacy routes to a cacheable permanent redirect), or
+ * `notFound` (the data-export route 404s when FEATURE_F9_DASHBOARD is dark,
+ * then permanentRedirects when on — still no layout in either branch).
+ *
  * The heuristic is deliberately PRECISE so it never exempts a real page that
- * conditionally calls `redirect()` while ALSO rendering a layout (e.g.
+ * conditionally calls one of these helpers while ALSO rendering a layout (e.g.
  * admin/plans/new redirects after a successful create but otherwise renders a
- * FormContainer). A file is redirect-only ONLY when ALL hold:
- *   1. it imports `redirect` from `next/navigation`, AND
- *   2. it contains a `redirect(` call, AND
+ * FormContainer; profile/directory notFound()s when F9 is dark but otherwise
+ * renders a DetailContainer). A file is redirect-only ONLY when ALL hold:
+ *   1. it imports `redirect` / `permanentRedirect` / `notFound` from
+ *      `next/navigation`, AND
+ *   2. it contains a call to one of them, AND
  *   3. it imports ZERO layout containers, AND
  *   4. it returns NO JSX tree (`return (` followed by `<`).
  * If a file imports a container OR returns JSX, it is a real page and stays

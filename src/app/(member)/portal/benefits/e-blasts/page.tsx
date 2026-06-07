@@ -8,8 +8,8 @@
  * The `_helpers/quota-banner.ts` module stays — BroadcastsPanel + the broadcast
  * detail page still import it.
  */
-import { redirect } from 'next/navigation';
+import { permanentRedirect } from 'next/navigation';
 
 export default async function EblastsRedirectPage(): Promise<never> {
-  redirect('/portal/benefits?tab=broadcasts');
+  permanentRedirect('/portal/benefits?tab=broadcasts');
 }
