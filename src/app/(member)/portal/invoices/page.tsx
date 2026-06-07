@@ -548,6 +548,22 @@ export default async function PortalInvoicesPage({
                                     {t('actions.receiptPreparing')}
                                   </span>
                                 )}
+                                {/* S1 fix — TERMINAL receipt-render failure.
+                                    A 'failed' receiptPdfStatus is NOT in-progress,
+                                    so it must NOT reuse the receiptPending spinner
+                                    (role=status + aria-busy) — that mislabels a
+                                    permanent failure as a perpetual "preparing"
+                                    state. Render a static, muted "Receipt
+                                    unavailable" label with NO aria-busy and NO
+                                    spinner. The member can still grab the Invoice
+                                    PDF (showInvoice) and a receipt action surfaces
+                                    the existing 502 toast. Identical affordance on
+                                    the mobile card (same vm.receiptFailed flag). */}
+                                {vm.receiptFailed && (
+                                  <span className="text-sm text-muted-foreground">
+                                    {t('actions.receiptUnavailable')}
+                                  </span>
+                                )}
                               </div>
                             );
                           })()}

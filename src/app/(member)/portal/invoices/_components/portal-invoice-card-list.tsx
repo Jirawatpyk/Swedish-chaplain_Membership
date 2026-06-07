@@ -249,6 +249,16 @@ export function PortalInvoiceCardList({
                         {t('actions.receiptPreparing')}
                       </span>
                     )}
+                    {/* S1 fix — TERMINAL receipt-render failure. Identical to
+                        the desktop table: a static, muted "Receipt unavailable"
+                        label with NO aria-busy and NO spinner (a 'failed' render
+                        is terminal, not in-progress). Both surfaces consume the
+                        SAME vm.receiptFailed flag so they can never drift. */}
+                    {vm.receiptFailed && (
+                      <span className="text-sm text-muted-foreground">
+                        {t('actions.receiptUnavailable')}
+                      </span>
+                    )}
                     {/* Resend ("Email me a copy") — icon-only square LAST in the
                         row. The compact / icon-only treatment is shared with the
                         desktop table's resend, but the placement diverges (the

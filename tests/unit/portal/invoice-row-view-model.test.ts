@@ -14,11 +14,16 @@
  *   - statuses: issued / paid / void / credited / partially_credited
  *   - isCombinedPaid: paid + receiptNumber null + receiptPdfStatus
  *     'rendered' (combined) vs paid + receiptNumber set (separate)
- *   - showInvoice / showReceipt / receiptPending across the receipt PDF
- *     state machine (null / pending / failed / rendered)
+ *   - showInvoice / showReceipt / receiptPending / receiptFailed across the
+ *     receipt PDF state machine (null / pending / failed / rendered).
+ *     receiptPending fires ONLY for the non-terminal 'pending' state;
+ *     a terminal 'failed' render fires receiptFailed (NEVER receiptPending)
+ *     so a permanent failure is never mislabelled as in-progress (S1 fix).
  *   - resendable: false on void, true on non-void with a PDF
- *   - rowHasAnyAction: derived OR of the four action flags (the shared
- *     empty-actions sentinel gate)
+ *   - rowHasAnyAction: derived OR of the FIVE action flags (the shared
+ *     empty-actions sentinel gate) — includes receiptFailed so a paid +
+ *     pdf=null + failed-receipt row keeps its terminal affordance and does
+ *     NOT collapse to the '—' sentinel
  *   - raw field passthrough (documentNumber / receiptNumber / dates /
  *     total / invoiceId)
  *
@@ -343,46 +348,78 @@ describe('rowHasAnyAction (shared empty-actions sentinel gate)', () => {
     expect(vm.receiptPending).toBe(true);
     expect(rowHasAnyAction(vm)).toBe(true);
   });
+
+  it('true when receiptFailed is the SOLE contributor (paid + pdf null + receipt render FAILED) — S1', () => {
+    // S1 fix: a paid invoice whose issue-time PDF is absent AND whose §105ทวิ
+    // receipt render TERMINALLY failed. Only `receiptFailed` fires —
+    // showInvoice (pdf null), showReceipt (not 'rendered'), receiptPending
+    // (not 'pending') and resendable (pdf null) are all false. The terminal
+    // "Receipt unavailable" affordance hangs ENTIRELY off receiptFailed in the
+    // OR, so this row MUST NOT collapse to the '—' sentinel — that would hide
+    // the only signal the member has that their receipt permanently failed.
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ status: 'paid', pdf: null, receiptPdfStatus: 'failed' }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptPending).toBe(false);
+    expect(vm.resendable).toBe(false);
+    expect(vm.receiptFailed).toBe(true);
+    expect(rowHasAnyAction(vm)).toBe(true);
+  });
 });
 
 describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
-  it('receiptPdfStatus null on a paid invoice → no receipt, no pending', () => {
+  it('receiptPdfStatus null on a paid invoice → no receipt, no pending, no failed', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({ status: 'paid', receiptPdfStatus: null }),
       NOW_PAST_DUE,
     );
     expect(vm.showReceipt).toBe(false);
     expect(vm.receiptPending).toBe(false);
+    expect(vm.receiptFailed).toBe(false);
     // Not combined (needs 'rendered'); PDF present → invoice shown.
     expect(vm.isCombinedPaid).toBe(false);
     expect(vm.showInvoice).toBe(true);
   });
 
-  it("receiptPdfStatus 'pending' on a paid invoice → receiptPending true", () => {
+  it("receiptPdfStatus 'pending' on a paid invoice → receiptPending true, receiptFailed false", () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({ status: 'paid', receiptPdfStatus: 'pending' }),
       NOW_PAST_DUE,
     );
     expect(vm.receiptPending).toBe(true);
+    // S1: 'pending' is the genuine in-progress state — NOT terminal-failed.
+    expect(vm.receiptFailed).toBe(false);
     expect(vm.showReceipt).toBe(false);
   });
 
-  it("receiptPdfStatus 'failed' on a paid invoice → receiptPending true", () => {
+  it("receiptPdfStatus 'failed' on a paid invoice → receiptFailed true, receiptPending false (S1)", () => {
+    // S1 fix: a TERMINAL 'failed' render must NOT be reported as
+    // receiptPending — that mislabelled a permanent failure as a perpetual
+    // aria-busy "preparing" spinner. It is now the terminal `receiptFailed`
+    // flag (drives a static, non-busy "Receipt unavailable" affordance).
     const vm = toInvoiceRowViewModel(
       buildInvoice({ status: 'paid', receiptPdfStatus: 'failed' }),
       NOW_PAST_DUE,
     );
-    expect(vm.receiptPending).toBe(true);
+    expect(vm.receiptFailed).toBe(true);
+    expect(vm.receiptPending).toBe(false);
     expect(vm.showReceipt).toBe(false);
+    // A failed-receipt row is NOT combined-paid (needs 'rendered'); its
+    // issue-time PDF (default fixture) still offers the invoice download.
+    expect(vm.isCombinedPaid).toBe(false);
   });
 
-  it("receiptPdfStatus 'rendered' on a paid invoice → showReceipt true, not pending", () => {
+  it("receiptPdfStatus 'rendered' on a paid invoice → showReceipt true, not pending, not failed", () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({ status: 'paid', receiptPdfStatus: 'rendered' }),
       NOW_PAST_DUE,
     );
     expect(vm.showReceipt).toBe(true);
     expect(vm.receiptPending).toBe(false);
+    expect(vm.receiptFailed).toBe(false);
   });
 
   it('an issued (unpaid) invoice never shows a receipt or pending state', () => {

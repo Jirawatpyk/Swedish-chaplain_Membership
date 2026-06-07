@@ -70,25 +70,52 @@ export interface InvoiceRowViewModel {
   readonly showInvoice: boolean;
   /** Show the receipt-PDF download (paid + receipt PDF rendered). */
   readonly showReceipt: boolean;
-  /** Paid invoice whose receipt PDF is still rendering (pending/failed). */
+  /**
+   * Paid invoice whose receipt PDF is GENUINELY in-progress
+   * (`receiptPdfStatus === 'pending'`). This is the ONLY non-terminal,
+   * non-rendered state — surfaces the `aria-busy` "Receipt preparing…"
+   * live region. A `'failed'` render is terminal and is reported by
+   * `receiptFailed` instead (NEVER as pending) so a permanent failure is
+   * never mislabelled as in-progress (S1 review fix — a terminal failure
+   * presented as a perpetual spinner).
+   */
   readonly receiptPending: boolean;
+  /**
+   * Paid invoice whose receipt PDF render has TERMINALLY failed
+   * (`receiptPdfStatus === 'failed'`). Surfaces a static, non-busy
+   * "Receipt unavailable" affordance (no spinner, no `aria-busy`) — the
+   * terminal counterpart to `receiptPending`. The member can still
+   * download the Invoice PDF when `showInvoice` is true, and clicking a
+   * receipt action surfaces the existing 502 toast.
+   */
+  readonly receiptFailed: boolean;
   /** Resend the invoice email (not void + invoice PDF exists). */
   readonly resendable: boolean;
 }
 
 /**
- * Whether the row has ANY document/action to render in its action cell —
- * a pure OR of the four action flags. When false the row has no
- * downloadable document, no pending receipt, and is not resendable, so
- * both the desktop table cell AND the mobile card render the em-dash
- * sentinel `—` instead of an (empty) action group.
+ * Whether the row has ANY document/action/state to render in its action
+ * cell — a pure OR of the FIVE action flags. When false the row has no
+ * downloadable document, no in-progress receipt, no terminally-failed
+ * receipt, and is not resendable, so both the desktop table cell AND the
+ * mobile card render the em-dash sentinel `—` instead of an (empty)
+ * action group.
+ *
+ * `receiptFailed` is included so a paid + `pdf === null` + receipt-render-
+ * failed row still surfaces its terminal "Receipt unavailable" affordance
+ * (it must NOT collapse to the `—` sentinel — that would hide the only
+ * signal the member has that their receipt render permanently failed).
  *
  * Derived on demand (not stored on the view-model) so it can never drift
- * out of sync with the four flags it summarises — a literal can't set a
- * stale `hasAnyAction` that contradicts the action flags.
+ * out of sync with the flags it summarises — a literal can't set a stale
+ * `hasAnyAction` that contradicts the action flags.
  */
 export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
-  vm.showInvoice || vm.showReceipt || vm.receiptPending || vm.resendable;
+  vm.showInvoice ||
+  vm.showReceipt ||
+  vm.receiptPending ||
+  vm.receiptFailed ||
+  vm.resendable;
 
 /**
  * Pure mapper. `nowUtcIso` MUST be supplied by the caller (do NOT call
@@ -119,12 +146,18 @@ export function toInvoiceRowViewModel(
 
   const showReceipt = row.status === 'paid' && row.receiptPdfStatus === 'rendered';
 
-  // Paid invoice whose §105ทวิ receipt is mid-render (pending/failed),
-  // i.e. receiptPdfStatus is set but not yet 'rendered'.
-  const receiptPending =
-    row.status === 'paid' &&
-    row.receiptPdfStatus !== null &&
-    row.receiptPdfStatus !== 'rendered';
+  // Paid invoice whose §105ทวิ receipt is GENUINELY mid-render — the
+  // single non-terminal, non-rendered state (`receiptPdfStatus` enum is
+  // 'pending' | 'rendered' | 'failed' | null). Narrowed to 'pending' ONLY
+  // (S1 fix): a terminal 'failed' render must NOT show the "preparing"
+  // spinner with aria-busy=true forever — it is reported by `receiptFailed`
+  // below instead.
+  const receiptPending = row.status === 'paid' && row.receiptPdfStatus === 'pending';
+
+  // Paid invoice whose §105ทวิ receipt render TERMINALLY failed — the
+  // terminal counterpart to `receiptPending`. Surfaces a static, non-busy
+  // "Receipt unavailable" affordance (no spinner, no aria-busy).
+  const receiptFailed = row.status === 'paid' && row.receiptPdfStatus === 'failed';
 
   const resendable = row.status !== 'void' && row.pdf !== null;
 
@@ -140,6 +173,7 @@ export function toInvoiceRowViewModel(
     showInvoice,
     showReceipt,
     receiptPending,
+    receiptFailed,
     resendable,
   };
 }
