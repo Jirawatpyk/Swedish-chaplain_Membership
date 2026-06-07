@@ -25,12 +25,6 @@ export interface ResendInvoiceButtonProps {
   readonly variant?: 'ghost' | 'outline';
   /** Compact label vs. full label — 'compact' shows the icon only; 'full' shows text. */
   readonly layout?: 'compact' | 'full';
-  /**
-   * Button size. Defaults to `'sm'` (h-7) for the dense list-row zone.
-   * The detail page passes `'default'` (h-9 = 36px) so the Resend button
-   * aligns with its page-header action-row neighbours (ux-standards § 19).
-   */
-  readonly size?: 'sm' | 'default';
   /** Extra classes (min-h, width). */
   readonly className?: string;
 }
@@ -40,7 +34,6 @@ export function ResendInvoiceButton({
   documentNumber,
   variant = 'ghost',
   layout = 'full',
-  size = 'sm',
   className,
 }: ResendInvoiceButtonProps) {
   const t = useTranslations('portal.invoices');
@@ -101,7 +94,7 @@ export function ResendInvoiceButton({
     <Button
       type="button"
       variant={variant}
-      size={size}
+      size="sm"
       onClick={handleClick}
       disabled={disabled}
       aria-label={t('actions.emailCopyAria', { number: documentNumber })}

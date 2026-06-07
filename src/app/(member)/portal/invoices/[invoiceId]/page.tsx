@@ -256,7 +256,7 @@ export default async function PortalInvoiceDetailPage({
                   documentNumber={documentNumber}
                   variant="ghost"
                   layout="full"
-                  size="default"
+                  className="min-h-11 px-3"
                 />
               ) : null}
               {(() => {
@@ -313,8 +313,8 @@ export default async function PortalInvoiceDetailPage({
                             : tList('actions.downloadInvoiceAria', { number: documentNumber })
                         }`}
                         className={cn(
-                          buttonVariants({ variant: 'default', size: 'default' }),
-                          'px-4',
+                          buttonVariants({ variant: 'default', size: 'sm' }),
+                          'min-h-11 px-4',
                         )}
                         data-testid="portal-download-invoice"
                       />
@@ -334,9 +334,9 @@ export default async function PortalInvoiceDetailPage({
                         className={cn(
                           buttonVariants({
                             variant: isCombinedPaid ? 'default' : 'outline',
-                            size: 'default',
+                            size: 'sm',
                           }),
-                          'px-4',
+                          'min-h-11 px-4',
                         )}
                         data-testid="portal-download-receipt"
                       />
@@ -347,8 +347,8 @@ export default async function PortalInvoiceDetailPage({
                         aria-live="polite"
                         aria-busy="true"
                         className={cn(
-                          buttonVariants({ variant: 'outline', size: 'default' }),
-                          'px-4 cursor-progress',
+                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          'min-h-11 px-4 cursor-progress',
                         )}
                       >
                         {t('pdf.preparing')}

@@ -15,8 +15,9 @@ import {
  * (title in CardHeader + trio). The line-items + totals cards carry a
  * title skeleton INSIDE a CardHeader so the shimmer→content swap
  * doesn't shift (D3 polish — real cards now render their `<h2>` in a
- * CardHeader). The header action skeleton is `h-9` (36px) to match the
- * normalized page-header action buttons (ux-standards § 19).
+ * CardHeader). The header action skeleton is `h-11` (44px) to match the
+ * page-header action buttons — member-portal tappable CTAs are ≥44px
+ * (ux-standards § 9.1, WCAG 2.5.5 AAA on mobile).
  *
  * Real translated title/subtitle to match the settled page header —
  * same convention as the list-loading skeleton. Uses DetailContainer
@@ -36,7 +37,7 @@ export default async function Loading() {
         <PageHeader
           title={t('title')}
           badge={<SkeletonBlock className="h-6 w-20" />}
-          actions={<SkeletonBlock className="h-9 w-28" />}
+          actions={<SkeletonBlock className="h-11 w-28" />}
         />
         <Card>
           <CardContent className="grid gap-4 sm:grid-cols-2">
