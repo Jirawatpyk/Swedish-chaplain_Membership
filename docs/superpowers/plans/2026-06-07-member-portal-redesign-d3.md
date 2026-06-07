@@ -64,7 +64,7 @@ The invoice-PDF download button rendered `portal.invoices.actions.download` = **
 ## Deferred / follow-up (NOT in D3)
 
 - **Mobile table card-view (list page):** the 7-column list table relies on a horizontal-scroll shadow cue; a true mobile card/stacked-row variant is a larger refactor than a polish pass — track as a separate D-series follow-up, not D3.
-- **Void-after-paid receipt-number display:** showing the receipt number on an invoice voided *after* payment touches Thai-tax document semantics (RD § 105ทวิ) — route through a `thai-tax-compliance-auditor` review before changing field visibility; out of scope for a chrome/layout polish pass.
+- **Void-after-paid receipt-number display:** ~~showing the receipt number on an invoice voided after payment~~ — **RESOLVED, no change.** A `thai-tax-compliance-auditor` review (2026-06-07) found the scenario is impossible in Chamber-OS: `paid → void` is blocked at BOTH the application layer (`void-invoice.ts:168` — only `issued` is voidable) and the domain state machine (`invoice.ts:canTransition` — `paid` → only `partially_credited`/`credited`). No row can hold `status='void'` + a non-null `receiptDocumentNumberRaw`, so the `status === 'paid'` guard at `[invoiceId]/page.tsx:461` is correct + complete. **Related finding surfaced by the same review (NOT void-related):** `credited`/`partially_credited` invoices ALSO hide the legally-issued (§105) receipt number on both the member (`:461`) and admin (`admin/invoices/[invoiceId]/page.tsx:556`) pages — a real `paid → credited` path. The credit-note section carries the corrective trail, so it is not a blocker, but a member/staff cross-referencing accounting may want the original receipt number. Fix = widen the guard to `receiptDocumentNumberRaw && ['paid','partially_credited','credited'].includes(status)` on both pages — tracked separately.
 - **Dedicated invoices-i18n render lock test:** `check:i18n` (parity) + the code-ref grep cover the new key; a full detail-page render-sentinel test (like `account-hub.test.tsx`) is heavy (many F4/F5 deps) — optional follow-up.
 
 ---
@@ -72,7 +72,7 @@ The invoice-PDF download button rendered `portal.invoices.actions.download` = **
 ## Acceptance criteria (D3 gate)
 
 - [x] Detail cards: lines + credit-notes + totals titles are real `<h2>` inside `CardHeader` (matches D1/D2 + `benefit-usage-card.tsx`); meta grid untouched.
-- [x] Detail page-header action buttons at 36px (`h-9`) per `ux-standards.md` § 19; list table-row buttons unchanged.
+- [x] Detail page-header + PayNowButton action buttons at **44px** (`min-h-11`) per `ux-standards.md` § 9.1 (≥44px mobile MUST). *(D3 initially set 36px per § 19, but a follow-up xhigh review caught that § 19's 36px governs the admin ⋯ icon-trigger, not mobile member-portal text CTAs; reverted to 44px in `d6f6057a`. The account-hub Appearance buttons were aligned to 44px in `c39b71ce` for the same reason.)* List table-row buttons unchanged.
 - [x] `totals.heading` present in EN/TH/SV (TH/SV reviewed for naturalness + corpus consistency); `pnpm check:i18n` OK.
 - [x] `[invoiceId]/loading.tsx` mirrors the new shape (CLS = 0); `pnpm check:layout` OK.
 - [x] `pnpm typecheck` (excl. `.next`) + `pnpm lint` clean; existing portal/payment unit tests green (258).

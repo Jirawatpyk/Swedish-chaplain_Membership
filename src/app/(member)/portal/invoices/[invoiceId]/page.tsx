@@ -454,11 +454,18 @@ export default async function PortalInvoiceDetailPage({
             </p>
           </div>
           {/* Round 6 portal-harden — surface receipt document number to
-              members in separate-mode + paid. Thai RD requires receipt
-              holders to keep the document; admins see this on the admin
-              detail page (added Round 1). Combined-mode hides this
-              because the invoice number IS the receipt number. */}
-          {invoice.status === 'paid' && invoice.receiptDocumentNumberRaw && (
+              members in separate-mode. Thai RD requires receipt holders to
+              keep the document; admins see this on the admin detail page.
+              Combined-mode hides this (the invoice number IS the receipt
+              number → receiptDocumentNumberRaw is null). Shown on paid AND
+              credited/partially_credited: a §105 receipt number, once issued
+              on payment, is a permanent §87 record the member still needs
+              after a credit note corrects the invoice (the credit-note
+              section below carries the correction). thai-tax review 2026-06-07. */}
+          {invoice.receiptDocumentNumberRaw &&
+            (invoice.status === 'paid' ||
+              invoice.status === 'partially_credited' ||
+              invoice.status === 'credited') && (
             <div>
               <p className="text-caption uppercase tracking-wide text-muted-foreground">
                 {t('fields.receiptNumber')}

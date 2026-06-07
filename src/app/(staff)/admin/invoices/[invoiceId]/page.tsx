@@ -549,11 +549,17 @@ export default async function InvoiceDetailPage({
               <dt className="text-muted-foreground">{t('fields.dueDate')}</dt>
               <dd>{formatDate(invoice.dueDate, userLocale)}</dd>
             </div>
-            {/* Receipt No. — visible only on paid invoices issued under
-                separate-mode numbering (the receipt has its own §87
-                sequence). Combined-mode rows reuse invoice doc number
-                and intentionally render nothing here. */}
-            {invoice.status === 'paid' && invoice.receiptDocumentNumberRaw && (
+            {/* Receipt No. — visible on separate-mode rows (the receipt has
+                its own §87 sequence) that reached payment. Shown on paid AND
+                credited/partially_credited: the receipt number, once issued,
+                is a permanent §87 record even after a credit note corrects
+                the invoice. Combined-mode rows reuse the invoice doc number
+                (receiptDocumentNumberRaw null) and render nothing here.
+                thai-tax review 2026-06-07. */}
+            {invoice.receiptDocumentNumberRaw &&
+              (invoice.status === 'paid' ||
+                invoice.status === 'partially_credited' ||
+                invoice.status === 'credited') && (
               <div>
                 <dt className="text-muted-foreground">{t('fields.receiptNumber')}</dt>
                 <dd
