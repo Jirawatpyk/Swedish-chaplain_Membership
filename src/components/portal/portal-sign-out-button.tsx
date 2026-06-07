@@ -31,7 +31,9 @@ export function PortalSignOutButton() {
   };
 
   return (
-    <Button variant="outline" onClick={handleSignOut}>
+    // min-h-11 = 44px tap target — member-portal CTAs are ≥44px
+    // (ux-standards § 9.1, WCAG 2.5.5 AAA on mobile).
+    <Button variant="outline" className="min-h-11" onClick={handleSignOut}>
       <LogOutIcon className="size-4" aria-hidden />
       {t('signOut')}
     </Button>

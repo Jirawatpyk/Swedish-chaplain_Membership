@@ -92,9 +92,11 @@ export default async function Loading() {
           </HubCardSkeleton>
         ) : null}
 
-        {/* Appearance. */}
+        {/* Appearance: 44px row (theme toggle 44×44 + sign-out 44) — match
+            the real buttons' tap target so the swap doesn't reflow
+            (ux-standards § 9.1). */}
         <HubCardSkeleton>
-          <SkeletonBlock className="h-9 w-full" />
+          <SkeletonBlock className="h-11 w-full" />
         </HubCardSkeleton>
       </FormContainer>
     </PageSkeletonShell>

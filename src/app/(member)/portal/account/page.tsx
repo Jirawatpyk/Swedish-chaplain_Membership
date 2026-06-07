@@ -305,8 +305,10 @@ export default async function MemberAccountPage() {
         title={tPage('sections.appearance')}
         contentClassName="flex flex-wrap items-center justify-between gap-3"
       >
-        {/* icon-lg (36px) so the toggle height matches the 36px sign-out button. */}
-        <ThemeToggle size="icon-lg" />
+        {/* size-11 = 44×44 tap target — member-portal CTAs are ≥44px
+            (ux-standards § 9.1, WCAG 2.5.5 AAA on mobile); matches the
+            44px sign-out button beside it. */}
+        <ThemeToggle className="size-11" />
         <PortalSignOutButton />
       </HubCard>
     </FormContainer>
