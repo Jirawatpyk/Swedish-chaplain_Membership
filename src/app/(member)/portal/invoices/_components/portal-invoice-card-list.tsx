@@ -200,16 +200,16 @@ export function PortalInvoiceCardList({
                       documentNumber={
                         vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId
                       }
-                      // Card label: combined-mode uses the SHORT verb-less
-                      // `card.combinedReceipt` ("Tax invoice / Receipt") — the
-                      // download icon already conveys "download", and the full
-                      // `actions.downloadCombined` ("Download Tax Invoice /
-                      // Receipt") overflows a 320px card. Separate-mode keeps
-                      // the existing short "Receipt". The full combined aria
-                      // label is preserved below for SR users.
+                      // Combined-mode label is the SHORT verb-less
+                      // `actions.downloadCombined` ("Tax invoice / Receipt").
+                      // The verb was dropped from that key so the download icon
+                      // carries "download" and the card + desktop table + detail
+                      // all share one label (no overflow on a 320px card).
+                      // Separate-mode keeps the short "Receipt"; the full
+                      // combined aria label is preserved below for SR users.
                       label={
                         vm.isCombinedPaid
-                          ? t('card.combinedReceipt')
+                          ? t('actions.downloadCombined')
                           : t('actions.downloadReceipt')
                       }
                       ariaLabel={t(

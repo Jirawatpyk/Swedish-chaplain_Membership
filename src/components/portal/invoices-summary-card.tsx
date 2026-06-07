@@ -189,9 +189,16 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
             {rows.map((r) => (
               <li
                 key={r.invoiceId}
-                className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                /* items-start aligns the two columns into a clean 2x2 grid
+                   (doc#+badge ↔ total on the top row, date ↔ download on the
+                   bottom row) instead of vertically centring the trailing
+                   total/button against the 2-line left block. No flex-wrap, so
+                   on a narrow phone the right column stacks under nothing — the
+                   two columns stay side-by-side down to 320px (the labels are
+                   short: doc# + "Invoice"/"Voided invoice"). */
+                className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <Link
                     href={`/portal/invoices/${r.invoiceId}`}
                     className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
@@ -217,7 +224,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 flex-col items-end gap-1">
                   <span className="tabular-nums text-body font-medium">
                     {formatSatangThb(r.total?.satang ?? null, userLocale)}
                   </span>
