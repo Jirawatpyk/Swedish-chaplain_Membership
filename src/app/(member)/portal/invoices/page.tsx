@@ -70,21 +70,38 @@ interface SearchParams {
   readonly page?: string;
   readonly q?: string;
   readonly status?: string;
-  // 054-event-fee-invoices — subject (membership/event) + paid-online filters.
-  // The shared InvoiceFilters control writes ?subject= / ?paidOnline=1 to the
-  // URL; the portal page must read + thread them. Pre-existing gap: 054 wired
-  // these on the admin list but NOT the member portal, so both controls were
-  // dead here (the dropdown changed the URL but the list never filtered).
+  // 054-event-fee-invoices — subject (membership/event) filter. The shared
+  // InvoiceFilters control writes ?subject= to the URL; the portal page reads
+  // + threads it (members can have both membership and event invoices).
+  //
+  // 060-member-portal-d4 — the `?paidOnline=` param is intentionally NOT read
+  // here. It is an admin reconciliation filter (succeeded card/PromptPay
+  // payment); a member who paid OFFLINE (bank transfer/cash) would see their
+  // legitimate invoices vanish. The portal hides the chip (showPaidOnlineChip
+  // ={false}) so it is unreachable from the UI; dropping the parse closes the
+  // remaining hand-typed-URL hole (`?paidOnline=1` is now inert on the portal).
   readonly subject?: string;
-  readonly paidOnline?: string;
 }
 
-type StatusFilter = 'all' | 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited';
+// 'overdue' is a DERIVED filter (issued + Bangkok-today past dueDate), not a
+// stored status. `listInvoicesPaged` accepts it and the repo translates it to
+// `status='issued' AND dueDate < today`. It MUST be honoured here — demoting it
+// to 'all' (the previous behaviour) silently returned EVERY non-draft invoice
+// when a member selected Overdue, never reaching the repo's overdue branch.
+export type StatusFilter =
+  | 'all'
+  | 'issued'
+  | 'paid'
+  | 'overdue'
+  | 'void'
+  | 'credited'
+  | 'partially_credited';
 
-function parseStatusFilter(raw: string | undefined): StatusFilter {
+export function parseStatusFilter(raw: string | undefined): StatusFilter {
   switch (raw) {
     case 'issued':
     case 'paid':
+    case 'overdue':
     case 'void':
     case 'credited':
     case 'partially_credited':
@@ -136,15 +153,15 @@ export default async function PortalInvoicesPage({
   const offset = (page - 1) * PAGE_SIZE;
   const searchTerm = (query.q ?? '').trim().slice(0, 100);
   const statusFilter = parseStatusFilter(query.status);
-  // 054-event-fee-invoices — subject (membership/event) + paid-online filters,
-  // mirroring the admin list (admin/invoices/page.tsx) so the portal honours
-  // the same InvoiceFilters controls. Only the two known subjects are honoured;
-  // anything else falls through to "all subjects".
+  // 054-event-fee-invoices — subject (membership/event) filter, mirroring the
+  // admin list (admin/invoices/page.tsx) so the portal honours the shared
+  // InvoiceFilters control. Only the two known subjects are honoured; anything
+  // else falls through to "all subjects". (The paid-online filter is admin-only
+  // — see SearchParams above — so it is deliberately not threaded here.)
   const subjectFilter =
     query.subject === 'membership' || query.subject === 'event'
       ? query.subject
       : undefined;
-  const paidOnlineOnly = query.paidOnline === '1';
 
   const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
@@ -155,7 +172,6 @@ export default async function PortalInvoicesPage({
     search: searchTerm.length > 0 ? searchTerm : undefined,
     status: statusFilter,
     ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
-    ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
   });
 
   // R7-M3 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
@@ -209,20 +225,35 @@ export default async function PortalInvoicesPage({
   const hasActiveFilter =
     searchTerm.length > 0 ||
     statusFilter !== 'all' ||
-    subjectFilter !== undefined ||
-    paidOnlineOnly;
+    subjectFilter !== undefined;
 
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {/* Reuse the admin InvoiceFilters client component for
-              UI parity (same shadcn Select, same debounced search,
-              same X-clear affordance). The URL contract is identical
-              — members just see a subset of statuses that return
-              rows (drafts are always excluded at the use-case level). */}
-          <InvoiceFilters />
+          {/* Reuse the admin InvoiceFilters client component for UI parity
+              (same shadcn Select, same debounced search, same X-clear
+              affordance), but configured for self-service:
+              - statusOptions drops 'draft' (members never see drafts —
+                includeDrafts:false at the use-case level — so a draft option
+                would only ever yield an unexplained empty state). 'overdue'
+                IS included and now filters correctly (parseStatusFilter +
+                the repo's derived overdue branch).
+              - showPaidOnlineChip={false}: the paid-online chip is an admin
+                reconciliation filter; a member who paid OFFLINE would see
+                their legitimate invoices vanish, so it is meaningless here. */}
+          <InvoiceFilters
+            statusOptions={[
+              'issued',
+              'paid',
+              'overdue',
+              'void',
+              'credited',
+              'partially_credited',
+            ]}
+            showPaidOnlineChip={false}
+          />
           {rows.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-muted-foreground">
