@@ -54,6 +54,7 @@ import {
   PortalReceiptDownloadButton,
 } from './_components/portal-pdf-download-button';
 import { CombinedReceiptHint } from './_components/combined-receipt-hint';
+import { EmptyCell } from './_components/empty-cell';
 import { PortalInvoiceCardList } from './_components/portal-invoice-card-list';
 
 const PAGE_SIZE = 20;
@@ -368,7 +369,7 @@ export default async function PortalInvoicesPage({
                               tooltipText={t('receiptNumberCombinedTooltip')}
                             />
                           ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
+                            <EmptyCell />
                           )}
                         </TableCell>
                         <TableCell className="align-middle">
@@ -416,7 +417,7 @@ export default async function PortalInvoicesPage({
                             // the IDENTICAL "nothing to show → em-dash" rule and
                             // never renders an empty action group.
                             if (!vm.hasAnyAction) {
-                              return <span className="text-sm text-muted-foreground">—</span>;
+                              return <EmptyCell />;
                             }
                             return (
                               <div className="flex items-center justify-end gap-1">

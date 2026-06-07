@@ -72,17 +72,11 @@ export interface InvoiceRowViewModel {
   readonly resendable: boolean;
   /**
    * Whether the row has ANY document/action to render in its action cell
-   * — the OR of the four action flags. When false there is nothing to
-   * download or do, so both the desktop table cell AND the mobile card
+   * — a plain OR of the four action flags
+   * (`showInvoice || showReceipt || receiptPending || resendable`). When
+   * false the row has no downloadable document and no pending receipt and
+   * is not resendable, so both the desktop table cell AND the mobile card
    * render the em-dash sentinel `—` instead of an (empty) action group.
-   *
-   * Equivalent to the table's former `r.pdf === null` proxy: every action
-   * flag (`showInvoice`/`resendable`) is gated on `row.pdf !== null`, and
-   * `showReceipt`/`receiptPending` only fire on `paid` rows (which always
-   * carry a receipt PDF), so `hasAnyAction === false` ⟺ the issue-time
-   * invoice PDF is absent (draft-shape / unrendered issued row). A void
-   * invoice that still has its PDF keeps `hasAnyAction === true` via
-   * `showInvoice` (the voided-invoice download stays available).
    */
   readonly hasAnyAction: boolean;
 }

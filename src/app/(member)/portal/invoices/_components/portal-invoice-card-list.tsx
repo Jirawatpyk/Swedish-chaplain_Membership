@@ -59,6 +59,7 @@ import {
   type InvoiceStatusIconName,
 } from '../_utils/format';
 import type { InvoiceRowViewModel } from '../_utils/invoice-row-view-model';
+import { EmptyCell } from './empty-cell';
 import { ResendInvoiceButton } from './resend-invoice-button';
 import {
   PortalInvoiceDownloadButton,
@@ -74,10 +75,10 @@ const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
 };
 
 /**
- * One row's data for the card list — the SAME `{ row, vm }` shape the
- * page builds for the table. `row` is intentionally NOT typed wider than
- * needed: the card only reads `vm.*` for flags; the raw row is unused
- * here (all flags live on the VM), so we accept just the VM.
+ * One row's data for the card list — the SAME `{ vm }` shape the page
+ * builds for the table. The card only reads `vm.*` for every flag/label;
+ * the raw repo row is not carried here, so the card can never re-derive a
+ * presentation flag the table didn't (and vice versa).
  */
 export interface PortalInvoiceCardRow {
   readonly vm: InvoiceRowViewModel;
@@ -271,7 +272,7 @@ export function PortalInvoiceCardList({
                 ) : (
                   // No document/action to show — mirror the desktop table's
                   // em-dash sentinel instead of an empty action group.
-                  <span className="text-sm text-muted-foreground">—</span>
+                  <EmptyCell />
                 )}
               </CardContent>
             </Card>
