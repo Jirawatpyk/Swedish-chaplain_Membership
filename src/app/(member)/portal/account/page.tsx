@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
@@ -33,20 +33,24 @@ import { RenewalRemindersToggle } from '../preferences/renewals/_components/rene
 /**
  * Member account hub (G2 / D2 redesign) at URL `/portal/account`.
  *
- * Sectioned IA: four anchored `<h2>` sections that the account-menu
- * deep-links into (`#account`, `#renewal-prefs`, `#data-privacy`,
- * `#appearance`). Consolidates what were previously separate pages
- * (`/portal/preferences/renewals`, `/portal/account/data-export`) into
- * one scroll-anchored hub:
+ * Sectioned IA: five anchored, self-titled cards that the account-menu
+ * deep-links into (`#account`, `#language`, `#renewal-prefs`,
+ * `#data-privacy`, `#appearance`). Each card carries its own `<h2>`
+ * title INSIDE its CardHeader (mirroring `benefit-usage-card.tsx`), so
+ * there is no empty pt-6 top-space above the content. Consolidates what
+ * were previously separate pages (`/portal/preferences/renewals`,
+ * `/portal/account/data-export`) into one scroll-anchored hub:
  *
- *   - Account: email + inline ChangePasswordForm (DECISION C: keep
- *     inline) + "Forgot your password?" → /forgot-password +
- *     PreferredLocaleForm.
+ *   - Account (`#account`): email + inline ChangePasswordForm (DECISION
+ *     C: keep inline) + "Forgot your password?" → /forgot-password.
+ *   - Preferred language (`#language`): PreferredLocaleForm with an
+ *     SSR-seeded `initialValue` (the locale form's title moves into the
+ *     card's CardHeader; its description stays in the body).
  *   - Renewal preferences (`#renewal-prefs`): RenewalRemindersToggle
  *     with an SSR-seeded `initialOptedOut`.
  *   - Data & privacy (`#data-privacy`, f9-gated): DataExportPanel
  *     seeded from `listMemberDataExports`.
- *   - Appearance: ThemeToggle + PortalSignOutButton.
+ *   - Appearance (`#appearance`): ThemeToggle + PortalSignOutButton.
  *
  * memberId is ALWAYS resolved from the session via
  * `findByLinkedUserId(tenant, user.id)` — never a URL param (RLS).
@@ -59,20 +63,27 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Inner chrome for one anchored hub section. Derives the h2 `id` from the
- * section `id` (`${id}-heading`) and reuses it for `aria-labelledby` so the
- * heading↔section pairing can't drift across the four sections. The
- * CONDITIONAL wrapping (`{memberId ? ... : null}`, the f9 gate) stays at the
- * call site — this helper only renders the section/heading/spacing chrome,
- * never the gate.
+ * One self-titled hub card. Renders the scroll-anchored `<section>` + a
+ * `<Card>` whose `<CardHeader>` carries a real `<h2>` title (NOT the shadcn
+ * `CardTitle` <div>, so the heading lands in the SR heading tree — mirrors the
+ * `benefit-usage-card.tsx` 056 fix #1) and a `<CardContent>` body. The title
+ * lives INSIDE the card so there is no empty top-space above the content.
+ *
+ * Derives the h2 `id` from the section `id` (`${id}-heading`) and reuses it for
+ * `aria-labelledby` so the heading↔section pairing can't drift across the five
+ * cards. The CONDITIONAL wrapping (`{memberId ? ... : null}`, the f9 gate)
+ * stays at the call site — this helper only renders the card chrome, never the
+ * gate. `contentClassName` tunes the per-card body layout (spacing / flex).
  */
-function HubSection({
+function HubCard({
   id,
   title,
+  contentClassName,
   children,
 }: {
   readonly id: string;
   readonly title: string;
+  readonly contentClassName?: string;
   readonly children: React.ReactNode;
 }) {
   const headingId = `${id}-heading`;
@@ -80,12 +91,19 @@ function HubSection({
     <section
       id={id}
       aria-labelledby={headingId}
-      className="scroll-mt-24 space-y-4"
+      className="scroll-mt-24"
     >
-      <h2 id={headingId} className="text-lg font-semibold">
-        {title}
-      </h2>
-      {children}
+      <Card>
+        <CardHeader>
+          <h2
+            id={headingId}
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {title}
+          </h2>
+        </CardHeader>
+        <CardContent className={contentClassName}>{children}</CardContent>
+      </Card>
     </section>
   );
 }
@@ -222,29 +240,35 @@ export default async function MemberAccountPage() {
         badge={<Badge variant="outline">{tShell(user.role)}</Badge>}
       />
 
-      <HubSection id="account" title={tPage('sections.account')}>
-        <Card>
-          <CardContent className="space-y-4 pt-6">
-            <p className="text-sm text-muted-foreground">{user.email}</p>
-            <ChangePasswordForm />
-            <Link
-              href="/forgot-password"
-              className="text-sm text-primary underline-offset-4 hover:underline"
-            >
-              {tPage('forgotPassword')}
-            </Link>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            <p className="text-sm font-medium">{tLocale('title')}</p>
-            <p className="text-sm text-muted-foreground">
-              {tLocale('description')}
-            </p>
-            <PreferredLocaleForm initialValue={initialLocale} />
-          </CardContent>
-        </Card>
-      </HubSection>
+      <HubCard
+        id="account"
+        title={tPage('sections.account')}
+        contentClassName="space-y-4"
+      >
+        <p className="text-sm text-muted-foreground">{user.email}</p>
+        <ChangePasswordForm />
+        <Link
+          href="/forgot-password"
+          className="text-sm text-primary underline-offset-4 hover:underline"
+        >
+          {tPage('forgotPassword')}
+        </Link>
+      </HubCard>
+
+      {/*
+        Preferred language: the locale form's `title` moves UP into the card's
+        CardHeader h2 (don't duplicate it in the body); the `description` muted
+        line stays in the body above the form. Always rendered (a member is not
+        required to choose a notification language).
+      */}
+      <HubCard
+        id="language"
+        title={tLocale('title')}
+        contentClassName="space-y-2"
+      >
+        <p className="text-sm text-muted-foreground">{tLocale('description')}</p>
+        <PreferredLocaleForm initialValue={initialLocale} />
+      </HubCard>
 
       {/*
         Renewal preferences + Data & privacy are MEMBER-SPECIFIC: their writes
@@ -255,39 +279,35 @@ export default async function MemberAccountPage() {
         but keep Account + Appearance (which work without a member).
       */}
       {memberId ? (
-        <HubSection id="renewal-prefs" title={tPage('sections.renewalPrefs')}>
-          <Card>
-            <CardContent className="pt-6">
-              <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
-            </CardContent>
-          </Card>
-        </HubSection>
+        <HubCard id="renewal-prefs" title={tPage('sections.renewalPrefs')}>
+          <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
+        </HubCard>
       ) : null}
 
       {env.features.f9Dashboard && memberId ? (
-        <HubSection id="data-privacy" title={tPage('sections.dataPrivacy')}>
-          <Card>
-            <CardContent className="space-y-4 pt-6">
-              <p className="max-w-prose text-sm text-muted-foreground">
-                {tExport('description')}
-              </p>
-              <DataExportPanel
-                rows={buildDataExportRows(exportJobs, tExport, locale)}
-                labels={buildDataExportLabels(tExport)}
-              />
-            </CardContent>
-          </Card>
-        </HubSection>
+        <HubCard
+          id="data-privacy"
+          title={tPage('sections.dataPrivacy')}
+          contentClassName="space-y-4"
+        >
+          <p className="max-w-prose text-sm text-muted-foreground">
+            {tExport('description')}
+          </p>
+          <DataExportPanel
+            rows={buildDataExportRows(exportJobs, tExport, locale)}
+            labels={buildDataExportLabels(tExport)}
+          />
+        </HubCard>
       ) : null}
 
-      <HubSection id="appearance" title={tPage('sections.appearance')}>
-        <Card>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
-            <ThemeToggle />
-            <PortalSignOutButton />
-          </CardContent>
-        </Card>
-      </HubSection>
+      <HubCard
+        id="appearance"
+        title={tPage('sections.appearance')}
+        contentClassName="flex flex-wrap items-center justify-between gap-3"
+      >
+        <ThemeToggle />
+        <PortalSignOutButton />
+      </HubCard>
     </FormContainer>
   );
 }

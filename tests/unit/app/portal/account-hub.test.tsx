@@ -110,19 +110,40 @@ async function renderHub() {
 }
 
 describe('Account hub — sectioned IA (G2)', () => {
-  it('renders a real <h2> for each of the four sections', async () => {
+  it('renders a real <h2> in the CardHeader for each of the five self-titled cards', async () => {
     await renderHub();
-    for (const name of [/^Account$/, /Renewal preferences/, /Data & privacy/, /Appearance/]) {
+    // Each title is a real <h2> (NOT the shadcn CardTitle <div>) so it lands in
+    // the SR heading tree — mirrors benefit-usage-card.tsx 056 fix #1. The
+    // language card's title comes from `portal.preferredLocale.title`
+    // ("Notification language"), moved up from the old body <p>.
+    for (const name of [
+      /^Account$/,
+      /Notification language/,
+      /Renewal preferences/,
+      /Data & privacy/,
+      /Appearance/,
+    ]) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
     }
   });
 
-  it('anchors the renewal + data-privacy sections with scroll-mt offsets', async () => {
+  it('each titled card heading sits inside a CardHeader (slot=card-header)', async () => {
+    await renderHub();
+    // Guards the "title INSIDE the card" fix: the h2 must be a descendant of a
+    // CardHeader, not a bare sibling above the Card (the old empty-pt-6 shape).
+    const heading = screen.getByRole('heading', { level: 2, name: /^Account$/ });
+    expect(heading.closest('[data-slot="card-header"]')).not.toBeNull();
+  });
+
+  it('anchors the language + renewal + data-privacy sections with scroll-mt offsets', async () => {
     const { container } = await renderHub();
+    const language = container.querySelector('#language');
     const renewal = container.querySelector('#renewal-prefs');
     const privacy = container.querySelector('#data-privacy');
+    expect(language).not.toBeNull();
     expect(renewal).not.toBeNull();
     expect(privacy).not.toBeNull();
+    expect(language?.className).toMatch(/scroll-mt-/);
     expect(renewal?.className).toMatch(/scroll-mt-/);
     expect(privacy?.className).toMatch(/scroll-mt-/);
   });

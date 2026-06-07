@@ -1,11 +1,10 @@
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ChangePasswordFormSkeleton } from '@/components/auth/change-password-form-skeleton';
 import { env } from '@/lib/env';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
-  CardSkeleton,
   PageSkeletonShell,
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
@@ -13,18 +12,19 @@ import {
 /**
  * Portal account-hub loading skeleton (058 D2).
  *
- * Mirrors the account hub in `page.tsx` (Account → Renewal preferences →
- * Data & privacy → Appearance) so the shimmer→content swap doesn't pop extra
- * sections into existence (CLS = 0, ux-standards § 2.1). Each section is an
- * <h2>-height SkeletonBlock + a Card placeholder; the Account section keeps
- * the two-card shape (change-password + preferred-locale). FormContainer
+ * Mirrors the account hub in `page.tsx` (Account → Preferred language →
+ * Renewal preferences → Data & privacy → Appearance) so the shimmer→content
+ * swap doesn't pop extra sections into existence (CLS = 0, ux-standards § 2.1).
+ * Each card is self-titled: a title-height SkeletonBlock INSIDE the CardHeader
+ * (mirroring the real `HubCard`'s h2-in-CardHeader, so the title doesn't shift
+ * when content arrives) + body SkeletonBlocks in CardContent. FormContainer
  * matches the real page (42rem) so width never reflows.
  *
- * Flag-gated sections (R2-1): the page renders Data & privacy only when
+ * Flag-gated cards (R2-1): the page renders Data & privacy only when
  * `env.features.f9Dashboard && memberId` — `FEATURE_F9_DASHBOARD` defaults
- * FALSE, so an ungated skeleton would show a 4th section that then collapses
- * (CLS). A route `loading.tsx` is a server component and can read `env`
- * synchronously, so we gate the Data & privacy skeleton on the SAME flag.
+ * FALSE, so an ungated skeleton would show a card that then collapses (CLS).
+ * A route `loading.tsx` is a server component and can read `env` synchronously,
+ * so we gate the Data & privacy skeleton card on the SAME flag.
  *
  * Unlinked-user caveat (accepted): the page also hides Renewal + Data &
  * privacy when `memberId === null` (e.g. a pending invitation), but a
@@ -33,12 +33,22 @@ import {
  * case, so the Renewal skeleton stays always-rendered to match them; the rare
  * unlinked-user CLS on Renewal/Data&privacy is knowingly accepted.
  */
-function SectionSkeleton({ children }: { children: React.ReactNode }) {
+function HubCardSkeleton({
+  titleWidth = 'w-40',
+  children,
+}: {
+  titleWidth?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-4">
-      <SkeletonBlock className="h-6 w-40" />
-      {children}
-    </div>
+    <Card>
+      {/* Title-skeleton INSIDE the CardHeader so it lands where the real h2
+          renders (h-5 ≈ the text-base h2) — no shift on the content swap. */}
+      <CardHeader>
+        <SkeletonBlock className={`h-5 ${titleWidth}`} />
+      </CardHeader>
+      <CardContent className="space-y-3">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -53,35 +63,39 @@ export default async function Loading() {
           badge={<SkeletonBlock className="h-6 w-20" />}
         />
 
-        {/* Account: change-password card + preferred-locale card. */}
-        <SectionSkeleton>
-          <Card>
-            <CardContent className="space-y-4 pt-6">
-              <SkeletonBlock className="h-4 w-48" />
-              <ChangePasswordFormSkeleton />
-              <SkeletonBlock className="h-4 w-40" />
-            </CardContent>
-          </Card>
-          <CardSkeleton rows={2} />
-        </SectionSkeleton>
+        {/* Account: email line + change-password form + forgot-password link. */}
+        <HubCardSkeleton>
+          <SkeletonBlock className="h-4 w-48" />
+          <ChangePasswordFormSkeleton />
+          <SkeletonBlock className="h-4 w-40" />
+        </HubCardSkeleton>
+
+        {/* Preferred language: description line + locale form. */}
+        <HubCardSkeleton>
+          <SkeletonBlock className="h-4 w-64" />
+          <SkeletonBlock className="h-[var(--input-height)] w-full" />
+        </HubCardSkeleton>
 
         {/* Renewal preferences. */}
-        <SectionSkeleton>
-          <CardSkeleton withDescription={false} rows={2} />
-        </SectionSkeleton>
+        <HubCardSkeleton>
+          <SkeletonBlock className="h-4 w-full" />
+          <SkeletonBlock className="h-4 w-3/4" />
+        </HubCardSkeleton>
 
         {/* Data & privacy — f9-gated, mirroring the page's
             `env.features.f9Dashboard && memberId` gate (R2-1). */}
         {env.features.f9Dashboard ? (
-          <SectionSkeleton>
-            <CardSkeleton rows={3} />
-          </SectionSkeleton>
+          <HubCardSkeleton>
+            <SkeletonBlock className="h-4 w-full" />
+            <SkeletonBlock className="h-4 w-full" />
+            <SkeletonBlock className="h-4 w-1/2" />
+          </HubCardSkeleton>
         ) : null}
 
         {/* Appearance. */}
-        <SectionSkeleton>
-          <CardSkeleton withDescription={false} rows={1} />
-        </SectionSkeleton>
+        <HubCardSkeleton>
+          <SkeletonBlock className="h-9 w-full" />
+        </HubCardSkeleton>
       </FormContainer>
     </PageSkeletonShell>
   );
