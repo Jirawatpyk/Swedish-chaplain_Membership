@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { TableContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
@@ -26,7 +26,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <TableContainer>
+      <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent className="flex flex-col gap-4">
@@ -79,7 +79,7 @@ export default async function Loading() {
             </ul>
           </CardContent>
         </Card>
-      </TableContainer>
+      </DetailContainer>
     </PageSkeletonShell>
   );
 }

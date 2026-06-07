@@ -32,10 +32,13 @@
  * a11y:
  *   - `<ul role="list">` of `<li>` (cards in a list = list items). Each
  *     `<li>` carries an `aria-label` ("Invoice {number}, {status}") so SR
- *     users hear an at-a-glance summary on item focus.
- *   - Card title is a REAL `<h3>` (not the CardTitle div) so the cards
- *     appear in the SR heading tree under the page `<h1>` — mirrors the
- *     benefit-usage-card real-`<h2>` precedent.
+ *     users hear an at-a-glance summary on item focus. The "Invoice"
+ *     prefix reuses the SINGULAR `detail.title` key (not the plural list
+ *     `title`) so the per-item summary reads naturally for one document.
+ *   - Card title is a REAL `<h2>` (not the CardTitle div / not an `<h3>`)
+ *     so the cards appear in the SR heading tree directly under the page
+ *     `<h1>` with NO skipped level — mirrors the benefit-usage-card
+ *     real-`<h2>` precedent (the portal card-header convention).
  *   - Status badge = lucide icon (aria-hidden) + text (WCAG 1.4.1 — colour
  *     is not the sole signal).
  *   - Action buttons keep their `min-h-11` (≥44px) treatment and wrap
@@ -111,7 +114,7 @@ export function PortalInvoiceCardList({
         return (
           <li
             key={vm.invoiceId}
-            aria-label={`${t('title')} ${vm.documentNumber ?? vm.invoiceId}, ${statusLabel}`}
+            aria-label={`${t('detail.title')} ${vm.documentNumber ?? vm.invoiceId}, ${statusLabel}`}
           >
             <Card>
               <CardContent className="flex flex-col gap-3">
@@ -122,9 +125,9 @@ export function PortalInvoiceCardList({
                     className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
                     aria-label={`${t('actions.viewDetail')} ${vm.documentNumber ?? vm.invoiceId}`}
                   >
-                    <h3 className="font-mono text-sm font-medium leading-snug">
+                    <h2 className="font-mono text-sm font-medium leading-snug">
                       {vm.documentNumber ?? vm.invoiceId}
-                    </h3>
+                    </h2>
                   </Link>
                   <Badge
                     variant={statusBadgeVariant(vm.displayStatus)}

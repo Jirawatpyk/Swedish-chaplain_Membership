@@ -22,7 +22,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { TableContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
@@ -111,14 +111,14 @@ export default async function PortalInvoicesPage({
   const memberResult = await memberDeps.memberRepo.findByLinkedUserId(tenantCtx, user.id);
   if (!memberResult.ok) {
     return (
-      <TableContainer>
+      <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{t('notLinked')}</p>
           </CardContent>
         </Card>
-      </TableContainer>
+      </DetailContainer>
     );
   }
   const member = memberResult.value;
@@ -156,14 +156,14 @@ export default async function PortalInvoicesPage({
       '[portal-invoices-list] listInvoicesPaged failed — rendering error state',
     );
     return (
-      <TableContainer>
+      <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{t('loadFailed')}</p>
           </CardContent>
         </Card>
-      </TableContainer>
+      </DetailContainer>
     );
   }
   const rawRows = invoicesResult.value.rows;
@@ -189,7 +189,7 @@ export default async function PortalInvoicesPage({
   const hasActiveFilter = searchTerm.length > 0 || statusFilter !== 'all';
 
   return (
-    <TableContainer>
+    <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
@@ -449,6 +449,6 @@ export default async function PortalInvoicesPage({
         </CardContent>
       </Card>
       <span className="sr-only">{t('loaded')}</span>
-    </TableContainer>
+    </DetailContainer>
   );
 }
