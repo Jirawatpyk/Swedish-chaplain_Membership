@@ -129,10 +129,14 @@ export type InvoicesTableRow = {
    */
   readonly receiptDocumentNumberRaw: string | null;
   /**
-   * Whether the row has a rendered receipt PDF available for download.
-   * True when paid + receiptPdf is non-null + status='rendered'. The
-   * Actions cell uses this flag to decide whether to render the
-   * "Receipt" download link.
+   * Whether the row has a receipt PDF available for download. Computed in
+   * page.tsx as `status === 'paid' && receiptPdf !== null` — i.e. the
+   * invoice is paid AND the receipt-stamped bytes have been persisted. A
+   * non-null `receiptPdf` IS the admin's "receipt has rendered" signal
+   * (the async worker only writes the blob once the PDF exists), so this
+   * flag doubles as the rendered-receipt gate. The Actions cell uses it
+   * to decide whether to render the "Receipt" download link, and the
+   * Receipt-No. cell uses it to gate the combined-mode hint.
    */
   readonly hasReceiptPdf: boolean;
   /**
@@ -372,8 +376,18 @@ export function InvoicesTable({
                   // still rendering (`receiptPdfStatus = 'pending'`) showed
                   // the "receipt = invoice number" hint PREMATURELY while
                   // the action cell correctly showed "Preparing receipt…".
-                  // Now both gate on the rendered receipt — matching the
-                  // member portal fix (060-member-portal-d4). The
+                  // Now this cell and the action cell both gate on the
+                  // receipt PDF being PRESENT (`hasReceiptPdf` = paid +
+                  // receiptPdf !== null), which is the admin's own
+                  // rendered-receipt signal. This is the same INTENT as
+                  // the member-portal fix (060-member-portal-d4) — don't
+                  // surface receipt-derived UI until the receipt has
+                  // rendered — but a DIFFERENT mechanism: admin reads
+                  // `hasReceiptPdf` (PDF blob present) while the portal VM
+                  // reads `receiptPdfStatus === 'rendered'`. The two
+                  // predicates are not identical and can momentarily
+                  // disagree during the async render window; they merely
+                  // share the goal of gating on a rendered receipt. The
                   // hover-only tooltip was removed: its `<span>` trigger
                   // was not keyboard-focusable and not touch-reachable
                   // (base-ui tooltips are hover/focus only), so the hint
