@@ -54,6 +54,7 @@ import {
   PortalReceiptDownloadButton,
 } from './_components/portal-pdf-download-button';
 import { CombinedReceiptHint } from './_components/combined-receipt-hint';
+import { PortalInvoiceCardList } from './_components/portal-invoice-card-list';
 
 const PAGE_SIZE = 20;
 
@@ -206,11 +207,18 @@ export default async function PortalInvoicesPage({
             </div>
           ) : (
             <>
+              {/* 060-member-portal-d4 — dual-render. The 7-column desktop
+                  table is hidden below `md` (768px); the mobile card list
+                  (`PortalInvoiceCardList`) takes over `< md`. Both consume
+                  the SAME per-row view-model (`rows[].vm`) so they can never
+                  drift apart. Filters + pagination + empty/no-match states
+                  live ABOVE this branch and render ONCE for both form
+                  factors. */}
               {/* R8-M1-ux — dual-tone inset shadow signals horizontal
-                  scroll on mobile (parity with admin table U-I4). The
-                  portal list has 7 columns; without the cue, members
-                  on phones miss the right-edge Total + Actions silently. */}
-              <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
+                  scroll on the table (parity with admin table U-I4). The
+                  portal list has 7 columns; without the cue, members miss
+                  the right-edge Total + Actions silently. */}
+              <div className="hidden overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] md:block dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
                 <Table aria-label={t('title')}>
                   <TableHeader>
                     <TableRow>
@@ -421,6 +429,15 @@ export default async function PortalInvoicesPage({
                   </TableBody>
                 </Table>
               </div>
+              {/* Mobile card list (`< md`). Consumes the same `rows[].vm`
+                  the table consumes — no recomputed flags. */}
+              <PortalInvoiceCardList
+                rows={rows}
+                locale={userLocale}
+                t={t}
+                tStatus={tStatus}
+                className="md:hidden"
+              />
               <TablePagination
                 page={page}
                 pageSize={PAGE_SIZE}
