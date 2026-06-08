@@ -98,9 +98,15 @@ export function InvoiceFilters({
   // Select value + the active-filter computation honest. No-op for admin:
   // its default `statusOptions` is the full list, so 'draft' clamps to
   // itself. Mirrors the `paidOnlineActive` guard below.
-  const effectiveStatus = (statusOptions as readonly string[]).includes(
-    currentStatus,
-  )
+  //
+  // Uses `.some((s) => s === …)` rather than `statusOptions.includes(…)`:
+  // calling an array method (`.includes`) directly on the `statusOptions`
+  // *prop* makes the React Compiler's manual-memoization analysis bail on
+  // the whole component (`react-hooks/preserve-manual-memoization` on the
+  // `pushUrl` useCallback below). The predicate form is behaviour-identical
+  // for string elements and keeps the compiler happy + the manual memo
+  // preserved (parity with `directory-filters.tsx`).
+  const effectiveStatus = statusOptions.some((s) => s === currentStatus)
     ? currentStatus
     : 'all';
   // When the chip is hidden (member portal) the paid-online filter is not
