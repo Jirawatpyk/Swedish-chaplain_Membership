@@ -378,6 +378,7 @@ body {
 [lang="th"] .text-h2,
 [lang="th"] .text-h3,
 [lang="th"] .text-h4,
+[lang="th"] .font-heading,
 [lang="th"] .text-body {
   line-height: var(--line-height-th);
 }

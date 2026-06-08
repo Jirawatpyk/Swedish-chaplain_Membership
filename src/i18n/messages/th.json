@@ -3992,8 +3992,10 @@
         "actions": "การดำเนินการ"
       },
       "actions": {
-        "download": "PDF",
+        "download": "ใบกำกับภาษี",
         "downloadInvoiceAria": "ดาวน์โหลดไฟล์ PDF ใบกำกับภาษีสำหรับ {number}",
+        "downloadVoided": "ใบแจ้งหนี้ที่ยกเลิก",
+        "downloadVoidedAria": "ดาวน์โหลดไฟล์ PDF ใบแจ้งหนี้ที่ยกเลิก (ประทับ VOID) สำหรับ {number}",
         "downloadReceipt": "ใบเสร็จ",
         "downloadReceiptAria": "ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงินสำหรับ {number}",
         "downloadCombined": "ดาวน์โหลดใบกำกับภาษี / ใบเสร็จรับเงิน",
@@ -4056,6 +4058,7 @@
           "lineTotal": "รวม"
         },
         "totals": {
+          "heading": "สรุปยอด",
           "subtotal": "รวมก่อนภาษี",
           "vat": "ภาษีมูลค่าเพิ่ม",
           "total": "ยอดรวมทั้งสิ้น"

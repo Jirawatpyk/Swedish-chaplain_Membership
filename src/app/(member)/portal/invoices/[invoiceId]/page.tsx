@@ -61,7 +61,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
@@ -383,7 +383,7 @@ export default async function PortalInvoiceDetailPage({
             {invoice.voidReason ? (
               <>
                 <dt className="text-muted-foreground">{t('void.reasonLabel')}</dt>
-                <dd className="whitespace-pre-wrap">{invoice.voidReason}</dd>
+                <dd className="whitespace-pre-wrap break-words">{invoice.voidReason}</dd>
               </>
             ) : null}
           </dl>
@@ -454,11 +454,18 @@ export default async function PortalInvoiceDetailPage({
             </p>
           </div>
           {/* Round 6 portal-harden — surface receipt document number to
-              members in separate-mode + paid. Thai RD requires receipt
-              holders to keep the document; admins see this on the admin
-              detail page (added Round 1). Combined-mode hides this
-              because the invoice number IS the receipt number. */}
-          {invoice.status === 'paid' && invoice.receiptDocumentNumberRaw && (
+              members in separate-mode. Thai RD requires receipt holders to
+              keep the document; admins see this on the admin detail page.
+              Combined-mode hides this (the invoice number IS the receipt
+              number → receiptDocumentNumberRaw is null). Shown on paid AND
+              credited/partially_credited: a §105 receipt number, once issued
+              on payment, is a permanent §87 record the member still needs
+              after a credit note corrects the invoice (the credit-note
+              section below carries the correction). thai-tax review 2026-06-07. */}
+          {invoice.receiptDocumentNumberRaw &&
+            (invoice.status === 'paid' ||
+              invoice.status === 'partially_credited' ||
+              invoice.status === 'credited') && (
             <div>
               <p className="text-caption uppercase tracking-wide text-muted-foreground">
                 {t('fields.receiptNumber')}
@@ -476,10 +483,21 @@ export default async function PortalInvoiceDetailPage({
       </Card>
 
       <Card>
+        <CardHeader>
+          <h2
+            id="invoice-lines-heading"
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {t('linesHeading')}
+          </h2>
+        </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <h2 className="text-h4">{t('linesHeading')}</h2>
           <div className="overflow-x-auto">
-            <Table aria-label={t('linesHeading')}>
+            {/* aria-labelledby (not aria-label) so the table's accessible name
+                reuses the visible <h2> instead of announcing the same string
+                twice (heading + table name) — mirrors the void/auto-refund
+                sections above. */}
+            <Table aria-labelledby="invoice-lines-heading">
               <TableHeader>
                 <TableRow>
                   <TableHead scope="col">{t('lines.description')}</TableHead>
@@ -548,6 +566,11 @@ export default async function PortalInvoiceDetailPage({
       </Card>
 
       <Card>
+        <CardHeader>
+          <h2 className="font-heading text-base font-medium leading-snug">
+            {t('totals.heading')}
+          </h2>
+        </CardHeader>
         {/* dl/dt/dd preserves the semantic label-value pairing for
             screen readers; the previous `div.contents` flattening
             caused VoiceOver/NVDA to read the six cells as loose
@@ -615,8 +638,12 @@ export default async function PortalInvoiceDetailPage({
 
       {portalCreditNotes.length > 0 && (
         <Card>
+          <CardHeader>
+            <h2 className="font-heading text-base font-medium leading-snug">
+              {t('creditNotes.heading')}
+            </h2>
+          </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <h2 className="text-h4">{t('creditNotes.heading')}</h2>
             <p className="text-caption text-muted-foreground">{t('creditNotes.description')}</p>
             <ul role="list" className="flex flex-col gap-2">
               {portalCreditNotes.map((pcn) => (

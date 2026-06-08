@@ -225,10 +225,19 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                     <PortalInvoiceDownloadButton
                       invoiceId={r.invoiceId}
                       documentNumber={r.documentNumber?.raw ?? r.invoiceId}
-                      label={t('actions.download')}
-                      ariaLabel={t('actions.downloadInvoiceAria', {
-                        number: r.documentNumber?.raw ?? r.invoiceId,
-                      })}
+                      label={
+                        r.status === 'void'
+                          ? t('actions.downloadVoided')
+                          : t('actions.download')
+                      }
+                      ariaLabel={t(
+                        r.status === 'void'
+                          ? 'actions.downloadVoidedAria'
+                          : 'actions.downloadInvoiceAria',
+                        {
+                          number: r.documentNumber?.raw ?? r.invoiceId,
+                        },
+                      )}
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'sm' }),
                         'min-h-11 px-3',
