@@ -27,6 +27,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import {
   getInvoice,
   makeGetInvoiceDeps,
@@ -525,11 +526,11 @@ export default async function InvoiceDetailPage({
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
-              <dd>{formatLocalisedDate(invoice.issueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
+              <dd>{formatLocalisedDate(invoice.issueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.dueDate')}</dt>
-              <dd>{formatLocalisedDate(invoice.dueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
+              <dd>{formatLocalisedDate(invoice.dueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
             </div>
             {/* Receipt No. — visible on separate-mode rows (the receipt has
                 its own §87 sequence) that reached payment. Shown on paid AND
@@ -593,10 +594,14 @@ export default async function InvoiceDetailPage({
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('payment.paymentDate')}</dt>
-                  <dd>{formatLocalisedDate(invoice.paymentDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
+                  {/* paymentDate is a Postgres `date` (date-only) — UTC-pin so the
+                      day never shifts for browsers west of UTC. */}
+                  <dd>{formatLocalisedDate(invoice.paymentDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('payment.paidAt')}</dt>
+                  {/* paidAt is a Postgres `timestamptz` (real instant) — do NOT
+                      UTC-pin; render in the user's local timezone intentionally. */}
                   <dd>{formatLocalisedDate(invoice.paidAt ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
                 </div>
                 {/* No separate "Amount paid" row — partial payments are
@@ -649,6 +654,8 @@ export default async function InvoiceDetailPage({
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedAt')}</dt>
+                  {/* voidedAt is a Postgres `timestamptz` (real instant) — do NOT
+                      UTC-pin; render in the user's local timezone intentionally. */}
                   <dd>{formatLocalisedDate(invoice.voidedAt ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
                 </div>
                 <div>
@@ -735,7 +742,10 @@ export default async function InvoiceDetailPage({
                           {cn.documentNumber.raw}
                         </TableCell>
                         <TableCell className="tabular-nums">
-                          {formatLocalisedDate(cn.issueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}
+                          {/* CN issueDate is a tax-document date — use formatTaxDocDate
+                              so th locale renders CE + (พ.ศ.) matching the CN detail +
+                              directory pages; UTC-pin is internal to formatTaxDocDate. */}
+                          {formatTaxDocDate(cn.issueDate, userLocale)}
                         </TableCell>
                         <TableCell
                           className="max-w-[20rem] truncate"

@@ -504,10 +504,10 @@ export function InvoicesTable({
                 </TableCell>
               )}
               <TableCell className="align-middle whitespace-nowrap">
-                {r.issueDate ? formatLocalisedDate(r.issueDate, locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                {r.issueDate ? formatLocalisedDate(r.issueDate, locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'}
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap">
-                {r.dueDate ? formatLocalisedDate(r.dueDate, locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                {r.dueDate ? formatLocalisedDate(r.dueDate, locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'}
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap text-right tabular-nums">
                 {formatSatang(r.totalSatang)} THB
