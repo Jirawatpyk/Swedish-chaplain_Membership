@@ -48,32 +48,11 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
 import { formatSatangThb } from '@/lib/format-thb';
+import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.creditNotes.detail.meta');
   return { title: t('title') };
-}
-
-function formatIssueDate(isoDate: string, locale: string): string {
-  const [yStr, mStr, dStr] = isoDate.split('-');
-  const year = Number(yStr);
-  const month = Number(mStr);
-  const day = Number(dStr);
-  if (!year || !month || !day) return isoDate;
-  // ICU already renders the Buddhist-Era year for `th` (e.g. 2568) — do NOT
-  // append a "(พ.ศ. …)" suffix or the BE year prints twice
-  // ("28 พ.ค. 2568 (พ.ศ. 2568)"). EN/SV render Gregorian. `cn.issueDate` is a
-  // bare YYYY-MM-DD; building it via Date.UTC + `timeZone: 'UTC'` keeps the
-  // rendered day stable regardless of server TZ. (NOTE: the shared
-  // invoices/_utils/format.ts `formatDate` does the same ICU BE conversion but
-  // does NOT pin UTC — so it is intentionally not reused here; the two are not
-  // byte-identical near a TZ-midnight boundary.)
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
 }
 
 // F4/F5 polish retrospective Phase E (2026-05-17) — `force-dynamic`
@@ -154,7 +133,7 @@ export default async function PortalCreditNoteDetailPage({
         <CardContent>
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
             <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
-            <dd>{formatIssueDate(cn.issueDate, locale)}</dd>
+            <dd>{formatTaxDocDate(cn.issueDate, locale)}</dd>
 
             <dt className="text-muted-foreground">{t('fields.originalInvoice')}</dt>
             <dd>
