@@ -20,6 +20,15 @@ describe('formatTaxDocDate', () => {
     expect(out).toContain('2026');
     expect(out).not.toContain('พ.ศ.');
   });
+  it('sv: routes through getDateFormatLocale → sv-SE canonical locale', () => {
+    const canonical = new Intl.DateTimeFormat('sv-SE', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(2026, 4, 29)));
+    expect(formatTaxDocDate('2026-05-29', 'sv')).toBe(canonical);
+  });
   it('UTC-pinned: the day does not shift', () => {
     expect(formatTaxDocDate('2026-05-29', 'en')).toContain('29');
     expect(formatTaxDocDate('2026-01-01', 'en')).toContain('1');
@@ -31,7 +40,14 @@ describe('formatTaxDocDate', () => {
       expect(out).toContain(String(y));
     }
   });
-  it('returns the raw string for a malformed date', () => {
-    expect(formatTaxDocDate('nope', 'th')).toBe('nope');
+  // R4 — invalid input must return em-dash '—', not the raw string
+  it('returns em-dash for a malformed date (non-numeric)', () => {
+    expect(formatTaxDocDate('nope', 'th')).toBe('—');
+  });
+  it('returns em-dash for an empty string', () => {
+    expect(formatTaxDocDate('', 'th')).toBe('—');
+  });
+  it('returns em-dash for an out-of-bounds date (month 99)', () => {
+    expect(formatTaxDocDate('2026-99-99', 'th')).toBe('—');
   });
 });

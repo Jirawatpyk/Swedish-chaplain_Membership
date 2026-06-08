@@ -11,16 +11,24 @@
  *     default calendar is buddhist.
  * BE is display-only; storage stays UTC Gregorian (CLAUDE.md).
  */
+import { getDateFormatLocale } from '@/lib/format-date-localised';
+
 export function formatTaxDocDate(isoDate: string, locale: string): string {
   const [yStr, mStr, dStr] = isoDate.split('-');
   const year = Number(yStr);
   const month = Number(mStr);
   const day = Number(dStr);
-  if (!year || !month || !day) return isoDate;
+  // R4: reject NaN, falsy-zero-safe bounds check, out-of-range values → em-dash
+  if (
+    Number.isNaN(year) || year < 1 ||
+    Number.isNaN(month) || month < 1 || month > 12 ||
+    Number.isNaN(day) || day < 1 || day > 31
+  ) return '—';
 
   const isThai = locale === 'th' || locale === 'th-TH';
+  // R3: non-Thai locales route through getDateFormatLocale (e.g. 'sv' → 'sv-SE')
   const ce = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(
-    isThai ? 'th-TH-u-ca-gregory' : locale,
+    isThai ? 'th-TH-u-ca-gregory' : getDateFormatLocale(locale),
     { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' },
   );
   return isThai ? `${ce} (พ.ศ. ${year + 543})` : ce;
