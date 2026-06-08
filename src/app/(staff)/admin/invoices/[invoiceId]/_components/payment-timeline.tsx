@@ -18,6 +18,7 @@
  * elsewhere by `isAdmin` checks on the parent page.
  */
 import { getLocale, getTranslations } from 'next-intl/server';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   ArrowDownToLineIcon,
   BanknoteIcon,
@@ -87,19 +88,11 @@ function isSystemActor(actorUserId: string): boolean {
 
 /**
  * Format an event timestamp for display on the timeline.
- *
- * Verify-fix U-I6 (2026-04-26): the previous comment claimed this used
- * "Thai Buddhist Era for `th` locale via existing F4 formatDate" but
- * the code was actually a fresh `toLocaleString` call. Modern V8 / ICU
- * (Node 22 LTS, current Chrome / Firefox / Safari) DOES return BE for
- * the `th-TH` locale by default — verified via `new Date().toLocaleString('th-TH', {year:'numeric'})` → `"2569"` — so the off-by-543-years
- * concern is a false positive on the runtime targets we ship to. The
- * comment is now explicit so future readers don't repeat the audit.
- *
+ * BE via getDateFormatLocale (explicit; not ICU-default).
  * Storage stays ISO UTC (CLAUDE.md). This helper is display-only.
  */
-function formatTimestamp(date: Date, locale: string): string {
-  return date.toLocaleString(locale, {
+export function formatTimestamp(date: Date, locale: string): string {
+  return date.toLocaleString(getDateFormatLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
