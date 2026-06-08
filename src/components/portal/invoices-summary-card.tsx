@@ -151,6 +151,9 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     // `listInvoicesPaged` is `Result<…, never>` — `ok` is always true at
     // runtime, but the union still carries the `Err<never>` variant so we
     // narrow explicitly (the `else` is type-unreachable, not a real branch).
+    // If `listInvoicesPaged` ever gains a real Err variant, branch on
+    // `invoicesResult.error` here instead of re-throwing — re-throwing would
+    // log it as a generic `Error` kind, losing the structured error.code.
     if (!invoicesResult.ok) throw new Error('unreachable');
     rows = invoicesResult.value.rows;
   } catch (e) {

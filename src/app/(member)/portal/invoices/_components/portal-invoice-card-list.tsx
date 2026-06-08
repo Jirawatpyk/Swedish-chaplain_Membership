@@ -10,8 +10,8 @@
  * view-model (`InvoiceRowViewModel`, see `_utils/invoice-row-view-model.ts`)
  * that the table consumes. It NEVER recomputes the presentation flags
  * (`displayStatus`, `showInvoice`, `showReceipt`, `receiptPending`,
- * `resendable`, `isCombinedPaid`) — so the card + table can never drift
- * apart. Formatting (date / money / badge variant / status icon) and the
+ * `receiptFailed`, `resendable`, `isCombinedPaid`) — so the card + table
+ * can never drift apart. Formatting (date / money / badge variant / status icon) and the
  * action buttons are reused verbatim from the same helpers the table uses.
  *
  * Card anatomy (member-confirmed mockup):

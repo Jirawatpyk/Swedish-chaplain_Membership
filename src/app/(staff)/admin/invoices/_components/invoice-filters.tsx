@@ -101,11 +101,14 @@ export function InvoiceFilters({
   //
   // Uses `.some((s) => s === …)` rather than `statusOptions.includes(…)`:
   // calling an array method (`.includes`) directly on the `statusOptions`
-  // *prop* makes the React Compiler's manual-memoization analysis bail on
-  // the whole component (`react-hooks/preserve-manual-memoization` on the
-  // `pushUrl` useCallback below). The predicate form is behaviour-identical
-  // for string elements and keeps the compiler happy + the manual memo
-  // preserved (parity with `directory-filters.tsx`).
+  // *prop* triggers a React Compiler memoization bailout
+  // (`react-hooks/preserve-manual-memoization`) that breaks the `pushUrl`
+  // useCallback below — the bailout is reported at the useCallback but is a
+  // whole-component effect (commit cf758387). The `.some` predicate form is
+  // behaviour-identical for string elements and avoids the bailout, keeping
+  // the manual memo preserved. (The `pushUrl` useCallback pattern itself
+  // mirrors `directory-filters.tsx`; that file never does an array method on
+  // a prop, so it has no `.some`/`.includes` equivalent to this idiom.)
   const effectiveStatus = statusOptions.some((s) => s === currentStatus)
     ? currentStatus
     : 'all';

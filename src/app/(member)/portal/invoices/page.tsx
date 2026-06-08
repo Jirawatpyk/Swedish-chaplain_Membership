@@ -225,6 +225,9 @@ export default async function PortalInvoicesPage({
       status: statusFilter,
       ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
     });
+    // If `listInvoicesPaged` ever gains a real Err variant, branch on
+    // `invoicesResult.error` here instead of re-throwing — re-throwing would
+    // log it as a generic `Error` kind, losing the structured error.code.
     if (!invoicesResult.ok) throw new Error('unreachable');
     pageData = invoicesResult.value;
   } catch (e) {
@@ -257,8 +260,8 @@ export default async function PortalInvoicesPage({
   // per-row inserts on self-service page loads.
   //
   // 060-member-portal-d4 — per-row presentation flags (displayStatus,
-  // isCombinedPaid, showInvoice/showReceipt, receiptPending, resendable)
-  // are derived ONCE here into a shared view-model so the desktop table
+  // isCombinedPaid, showInvoice/showReceipt, receiptPending, receiptFailed,
+  // resendable) are derived ONCE here into a shared view-model so the desktop table
   // (below) and the mobile card list consume one source of truth and can
   // never drift apart. The "has any action" decision is derived on demand
   // from those flags via `rowHasAnyAction(vm)` (not stored, so it can't go
@@ -393,11 +396,14 @@ export default async function PortalInvoicesPage({
                             // still rendering (`receiptPdfStatus = 'pending'`)
                             // must NOT show the "receipt = invoice number" hint
                             // prematurely — the action cell shows "Preparing
-                            // receipt…" in that window. The card has NO
-                            // receipt-number cell at all (it omits the
-                            // receipt-number line entirely), so it carries no
-                            // combined receipt-number hint to match here; only
-                            // the combined RECEIPT-DOWNLOAD label is gated on
+                            // receipt…" in that window. The card omits only
+                            // the combined-mode receipt-number HINT (em-dash +
+                            // tooltip); it STILL renders a separate-mode
+                            // receipt-number line when `vm.receiptNumber` is
+                            // present, so it shows nothing in combined-pending
+                            // — gating this table hint on `vm.isCombinedPaid`
+                            // keeps the two surfaces in lockstep. Only the
+                            // combined RECEIPT-DOWNLOAD label is gated on
                             // `isCombinedPaid` on both surfaces.
                             // Em-dash + InfoIcon affordance with min-h-6 hit
                             // area for WCAG 2.2 SC 2.5.8 (R5-UX-M2).

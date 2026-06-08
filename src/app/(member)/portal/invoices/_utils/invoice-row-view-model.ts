@@ -14,10 +14,20 @@
  * is deterministic and unit-testable at boundaries. Mirrors how
  * `page.tsx` derives `displayStatus` via `computeIsOverdue(r, nowUtcIso)`.
  *
- * The flag logic below is a BYTE-FOR-BYTE extraction of the inline
- * expressions that previously lived in `page.tsx`'s `<TableBody>` row
- * map — do not "improve" the boolean conditions; the desktop table's
- * rendered output must stay identical.
+ * Flag provenance: `isCombinedPaid` / `showInvoice` / `showReceipt` /
+ * `resendable` were extracted VERBATIM from the D3 inline expressions that
+ * previously lived in `page.tsx`'s `<TableBody>` row map. `receiptPending`
+ * was deliberately NARROWED to `receiptPdfStatus === 'pending'` ONLY and a
+ * new `receiptFailed` (`=== 'failed'`) flag was added by the S1 review fix
+ * (commit 3f16631a) — so a terminally-failed receipt render now shows a
+ * static "Receipt unavailable" affordance instead of a perpetual
+ * "Preparing receipt…" spinner. The failed-receipt output therefore
+ * DELIBERATELY differs from D3 (see the per-flag comments below).
+ *
+ * The real invariant to preserve is PARITY, not byte-identical D3 output:
+ * the desktop `<table>` and the mobile card both consume this single
+ * view-model, so any flag change lands on both surfaces at once and they
+ * can never drift apart.
  *
  * i18n decision (for the mobile card): NO new keys added. The existing
  * column labels already read as inline card labels — EN
@@ -47,6 +57,13 @@ export type { InvoiceRowDisplayStatus };
  * and shared by the desktop table + mobile card. Raw document/receipt
  * numbers are kept as `string | null` (callers apply the `?? '—'` /
  * `?? invoiceId` fallbacks they already use for aria labels + display).
+ *
+ * The flag invariants — `receiptPending` XOR `receiptFailed` (a paid
+ * receipt PDF is in exactly one terminal/non-terminal state), a
+ * `'overdue'` `displayStatus` implies the stored status was `'issued'`,
+ * and `rowHasAnyAction` = OR of the action flags — hold BY CONSTRUCTION
+ * because they all flow from `toInvoiceRowViewModel`. Hand-building a VM
+ * literal bypasses them; always go through the mapper.
  */
 export interface InvoiceRowViewModel {
   readonly invoiceId: Invoice['invoiceId'];
@@ -122,8 +139,11 @@ export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
  * `new Date()` here) so overdue derivation stays deterministic and the
  * view-model is testable at boundaries.
  *
- * Boolean logic is a verbatim copy of the former inline expressions in
- * `page.tsx` — see the per-flag comments for the original source lines.
+ * `isCombinedPaid` / `showInvoice` / `showReceipt` / `resendable` are a
+ * verbatim copy of the former D3 inline expressions in `page.tsx`;
+ * `receiptPending` was narrowed and `receiptFailed` added by the S1 fix —
+ * see the per-flag comments below for each flag's exact condition and
+ * provenance.
  */
 export function toInvoiceRowViewModel(
   row: Invoice,
