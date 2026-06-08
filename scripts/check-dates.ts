@@ -17,7 +17,9 @@
  *
  *   2. Bare-locale Intl date APIs — `toLocaleDateString(locale` and
  *      `new Intl.DateTimeFormat(locale` — where `locale` is an unresolved
- *      variable.  Correct call sites wrap the locale with
+ *      variable (simple identifier OR member-access chain ending in a
+ *      `*locale` segment, e.g. `props.locale`, `this.locale`,
+ *      `ctx.requestLocale`).  Correct call sites wrap the locale with
  *      `getDateFormatLocale(locale)` so the Buddhist-Era calendar is applied
  *      for `th-TH` and the guard does NOT fire.
  *
@@ -50,12 +52,17 @@
  *   - src/lib/format-date-localised.ts
  *   - src/lib/format-tax-doc-date.ts
  *
- * The script intentionally FAILS until Task 10 of 061-date-standardization
- * lands — it proves the guard works (migration preview) and goes green once
- * all calling sites are migrated.
+ * Enforcement model:
+ *   This script exits 1 on violations.  In `.husky/pre-push` it runs
+ *   sequentially alongside the other advisory `check:*` guards (check:layout,
+ *   check:fixme, check:template-seed) — none of which are chained with
+ *   `|| exit 1`, so a failure is visible but non-blocking in pre-push.
+ *   It IS blocking in the full-CI reproduce command:
+ *     pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n &&
+ *     pnpm check:layout && pnpm check:fixme && pnpm check:dates && …
  *
  * Usage:
- *   pnpm check:dates          # fail on violations (CI gate)
+ *   pnpm check:dates          # exit 1 on violations
  *   pnpm check:dates --list   # same + always prints violation details
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -131,9 +138,16 @@ const BANNED: ReadonlyArray<BannedPattern> = [
     // explicitly NOT matched because by convention they have already been
     // through `getDateFormatLocale`.
     //
+    // Member-access chains (e.g. `props.locale`, `this.locale`,
+    // `ctx.requestLocale`) are matched via an optional `(?:…\.)+` prefix
+    // before the `*locale` token.  The chain prefix itself only matches
+    // identifier segments (no spaces), so `getDateFormatLocale(locale)` is
+    // NOT affected: the negative-lookahead fires on `getDateFormatLocale\s*\(`
+    // before the pattern body is even evaluated.
+    //
     // Also catches ternary forms: .toLocaleDateString(locale === 'th' ? 'x' : locale, …)
     reFullText:
-      /\.toLocaleDateString\(\s*(?!getDateFormatLocale\s*\()(?:[a-zA-Z_$][a-zA-Z0-9_$]*[Ll]ocale\b|locale\b)/s,
+      /\.toLocaleDateString\(\s*(?!getDateFormatLocale\s*\()(?:[A-Za-z_$][\w$]*\.)*(?:[A-Za-z_$][\w$]*[Ll]ocale\b|locale\b)/s,
     description:
       '.toLocaleDateString(locale) with bare locale variable — use .toLocaleDateString(getDateFormatLocale(locale)) instead',
   },
@@ -146,14 +160,18 @@ const BANNED: ReadonlyArray<BannedPattern> = [
     //   )
     // Does NOT match: new Intl.DateTimeFormat(getDateFormatLocale(…)
     // Does NOT match: new Intl.DateTimeFormat('th-TH-u-ca-buddhist' ← buddhist-literal catches this
-    // Does NOT match: new Intl.DateTimeFormat(cacheKey, …)  ← already resolved
+    // Does NOT match: new Intl.DateTimeFormat(cacheKey, …)  ← cacheKey doesn't end in *locale
     //
     // Matches identifiers whose name IS or CONTAINS the word `locale`
     // (same convention as bare-toLocaleDateString above).  The `locale\b`
     // branch also catches ternary forms where `locale` appears after `?`:
     //   new Intl.DateTimeFormat(locale === 'th' ? X : locale, …)
+    //
+    // Member-access chains (e.g. `props.locale`, `this.locale`,
+    // `ctx.requestLocale`) are matched via an optional `(?:…\.)+` prefix —
+    // same approach as bare-toLocaleDateString.
     reFullText:
-      /new\s+Intl\.DateTimeFormat\(\s*(?!getDateFormatLocale\s*\()(?!['"`])(?:[a-zA-Z_$][a-zA-Z0-9_$]*[Ll]ocale\b|locale\b)/s,
+      /new\s+Intl\.DateTimeFormat\(\s*(?!getDateFormatLocale\s*\()(?!['"`])(?:[A-Za-z_$][\w$]*\.)*(?:[A-Za-z_$][\w$]*[Ll]ocale\b|locale\b)/s,
     description:
       'new Intl.DateTimeFormat(locale) with bare locale variable — use new Intl.DateTimeFormat(getDateFormatLocale(locale)) instead',
   },
@@ -245,9 +263,15 @@ function lineOf(text: string, matchIndex: number): number {
   return line;
 }
 
-function scanFile(filePath: string): ReadonlyArray<Violation> {
+/**
+ * Pure scanning function — exposed for unit tests.
+ *
+ * Accepts file source text and a relative path label (used only in the
+ * returned Violation objects' `file` field; no I/O is performed).
+ * Returns all violations found, deduplication included.
+ */
+export function scanSource(source: string, relPath: string): ReadonlyArray<Violation> {
   const out: Violation[] = [];
-  const source = readFileSync(filePath, 'utf8');
   const lines = source.split('\n');
 
   // --- Per-line pass (for the cheap `buddhist-literal` literal check) ---
@@ -260,7 +284,7 @@ function scanFile(filePath: string): ReadonlyArray<Violation> {
       const match = pattern.reLine.exec(line);
       if (match !== null) {
         out.push({
-          file: filePath,
+          file: relPath,
           line: i + 1,
           col: match.index + 1,
           patternId: pattern.id,
@@ -277,7 +301,7 @@ function scanFile(filePath: string): ReadonlyArray<Violation> {
   for (const pattern of BANNED) {
     if (!pattern.reFullText) continue;
 
-    // Use a sticky/global copy to find ALL matches (not just the first).
+    // Use a global copy to find ALL matches (not just the first).
     const globalRe = new RegExp(pattern.reFullText.source, 'gs');
     let match: RegExpExecArray | null;
     while ((match = globalRe.exec(stripped)) !== null) {
@@ -286,7 +310,7 @@ function scanFile(filePath: string): ReadonlyArray<Violation> {
       // Compute column from the character offset within that line.
       const lineStart = match.index - (stripped.lastIndexOf('\n', match.index - 1) + 1);
       out.push({
-        file: filePath,
+        file: relPath,
         line: lineNum,
         col: lineStart + 1,
         patternId: pattern.id,
@@ -305,6 +329,11 @@ function scanFile(filePath: string): ReadonlyArray<Violation> {
     seen.add(key);
     return true;
   });
+}
+
+function scanFile(filePath: string): ReadonlyArray<Violation> {
+  const source = readFileSync(filePath, 'utf8');
+  return scanSource(source, filePath);
 }
 
 // ---------------------------------------------------------------------------
