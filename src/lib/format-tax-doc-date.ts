@@ -25,9 +25,18 @@ export function formatTaxDocDate(isoDate: string, locale: string): string {
     Number.isNaN(day) || day < 1 || day > 31
   ) return '—';
 
+  // R5: construct once and round-trip-verify to catch rollover-invalid dates
+  // e.g. Date.UTC(2026, 1, 30) silently rolls to Mar 2 — reject these.
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() !== month - 1 ||
+    d.getUTCDate() !== day
+  ) return '—';
+
   const isThai = locale === 'th' || locale === 'th-TH';
   // R3: non-Thai locales route through getDateFormatLocale (e.g. 'sv' → 'sv-SE')
-  const ce = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(
+  const ce = d.toLocaleDateString(
     isThai ? 'th-TH-u-ca-gregory' : getDateFormatLocale(locale),
     { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' },
   );
