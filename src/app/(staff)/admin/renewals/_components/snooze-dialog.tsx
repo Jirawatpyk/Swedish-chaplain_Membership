@@ -93,8 +93,19 @@ export function SnoozeDialog({
   const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   return (
+    // Fix 4 a11y: form-bearing confirmation dialog — keep Dialog (for
+    // `initialFocus` support on the Cancel button ref) and add
+    // `role="alertdialog"` so AT announces this as an alert dialog
+    // requiring a response (ARIA 1.1 § 5.3.3). AlertDialog primitive
+    // is not used here because `AlertDialogContent` (Base UI
+    // AlertDialog.Popup) does not expose an `initialFocus` prop,
+    // which is needed to satisfy ux-standards § 4 "focus Cancel by
+    // default". `DialogContent` renders a Base UI `Dialog.Popup`
+    // which extends `BaseUIComponentProps<'div'>`, so `role` is a
+    // valid HTML div attribute passed through to the rendered element.
+    // Match: `outreach-dialog.tsx` (same form-bearing-confirm pattern).
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent initialFocus={cancelRef}>
+      <DialogContent initialFocus={cancelRef} role="alertdialog">
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>

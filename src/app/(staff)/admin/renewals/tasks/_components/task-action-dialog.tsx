@@ -119,7 +119,19 @@ export function TaskActionDialog({
         {children}
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
+          {/* ux-standards § 7.2/§ 6.2: focus Cancel on open for
+              dialogs with side-effects (prefer safety default over
+              convenience). `autoFocus` on the Cancel button fires
+              inside the Base UI focus-trap after the popup opens,
+              overriding the trap's default first-focusable-element
+              heuristic which would otherwise land on the textarea/
+              combobox in the body slot. */}
+          <AlertDialogCancel
+            disabled={isPending}
+            autoFocus
+          >
+            {cancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
             variant={variant}
             disabled={isPending || !canSubmit}
