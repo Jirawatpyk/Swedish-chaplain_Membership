@@ -20,6 +20,8 @@
  * calendar-agnostic.
  */
 
+import { getDateFormatLocale } from '@/lib/format-date-localised';
+
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
@@ -70,9 +72,8 @@ export function formatRelativeTime(
   }
 
   // Older than ~30 days → absolute formatted date
-  const bcp47 = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
   try {
-    return new Intl.DateTimeFormat(bcp47, {
+    return new Intl.DateTimeFormat(getDateFormatLocale(locale), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
