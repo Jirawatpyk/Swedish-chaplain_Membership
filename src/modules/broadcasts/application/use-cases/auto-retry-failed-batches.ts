@@ -137,7 +137,9 @@ export async function autoRetryFailedBatch(
   await safeAuditEmit(deps.audit, null, {
     tenantId: tenantSlug,
     eventType: 'broadcast_retry_initiated',
-    actorUserId: 'system',
+    // `system:` prefix (NOT bare `system`) so the audit viewer's
+    // isResolvableActor sentinel filter excludes it from the uuid lookup.
+    actorUserId: 'system:auto-retry',
     summary: `Auto-retry batch ${batch.batchIndex} of broadcast ${batch.broadcastId as unknown as string} (attempt ${newRetryCount}/${AUTO_RETRY_BUDGET})`,
     payload: {
       broadcastId: batch.broadcastId,
