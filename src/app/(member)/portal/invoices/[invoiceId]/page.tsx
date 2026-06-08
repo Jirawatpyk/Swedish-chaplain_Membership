@@ -62,7 +62,6 @@ import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Table,
@@ -73,12 +72,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import {
-  formatDate,
-  formatSatangThb,
-  statusBadgeVariant,
-  statusIcon,
-} from '../_utils/format';
+import { formatDate, formatSatangThb } from '../_utils/format';
+import { InvoiceStatusBadge } from '../_components/invoice-status-badge';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
 import {
   PortalInvoiceDownloadButton,
@@ -170,15 +165,9 @@ export default async function PortalInvoiceDetailPage({
   // without having to re-derive the rendered output. Function children
   // are not allowed across the server→client boundary, so we pass the
   // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
-  const renderStatusBadge = (status: typeof displayStatus | 'paid') => {
-    const Icon = statusIcon(status);
-    return (
-      <Badge variant={statusBadgeVariant(status)} className="inline-flex items-center gap-1">
-        <Icon className="size-3.5" aria-hidden="true" />
-        {tStatus(status)}
-      </Badge>
-    );
-  };
+  const renderStatusBadge = (status: typeof displayStatus | 'paid') => (
+    <InvoiceStatusBadge status={status} label={tStatus(status)} />
+  );
 
   const documentNumber = invoice.documentNumber?.raw ?? '—';
   const subtotal = invoice.subtotal?.satang ?? null;

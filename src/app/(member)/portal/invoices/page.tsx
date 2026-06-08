@@ -32,7 +32,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -43,12 +42,8 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import {
-  formatDate,
-  formatSatangThb,
-  statusBadgeVariant,
-  statusIcon,
-} from './_utils/format';
+import { formatDate, formatSatangThb } from './_utils/format';
+import { InvoiceStatusBadge } from './_components/invoice-status-badge';
 import {
   toInvoiceRowViewModel,
   rowHasAnyAction,
@@ -132,6 +127,23 @@ export default async function PortalInvoicesPage({
   const tenantCtx = resolveTenantFromRequest();
   const memberDeps = buildMembersDeps(tenantCtx);
 
+  // 060-member-portal-d4 (final review) — three early-return branches
+  // (member-lookup failure, not-linked, list-read throw) render the SAME
+  // centred message card under the page header; only the message string
+  // differs. Extracted to a local helper so the three branches keep their
+  // own log/discriminate logic but share ONE byte-identical card shape (a
+  // copy drifting would give members three subtly different empty states).
+  const messageState = (message: string): React.ReactElement => (
+    <DetailContainer>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <Card>
+        <CardContent className="py-12 text-center">
+          <p className="text-muted-foreground">{message}</p>
+        </CardContent>
+      </Card>
+    </DetailContainer>
+  );
+
   // Resolve the member linked to this user — if none, surface the
   // "not linked" empty state instead of listing zero rows (which
   // would be indistinguishable from "member with no invoices").
@@ -156,27 +168,9 @@ export default async function PortalInvoicesPage({
         },
         '[portal-invoices-list] member lookup failed — rendering error state',
       );
-      return (
-        <DetailContainer>
-          <PageHeader title={t('title')} subtitle={t('subtitle')} />
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">{t('loadFailed')}</p>
-            </CardContent>
-          </Card>
-        </DetailContainer>
-      );
+      return messageState(t('loadFailed'));
     }
-    return (
-      <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">{t('notLinked')}</p>
-          </CardContent>
-        </Card>
-      </DetailContainer>
-    );
+    return messageState(t('notLinked'));
   }
   const member = memberResult.value;
 
@@ -239,16 +233,7 @@ export default async function PortalInvoicesPage({
       },
       '[portal-invoices-list] listInvoicesPaged threw — rendering error state',
     );
-    return (
-      <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">{t('loadFailed')}</p>
-          </CardContent>
-        </Card>
-      </DetailContainer>
-    );
+    return messageState(t('loadFailed'));
   }
   const rawRows = pageData.rows;
   const total = pageData.total;
@@ -423,18 +408,10 @@ export default async function PortalInvoicesPage({
                           )}
                         </TableCell>
                         <TableCell className="align-middle">
-                          {(() => {
-                            const Icon = statusIcon(vm.displayStatus);
-                            return (
-                              <Badge
-                                variant={statusBadgeVariant(vm.displayStatus)}
-                                className="inline-flex items-center gap-1"
-                              >
-                                <Icon className="size-3.5" aria-hidden="true" />
-                                {tStatus(vm.displayStatus)}
-                              </Badge>
-                            );
-                          })()}
+                          <InvoiceStatusBadge
+                            status={vm.displayStatus}
+                            label={tStatus(vm.displayStatus)}
+                          />
                         </TableCell>
                         <TableCell className="align-middle">
                           {formatDate(vm.issueDate, userLocale)}
@@ -504,43 +481,47 @@ export default async function PortalInvoicesPage({
                                     )}
                                   />
                                 )}
-                                {vm.showReceipt && (
-                                  <PortalReceiptDownloadButton
-                                    invoiceId={vm.invoiceId}
-                                    documentNumber={
-                                      vm.receiptNumber ??
-                                      vm.documentNumber ??
-                                      vm.invoiceId
-                                    }
-                                    label={
-                                      vm.isCombinedPaid
-                                        ? t('actions.downloadCombined')
-                                        : t('actions.downloadReceipt')
-                                    }
-                                    // 060-member-portal-d4 (F2) — branch the aria
-                                    // on `vm.isCombinedPaid` so the SR name matches
-                                    // the visible combined label ("Tax invoice /
-                                    // Receipt"). Previously hardcoded to
-                                    // `downloadReceiptAria` ("Download tax receipt
-                                    // PDF"), contradicting the combined visible
-                                    // text. Mirrors the card.
-                                    ariaLabel={t(
-                                      vm.isCombinedPaid
-                                        ? 'actions.downloadCombinedAria'
-                                        : 'actions.downloadReceiptAria',
-                                      {
-                                        number:
-                                          vm.receiptNumber ??
-                                          vm.documentNumber ??
-                                          vm.invoiceId,
-                                      },
-                                    )}
-                                    className={cn(
-                                      buttonVariants({ variant: 'ghost', size: 'sm' }),
-                                      'min-h-11 px-3',
-                                    )}
-                                  />
-                                )}
+                                {vm.showReceipt &&
+                                  (() => {
+                                    // 060-member-portal-d4 (final review) — the
+                                    // receipt reference (separate-mode receipt
+                                    // number, else the invoice doc number, else
+                                    // the raw id) was computed twice in this
+                                    // button (the `documentNumber` prop + the aria
+                                    // `number`). Hoist it so the visible doc-ref
+                                    // and the SR aria can never diverge. Mirrors
+                                    // the card.
+                                    const receiptRef =
+                                      vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId;
+                                    return (
+                                      <PortalReceiptDownloadButton
+                                        invoiceId={vm.invoiceId}
+                                        documentNumber={receiptRef}
+                                        label={
+                                          vm.isCombinedPaid
+                                            ? t('actions.downloadCombined')
+                                            : t('actions.downloadReceipt')
+                                        }
+                                        // 060-member-portal-d4 (F2) — branch the aria
+                                        // on `vm.isCombinedPaid` so the SR name matches
+                                        // the visible combined label ("Tax invoice /
+                                        // Receipt"). Previously hardcoded to
+                                        // `downloadReceiptAria` ("Download tax receipt
+                                        // PDF"), contradicting the combined visible
+                                        // text. Mirrors the card.
+                                        ariaLabel={t(
+                                          vm.isCombinedPaid
+                                            ? 'actions.downloadCombinedAria'
+                                            : 'actions.downloadReceiptAria',
+                                          { number: receiptRef },
+                                        )}
+                                        className={cn(
+                                          buttonVariants({ variant: 'ghost', size: 'sm' }),
+                                          'min-h-11 px-3',
+                                        )}
+                                      />
+                                    );
+                                  })()}
                                 {vm.receiptPending && (
                                   <span
                                     role="status"

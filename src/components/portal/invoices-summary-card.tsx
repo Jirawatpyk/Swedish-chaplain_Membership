@@ -35,15 +35,13 @@ import {
   CardDescription,
   CardHeader,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   formatDate,
   formatSatangThb,
-  statusBadgeVariant,
-  statusIcon,
 } from '@/app/(member)/portal/invoices/_utils/format';
+import { InvoiceStatusBadge } from '@/app/(member)/portal/invoices/_components/invoice-status-badge';
 import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
 
 const SUMMARY_LIMIT = 3;
@@ -225,18 +223,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                     {r.documentNumber?.raw ?? '—'}
                   </Link>
                   <div className="flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const Icon = statusIcon(r.status);
-                      return (
-                        <Badge
-                          variant={statusBadgeVariant(r.status)}
-                          className="inline-flex items-center gap-1"
-                        >
-                          <Icon className="size-3.5" aria-hidden="true" />
-                          {tStatus(r.status)}
-                        </Badge>
-                      );
-                    })()}
+                    <InvoiceStatusBadge status={r.status} label={tStatus(r.status)} />
                     {/* whitespace-nowrap so the date wraps as a UNIT below the
                         badge (not mid-date "Apr 27, / 2026") when the row is
                         tight on a narrow phone; flex-wrap on the parent lets it

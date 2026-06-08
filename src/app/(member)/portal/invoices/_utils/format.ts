@@ -126,7 +126,7 @@ export function statusIconName(
  * through {@link statusIcon} below instead of redeclaring this map, so the
  * status → icon pairing can never drift between surfaces.
  */
-const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
+export const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   CheckCircle2,
   Clock,
   AlertTriangle,

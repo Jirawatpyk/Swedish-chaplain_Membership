@@ -46,21 +46,17 @@
  */
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import {
-  formatDate,
-  formatSatangThb,
-  statusBadgeVariant,
-  statusIcon,
-} from '../_utils/format';
+import { formatDate, formatSatangThb } from '../_utils/format';
+import type { InvoiceRowDisplayStatus } from '../_utils/format';
 import {
   rowHasAnyAction,
   type InvoiceRowViewModel,
 } from '../_utils/invoice-row-view-model';
 import { EmptyCell } from './empty-cell';
+import { InvoiceStatusBadge } from './invoice-status-badge';
 import { ResendInvoiceButton } from './resend-invoice-button';
 import {
   PortalInvoiceDownloadButton,
@@ -83,8 +79,18 @@ export interface PortalInvoiceCardListProps {
   readonly locale: string;
   /** `t` bound to `portal.invoices` (column labels + action labels + aria). */
   readonly t: (key: string, values?: Record<string, string | number>) => string;
-  /** `tStatus` bound to `admin.invoices.list.statuses` (status badge text). */
-  readonly tStatus: (key: string) => string;
+  /**
+   * `tStatus` bound to `admin.invoices.list.statuses` (status badge text).
+   *
+   * 060-member-portal-d4 (final review) — the param is narrowed to
+   * {@link InvoiceRowDisplayStatus} (the only thing this list ever passes is
+   * `vm.displayStatus`) so a wrong/typo status key is a COMPILE error at this
+   * prop boundary. next-intl's `t: (key: string) => string` is still
+   * assignable here: a wider parameter is contravariantly assignable to a
+   * narrower one (string ⊇ InvoiceRowDisplayStatus), so the page's translator
+   * type-checks unchanged.
+   */
+  readonly tStatus: (key: InvoiceRowDisplayStatus) => string;
   /** Forwarded to the root `<ul>` — the page passes `md:hidden`. */
   readonly className?: string;
 }
@@ -104,7 +110,6 @@ export function PortalInvoiceCardList({
     >
       {rows.map(({ vm }) => {
         const statusLabel = tStatus(vm.displayStatus);
-        const Icon = statusIcon(vm.displayStatus);
         return (
           <li
             key={vm.invoiceId}
@@ -123,13 +128,11 @@ export function PortalInvoiceCardList({
                       {vm.documentNumber ?? vm.invoiceId}
                     </h2>
                   </Link>
-                  <Badge
-                    variant={statusBadgeVariant(vm.displayStatus)}
-                    className="inline-flex shrink-0 items-center gap-1"
-                  >
-                    <Icon className="size-3.5" aria-hidden="true" />
-                    {statusLabel}
-                  </Badge>
+                  <InvoiceStatusBadge
+                    status={vm.displayStatus}
+                    label={statusLabel}
+                    className="shrink-0"
+                  />
                 </div>
 
                 {/* Dates — reuse the existing column labels as inline labels. */}
@@ -199,43 +202,52 @@ export function PortalInvoiceCardList({
                         )}
                       />
                     )}
-                    {vm.showReceipt && (
-                      <PortalReceiptDownloadButton
-                        invoiceId={vm.invoiceId}
-                        documentNumber={
-                          vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId
-                        }
-                        // Combined-mode label is the SHORT verb-less
-                        // `actions.downloadCombined` ("Tax invoice / Receipt").
-                        // The verb was dropped from that key so the download icon
-                        // carries "download" and the card + desktop table + detail
-                        // all share one label (no overflow on a 320px card).
-                        // Separate-mode keeps the short "Receipt"; the full
-                        // combined aria label is preserved below for SR users.
-                        label={
-                          vm.isCombinedPaid
-                            ? t('actions.downloadCombined')
-                            : t('actions.downloadReceipt')
-                        }
-                        ariaLabel={t(
-                          vm.isCombinedPaid
-                            ? 'actions.downloadCombinedAria'
-                            : 'actions.downloadReceiptAria',
-                          { number: vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId },
-                        )}
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-3',
-                          // Allow the combined label to WRAP to 2 lines within
-                          // the card instead of clipping (Button defaults to
-                          // `whitespace-nowrap` + the Card is `overflow-hidden`,
-                          // which silently clipped the legally-required CTA).
-                          // `h-auto` lets the button grow past its fixed sm
-                          // height; `min-h-11` keeps the ≥44px tap target.
-                          vm.isCombinedPaid && 'h-auto min-h-11 whitespace-normal text-left',
-                        )}
-                      />
-                    )}
+                    {vm.showReceipt &&
+                      (() => {
+                        // 060-member-portal-d4 (final review) — the receipt
+                        // reference (separate-mode receipt number, else the
+                        // invoice doc number, else the raw id) was computed twice
+                        // in this button (the `documentNumber` prop + the aria
+                        // `number`). Hoist it so the visible doc-ref and the SR
+                        // aria can never diverge. Mirrors the desktop table.
+                        const receiptRef =
+                          vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId;
+                        return (
+                          <PortalReceiptDownloadButton
+                            invoiceId={vm.invoiceId}
+                            documentNumber={receiptRef}
+                            // Combined-mode label is the SHORT verb-less
+                            // `actions.downloadCombined` ("Tax invoice / Receipt").
+                            // The verb was dropped from that key so the download icon
+                            // carries "download" and the card + desktop table + detail
+                            // all share one label (no overflow on a 320px card).
+                            // Separate-mode keeps the short "Receipt"; the full
+                            // combined aria label is preserved below for SR users.
+                            label={
+                              vm.isCombinedPaid
+                                ? t('actions.downloadCombined')
+                                : t('actions.downloadReceipt')
+                            }
+                            ariaLabel={t(
+                              vm.isCombinedPaid
+                                ? 'actions.downloadCombinedAria'
+                                : 'actions.downloadReceiptAria',
+                              { number: receiptRef },
+                            )}
+                            className={cn(
+                              buttonVariants({ variant: 'outline', size: 'sm' }),
+                              'min-h-11 px-3',
+                              // Allow the combined label to WRAP to 2 lines within
+                              // the card instead of clipping (Button defaults to
+                              // `whitespace-nowrap` + the Card is `overflow-hidden`,
+                              // which silently clipped the legally-required CTA).
+                              // `h-auto` lets the button grow past its fixed sm
+                              // height; `min-h-11` keeps the ≥44px tap target.
+                              vm.isCombinedPaid && 'h-auto min-h-11 whitespace-normal text-left',
+                            )}
+                          />
+                        );
+                      })()}
                     {vm.receiptPending && (
                       <span
                         role="status"
