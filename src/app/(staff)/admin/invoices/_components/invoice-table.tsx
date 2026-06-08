@@ -28,7 +28,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { toast } from 'sonner';
 import { AlertCircleIcon, InfoIcon, Loader2 } from 'lucide-react';
 import {
@@ -227,6 +228,7 @@ export function InvoicesTable({
 }) {
   const t = useTranslations('admin.invoices.list');
   const tDetail = useTranslations('admin.invoices.detail');
+  const locale = useLocale();
   // Per-row spinner state keyed by `${variant}:${invoiceId}` so two
   // downloads on different rows don't overwrite each other's loader.
   // (Single-slot state would lose row-A's spinner when row-B's
@@ -501,8 +503,12 @@ export function InvoicesTable({
                   )}
                 </TableCell>
               )}
-              <TableCell className="align-middle whitespace-nowrap">{r.issueDate ?? '—'}</TableCell>
-              <TableCell className="align-middle whitespace-nowrap">{r.dueDate ?? '—'}</TableCell>
+              <TableCell className="align-middle whitespace-nowrap">
+                {r.issueDate ? formatLocalisedDate(r.issueDate, locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+              </TableCell>
+              <TableCell className="align-middle whitespace-nowrap">
+                {r.dueDate ? formatLocalisedDate(r.dueDate, locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+              </TableCell>
               <TableCell className="align-middle whitespace-nowrap text-right tabular-nums">
                 {formatSatang(r.totalSatang)} THB
               </TableCell>
