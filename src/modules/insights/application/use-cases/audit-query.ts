@@ -101,9 +101,20 @@ export interface AuditQueryDeps {
   readonly actorDirectory: ActorDirectory;
 }
 
-/** `system:*` / `anonymous` actors are sentinels, not resolvable user rows. */
-function isResolvableActor(actorUserId: string): boolean {
-  return !actorUserId.startsWith('system:') && actorUserId !== 'anonymous';
+/**
+ * Only UUID-shaped actor ids are resolvable `users` rows. Sentinels —
+ * `system:*`, `anonymous`, the bare `system`, `''`, or ANY non-UUID string —
+ * are rendered raw and MUST NOT reach the `inArray(users.id, …)` lookup:
+ * `users.id` is a `uuid` column, so a non-UUID value throws Postgres
+ * `invalid input syntax for type uuid` (a DrizzleQueryError that degraded the
+ * entire identity-resolve to raw ids — e.g. an `actor_user_id = 'system'` row
+ * that slipped the old `startsWith('system:')` check, which required the colon).
+ * Exported for unit testing.
+ */
+const ACTOR_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isResolvableActor(actorUserId: string): boolean {
+  return ACTOR_UUID_RE.test(actorUserId);
 }
 
 function actorLabelOf(
