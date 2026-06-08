@@ -47,8 +47,23 @@ import { join, relative, resolve } from 'node:path';
 // these patterns — they must NOT be flagged).
 // ---------------------------------------------------------------------------
 const ALLOWLIST_REL: ReadonlyArray<string> = [
+  // Canonical helpers — the only legitimate locations for the buddhist literal.
   'src/lib/format-date-localised.ts',
   'src/lib/format-tax-doc-date.ts',
+
+  // Email templates: server-side render for the RECIPIENT's locale (not the
+  // admin's next-intl locale). Spec §4 explicitly scopes email locale handling
+  // out of the BE-display convention; these use a custom BroadcastNotificationLocale
+  // type with explicit tz mapping, not a bare next-intl locale variable.
+  'src/modules/broadcasts/infrastructure/email/broadcast-notification-emails.ts',
+
+  // calendar.tsx: the `locale?.code` is a react-day-picker locale OBJECT
+  // property (e.g. `enUS.code`), not a next-intl locale string. The
+  // toLocaleDateString call here sets a DOM data-attribute for day-picker
+  // internal state, not a user-visible date string; BE conversion is
+  // irrelevant (month-only calendar header has no year context where BE
+  // matters, and the picker library owns its own locale formatting).
+  'src/components/ui/calendar.tsx',
 ];
 
 // ---------------------------------------------------------------------------

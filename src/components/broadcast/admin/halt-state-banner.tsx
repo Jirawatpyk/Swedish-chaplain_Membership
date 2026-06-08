@@ -13,6 +13,7 @@
 import Link from 'next/link';
 import { ShieldAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { ClearHaltDialog } from './clear-halt-dialog';
 
 export interface HaltedMember {
@@ -35,7 +36,7 @@ export async function HaltStateBanner({
   const t = await getTranslations('admin.broadcasts.haltBanner');
   const locale = await getLocale();
   const fmt = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
+    getDateFormatLocale(locale),
     { dateStyle: 'medium' },
   );
 

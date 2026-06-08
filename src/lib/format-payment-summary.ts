@@ -16,6 +16,8 @@
  * `Intl.NumberFormat` cache strategy verbatim + delegating formatting.
  */
 
+import { getDateFormatLocale } from '@/lib/format-date-localised';
+
 const DATETIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
 // cache `Intl.NumberFormat` per locale to mirror the
 // `DATETIME_FORMATTERS` pattern. `formatPaymentAmount` is called on
@@ -59,13 +61,17 @@ export function formatPaymentDateTime(
   date: Date = new Date(),
   locale: string = 'en-US',
 ): string {
-  let fmt = DATETIME_FORMATTERS.get(locale);
+  // Cache key uses the resolved BCP-47 locale (th → th-TH-u-ca-buddhist)
+  // so Thai renders Buddhist Era and the cache does not duplicate entries
+  // for 'th' vs 'th-TH-u-ca-buddhist'.
+  const cacheKey = getDateFormatLocale(locale);
+  let fmt = DATETIME_FORMATTERS.get(cacheKey);
   if (!fmt) {
-    fmt = new Intl.DateTimeFormat(locale, {
+    fmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
       dateStyle: 'long',
       timeStyle: 'short',
     });
-    DATETIME_FORMATTERS.set(locale, fmt);
+    DATETIME_FORMATTERS.set(cacheKey, fmt);
   }
   return fmt.format(date);
 }

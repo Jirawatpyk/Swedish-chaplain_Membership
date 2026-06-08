@@ -18,6 +18,7 @@
 import Link from 'next/link';
 import { ArrowRight, PackageOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -79,7 +80,7 @@ export interface BenefitUsageCardProps {
 
 function useFormatDate(locale: string): (iso: string) => string {
   return (iso: string) =>
-    new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
+    new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'medium' }).format(new Date(iso));
 }
 
 export function BenefitUsageCard({

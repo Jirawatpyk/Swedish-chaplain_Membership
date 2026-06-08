@@ -25,6 +25,7 @@ import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { dompurifySanitizer } from '@/modules/broadcasts';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.review');
@@ -74,7 +75,7 @@ export default async function AdminBroadcastDetailPage({
   // (+8) and a UTC dev environment would format as +0, drifting from
   // the contract the queue + schedule picker advertise.
   const fmt = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
+    getDateFormatLocale(locale),
     { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' },
   );
 

@@ -32,6 +32,7 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -134,8 +135,7 @@ function formatDispatchedAt(iso: string | null, locale: string): string {
   // locale we also pass `ca-buddhist` for BE-year display (matches
   // existing F4 invoicing convention).
   try {
-    const resolvedLocale = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
-    return new Date(iso).toLocaleString(resolvedLocale, {
+    return new Date(iso).toLocaleString(getDateFormatLocale(locale), {
       year: 'numeric',
       month: 'short',
       day: '2-digit',

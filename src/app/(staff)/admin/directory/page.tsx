@@ -24,6 +24,7 @@ import { ShieldAlertIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   listDirectoryExports,
   makeGenerateDirectoryExportDeps,
@@ -117,7 +118,7 @@ export default async function DirectoryPage({
     contactName: item.contactName,
   }));
 
-  const dateFmt = new Intl.DateTimeFormat(locale, {
+  const dateFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: env.tenant.timezone,

@@ -15,6 +15,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { CheckCircle2, Circle } from 'lucide-react';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 interface AuditRow {
   readonly eventType: string;
@@ -70,7 +71,7 @@ export async function AuditTimeline({
   const t = await getTranslations('admin.broadcasts.review.audit');
   const locale = await getLocale();
   const fmt = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
+    getDateFormatLocale(locale),
     { dateStyle: 'medium', timeStyle: 'short' },
   );
 

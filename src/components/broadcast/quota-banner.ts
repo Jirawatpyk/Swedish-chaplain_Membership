@@ -20,6 +20,7 @@ import { Instant, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import type { IanaTimezone } from '@/modules/tenants';
 import { nextResetAtFor } from '@/modules/broadcasts';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 /**
  * Re-export of the canonical quota-reset formatter so the page helper
@@ -55,13 +56,12 @@ export function shouldShowPlanChangedExplainer(
 /**
  * Map next-intl locale → BCP 47 tag for `Intl.DateTimeFormat`.
  *
- * Thai dates display in Buddhist Era (BE = CE + 543) on member-facing
- * surfaces per CLAUDE.md Conventions; the `u-ca-buddhist` Unicode
- * extension toggles ICU's Buddhist calendar without changing the
- * stored UTC value. Other locales pass through unchanged.
+ * Delegates to the canonical `getDateFormatLocale` helper so Thai
+ * surfaces display Buddhist Era (BE = CE + 543) without inlining the
+ * `u-ca-buddhist` calendar extension at each call site.
  */
 export function intlLocale(locale: string): string {
-  return locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
+  return getDateFormatLocale(locale);
 }
 
 export interface HistoryPage<T> {
