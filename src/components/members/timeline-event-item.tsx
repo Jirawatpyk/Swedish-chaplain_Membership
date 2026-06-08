@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { RelativeTime } from '@/components/ui/relative-time';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import type { TimelineSource, TimelineActorKind } from '@/lib/timeline-shared';
 
 export type TimelineItemProps = {
@@ -59,9 +60,8 @@ const SOURCE_ICON: Record<TimelineSource, LucideIcon> = {
 export function formatLocalisedTimestamp(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const bcp47 = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
   try {
-    return new Intl.DateTimeFormat(bcp47, {
+    return new Intl.DateTimeFormat(getDateFormatLocale(locale), {
       year: 'numeric',
       month: 'short',
       day: '2-digit',
