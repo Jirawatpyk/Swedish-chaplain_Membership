@@ -468,7 +468,23 @@ export function makeDrizzleInvoiceRepo(
         const filters = [eq(invoices.tenantId, tenantIdArg)];
 
         const includeDrafts = opts.includeDrafts ?? false;
-        if (!includeDrafts && !opts.status) {
+        // Unconditional draft-exclusion guard (kept in lockstep with
+        // `listPaged`). #15 fix: the prior `(!opts.status || opts.status ===
+        // 'all')` guard still let `status: 'draft'` bypass — the specific-status
+        // branch below fired `eq(status, 'draft')`, returning drafts even with
+        // `includeDrafts: false` (reachable via `GET /api/invoices?status=draft`
+        // with no `includeDrafts=true`). Excluding drafts whenever they are not
+        // opted-in is correct for EVERY status, because the filters array is
+        // AND-combined:
+        //   - undefined / 'all'  → drafts excluded (subsumes the prior fix)
+        //   - 'issued'/'paid'/…  → eq(status, X) AND status != 'draft' (no-op
+        //     for non-draft statuses)
+        //   - 'draft'            → eq(status, 'draft') AND status != 'draft' →
+        //     EMPTY (the #15 fix: a raw API draft request without the flag now
+        //     returns nothing — members/managers must opt in via includeDrafts)
+        // `includeDrafts: true` (admin member-detail / GDPR export) skips the
+        // exclusion entirely, so all legitimate draft paths are unchanged.
+        if (!includeDrafts) {
           filters.push(sql`${invoices.status} != 'draft'`);
         }
         if (opts.status && opts.status !== 'all') {
@@ -569,7 +585,24 @@ export function makeDrizzleInvoiceRepo(
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];
         const includeDrafts = opts.includeDrafts ?? false;
-        if (!includeDrafts && !opts.status) {
+        // Unconditional draft-exclusion guard (kept in lockstep with the cursor
+        // `list`). #15 fix: the prior `(!opts.status || opts.status === 'all')`
+        // guard still let `status: 'draft'` bypass — the specific-status branch
+        // below fired `eq(status, 'draft')`, returning drafts even with
+        // `includeDrafts: false`. Excluding drafts whenever they are not opted-in
+        // is correct for EVERY status because the filters array is AND-combined:
+        //   - undefined / 'all'  → drafts excluded (subsumes the prior fix; the
+        //     member portal calls `{ includeDrafts: false, status: 'all' }`)
+        //   - 'issued'/'paid'/…  → eq(status, X) AND status != 'draft' (no-op
+        //     for non-draft statuses)
+        //   - 'overdue'          → status = 'issued' AND past-due AND status !=
+        //     'draft' (no-op; 'issued' already excludes 'draft')
+        //   - 'draft'            → eq(status, 'draft') AND status != 'draft' →
+        //     EMPTY (the #15 fix: a raw draft request without the flag returns
+        //     nothing)
+        // `includeDrafts: true` (admin member-detail / GDPR export) skips the
+        // exclusion entirely so all legitimate draft paths are unchanged.
+        if (!includeDrafts) {
           filters.push(sql`${invoices.status} != 'draft'`);
         }
         if (opts.status === 'overdue') {

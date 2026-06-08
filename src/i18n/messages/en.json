@@ -3998,9 +3998,10 @@
         "downloadVoidedAria": "Download voided invoice PDF (VOID-stamped) for {number}",
         "downloadReceipt": "Receipt",
         "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
-        "downloadCombined": "Download Tax Invoice / Receipt",
+        "downloadCombined": "Tax invoice / Receipt",
         "downloadCombinedAria": "Download combined Tax Invoice / Official Receipt PDF for {number}",
         "receiptPreparing": "Receipt preparing…",
+        "receiptUnavailable": "Receipt unavailable",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"

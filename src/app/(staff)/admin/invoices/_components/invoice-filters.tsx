@@ -32,6 +32,14 @@ import {
 
 const DEBOUNCE_MS = 300;
 
+/**
+ * The status values the filter dropdown can render. This is the
+ * presentation-layer *filter* vocabulary — a superset of the stored
+ * domain `InvoiceStatus`: it also carries the DERIVED `'overdue'` view
+ * (issued + Bangkok-today past dueDate), which the use-case + repo
+ * translate to `status='issued' AND dueDate < today`. It is intentionally
+ * NOT `@/modules/invoicing`'s `InvoiceStatus` (which has no `'overdue'`).
+ */
 const STATUS_VALUES = [
   'draft',
   'issued',
@@ -42,7 +50,32 @@ const STATUS_VALUES = [
   'partially_credited',
 ] as const;
 
-export function InvoiceFilters() {
+/** A single status value the filter dropdown may render. */
+export type InvoiceStatusFilterValue = (typeof STATUS_VALUES)[number];
+
+interface InvoiceFiltersProps {
+  /**
+   * Which status values to render in the status `<Select>`. Defaults to
+   * the full admin vocabulary (`STATUS_VALUES`) so the admin call site is
+   * unchanged. The member portal passes a subset that excludes `'draft'`
+   * (members never see drafts — `includeDrafts:false` at the use-case
+   * level — so a draft option would only yield an unexplained empty state).
+   */
+  readonly statusOptions?: readonly InvoiceStatusFilterValue[];
+  /**
+   * Whether to render the "Paid online" reconciliation chip. Defaults to
+   * `true` so the admin call site is unchanged. The member portal passes
+   * `false`: it is an admin reconciliation filter (succeeded card/PromptPay
+   * payment), so a member who paid offline who toggled it would see their
+   * legitimate invoices vanish — it is meaningless for self-service.
+   */
+  readonly showPaidOnlineChip?: boolean;
+}
+
+export function InvoiceFilters({
+  statusOptions = STATUS_VALUES,
+  showPaidOnlineChip = true,
+}: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
   const tStatus = useTranslations('admin.invoices.list.statuses');
   const router = useRouter();
@@ -54,7 +87,38 @@ export function InvoiceFilters() {
   const tReconciliation = useTranslations('admin.paymentReconciliation.filterChip');
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
-  const paidOnlineActive = searchParams.get('paidOnline') === '1';
+  // Clamp the URL status to the options THIS call site actually renders.
+  // The portal passes `statusOptions` WITHOUT 'draft' (members never see
+  // drafts), so a stale/hand-typed `?status=draft` has no matching
+  // `<SelectItem>`. Without this clamp the trigger would still translate +
+  // show "Draft" AND `hasAnyFilter` would flip true (phantom clear-all)
+  // while the server's `parseStatusFilter('draft')` falls back to 'all' and
+  // returns an UNFILTERED list — a split-brain (UI says Draft+clear-all,
+  // data is unfiltered). Clamping to the permitted vocabulary keeps the
+  // Select value + the active-filter computation honest. No-op for admin:
+  // its default `statusOptions` is the full list, so 'draft' clamps to
+  // itself. Mirrors the `paidOnlineActive` guard below.
+  //
+  // Uses `.some((s) => s === …)` rather than `statusOptions.includes(…)`:
+  // calling an array method (`.includes`) directly on the `statusOptions`
+  // *prop* triggers a React Compiler memoization bailout
+  // (`react-hooks/preserve-manual-memoization`) that breaks the `pushUrl`
+  // useCallback below — the bailout is reported at the useCallback but is a
+  // whole-component effect (commit cf758387). The `.some` predicate form is
+  // behaviour-identical for string elements and avoids the bailout, keeping
+  // the manual memo preserved. (The `pushUrl` useCallback pattern itself
+  // mirrors `directory-filters.tsx`; that file never does an array method on
+  // a prop, so it has no `.some`/`.includes` equivalent to this idiom.)
+  const effectiveStatus = statusOptions.some((s) => s === currentStatus)
+    ? currentStatus
+    : 'all';
+  // When the chip is hidden (member portal) the paid-online filter is not
+  // reachable, so a stray `?paidOnline=1` (hand-typed URL / stale link) must
+  // NOT count as an active filter here — otherwise the clear-all button would
+  // appear with no chip to explain it. The portal page already ignores the
+  // param when threading filters to the use-case.
+  const paidOnlineActive =
+    showPaidOnlineChip && searchParams.get('paidOnline') === '1';
   // 054-event-fee-invoices — subject filter (all | membership | event).
   // Only the two known subjects are honoured; anything else => 'all'.
   const rawSubject = searchParams.get('subject');
@@ -87,7 +151,7 @@ export function InvoiceFilters() {
 
   const hasAnyFilter =
     currentQ !== '' ||
-    currentStatus !== 'all' ||
+    effectiveStatus !== 'all' ||
     currentSubject !== 'all' ||
     paidOnlineActive;
 
@@ -116,7 +180,7 @@ export function InvoiceFilters() {
         />
       </div>
       <Select
-        value={currentStatus}
+        value={effectiveStatus}
         onValueChange={(v) =>
           pushUrl({ status: v && v !== 'all' ? v : null })
         }
@@ -134,7 +198,7 @@ export function InvoiceFilters() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{t('filters.allStatuses')}</SelectItem>
-          {STATUS_VALUES.map((s) => (
+          {statusOptions.map((s) => (
             <SelectItem key={s} value={s}>
               {tStatus(s)}
             </SelectItem>
@@ -189,29 +253,31 @@ export function InvoiceFilters() {
           ("Paid online") is sufficient for sighted touch users
           since the filter result speaks for itself once toggled.
           Accepted Base UI limitation. */}
-      <Tooltip>
-        <TooltipTrigger
-          render={(triggerProps) => (
-            <Button
-              {...triggerProps}
-              type="button"
-              variant={paidOnlineActive ? 'default' : 'outline'}
-              size="sm"
-              onClick={togglePaidOnline}
-              data-testid="paid-online-filter-chip"
-              aria-pressed={paidOnlineActive}
-              aria-label={tReconciliation('ariaLabel')}
-              className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
-            >
-              {paidOnlineActive && (
-                <CheckIcon className="size-3.5" aria-hidden="true" />
-              )}
-              {tReconciliation('label')}
-            </Button>
-          )}
-        />
-        <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
-      </Tooltip>
+      {showPaidOnlineChip && (
+        <Tooltip>
+          <TooltipTrigger
+            render={(triggerProps) => (
+              <Button
+                {...triggerProps}
+                type="button"
+                variant={paidOnlineActive ? 'default' : 'outline'}
+                size="sm"
+                onClick={togglePaidOnline}
+                data-testid="paid-online-filter-chip"
+                aria-pressed={paidOnlineActive}
+                aria-label={tReconciliation('ariaLabel')}
+                className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
+              >
+                {paidOnlineActive && (
+                  <CheckIcon className="size-3.5" aria-hidden="true" />
+                )}
+                {tReconciliation('label')}
+              </Button>
+            )}
+          />
+          <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
+        </Tooltip>
+      )}
       {hasAnyFilter && (
         <Button
           variant="ghost"

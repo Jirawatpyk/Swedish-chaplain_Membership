@@ -3998,9 +3998,10 @@
         "downloadVoidedAria": "ดาวน์โหลดไฟล์ PDF ใบแจ้งหนี้ที่ยกเลิก (ประทับ VOID) สำหรับ {number}",
         "downloadReceipt": "ใบเสร็จ",
         "downloadReceiptAria": "ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงินสำหรับ {number}",
-        "downloadCombined": "ดาวน์โหลดใบกำกับภาษี / ใบเสร็จรับเงิน",
+        "downloadCombined": "ใบกำกับภาษี / ใบเสร็จรับเงิน",
         "downloadCombinedAria": "ดาวน์โหลดเอกสารรวม (ใบกำกับภาษี / ใบเสร็จรับเงิน) สำหรับ {number}",
         "receiptPreparing": "กำลังเตรียมใบเสร็จ…",
+        "receiptUnavailable": "ใบเสร็จไม่พร้อมใช้งาน",
         "viewDetail": "ดูใบแจ้งหนี้",
         "emailCopy": "ส่งสำเนาไปที่อีเมล",
         "emailCopyAria": "ส่งสำเนาใบแจ้งหนี้ {number} ไปที่อีเมลที่บันทึกไว้"

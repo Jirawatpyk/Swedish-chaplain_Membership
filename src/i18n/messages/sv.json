@@ -3998,9 +3998,10 @@
         "downloadVoidedAria": "Ladda ner annullerad faktura-PDF (VOID-stämplad) för {number}",
         "downloadReceipt": "Kvitto",
         "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
-        "downloadCombined": "Ladda ner faktura / kvitto",
+        "downloadCombined": "Faktura / kvitto",
         "downloadCombinedAria": "Ladda ner kombinerat dokument (faktura / kvitto) för {number}",
         "receiptPreparing": "Förbereder kvitto…",
+        "receiptUnavailable": "Kvitto ej tillgängligt",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"

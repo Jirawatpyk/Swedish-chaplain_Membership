@@ -1,12 +1,12 @@
 'use client';
 
-import { TableContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PortalRouteError } from '@/components/shell/portal-route-error';
 
 /**
- * Route-level error boundary for /portal/invoices — renders in the LIST
- * container (matches the page) so a runtime throw doesn't bubble to the root
- * portal boundary's narrower container.
+ * Route-level error boundary for /portal/invoices — renders in the SAME
+ * container as page.tsx + loading.tsx (DetailContainer, D4) so a runtime throw
+ * lands at the matching width and doesn't shift relative to the portal shell.
  */
 export default function PortalInvoicesError(props: {
   error: Error & { digest?: string };
@@ -15,7 +15,7 @@ export default function PortalInvoicesError(props: {
   return (
     <PortalRouteError
       {...props}
-      container={TableContainer}
+      container={DetailContainer}
       logTag="[portal invoices error boundary]"
     />
   );
