@@ -57,7 +57,11 @@ type TierUpgradeQueueItem = {
   readonly memberId: string;
   readonly status: string;
   readonly fromPlanId: string;
+  /** Localised plan name resolved in the SSR page; falls back to the ID. */
+  readonly fromPlanName?: string;
   readonly toPlanId: string;
+  /** Localised plan name resolved in the SSR page; falls back to the ID. */
+  readonly toPlanName?: string;
   readonly reasonCode: string;
   readonly createdAt: string;
 };
@@ -166,11 +170,32 @@ export function TierUpgradeQueueClient({
                     <span aria-hidden="true">{item.memberId.slice(0, 8)}</span>
                     <span className="sr-only">{item.memberId}</span>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {item.fromPlanId}
+                  {/* Render localised plan name; fall back to the raw ID
+                      (font-mono, title tooltip) when the SSR lookup
+                      returned nothing (e.g. plan deleted/archived). */}
+                  <TableCell>
+                    {item.fromPlanName ? (
+                      <span className="text-sm">{item.fromPlanName}</span>
+                    ) : (
+                      <span
+                        className="font-mono text-xs text-muted-foreground"
+                        title={item.fromPlanId}
+                      >
+                        {item.fromPlanId}
+                      </span>
+                    )}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {item.toPlanId}
+                  <TableCell>
+                    {item.toPlanName ? (
+                      <span className="text-sm">{item.toPlanName}</span>
+                    ) : (
+                      <span
+                        className="font-mono text-xs text-muted-foreground"
+                        title={item.toPlanId}
+                      >
+                        {item.toPlanId}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>{t(`reason.${item.reasonCode}`)}</TableCell>
                   <TableCell>

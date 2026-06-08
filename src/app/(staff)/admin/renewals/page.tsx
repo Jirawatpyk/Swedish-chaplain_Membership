@@ -19,6 +19,7 @@ import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -179,7 +180,18 @@ export default async function RenewalsPipelinePage({
     );
   }
 
-  const { rows, summary } = result.value;
+  const { rows, summary, nextCursor } = result.value;
+
+  // Build the "Next 50" URL preserving tier + urgency but replacing the
+  // cursor. Matches the `/admin/audit` keyset-pagination pattern.
+  const paginationParams = new URLSearchParams();
+  if (tier !== undefined) paginationParams.set('tier', tier);
+  paginationParams.set('urgency', urgency);
+  if (nextCursor !== null) paginationParams.set('cursor', nextCursor);
+  const nextHref =
+    nextCursor !== null
+      ? `/admin/renewals?${paginationParams.toString()}`
+      : null;
   // `RenewalsEmptyState` replaces the entire pipeline shell (tabs +
   // filter + table) with a full-card "no renewals due" illustration,
   // so it must only fire when NO filter is active. Otherwise applying
@@ -233,6 +245,27 @@ export default async function RenewalsPipelinePage({
               ) : (
                 <PipelineTable rows={rows} />
               )}
+              {nextHref ? (
+                // Keyset cursor pagination: when the repo returns
+                // nextCursor != null the page was capped at 50 rows.
+                // Render a "Next 50 →" link (same pattern as
+                // /admin/audit) + a sr-only "Showing first 50"
+                // indicator so screen-reader users know the list is
+                // truncated. The UrgencyBucketTabs already deletes
+                // the cursor param on tab switch (line 63), so stale
+                // cursors are auto-cleared on urgency change.
+                <div className="flex items-center justify-between gap-4 pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    {t('table.pagination.showingFirst')}
+                  </p>
+                  <a
+                    href={nextHref}
+                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                  >
+                    {t('table.pagination.next')}
+                  </a>
+                </div>
+              ) : null}
             </>
           )}
         </CardContent>
