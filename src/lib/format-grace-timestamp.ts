@@ -18,24 +18,26 @@
  * Round 3 M-type-3 — `format` parameter typed as a local structural
  * `GraceFormatter` interface instead of `ReturnType<typeof useFormatter>`.
  * Decouples from next-intl's internal return-type shape so a future
- * minor-version widening of `useFormatter`'s return doesn't silently
- * widen our signature.
+ * version narrowing or restructuring of `useFormatter`'s return type
+ * fails loudly here rather than silently compiling.
  *
- * 061-date-standardization — `GraceFormatter.dateTime` now uses two
- * overloads mirroring `useFormatter().dateTime` so:
- *  (a) `ReturnType<typeof useFormatter>` remains structurally assignable
- *      (the `_AssertCompat` check is preserved), and
- *  (b) callers can pass a preset string like `'dateTimeMedium'` via
- *      overload 2 (format?: string).
+ * 061-date-standardization — `GraceFormatter.dateTime` uses a single
+ * union signature (preset key or inline options) rather than two separate
+ * overloads. Both forms are structurally assignable from `useFormatter()`,
+ * so `_AssertCompat` holds with a single signature. The overload approach
+ * previously used here was based on a false claim about contravariance
+ * necessity — a single union signature compiles and `_AssertCompat`
+ * remains `true`.
  *
  * Pure presentation helper — no framework state. Caller injects the
  * `useFormatter()` instance (client-side hook).
  */
 import type { useFormatter } from 'next-intl';
+import type { DateTimePresetKey } from '@/i18n/formats';
 
 /**
  * Subset of the inline-options shape from next-intl's DateTimeFormatOptions.
- * Named for clarity in the overload signatures below.
+ * Named for clarity in the signature below.
  */
 type GraceInlineOpts = {
   readonly year?: 'numeric' | '2-digit';
@@ -48,25 +50,27 @@ type GraceInlineOpts = {
 
 export interface GraceFormatter {
   /**
-   * Two overloads mirroring next-intl `useFormatter().dateTime`:
-   *  1. `(d, opts?)` — inline options object (original shape).
-   *  2. `(d, format?, opts?)` — named preset string from `buildFormats()`
-   *     (e.g. `'dateTimeMedium'`) with optional per-call overrides.
+   * Single union signature covering both intended call shapes:
+   *  - `(d, opts?)` — inline options object (e.g. `{ year: 'numeric' }`).
+   *  - `(d, preset, opts?)` — named preset from `buildFormats()` (e.g.
+   *    `'dateTimeMedium'`), narrowed to `DateTimePresetKey` for type safety.
    *
-   * Mirror-overload pattern keeps `ReturnType<typeof useFormatter>` assignable
-   * to `GraceFormatter` — a single `opts: string | {...}` union would break
-   * the `_AssertCompat` structural check due to TS overload contravariance.
+   * A single union signature is sufficient for structural assignability:
+   * `ReturnType<typeof useFormatter>` extends `GraceFormatter` because
+   * `useFormatter().dateTime`'s overloads are assignable to this union
+   * signature. The `_AssertCompat` assertion below verifies this at
+   * compile time.
    */
-  dateTime(d: Date, opts?: GraceInlineOpts): string;
-  dateTime(d: Date, format?: string, opts?: GraceInlineOpts): string;
+  dateTime(d: Date, formatOrOptions?: DateTimePresetKey | GraceInlineOpts, options?: GraceInlineOpts): string;
 }
 
-// Compile-time check: the structural interface stays compatible with
-// the actual `useFormatter()` return type. If next-intl changes its
-// return shape, this assertion fails and the codebase recompiles
-// fast — instead of silently following the upstream change. The
-// `void` consumer pattern silences the unused-binding rule without
-// needing a directive.
+// Compile-time check: `GraceFormatter` must remain a structural subset of
+// `useFormatter()`'s return type. This guards against upstream narrowing or
+// incompatible changes — if next-intl restructures `useFormatter().dateTime`,
+// this assignment fails and the build breaks loudly rather than silently
+// drifting. Note: a pure widening of the upstream type keeps this assertion
+// green (the subset relation still holds). The `void` consumer suppresses
+// the unused-binding lint rule without a directive.
 type _AssertCompat = ReturnType<typeof useFormatter> extends GraceFormatter
   ? true
   : never;

@@ -14,8 +14,8 @@ export { buildFormats };
  *  3. defaultLocale ('en')
  *
  * dateTime format presets live in `./formats` (pure module, no Next.js
- * runtime imports) so the check:intl-formats script can import them
- * without instantiating the Next.js request context.
+ * runtime imports). The `src/i18n/next-intl.d.ts` AppConfig augmentation
+ * imports `buildFormats` at the type level for compile-time preset checking.
  */
 
 export default getRequestConfig(async ({ requestLocale }) => {
