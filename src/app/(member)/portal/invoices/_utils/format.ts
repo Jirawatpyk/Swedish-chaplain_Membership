@@ -123,8 +123,11 @@ export function statusIconName(
  * Maps each {@link InvoiceStatusIconName} to its `lucide-react` component.
  * Single source of truth — every portal invoice surface (list table,
  * mobile card list, summary card, detail page) resolves its status icon
- * through {@link statusIcon} below instead of redeclaring this map, so the
- * status → icon pairing can never drift between surfaces.
+ * through `STATUS_ICON_MAP[statusIconName(status)]` (see
+ * `InvoiceStatusBadge`) instead of redeclaring this map, so the status →
+ * icon pairing can never drift between surfaces. The map index (not a
+ * function-call wrapper) is used so `react-hooks/static-components` sees a
+ * stable component reference at the JSX render site.
  */
 export const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   CheckCircle2,
@@ -133,13 +136,3 @@ export const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   FileText,
   Ban,
 };
-
-/**
- * Resolve the `lucide-react` icon component for an invoice row status.
- * Callers render it at ~14px inside the Badge with `aria-hidden` (the text
- * label is already present). Tied to {@link InvoiceRowDisplayStatus} so a
- * stale/typo status is a compile error at the render site.
- */
-export function statusIcon(status: InvoiceRowDisplayStatus): LucideIcon {
-  return STATUS_ICON_MAP[statusIconName(status)];
-}
