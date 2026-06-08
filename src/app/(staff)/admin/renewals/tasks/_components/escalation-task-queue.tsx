@@ -375,11 +375,7 @@ export function EscalationTaskQueue({
     if (!Number.isFinite(ms)) {
       return <span className="text-xs text-muted-foreground">—</span>;
     }
-    return format.dateTime(new Date(ms), {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+    return format.dateTime(new Date(ms), 'dateMedium');
   }
 
   return (

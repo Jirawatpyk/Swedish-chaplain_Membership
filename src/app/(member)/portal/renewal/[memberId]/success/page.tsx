@@ -140,11 +140,7 @@ export default async function RenewalSuccessPage({
               <dt className="text-muted-foreground">{t('newExpiry')}</dt>
               <dd>
                 <time dateTime={activeCycle.expiresAt}>
-                  {formatter.dateTime(new Date(activeCycle.expiresAt), {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
+                  {formatter.dateTime(new Date(activeCycle.expiresAt), 'dateLong')}
                 </time>
               </dd>
               {/* UX R5 / S3: only show cycle status when it's actually

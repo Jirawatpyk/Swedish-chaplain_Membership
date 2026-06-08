@@ -6,10 +6,9 @@
  *   - Renders via `next-intl`'s `useFormatter().dateTime()` so TH and
  *     SV see locale-correct date+time copy (Thai script + Buddhist Era
  *     in `th-TH`; Swedish 24h clock in `sv-SE`).
- *   - Pinned to `Asia/Bangkok`: the grace window is a chamber-ops
- *     invariant — a Stockholm-based admin (CET) should see the same
- *     cutoff the Bangkok chamber operator observes, not their local
- *     clock.
+ *   - Timezone is inherited from the global next-intl config (`Asia/Bangkok`)
+ *     set in `src/i18n/request.ts` — no explicit `timeZone` needed at the
+ *     call site.
  *   - Falls back to the raw ISO if `Date` rejects the input. Round 3
  *     M-err-1 (2026-05-13) — emits a `console.error` so a malformed
  *     adapter shape is at least visible in DevTools rather than
@@ -22,24 +21,48 @@
  * minor-version widening of `useFormatter`'s return doesn't silently
  * widen our signature.
  *
+ * 061-date-standardization — `GraceFormatter.dateTime` now uses two
+ * overloads mirroring `useFormatter().dateTime` so:
+ *  (a) `ReturnType<typeof useFormatter>` remains structurally assignable
+ *      (the `_AssertCompat` check is preserved), and
+ *  (b) callers can pass a preset string like `'dateTimeMedium'` via
+ *      overload 2 (format?: string).
+ *
  * Pure presentation helper — no framework state. Caller injects the
  * `useFormatter()` instance (client-side hook).
  */
 import type { useFormatter } from 'next-intl';
 
+/**
+ * Subset of the inline-options shape from next-intl's DateTimeFormatOptions.
+ * Named for clarity in the overload signatures below.
+ */
+type GraceInlineOpts = {
+  readonly year?: 'numeric' | '2-digit';
+  readonly month?: 'numeric' | '2-digit' | 'short' | 'long' | 'narrow';
+  readonly day?: 'numeric' | '2-digit';
+  readonly hour?: 'numeric' | '2-digit';
+  readonly minute?: 'numeric' | '2-digit';
+  readonly timeZone?: string;
+};
+
 export interface GraceFormatter {
-  dateTime(d: Date, opts: {
-    readonly year?: 'numeric' | '2-digit';
-    readonly month?: 'numeric' | '2-digit' | 'short' | 'long' | 'narrow';
-    readonly day?: 'numeric' | '2-digit';
-    readonly hour?: 'numeric' | '2-digit';
-    readonly minute?: 'numeric' | '2-digit';
-    readonly timeZone?: string;
-  }): string;
+  /**
+   * Two overloads mirroring next-intl `useFormatter().dateTime`:
+   *  1. `(d, opts?)` — inline options object (original shape).
+   *  2. `(d, format?, opts?)` — named preset string from `buildFormats()`
+   *     (e.g. `'dateTimeMedium'`) with optional per-call overrides.
+   *
+   * Mirror-overload pattern keeps `ReturnType<typeof useFormatter>` assignable
+   * to `GraceFormatter` — a single `opts: string | {...}` union would break
+   * the `_AssertCompat` structural check due to TS overload contravariance.
+   */
+  dateTime(d: Date, opts?: GraceInlineOpts): string;
+  dateTime(d: Date, format?: string, opts?: GraceInlineOpts): string;
 }
 
 // Compile-time check: the structural interface stays compatible with
-// the actual `useFormatter()` return type. If next-intl widens its
+// the actual `useFormatter()` return type. If next-intl changes its
 // return shape, this assertion fails and the codebase recompiles
 // fast — instead of silently following the upstream change. The
 // `void` consumer pattern silences the unused-binding rule without
@@ -65,12 +88,5 @@ export function formatGraceTimestamp(
     console.error('[chamber-os] formatGraceTimestamp: Invalid Date input', { iso });
     return iso;
   }
-  return format.dateTime(d, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Bangkok',
-  });
+  return format.dateTime(d, 'dateTimeMedium');
 }

@@ -93,10 +93,7 @@ export function EventMismatchWarningDialog(
                   </span>
                   <span className="text-caption text-muted-foreground">
                     {t('priorImportRow', {
-                      uploadedAt: formatter.dateTime(new Date(p.uploadedAt), {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      }),
+                      uploadedAt: formatter.dateTime(new Date(p.uploadedAt), 'mediumWithTime'),
                     })}
                   </span>
                 </li>
