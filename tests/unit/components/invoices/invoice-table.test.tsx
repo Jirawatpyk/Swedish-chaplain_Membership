@@ -119,6 +119,14 @@ function renderTable(rows: InvoicesTableRow[]) {
   );
 }
 
+function renderTableWithLocale(rows: InvoicesTableRow[], locale: string) {
+  return render(
+    <NextIntlClientProvider locale={locale} messages={messages}>
+      <InvoicesTable rows={rows} />
+    </NextIntlClientProvider>,
+  );
+}
+
 describe('<InvoicesTable> buyer column', () => {
   it('renders the buyer header (renamed from "Member")', () => {
     renderTable([baseRow({})]);
@@ -311,5 +319,49 @@ describe('<InvoicesTable> receipt-number combined-hint gate', () => {
     // …and the combined-mode hint is NOT shown (separate mode owns a
     // distinct receipt document number, so there is nothing to disambiguate).
     expect(screen.queryByLabelText(COMBINED_HINT_LABEL)).toBeNull();
+  });
+});
+
+/**
+ * Date-cell formatting tests (#2 speckit-review finding).
+ *
+ * `invoice-table.tsx` changed from raw `{r.issueDate ?? '—'}` to
+ * `formatLocalisedDate(r.issueDate, locale, { year:'numeric',
+ * month:'short', day:'numeric', timeZone:'UTC' })`. These cases lock
+ * the formatted output and the `null → '—'` fallback branch.
+ *
+ * Locale is threaded via `NextIntlClientProvider` → `useLocale()` in
+ * the component — the existing harness handles this; we only need to
+ * vary the `locale` prop.
+ *
+ * The raw ISO string `'2026-06-15'` must NOT appear verbatim in the
+ * cell — that was the old (un-formatted) rendering.
+ */
+describe('<InvoicesTable> date cell formatting', () => {
+  it('en locale: issueDate is formatted (contains year "2026" and day "15"), not raw ISO', () => {
+    renderTable([baseRow({ issueDate: '2026-06-15' })]);
+    // The year and day must be present as formatted text tokens.
+    expect(screen.getAllByText(/2026/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/15/)[0]).toBeInTheDocument();
+    // The raw ISO string must not appear verbatim (guards against regression
+    // to the old `{r.issueDate ?? '—'}` path).
+    expect(screen.queryByText('2026-06-15')).not.toBeInTheDocument();
+  });
+
+  it('en locale: null dueDate renders the em-dash fallback "—"', () => {
+    renderTable([baseRow({ dueDate: null })]);
+    // At least one "—" must be in the document (the dueDate cell).
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+
+  it('th locale: issueDate cell contains the BE year "2569" (2026 + 543)', () => {
+    // This locks the Buddhist Era path that is the whole point of the
+    // locale-aware helper. A 2026 CE date maps to 2569 BE.
+    renderTableWithLocale([baseRow({ issueDate: '2026-06-15' })], 'th');
+    expect(screen.getAllByText(/2569/)[0]).toBeInTheDocument();
+    // Gregorian year must NOT appear as the primary year token in a
+    // Thai-locale cell.
+    expect(screen.queryByText('2026-06-15')).not.toBeInTheDocument();
   });
 });
