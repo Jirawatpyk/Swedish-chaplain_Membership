@@ -249,18 +249,18 @@ export default async function RenewalsPipelinePage({
                 // Keyset cursor pagination: when the repo returns
                 // nextCursor != null the page was capped at 50 rows.
                 // Render a "Next 50 →" link (same pattern as
-                // /admin/audit) + a sr-only "Showing first 50"
-                // indicator so screen-reader users know the list is
-                // truncated. The UrgencyBucketTabs already deletes
-                // the cursor param on tab switch (line 63), so stale
-                // cursors are auto-cleared on urgency change.
+                // /admin/audit) + a visible "Showing first 50" hint
+                // so all users know the list is truncated. The
+                // UrgencyBucketTabs already deletes the cursor param
+                // on tab switch (line 63), so stale cursors are
+                // auto-cleared on urgency change.
                 <div className="flex items-center justify-between gap-4 pt-1">
                   <p className="text-xs text-muted-foreground">
                     {t('table.pagination.showingFirst')}
                   </p>
                   <a
                     href={nextHref}
-                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                    className={buttonVariants({ variant: 'outline' })}
                   >
                     {t('table.pagination.next')}
                   </a>

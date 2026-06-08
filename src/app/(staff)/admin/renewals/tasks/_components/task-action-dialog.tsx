@@ -85,6 +85,13 @@ export function TaskActionDialog({
   variant = 'default',
   children,
 }: TaskActionDialogProps) {
+  // ux-standards § 7.2/§ 6.2: focus Cancel on open for dialogs with
+  // side-effects (prefer safety default over convenience). Base UI's
+  // FloatingFocusManager ignores `autoFocus`/`data-autofocus` — only
+  // `initialFocus` on the Popup (AlertDialogContent) moves initial focus.
+  // Pattern matches `src/components/shell/confirmation-dialog.tsx:81`.
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
   // R6 IMP-6 + R8 C3-4 close — fire onClose exactly once per close,
   // via a `wasOpen` ref-guarded `useEffect`. The ref skips initial
   // mount (when `open=false` is the default state, not a close
@@ -110,7 +117,7 @@ export function TaskActionDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent initialFocus={cancelRef}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
@@ -119,16 +126,9 @@ export function TaskActionDialog({
         {children}
 
         <AlertDialogFooter>
-          {/* ux-standards § 7.2/§ 6.2: focus Cancel on open for
-              dialogs with side-effects (prefer safety default over
-              convenience). `autoFocus` on the Cancel button fires
-              inside the Base UI focus-trap after the popup opens,
-              overriding the trap's default first-focusable-element
-              heuristic which would otherwise land on the textarea/
-              combobox in the body slot. */}
           <AlertDialogCancel
+            ref={cancelRef}
             disabled={isPending}
-            autoFocus
           >
             {cancelLabel}
           </AlertDialogCancel>
