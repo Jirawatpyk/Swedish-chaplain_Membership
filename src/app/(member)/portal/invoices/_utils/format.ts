@@ -23,7 +23,7 @@
 // portal callers don't break — staged migration; portal imports
 // will update to the canonical lib path in a follow-up.
 export { formatSatangThb } from '@/lib/format-thb';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { InvoiceStatus } from '@/modules/invoicing';
 import {
   AlertTriangle,
@@ -54,8 +54,7 @@ export type InvoiceRowDisplayStatus = InvoiceStatus | 'overdue';
  * Gregorian).
  */
 export function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(getDateFormatLocale(locale), {
+  return formatLocalisedDate(iso ?? '', locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
