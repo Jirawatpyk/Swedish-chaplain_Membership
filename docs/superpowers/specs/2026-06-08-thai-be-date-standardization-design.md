@@ -64,32 +64,53 @@ Migration targets (verified 2026-06-08):
 
 (B1–B14 are functionally correct BE today → **no visible change**, pure DRY + robustness.)
 
-### 3.3 DRY consolidation
-- `app/(staff)/admin/invoices/[invoiceId]/page.tsx` local `formatDate` and `app/(member)/portal/invoices/_utils/format.ts` local `formatDate` both already call `getDateFormatLocale` correctly. Route them through the shared `formatLocalisedDate` where byte-identical; otherwise keep the thin local wrapper but ensure it consumes the helper (no inline duplication). Do not change rendered output.
+### 3.3 DRY consolidation (clarified per architecture review)
+Three different existing `formatDate`-style functions; they are NOT all the same and must not be naively merged:
+- **admin invoice-detail** `app/(staff)/admin/invoices/[invoiceId]/page.tsx` local `formatDate` (ISO timestamps, no UTC-pin) → route through the shared **`formatLocalisedDate`** (byte-identical; remove the local wrapper).
+- **portal** `app/(member)/portal/invoices/_utils/format.ts` local `formatDate` (ISO timestamps, **intentionally NOT UTC-pinned** — see its own comment vs the credit-note) → already consumes `getDateFormatLocale` correctly; **KEEP as a thin local wrapper** (do not force it into `formatLocalisedDate` if options/TZ differ). No visible change.
+- **credit-note** `formatIssueDate` (bare `YYYY-MM-DD`, UTC-pinned) → folded into **`formatTaxDocDate`** (§3.4), NOT `formatLocalisedDate` (different input shape + UTC-pin + the `(พ.ศ.)` treatment).
 
 ### 3.4 Tax-doc fix (credit-notes) — thai-tax-compliance reviewed
-- **portal credit-note** (`app/(member)/portal/credit-notes/[creditNoteId]/page.tsx:71`): change ICU-default-BE → **`CE + (พ.ศ. year+543)`** matching admin credit-notes (consistent, robust).
-- **admin credit-notes** (`app/(staff)/admin/credit-notes/page.tsx`, `[creditNoteId]/page.tsx`) + **invoice PDF template**: keep `CE + (พ.ศ.)`.
-- **Resolve the bare-`'th'` ambiguity:** the CE base of the parenthetical MUST force the **Gregorian** calendar (e.g. `'th-TH-u-ca-gregory'` or `'en-GB'` for the date part) so "29 พ.ค. 2026 (พ.ศ. 2569)" can never double-print BE on an ICU build whose bare-`'th'` default is buddhist. Centralize the tax-doc date formatter (e.g. `formatTaxDocDate(iso, locale)`) so admin + portal credit-notes share one implementation.
-- **This sub-area requires a `thai-tax-compliance-auditor` review** before merge (legal-sensitive; §105/§86 wording, no double-BE, fast-check the CE/BE invariant).
+**Both admin AND portal credit-notes have the latent double-BE bug** (the CE base uses a bare `'th'`/`'th-TH'` locale → on a Node 22 ICU build whose default `th` calendar is buddhist, the "CE base" already prints BE, then `(พ.ศ. year+543)` is appended → "29 พ.ค. 2569 (พ.ศ. 2569)"). So the fix is NOT "keep admin / change portal" — it is **centralize one `formatTaxDocDate(isoDate, locale)` used by all credit-note surfaces** (admin list + admin detail + portal detail):
+- **CE base forced to Gregorian via `'th-TH-u-ca-gregory'`** (NOT `'en-GB'` — keeps Thai month script: "29 พ.ค. 2026") + the `(พ.ศ. year+543)` suffix for `th`; Gregorian-only for en/sv.
+- **Input is a bare `YYYY-MM-DD` string** → parse via `Date.UTC(y, m-1, d)` and render with `timeZone: 'UTC'`. Do NOT pass `isoDate` to `new Date()` / `Intl` without the UTC pin (day-shift across server-UTC vs Asia/Bangkok). This is why `formatTaxDocDate` is SEPARATE from the general `formatLocalisedDate`.
+- Migration targets (add to the list): admin `credit-notes/page.tsx:formatIssueDate`, admin `credit-notes/[creditNoteId]/page.tsx:formatIssueDate`, portal `credit-notes/[creditNoteId]/page.tsx:formatIssueDate` → all call `formatTaxDocDate`.
+- **invoice PDF template** keeps its own `{isoDate} (พ.ศ. {beYear})` raw-ISO treatment (deterministic @react-pdf rendering, avoids ICU in the PDF runtime) — leave as-is.
+- **Policy (document, do NOT change):** invoice-detail **HTML** (admin + portal) renders **BE-only** via the general helper (it's a general operational view); **credit-note HTML + all tax PDFs** render **`CE + (พ.ศ.)`** (stricter tax document with a CE anchor for auditors). The credit-note *list* shown on the invoice-detail page is a reference list (general context) → BE-only is acceptable there. This matches the existing in-code intent ("CE+พ.ศ. treatment lives on the credit-note surfaces, not here").
+- **Requires a `thai-tax-compliance-auditor` review** before merge (legal-sensitive; §86/§87/§105; no double-BE; fast-check CE↔BE=+543).
 
-### 3.5 Regression guard
-- Add an ESLint `no-restricted-syntax` rule (or a `pnpm check:dates` script) banning new inline `'u-ca-buddhist'` string literals and bare-locale `toLocaleDateString`/`toLocaleString`/`new Intl.DateTimeFormat(<bareLocale>)` in display code under `src/` (allow-list `format-date-localised.ts` + the centralized tax-doc formatter). Keeps the standardization from regressing (a prior `dateFormatLocale` duplicate had to be caught by manual review).
+### 3.5 Regression guard — `check:dates` script (decided)
+Add a `scripts/check-dates.ts` + `pnpm check:dates` (matching the repo's existing `check:layout`/`check:i18n`/`check:fixme` script pattern — NOT an ESLint `no-restricted-syntax` AST rule, which is harder to maintain + noisy). It bans, in display code under `src/`, new inline `'u-ca-buddhist'` literals and bare-locale `toLocaleDateString`/`toLocaleString`/`new Intl.DateTimeFormat(<bareLocale>)`. Allow-list: `src/lib/format-date-localised.ts` + the `formatTaxDocDate` module. Wire into pre-push + full CI. Keeps the standardization from regressing.
 
 ### 3.6 Testing
-- **Unit (`getDateFormatLocale`/`formatLocalisedDate`):** `th`→buddhist, `th-TH`→buddhist, **`sv`→`sv-SE`**, `en` passthrough; `formatLocalisedDate` BE-year correctness + invalid→`'—'`.
-- **Tax-doc:** assert the centralized `formatTaxDocDate` renders a **Gregorian** CE base + exactly one `(พ.ศ. year+543)` suffix for `th` (no double-BE), Gregorian-only for en/sv; fast-check the CE↔BE = +543 invariant.
-- **Migration spot-checks:** admin invoices list renders BE for `th`; relative-time `sv` output unchanged; a render test or i18n-key check where practical.
-- Full gate: `pnpm lint && typecheck && check:i18n && the new check:dates`.
+- **Unit (`getDateFormatLocale`/`formatLocalisedDate`):** `th`→buddhist, `th-TH`→buddhist, **`sv`→`'sv-SE'` (explicit), `en` passthrough**; plus an **sv no-regression assertion** — `Intl.DateTimeFormat('sv-SE', …).format(d) === Intl.DateTimeFormat('sv', …).format(d)` (proves the migration doesn't change sv output); `formatLocalisedDate` BE-year correctness + invalid→`'—'`. **Assert Arabic numerals** (e.g. "2569", not "๒๕๖๙") — no `-nu-thai`.
+- **Tax-doc (`formatTaxDocDate`):** Gregorian CE base (year is CE) + exactly one `(พ.ศ. year+543)` suffix for `th` (no double-BE); Gregorian-only for en/sv; UTC-pin (no day-shift at a TZ-midnight boundary); fast-check CE↔BE=+543.
+- **payment-timeline (C1):** an explicit unit test asserting the formatted output uses the BE calendar for `th` (pin the locale output — do NOT rely on the "verified on Node 22" comment); also update/remove that stale "false positive" comment in the code.
+- **Migration spot-checks:** admin invoices list renders BE for `th`; relative-time `sv` output unchanged.
+- Full gate: `pnpm lint && typecheck && check:i18n && check:dates`.
 
 ## 4. Out of scope
 - `components/ui/calendar.tsx` (month-only header, no year → BE irrelevant) — leave.
 - Storage, js-joda fiscal-year/sequential-number logic, `Intl` used for sort keys, `trend-window.ts`, `insight-cycle-key.ts`, env — untouched.
-- Email templates — none found doing client-style date formatting; revisit only if a date surface is discovered.
+- **Email templates** (`modules/*/infrastructure/email/**`, e.g. `dual-format-date-footer.tsx`, `broadcast-notification-emails.ts`) — Infrastructure layer; locale is the *recipient's*, not the request locale; some carry their own inline `sv→sv-SE`. Left untouched (separate context).
 - The relative-time *relative* output ("2 days ago") — untouched (only its SSR absolute fallback is migrated).
+
+### Known gaps (tracked, NOT fixed here)
+- **Invoice PDF footer credit-note reference table** (`modules/invoicing/infrastructure/pdf/templates/invoice-template.tsx:~393` `{r.issueDate}`) renders a raw `YYYY-MM-DD` with no `(พ.ศ.)`, while the CN body + CN HTML carry the parenthetical → minor intra-PDF inconsistency. Track for a future PDF-template pass.
 
 ## 5. Risks / mitigations
 - **Tax-doc legal sensitivity** → centralize + thai-tax-compliance review + invariant tests; keep admin behavior byte-identical.
 - **`sv` behavior drift** from extending the helper → unit test pins `sv→sv-SE`; audit the few sv-aware sites.
 - **Re-touching just-shipped portal `format.ts`** (D-series) → DRY change is behavior-preserving + covered by the existing portal invoice tests.
 - **Large surface (~16 files)** → most are no-visible-change DRY swaps; stage by area (invoices / broadcast / members / renewals / relative-time / tax-docs) for reviewable commits.
+
+## 6. Sequencing (hard order for the plan)
+1. **Step 0 (lands first, own commit):** extend `getDateFormatLocale` (`sv→'sv-SE'`) + its unit tests. Every B/C/F site depends on the helper being correct first.
+2. **Step 1 (own commit):** add `formatTaxDocDate` util + tests (Gregorian CE base + UTC-pin + single `(พ.ศ.)`), then point all 3 credit-note surfaces at it. Tax-doc review here.
+3. **Step 2 (own commit):** add `check:dates` script + wire CI; fix any remaining flagged sites it catches.
+4. **Step 3+ (per-area commits):** the general B/C/F migrations (invoices list F1/F2 + payment-timeline C1; broadcast; members; renewals; relative-time; admin/broadcasts/[id]) — no hard inter-dependency; each is behavior-preserving except F1/F2 (admin list gains BE). Update the stale payment-timeline "false positive" comment.
+
+## 7. Design-review sign-off (2026-06-08, via .claude/agents in lieu of human review)
+- `thai-tax-compliance-auditor`: CONDITIONAL PASS → folded M-1 (UTC-pin), M-2 (invoice-HTML-BE-only vs CN-CE+พ.ศ. policy documented), admin-CN-also-buggy, PDF-footer known gap.
+- `chamber-os-architect`: ADJUST → folded admin-CN-in-scope, `check:dates` (not ESLint), DRY-scope clarification, sequencing, sv-safe + lib/ placement confirmed.
+- `i18n-translation-reviewer`: GO → folded `'th-TH-u-ca-gregory'` pin, sv no-regression test, Arabic-numerals assertion; th→buddhist + bare-`'th'` locale + sv→sv-SE confirmed.
