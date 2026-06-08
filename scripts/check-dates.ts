@@ -27,6 +27,25 @@
  *   calendar month labels).  A broad ban would produce false positives.
  *   The two signals above are sufficient to catch all date-specific sites.
  *
+ * Multiline-aware scanning (R5):
+ *   The scanner strips inline comments then runs the Intl / toLocaleDateString
+ *   banned patterns over the FULL file text (not line-by-line) using `s` flag
+ *   regexes so `\s*` spans newlines.  This catches calls where the bare-locale
+ *   argument sits on its own line:
+ *
+ *     new Intl.DateTimeFormat(
+ *       locale,          // ← bare arg on line N+1 — previously uncaught
+ *       { year: 'numeric' }
+ *     )
+ *
+ *   The `u-ca-buddhist` literal check is short and never written multiline, so
+ *   it stays per-line (cheaper + simpler).
+ *
+ *   Violation line numbers are computed from the match index after stripping
+ *   so they remain correct even when the stripped text differs from source in
+ *   length (comment removal does not change line count; it replaces characters
+ *   with spaces, keeping the newline structure intact).
+ *
  * Allow-listed files (the canonical helpers themselves):
  *   - src/lib/format-date-localised.ts
  *   - src/lib/format-tax-doc-date.ts
@@ -73,38 +92,93 @@ const SCAN_ROOTS: ReadonlyArray<string> = ['src'];
 const FILE_RE = /\.(?:ts|tsx)$/;
 
 // ---------------------------------------------------------------------------
-// Banned patterns (see module JSDoc above for rationale)
+// Banned patterns
 // ---------------------------------------------------------------------------
 interface BannedPattern {
   readonly id: string;
-  readonly re: RegExp;
+  /** Applied per-line (for cheap literal checks). */
+  readonly reLine?: RegExp;
+  /**
+   * Applied over full-file text (comment-stripped) with the `s` flag so
+   * `\s*` spans newlines.  Used for the Intl / toLocaleDateString checks
+   * that may be written multiline.
+   */
+  readonly reFullText?: RegExp;
   readonly description: string;
 }
 
 const BANNED: ReadonlyArray<BannedPattern> = [
   {
     id: 'buddhist-literal',
-    re: /['"`][^'"`]*u-ca-buddhist[^'"`]*['"`]/,
+    // Short, never written multiline — keep cheap per-line check.
+    reLine: /['"`][^'"`]*u-ca-buddhist[^'"`]*['"`]/,
     description: "inline 'u-ca-buddhist' calendar literal — use getDateFormatLocale(locale) instead",
   },
   {
     id: 'bare-toLocaleDateString',
-    // Matches: .toLocaleDateString(locale   (bare variable, not wrapped in a call)
-    // Does NOT match: .toLocaleDateString(getDateFormatLocale(
-    re: /\.toLocaleDateString\(\s*(?!getDateFormatLocale\s*\()(?:locale\b|[a-zA-Z_$][a-zA-Z0-9_$]*\s*[,)])/,
+    // Full-text regex with `s` flag so a multiline call like:
+    //   .toLocaleDateString(
+    //     locale,
+    //   )
+    // is caught.  The negative-lookahead (?!getDateFormatLocale\s*\() skips
+    // correctly wrapped calls.
+    //
+    // Matches identifiers whose name IS or CONTAINS the word `locale`
+    // (case-insensitive suffix match: `locale`, `userLocale`, `currentLocale`,
+    // `requestLocale`, etc.) — a variable whose name derives from a locale
+    // value is suspect.  Variables with unrelated names (e.g. `cacheKey`,
+    // `resolvedBcp47`) that carry an already-resolved locale string are
+    // explicitly NOT matched because by convention they have already been
+    // through `getDateFormatLocale`.
+    //
+    // Also catches ternary forms: .toLocaleDateString(locale === 'th' ? 'x' : locale, …)
+    reFullText:
+      /\.toLocaleDateString\(\s*(?!getDateFormatLocale\s*\()(?:[a-zA-Z_$][a-zA-Z0-9_$]*[Ll]ocale\b|locale\b)/s,
     description:
       '.toLocaleDateString(locale) with bare locale variable — use .toLocaleDateString(getDateFormatLocale(locale)) instead',
   },
   {
     id: 'bare-Intl-DateTimeFormat',
-    // Matches: new Intl.DateTimeFormat(locale   (bare variable)
-    // Does NOT match: new Intl.DateTimeFormat(getDateFormatLocale(
-    // Does NOT match: new Intl.DateTimeFormat('th-TH-u-ca-buddhist'  <- ALREADY caught by buddhist-literal
-    re: /new\s+Intl\.DateTimeFormat\(\s*(?!getDateFormatLocale\s*\()(?!['"`])(?:[a-zA-Z_$][a-zA-Z0-9_$]*\s*[,)])/,
+    // Full-text regex so multiline Intl.DateTimeFormat calls are caught:
+    //   new Intl.DateTimeFormat(
+    //     locale,            ← previously escaped the per-line check
+    //     { year: 'numeric' }
+    //   )
+    // Does NOT match: new Intl.DateTimeFormat(getDateFormatLocale(…)
+    // Does NOT match: new Intl.DateTimeFormat('th-TH-u-ca-buddhist' ← buddhist-literal catches this
+    // Does NOT match: new Intl.DateTimeFormat(cacheKey, …)  ← already resolved
+    //
+    // Matches identifiers whose name IS or CONTAINS the word `locale`
+    // (same convention as bare-toLocaleDateString above).  The `locale\b`
+    // branch also catches ternary forms where `locale` appears after `?`:
+    //   new Intl.DateTimeFormat(locale === 'th' ? X : locale, …)
+    reFullText:
+      /new\s+Intl\.DateTimeFormat\(\s*(?!getDateFormatLocale\s*\()(?!['"`])(?:[a-zA-Z_$][a-zA-Z0-9_$]*[Ll]ocale\b|locale\b)/s,
     description:
       'new Intl.DateTimeFormat(locale) with bare locale variable — use new Intl.DateTimeFormat(getDateFormatLocale(locale)) instead',
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Comment stripper
+//
+// Replaces comment text with spaces so:
+//   - line numbers are preserved (newlines untouched)
+//   - patterns inside comments are never flagged
+//
+// Handles:
+//   - /* … */  block comments (including /** JSDoc */)
+//   - // … EOL  single-line comments
+// ---------------------------------------------------------------------------
+function stripComments(source: string): string {
+  // Block comments first (may span multiple lines).
+  let out = source.replace(/\/\*[\s\S]*?\*\//g, (m) =>
+    m.replace(/[^\n]/g, ' '),
+  );
+  // Single-line comments.
+  out = out.replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // File walker (mirrors check-fixme-budget.ts convention: fs.readdirSync
@@ -159,19 +233,31 @@ function isCommentLine(line: string): boolean {
   );
 }
 
+/**
+ * Compute the 1-based line number of `matchIndex` within `text`.
+ * Counts newline characters before the match position.
+ */
+function lineOf(text: string, matchIndex: number): number {
+  let line = 1;
+  for (let i = 0; i < matchIndex; i++) {
+    if (text[i] === '\n') line++;
+  }
+  return line;
+}
+
 function scanFile(filePath: string): ReadonlyArray<Violation> {
   const out: Violation[] = [];
   const source = readFileSync(filePath, 'utf8');
   const lines = source.split('\n');
 
+  // --- Per-line pass (for the cheap `buddhist-literal` literal check) ---
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    // Skip pure comment lines (we do not want to flag documentation
-    // explaining why a helper uses buddhist — only real code sites matter).
     if (isCommentLine(line)) continue;
 
     for (const pattern of BANNED) {
-      const match = pattern.re.exec(line);
+      if (!pattern.reLine) continue;
+      const match = pattern.reLine.exec(line);
       if (match !== null) {
         out.push({
           file: filePath,
@@ -184,7 +270,41 @@ function scanFile(filePath: string): ReadonlyArray<Violation> {
       }
     }
   }
-  return out;
+
+  // --- Full-text pass (for multiline Intl / toLocaleDateString patterns) ---
+  const stripped = stripComments(source);
+
+  for (const pattern of BANNED) {
+    if (!pattern.reFullText) continue;
+
+    // Use a sticky/global copy to find ALL matches (not just the first).
+    const globalRe = new RegExp(pattern.reFullText.source, 'gs');
+    let match: RegExpExecArray | null;
+    while ((match = globalRe.exec(stripped)) !== null) {
+      const lineNum = lineOf(stripped, match.index);
+      const lineText = lines[lineNum - 1] ?? '';
+      // Compute column from the character offset within that line.
+      const lineStart = match.index - (stripped.lastIndexOf('\n', match.index - 1) + 1);
+      out.push({
+        file: filePath,
+        line: lineNum,
+        col: lineStart + 1,
+        patternId: pattern.id,
+        description: pattern.description,
+        snippet: lineText.trim().slice(0, 140),
+      });
+    }
+  }
+
+  // Deduplicate: a pattern that has BOTH reLine and reFullText would fire
+  // twice on the same location.  Keep the first occurrence per (line, patternId).
+  const seen = new Set<string>();
+  return out.filter((v) => {
+    const key = `${v.line}:${v.patternId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------

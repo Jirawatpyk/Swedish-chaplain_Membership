@@ -35,7 +35,7 @@ import {
   makeGetMemberBroadcastDeps,
   parseBroadcastId,
 } from '@/modules/broadcasts';
-import { intlLocale } from '@/components/broadcast/quota-banner';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
 
@@ -111,7 +111,7 @@ export default async function BroadcastDetailPage(props: {
   const t = await getTranslations('portal.broadcasts.detail');
   const tStatus = await getTranslations('portal.broadcasts.list.status');
   const locale = await getLocale();
-  const dateFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+  const dateFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
   });

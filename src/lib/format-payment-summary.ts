@@ -67,7 +67,7 @@ export function formatPaymentDateTime(
   const cacheKey = getDateFormatLocale(locale);
   let fmt = DATETIME_FORMATTERS.get(cacheKey);
   if (!fmt) {
-    fmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+    fmt = new Intl.DateTimeFormat(cacheKey, {
       dateStyle: 'long',
       timeStyle: 'short',
     });

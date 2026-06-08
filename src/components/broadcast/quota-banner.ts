@@ -20,7 +20,6 @@ import { Instant, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import type { IanaTimezone } from '@/modules/tenants';
 import { nextResetAtFor } from '@/modules/broadcasts';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 /**
  * Re-export of the canonical quota-reset formatter so the page helper
@@ -51,17 +50,6 @@ export function shouldShowPlanChangedExplainer(
     zone,
   ).year();
   return yearAtChange === quotaYear;
-}
-
-/**
- * Map next-intl locale → BCP 47 tag for `Intl.DateTimeFormat`.
- *
- * Delegates to the canonical `getDateFormatLocale` helper so Thai
- * surfaces display Buddhist Era (BE = CE + 543) without inlining the
- * `u-ca-buddhist` calendar extension at each call site.
- */
-export function intlLocale(locale: string): string {
-  return getDateFormatLocale(locale);
 }
 
 export interface HistoryPage<T> {
