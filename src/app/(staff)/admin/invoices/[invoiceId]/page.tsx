@@ -26,7 +26,8 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import {
   getInvoice,
   makeGetInvoiceDeps,
@@ -104,24 +105,6 @@ function formatSatang(satang: bigint | null): string {
   return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
-/**
- * Format an ISO timestamp as a medium-style date in the active
- * next-intl locale. Returns an em-dash for null inputs so missing
- * audit timestamps read cleanly in the UI (L7 — duplicate of the
- * inline blocks that used to live on the payment/void sections).
- */
-function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return '—';
-  // getDateFormatLocale → Thai renders the Buddhist-Era year explicitly
-  // (`-u-ca-buddhist`), independent of the host ICU default for bare `th`.
-  // These are operational/audit timestamps; the tax-document dual-calendar
-  // (CE + พ.ศ.) treatment lives on the credit-note surfaces, not here.
-  return new Date(iso).toLocaleDateString(getDateFormatLocale(locale), {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
 
 type InvoiceStatusBadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
 function statusBadgeVariant(status: string): InvoiceStatusBadgeVariant {
@@ -543,11 +526,11 @@ export default async function InvoiceDetailPage({
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
-              <dd>{formatDate(invoice.issueDate, userLocale)}</dd>
+              <dd>{formatLocalisedDate(invoice.issueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.dueDate')}</dt>
-              <dd>{formatDate(invoice.dueDate, userLocale)}</dd>
+              <dd>{formatLocalisedDate(invoice.dueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
             </div>
             {/* Receipt No. — visible on separate-mode rows (the receipt has
                 its own §87 sequence) that reached payment. Shown on paid AND
@@ -611,11 +594,15 @@ export default async function InvoiceDetailPage({
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('payment.paymentDate')}</dt>
-                  <dd>{formatDate(invoice.paymentDate, userLocale)}</dd>
+                  {/* paymentDate is a Postgres `date` (date-only) — UTC-pin so the
+                      day never shifts for browsers west of UTC. */}
+                  <dd>{formatLocalisedDate(invoice.paymentDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('payment.paidAt')}</dt>
-                  <dd>{formatDate(invoice.paidAt, userLocale)}</dd>
+                  {/* paidAt is a Postgres `timestamptz` (real instant) — do NOT
+                      UTC-pin; render in the user's local timezone intentionally. */}
+                  <dd>{formatLocalisedDate(invoice.paidAt ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
                 </div>
                 {/* No separate "Amount paid" row — partial payments are
                     out of MVP scope (spec §US2 AS4), so paid amount is
@@ -667,7 +654,9 @@ export default async function InvoiceDetailPage({
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedAt')}</dt>
-                  <dd>{formatDate(invoice.voidedAt, userLocale)}</dd>
+                  {/* voidedAt is a Postgres `timestamptz` (real instant) — do NOT
+                      UTC-pin; render in the user's local timezone intentionally. */}
+                  <dd>{formatLocalisedDate(invoice.voidedAt ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric' })}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedBy')}</dt>
@@ -753,7 +742,10 @@ export default async function InvoiceDetailPage({
                           {cn.documentNumber.raw}
                         </TableCell>
                         <TableCell className="tabular-nums">
-                          {formatDate(cn.issueDate, userLocale)}
+                          {/* CN issueDate is a tax-document date — use formatTaxDocDate
+                              so th locale renders CE + (พ.ศ.) matching the CN detail +
+                              directory pages; UTC-pin is internal to formatTaxDocDate. */}
+                          {formatTaxDocDate(cn.issueDate, userLocale)}
                         </TableCell>
                         <TableCell
                           className="max-w-[20rem] truncate"

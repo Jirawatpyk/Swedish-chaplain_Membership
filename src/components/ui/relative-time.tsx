@@ -39,6 +39,7 @@
 
 import { useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { formatRelativeTime } from '@/lib/relative-time';
 
 /**
@@ -126,10 +127,8 @@ export interface RelativeTimeProps {
 function formatAbsolute(iso: string, locale: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  const bcp47 =
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale === 'sv' ? 'sv-SE' : locale;
   try {
-    return new Intl.DateTimeFormat(bcp47, {
+    return new Intl.DateTimeFormat(getDateFormatLocale(locale), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

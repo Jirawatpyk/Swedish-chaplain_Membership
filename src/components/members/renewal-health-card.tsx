@@ -125,11 +125,7 @@ export function RenewalHealthCard({
                 {expiryIso !== null ? (
                   <div className="flex flex-col">
                     <span>
-                      {format.dateTime(new Date(expiryIso), {
-                        year: 'numeric',
-                        month: 'short',
-                        day: '2-digit',
-                      })}
+                      {format.dateTime(new Date(expiryIso), 'dateMedium2Digit')}
                     </span>
                     {daysRemaining !== null && (
                       <span className="text-caption text-muted-foreground">

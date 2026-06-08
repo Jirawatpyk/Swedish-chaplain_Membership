@@ -42,14 +42,7 @@ import {
   fetchMemberDisplay,
   fetchPlanDisplay,
 } from './_lib/cycle-detail-fetchers';
-
-// Locale → BCP47 mapping. Thai uses Buddhist Era via the
-// `-u-ca-buddhist` calendar extension (CLAUDE.md: BE = CE + 543 is
-// display-only for th-TH; storage stays Gregorian ISO). Verified
-// pattern at `src/components/members/archived-banner.tsx:90`.
-function bcp47For(locale: string): string {
-  return locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
-}
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 export async function generateMetadata({
   params,
@@ -98,7 +91,6 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   );
   const formatter = await getFormatter();
   const locale = await getLocale();
-  const dateLocale = bcp47For(locale);
 
   // Auth + role check — managers permitted on this read-only surface.
   const { user: currentUser } = await requireSession('staff');
@@ -211,11 +203,11 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   // admins). The Date constructor accepts any string and
   // `Intl.DateTimeFormat.format` returns "Invalid Date" for bad
   // input rather than throwing — no try/catch needed.
-  const dtFmtFull = new Intl.DateTimeFormat(dateLocale, {
+  const dtFmtFull = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
     timeStyle: 'short',
   });
-  const dtFmtDay = new Intl.DateTimeFormat(dateLocale, {
+  const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
   });
   const fmtDate = (s: string | null | undefined): string =>

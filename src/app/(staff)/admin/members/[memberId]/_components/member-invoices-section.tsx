@@ -206,13 +206,7 @@ export async function MemberInvoicesSection({
         });
 
   const formatDate = (iso: string | null): string =>
-    iso === null
-      ? '—'
-      : format.dateTime(new Date(iso), {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit',
-        });
+    iso === null ? '—' : format.dateTime(new Date(iso), 'dateMedium2Digit');
 
   return (
     <section aria-labelledby="member-invoices-heading">

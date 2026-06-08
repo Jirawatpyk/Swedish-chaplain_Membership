@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { toast } from 'sonner';
 import { ArchiveRestoreIcon, AlertTriangleIcon } from 'lucide-react';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -87,11 +88,10 @@ export function ArchivedBanner({
   // th-TH per CLAUDE.md "BE = CE + 543 is display-only for th-TH".
   // Same BCP47 pattern as src/lib/relative-time.ts:73 (`-u-ca-buddhist`
   // extension). Storage remains Gregorian ISO; this is pure display.
-  const bcp47 = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
   const archivedDate = new Date(archivedAtIso);
   let isoDate: string;
   try {
-    isoDate = new Intl.DateTimeFormat(bcp47, {
+    isoDate = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

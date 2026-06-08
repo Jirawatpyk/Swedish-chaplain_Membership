@@ -5,10 +5,11 @@
  * we permanently redirect to the Broadcasts tab. Internal navigation now links
  * straight at `?tab=broadcasts` to avoid a chain redirect.
  *
- * The shared quota helpers (`intlLocale`, `shouldShowPlanChangedExplainer`)
+ * The shared quota helpers (`shouldShowPlanChangedExplainer`, `paginateHistory`)
  * relocated to `@/components/broadcast/quota-banner` (a neutral home) when this
  * route became a thin redirect — BroadcastsPanel + the broadcast detail page
- * import them from there.
+ * import them from there. Locale resolution uses `getDateFormatLocale` directly
+ * (from `@/lib/format-date-localised`) at each call site.
  */
 import { permanentRedirect } from 'next/navigation';
 

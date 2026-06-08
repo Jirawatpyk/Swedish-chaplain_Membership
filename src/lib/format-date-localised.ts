@@ -11,13 +11,18 @@
 
 /**
  * Map a next-intl locale to the appropriate `Intl.DateTimeFormat`
- * locale string. For `'th'` / `'th-TH'` returns
- * `'th-TH-u-ca-buddhist'` so display renders BE year (+543). All
- * other locales pass through unchanged.
+ * locale string.
+ *
+ * - `'th'` / `'th-TH'` → `'th-TH-u-ca-buddhist'` (Buddhist Era calendar, +543)
+ * - `'sv'` / `'sv-SE'` → `'sv-SE'` (ensures canonical BCP-47 region tag)
+ * - All other locales pass through unchanged.
  */
 export function getDateFormatLocale(locale: string): string {
   if (locale === 'th' || locale === 'th-TH') {
     return 'th-TH-u-ca-buddhist';
+  }
+  if (locale === 'sv' || locale === 'sv-SE') {
+    return 'sv-SE';
   }
   return locale;
 }

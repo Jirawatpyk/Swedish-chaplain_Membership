@@ -727,13 +727,7 @@ export function ScheduleEditor({
                   {lastSavedAt ? (
                     <span>
                       {t('lastSaved', {
-                        date: fmt.dateTime(new Date(lastSavedAt), {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        }),
+                        date: fmt.dateTime(new Date(lastSavedAt), 'dateTimeMedium'),
                       })}
                     </span>
                   ) : null}

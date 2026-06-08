@@ -351,7 +351,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                   purely decorative shimmer per ux-standards.md § 2.1. */}
               {selected !== null ? (
                 <span className="truncate">
-                  {`${selected.name} — ${formatter.dateTime(new Date(selected.startDate), { dateStyle: 'medium' })}`}
+                  {`${selected.name} — ${formatter.dateTime(new Date(selected.startDate), 'medium')}`}
                 </span>
               ) : loading ? (
                 <Skeleton aria-hidden="true" className="h-4 w-48" />
@@ -430,7 +430,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                     <div className="flex flex-col">
                       <span>{event.name}</span>
                       <span className="text-caption text-muted-foreground">
-                        {formatter.dateTime(new Date(event.startDate), { dateStyle: 'medium' })}
+                        {formatter.dateTime(new Date(event.startDate), 'medium')}
                       </span>
                     </div>
                   </CommandItem>

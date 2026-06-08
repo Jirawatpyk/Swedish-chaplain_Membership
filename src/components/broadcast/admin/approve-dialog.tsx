@@ -27,6 +27,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { LocalDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
 const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
@@ -221,18 +222,14 @@ export function ApproveDialog({
                         // preview matches what the admin typed in the
                         // input regardless of browser TZ.
                         const instant = bangkokInputToInstant(scheduledFor);
-                        const formatter =
-                          locale === 'th'
-                            ? new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-                                dateStyle: 'long',
-                                timeStyle: 'short',
-                                timeZone: 'Asia/Bangkok',
-                              })
-                            : new Intl.DateTimeFormat(locale, {
-                                dateStyle: 'long',
-                                timeStyle: 'short',
-                                timeZone: 'Asia/Bangkok',
-                              });
+                        const formatter = new Intl.DateTimeFormat(
+                          getDateFormatLocale(locale),
+                          {
+                            dateStyle: 'long',
+                            timeStyle: 'short',
+                            timeZone: 'Asia/Bangkok',
+                          },
+                        );
                         return formatter.format(instant);
                       } catch {
                         return '';

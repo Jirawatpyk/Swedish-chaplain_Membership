@@ -23,6 +23,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -76,8 +77,7 @@ export function AdminTemplateLibrary({
   // Intl support which is ubiquitous since Edge 16+).
   function formatUpdatedAt(iso: string): string {
     try {
-      const resolvedLocale = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
-      return new Date(iso).toLocaleDateString(resolvedLocale, {
+      return new Date(iso).toLocaleDateString(getDateFormatLocale(locale), {
         year: 'numeric',
         month: 'short',
         day: '2-digit',

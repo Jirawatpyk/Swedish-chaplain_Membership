@@ -52,18 +52,6 @@ export function shouldShowPlanChangedExplainer(
   return yearAtChange === quotaYear;
 }
 
-/**
- * Map next-intl locale → BCP 47 tag for `Intl.DateTimeFormat`.
- *
- * Thai dates display in Buddhist Era (BE = CE + 543) on member-facing
- * surfaces per CLAUDE.md Conventions; the `u-ca-buddhist` Unicode
- * extension toggles ICU's Buddhist calendar without changing the
- * stored UTC value. Other locales pass through unchanged.
- */
-export function intlLocale(locale: string): string {
-  return locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
-}
-
 export interface HistoryPage<T> {
   readonly items: ReadonlyArray<T>;
   readonly page: number;

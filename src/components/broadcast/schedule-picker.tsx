@@ -23,6 +23,7 @@ import {
   isoToBangkokInput,
   bangkokMinInputAfterMinutes,
 } from './bangkok-datetime';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 export interface SchedulePickerProps {
   /** ISO-8601 UTC string or null when "send immediately" is selected. */
@@ -49,18 +50,11 @@ export function SchedulePicker({
     // the contract the picker asks the user to provide (E2 UX hardening
     // — previously this defaulted to the BROWSER local TZ, so an admin
     // travelling abroad would see a different time than they typed).
-    const formatter =
-      locale === 'th'
-        ? new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-            dateStyle: 'long',
-            timeStyle: 'short',
-            timeZone: 'Asia/Bangkok',
-          })
-        : new Intl.DateTimeFormat(locale, {
-            dateStyle: 'long',
-            timeStyle: 'short',
-            timeZone: 'Asia/Bangkok',
-          });
+    const formatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+      dateStyle: 'long',
+      timeStyle: 'short',
+      timeZone: 'Asia/Bangkok',
+    });
     return formatter.format(date);
   }, [value, locale]);
 

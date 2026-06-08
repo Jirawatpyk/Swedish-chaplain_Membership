@@ -28,6 +28,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
 import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { ALL_AUDIT_EVENT_TYPES } from '@/modules/auth';
 import {
   auditQuery,
@@ -172,7 +173,7 @@ export default async function AuditLogPage({
   // `timeZone: tz` is essential — the Vercel runtime is UTC, so without it the
   // "local" column would render UTC and duplicate the UTC line (FR-012 dual
   // timestamp). Render the instant in the tenant's timezone.
-  const dateFmt = new Intl.DateTimeFormat(locale, {
+  const dateFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: tz,

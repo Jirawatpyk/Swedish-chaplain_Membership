@@ -43,6 +43,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
+import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteMoreMenu } from '../_components/credit-note-more-menu';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -63,30 +64,6 @@ function formatSatang(satang: bigint | null): string {
   const rem = abs % 100n;
   const sign = satang < 0n ? '-' : '';
   return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
-}
-
-/**
- * Format an ISO YYYY-MM-DD (CE) in the active next-intl locale. For
- * Thai locale, append the Buddhist Era year in parentheses — matches
- * the PDF-side treatment in invoice-template.tsx (BE = CE + 543;
- * display-only per project convention, storage stays CE ISO).
- */
-function formatIssueDate(isoDate: string, locale: string): string {
-  const [yStr, mStr, dStr] = isoDate.split('-');
-  const year = Number(yStr);
-  const month = Number(mStr);
-  const day = Number(dStr);
-  if (!year || !month || !day) return isoDate;
-  const ce = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-  if (locale.startsWith('th')) {
-    return `${ce} (พ.ศ. ${year + 543})`;
-  }
-  return ce;
 }
 
 // F4/F5 polish retrospective Phase E (2026-05-17) — `force-dynamic`
@@ -181,7 +158,7 @@ export default async function CreditNoteDetailPage({
         <CardContent>
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
             <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
-            <dd>{formatIssueDate(cn.issueDate, locale)}</dd>
+            <dd>{formatTaxDocDate(cn.issueDate, locale)}</dd>
 
             <dt className="text-muted-foreground">{t('fields.issuedBy')}</dt>
             <dd className="break-all">{issuerLabel}</dd>

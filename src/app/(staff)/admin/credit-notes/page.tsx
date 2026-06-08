@@ -40,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteFilters } from './_components/credit-note-filters';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -59,21 +60,6 @@ function formatSatang(sRaw: string): string {
   return `${sign}${(abs / 100n).toLocaleString('en-US')}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
-function formatIssueDate(iso: string, locale: string): string {
-  const [yStr, mStr, dStr] = iso.split('-');
-  const year = Number(yStr);
-  const month = Number(mStr);
-  const day = Number(dStr);
-  if (!year || !month || !day) return iso;
-  const ce = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-  if (locale.startsWith('th')) return `${ce} (พ.ศ. ${year + 543})`;
-  return ce;
-}
 
 export default async function AdminCreditNotesDirectoryPage({
   searchParams,
@@ -200,7 +186,7 @@ export default async function AdminCreditNotesDirectoryPage({
                           </Link>
                         </TableCell>
                         <TableCell className="tabular-nums">
-                          {formatIssueDate(r.issueDate, locale)}
+                          {formatTaxDocDate(r.issueDate, locale)}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           {r.originalInvoiceNumberRaw ? (

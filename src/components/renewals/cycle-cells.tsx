@@ -83,11 +83,7 @@ export function CycleExpiresCell({
       dateTime={expiresAt}
       className="tabular-nums text-foreground/80"
     >
-      {fmt.dateTime(new Date(expiresAt), {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      })}
+      {fmt.dateTime(new Date(expiresAt), 'dateMedium')}
     </time>
   );
 }

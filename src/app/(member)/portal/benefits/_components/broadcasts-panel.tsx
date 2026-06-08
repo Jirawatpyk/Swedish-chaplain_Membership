@@ -48,7 +48,8 @@ import {
 import { type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { intlLocale, shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
+import { shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 const PER_PAGE = 10;
 
@@ -74,11 +75,11 @@ export async function BroadcastsPanel({
   const tQuota = await getTranslations('portal.broadcasts.quota');
   const tPagination = await getTranslations('portal.broadcasts.list.pagination');
   const locale = await getLocale();
-  const dateFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+  const dateFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-  const dateOnlyFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+  const dateOnlyFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
   });
 
@@ -181,7 +182,7 @@ export async function BroadcastsPanel({
         // Format the plan-changed date in the tenant timezone so the
         // microcopy reads "Plan changed on <Bangkok-day>" regardless
         // of where the server is running.
-        const planChangedFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+        const planChangedFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
           dateStyle: 'long',
           timeZone: v.tenantTimezone,
         });

@@ -14,6 +14,7 @@ import {
 } from './queue-table-client';
 import type { BroadcastStatus } from '@/modules/broadcasts';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 // Status → badge variant mapping moved to
 // `src/components/broadcast/status-badge-mapping.ts` (H4 UX hardening)
@@ -47,7 +48,7 @@ export async function QueueTable({
   const tStatus = await getTranslations('admin.broadcasts.queue.status');
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
+    getDateFormatLocale(locale),
     { dateStyle: 'medium', timeStyle: 'short' },
   );
 

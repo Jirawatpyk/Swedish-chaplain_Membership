@@ -200,11 +200,7 @@ export default async function RenewalPortalPage({
             <dt className="text-muted-foreground">{tField('expiry')}</dt>
             <dd>
               <time dateTime={summary.expiresAt}>
-                {formatter.dateTime(new Date(summary.expiresAt), {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
+                {formatter.dateTime(new Date(summary.expiresAt), 'dateLong')}
               </time>
             </dd>
           </dl>
