@@ -21,6 +21,30 @@ const CONTAINER_RE = /\b(TableContainer|FormContainer|DetailContainer)\b/g;
 const LAYOUT_IMPORT_RE =
   /import\s*\{[^}]+\}\s*from\s*['"]@\/components\/layout(?:\/[^'"]+)?['"]/g;
 
+// Redirect-only page detection.
+//   - imports a control-flow helper from `next/navigation`
+//     (`redirect` (307 — the F9-flag-gated data-export route, R2-5) /
+//      `permanentRedirect` (308 — 058 D2 switched the UNCONDITIONAL legacy
+//      routes to a cacheable permanent redirect) / `notFound` (the data-export
+//      route 404s when FEATURE_F9_DASHBOARD is dark, then redirects when on))
+//   - calls one of those helpers
+// NOTE: the alternation order is IRRELEVANT here. The group is wrapped in `\b`
+// word-boundary anchors — `\b(?:permanentRedirect|redirect|notFound)\b`. Inside
+// `permanentRedirect`, the `redirect` alternative cannot match the trailing
+// `Redirect` substring (it starts with an uppercase `R`, so it's literally a
+// different string) NOR the lowercase tail, because there is no word boundary
+// before `...tRedirect` (the preceding `t` is a word char). So `redirect` only
+// matches a standalone `redirect` token, never the inner part of
+// `permanentRedirect`. (This is the `\b` anchors doing the work — NOT
+// longest-match: JS regex alternation is first-match, left-to-right.)
+const REDIRECT_IMPORT_RE =
+  /import\s*\{[^}]*\b(?:permanentRedirect|redirect|notFound)\b[^}]*\}\s*from\s*['"]next\/navigation['"]/;
+const REDIRECT_CALL_RE = /\b(?:permanentRedirect|redirect|notFound)\s*\(/;
+// A real page returns a JSX tree: `return (` followed (soon) by `<`.
+// Used as the negative guard so a real page that *conditionally* redirects
+// while ALSO rendering a layout is NOT mistaken for a redirect-only page.
+const JSX_RETURN_RE = /return\s*\(\s*</;
+
 type Offense =
   | { kind: 'count'; file: string; found: Container[]; reason: 'zero' | 'multiple' }
   | { kind: 'pair-mismatch'; page: string; loading: string; pageVariant: Container; loadingVariant: Container }
@@ -48,6 +72,47 @@ function findContainers(source: string): Container[] {
   return [...found];
 }
 
+/**
+ * A redirect-only page renders NO layout — it exists purely to preserve a
+ * route for email/bookmark deep-links and `redirect()` the visitor onward
+ * (058 D2 consolidated several portal surfaces into hubs; the legacy routes
+ * stay alive only as redirects, e.g. /portal/benefits/e-blasts →
+ * /portal/benefits?tab=broadcasts and /portal/preferences/renewals →
+ * /portal/account#renewal-prefs). Such a page has no container to require, so
+ * it is exempt from the layout-container rule.
+ *
+ * The redirect helper may be `redirect` (307 — the F9-flag-gated data-export
+ * route, which redirects when F9 is on; R2-5), `permanentRedirect` (308 — 058
+ * D2 switched the UNCONDITIONAL legacy routes to a cacheable permanent
+ * redirect), or `notFound` (the data-export route 404s when
+ * FEATURE_F9_DASHBOARD is dark, then redirects when on — still no layout in
+ * either branch).
+ *
+ * The heuristic is deliberately PRECISE so it never exempts a real page that
+ * conditionally calls one of these helpers while ALSO rendering a layout (e.g.
+ * admin/plans/new redirects after a successful create but otherwise renders a
+ * FormContainer; profile/directory notFound()s when F9 is dark but otherwise
+ * renders a DetailContainer). A file is redirect-only ONLY when ALL hold:
+ *   1. it imports `redirect` / `permanentRedirect` / `notFound` from
+ *      `next/navigation`, AND
+ *   2. it contains a call to one of them, AND
+ *   3. it imports ZERO layout containers, AND
+ *   4. it returns NO JSX tree (`return (` followed by `<`).
+ * If a file imports a container OR returns JSX, it is a real page and stays
+ * subject to the container requirement.
+ */
+function isRedirectOnlyPage(
+  source: string,
+  containers: Container[],
+): boolean {
+  return (
+    containers.length === 0 &&
+    REDIRECT_IMPORT_RE.test(source) &&
+    REDIRECT_CALL_RE.test(source) &&
+    !JSX_RETURN_RE.test(source)
+  );
+}
+
 function main(): void {
   const files = collectFiles();
   if (files.length === 0) {
@@ -61,6 +126,9 @@ function main(): void {
   for (const file of files) {
     const src = readFileSync(file, 'utf8');
     const found = findContainers(src);
+    // Redirect-only pages render no layout — skip the container requirement
+    // (and the page+loading pairing check, since they have no loading.tsx).
+    if (isRedirectOnlyPage(src, found)) continue;
     if (found.length === 0) offenses.push({ kind: 'count', file, found, reason: 'zero' });
     else if (found.length > 1) offenses.push({ kind: 'count', file, found, reason: 'multiple' });
     else variantByFile.set(file, found[0]!);

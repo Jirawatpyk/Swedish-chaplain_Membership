@@ -3948,6 +3948,13 @@
     "account": {
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",
+      "forgotPassword": "Forgot your password?",
+      "sections": {
+        "account": "Account",
+        "renewalPrefs": "Renewal preferences",
+        "dataPrivacy": "Data & privacy",
+        "appearance": "Appearance"
+      },
       "menu": {
         "renewalPrefs": "Renewal reminders",
         "dataPrivacy": "Data & privacy"
@@ -4342,6 +4349,13 @@
           "total": "Total"
         },
         "back": "Back to broadcasts"
+      }
+    },
+    "benefits": {
+      "tabs": {
+        "ariaLabel": "Benefits sections",
+        "benefits": "Benefits",
+        "broadcasts": "Broadcasts"
       }
     },
     "profile": {
@@ -4993,7 +5007,6 @@
     "colRequested": "Requested",
     "adminHeading": "Data export (GDPR)",
     "adminDescription": "Produce a downloadable archive of this member’s data on their behalf for a data-subject request. The action is recorded in the audit log, attributed to you.",
-    "alreadyPending": "An export is already being prepared — see its status below.",
-    "open": "Go to data export"
+    "alreadyPending": "An export is already being prepared — see its status below."
   }
 }

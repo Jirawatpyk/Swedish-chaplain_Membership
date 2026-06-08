@@ -27,7 +27,7 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Link
-          href="/portal/benefits/e-blasts"
+          href="/portal/benefits?tab=broadcasts"
           className={buttonVariants({ variant: 'ghost', size: 'sm' })}
         >
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />

@@ -2,8 +2,11 @@
  * F8 Phase 5 Wave E · T151 — lapsed-portal-scope E2E (FR-005a).
  *
  * Coverage scope: smoke-test that the whitelisted F8 portal surfaces
- * (renewal page, preferences page) are reachable for an authenticated
- * member. The full FR-005a "lapsed-blocked" branch is NOT exercised
+ * (renewal page, renewal opt-out) are reachable for an authenticated
+ * member. Since 058 D2 the legacy `/portal/preferences/renewals` route
+ * 308-redirects to the consolidated Account hub
+ * (`/portal/account#renewal-prefs`); the opt-out toggle lives there now.
+ * The full FR-005a "lapsed-blocked" branch is NOT exercised
  * via E2E because:
  *
  *   - `cyclesRepo.findActiveForMember` excludes status='lapsed'
@@ -34,13 +37,31 @@ test.describe('F8 — lapsed-portal-scope smoke (T151 / FR-005a)', () => {
       );
     }
 
-    // Whitelist 1 — preferences page should render the toggle.
+    // Whitelist 1 — the renewal opt-out surface must stay reachable.
+    //
+    // 058 D2: `/portal/preferences/renewals` now 308-redirects to the
+    // consolidated Account hub (`/portal/account#renewal-prefs`) — the
+    // FR-016 opt-out toggle moved there. The redirect target is itself
+    // lapsed-allow-listed (LAPSED_PORTAL_ALLOWED_PREFIXES includes
+    // '/portal/account' in src/lib/lapsed-portal-scope.ts), so a lapsed
+    // member still lands on the opt-out (FR-005a). We assert the hub's
+    // real section heading "Renewal preferences" (en.json
+    // portal.account.sections.renewalPrefs) — NOT the legacy "Renewal
+    // reminders" page title, which the hub no longer renders as a heading.
     await page.goto('/portal/preferences/renewals');
     await page.waitForLoadState('networkidle');
+    const renewalSection = page.locator('#renewal-prefs');
     await expect(
-      page.getByRole('heading', { name: /renewal reminders/i }),
+      renewalSection.getByRole('heading', {
+        level: 2,
+        name: /renewal preferences/i,
+      }),
     ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('switch')).toBeVisible();
+    // RenewalRemindersToggle renders the single switch in this section
+    // (ThemeToggle elsewhere on the hub is a dropdown, not a switch).
+    // Scope to #renewal-prefs to keep the assertion robust if a future
+    // hub section adds another switch.
+    await expect(renewalSection.getByRole('switch')).toBeVisible();
 
     // Whitelist 2 — renewal page renders for the active cycle.
     await page.goto(`/portal/renewal/${seed.memberId}`);

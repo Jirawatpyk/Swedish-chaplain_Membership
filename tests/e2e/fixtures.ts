@@ -56,9 +56,34 @@ export const test = base.extend<{
    * loud, attributable failure.
    *
    * Opt-out via env: `E2E_PAGEERROR_IGNORE=true` keeps capture +
-   * attachment but skips the auto-fail. Use sparingly (e.g. tests
-   * that intentionally trigger client errors as part of UX flows
-   * — Sentry-style debugging, malformed-input tests).
+   * attachment but skips the auto-fail ENTIRELY (blanket). Use
+   * sparingly (e.g. tests that intentionally trigger client errors
+   * as part of UX flows — Sentry-style debugging, malformed-input
+   * tests). A blanket opt-out is dangerous: it would silently swallow
+   * a real `MISSING_MESSAGE` / hydration crash — the exact bug class
+   * this project most cares about — so prefer the NARROW pattern
+   * opt-out below.
+   *
+   * Narrow opt-out via env: `E2E_PAGEERROR_IGNORE_PATTERN=<regex>`
+   * filters out ONLY the captured app-errors whose `message + '\n' +
+   * stack` matches the regex, and still fails the test if any
+   * NON-matching error remains. This keeps the full pageerror
+   * regression net active for every other error (incl.
+   * `MISSING_MESSAGE`, generic `TypeError`, hydration mismatches). It
+   * is for narrowly ignoring KNOWN dev-only framework noise — e.g. the
+   * Next.js 16 dev component-performance profiler `Failed to execute
+   * 'measure' on 'Performance': '…' cannot have a negative time stamp`
+   * error that deterministically fires on redirect-only RSCs under
+   * `next dev` (stripped from prod builds) — NOT for blanket
+   * suppression. Match against the STACK (not just the message)
+   * because some dev-only noise has an engine-specific, uninformative
+   * message (e.g. WebKit surfaces the profiler error as the bare `Type
+   * error`, where the only stable discriminator is the
+   * `flushComponentPerformance` stack frame). Prefer this over the
+   * blanket `E2E_PAGEERROR_IGNORE=true` whenever the noise has a
+   * stable, distinguishable message OR stack frame. An invalid regex
+   * in this var is treated as "no pattern" and fails loudly (see
+   * below) rather than silently disabling the net.
    *
    * Dev-overlay carve-out: Next.js dev internals (e.g. the
    * `__nextjs_original-stack-frames` source-map endpoint) emit a
@@ -94,10 +119,68 @@ export const test = base.extend<{
         // Exclude Next.js dev-overlay internals (dev-only, WebKit access-control
         // noise) from the fail set — see the carve-out note above.
         const appErrors = errors.filter((e) => !e.message.includes('__nextjs'));
-        if (appErrors.length > 0 && process.env.E2E_PAGEERROR_IGNORE !== 'true') {
-          throw new Error(
-            `Captured ${appErrors.length} client-side pageerror(s); first: ${appErrors[0]!.message}`,
-          );
+
+        // Blanket opt-out: skip the auto-fail for EVERY app error.
+        const blanketIgnore = process.env.E2E_PAGEERROR_IGNORE === 'true';
+
+        // Narrow, additive opt-out: ignore ONLY app errors whose message OR
+        // stack matches `E2E_PAGEERROR_IGNORE_PATTERN` (a regex). This narrowly
+        // suppresses KNOWN dev-only framework noise (e.g. the Next.js 16
+        // dev-profiler `Performance.measure … negative time stamp` error on
+        // redirect-only RSCs) WITHOUT muting the rest of the pageerror net —
+        // a real `MISSING_MESSAGE` / hydration crash with a different message
+        // and stack still fails the test. See the fixture doc comment above.
+        //
+        // Why match the STACK too, not just the message: the very same
+        // dev-profiler error surfaces with engine-specific messages. On
+        // chromium/mobile-chrome the message is the descriptive `Failed to
+        // execute 'measure' on 'Performance': '…' cannot have a negative time
+        // stamp`; on WebKit/mobile-safari the message is the uninformative bare
+        // `Type error` and the ONLY stable discriminator is the stack frame
+        // (`flushComponentPerformance`). Matching the pattern against
+        // `message + '\n' + stack` lets a single narrow pattern (anchored on a
+        // React dev-profiler internal that never appears in app errors) cover
+        // both engines without resorting to the dangerous blanket flag.
+        const rawPattern = process.env.E2E_PAGEERROR_IGNORE_PATTERN;
+        let ignoreRegex: RegExp | undefined;
+        let patternError: string | undefined;
+        if (rawPattern !== undefined && rawPattern !== '') {
+          try {
+            ignoreRegex = new RegExp(rawPattern);
+          } catch (e) {
+            // Robustness: a malformed regex must NOT crash the fixture and
+            // must NOT silently disable the net. Treat as "no pattern" and
+            // fail loudly with a clear message so the bad env var is fixed.
+            patternError = `E2E_PAGEERROR_IGNORE_PATTERN is not a valid regex (${rawPattern!}): ${
+              e instanceof Error ? e.message : String(e)
+            }`;
+          }
+        }
+
+        if (!blanketIgnore) {
+          if (patternError !== undefined) {
+            throw new Error(patternError);
+          }
+          // Partition into ignored (pattern match) vs remaining (no match).
+          // With no valid pattern, `ignoreRegex` is undefined → nothing is
+          // ignored → behaviour is identical to the original blanket-aware
+          // check (additive change, default unchanged).
+          const remaining =
+            ignoreRegex === undefined
+              ? appErrors
+              : appErrors.filter(
+                  (e) => !ignoreRegex.test(`${e.message}\n${e.stack ?? ''}`),
+                );
+          if (remaining.length > 0) {
+            const ignoredCount = appErrors.length - remaining.length;
+            const ignoredNote =
+              ignoredCount > 0
+                ? ` (ignored ${ignoredCount} matching E2E_PAGEERROR_IGNORE_PATTERN)`
+                : '';
+            throw new Error(
+              `Captured ${remaining.length} client-side pageerror(s)${ignoredNote}; first: ${remaining[0]!.message}`,
+            );
+          }
         }
       }
     }

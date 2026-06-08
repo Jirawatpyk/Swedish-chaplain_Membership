@@ -58,7 +58,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     page,
   }) => {
     await signIn(page);
-    const res = await page.goto('/portal/benefits/e-blasts');
+    const res = await page.goto('/portal/benefits?tab=broadcasts');
     expect(res?.status()).toBeLessThan(400);
 
     // Quota panel: used / reserved / remaining / cap
@@ -79,7 +79,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     page,
   }) => {
     await signIn(page);
-    await page.goto('/portal/benefits/e-blasts');
+    await page.goto('/portal/benefits?tab=broadcasts');
 
     // Implementation must expose the history region with this testid.
     await expect(page.getByTestId('broadcast-history-table')).toBeVisible();
@@ -88,7 +88,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   // ── AS1 pagination ────────────────────────────────────────────────
   test('AS1 — history table is paginated (page size 10)', async ({ page }) => {
     await signIn(page);
-    await page.goto('/portal/benefits/e-blasts');
+    await page.goto('/portal/benefits?tab=broadcasts');
     // [RED — T129/AS1-pagination] Pagination control must be present.
     await expect(page.getByTestId('broadcast-history-pagination')).toBeVisible();
   });
@@ -119,7 +119,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     ]);
 
     await signIn(page);
-    await page.goto('/portal/benefits/e-blasts');
+    await page.goto('/portal/benefits?tab=broadcasts');
 
     const el = page.getByTestId('quota-plan-changed-explainer');
     await expect(el).toHaveCount(1);
@@ -145,7 +145,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     page,
   }) => {
     await signIn(page);
-    await page.goto('/portal/benefits/e-blasts');
+    await page.goto('/portal/benefits?tab=broadcasts');
     const firstRow = page
       .getByTestId('broadcast-history-table')
       .locator('tbody tr')
@@ -171,7 +171,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     page,
   }) => {
     await signIn(page);
-    await page.goto('/portal/benefits/e-blasts');
+    await page.goto('/portal/benefits?tab=broadcasts');
     // The current page already renders an empty-block; the RED contract
     // is that the empty state has the canonical testid + a primary CTA
     // pointing at /portal/broadcasts/new.
@@ -371,9 +371,10 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     await expect(composeEntry).toBeVisible({ timeout: 10_000 });
     await expect(benefitsEntry).toBeVisible();
 
-    // Click "View E-Blast usage" → navigates to /portal/benefits/e-blasts.
+    // Click "View E-Blast usage" → navigates straight to the Broadcasts tab
+    // (/portal/benefits?tab=broadcasts), no chain redirect via /e-blasts.
     await benefitsEntry.click();
-    await page.waitForURL(/\/portal\/benefits\/e-blasts(?:\?|$)/, {
+    await page.waitForURL(/\/portal\/benefits\?(?:.*&)?tab=broadcasts(?:&|$)/, {
       timeout: 10_000,
     });
   });

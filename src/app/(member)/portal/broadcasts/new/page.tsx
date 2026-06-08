@@ -81,7 +81,7 @@ export default async function ComposeBroadcastPage({
         // Redirect to the benefits surface (which renders the same quota
         // card with an "exhausted / not in plan" treatment).
         if (quotaResult.value.counter.cap === 0) {
-          redirect('/portal/benefits/e-blasts');
+          redirect('/portal/benefits?tab=broadcasts');
         }
         initialQuota = {
           used: quotaResult.value.counter.used,

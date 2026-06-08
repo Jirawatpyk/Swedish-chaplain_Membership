@@ -6,6 +6,10 @@
  * Wraps next-themes with a shadcn DropdownMenu so the user can pick
  * Light, Dark, or System. Theme defaults to `system` so the OS
  * preference is honoured on first visit.
+ *
+ * `size` defaults to `icon` (32px) for the compact header/auth-page usage;
+ * the Account-hub Appearance row passes `icon-lg` (36px) so the toggle's
+ * height lines up with the adjacent 36px sign-out button.
  */
 import { MoonIcon, SunIcon, MonitorIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -18,13 +22,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export function ThemeToggle() {
+export function ThemeToggle({
+  size = 'icon',
+}: {
+  readonly size?: 'icon' | 'icon-lg';
+} = {}) {
   const { setTheme } = useTheme();
   const t = useTranslations('shell.theme');
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={t('label')} />}>
+      <DropdownMenuTrigger render={<Button variant="ghost" size={size} aria-label={t('label')} />}>
         <SunIcon className="size-4 dark:hidden" aria-hidden />
         <MoonIcon className="hidden size-4 dark:block" aria-hidden />
       </DropdownMenuTrigger>

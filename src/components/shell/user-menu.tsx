@@ -11,13 +11,12 @@
  * failure/network error it shows a toast. It requires JS (no progressive
  * enhancement) — consistent with the rest of this interactive dropdown.
  *
- * Members get an Account menu linking to Account settings (/portal/account),
- * Renewal reminders (/portal/preferences/renewals), Data & privacy
- * (/portal/account/data-export), theme controls, and sign-out (057). The
- * renewal/privacy items point at the REAL existing routes — the earlier
- * `/portal/account#renewal-prefs` / `#data-privacy` anchors were dead (the
- * Account-hub consolidation is D2), which orphaned the FR-016 renewal opt-out
- * in-app (057 review F7/F8). D2 will re-point these to the consolidated hub.
+ * Members get an Account menu linking to Account settings (/portal/account)
+ * and its in-page sections (Renewal preferences → /portal/account#renewal-prefs,
+ * Data & privacy → /portal/account#data-privacy), theme controls, and sign-out.
+ * D2 consolidated these into the single Account hub; the legacy routes
+ * (/portal/preferences/renewals, /portal/account/data-export) now redirect to
+ * the matching anchors, so renewal-reminder email CTAs keep resolving.
  * Staff (admin/manager) keep the original single account item.
  */
 import {
@@ -125,11 +124,11 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
                 <UserIcon className="size-4" aria-hidden />
                 {t('account')}
               </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/portal/preferences/renewals" />}>
+              <DropdownMenuItem render={<Link href="/portal/account#renewal-prefs" />}>
                 <CalendarClockIcon className="size-4" aria-hidden />
                 {tHub('renewalPrefs')}
               </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/portal/account/data-export" />}>
+              <DropdownMenuItem render={<Link href="/portal/account#data-privacy" />}>
                 <ShieldIcon className="size-4" aria-hidden />
                 {tHub('dataPrivacy')}
               </DropdownMenuItem>

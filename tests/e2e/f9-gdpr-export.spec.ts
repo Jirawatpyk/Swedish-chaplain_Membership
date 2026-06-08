@@ -59,14 +59,20 @@ test.describe('F9 — member GDPR data export (US6) @f9', () => {
     await expect(page.getByRole('table')).toBeVisible({ timeout: 15_000 });
   });
 
-  test('the data-export link is discoverable from the account page', async ({ page }) => {
+  test('the data-export panel is discoverable from the account hub (inlined)', async ({ page }) => {
     await signInAsMember(page);
-    await page.goto('/portal/account');
-    const link = page.getByRole('link', { name: /go to data export/i });
-    await expect(link).toBeVisible();
-    await link.click();
-    await page.waitForURL(/\/portal\/account\/data-export/, { timeout: 15_000 });
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await page.goto('/portal/account#data-privacy');
+
+    // The hub inlines the DataExportPanel inside the Data & privacy section
+    // (no "Go to data export" link exists since D2 consolidation). Assert:
+    //   1. The section heading is visible (proves the section rendered).
+    //   2. The request button is present (proves the panel is inlined, not hidden).
+    await expect(
+      page.getByRole('heading', { level: 2, name: /data & privacy/i }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByRole('button', { name: /request my data export/i }),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('admin can produce a member’s data export on their behalf (FR-031)', async ({ page }) => {

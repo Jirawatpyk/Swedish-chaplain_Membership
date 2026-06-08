@@ -265,7 +265,7 @@ export function ComposeForm({
           description: t('toast.submittedSlaHint'),
         });
         setQuotaRefreshKey((n) => n + 1);
-        router.push(`/portal/benefits/e-blasts?submitted=${responseBody.broadcastId}`);
+        router.push(`/portal/benefits?tab=broadcasts&submitted=${responseBody.broadcastId}`);
         router.refresh();
         return;
       }

@@ -35,7 +35,7 @@ import {
   makeGetMemberBroadcastDeps,
   parseBroadcastId,
 } from '@/modules/broadcasts';
-import { intlLocale } from '@/app/(member)/portal/benefits/e-blasts/_helpers/quota-banner';
+import { intlLocale } from '@/components/broadcast/quota-banner';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
 
@@ -121,7 +121,7 @@ export default async function BroadcastDetailPage(props: {
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <Link
-        href="/portal/benefits/e-blasts"
+        href="/portal/benefits?tab=broadcasts"
         className={buttonVariants({ variant: 'ghost', size: 'sm' })}
       >
         <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />

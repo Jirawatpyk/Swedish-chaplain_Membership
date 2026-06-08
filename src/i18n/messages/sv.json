@@ -3948,6 +3948,13 @@
     "account": {
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
+      "forgotPassword": "Glömt ditt lösenord?",
+      "sections": {
+        "account": "Konto",
+        "renewalPrefs": "Förnyelseinställningar",
+        "dataPrivacy": "Data och integritet",
+        "appearance": "Utseende"
+      },
       "menu": {
         "renewalPrefs": "Förnyelsepåminnelser",
         "dataPrivacy": "Data och integritet"
@@ -4342,6 +4349,13 @@
           "total": "Totalt"
         },
         "back": "Tillbaka till utskick"
+      }
+    },
+    "benefits": {
+      "tabs": {
+        "ariaLabel": "Förmånssektioner",
+        "benefits": "Förmåner",
+        "broadcasts": "Utskick"
       }
     },
     "profile": {
@@ -4993,7 +5007,6 @@
     "colRequested": "Begärd",
     "adminHeading": "Dataexport (GDPR)",
     "adminDescription": "Skapa ett nedladdningsbart arkiv med den här medlemmens uppgifter å deras vägnar för en begäran från den registrerade. Åtgärden loggas i granskningsloggen och tillskrivs dig.",
-    "alreadyPending": "En export förbereds redan — se status nedan.",
-    "open": "Gå till dataexport"
+    "alreadyPending": "En export förbereds redan — se status nedan."
   }
 }

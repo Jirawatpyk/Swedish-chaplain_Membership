@@ -1,10 +1,10 @@
 /**
- * 057 — <UserMenu> desktop avatar Account menu (member role). Pins that the
- * dropdown links to the REAL existing routes (/portal/account,
- * /portal/preferences/renewals, /portal/account/data-export), theme controls,
- * and sign-out — all inside a role=menu popup. The earlier `#renewal-prefs` /
- * `#data-privacy` anchors were dead (057 review F7/F8); this test guards
- * against regressing to non-existent anchors.
+ * 058-D2 — <UserMenu> desktop avatar Account menu (member role). Pins that
+ * the dropdown links directly to the Account hub anchors (/portal/account,
+ * /portal/account#renewal-prefs, /portal/account#data-privacy), theme
+ * controls, and sign-out — all inside a role=menu popup. The legacy routes
+ * (/portal/preferences/renewals, /portal/account/data-export) now redirect to
+ * these anchors; the menu links straight to the destination.
  *
  * Base UI's MenuPrimitive.Portal uses floating-ui internals that need real
  * timers (setTimeout for positioning). Override global vi.useFakeTimers()
@@ -46,17 +46,17 @@ describe('<UserMenu> member Account hub (057)', () => {
     vi.useFakeTimers();
   });
 
-  it('links to the real existing Account / renewal / privacy routes', async () => {
+  it('links to the Account hub and its in-page section anchors', async () => {
     renderMenu();
     openMenu();
     const account = await screen.findByRole('menuitem', { name: /account settings/i });
     expect(account).toHaveAttribute('href', '/portal/account');
     expect(
       screen.getByRole('menuitem', { name: /renewal/i }),
-    ).toHaveAttribute('href', '/portal/preferences/renewals');
+    ).toHaveAttribute('href', '/portal/account#renewal-prefs');
     expect(
       screen.getByRole('menuitem', { name: /data & privacy/i }),
-    ).toHaveAttribute('href', '/portal/account/data-export');
+    ).toHaveAttribute('href', '/portal/account#data-privacy');
   });
 
   it('renders theme controls and a sign-out item', async () => {

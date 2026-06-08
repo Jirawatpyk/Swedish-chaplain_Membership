@@ -45,6 +45,12 @@ vi.mock('@/modules/members', async () => ({
   formatMemberNumber: (prefix: string, n: number) =>
     `${prefix}-${String(n).padStart(4, '0')}`,
   asMemberNumber: (n: number) => n,
+  // 055-member-number — the route resolves the per-tenant display prefix via
+  // resolveMemberNumberPrefix(tenant, memberSettings) (the RLS-safe helper that
+  // wraps runInTenant + settings.getPrefix). Stub it to the expected 'SCCM'
+  // prefix so formatMemberNumber yields 'SCCM-0042'. (Without this export the
+  // route's call is undefined → throws → caught → members:[] — the bug this fixes.)
+  resolveMemberNumberPrefix: async () => 'SCCM',
 }));
 vi.mock('@/lib/db', async (importActual) => {
   const actual = await importActual<typeof import('@/lib/db')>();
@@ -199,18 +205,9 @@ describe('contract: GET /api/plans/search (T064)', () => {
   it('200 — member results include member_number_display (SCCM-NNNN)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     stubPlansOk(true);
-    // runInTenant stub calls the callback and returns 'SCCM' prefix from
-    // a fake memberSettings.getPrefix implementation.
-    runInTenantMock.mockImplementationOnce(
-      (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) =>
-        // The route passes `(tx) => deps.memberSettings.getPrefix(tx, tenantId)`.
-        // Our vi.mock of @/modules/members stubs the directorySearch return but
-        // does NOT stub memberSettings — the route resolves memberSettings from
-        // buildMembersDeps. We bypass that by making runInTenant itself return
-        // the prefix value directly (the fn is never invoked — we're stubbing the
-        // whole transport, not the callback).
-        Promise.resolve('SCCM'),
-    );
+    // The route resolves the display prefix via resolveMemberNumberPrefix
+    // (mocked to 'SCCM' above) + directorySearch (mocked to Acme Co #42), so the
+    // response member carries member_number_display 'SCCM-0042'.
 
     const { GET } = await import('@/app/api/plans/search/route');
     const res = await GET(makeRequest('acme'));

@@ -5,8 +5,8 @@
  * § 1.7 (`nextResetAt` + `tenantTimezone`).
  *
  * Authored RED-first against a not-yet-existing module; GREEN once
- * `src/app/(member)/portal/benefits/e-blasts/_helpers/quota-banner.ts`
- * landed. Helpers asserted:
+ * `src/components/broadcast/quota-banner.ts` landed (relocated from
+ * `(member)/portal/benefits/e-blasts/_helpers/` in 058 G1). Helpers asserted:
  *   - `formatNextResetAt(quotaYear, tenantTz)` → ISO 8601 UTC instant
  *     pointing at 1 January (year+1) in `tenantTz`.
  *   - `shouldShowPlanChangedExplainer(planChangedAt, quotaYear, tenantTz)`
@@ -15,7 +15,7 @@
  *     totalPages, total }`.
  */
 import { describe, expect, it } from 'vitest';
-import * as helpers from '@/app/(member)/portal/benefits/e-blasts/_helpers/quota-banner';
+import * as helpers from '@/components/broadcast/quota-banner';
 
 function ensureLoaded(): typeof helpers {
   return helpers;
