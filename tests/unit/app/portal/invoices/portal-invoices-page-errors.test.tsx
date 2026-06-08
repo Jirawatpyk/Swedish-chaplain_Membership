@@ -83,10 +83,20 @@ vi.mock('@/modules/invoicing', () => ({
   makeListInvoicesDeps: () => ({ invoiceRepo: {} }),
 }));
 
+// `InvoiceFilters` is an admin CLIENT component (uses next-intl's
+// react-client `useTranslations`, which has no provider under
+// renderToStaticMarkup). It is pure filter UI — irrelevant to what these
+// tests assert (use-case args + empty-state copy), so stub it to a marker.
+vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
+  InvoiceFilters: () => null,
+}));
+
 import PortalInvoicesPage from '@/app/(member)/portal/invoices/page';
 
-async function renderPage(): Promise<string> {
-  const tree = await PortalInvoicesPage({ searchParams: Promise.resolve({}) });
+async function renderPage(
+  searchParams: Record<string, string> = {},
+): Promise<string> {
+  const tree = await PortalInvoicesPage({ searchParams: Promise.resolve(searchParams) });
   return renderToStaticMarkup(tree as ReactElement);
 }
 
@@ -159,5 +169,76 @@ describe('PortalInvoicesPage — invoice read-throw resilience (finding C1)', ()
     expect(ctx).not.toHaveProperty('message');
     expect(msg).toContain('portal-invoices-list');
     expect(msg).toContain('threw');
+  });
+});
+
+describe('PortalInvoicesPage — subject (?subject=) filter wiring (054 event-fee)', () => {
+  // The page parses query.subject (membership|event → that value; anything
+  // else → undefined) and threads it to `listInvoicesPaged` as
+  // `invoiceSubject` ONLY when defined (`...(subjectFilter ? {...} : {})`).
+  // These assert the EXACT use-case argument the page builds — they would
+  // fail if the parse allowlist widened/typo'd or the threading dropped.
+  function subjectArg(): unknown {
+    expect(listInvoicesPagedMock).toHaveBeenCalledTimes(1);
+    const [, input] = listInvoicesPagedMock.mock.calls[0] as [unknown, Record<string, unknown>];
+    return input;
+  }
+
+  it("subject=event → listInvoicesPaged called with invoiceSubject: 'event'", async () => {
+    await renderPage({ subject: 'event' });
+    expect(subjectArg()).toMatchObject({ invoiceSubject: 'event' });
+  });
+
+  it("subject=membership → listInvoicesPaged called with invoiceSubject: 'membership'", async () => {
+    await renderPage({ subject: 'membership' });
+    expect(subjectArg()).toMatchObject({ invoiceSubject: 'membership' });
+  });
+
+  it('subject=bogus → invoiceSubject NOT passed (undefined fallback, key absent)', async () => {
+    await renderPage({ subject: 'bogus' });
+    const input = subjectArg() as Record<string, unknown>;
+    // The key must be ABSENT (not present-and-undefined) — the page spreads
+    // an empty object when subjectFilter is undefined, so the use-case never
+    // sees an `invoiceSubject` property at all.
+    expect(input).not.toHaveProperty('invoiceSubject');
+  });
+
+  it('no subject param → invoiceSubject NOT passed', async () => {
+    await renderPage();
+    const input = subjectArg() as Record<string, unknown>;
+    expect(input).not.toHaveProperty('invoiceSubject');
+  });
+});
+
+describe('PortalInvoicesPage — empty vs no-match empty-state copy', () => {
+  // rows.length === 0 renders DIFFERENT copy depending on hasActiveFilter
+  // (searchTerm | status !== 'all' | subject defined): `filters.noMatch`
+  // when a filter is active, else the "no invoices yet" `empty` copy.
+  // Mutation-sensitive: swapping the ternary arms (or dropping a
+  // hasActiveFilter term) flips one of these assertions.
+  beforeEach(() => {
+    // Linked member + an EMPTY successful read for both scenarios.
+    listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+  });
+
+  it('active filter + zero rows → no-match copy (NOT the "no invoices yet" empty copy)', async () => {
+    const html = await renderPage({ status: 'paid' });
+    expect(html).toContain(en.portal.invoices.filters.noMatch);
+    expect(html).not.toContain(en.portal.invoices.empty);
+    expect(html).not.toContain('MISSING_KEY:');
+  });
+
+  it('active subject filter + zero rows → no-match copy', async () => {
+    const html = await renderPage({ subject: 'event' });
+    expect(html).toContain(en.portal.invoices.filters.noMatch);
+    expect(html).not.toContain(en.portal.invoices.empty);
+    expect(html).not.toContain('MISSING_KEY:');
+  });
+
+  it('no filter + zero rows → empty copy (NOT the no-match copy)', async () => {
+    const html = await renderPage();
+    expect(html).toContain(en.portal.invoices.empty);
+    expect(html).not.toContain(en.portal.invoices.filters.noMatch);
+    expect(html).not.toContain('MISSING_KEY:');
   });
 });

@@ -3,10 +3,16 @@
  *
  * The pure view-model is the SINGLE source of truth for the per-row
  * presentation flags rendered by the member-portal invoice desktop
- * table and the mobile card list. These boundary tests pin the
- * EXACT flag logic that was extracted verbatim from `page.tsx`'s inline
- * `<TableBody>` row map — any future "improvement" to a boolean that
- * silently diverges the table from the card fails here.
+ * table and the mobile card list. These boundary tests pin the EXACT
+ * flag logic the view-model exposes. Most flags (`isCombinedPaid` /
+ * `showInvoice` / `showReceipt` / `resendable`) were extracted verbatim
+ * from `page.tsx`'s former inline `<TableBody>` row map, but the
+ * receipt-PDF flags are NOT all verbatim: the S1 fix narrowed
+ * `receiptPending` to the 'pending' state ONLY and added a separate
+ * `receiptFailed` ('failed') flag (see the source VM header). The
+ * invariant these tests guard is therefore PARITY — both surfaces
+ * consume one view-model, so any flag change lands on both at once and
+ * they can never drift apart — NOT byte-identical D3 output.
  *
  * Coverage:
  *   - displayStatus: overdue derivation (issued + past-due → 'overdue';
