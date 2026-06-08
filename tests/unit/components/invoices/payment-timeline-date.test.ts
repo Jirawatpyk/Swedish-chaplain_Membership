@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTimestamp } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline';
+import { formatTimestamp } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline-format';
 
 describe('payment-timeline formatTimestamp', () => {
   it('renders the BE year for th (explicit, not ICU-default)', () => {

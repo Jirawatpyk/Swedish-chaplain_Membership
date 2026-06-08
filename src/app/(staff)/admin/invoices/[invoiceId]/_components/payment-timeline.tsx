@@ -18,7 +18,7 @@
  * elsewhere by `isAdmin` checks on the parent page.
  */
 import { getLocale, getTranslations } from 'next-intl/server';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatTimestamp } from './payment-timeline-format';
 import {
   ArrowDownToLineIcon,
   BanknoteIcon,
@@ -84,26 +84,6 @@ function isSystemActor(actorUserId: string): boolean {
     actorUserId.startsWith(SYSTEM_ACTOR_PREFIX) ||
     actorUserId === SYSTEM_ACTOR_STRIPE_WEBHOOK
   );
-}
-
-/**
- * Format an event timestamp for display on the timeline.
- * BE via getDateFormatLocale (explicit; not ICU-default).
- * Storage stays ISO UTC (CLAUDE.md). This helper is display-only.
- */
-export function formatTimestamp(date: Date, locale: string): string {
-  return date.toLocaleString(getDateFormatLocale(locale), {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short',
-    // S1-P1-20: pin to Asia/Bangkok. Without an explicit timeZone, the value
-    // renders in the server's UTC offset on SSR, so Bangkok payment events
-    // appear ~7h off. Storage stays ISO UTC; this is display-only.
-    timeZone: 'Asia/Bangkok',
-  });
 }
 
 /**
