@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { buildFormats } from '@/i18n/request';
+import { buildFormats } from '@/i18n/formats';
 
 // 2026-05-29 CE → 2569 BE
 const REFERENCE_DATE = new Date('2026-05-29T00:00:00Z');

@@ -33,6 +33,7 @@ pnpm check:layout
 pnpm check:template-seed
 pnpm check:fixme
 pnpm check:dates
+pnpm check:intl-formats
 pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================
