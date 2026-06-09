@@ -124,9 +124,15 @@ export async function POST(
         timeout_refund_orphaned: result.value.timeoutRefundOrphaned,
         // MONEY-SAFETY (063 xhigh): refund succeeded but tx2 transition
         // threw (non-conflict); money durable, next cron run self-heals.
-        // Previously mislabelled as a refund failure.
+        // Previously mislabelled as a refund failure. PAGES on-call.
         timeout_transition_failed_post_refund:
           result.value.timeoutTransitionFailedPostRefund,
+        // 063 follow-up: tx2 transition threw (non-conflict) but NO refund
+        // moved (no invoice OR no_payment_found); no money at stake, cycle
+        // self-heals next run. INFORMATIONAL — split from the paging
+        // post-refund counter so a no-money DB blip does not falsely page.
+        timeout_transition_failed_no_refund:
+          result.value.timeoutTransitionFailedNoRefund,
         duration_ms: Date.now() - startedAt,
       });
     });

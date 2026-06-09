@@ -2994,6 +2994,41 @@ export const renewalsMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * `renewals_reconcile_timeout_transition_failed_no_refund_total{tenant}`
+   * — 063 follow-up classification fix.
+   *
+   * Incremented in `processTimeout` when the tx2 cycle-transition /
+   * audit-emit threw a NON-conflict error (DB blip / RLS regression
+   * mid-tx) AND no refund had been issued (`refundIssued=false`): the
+   * cycle either had no linked invoice (Step 2 skipped) or the F5 bridge
+   * returned `no_payment_found` (no settled charge to claw back). NO money
+   * is at stake; the cycle stays `pending_admin_reactivation` and the NEXT
+   * cron run re-enters `processTimeout` and completes the transition — the
+   * cron SELF-HEALS exactly as in the post-refund variant, minus the money.
+   *
+   * Distinct from `timeoutTransitionFailedPostRefund` (refund DID move →
+   * paging alert, refunded money is stuck on a pending cycle) so a no-money
+   * transition blip does NOT page on-call. The prior 063 fix returned
+   * `'transition_failed_post_refund'` here UNCONDITIONALLY, so a no-money DB
+   * blip falsely fired the paging metric — SRE noise that buries real money
+   * residuals.
+   *
+   * Alert rule: INFORMATIONAL (mirrors `timeoutAdminRaceSkipped` /
+   * `timeoutRefundOrphaned`) — a non-zero rate is a transient-DB signal, not
+   * a money-at-risk page. A SUSTAINED rate warrants investigating chronic
+   * tx2 failures (the self-heal is not clearing), but on its own it never
+   * pages.
+   */
+  timeoutTransitionFailedNoRefund(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_transition_failed_no_refund_total',
+        'F8 reconcile-pending-reactivations timeout — tx2 transition threw (non-conflict) but NO refund issued; no money at stake, next cron run self-heals (informational, NOT paging)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
