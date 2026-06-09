@@ -2303,19 +2303,22 @@ export const renewalsMetrics = {
   // ==========================================================================
 
   /**
-   * `renewals_reminders_sent_total{tier_bucket, offset_day}` — total
-   * count of reminder emails successfully dispatched. Pivot table for
+   * `renewals_reminders_sent_total{tier_bucket, offset_day, caught_up}` —
+   * total count of reminder emails successfully dispatched. Pivot table for
    * dispatcher health; correlates with Resend deliverability metrics.
    * `tier_bucket` ∈ 5-value enum (regular | premium | partner_silver |
    * partner_gold | partner_diamond). `offset_day` ∈ ~6-value bounded
-   * set (90 / 60 / 30 / 14 / 7 / 0).
+   * set (90 / 60 / 30 / 14 / 7 / 0). `caught_up` ∈ {true, false} —
+   * boolean dimension that surfaces catch-up spikes (a spike in
+   * `caught_up=true` signals cron-health degradation, exactly what
+   * the 063 recovery path addresses). Cardinality stays bounded.
    */
-  remindersSent(tier_bucket: string, offset_day: number): void {
+  remindersSent(tier_bucket: string, offset_day: number, caught_up: boolean): void {
     safeMetric(() => {
       counter(
         'renewals_reminders_sent_total',
         'F8 reminder emails successfully dispatched (FR-010)',
-      ).add(1, { tier_bucket, offset_day: String(offset_day) });
+      ).add(1, { tier_bucket, offset_day: String(offset_day), caught_up: String(caught_up) });
     });
   },
 

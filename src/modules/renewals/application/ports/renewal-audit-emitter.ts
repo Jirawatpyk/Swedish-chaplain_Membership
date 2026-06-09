@@ -858,6 +858,38 @@ export interface F8AuditPayloadShapes {
     readonly members_failed: number;
   };
   /**
+   * S-2 (063 review polish) — `renewal_reminder_sent` typed payload.
+   *
+   * Emitted by `dispatchOneCycle` (email and task channels) on every
+   * successful dispatch. Previously fell through to `Record<string,
+   * unknown>` — asymmetric with the already-typed `escalation_task_created`.
+   *
+   * Key fields:
+   *   - `caught_up` — true when the step's due-day was strictly before
+   *     today (bounded missed-cron recovery, 063 feature). False for
+   *     on-time sends. Ops dashboards filter on this to detect cron-
+   *     health degradation (a spike in `caught_up=true` across tenants
+   *     signals a systemic cron miss).
+   *   - `step_due_date` — ISO UTC date the step was originally due
+   *     (for forensic correlation; present on both on-time and catch-up).
+   *   - `delivery_id` — Resend message id (forensic link to F7 delivery
+   *     webhook); null for task-channel "sent" (no external delivery).
+   *   - `recipient_locale` — resolved BCP-47 tag; null for task channel.
+   */
+  readonly renewal_reminder_sent: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly step_id: string;
+    readonly channel: 'email' | 'task';
+    readonly template_id: string | null;
+    readonly delivery_id: string | null;
+    readonly recipient_locale?: string | null;
+    /** True when dispatched after the exact due-day (bounded catch-up). */
+    readonly caught_up: boolean;
+    /** ISO UTC date the step was originally due. */
+    readonly step_due_date: string;
+  };
+  /**
    * Discriminated union — `renewal_reminder_send_failed_permanent`
    * fires from THREE distinct emit sites, each with its own payload
    * shape:

@@ -41,7 +41,6 @@ import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
 import { buildRenewalCtaUrl } from './build-renewal-redeem-link-url';
 import {
   findDueStepsForDate,
-  REMINDER_CATCH_UP_LOOKBACK_DAYS,
 } from '../../../domain/tenant-renewal-schedule-policy';
 import { asCycleId } from '../../../domain/renewal-cycle';
 import { asTaskId } from '../../../domain/renewal-escalation-task';
@@ -432,15 +431,18 @@ async function dispatchOneCycleInner(
   // excluded — firing a T-90 when it is now T-30 is worse than skipping).
   //
   // Among the window candidates we fire the MOST-RECENT step NOT yet sent
-  // for this (cycle, step, year_in_cycle) — exactly the admin reactivation
-  // ladder's "threshold-crossed + not-yet-fired" rule
-  // (`reconcile-pending-reactivations.ts` `decideRemindersToFire`), with the
-  // `renewal_reminder_events` table (read via `listForCycle`) as the
-  // already-fired source instead of audit_log. Firing only the most-recent
-  // unfired step (not every overdue step) avoids multi-reminder spam in a
-  // single catch-up run; the Gate-12 idempotency index stays the
-  // double-send guard. See spec.md:194 + FR-010 ("dispatch any reminder
-  // step whose offset_day is due").
+  // for this (cycle, step, year_in_cycle). This is deliberately DIFFERENT
+  // from the admin reactivation ladder (`reconcile-pending-reactivations.ts`
+  // `decideRemindersToFire`) which fires EVERY crossed-unfired rung in a
+  // single pass. Here we fire only ONE step per pass (the most-recent
+  // unfired one) — the no-spam tradeoff for member reminders: a member
+  // must never receive multiple catch-up emails in one cron run. Older
+  // unfired in-window steps that are not the most-recent are dropped as
+  // stale on that pass; on the next daily run they slide below the lookback
+  // and are permanently skipped. The dropped step is always the older /
+  // less-urgent one, so urgency is preserved. The Gate-12 idempotency
+  // index stays the double-send guard. See spec.md:194 + FR-010 ("dispatch
+  // any reminder step whose offset_day is due").
   const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
   const windowSteps = findDueStepsForDate(
     schedulePolicy,
@@ -453,11 +455,10 @@ async function dispatchOneCycleInner(
     // too noisy; FR-012).
     return { kind: 'skipped', reason: 'not_due_today' };
   }
-  // Pick the MOST-RECENT step not yet fired for this (cycle, step, year) —
-  // the admin reactivation-ladder "threshold-crossed + not-yet-fired" rule,
-  // with the `renewal_reminder_events` table (read via `listForCycle`) as
-  // the already-fired source. `listForCycle` is RLS-scoped (wraps its own
-  // runInTenant) so this read stays tenant-isolated.
+  // Pick the MOST-RECENT step not yet fired for this (cycle, step, year).
+  // `listForCycle` is RLS-scoped (wraps its own runInTenant) so this read
+  // stays tenant-isolated. Only the most-recent unfired step fires this
+  // pass (see Gate 8 comment above for the no-spam rationale).
   const existing = await deps.reminderEventRepo.listForCycle(
     ctx.tenantId,
     asCycleId(cycle.cycleId),
@@ -483,9 +484,6 @@ async function dispatchOneCycleInner(
   const todayUtcDay = Math.floor(new Date(ctx.nowIso).getTime() / MS_PER_DAY);
   const caughtUp = stepDueDayUtc < todayUtcDay;
   const stepDueDateIso = new Date(stepDueDayUtc * MS_PER_DAY).toISOString();
-  // Reference the lookback constant so the catch-up window is documented
-  // at the call site (the domain function owns the actual bound).
-  void REMINDER_CATCH_UP_LOOKBACK_DAYS;
   // Gate 9 — multi-year non-final year for email steps (Q4 / FR-010).
   const cycleYears = computeCycleYears(cycle.cycleLengthMonths);
   if (
@@ -899,8 +897,9 @@ async function dispatchEmailStep(
       // Phase 9 / T231 — business-volume counter (FR-010 dispatcher
       // cadence dashboard). `tier_bucket` is bounded 5-value enum,
       // `offset_day` is bounded by tier-bucket schedule policy
-      // (~6 distinct values across all 5 tiers).
-      renewalsMetrics.remindersSent(cycle.tierAtCycleStart, step.offsetDays);
+      // (~6 distinct values across all 5 tiers). `caught_up` is boolean
+      // (2-value) — cardinality stays bounded.
+      renewalsMetrics.remindersSent(cycle.tierAtCycleStart, step.offsetDays, catchUp.caughtUp);
       return {
         kind: 'sent',
         reminderEventId,

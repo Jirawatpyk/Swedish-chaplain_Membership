@@ -683,6 +683,58 @@ describe('dispatchOneCycle', () => {
       expect(call.stepId).toBe('t-14.email');
     });
 
+    it('Gate 8 TWO-BOTH-UNFIRED — two steps in window, NEITHER fired → fires MOST-RECENT; older NOT fired this pass', async () => {
+      // Design lock for the no-spam / fire-one-per-pass deliberate tradeoff
+      // (I-1 review action): when two steps fall inside the catch-up window
+      // and neither has been fired yet, the dispatcher fires ONLY the
+      // most-recent one (the closer-to-expiry / higher-urgency step).
+      // The older unfired step is NOT fired this pass — it will slide below
+      // the lookback by the next day and be permanently skipped. This is the
+      // intended "no-spam" behavior: a member must never receive two catch-up
+      // emails in a single cron run, even after a multi-day outage. Older
+      // steps are less urgent; the most-recent is always preferred.
+      //
+      // Setup: expires_at 2026-06-22, t-14 due 2026-06-08, t-7 due 2026-06-15.
+      // nowIso = 2026-06-15 → both steps are within the 7-day window.
+      // alreadyFired = [] (neither fired).
+      // Expected: gateway called ONCE with the t-7 step (most-recent).
+      const nowIso = '2026-06-15T00:00:00.000Z';
+      const { deps, gatewayMock, emitInTxMock } = fakeDeps({ alreadyFired: [] });
+      const candidate = buildHappyCandidate({
+        cycle: {
+          expiresAt: '2026-06-22T00:00:00.000Z',
+          periodFrom: '2025-06-22T00:00:00.000Z',
+          periodTo: '2026-06-22T00:00:00.000Z',
+        } as Partial<RenewalCycle>,
+        schedulePolicy: {
+          tenantId: TENANT_ID,
+          tierBucket: 'regular' as const,
+          steps: [
+            { stepId: 't-14.email', offsetDays: -14, channel: 'email' as const, templateId: 'renewal.t-14.regular' },
+            { stepId: 't-7.email', offsetDays: -7, channel: 'email' as const, templateId: 'renewal.t-7.regular' },
+          ],
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+        },
+      });
+
+      const result = await dispatchOneCycle(deps, candidate, { ...happyCtx, nowIso });
+
+      // Only ONE email dispatched this pass.
+      expect(result.kind).toBe('sent');
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+      // Gateway received the MOST-RECENT (t-7) step, not the older t-14.
+      const call = gatewayMock.mock.calls[0]![0] as { stepId: string };
+      expect(call.stepId).toBe('t-7.email');
+      // Audit confirms sent (not already_sent or skipped).
+      const sentAudit = emitInTxMock.mock.calls.find(
+        (c) => c[1].type === 'renewal_reminder_sent',
+      );
+      expect(sentAudit).toBeDefined();
+      // The older t-14 step was NOT fired — gateway called exactly once.
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+    });
+
     it('Gate 9 — multi-year non-final-year: skip multi_year_non_final_year', async () => {
       const { deps } = fakeDeps({});
       // 3-year cycle, period_from = today, expires_at = T-30 from now
