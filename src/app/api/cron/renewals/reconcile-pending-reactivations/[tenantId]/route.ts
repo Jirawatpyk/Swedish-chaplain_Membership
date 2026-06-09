@@ -114,6 +114,9 @@ export async function POST(
         reminders_failed: result.value.remindersFailed,
         timed_out: result.value.timedOut,
         timeout_refund_failures: result.value.timeoutRefundFailures,
+        // MONEY-SAFETY (063): cycles skipped because an admin approve/
+        // reject won the per-cycle lock race before the refund.
+        timeout_admin_race_skipped: result.value.timeoutAdminRaceSkipped,
         duration_ms: Date.now() - startedAt,
       });
     });

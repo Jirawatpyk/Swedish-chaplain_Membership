@@ -81,6 +81,17 @@ export interface ReconcilePendingReactivationsOutput {
   /** Auto-timeouts where the F5 refund failed; cron will retry tomorrow. */
   readonly timeoutRefundFailures: number;
   /**
+   * MONEY-SAFETY (063 audit): timed-out cycles SKIPPED because the
+   * validate-under-lock re-read found the cycle was no longer
+   * `pending_admin_reactivation` — a concurrent admin approve (→ member
+   * kept, no refund) or reject (→ refund already issued) won the race.
+   * NO refund + NO transition happened. Distinct from `timedOut`
+   * (success) and `timeoutRefundFailures` (Stripe failed). Surfaced so
+   * SREs can see admin-vs-cron contention on the lapsed pipeline. Mirrors
+   * the `transitionRaceSkipped` counter in `lapseCyclesOnGraceExpiry`.
+   */
+  readonly timeoutAdminRaceSkipped: number;
+  /**
    * Round 2 review-fix (I-6): reminder-rung audit emits that THREW
    * (DB connection blip / RLS regression / unique-constraint conflict).
    * Round 1 silently swallowed these into a `logger.warn` — a
@@ -198,19 +209,33 @@ export async function reconcilePendingReactivations(
   let remindersFailed = 0;
   let timedOut = 0;
   let timeoutRefundFailures = 0;
+  let timeoutAdminRaceSkipped = 0;
 
   for (const cycle of page.items) {
     const daysPending = computeDaysPending(cycle, input.now);
     if (daysPending === null) continue; // missing entered_pending_at — defensive
     if (daysPending >= PENDING_TIMEOUT_DAYS) {
-      const ok = await processTimeout(
+      const outcome = await processTimeout(
         deps,
         cycle,
         input.correlationId,
         input.now,
       );
-      if (ok) timedOut += 1;
-      else timeoutRefundFailures += 1;
+      switch (outcome) {
+        case 'timed_out':
+          timedOut += 1;
+          break;
+        case 'refund_failed':
+          timeoutRefundFailures += 1;
+          break;
+        case 'admin_race_skipped':
+          timeoutAdminRaceSkipped += 1;
+          break;
+        default: {
+          const _exhaustive: never = outcome;
+          void _exhaustive;
+        }
+      }
       continue;
     }
     // T138 catch-up review-fix: instead of equality-only firing
@@ -272,8 +297,23 @@ export async function reconcilePendingReactivations(
     remindersFailed,
     timedOut,
     timeoutRefundFailures,
+    timeoutAdminRaceSkipped,
   });
 }
+
+/**
+ * Outcome of `processTimeout` for one timed-out cycle. Three terminal
+ * states — counted independently by the caller (parity with
+ * `lapseCyclesOnGraceExpiry`'s `ProcessOneOutcome`):
+ *   - `'timed_out'`        — refund issued (or no payment) + cycle lapsed.
+ *   - `'refund_failed'`    — F5/Stripe refund failed; cron retries tomorrow.
+ *   - `'admin_race_skipped'` — admin approve/reject won the lock race
+ *     before the refund; NO money moved, NO transition.
+ */
+type ProcessTimeoutOutcome =
+  | 'timed_out'
+  | 'refund_failed'
+  | 'admin_race_skipped';
 
 /**
  * T138 catch-up review-fix: pure decision fn — given a cycle's
@@ -374,8 +414,53 @@ async function processTimeout(
   cycle: RenewalCycle,
   correlationId: string,
   now: Date,
-): Promise<boolean> {
-  // Step 1: refund via F5 (outside tx — Stripe is external).
+): Promise<ProcessTimeoutOutcome> {
+  const cycleId = cycle.cycleId as CycleId;
+
+  // ---------------------------------------------------------------------
+  // Step 1 (MONEY SAFETY — 063 audit fix): re-confirm the cycle is STILL
+  // `pending_admin_reactivation` UNDER the per-cycle advisory lock BEFORE
+  // issuing the Stripe refund. Mirrors the validate-under-lock → refund-
+  // outside-tx → transition-in-tx ordering already used by
+  // `adminRejectReactivation` (the F8-canonical refund-a-pending-cycle
+  // pattern). The previous ordering refunded FIRST (no lock, no re-read),
+  // so an admin who APPROVED the reactivation in the race window — the
+  // member paid + was reactivated — still had their money clawed back by
+  // the cron. The advisory lock serialises this tx against the admin
+  // approve/reject use-cases on the (tenant, cycle) namespace: if the
+  // admin's tx committed first, this re-read observes a non-pending
+  // status and we skip the refund entirely (the admin's action wins).
+  //
+  // INVARIANT: an admin approval that lands before this lock MUST prevent
+  // the refund. The lock + tx-bound re-read enforce it.
+  const stillPending = await runInTenant(deps.tenant, async (tx) => {
+    await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
+    const reread = await deps.cyclesRepo.findByIdInTx(
+      tx,
+      cycle.tenantId,
+      cycleId,
+    );
+    return reread !== null && reread.status === 'pending_admin_reactivation';
+  });
+  if (!stillPending) {
+    // A concurrent admin approve (T136 → `completed`) or reject (T137 →
+    // `cancelled`, refund already issued) won the race before our lock.
+    // Skip silently — no refund, no transition. Counted as
+    // `admin_race_skipped` (NOT a timeout, NOT a refund failure).
+    logger.info(
+      { cycleId, tenantId: cycle.tenantId },
+      '[reconcile-pending-reactivations] cycle no longer pending at lock — admin action won race; skipping refund',
+    );
+    return 'admin_race_skipped';
+  }
+
+  // Step 2: refund via F5 (outside tx — Stripe is external; matches the
+  // F5 two-tx design + the admin-reject ordering). The advisory lock from
+  // Step 1 has been released at COMMIT, so this network call holds no DB
+  // lock. Double-refund is prevented by F5 idempotency: a second attempt
+  // for an already-refunded invoice resolves to `no_payment_found`
+  // (`computeRemainingRefundable` returns null) and the F5 `issueRefund`
+  // Stripe idempotency key guards the processor side.
   if (cycle.linkedInvoiceId !== null) {
     // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
     // boundary — see same pattern in admin-reject-reactivation.
@@ -395,19 +480,23 @@ async function processTimeout(
         },
         '[reconcile-pending-reactivations] F5 refund failed — cycle stays pending; cron will retry tomorrow',
       );
-      return false;
+      return 'refund_failed';
     }
   }
 
-  // Step 2: transition cycle + emit timed_out audit atomically.
+  // Step 3: transition cycle + emit timed_out audit atomically.
   // R4-W1 (staff-review-2026-05-09): use injected `now` for clock
   // determinism — mirrors the WRN-12 fix in `lapseCyclesOnGraceExpiry`.
   // Without this, `closedAt` drifts from the page-cutoff timestamp under
   // heavy cron load and breaks log↔audit correlation.
-  const cycleId = cycle.cycleId as CycleId;
   const closedAt = now.toISOString();
   try {
     await runInTenant(deps.tenant, async (tx) => {
+      // Re-acquire the per-cycle advisory lock + re-read inside tx2:
+      // Step 1 released the lock at COMMIT, then the F5 refund ran
+      // unlocked. A concurrent admin approve/reject could land in that
+      // window — re-confirm the cycle is still pending before writing
+      // the lapse transition. Mirrors `adminRejectReactivation`'s tx2.
       await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
       const reread = await deps.cyclesRepo.findByIdInTx(
         tx,
@@ -416,7 +505,8 @@ async function processTimeout(
       );
       // Re-read protects against the admin-approve race: a concurrent
       // T136/T137 might have moved the cycle out of pending while we
-      // were calling F5. Skip the timeout transition silently.
+      // were calling F5. Skip the timeout transition silently. The
+      // refund (if issued) is durable; admin reconciles via F5 history.
       if (!reread || reread.status !== 'pending_admin_reactivation') {
         return;
       }
@@ -475,7 +565,7 @@ async function processTimeout(
       },
       '[reconcile-pending-reactivations] timeout transition failed',
     );
-    return false;
+    return 'refund_failed';
   }
-  return true;
+  return 'timed_out';
 }

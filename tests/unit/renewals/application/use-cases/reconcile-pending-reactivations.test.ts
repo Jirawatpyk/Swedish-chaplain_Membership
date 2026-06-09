@@ -362,17 +362,55 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
     expect(transitionMock).not.toHaveBeenCalled();
   });
 
-  it('race — re-read shows cycle no longer pending → skip transition silently', async () => {
+  it('admin-approve-before-lock — re-confirm UNDER lock shows completed → NO refund, no transition (money safety)', async () => {
+    // MONEY-SAFETY regression guard (063 audit): the timeout-refund must
+    // happen ONLY after the per-cycle advisory lock + tx-bound re-read
+    // re-confirm the cycle is STILL `pending_admin_reactivation`. If an
+    // admin approved the reactivation in the race window (cycle now
+    // `completed` — the member paid + got reactivated), the cron MUST
+    // NOT claw back their money. The previous ordering issued the Stripe
+    // refund BEFORE acquiring the lock, so an admin-approve that landed
+    // first still got refunded. Now the validate-under-lock step gates
+    // the refund: a non-pending re-read short-circuits to a no-op.
     const cycle = pendingCycle({ daysPending: 30 });
-    const { deps, transitionMock, emitInTxMock } = fakeDeps({
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
       cycles: [cycle],
-      reReadCycle: () => ({ ...cycle, status: 'completed' } as unknown as typeof cycle),
+      reReadCycle: () =>
+        ({ ...cycle, status: 'completed' } as unknown as typeof cycle),
     });
     const r = await reconcilePendingReactivations(deps, baseInput);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.timedOut).toBe(1); // counted as success (refund happened)
+    // INVARIANT: an admin approval that lands before the lock prevents
+    // the refund entirely.
+    expect(refundMock).not.toHaveBeenCalled();
     expect(transitionMock).not.toHaveBeenCalled();
     expect(emitInTxMock).not.toHaveBeenCalled();
+    // Not counted as a timeout — the admin's approval won, no money moved.
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
+
+  it('admin-reject-before-lock — re-confirm shows cancelled → NO refund (no double-refund)', async () => {
+    // Same guard for the admin-REJECT race: the admin-reject path already
+    // issued the refund. The cron must not issue a SECOND refund. The
+    // validate-under-lock re-read sees `cancelled` ≠ pending and skips.
+    const cycle = pendingCycle({ daysPending: 31 });
+    const { deps, refundMock, transitionMock } = fakeDeps({
+      cycles: [cycle],
+      reReadCycle: () =>
+        ({ ...cycle, status: 'cancelled' } as unknown as typeof cycle),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(transitionMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
   });
 });
 
