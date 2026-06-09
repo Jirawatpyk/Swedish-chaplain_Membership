@@ -194,10 +194,14 @@ export function makeDrizzleAtRiskScorer(
       // C3): a malformed payload year for ONE member's audit row is
       // treated as "no match" instead of aborting the whole query.
       //
-      // RLS scopes audit_log + membership_plans to the current tenant
-      // automatically (both tables ENABLE + FORCE RLS); the explicit
-      // tenant_id predicate is defence-in-depth. Single query; O(1) per
-      // member (we short-circuit on the first downgrade row found).
+      // audit_log has ENABLE + FORCE RLS, but its policy is PERMISSIVE:
+      // rows with NULL tenant_id (F1 identity events) remain visible to
+      // every tenant context (migration 0007). membership_plans uses a
+      // strict isolating policy and IS fully scoped automatically.
+      // The explicit tenant_id predicate on both tables is therefore
+      // load-bearing for audit_log, not merely defence-in-depth. Single
+      // query; O(1) per member (we short-circuit on the first downgrade
+      // row found).
       // ----------------------------------------------------------------
       const downgradeProbe = await tx.execute<{ has_downgrade: boolean }>(sql`
         SELECT EXISTS (
