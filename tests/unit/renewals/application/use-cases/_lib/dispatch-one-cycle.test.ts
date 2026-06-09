@@ -735,6 +735,169 @@ describe('dispatchOneCycle', () => {
       expect(gatewayMock).toHaveBeenCalledTimes(1);
     });
 
+    // -----------------------------------------------------------------------
+    // 063 #1 — cross-year double-send guard. The idempotency namespace
+    // (firedKeys + insertIfAbsent year_in_cycle) MUST be anchored on the
+    // step's DUE-DATE, not the cron RUN-date. A catch-up step whose due-date
+    // was in the PRIOR quota year (the 365-day boundary lands inside the
+    // 7-day lookback) must NOT re-fire under a drifted year_in_cycle.
+    // -----------------------------------------------------------------------
+
+    it('063 #1 CROSS-YEAR — step due in PRIOR quota-year, already fired under year 1, run-date is year 2 → does NOT re-fire (already_sent)', async () => {
+      // periodFrom 2025-01-01, expiresAt 2026-01-01 (12-month cycle).
+      // T-7 step due 2025-12-25 (year 1: 358 days into the cycle).
+      // Cron runs 2026-01-01 (the 365-day boundary day → run-date year = 2)
+      // which is exactly 7 days after the due-date → inside the lookback.
+      // The original on-time send recorded a row under year_in_cycle=1.
+      //
+      // RED against the run-date-anchored year: firedKeys checks `t-7.email::2`
+      // (miss), insertIfAbsent inserts year_in_cycle=2 (no unique conflict)
+      // → a SECOND pending row → duplicate reminder. The step-anchored fix
+      // resolves the step to year 1 → already_sent, no gateway call.
+      const nowIso = '2026-01-01T08:00:00.000Z';
+      const { deps, gatewayMock, insertReminderMock } = fakeDeps({
+        alreadyFired: [{ stepId: 't-7.email', yearInCycle: 1 }],
+      });
+      const candidate = buildHappyCandidate({
+        cycle: {
+          periodFrom: '2025-01-01T00:00:00.000Z',
+          periodTo: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-01T00:00:00.000Z',
+          cycleLengthMonths: 12,
+        } as Partial<RenewalCycle>,
+        schedulePolicy: {
+          tenantId: TENANT_ID,
+          tierBucket: 'regular' as const,
+          steps: [
+            { stepId: 't-7.email', offsetDays: -7, channel: 'email' as const, templateId: 'renewal.t-7.regular' },
+          ],
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      });
+      const result = await dispatchOneCycle(deps, candidate, { ...happyCtx, nowIso });
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('already_sent');
+      // The double-send guard: gateway never called, and any insertIfAbsent
+      // attempt used the STEP-anchored year (1), matching the prior row, so
+      // it resolved created=false rather than minting a year-2 duplicate.
+      expect(gatewayMock).not.toHaveBeenCalled();
+      const insertCalls = insertReminderMock.mock.calls;
+      for (const call of insertCalls) {
+        expect(call[1].yearInCycle).toBe(1);
+      }
+    });
+
+    // -----------------------------------------------------------------------
+    // 063 #4 — listForCycle read is gated on an OVERDUE window step. The hot
+    // common path (the only due step is exactly today) MUST NOT issue the
+    // extra read; Gate 12's unique-index insertIfAbsent remains the dedup.
+    // -----------------------------------------------------------------------
+
+    it('063 #4 — step due EXACTLY today (no catch-up) → listForCycle is NOT read', async () => {
+      const { deps, listForCycleMock, gatewayMock } = fakeDeps({ alreadyFired: [] });
+      // Default candidate: expires_at 2026-06-14 → T-30 due exactly NOW_ISO day.
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      expect(result.kind).toBe('sent');
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+      // Hot-path: no per-cycle history read when nothing is overdue.
+      expect(listForCycleMock).not.toHaveBeenCalled();
+    });
+
+    it('063 #4 — step OVERDUE (catch-up possible) → listForCycle IS read', async () => {
+      const { deps, listForCycleMock, gatewayMock } = fakeDeps({ alreadyFired: [] });
+      // T-30 due YESTERDAY relative to NOW_ISO → overdue → read happens.
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({
+          cycle: { expiresAt: '2026-06-13T00:00:00.000Z' } as Partial<RenewalCycle>,
+        }),
+        happyCtx,
+      );
+      expect(result.kind).toBe('sent');
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+      // Catch-up path: the read is required to skip an already-fired step.
+      expect(listForCycleMock).toHaveBeenCalledTimes(1);
+    });
+
+    // -----------------------------------------------------------------------
+    // 063 #5 — same-offsetDay (same-target) email+task pair. Both are equally
+    // due; firing only one per pass permanently drops the second on the last
+    // window day. Co-resolve: fire ALL unfired same-target steps this pass.
+    // -----------------------------------------------------------------------
+
+    it('063 #5 — same-target email+task pair, both unfired → BOTH fire this pass (neither dropped)', async () => {
+      const { deps, gatewayMock, insertTaskMock, emitInTxMock } = fakeDeps({ alreadyFired: [] });
+      // premium-style pair at offset -60. expires_at so T-60 is the last
+      // window day (overdue by exactly the lookback) — the drop scenario.
+      // NOW_ISO = 2026-05-15 → T-60 due = NOW - 7 = 2026-05-08 → expires_at
+      // = 2026-05-08 + 60 = 2026-07-07.
+      const candidate = buildHappyCandidate({
+        cycle: {
+          periodFrom: '2025-07-07T00:00:00.000Z',
+          periodTo: '2026-07-07T00:00:00.000Z',
+          expiresAt: '2026-07-07T00:00:00.000Z',
+        } as Partial<RenewalCycle>,
+        schedulePolicy: {
+          tenantId: TENANT_ID,
+          tierBucket: 'premium' as const,
+          steps: [
+            { stepId: 't-60.email', offsetDays: -60, channel: 'email' as const, templateId: 'renewal.t-60.premium' },
+            { stepId: 't-60.task.phone_call', offsetDays: -60, channel: 'task' as const, taskType: 'phone_call', assigneeRole: 'admin' as const },
+          ],
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      });
+      await dispatchOneCycle(deps, candidate, happyCtx);
+      // BOTH steps fired this pass: the email (gateway) AND the task (repo).
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+      expect(insertTaskMock).toHaveBeenCalledTimes(1);
+      const emailCall = gatewayMock.mock.calls[0]![0] as { stepId: string };
+      expect(emailCall.stepId).toBe('t-60.email');
+      expect(insertTaskMock.mock.calls[0]![1].taskType).toBe('phone_call');
+      // Audits for BOTH: renewal_reminder_sent + escalation_task_created.
+      expect(emitInTxMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: 'renewal_reminder_sent' }),
+        expect.anything(),
+      );
+      expect(emitInTxMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: 'escalation_task_created' }),
+        expect.anything(),
+      );
+    });
+
+    it('063 #5 — same-target pair, email ALREADY fired → only the unfired task fires (no email re-send)', async () => {
+      const { deps, gatewayMock, insertTaskMock } = fakeDeps({
+        alreadyFired: [{ stepId: 't-60.email', yearInCycle: 1 }],
+      });
+      const candidate = buildHappyCandidate({
+        cycle: {
+          periodFrom: '2025-07-07T00:00:00.000Z',
+          periodTo: '2026-07-07T00:00:00.000Z',
+          expiresAt: '2026-07-07T00:00:00.000Z',
+        } as Partial<RenewalCycle>,
+        schedulePolicy: {
+          tenantId: TENANT_ID,
+          tierBucket: 'premium' as const,
+          steps: [
+            { stepId: 't-60.email', offsetDays: -60, channel: 'email' as const, templateId: 'renewal.t-60.premium' },
+            { stepId: 't-60.task.phone_call', offsetDays: -60, channel: 'task' as const, taskType: 'phone_call', assigneeRole: 'admin' as const },
+          ],
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      });
+      await dispatchOneCycle(deps, candidate, happyCtx);
+      // Email already fired (year 1) → no re-send; only the task fires.
+      expect(gatewayMock).not.toHaveBeenCalled();
+      expect(insertTaskMock).toHaveBeenCalledTimes(1);
+      expect(insertTaskMock.mock.calls[0]![1].taskType).toBe('phone_call');
+    });
+
     it('Gate 9 — multi-year non-final-year: skip multi_year_non_final_year', async () => {
       const { deps } = fakeDeps({});
       // 3-year cycle, period_from = today, expires_at = T-30 from now
