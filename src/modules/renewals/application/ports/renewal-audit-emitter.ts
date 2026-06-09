@@ -860,27 +860,41 @@ export interface F8AuditPayloadShapes {
   /**
    * S-2 (063 review polish) — `renewal_reminder_sent` typed payload.
    *
-   * Emitted by `dispatchOneCycle` (email and task channels) on every
-   * successful dispatch. Previously fell through to `Record<string,
-   * unknown>` — asymmetric with the already-typed `escalation_task_created`.
+   * Emitted ONLY by the EMAIL channel on a successful dispatch: the
+   * member dispatcher (`dispatchOneCycle` → `dispatchEmailStep`) and the
+   * retry path (`retryFailedReminders`). The TASK channel
+   * (`dispatchOneCycle` → `dispatchTaskStep`) does NOT emit this event —
+   * a task-channel "send" is recorded via `escalation_task_created`
+   * (a different event). Hence `channel` is narrowed to `'email'`: a
+   * dashboard/alert filtering `renewal_reminder_sent` on a task channel
+   * would always return zero. Analytics that count "all reminder
+   * dispatches" (email + task) MUST union both events:
+   * `renewal_reminder_sent` ∪ `escalation_task_created`.
+   *
+   * Previously fell through to `Record<string, unknown>` — asymmetric
+   * with the already-typed `escalation_task_created`.
    *
    * Key fields:
    *   - `caught_up` — true when the step's due-day was strictly before
    *     today (bounded missed-cron recovery, 063 feature). False for
    *     on-time sends. Ops dashboards filter on this to detect cron-
    *     health degradation (a spike in `caught_up=true` across tenants
-   *     signals a systemic cron miss).
+   *     signals a systemic cron miss). NOTE: the OTel counter
+   *     `renewalsMetrics.remindersSent(...,caught_up)` is EMAIL-only —
+   *     task-channel catch-up recoveries are observable only via
+   *     `escalation_task_created.caught_up` in the audit payload, not
+   *     via that counter (no separate task metric is warranted).
    *   - `step_due_date` — ISO UTC date the step was originally due
    *     (for forensic correlation; present on both on-time and catch-up).
    *   - `delivery_id` — Resend message id (forensic link to F7 delivery
-   *     webhook); null for task-channel "sent" (no external delivery).
-   *   - `recipient_locale` — resolved BCP-47 tag; null for task channel.
+   *     webhook).
+   *   - `recipient_locale` — resolved BCP-47 tag (email channel).
    */
   readonly renewal_reminder_sent: {
     readonly cycle_id: CycleId;
     readonly member_id: MemberId;
     readonly step_id: string;
-    readonly channel: 'email' | 'task';
+    readonly channel: 'email';
     readonly template_id: string | null;
     readonly delivery_id: string | null;
     readonly recipient_locale?: string | null;
