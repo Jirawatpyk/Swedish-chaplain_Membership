@@ -88,6 +88,22 @@ describe('tierBucketOrdinalCaseSql — columnRef SQL-injection guard', () => {
     }
   });
 
+  it('rejects camelCase / uppercase column refs (Postgres folds unquoted identifiers to lowercase, so the CASE would never match → silent sentinel for all members)', () => {
+    // e.g. a future caller passing `np.renewalTierBucket` would pass the
+    // old /i regex but produce a CASE that never matches any row → sentinel
+    // returned for every member → tier-downgrade factor silently zeroed.
+    // The guard must reject these at call time.
+    expect(() => tierBucketOrdinalCaseSql('np.renewalTierBucket')).toThrow(
+      /untrusted columnRef/,
+    );
+    expect(() => tierBucketOrdinalCaseSql('NP.COL')).toThrow(
+      /untrusted columnRef/,
+    );
+    expect(() => tierBucketOrdinalCaseSql('Np.renewal_tier_bucket')).toThrow(
+      /untrusted columnRef/,
+    );
+  });
+
   it('rejects an unqualified identifier (no table prefix)', () => {
     expect(() => tierBucketOrdinalCaseSql('renewal_tier_bucket')).toThrow(
       /untrusted columnRef/,
