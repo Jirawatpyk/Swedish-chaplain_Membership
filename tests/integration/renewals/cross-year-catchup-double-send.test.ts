@@ -55,18 +55,22 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // The dispatch-candidate repo filters cycles by `expires_at >= NOW() -
 // maxOffsetDays` using the DB wall-clock, so `expires_at` must be near
-// real-now to be picked up. Anchor all dates on real-now:
+// real-now to be picked up. Anchor all dates on real-now's midnight (UTC)
+// so the day-floored year arithmetic is exact (no time-of-day fraction):
 //
-//   expires_at  = real-now + 2d  (in the candidate window)
-//   period_from = expires_at - 365d  (exactly the 365-day boundary)
-//   T-7 due     = expires_at - 7d  (358 days into the cycle → YEAR 1)
-//   cron run    = expires_at (= period_from + 365d → run-date YEAR 2)
-//                 → run-date - due-date = 7d → inside the 7-day lookback.
+//   expires_at  = today + 5d  (future → its own T+0 step is NOT yet due,
+//                              so ONLY the T-7 step is in the window)
+//   T-7 due     = expires_at - 7d = today - 2d  (overdue by 2d, in window)
+//   period_from = expires_at - 371d  → T-7 due = period_from + 364d → YEAR 1
+//   cron run    = today (= period_from + 366d → run-date YEAR 2)
+//                 → the 365-day boundary lands BETWEEN the T-7 due-date
+//                   (year 1) and the run-date (year 2) — the drift window.
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const REAL_NOW_MS = Date.now();
-const EXPIRES_AT = new Date(REAL_NOW_MS + 2 * MS_PER_DAY);
-const PERIOD_FROM = new Date(EXPIRES_AT.getTime() - 365 * MS_PER_DAY);
-const NOW_ISO = EXPIRES_AT.toISOString();
+const TODAY_UTC_MIDNIGHT_MS =
+  Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY;
+const EXPIRES_AT = new Date(TODAY_UTC_MIDNIGHT_MS + 5 * MS_PER_DAY);
+const PERIOD_FROM = new Date(EXPIRES_AT.getTime() - 371 * MS_PER_DAY);
+const NOW_ISO = new Date(TODAY_UTC_MIDNIGHT_MS).toISOString();
 const STEP_ID = 't-7.email';
 const ON_TIME_DISPATCHED_AT = new Date(
   EXPIRES_AT.getTime() - 7 * MS_PER_DAY,
