@@ -477,6 +477,122 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
     expect(single).toBe(false);
   }, 90_000);
 
+  /**
+   * Like `seedOriginatedSentBroadcast` but records the broadcast under
+   * an EXPLICIT quota year. Used to prove the year-fence: a `sent` row
+   * with `quota_year_consumed = QUOTA_YEAR - 1` must NOT count toward the
+   * CURRENT year's engagement usage.
+   */
+  async function seedOriginatedSentBroadcastInYear(
+    memberId: string,
+    quotaYear: number,
+  ): Promise<void> {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(broadcasts).values({
+        tenantId: tenant.ctx.slug,
+        broadcastId: randomUUID(),
+        requestedByMemberId: memberId,
+        requestedByMemberPlanIdSnapshot: 'snap',
+        submittedByUserId: user.userId,
+        actorRole: 'admin_proxy',
+        subject: 'Prior-year Sent',
+        bodyHtml: '<p>x</p>',
+        bodySource: '<p>x</p>',
+        fromName: 'Test',
+        replyToEmail: 'reply@example.com',
+        segmentType: 'all_members',
+        estimatedRecipientCount: 1,
+        status: 'sent',
+        quotaYearConsumed: quotaYear,
+        quotaConsumedAt: new Date(NOW_MS - 400 * MS_PER_DAY),
+        sentAt: new Date(NOW_MS - 400 * MS_PER_DAY),
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // #8 edge cases — document the TWO boundary conditions that prove the
+  // year-fence and the reserved-exclusion independently of each other.
+  // ---------------------------------------------------------------------
+
+  it('#8 edge: 0 sent + N reserved THIS year → usage=0 (reserved excluded) → +15 FIRES on BOTH', async () => {
+    // A member who has NEVER originated a sent e-blast this quota year,
+    // but HAS a submitted (reserved) broadcast in-flight. The reserved row
+    // holds a quota slot in F7's enforcement count but carries
+    // quota_year_consumed IS NULL, so it must NOT count toward the at-risk
+    // engagement usage. usage = 0/4 = 0% < 30% → factor fires.
+    // Proves: dropping the reserved bucket means a pure-reserved member
+    // counts as zero usage, triggering the +15 risk signal correctly.
+    const planId = `conv-pureresv-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Pure Reserved Plan' },
+        benefitMatrix: { ...DEFAULT_TEST_BENEFIT_MATRIX, eblast_per_year: 4 },
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMember(planId);
+    // Seed two reserved broadcasts (submitted + approved) — no sent rows.
+    await seedOriginatedReservedBroadcast(
+      memberId,
+      'submitted',
+      NOW_MS - 14 * MS_PER_DAY,
+    );
+    await seedOriginatedReservedBroadcast(
+      memberId,
+      'approved',
+      NOW_MS - 7 * MS_PER_DAY,
+    );
+
+    const single = await singleFires(memberId, EBLAST_FACTOR);
+    const batch = await batchFires(memberId, EBLAST_FACTOR);
+
+    // Both scorers agree and both FIRE: usage = 0 (0% < 30%).
+    expect(single).toBe(batch);
+    expect(single).toBe(true);
+  }, 90_000);
+
+  it('#8 edge: 1 sent PRIOR quota year + 1 submitted THIS year → usage=0 (year-fence excludes both) → +15 FIRES on BOTH', async () => {
+    // A member with:
+    //   (a) 1 `sent` broadcast from the PRIOR quota year
+    //       (quota_year_consumed = QUOTA_YEAR - 1, sentAt ~400 days ago)
+    //   (b) 1 `submitted` (reserved) broadcast from THIS quota year
+    //       (quota_year_consumed IS NULL)
+    // The year-fence excludes (a) — it was sent last year, not this year.
+    // The reserved-exclusion excludes (b) — it was never sent.
+    // So current-year engagement usage = 0/4 = 0% < 30% → factor fires.
+    // Proves: a prior-year sent does NOT count toward this year's usage,
+    // and a this-year reserved likewise does NOT count.
+    const planId = `conv-prioryear-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Prior Year Sent Plan' },
+        benefitMatrix: { ...DEFAULT_TEST_BENEFIT_MATRIX, eblast_per_year: 4 },
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMember(planId);
+    // (a) sent last quota year — must NOT count toward current-year usage.
+    await seedOriginatedSentBroadcastInYear(memberId, QUOTA_YEAR - 1);
+    // (b) reserved this year — must NOT count toward engagement usage.
+    await seedOriginatedReservedBroadcast(
+      memberId,
+      'submitted',
+      NOW_MS - 30 * MS_PER_DAY,
+    );
+
+    const single = await singleFires(memberId, EBLAST_FACTOR);
+    const batch = await batchFires(memberId, EBLAST_FACTOR);
+
+    // Both scorers agree and both FIRE: usage = 0 (0% < 30%).
+    expect(single).toBe(batch);
+    expect(single).toBe(true);
+  }, 90_000);
+
   // ---------------------------------------------------------------------
   // Tier-downgrade bucket convergence
   // ---------------------------------------------------------------------
