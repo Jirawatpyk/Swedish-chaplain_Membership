@@ -38,10 +38,40 @@ import { TIER_BUCKETS } from '../../domain/value-objects/tier-bucket';
 const UNKNOWN_BUCKET_ORDINAL = TIER_BUCKETS.length;
 
 /**
+ * Strict allowlist for a qualified SQL column reference: a `table.column`
+ * pair, each part an identifier (`[a-z_][a-z0-9_]*`). This is the ONLY
+ * shape the current callers pass (e.g. `np.renewal_tier_bucket`). The
+ * runtime guard below rejects anything else (whitespace, quotes, dots
+ * elsewhere, parentheses, etc.) so a future caller that accidentally
+ * threads a dynamic / user-controlled string fails LOUDLY at call time
+ * rather than silently interpolating a SQL-injection vector — static
+ * analysis cannot catch a raw-string interpolation, so we guard at runtime.
+ */
+const QUALIFIED_COLUMN_REF = /^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/i;
+
+/**
+ * Assert that a `columnRef` is a trusted qualified column reference
+ * (`table.column`). Throws a clear error on anything else.
+ */
+function assertTrustedColumnRef(columnRef: string): void {
+  if (!QUALIFIED_COLUMN_REF.test(columnRef)) {
+    throw new Error(
+      `tierBucketOrdinalCaseSql: untrusted columnRef ${JSON.stringify(
+        columnRef,
+      )} — expected a qualified column reference (table.column). ` +
+        `This value is interpolated verbatim into raw SQL; dynamic / ` +
+        `user-controlled strings are a SQL-injection vector and are rejected.`,
+    );
+  }
+}
+
+/**
  * Build a SQL `CASE <columnRef> WHEN 'bucket' THEN <ordinal> ... ELSE
  * <sentinel> END` expression as a raw string. `columnRef` MUST be a
- * trusted, code-controlled column reference (e.g. `'np.renewal_tier_bucket'`)
- * — it is interpolated verbatim, so NEVER pass user input here.
+ * trusted, code-controlled qualified column reference (e.g.
+ * `'np.renewal_tier_bucket'`) — it is interpolated verbatim, so NEVER
+ * pass user input here. A runtime guard (`assertTrustedColumnRef`)
+ * rejects anything that is not a bare `table.column` reference.
  *
  * Example output (with the current 5-bucket tuple):
  *   CASE np.renewal_tier_bucket
@@ -54,6 +84,7 @@ const UNKNOWN_BUCKET_ORDINAL = TIER_BUCKETS.length;
  *   END
  */
 export function tierBucketOrdinalCaseSql(columnRef: string): string {
+  assertTrustedColumnRef(columnRef);
   const whenClauses = TIER_BUCKETS.map(
     (bucket, ordinal) => `WHEN '${bucket}' THEN ${ordinal}`,
   ).join(' ');

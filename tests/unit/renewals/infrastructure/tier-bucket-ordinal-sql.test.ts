@@ -34,7 +34,7 @@ describe('tierBucketOrdinalCaseSql', () => {
   });
 
   it('maps unknown / NULL buckets to a sentinel above every known ordinal', () => {
-    const sql = tierBucketOrdinalCaseSql('x');
+    const sql = tierBucketOrdinalCaseSql('t.col');
     // ELSE sentinel === tuple length, strictly greater than the max known
     // ordinal (length - 1), so an unknown bucket never sorts BELOW a
     // known one — i.e. it can never falsely register as a downgrade.
@@ -71,5 +71,55 @@ describe('tierBucketDowngradePredicateSql', () => {
     const oldIdx = sql.indexOf('op.renewal_tier_bucket');
     expect(newIdx).toBeLessThan(ltIdx);
     expect(ltIdx).toBeLessThan(oldIdx);
+  });
+});
+
+describe('tierBucketOrdinalCaseSql — columnRef SQL-injection guard', () => {
+  it('accepts the qualified column references the real callers pass', () => {
+    // The exact literals threaded by the two scorers
+    // (drizzle-at-risk-scorer + drizzle-member-renewal-flags-repo).
+    for (const ref of [
+      'np.renewal_tier_bucket',
+      'op.renewal_tier_bucket',
+      'p_new.renewal_tier_bucket',
+      'p_old.renewal_tier_bucket',
+    ]) {
+      expect(() => tierBucketOrdinalCaseSql(ref)).not.toThrow();
+    }
+  });
+
+  it('rejects an unqualified identifier (no table prefix)', () => {
+    expect(() => tierBucketOrdinalCaseSql('renewal_tier_bucket')).toThrow(
+      /untrusted columnRef/,
+    );
+  });
+
+  it('rejects a dynamic / user-controlled SQL-injection string', () => {
+    expect(() =>
+      tierBucketOrdinalCaseSql("np.bucket; DROP TABLE members; --"),
+    ).toThrow(/untrusted columnRef/);
+    expect(() =>
+      tierBucketOrdinalCaseSql("(SELECT secret FROM tenants)"),
+    ).toThrow(/untrusted columnRef/);
+    expect(() => tierBucketOrdinalCaseSql('np.col OR 1=1')).toThrow(
+      /untrusted columnRef/,
+    );
+  });
+
+  it('rejects whitespace, quoting, and empty input', () => {
+    for (const bad of ['', ' np.col', 'np.col ', '"np"."col"', 'np .col']) {
+      expect(() => tierBucketOrdinalCaseSql(bad)).toThrow(/untrusted columnRef/);
+    }
+  });
+
+  it('propagates the guard through tierBucketDowngradePredicateSql', () => {
+    // The predicate builds two CASE expressions; a bad ref on EITHER
+    // side must throw (the guard fires inside tierBucketOrdinalCaseSql).
+    expect(() =>
+      tierBucketDowngradePredicateSql('np.col; --', 'op.renewal_tier_bucket'),
+    ).toThrow(/untrusted columnRef/);
+    expect(() =>
+      tierBucketDowngradePredicateSql('np.renewal_tier_bucket', 'bad ref'),
+    ).toThrow(/untrusted columnRef/);
   });
 });
