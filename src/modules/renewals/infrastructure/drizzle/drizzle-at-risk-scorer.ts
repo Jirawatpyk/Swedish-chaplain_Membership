@@ -20,13 +20,18 @@
  *     ✓ daysSinceContactUpdate     — F3 members.last_activity_at
  *     ✓ tierDowngradedLast12Months — F2 audit_log scan: looks for any
  *                                     `member_plan_changed` event in the
- *                                     last 12mo where new plan's
- *                                     annual_fee < old plan's annual_fee
- *                                     (PR #24 Round 7 — F2 ship unblocked)
- *     ✓ eBlastQuotaPctUsed         — F7 broadcast_deliveries count vs
- *                                     plan benefit_matrix.eblast_per_year
- *                                     for current quota year
- *                                     (PR #24 Round 7 — F7 ship unblocked)
+ *                                     last 12mo where the new plan's
+ *                                     renewal_tier_bucket ordinal is lower
+ *                                     than the old plan's (a move to a
+ *                                     lower tier BUCKET, not just a fee
+ *                                     cut) (063 bucket-ordinal fix)
+ *     ✓ eBlastQuotaPctUsed         — F7 broadcasts the member ORIGINATED
+ *                                     (requested_by_member_id) that hold/
+ *                                     consume a quota slot for the current
+ *                                     quota year, vs plan benefit_matrix.
+ *                                     eblast_per_year. Matches F7's
+ *                                     canonical countForMemberQuota
+ *                                     (063 axis + quota-year fix)
  *
  *   F6-DEPENDENT (3):
  *     ⊘ eventsAttendedLast12Months — F6 EventCreate not shipped
@@ -59,12 +64,10 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 // emitter at `drizzle-renewal-audit-emitter.ts:20`.
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
-import {
-  broadcastDeliveries,
-  broadcasts,
-} from '@/modules/broadcasts/infrastructure/schema';
+import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { currentQuotaYear } from '@/modules/broadcasts';
 import { env } from '@/lib/env';
+import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
 import {
   computeAtRiskScore,
   type AtRiskFactors,
@@ -172,20 +175,29 @@ export function makeDrizzleAtRiskScorer(
       const minTenureDays = settings?.minTenureDaysForAtRisk ?? 30;
 
       // ----------------------------------------------------------------
-      // PR #24 Round 7 — F2 audit-log scan: tier_downgraded_last_12mo.
-      // F2 + F7 shipped, so the at-risk scorer can now consume the
-      // `member_plan_changed` audit trail (emitted by F3 change-plan
-      // use-case) joined against `membership_plans` to detect a
-      // downgrade in the last 12 months. A "downgrade" is defined as
-      // any plan transition where `new.annual_fee_minor_units` <
-      // `old.annual_fee_minor_units` — a member moving from Premium
-      // (high fee) to Standard (lower fee). Tier-equal moves and
-      // upgrades both score as `false`.
+      // F2 audit-log scan: tier_downgraded_last_12mo (FR-029 line 8).
+      // Consumes the `member_plan_changed` audit trail (emitted by F3
+      // change-plan) joined against `membership_plans` to detect a
+      // downgrade in the last 12 months.
+      //
+      // 063 correctness fix — a "downgrade" is a move to a lower tier
+      // BUCKET (`renewal_tier_bucket` ordinal), NOT merely an annual-fee
+      // decrease. The prior `np.annual_fee_minor_units <
+      // op.annual_fee_minor_units` test falsely flagged a same-bucket fee
+      // cut (custom pricing / override) as a downgrade, and diverged from
+      // the batch scorer (`drizzle-member-renewal-flags-repo.ts`) which
+      // already compared the bucket ordinal. Both now use the shared
+      // `tierBucketDowngradePredicateSql` fragment, derived from the
+      // Domain `TIER_BUCKETS` tuple, so the two cannot drift.
+      //
+      // The `~ '^[0-9]+$'` regex guard mirrors the batch (Phase 6 review
+      // C3): a malformed payload year for ONE member's audit row is
+      // treated as "no match" instead of aborting the whole query.
       //
       // RLS scopes audit_log + membership_plans to the current tenant
-      // automatically (both tables ENABLE + FORCE RLS). Single query;
-      // O(1) per member regardless of plan-change history depth (we
-      // short-circuit on the first downgrade row found).
+      // automatically (both tables ENABLE + FORCE RLS); the explicit
+      // tenant_id predicate is defence-in-depth. Single query; O(1) per
+      // member (we short-circuit on the first downgrade row found).
       // ----------------------------------------------------------------
       const downgradeProbe = await tx.execute<{ has_downgrade: boolean }>(sql`
         SELECT EXISTS (
@@ -194,15 +206,23 @@ export function makeDrizzleAtRiskScorer(
           JOIN ${membershipPlans} op
             ON op.tenant_id = al.tenant_id
            AND op.plan_id = al.payload->>'old_plan_id'
+           AND al.payload->>'old_plan_year' ~ '^[0-9]+$'
            AND op.plan_year = (al.payload->>'old_plan_year')::int
           JOIN ${membershipPlans} np
             ON np.tenant_id = al.tenant_id
            AND np.plan_id = al.payload->>'new_plan_id'
+           AND al.payload->>'new_plan_year' ~ '^[0-9]+$'
            AND np.plan_year = (al.payload->>'new_plan_year')::int
           WHERE al.event_type = 'member_plan_changed'
+            AND al.tenant_id = ${tenantId}
             AND al.payload->>'member_id' = ${memberId}
             AND al.timestamp > NOW() - INTERVAL '12 months'
-            AND np.annual_fee_minor_units < op.annual_fee_minor_units
+            AND ${sql.raw(
+              tierBucketDowngradePredicateSql(
+                'np.renewal_tier_bucket',
+                'op.renewal_tier_bucket',
+              ),
+            )}
         ) AS has_downgrade
       `);
       // Round 8 review-fix — defensive Boolean() coerce so a future
@@ -214,33 +234,42 @@ export function makeDrizzleAtRiskScorer(
       );
 
       // ----------------------------------------------------------------
-      // PR #24 Round 7 — F7 broadcast quota: eBlastQuotaPctUsed.
-      // Member's plan benefit_matrix.eblast_per_year is the per-year
-      // delivery budget. We count `broadcast_deliveries` where
-      // `recipient_member_id = ?` AND `quota_year_consumed = current
-      // quota year` (Asia/Bangkok calendar year — matches F7
-      // `currentQuotaYear()` semantics). pct = sent / quota * 100.
+      // F7 broadcast quota: eBlastQuotaPctUsed (FR-029 line 3).
+      // Member's plan benefit_matrix.eblast_per_year is the per-quota-year
+      // SENDING budget. "Used %" = broadcasts the member ORIGINATED that
+      // hold OR consume a quota slot, divided by the cap — the exact
+      // number the member sees on their /portal/benefits page.
+      //
+      // 063 correctness fix — this previously counted `broadcast_deliveries
+      // WHERE recipient_member_id = member` (RECEIVED axis), which is the
+      // WRONG axis: per F7 Q16 the e-blast quota is consumed by the
+      // ORIGINATOR (`requested_by_member_id`) and the sender is EXCLUDED
+      // from receiving their own broadcast, so received-count is unrelated
+      // to the member's own quota. It also diverged from the batch scorer
+      // (`drizzle-member-renewal-flags-repo.ts`). Both now count the
+      // ORIGINATED axis on the per-quota-year window.
+      //
+      // Status set is F7's canonical "held or consumed" slot definition,
+      // matching `broadcasts-repo.countForMemberQuota`
+      // (drizzle-broadcasts-repo.ts:780): `used` = sent rows whose
+      // `quota_year_consumed` equals the current quota year, plus
+      // `reserved` = submitted/approved/failed_to_dispatch rows (which by
+      // the schema CHECK have `quota_year_consumed IS NULL` and reserve
+      // against the current year by definition). cancelled/rejected
+      // RELEASE the slot and are excluded. This is the single source of
+      // truth — no third e-blast-counting variant.
       //
       // Returned `undefined` (skipped) when:
       //   - member's plan has no benefit_matrix (orphan)
       //   - eblast_per_year === 0 (plan with no quota — Junior tier)
       // Domain handles `undefined` as a 0-contribution skip per the
       // computeAtRiskScore contract.
-      // ----------------------------------------------------------------
-      // Round 8 review-fix — `quota_year_consumed` lives on the
-      // `broadcasts` table (one row per send-batch), NOT on
-      // `broadcast_deliveries` (one row per recipient × broadcast). The
-      // Round 7 implementation queried a non-existent column and would
-      // have crashed every cron pass at runtime. Fix: JOIN deliveries →
-      // broadcasts ON broadcast_id, then filter the parent broadcast's
-      // quota_year_consumed.
       //
-      // Round 8 review-fix — pass tenant timezone (env.tenant.timezone)
-      // to currentQuotaYear so the quota-year boundary aligns with
-      // however F7 wrote the broadcasts row at send time. SweCham is
-      // Bangkok-based so this is currently equivalent; future
-      // non-Bangkok tenants would have suffered a year-boundary
-      // misalignment without this fix.
+      // Tenant timezone (env.tenant.timezone) feeds currentQuotaYear so
+      // the year boundary aligns with however F7 wrote the broadcasts row
+      // at send time (SweCham is Bangkok; future non-Bangkok tenants stay
+      // correct).
+      // ----------------------------------------------------------------
       let eBlastQuotaPctUsed: number | undefined;
       if (memberRow != null) {
         const planRows = await tx
@@ -260,21 +289,24 @@ export function makeDrizzleAtRiskScorer(
             new Date(),
             env.tenant.timezone,
           );
-          const sentRows = await tx.execute<{ sent_count: string }>(sql`
-            SELECT count(*)::text AS sent_count
-            FROM ${broadcastDeliveries} bd
-            JOIN ${broadcasts} b
-              ON b.broadcast_id = bd.broadcast_id
-             AND b.tenant_id = bd.tenant_id
-            WHERE bd.recipient_member_id = ${memberId}
-              AND bd.status = 'sent'
-              AND b.quota_year_consumed = ${quotaYear}
+          // used (sent, quota_year_consumed = quotaYear) ∪ reserved
+          // (submitted/approved/failed_to_dispatch). Mirrors
+          // countForMemberQuota's two-bucket count exactly.
+          const usedRows = await tx.execute<{ used_count: string }>(sql`
+            SELECT count(*)::text AS used_count
+            FROM ${broadcasts} b
+            WHERE b.tenant_id = ${tenantId}
+              AND b.requested_by_member_id = ${memberId}
+              AND (
+                (b.status = 'sent' AND b.quota_year_consumed = ${quotaYear})
+                OR b.status IN ('submitted', 'approved', 'failed_to_dispatch')
+              )
           `);
-          const sentCount = Number.parseInt(
-            sentRows[0]?.sent_count ?? '0',
+          const usedCount = Number.parseInt(
+            usedRows[0]?.used_count ?? '0',
             10,
           );
-          eBlastQuotaPctUsed = (sentCount / eblastQuota) * 100;
+          eBlastQuotaPctUsed = (usedCount / eblastQuota) * 100;
         }
       }
 

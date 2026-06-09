@@ -21,9 +21,15 @@
  */
 import { and, asc, desc, eq, exists, gte, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
+import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+// Cross-module adapter→barrel import for F7's canonical quota-year
+// helper (063 — single source of truth for the e-blast quota window;
+// matches drizzle-at-risk-scorer.ts + countForMemberQuota).
+import { currentQuotaYear } from '@/modules/broadcasts';
 import { renewalCycles } from '../schema-renewal-cycles';
+import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
 import type {
   MemberFlagToggleResult,
   MemberRenewalFlagsRepo,
@@ -404,6 +410,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       tenantId: string,
     ): Promise<ReadonlyArray<AtRiskBatchFactorRow>> {
       const txDb = tx as typeof db;
+      // 063 correctness fix — compute the current quota year ONCE for the
+      // batch (tenant timezone) and bind it into the e-blast LATERAL so
+      // the per-quota-year window matches F7's canonical
+      // countForMemberQuota + the single-member scorer.
+      const quotaYear = currentQuotaYear(new Date(), env.tenant.timezone);
       const rows = await txDb.execute<{
         member_id: string;
         created_at: Date;
@@ -446,23 +457,17 @@ export function makeDrizzleMemberRenewalFlagsRepo(
               AND al.tenant_id = ${tenantId}
               AND al.payload->>'member_id' = m.member_id::text
               AND al.timestamp > NOW() - INTERVAL '12 months'
-              AND CASE p_new.renewal_tier_bucket
-                    WHEN 'thai_alumni' THEN 0
-                    WHEN 'start_up' THEN 1
-                    WHEN 'regular' THEN 2
-                    WHEN 'premium' THEN 3
-                    WHEN 'partnership' THEN 4
-                    ELSE 99
-                  END
-                  <
-                  CASE p_old.renewal_tier_bucket
-                    WHEN 'thai_alumni' THEN 0
-                    WHEN 'start_up' THEN 1
-                    WHEN 'regular' THEN 2
-                    WHEN 'premium' THEN 3
-                    WHEN 'partnership' THEN 4
-                    ELSE 99
-                  END
+              -- 063 — bucket-ordinal downgrade test via the shared
+              -- fragment (derived from the Domain TIER_BUCKETS tuple) so
+              -- the single-member + batch scorers cannot drift. A
+              -- downgrade = lower NEW-bucket ordinal than OLD-bucket
+              -- ordinal (a move to a lower tier bucket, not a fee cut).
+              AND ${sql.raw(
+                tierBucketDowngradePredicateSql(
+                  'p_new.renewal_tier_bucket',
+                  'p_old.renewal_tier_bucket',
+                ),
+              )}
           ) AS tier_downgraded
         FROM members m
         LEFT JOIN membership_plans p
@@ -488,8 +493,24 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           -- Phase 6 review I7 — explicit tenant_id filter (defence-in-depth).
           WHERE b.tenant_id = m.tenant_id
             AND b.requested_by_member_id = m.member_id
-            AND b.status IN ('sent', 'sending', 'approved')
-            AND b.quota_consumed_at > NOW() - INTERVAL '12 months'
+            -- 063 correctness fix — count the e-blast quota slots the
+            -- member ORIGINATED for the CURRENT quota year, matching F7's
+            -- canonical countForMemberQuota (drizzle-broadcasts-repo.ts):
+            -- USED (sent rows whose quota_year_consumed = the current
+            -- quota year) plus RESERVED (submitted/approved/
+            -- failed_to_dispatch rows, which per the broadcasts schema
+            -- CHECK have quota_year_consumed IS NULL and reserve against
+            -- the current year). The prior rolling-12mo
+            -- quota_consumed_at window (a) used the wrong window — quota
+            -- is per-quota-YEAR, not rolling — and (b) used a status set
+            -- (sent,sending,approved) that diverged from both F7's
+            -- canonical set and the single-member scorer. quotaYear is
+            -- computed once per batch in the tenant timezone and bound as
+            -- a param so the year boundary matches how F7 wrote the row.
+            AND (
+              (b.status = 'sent' AND b.quota_year_consumed = ${quotaYear})
+              OR b.status IN ('submitted', 'approved', 'failed_to_dispatch')
+            )
         ) eb ON true
         WHERE m.status = 'active'
           AND EXISTS (

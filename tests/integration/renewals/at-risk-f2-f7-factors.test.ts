@@ -91,12 +91,18 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
     const standardPlanId = `f8-r9-std-${randomUUID().slice(0, 6)}`;
 
     await runInTenant(tenant.ctx, async (tx) => {
-      // Seed two plans with different annual fees — premium higher.
+      // 063 — a downgrade is a move to a lower tier BUCKET, not just a
+      // fee decrease. Seed the old plan in the `premium` bucket and the
+      // new plan in the lower `regular` bucket. (Pre-063 this test relied
+      // solely on annual_fee 250k < 1M with both plans defaulting to the
+      // `regular` bucket — which the corrected bucket-ordinal logic no
+      // longer treats as a downgrade.)
       await seedF8MembershipPlan(tx, {
         tenantSlug: tenant.ctx.slug,
         planId: premiumPlanId,
         planName: { en: 'Premium' },
         annualFeeMinorUnits: 100_000_000, // 1,000,000 THB
+        renewalTierBucket: 'premium',
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         createdBy: user.userId,
       });
@@ -105,6 +111,7 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         planId: standardPlanId,
         planName: { en: 'Standard' },
         annualFeeMinorUnits: 25_000_000, // 250,000 THB — lower
+        renewalTierBucket: 'regular', // lower bucket ordinal than premium
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         createdBy: user.userId,
       });
@@ -169,15 +176,21 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
     ).toBe(true);
   }, 60_000);
 
-  it('counts e-blast deliveries against quota via broadcasts JOIN', async () => {
+  it('counts e-blasts the member ORIGINATED against their sending quota', async () => {
+    // 063 — the e-blast quota factor counts broadcasts the member
+    // ORIGINATED (requested_by_member_id), NOT broadcasts they received
+    // (per F7 Q16 the originator holds the quota; the sender is excluded
+    // from receiving their own broadcast). This test seeds one ORIGINATED
+    // sent broadcast (no delivery row — receipt is irrelevant to the
+    // sending quota) on a 4-quota plan: 1/4 = 25% used → <30% → +15.
     const memberId = randomUUID();
     const planId = `f8-r9-eblast-${randomUUID().slice(0, 6)}`;
     const broadcastId = randomUUID();
     const currentYear = new Date().getFullYear();
 
     await runInTenant(tenant.ctx, async (tx) => {
-      // Plan with eblast quota = 4 (so 1 delivery = 25% used → triggers
-      // the "<30% used" factor).
+      // Plan with eblast quota = 4 (so 1 originated broadcast = 25% used
+      // → triggers the "<30% used" factor).
       await seedF8MembershipPlan(tx, {
         tenantSlug: tenant.ctx.slug,
         planId,
@@ -206,8 +219,10 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         isPrimary: true,
         preferredLanguage: 'en',
       });
-      // Parent broadcast — quota_year_consumed populated per F7's
-      // FR-007 invariant (only set on `status='sent'`).
+      // Broadcast ORIGINATED by the member — quota_year_consumed
+      // populated per F7's FR-007 invariant (only set on `status='sent'`).
+      // No broadcast_deliveries row: receipt is irrelevant to the
+      // member's own SENDING quota (063 axis fix).
       await tx.insert(broadcasts).values({
         tenantId: tenant.ctx.slug,
         broadcastId,
@@ -227,18 +242,6 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         quotaConsumedAt: new Date(),
         sentAt: new Date(NOW_MS - 7 * MS_PER_DAY),
       });
-      // Delivery row pointing at the member.
-      await tx.insert(broadcastDeliveries).values({
-        tenantId: tenant.ctx.slug,
-        deliveryId: randomUUID(),
-        broadcastId,
-        resendEventId: `evt_${randomUUID().slice(0, 8)}`,
-        resendMessageId: `msg_${randomUUID().slice(0, 8)}`,
-        recipientEmailLower: `eblast-${memberId.slice(0, 6)}@acme.example`,
-        recipientMemberId: memberId,
-        status: 'sent',
-        eventTimestamp: new Date(NOW_MS - 7 * MS_PER_DAY),
-      });
     });
 
     const deps = makeRenewalsDeps(tenant.ctx.slug);
@@ -247,9 +250,9 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
       memberId,
     );
 
-    // 1 delivery / 4 quota = 25% used → triggers the "<30% used" factor
-    // weighted +15 per FR-029. Score should reflect at least that
-    // contribution; we don't pin a tighter equality because other
+    // 1 originated broadcast / 4 quota = 25% used → triggers the "<30%
+    // used" factor weighted +15 per FR-029. Score should reflect at least
+    // that contribution; we don't pin a tighter equality because other
     // factors (tenureDays etc.) may also contribute small amounts.
     expect(result.score).toBeGreaterThanOrEqual(15);
     expect(
