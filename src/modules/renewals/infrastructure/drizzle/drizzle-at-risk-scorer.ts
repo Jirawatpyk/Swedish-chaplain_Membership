@@ -48,9 +48,18 @@
  * Wave A1's property-based test pins the "0-contribution-when-undefined"
  * invariant (`tests/unit/renewals/domain/at-risk-score.test.ts`).
  *
- * Tenant isolation via RLS — adapter runs queries inside `runInTenant`
- * so SET LOCAL app.current_tenant binds the row visibility. NO explicit
- * `WHERE tenant_id = ?` — the policies add it automatically.
+ * Tenant isolation: most tables (members, invoices, membership_plans,
+ * renewal_*) use strict isolating RLS policies and require NO explicit
+ * `WHERE tenant_id = ?` — `runInTenant` SET LOCAL is sufficient. However,
+ * `audit_log` uses a PERMISSIVE policy where rows with NULL tenant_id (F1
+ * identity events, migration 0007) remain visible to every tenant context.
+ * Therefore any `audit_log` query in this file MUST include an explicit
+ * `al.tenant_id = ${tenantId}` predicate — it is load-bearing, not
+ * defence-in-depth. A future audit_log query added here MUST carry the same
+ * explicit filter.
+ * The `broadcasts` table query also includes an explicit `b.tenant_id`
+ * predicate as defence-in-depth (Phase 6 review I7 pattern), consistent
+ * with the batch scorer (`drizzle-member-renewal-flags-repo.ts`).
  *
  * Per-member SLO budget (per FR-036 + SC-005 + T174 perf bench): the
  * single SQL query per member with primary-key + secondary-index lookups

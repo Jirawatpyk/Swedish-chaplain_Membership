@@ -593,6 +593,13 @@ async function dispatchOneCycleInner(
   // preserving the existing replay-skip-reason contract (a same-day re-run
   // must report `already_sent`, not `not_due_today`). Idempotency check is
   // STEP-anchored (063 #1) + cross-version tolerant (063 residual).
+  //
+  // The `?? windowSteps[0]!` fallback is unreachable at runtime on the
+  // today-exactly path (firedKeys is always empty there → find() always
+  // succeeds in finding an unfired step). It IS load-bearing for TypeScript:
+  // without it `primaryStep` would be `ReminderStep | undefined`, propagating
+  // undefined checks through every downstream use. Do NOT remove it as "dead
+  // code" — it keeps the type non-nullable.
   const primaryStep: ReminderStep =
     windowSteps.find((s) => !stepAlreadyFired(s)) ?? windowSteps[0]!;
 
@@ -729,9 +736,17 @@ async function dispatchOneCycleInner(
     // outer `dispatch-renewal-cycle` handler and corrupt the summary even
     // though the primary's row + audit persisted. We log + count the failure
     // (the existing failure metric) and continue; the primary's outcome
-    // stands. The sibling's pending reminder_event row (if its insert
-    // committed before the throw) is recovered by the retry/exhaustion sweep,
-    // same as any other transient dispatcher fault.
+    // stands.
+    //
+    // Recovery path for a thrown sibling: if the throw happens AFTER
+    // Gate 12 `insertIfAbsent` committed a `status='pending'` row, that
+    // pending row IS picked up by the retry/exhaustion sweep on the next
+    // pass. If the throw happens BEFORE any row was committed (e.g.
+    // Gate 12 itself throws), NO row was persisted — the sweep finds nothing.
+    // In that case recovery is the NEXT CRON PASS: `hasOverdueStep` +
+    // the boundary re-fires the unfired sibling within the lookback window.
+    // The sibling is permanently dropped only if the fault persists for the
+    // entire lookback window duration without a successful cron pass.
     try {
       await fireStep(deps, candidate, ctx, fireArgs);
     } catch (siblingErr) {
@@ -800,6 +815,12 @@ async function fireStep(
   const { cycle, member, primaryContact } = candidate;
   const { step, stepYearInCycle, yearInCycleRunDate } = args;
   // Gate 9 — multi-year non-final year for email steps (Q4 / FR-010).
+  // EMAIL-ONLY: task-channel steps on the same offset_day are NOT gated here.
+  // On a catch-up pass where co-resolution is active (063 #5), a same-target
+  // task sibling (e.g. `t-60.task.phone_call`) may still fire this pass even
+  // when the email step is suppressed by Gate 9. The cron summary will show
+  // a `multi_year_non_final_year` skip while a task row was created — this
+  // is expected and correct (the task escalation is not year-gated).
   const cycleYears = computeCycleYears(cycle.cycleLengthMonths);
   if (
     step.channel === 'email' &&
