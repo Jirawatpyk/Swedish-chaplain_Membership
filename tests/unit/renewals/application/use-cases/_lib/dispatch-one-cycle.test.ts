@@ -898,6 +898,78 @@ describe('dispatchOneCycle', () => {
       expect(insertTaskMock.mock.calls[0]![1].taskType).toBe('phone_call');
     });
 
+    it('063 residual — same-target pair, SIBLING throws AFTER primary committed → primary outcome intact, sibling swallowed (no cycle crash)', async () => {
+      // Co-resolution: the PRIMARY email fires first (commits its row +
+      // audit + gateway send), then the co-resolved SIBLING task throws in
+      // its Gate-12 insertIfAbsent (BEFORE fireStep's inner channel-dispatch
+      // try/catch). Previously the throw propagated out of the loop →
+      // dispatchOneCycle threw → the outer dispatch-renewal-cycle handler
+      // counted the WHOLE cycle as a crash, even though the primary's
+      // outcome (sent) + row + audit had already committed (summary
+      // corruption). The sibling fire MUST be best-effort: its failure is a
+      // side-effect that must not corrupt the primary's result or crash the
+      // cycle.
+      const { deps, gatewayMock } = fakeDeps({ alreadyFired: [] });
+      // Make the reminder-event insert throw ONLY for the sibling task step.
+      // The email (primary) insert succeeds; the task (sibling) insert throws
+      // — reproducing a sibling fault AFTER the primary committed.
+      const repo = deps.reminderEventRepo as unknown as {
+        insertIfAbsent: ReturnType<typeof vi.fn>;
+      };
+      repo.insertIfAbsent = vi.fn(async (_tx, input) => {
+        if (input.channel === 'task') {
+          throw new Error('sibling task insert exploded: deadlock detected');
+        }
+        return {
+          created: true,
+          row: {
+            tenantId: TENANT_ID,
+            reminderEventId: 'rem-primary',
+            cycleId: CYCLE_ID,
+            stepId: input.stepId,
+            channel: input.channel,
+            templateId: input.templateId ?? null,
+            taskType: input.taskType ?? null,
+            dispatchedAt: null,
+            deliveryId: null,
+            status: 'pending' as const,
+            skipReason: null,
+            failureReason: null,
+            actorUserId: null,
+            yearInCycle: input.yearInCycle,
+            createdAt: NOW_ISO,
+          },
+        };
+      });
+      const candidate = buildHappyCandidate({
+        cycle: {
+          periodFrom: '2025-07-07T00:00:00.000Z',
+          periodTo: '2026-07-07T00:00:00.000Z',
+          expiresAt: '2026-07-07T00:00:00.000Z',
+        } as Partial<RenewalCycle>,
+        schedulePolicy: {
+          tenantId: TENANT_ID,
+          tierBucket: 'premium' as const,
+          steps: [
+            { stepId: 't-60.email', offsetDays: -60, channel: 'email' as const, templateId: 'renewal.t-60.premium' },
+            { stepId: 't-60.task.phone_call', offsetDays: -60, channel: 'task' as const, taskType: 'phone_call', assigneeRole: 'admin' as const },
+          ],
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      });
+
+      // RED against e654feb8: the sibling throw propagates → this rejects.
+      // GREEN: best-effort wrap swallows the sibling fault → the PRIMARY
+      // (email) outcome `sent` is returned intact.
+      const result = await dispatchOneCycle(deps, candidate, happyCtx);
+      expect(result.kind).toBe('sent');
+      // The primary email send DID happen (committed before the sibling threw).
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+      const emailCall = gatewayMock.mock.calls[0]![0] as { stepId: string };
+      expect(emailCall.stepId).toBe('t-60.email');
+    });
+
     it('Gate 9 — multi-year non-final-year: skip multi_year_non_final_year', async () => {
       const { deps } = fakeDeps({});
       // 3-year cycle, period_from = today, expires_at = T-30 from now
