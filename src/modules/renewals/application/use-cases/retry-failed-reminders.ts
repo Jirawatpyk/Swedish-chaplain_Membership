@@ -289,7 +289,7 @@ async function attemptRetry(
         {
           type: 'renewal_reminder_sent',
           payload: {
-            cycle_id: event.cycleId,
+            cycle_id: asCycleId(event.cycleId),
             member_id: candidate.member.memberId as MemberId,
             step_id: event.stepId,
             channel: 'email',

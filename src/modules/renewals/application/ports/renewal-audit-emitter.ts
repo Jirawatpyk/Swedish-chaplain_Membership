@@ -884,10 +884,15 @@ export interface F8AuditPayloadShapes {
     readonly template_id: string | null;
     readonly delivery_id: string | null;
     readonly recipient_locale?: string | null;
-    /** True when dispatched after the exact due-day (bounded catch-up). */
-    readonly caught_up: boolean;
-    /** ISO UTC date the step was originally due. */
-    readonly step_due_date: string;
+    /**
+     * True when dispatched after the exact due-day (bounded catch-up).
+     * Set by the member dispatcher path; absent on the retry path.
+     */
+    readonly caught_up?: boolean;
+    /** ISO UTC date the step was originally due (dispatcher path). */
+    readonly step_due_date?: string;
+    /** True when (re-)emitted by the retry-failed-reminders path. */
+    readonly via_retry?: boolean;
   };
   /**
    * Discriminated union — `renewal_reminder_send_failed_permanent`
