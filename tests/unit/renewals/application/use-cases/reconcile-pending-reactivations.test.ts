@@ -9,6 +9,7 @@ import { reconcilePendingReactivations } from '@/modules/renewals/application/us
 import type { ReconcilePendingReactivationsDeps } from '@/modules/renewals/application/use-cases/reconcile-pending-reactivations';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
+import { CycleTransitionConflictError } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import type {
   F5RefundBridge,
   IssueRefundForInvoiceResult,
@@ -52,6 +53,21 @@ function fakeDeps(args: {
   refundResult?: IssueRefundForInvoiceResult;
   refundImpl?: () => Promise<IssueRefundForInvoiceResult>;
   reReadCycle?: (cycle: RenewalCycle) => RenewalCycle | null;
+  /**
+   * 063 Step-3 race modelling: `processTimeout` calls `findByIdInTx`
+   * TWICE — once in tx1 (validate-before-refund) and once in tx2
+   * (re-confirm-before-transition). `reReadCycle` applies the SAME
+   * transform to both, so it can only model the Step-1 race (admin won
+   * BEFORE the refund). To exercise the Step-3 residual (refund issued
+   * in tx1-pending window, THEN admin wins before tx2's lock) the test
+   * needs the re-read to differ per call: PENDING the first time,
+   * COMPLETED/CANCELLED the second. `findByIdInTxImpl` overrides the
+   * default lookup entirely and receives the 0-based call index.
+   */
+  findByIdInTxImpl?: (
+    callIndex: number,
+    cycle: RenewalCycle,
+  ) => RenewalCycle | null;
   emitImpl?: () => Promise<void>;
   emitInTxImpl?: () => Promise<void>;
   transitionImpl?: () => Promise<RenewalCycle>;
@@ -78,8 +94,14 @@ function fakeDeps(args: {
     items: args.cycles,
     nextCursor: null,
   }));
+  let findByIdInTxCallIndex = 0;
   const findByIdInTxMock = vi.fn(async (_tx: unknown, _t: string, cid: string) => {
     const found = args.cycles.find((c) => c.cycleId === cid);
+    const callIndex = findByIdInTxCallIndex;
+    findByIdInTxCallIndex += 1;
+    if (args.findByIdInTxImpl && found) {
+      return args.findByIdInTxImpl(callIndex, found);
+    }
     return args.reReadCycle && found ? args.reReadCycle(found) : found ?? null;
   });
   const transitionMock = vi.fn(
@@ -410,6 +432,108 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
     if (r.ok) {
       expect(r.value.timedOut).toBe(0);
       expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
+});
+
+describe('reconcilePendingReactivations (063) — POST-refund Step-3 residual classification', () => {
+  it('Step-3 admin-approve-AFTER-refund (tx2 re-read shows completed) → post_refund_admin_race, NOT timed_out', async () => {
+    // MONEY-OBSERVABILITY regression guard (063 xhigh review): the Step-1
+    // lock re-read finds the cycle STILL pending (admin had not yet won),
+    // so the cron PROCEEDS to issue the refund. The admin then approves
+    // in the window between the refund and tx2's lock. The tx2 re-read
+    // now finds `completed` ≠ pending and short-circuits the transition.
+    //
+    // The accepted residual (per #6): the member is `completed` (admin
+    // approved) BUT got their money back (cron already refunded). This is
+    // a money-safety residual that SRE MUST be able to see. The OLD code
+    // let the tx2 lambda `return;` fall through to `return 'timed_out'` →
+    // the cron counted it as a benign timeout → INVISIBLE. The fix routes
+    // it to a DISTINCT `post_refund_admin_race` outcome (NOT inflating
+    // `timedOut`) + a dedicated counter + a forensic log.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      // tx1 (callIndex 0) → PENDING (refund proceeds);
+      // tx2 (callIndex 1) → COMPLETED (admin won the Step-3 window).
+      findByIdInTxImpl: (callIndex, c) =>
+        callIndex === 0
+          ? c
+          : ({ ...c, status: 'completed' } as unknown as typeof c),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // The refund WAS issued (Step-1 saw pending) — this is the residual.
+    expect(refundMock).toHaveBeenCalledOnce();
+    // The transition was short-circuited (admin's completed wins tx2).
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      // MUST NOT inflate timedOut (the cron did NOT lapse this cycle).
+      expect(r.value.timedOut).toBe(0);
+      // MUST NOT inflate refund failures (the refund SUCCEEDED).
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      // Pre-refund admin-race counter MUST stay 0 (this is the POST case).
+      expect(r.value.timeoutAdminRaceSkipped).toBe(0);
+      // The NEW residual counter is bumped.
+      expect(r.value.timeoutRefundOrphaned).toBe(1);
+    }
+  });
+
+  it('Step-3 transition CONFLICT after refund (CycleTransitionConflictError) → post_refund_admin_race, NOT timed_out', async () => {
+    // tx2 re-read still shows pending (the conflicting tx had not yet
+    // committed at re-read time) but the transitionStatus call loses the
+    // optimistic-lock race and throws CycleTransitionConflictError. The
+    // OLD code's catch did `return;` → fell through to 'timed_out'. The
+    // refund already issued, so this is the SAME money residual as the
+    // non-pending re-read and MUST be classified identically.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, refundMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new CycleTransitionConflictError(
+          cycle.cycleId,
+          'pending_admin_reactivation',
+          'completed',
+        );
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(refundMock).toHaveBeenCalledOnce();
+    // Transition conflict → audit never emitted.
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutRefundOrphaned).toBe(1);
+    }
+  });
+
+  it('Step-3 transition THROWS (non-conflict) after refund succeeded → transition_failed_post_refund, NOT refund_failed', async () => {
+    // The outer-catch fires when tx2 throws a NON-conflict error (e.g. a
+    // DB blip during the transition/audit) AFTER the refund already
+    // succeeded. The OLD code returned 'refund_failed' → inflated
+    // `timeoutRefundFailures` → mislabelled a SUCCEEDED refund as a refund
+    // failure. The fix classifies it distinctly: money is durable, the
+    // next cron run finds it already-refunded and self-heals.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, refundMock } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new Error('audit_log: connection reset mid-tx');
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // The refund SUCCEEDED — this is NOT a refund failure.
+    expect(refundMock).toHaveBeenCalledOnce();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      // MUST NOT be counted as a refund failure (the refund succeeded).
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      // Distinct counter for "refund OK, transition failed, will self-heal".
+      expect(r.value.timeoutTransitionFailedPostRefund).toBe(1);
     }
   });
 });
