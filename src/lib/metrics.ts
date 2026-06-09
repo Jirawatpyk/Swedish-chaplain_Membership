@@ -2900,6 +2900,35 @@ export const renewalsMetrics = {
       ).add(1, { tenant_id: tenantId });
     });
   },
+
+  /**
+   * `renewals_reconcile_timeout_admin_race_skipped_total{tenant}` — 063
+   * reliability fix.
+   *
+   * Incremented in `processTimeout` when the per-cycle advisory lock
+   * re-read finds the cycle is no longer in `pending_admin_reactivation`
+   * (a concurrent admin approve / reject won the lock race before the
+   * cron). NO refund, NO transition happens on the skipped path; the
+   * admin's action is canonical. Without this counter, a spike in
+   * admin–cron contention (e.g. a batch of back-office reactivations
+   * landing at the same time as the nightly cron) is invisible on
+   * dashboards — only observable from `timeout_admin_race_skipped` in
+   * the JSON response body. A sustained non-zero rate warrants
+   * investigating whether the cron cadence + timeout window are
+   * correctly aligned with admin workflows.
+   *
+   * Alert rule: informational (non-zero rate is not an error; sustained
+   * rate > 5 / cron-pass may indicate admin–cron scheduling conflicts
+   * worth reviewing).
+   */
+  timeoutAdminRaceSkipped(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_admin_race_skipped_total',
+        'F8 reconcile-pending-reactivations timeout skipped — admin approve/reject won lock race before cron refund',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------

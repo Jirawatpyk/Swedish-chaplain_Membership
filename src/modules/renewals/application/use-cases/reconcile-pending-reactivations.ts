@@ -230,6 +230,7 @@ export async function reconcilePendingReactivations(
           break;
         case 'admin_race_skipped':
           timeoutAdminRaceSkipped += 1;
+          renewalsMetrics.timeoutAdminRaceSkipped(cycle.tenantId);
           break;
         default: {
           const _exhaustive: never = outcome;
@@ -457,10 +458,27 @@ async function processTimeout(
   // Step 2: refund via F5 (outside tx — Stripe is external; matches the
   // F5 two-tx design + the admin-reject ordering). The advisory lock from
   // Step 1 has been released at COMMIT, so this network call holds no DB
-  // lock. Double-refund is prevented by F5 idempotency: a second attempt
-  // for an already-refunded invoice resolves to `no_payment_found`
-  // (`computeRemainingRefundable` returns null) and the F5 `issueRefund`
-  // Stripe idempotency key guards the processor side.
+  // lock.
+  //
+  // Double-refund protection is layered:
+  //
+  //   PRIMARY SERIALISERS (prevent concurrent in-flight double-refunds):
+  //     (a) Route-level per-tenant advisory lock `renewals:reconcile:<tenant>`
+  //         (acquired at the top of this POST handler) — serialises overlapping
+  //         cron retries for the same tenant so two cron passes cannot both
+  //         reach Step 2 concurrently for the same invoice.
+  //     (b) F5 `issueRefund` Phase A `SELECT…FOR UPDATE` on the `payments`
+  //         row + `pendingCount > 0 → refund_in_progress` guard — detects a
+  //         concurrently-in-progress refund from any other code path (admin,
+  //         other cron variant) and aborts before calling Stripe.
+  //
+  //   BACKSTOPS (defence-in-depth for already-completed prior refunds):
+  //     (c) `computeRemainingRefundable` counts only `status='succeeded'`
+  //         refund rows; if a prior refund settled, it returns null and
+  //         `issueRefund` short-circuits without calling Stripe.
+  //     (d) Stripe idempotency key per-(invoiceId, attempt) stops the
+  //         processor from charging twice even if our guard layers were
+  //         somehow bypassed.
   if (cycle.linkedInvoiceId !== null) {
     // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
     // boundary — see same pattern in admin-reject-reactivation.
