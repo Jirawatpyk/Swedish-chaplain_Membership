@@ -39,7 +39,10 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
 import { buildRenewalCtaUrl } from './build-renewal-redeem-link-url';
-import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
+import {
+  findDueStepsForDate,
+  REMINDER_CATCH_UP_LOOKBACK_DAYS,
+} from '../../../domain/tenant-renewal-schedule-policy';
 import { asCycleId } from '../../../domain/renewal-cycle';
 import { asTaskId } from '../../../domain/renewal-escalation-task';
 import type {
@@ -195,6 +198,18 @@ export type DispatchOneCycleOutcome =
 // ---------------------------------------------------------------------------
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * 063 — catch-up provenance threaded from Gate 8 into the success-path
+ * audit. `caughtUp` is true when the step's due-day was strictly before
+ * today (the daily cron missed the exact due-day and is recovering within
+ * the bounded lookback). `stepDueDate` is the ISO date the step was
+ * originally due (UTC day boundary) for forensic correlation.
+ */
+interface CatchUpInfo {
+  readonly caughtUp: boolean;
+  readonly stepDueDate: string;
+}
 
 /** `year_in_cycle = floor((now - period_from) / 365 days) + 1` per research.md:103. */
 export function computeYearInCycle(periodFromIso: string, nowIso: string): number {
@@ -405,17 +420,73 @@ async function dispatchOneCycleInner(
     await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured');
     return { kind: 'skipped', reason: 'tenant_misconfigured' };
   }
-  // Gate 8 — step not due today (silent no-op; not an audit event).
-  const dueStep: ReminderStep | null = findStepForDate(
+  // Gate 8 — resolve the due (or recently-overdue) step + bounded catch-up.
+  //
+  // 063 — was a STRICT day-equality match (`target === todayUtc`) which
+  // silently dropped a reminder forever whenever the daily cron missed the
+  // exact UTC day a step was due (Vercel reboot, READ_ONLY_MODE window,
+  // infra outage). Now `findDueStepsForDate` returns every step whose
+  // due-day is within `[todayUtc - REMINDER_CATCH_UP_LOOKBACK_DAYS, todayUtc]`
+  // (most-recent first), so a short cron miss recovers while a long outage
+  // does NOT blast a stale reminder (a step older than the lookback is
+  // excluded — firing a T-90 when it is now T-30 is worse than skipping).
+  //
+  // Among the window candidates we fire the MOST-RECENT step NOT yet sent
+  // for this (cycle, step, year_in_cycle) — exactly the admin reactivation
+  // ladder's "threshold-crossed + not-yet-fired" rule
+  // (`reconcile-pending-reactivations.ts` `decideRemindersToFire`), with the
+  // `renewal_reminder_events` table (read via `listForCycle`) as the
+  // already-fired source instead of audit_log. Firing only the most-recent
+  // unfired step (not every overdue step) avoids multi-reminder spam in a
+  // single catch-up run; the Gate-12 idempotency index stays the
+  // double-send guard. See spec.md:194 + FR-010 ("dispatch any reminder
+  // step whose offset_day is due").
+  const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
+  const windowSteps = findDueStepsForDate(
     schedulePolicy,
     new Date(cycle.expiresAt),
     new Date(ctx.nowIso),
   );
-  if (!dueStep) {
+  if (windowSteps.length === 0) {
+    // No step is due-or-overdue within the lookback (a future step, or a
+    // step stale beyond the lookback). Silent no-op (not an audit event —
+    // too noisy; FR-012).
     return { kind: 'skipped', reason: 'not_due_today' };
   }
+  // Pick the MOST-RECENT step not yet fired for this (cycle, step, year) —
+  // the admin reactivation-ladder "threshold-crossed + not-yet-fired" rule,
+  // with the `renewal_reminder_events` table (read via `listForCycle`) as
+  // the already-fired source. `listForCycle` is RLS-scoped (wraps its own
+  // runInTenant) so this read stays tenant-isolated.
+  const existing = await deps.reminderEventRepo.listForCycle(
+    ctx.tenantId,
+    asCycleId(cycle.cycleId),
+  );
+  const firedKeys = new Set(
+    existing.map((e) => `${e.stepId}::${e.yearInCycle}`),
+  );
+  // windowSteps is most-recent first → the first unfired one is the most
+  // relevant step to send now. When EVERY in-window step is already fired
+  // we deliberately fall back to the most-recent window step so Gate 12's
+  // `insertIfAbsent` reports the FR-011 idempotency-hit (`already_sent`) —
+  // preserving the existing replay-skip-reason contract (a same-day re-run
+  // must report `already_sent`, not `not_due_today`).
+  const dueStep: ReminderStep =
+    windowSteps.find((s) => !firedKeys.has(`${s.stepId}::${yearInCycle}`)) ??
+    windowSteps[0]!;
+  // A step whose due-day is strictly in the past is a CATCH-UP fire (the
+  // cron missed the exact due-day). Surface this on the audit trail so the
+  // forensic record distinguishes an on-time send from a recovered one.
+  const stepDueDayUtc =
+    Math.floor(new Date(cycle.expiresAt).getTime() / MS_PER_DAY) +
+    dueStep.offsetDays;
+  const todayUtcDay = Math.floor(new Date(ctx.nowIso).getTime() / MS_PER_DAY);
+  const caughtUp = stepDueDayUtc < todayUtcDay;
+  const stepDueDateIso = new Date(stepDueDayUtc * MS_PER_DAY).toISOString();
+  // Reference the lookback constant so the catch-up window is documented
+  // at the call site (the domain function owns the actual bound).
+  void REMINDER_CATCH_UP_LOOKBACK_DAYS;
   // Gate 9 — multi-year non-final year for email steps (Q4 / FR-010).
-  const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
   const cycleYears = computeCycleYears(cycle.cycleLengthMonths);
   if (
     dueStep.channel === 'email' &&
@@ -584,11 +655,14 @@ async function dispatchOneCycleInner(
   // preserved (the cleanup tx writes BOTH the status flip + the
   // `renewal_reminder_send_failed` audit in the same tx).
   const reminderEventId = reminderInsert.row.reminderEventId;
+  // 063 — catch-up marker threaded into the success-path audit so the
+  // forensic trail distinguishes an on-time send from a recovered one.
+  const catchUp: CatchUpInfo = { caughtUp, stepDueDate: stepDueDateIso };
   try {
     if (dueStep.channel === 'email') {
-      return await dispatchEmailStep(deps, candidate, ctx, dueStep, reminderEventId);
+      return await dispatchEmailStep(deps, candidate, ctx, dueStep, reminderEventId, catchUp);
     }
-    return await dispatchTaskStep(deps, candidate, ctx, dueStep, reminderEventId, yearInCycle);
+    return await dispatchTaskStep(deps, candidate, ctx, dueStep, reminderEventId, yearInCycle, catchUp);
   } catch (e) {
     return await defensivelyMarkFailedForRetry(
       deps,
@@ -736,6 +810,7 @@ async function dispatchEmailStep(
   ctx: DispatchContext,
   step: ReminderStep & { channel: 'email' },
   reminderEventId: string,
+  catchUp: CatchUpInfo,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member, primaryContact } = candidate;
   // Type narrowing — Gate 11 already guarantees primaryContact !== null
@@ -806,6 +881,10 @@ async function dispatchEmailStep(
             template_id: step.templateId,
             delivery_id: gatewayResult.value.deliveryId,
             recipient_locale: locale,
+            // 063 catch-up provenance — true when a missed-cron day was
+            // recovered within the bounded lookback (spec.md:194 FR-010).
+            caught_up: catchUp.caughtUp,
+            step_due_date: catchUp.stepDueDate,
           },
         },
         {
@@ -917,6 +996,7 @@ async function dispatchTaskStep(
   step: ReminderStep & { channel: 'task' },
   reminderEventId: string,
   yearInCycle: number,
+  catchUp: CatchUpInfo,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member } = candidate;
   return runInTenant(deps.tenant, async (tx) => {
@@ -954,6 +1034,9 @@ async function dispatchTaskStep(
           step_id: step.stepId,
           assignee_role: step.assigneeRole,
           idempotent_replay: !insert.created,
+          // 063 catch-up provenance for task-channel steps.
+          caught_up: catchUp.caughtUp,
+          step_due_date: catchUp.stepDueDate,
         },
       },
       {

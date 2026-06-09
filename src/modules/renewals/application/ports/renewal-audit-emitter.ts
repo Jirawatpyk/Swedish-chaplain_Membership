@@ -675,6 +675,16 @@ export interface F8AuditPayloadShapes {
      * Pre-Phase-8 emit; kept optional for backward compat.
      */
     readonly bounce_trigger?: string;
+    /**
+     * 063 — catch-up provenance for task-channel reminder steps fired by
+     * the dispatcher's bounded missed-cron recovery (Gate 8). `caught_up`
+     * is true when the step's due-day was strictly before today (recovered
+     * within `REMINDER_CATCH_UP_LOOKBACK_DAYS`); `step_due_date` is the ISO
+     * date the step was originally due. Optional — only the dispatch
+     * producer sets them; other `escalation_task_created` emitters omit.
+     */
+    readonly caught_up?: boolean;
+    readonly step_due_date?: string;
   };
   /**
    * F8 Phase 8 T209 — `escalation_task_completed` typed payload.
