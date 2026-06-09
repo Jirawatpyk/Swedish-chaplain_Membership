@@ -538,6 +538,157 @@ describe('reconcilePendingReactivations (063) — POST-refund Step-3 residual cl
   });
 });
 
+describe('reconcilePendingReactivations (063 follow-up) — NO-MONEY Step-3 classification', () => {
+  // The prior 063 xhigh fix added `post_refund_admin_race` +
+  // `transition_failed_post_refund`, but they fired UNCONDITIONALLY on the
+  // tx2 race / outer-catch paths — NOT gated on whether a refund actually
+  // moved (`refundIssued`). For a NO-MONEY cycle (no linked invoice → Step 2
+  // skipped → `refundIssued=false`, OR a `no_payment_found` refund result →
+  // `refundIssued=false`), the SAME tx2 paths set the "post_refund" / paging
+  // outcomes even though no money moved — inflating `timeoutRefundOrphaned`
+  // with phantom money windows AND firing the PAGING
+  // `timeoutTransitionFailedPostRefund` metric for a no-money DB blip.
+  //
+  // The fix gates the OUTCOME on `refundIssued`:
+  //   - tx2 admin-race / conflict, NO money → `admin_race_skipped`
+  //     (the Step-1 informational semantic — admin/conflict won, nothing
+  //     to reconcile).
+  //   - outer-catch transition-fail, NO money → `transition_failed_no_refund`
+  //     (a DISTINCT informational outcome — cycle stays pending, self-heals
+  //     next run, no money at stake; NOT the paging post-refund metric).
+
+  it('NO-invoice cycle, Step-3 admin-race (tx2 non-pending) → admin_race_skipped, NOT post_refund_admin_race', async () => {
+    // linkedInvoiceId=null → Step 2 refund skipped → refundIssued=false.
+    // tx1 (callIndex 0) sees pending (so the cron proceeds past Step 1);
+    // tx2 (callIndex 1) sees completed (admin won the Step-3 window).
+    // No money ever moved, so this is exactly the Step-1 `admin_race_skipped`
+    // semantic — it MUST land on the informational admin-race counter, NOT
+    // the money-orphan counter.
+    const cycle = pendingCycle({ daysPending: 30, linkedInvoiceId: null });
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      findByIdInTxImpl: (callIndex, c) =>
+        callIndex === 0
+          ? c
+          : ({ ...c, status: 'completed' } as unknown as typeof c),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // No linked invoice → the refund bridge was never reached.
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      // Informational admin-race counter IS bumped (no money moved).
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+      // The money-orphan counter MUST stay 0 — no phantom money window.
+      expect(r.value.timeoutRefundOrphaned).toBe(0);
+    }
+  });
+
+  it('NO-invoice cycle, Step-3 transition CONFLICT → admin_race_skipped, NOT post_refund_admin_race', async () => {
+    // tx2 re-read still pending, but transitionStatus throws a
+    // CycleTransitionConflictError. No money moved (no invoice), so the
+    // conflict is just "admin/conflict won, nothing to reconcile".
+    const cycle = pendingCycle({ daysPending: 30, linkedInvoiceId: null });
+    const { deps, refundMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new CycleTransitionConflictError(
+          cycle.cycleId,
+          'pending_admin_reactivation',
+          'completed',
+        );
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+      expect(r.value.timeoutRefundOrphaned).toBe(0);
+    }
+  });
+
+  it('NO-invoice cycle, Step-3 transition THROWS (non-conflict) → transition_failed_no_refund, NOT the PAGING post_refund metric', async () => {
+    // The outer-catch fires on a non-conflict tx2 throw. No money moved
+    // (no invoice), so the cycle stays pending + self-heals next run — this
+    // is an INFORMATIONAL no-money outcome, NOT the paging
+    // `timeoutTransitionFailedPostRefund` metric (which exists to page
+    // on-call when REFUNDED money is stuck on a pending cycle).
+    const cycle = pendingCycle({ daysPending: 30, linkedInvoiceId: null });
+    const { deps, refundMock } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new Error('audit_log: connection reset mid-tx');
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(refundMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      // The PAGING post-refund counter MUST stay 0 — no money is stuck.
+      expect(r.value.timeoutTransitionFailedPostRefund).toBe(0);
+      // The new informational no-money counter IS bumped.
+      expect(r.value.timeoutTransitionFailedNoRefund).toBe(1);
+    }
+  });
+
+  it('no_payment_found refund (linked invoice, no settled charge), Step-3 transition THROWS → transition_failed_no_refund', async () => {
+    // linkedInvoiceId is non-null so Step 2 runs, but the F5 bridge returns
+    // `no_payment_found` → refundIssued=false (nothing was clawed back).
+    // A non-conflict tx2 throw must therefore be the no-money outcome, NOT
+    // the paging post-refund metric.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, refundMock } = fakeDeps({
+      cycles: [cycle],
+      refundResult: { status: 'no_payment_found' },
+      transitionImpl: async () => {
+        throw new Error('audit_log: connection reset mid-tx');
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // The bridge WAS called (invoice is linked) but found no payment.
+    expect(refundMock).toHaveBeenCalledOnce();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutTransitionFailedPostRefund).toBe(0);
+      expect(r.value.timeoutTransitionFailedNoRefund).toBe(1);
+    }
+  });
+
+  it('no_payment_found refund, Step-3 admin-race (tx2 non-pending) → admin_race_skipped', async () => {
+    // no_payment_found → refundIssued=false; tx2 sees the cycle non-pending.
+    // No money moved → informational admin-race, NOT the money-orphan counter.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, refundMock, transitionMock } = fakeDeps({
+      cycles: [cycle],
+      refundResult: { status: 'no_payment_found' },
+      findByIdInTxImpl: (callIndex, c) =>
+        callIndex === 0
+          ? c
+          : ({ ...c, status: 'completed' } as unknown as typeof c),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(refundMock).toHaveBeenCalledOnce();
+    expect(transitionMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+      expect(r.value.timeoutRefundOrphaned).toBe(0);
+    }
+  });
+});
+
 describe('reconcilePendingReactivations (T138) — input validation + summary', () => {
   it('returns zero counters when no cycles pending', async () => {
     const { deps } = fakeDeps({ cycles: [] });
