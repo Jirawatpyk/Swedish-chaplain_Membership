@@ -245,6 +245,52 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
   }
 
   /**
+   * Insert a RESERVED broadcast ORIGINATED by `memberId` that holds an
+   * F7 quota slot indefinitely (per spec AS2: `failed_to_dispatch` /
+   * `submitted` / `approved` rows reserve their slot until manually
+   * resolved). Reserved rows carry `quota_year_consumed IS NULL` (CHECK
+   * `broadcasts_quota_year_only_on_sent`), so F7's enforcement counter
+   * counts them against the CURRENT year regardless of WHEN they were
+   * submitted — a prior-year stale reservation never ages out.
+   *
+   * This is the #8 hazard: a stale reserved row inflates the at-risk
+   * ENGAGEMENT usage count, masking a disengaged member. The at-risk
+   * factor must IGNORE reserved rows and count only sent-this-year
+   * (matching F9 `computeQuotaCounter.used`).
+   */
+  async function seedOriginatedReservedBroadcast(
+    memberId: string,
+    status: 'submitted' | 'approved' | 'failed_to_dispatch',
+    submittedAtMs: number,
+  ): Promise<void> {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(broadcasts).values({
+        tenantId: tenant.ctx.slug,
+        broadcastId: randomUUID(),
+        requestedByMemberId: memberId,
+        requestedByMemberPlanIdSnapshot: 'snap',
+        submittedByUserId: user.userId,
+        actorRole: 'admin_proxy',
+        subject: 'Stale Reserved',
+        bodyHtml: '<p>x</p>',
+        bodySource: '<p>x</p>',
+        fromName: 'Test',
+        replyToEmail: 'reply@example.com',
+        segmentType: 'all_members',
+        estimatedRecipientCount: 1,
+        status,
+        // Reserved rows MUST leave quota_year_consumed NULL per the
+        // broadcasts_quota_year_only_on_sent CHECK — the absence of a
+        // year fence is exactly why a stale prior-year reservation
+        // leaks into F7's enforcement count.
+        quotaYearConsumed: null,
+        quotaConsumedAt: null,
+        submittedAt: new Date(submittedAtMs),
+      });
+    });
+  }
+
+  /**
    * Insert a `sent` broadcast originated by SOMEONE ELSE that was
    * DELIVERED TO `recipientMemberId` (the received axis). This must NOT
    * count toward the recipient's own SENDING quota.
@@ -344,6 +390,86 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
 
     expect(single).toBe(batch);
     expect(single).toBe(true);
+  }, 90_000);
+
+  // ---------------------------------------------------------------------
+  // #8 — at-risk eBlast usage = sent THIS quota year (year-fenced),
+  // matching F9 `computeQuotaCounter.used`. A stale prior-year RESERVED
+  // row (failed_to_dispatch / submitted / approved — quota_year_consumed
+  // IS NULL, never ages out of F7's ENFORCEMENT count) must NOT inflate
+  // the ENGAGEMENT usage count, or a disengaged member's +15 risk
+  // factor would be silently suppressed.
+  // ---------------------------------------------------------------------
+
+  it('#8 e-blast: 1 sent-this-year + 1 stale prior-year RESERVED → usage=1 (reserved NOT counted) → +15 FIRES on BOTH', async () => {
+    // Plan eblast_per_year = 4. Member has:
+    //   (a) 1 `sent` broadcast in the CURRENT quota year
+    //   (b) 1 `failed_to_dispatch` reserved broadcast SUBMITTED two
+    //       years ago (quota_year_consumed IS NULL — holds the slot in
+    //       F7's enforcement count forever).
+    // F9 benefit-usage `used` counts only (a) = 1/4 = 25% < 30% → the
+    // engagement factor MUST fire. The pre-#8 code counted (a)+(b) = 2/4
+    // = 50% >= 30% → factor suppressed (the bug). Both scorers must now
+    // agree the factor FIRES (usage = 1, reserved dropped).
+    const planId = `conv-stale-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Stale Reserved Plan' },
+        benefitMatrix: { ...DEFAULT_TEST_BENEFIT_MATRIX, eblast_per_year: 4 },
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMember(planId);
+    await seedOriginatedSentBroadcast(memberId); // current-year sent → counts
+    await seedOriginatedReservedBroadcast(
+      memberId,
+      'failed_to_dispatch',
+      NOW_MS - 730 * MS_PER_DAY, // submitted ~2 years ago
+    );
+
+    const single = await singleFires(memberId, EBLAST_FACTOR);
+    const batch = await batchFires(memberId, EBLAST_FACTOR);
+
+    // Both agree, and both FIRE: usage = 1 (25% < 30%), the stale
+    // prior-year reserved row is excluded.
+    expect(single).toBe(batch);
+    expect(single).toBe(true);
+  }, 90_000);
+
+  it('#8 e-blast: 2 sent-this-year + 1 stale prior-year RESERVED → usage=2 (50% >= 30%) → factor does NOT fire on BOTH', async () => {
+    // Same plan cap = 4. Member sent 2 this year (50% used) + has a stale
+    // `submitted` reserved row from a prior year. usage = 2 (reserved
+    // dropped) = 50% >= 30% → factor must NOT fire. Confirms the
+    // year-fenced count is the ONLY input — the reserved row neither adds
+    // to nor changes the outcome. (Pre-#8 code would count 3/4 = 75%,
+    // same not-fire outcome here, so this case alone can't catch the bug;
+    // it pins that dropping reserved does not over-correct.)
+    const planId = `conv-stale2-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Stale Reserved Plan 2' },
+        benefitMatrix: { ...DEFAULT_TEST_BENEFIT_MATRIX, eblast_per_year: 4 },
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMember(planId);
+    await seedOriginatedSentBroadcast(memberId);
+    await seedOriginatedSentBroadcast(memberId);
+    await seedOriginatedReservedBroadcast(
+      memberId,
+      'submitted',
+      NOW_MS - 400 * MS_PER_DAY, // prior year
+    );
+
+    const single = await singleFires(memberId, EBLAST_FACTOR);
+    const batch = await batchFires(memberId, EBLAST_FACTOR);
+
+    expect(single).toBe(batch);
+    expect(single).toBe(false);
   }, 90_000);
 
   // ---------------------------------------------------------------------
