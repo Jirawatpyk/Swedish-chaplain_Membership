@@ -61,13 +61,18 @@ export type ChangePlanError =
   | { type: 'server_error'; message: string };
 
 // F8 listener event payload — emitted to `manualPlanChangeListeners`
-// after the `member_plan_manually_changed` audit row commits inside
-// the change-plan tx. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
+// AFTER the change-plan tx (plan-flip + `member_plan_manually_changed`
+// audit) has COMMITTED. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
 // factory returns the listener array; the route handler wires it.
 //
-// Each listener runs inside the F3 tx (the `tx` param) so failures
-// roll the F3 plan-change back per Constitution Principle VIII.
-// Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern.
+// 063 (Option A) — each listener runs POST-COMMIT in its OWN tenant tx
+// (the bridge opens it). Listeners are best-effort: a failure is logged
+// + counted by the bridge and does NOT roll back the already-committed
+// plan-flip. This mirrors the POST-tx half of the F4 → F8
+// `f8OnPaidCallbacks` pattern (the F2 finaliser there also runs in its
+// own `runInTenant` after F4 commits). The previous in-tx contract could
+// not deliver its swallow guarantee — a hard SQL failure poisoned the
+// shared tx so COMMIT downgraded to ROLLBACK regardless.
 //
 // Phase 7 review-fix C-TYPE-1 — the event shape lives in F8's port to
 // eliminate the prior duplicate F3 + F8 definitions that only worked
@@ -103,11 +108,15 @@ export type ChangePlanDeps = {
    */
   planAdvisoryLock: PlanAdvisoryLockPort;
   /**
-   * F8 Phase 7 T188 — listener array invoked atomically inside the
-   * change-plan tx after the `member_plan_manually_changed` audit
-   * commits. F8's `f8OnManualPlanChangeCallbacks(tenantId)` factory
-   * supplies the canonical pair (supersede pending tier-upgrade +
-   * reschedule renewal cadence). Optional — when undefined, change-
+   * F8 Phase 7 T188 / 063 (Option A) — listener array invoked
+   * POST-COMMIT, after the change-plan tx (plan-flip +
+   * `member_plan_manually_changed` audit) has committed durably. Each
+   * listener runs in its OWN tenant tx (the bridge opens it) and is
+   * best-effort: a failure is logged + counted and leaves the
+   * (documented) supersede-orphan state for replay — it does NOT roll
+   * back the plan-flip. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
+   * factory supplies the canonical pair (supersede pending tier-upgrade
+   * + reschedule renewal cadence). Optional — when undefined, change-
    * plan still works (the reconcile cron T185 catches orphan-pending
    * suggestions defensively).
    */
@@ -232,6 +241,11 @@ export async function changePlan(
   // Persist + audit atomically (Principle VIII — audit-with-state).
   // Throw-to-rollback: any port err aborts the tx via UpdateFailed /
   // AuditFailed sentinels caught below and mapped to server_error.
+  //
+  // 063 (Option A) — the old plan id read under FOR UPDATE inside the tx
+  // is hoisted here so the POST-COMMIT F8 listener event (dispatched
+  // after this tx returns) can carry the exact pre-flip plan id.
+  let lockedOldPlanId = '';
   try {
     const updatedMember = await runInTenant(deps.tenant, async (tx) => {
       // W0-02 — acquire the shared soft-delete advisory lock on the NEW plan
@@ -279,6 +293,8 @@ export async function changePlan(
         );
       }
       const locked = lockedResult.value;
+      // 063 — capture the pre-flip plan id for the post-commit F8 event.
+      lockedOldPlanId = locked.planId as string;
 
       const updated = await deps.memberRepo.updateFieldsInTx(tx, memberId, {
         planId: newPlan.value.planId,
@@ -356,55 +372,56 @@ export async function changePlan(
         }
       }
 
-      // F8 Phase 7 T188 — invocation of registered F8 listeners
-      // (supersede pending tier-upgrade + reschedule renewal cadence)
-      // inside the F3 tx. Each listener runs in F3's tx context.
-      //
-      // **Failure semantics** (review-fix Round 2 IMP-10):
-      //
-      // F8's production listeners go through `wrapListener`
-      // (`src/modules/renewals/infrastructure/ports-adapters/
-      // f2-plan-change-bridge.ts`) which catches + logs + counts
-      // (`manualPlanChangeListenerFailed{listener,tenant_id}`) +
-      // swallows. F2 plan-flip is the source of truth; an F8
-      // bookkeeping hiccup must NOT roll the plan-flip back.
-      //
-      // The catch + rethrow below is therefore unreachable for
-      // production F8 listeners. It exists ONLY as a safety net for
-      // hypothetical custom listeners (tests, future modules) that
-      // bypass `wrapListener` and propagate errors. For F8's two
-      // production listeners the swallow contract holds and the
-      // counter is the alert signal.
-      const listeners = deps.manualPlanChangeListeners ?? [];
-      if (listeners.length > 0) {
-        const evt: ManualPlanChangeListenerEvent = {
-          tenantId: deps.tenant.slug,
-          memberId,
-          oldPlanId: locked.planId,
-          newPlanId: data.new_plan_id,
-          actorUserId: meta.actorUserId,
-          correlationId: meta.requestId,
-          requestId: meta.requestId,
-        };
-        for (const listener of listeners) {
-          try {
-            await listener(evt, tx);
-          } catch (e) {
-            logger.error(
-              {
-                err: e instanceof Error ? e.message : String(e),
-                tenantId: deps.tenant.slug,
-                memberId,
-              },
-              '[change-plan] manualPlanChangeListener threw — F3 tx rolling back',
-            );
-            throw e;
-          }
-        }
-      }
-
       return updated.value;
     });
+
+    // F8 Phase 7 T188 / 063 (Option A) — invoke the registered F8
+    // listeners (supersede pending tier-upgrade + reschedule renewal
+    // cadence) POST-COMMIT, after the tx above has committed durably.
+    //
+    // Each listener runs in its OWN tenant tx (the bridge opens it) and
+    // is best-effort. The previous design ran them INSIDE this tx with
+    // the shared `tx`; the bridge tried to swallow failures, but a hard
+    // SQL failure poisons the Postgres tx so the COMMIT downgrades to
+    // ROLLBACK — the plan-flip was silently lost regardless of the
+    // swallow. Running them after the commit makes the plan-flip atomic
+    // and the F8 bookkeeping eventual: a listener failure is logged +
+    // counted by the bridge (`manualPlanChangeListenerFailed`) and
+    // leaves the documented supersede-orphan state for replay, but does
+    // NOT roll the plan-flip back. Mirrors the post-tx half of the
+    // F4 → F8 `f8OnPaidCallbacks` pattern.
+    //
+    // The try/catch here is defence-in-depth only: production F8
+    // listeners (the bridge) never throw (they catch + log + count
+    // internally + return). A custom/test listener that bypasses that
+    // contract is logged here but still does NOT fail the use-case — the
+    // plan-flip is already committed, so `ok` is returned either way.
+    const listeners = deps.manualPlanChangeListeners ?? [];
+    if (listeners.length > 0) {
+      const evt: ManualPlanChangeListenerEvent = {
+        tenantId: deps.tenant.slug,
+        memberId,
+        oldPlanId: lockedOldPlanId,
+        newPlanId: data.new_plan_id,
+        actorUserId: meta.actorUserId,
+        correlationId: meta.requestId,
+        requestId: meta.requestId,
+      };
+      for (const listener of listeners) {
+        try {
+          await listener(evt);
+        } catch (e) {
+          logger.error(
+            {
+              err: e instanceof Error ? e.message : String(e),
+              tenantId: deps.tenant.slug,
+              memberId,
+            },
+            '[change-plan] post-commit manualPlanChangeListener threw — plan-flip already committed; ignored',
+          );
+        }
+      }
+    }
 
     return ok(updatedMember);
   } catch (e) {
