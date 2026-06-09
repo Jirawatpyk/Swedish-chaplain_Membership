@@ -43,6 +43,16 @@
  *
  * The legacy ordering (refund-before-lock) would call the spy bridge
  * here → the spy throws → the test goes red, RED-proving the regression.
+ *
+ * 063 xhigh follow-up — a SECOND test in this file covers the POST-refund
+ * Step-3 residual: tx1 sees the cycle STILL pending → the cron issues the
+ * refund → an admin approves in the window between the refund and tx2's
+ * lock (injected via the stub refund bridge's side effect) → tx2 observes
+ * `completed` and short-circuits. Asserts the cron reports
+ * `timeoutRefundOrphaned=1` (NOT `timedOut`, NOT `timeoutRefundFailures`,
+ * NOT the Step-1 `timeoutAdminRaceSkipped`) so the money window — refunded
+ * money on an admin-approved (now-terminal) cycle, the accepted residual
+ * per #6 — is observable rather than hidden as a benign timeout.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -261,6 +271,146 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
         })
         .from(renewalCycles)
         .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(after[0]?.status).toBe('completed');
+    expect(after[0]?.closedReason).toBe('admin_reactivated');
+  });
+
+  it('Step-3: refund issues, THEN admin approves before tx2 lock → timeout_refund_orphaned=1 (NOT timed_out)', async () => {
+    // 063 xhigh follow-up: the canonical POST-refund residual on live
+    // Neon. Unlike the Step-1 test above (admin wins BEFORE the refund,
+    // so the cron never reaches F5), here the cron's tx1 validate-under-
+    // lock re-read finds the cycle STILL pending → the cron PROCEEDS to
+    // issue the refund. The admin then approves in the window between the
+    // refund and tx2's lock. The tx2 re-read observes `completed` and
+    // short-circuits the transition.
+    //
+    // Timing injection: tx1 commits + releases the advisory lock, then
+    // the refund bridge runs (no lock held). We hook the STUB refund
+    // bridge to (a) perform the real `adminReactivateLapsedCycle` against
+    // the live row — which can now acquire the freed lock — committing
+    // `pending_admin_reactivation` → `completed`, then (b) return
+    // `'refunded'`. So by the time tx2 re-acquires the lock + re-reads,
+    // the LIVE row is `completed`. This is the faithful Step-3 ordering;
+    // the admin's approve happens AFTER tx1 (lock free) and BEFORE tx2.
+    const member2 = randomUUID();
+    const invoice2 = randomUUID();
+    const cycle2 = randomUUID();
+    const planId2 = `f8-race3-${randomUUID().slice(0, 8)}`;
+
+    await runInTenant(tenantA.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenantA.ctx.slug,
+        planId: planId2,
+        planName: { en: 'Race Plan 3' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      }),
+    );
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(members).values({
+        tenantId: tenantA.ctx.slug,
+        memberId: member2,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Race Co 3',
+        country: 'TH',
+        planId: planId2,
+        planYear: 2026,
+      }),
+    );
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: invoice2,
+        memberId: member2,
+        planId: planId2,
+        planYear: 2026,
+        invoiceSubject: 'membership',
+        status: 'draft',
+        draftByUserId: user.userId,
+        currency: 'THB',
+      }),
+    );
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenantA.ctx.slug,
+        cycleId: cycle2,
+        memberId: member2,
+        status: 'pending_admin_reactivation',
+        periodFrom: new Date('2026-01-01T00:00:00Z'),
+        periodTo: new Date('2027-01-01T00:00:00Z'),
+        expiresAt: new Date('2027-01-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: randomUUID(),
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        enteredPendingAt,
+        linkedInvoiceId: invoice2,
+      }),
+    );
+
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+
+    // STUB refund bridge: returns `'refunded'` (no Stripe) AND performs
+    // the admin-approve side effect — the precise Step-3 window injection
+    // (after tx1's lock release, before tx2's lock re-acquire).
+    let adminApprovedDuringRefund = false;
+    const refundThenApprove = vi.fn<F5RefundBridge['issueRefundForInvoice']>(
+      async () => {
+        const approve = await adminReactivateLapsedCycle(deps, {
+          tenantId: tenantA.ctx.slug,
+          cycleId: cycle2,
+          actorUserId: user.userId,
+          actorRole: 'admin',
+          correlationId: randomUUID(),
+        });
+        adminApprovedDuringRefund = approve.ok;
+        return {
+          status: 'refunded',
+          refundId: randomUUID(),
+          creditNoteId: randomUUID(),
+          creditNoteNumber: 'CN-STEP3-1',
+        };
+      },
+    );
+
+    const racedDeps = {
+      ...deps,
+      f5RefundBridge: { issueRefundForInvoice: refundThenApprove },
+    };
+
+    const r = await reconcilePendingReactivations(racedDeps, {
+      tenantId: tenantA.ctx.slug,
+      now: NOW,
+      correlationId: randomUUID(),
+    });
+
+    expect(r.ok).toBe(true);
+    // The refund WAS reached (tx1 saw pending) and the admin approve ran
+    // inside the refund window.
+    expect(refundThenApprove).toHaveBeenCalledOnce();
+    expect(adminApprovedDuringRefund).toBe(true);
+    if (r.ok) {
+      // The residual: refund issued, admin won tx2 → NOT a clean timeout,
+      // NOT a refund failure, NOT the Step-1 (pre-refund) skip.
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(0);
+      expect(r.value.timeoutRefundOrphaned).toBe(1);
+    }
+
+    // The cron did NOT lapse the cycle — the admin's approval stands.
+    const after = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          closedReason: renewalCycles.closedReason,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycle2))
         .limit(1),
     );
     expect(after[0]?.status).toBe('completed');

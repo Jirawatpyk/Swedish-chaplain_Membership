@@ -2929,6 +2929,71 @@ export const renewalsMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * `renewals_reconcile_timeout_refund_orphaned_total{tenant}` — 063
+   * xhigh-review money-observability fix.
+   *
+   * Incremented in `processTimeout` when the cron DID issue the refund
+   * (the Step-1 validate-under-lock re-read found the cycle still
+   * `pending_admin_reactivation`) but an admin approve/reject — or an
+   * optimistic-lock `CycleTransitionConflictError`/`CycleNotFoundError`
+   * — won the *Step-3* window between the refund and tx2's lock. The
+   * cycle ended up terminal (admin won) yet the member got their money
+   * back (cron already refunded) — the ACCEPTED residual per #6.
+   *
+   * Distinct from `timeoutAdminRaceSkipped` (Step-1: admin won BEFORE the
+   * refund, NO money moved) so SRE can tell a clean no-op race apart from
+   * a money-window residual. The OLD code silently folded this into
+   * `timed_out` via a fall-through `return;`, so the JSON `timed_out`
+   * count over-reported clean timeouts and the money window was invisible
+   * on dashboards.
+   *
+   * Alert rule: informational — a non-zero rate is expected under
+   * admin–cron contention; a SUSTAINED rate warrants reviewing whether
+   * the cron cadence + 30-day timeout window align with admin workflows
+   * (same alignment concern as `timeoutAdminRaceSkipped`).
+   */
+  timeoutRefundOrphaned(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_refund_orphaned_total',
+        'F8 reconcile-pending-reactivations timeout — refund issued then admin/conflict won the tx2 window (accepted residual #6; money refunded against a now-non-pending cycle)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_transition_failed_post_refund_total{tenant}`
+   * — 063 xhigh-review money-observability fix.
+   *
+   * Incremented in `processTimeout` when the cron issued the refund
+   * successfully but the tx2 cycle-transition / audit-emit threw a
+   * NON-conflict error (DB blip / RLS regression mid-tx). The refund is
+   * durable; the cycle stays `pending_admin_reactivation` and the NEXT
+   * cron run re-enters `processTimeout`, where F5 short-circuits the
+   * second refund (prior refund already settled) and the transition
+   * completes — i.e. the cron SELF-HEALS.
+   *
+   * Distinct from `timeoutRefundFailures` (the Stripe refund itself
+   * FAILED — no money moved). The OLD code returned `'refund_failed'`
+   * here, inflating `timeoutRefundFailures` and mislabelling a SUCCEEDED
+   * refund as a refund failure, which would mask a real Stripe-pipeline
+   * outage behind transient transition blips.
+   *
+   * Alert rule: any non-zero rate sustained for 15 min pages on-call — a
+   * persistent rate means the self-heal is NOT clearing (the transition
+   * keeps failing run after run, leaving refunded money on a pending
+   * cycle).
+   */
+  timeoutTransitionFailedPostRefund(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_transition_failed_post_refund_total',
+        'F8 reconcile-pending-reactivations timeout — refund succeeded but tx2 transition threw (non-conflict); money durable, next cron run self-heals',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
