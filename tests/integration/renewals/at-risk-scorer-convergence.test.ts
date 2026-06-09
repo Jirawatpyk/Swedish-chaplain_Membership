@@ -101,10 +101,8 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, tenant.ctx.slug))
       .catch(() => {});
-    await db
-      .delete(auditLog)
-      .where(eq(auditLog.tenantId, tenant.ctx.slug))
-      .catch(() => {});
+    // audit_log cleanup intentionally skipped — append-only trigger
+    // blocks all DELETEs (see tests/integration/helpers/test-tenant.ts).
     await tenant.cleanup().catch(() => {});
   }, 120_000);
 

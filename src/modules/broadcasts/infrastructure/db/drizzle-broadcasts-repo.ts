@@ -782,6 +782,10 @@ export function makeDrizzleBroadcastsRepo(
       memberId: string,
       quotaYear: number,
     ): Promise<{
+      // Despite the name, this counts THREE statuses: submitted +
+      // approved + failed_to_dispatch (all hold their reservation per
+      // spec AS2). The field is kept as-is because callers depend on
+      // this name; only the comment was missing.
       readonly submittedOrApproved: number;
       readonly sent: number;
     }> {

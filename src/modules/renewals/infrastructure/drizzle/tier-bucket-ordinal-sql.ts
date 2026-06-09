@@ -16,6 +16,15 @@
  * orphan or corrupt bucket value is treated as "not a downgrade",
  * matching the batch's prior `ELSE 99` behaviour.
  *
+ * The inverse direction (old=unknown sentinel → new=known ordinal)
+ * cannot produce a false downgrade either: the sentinel ordinal sits
+ * strictly above every known ordinal, so `new < old` (= "downgrade")
+ * would require `new` to be above all known ordinals — impossible for
+ * a valid bucket. As an additional safety net, the DB CHECK constraint
+ * `membership_plans_renewal_tier_bucket_check` rejects non-null bucket
+ * values that are not in the `TIER_BUCKETS` tuple, so a corrupt-but-
+ * non-null value cannot reach this expression in production.
+ *
  * Infrastructure-only: returns a raw SQL string fragment for embedding
  * into a `sql`` template. The caller substitutes the column reference
  * (`p_new.renewal_tier_bucket` / `np.renewal_tier_bucket`).

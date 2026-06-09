@@ -292,6 +292,9 @@ export function makeDrizzleAtRiskScorer(
           // used (sent, quota_year_consumed = quotaYear) ∪ reserved
           // (submitted/approved/failed_to_dispatch). Mirrors
           // countForMemberQuota's two-bucket count exactly.
+          // `sending` is intentionally excluded: it has already left
+          // the reserved set and will imminently land in `sent` or
+          // `failed_to_dispatch` — counting it here would double-count.
           const usedRows = await tx.execute<{ used_count: string }>(sql`
             SELECT count(*)::text AS used_count
             FROM ${broadcasts} b

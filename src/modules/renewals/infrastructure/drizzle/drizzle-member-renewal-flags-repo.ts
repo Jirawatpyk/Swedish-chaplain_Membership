@@ -507,6 +507,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             -- canonical set and the single-member scorer. quotaYear is
             -- computed once per batch in the tenant timezone and bound as
             -- a param so the year boundary matches how F7 wrote the row.
+            -- 'sending' intentionally excluded: it has left the reserved
+            -- set and will imminently land in 'sent' or 'failed_to_dispatch';
+            -- counting it here would double-count against the quota cap.
             AND (
               (b.status = 'sent' AND b.quota_year_consumed = ${quotaYear})
               OR b.status IN ('submitted', 'approved', 'failed_to_dispatch')
