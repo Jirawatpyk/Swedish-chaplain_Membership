@@ -790,19 +790,62 @@ describe('dispatchOneCycle', () => {
     });
 
     // -----------------------------------------------------------------------
-    // 063 #4 — listForCycle read is gated on an OVERDUE window step. The hot
-    // common path (the only due step is exactly today) MUST NOT issue the
-    // extra read; Gate 12's unique-index insertIfAbsent remains the dedup.
+    // 063 #4 — listForCycle read is gated on an OVERDUE window step OR a
+    // BOUNDARY-ADJACENT step (063 residual × #4 interaction fix). The hot
+    // common path (the only due step is exactly today AND it is NOT
+    // boundary-adjacent) MUST NOT issue the extra read; Gate 12's
+    // unique-index insertIfAbsent remains the dedup there.
     // -----------------------------------------------------------------------
 
-    it('063 #4 — step due EXACTLY today (no catch-up) → listForCycle is NOT read', async () => {
+    it('063 #4 — step due EXACTLY today, NON-boundary-adjacent (no catch-up) → listForCycle is NOT read', async () => {
       const { deps, listForCycleMock, gatewayMock } = fakeDeps({ alreadyFired: [] });
-      // Default candidate: expires_at 2026-06-14 → T-30 due exactly NOW_ISO day.
-      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      // expires_at 2026-06-14 → T-30 due exactly NOW_ISO day (2026-05-15).
+      // periodFrom 2026-04-15 puts the T-30 due-day 30 days into the cycle
+      // (`(dueDay - periodFromDay) % 365 === 30`) → NOT within 1 of a
+      // 365-multiple → NOT boundary-adjacent → the cross-version `+1`
+      // tolerance can't apply → the read stays gated off (perf preserved).
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({
+          cycle: {
+            periodFrom: '2026-04-15T00:00:00.000Z',
+            periodTo: '2027-04-15T00:00:00.000Z',
+          } as Partial<RenewalCycle>,
+        }),
+        happyCtx,
+      );
       expect(result.kind).toBe('sent');
       expect(gatewayMock).toHaveBeenCalledTimes(1);
-      // Hot-path: no per-cycle history read when nothing is overdue.
+      // Hot-path: no per-cycle history read when nothing is overdue AND the
+      // step is not boundary-adjacent.
       expect(listForCycleMock).not.toHaveBeenCalled();
+    });
+
+    it('063 residual × #4 — step due EXACTLY today but BOUNDARY-ADJACENT → listForCycle IS read (tolerance no longer inert)', async () => {
+      const { deps, listForCycleMock, gatewayMock } = fakeDeps({ alreadyFired: [] });
+      // expires_at 2026-06-14 → T-30 due exactly NOW_ISO day (2026-05-15).
+      // periodFrom 2025-05-15 puts the T-30 due-day EXACTLY 365 days into the
+      // cycle (`(dueDay - periodFromDay) % 365 === 0`) → boundary-adjacent.
+      // Without the fix the read would be gated off (nothing overdue) and the
+      // cross-version `+1` tolerance would be inert → a PRE-063 legacy
+      // run-date-year row would not be recognised → double-send. The fix
+      // reads firedKeys here so the tolerance can apply.
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({
+          cycle: {
+            periodFrom: '2025-05-15T00:00:00.000Z',
+            periodTo: '2026-05-15T00:00:00.000Z',
+            cycleLengthMonths: 12,
+          } as Partial<RenewalCycle>,
+        }),
+        happyCtx,
+      );
+      expect(result.kind).toBe('sent');
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+      // The read fires on the rare boundary-adjacent day so the tolerance
+      // can recognise a legacy run-date-year row.
+      expect(listForCycleMock).toHaveBeenCalledTimes(1);
     });
 
     it('063 #4 — step OVERDUE (catch-up possible) → listForCycle IS read', async () => {

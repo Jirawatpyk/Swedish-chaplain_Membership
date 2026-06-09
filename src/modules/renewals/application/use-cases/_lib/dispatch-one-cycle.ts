@@ -484,17 +484,63 @@ async function dispatchOneCycleInner(
       new Date(stepDueDayUtcOf(s) * MS_PER_DAY).toISOString(),
     );
 
+  // 063 residual — cross-VERSION dedup tolerance. The 063 #1 fix anchors the
+  // idempotency year on the step's due-DAY at UTC midnight. Rows written by
+  // THIS code always match. BUT a PRE-063 on-time row stored
+  // `computeYearInCycle(period_from, cron-RUN-INSTANT)` — the run instant
+  // carries a time-of-day, and `period_from` is a real (non-midnight) paid-at
+  // `timestamptz`. When a step's due-day is the SAME UTC day as a 365×N-day
+  // boundary from `period_from`, the run-instant on that day (>= midnight)
+  // pushes `floor((t - period_from)/day)` past the 365-multiple, so the legacy
+  // stored year is `stepAnchoredYear + 1` (the drift is monotonic in
+  // time-of-day → always 0 or +1, NEVER -1). A pass on the boundary day would
+  // compute `stepAnchoredYear`, MISS the legacy `+1` row in `firedKeys`, and
+  // mint a duplicate via Gate-12 `insertIfAbsent` (no unique conflict) → a
+  // DOUBLE member email during the rollout window.
+  //
+  // `stepDueDayIsBoundaryAdjacent` is true only when the step's day-offset
+  // from `period_from`'s day is within 1 day of an exact 365-multiple — the
+  // ONLY geometry where the legacy run-instant year can drift from the
+  // midnight-anchored year. Outside this thin zone the exact-year check is the
+  // sole guard (unchanged behaviour). Declared BEFORE the `firedKeys` read
+  // because the read-gate (`needsFiredKeys`) now depends on it.
+  const periodFromDayUtc = Math.floor(
+    new Date(cycle.periodFrom).getTime() / MS_PER_DAY,
+  );
+  const stepDueDayIsBoundaryAdjacent = (s: ReminderStep): boolean => {
+    const offsetFromStart = stepDueDayUtcOf(s) - periodFromDayUtc;
+    if (offsetFromStart < 0) return false; // pre-cycle-start step — not reachable
+    const mod = offsetFromStart % 365;
+    return mod <= 1 || mod >= 364;
+  };
+
   // 063 #4 — the per-cycle history read (`listForCycle`) is a DB round-trip
   // that previously fired for EVERY cycle with an in-window step (+N reads
-  // on every shared-renewal-window day → cron 60s-budget risk). It is only
-  // NEEDED when a CATCH-UP is actually possible — i.e. at least one window
-  // step is OVERDUE (`target < todayUtc`). When the only due step is exactly
-  // today (the common no-catch-up path) we SKIP the read entirely and let
-  // Gate-12's `insertIfAbsent` (the unique index) be the dedup guard, as it
-  // was before the catch-up landed. `firedKeys` stays empty on that path.
+  // on every shared-renewal-window day → cron 60s-budget risk). It is NEEDED
+  // when EITHER:
+  //   (a) a CATCH-UP is possible — at least one window step is OVERDUE
+  //       (`target < todayUtc`); the `firedKeys` set lets the dispatcher skip
+  //       an already-fired most-recent step and fall back to the next-older
+  //       unfired one, and co-resolve same-offset siblings; OR
+  //   (b) a window step is BOUNDARY-ADJACENT — even on the today-exactly
+  //       (non-overdue) path. The cross-VERSION `+1` tolerance below reads
+  //       `firedKeys`; if the set is empty the tolerance is INERT and a
+  //       PRE-063 legacy run-date-year row (`stepAnchoredYear + 1`) is unseen
+  //       → Gate-12 `insertIfAbsent` at the step-anchored year does NOT
+  //       collide with the legacy row → a SECOND reminder email is dispatched
+  //       on a same-UTC-day deploy-day re-run (063 residual × #4 interaction).
+  //       Populating `firedKeys` here lets the tolerance recognise the legacy
+  //       row → idempotency hit → no double-send.
+  //
+  // The common today-exactly NON-boundary-adjacent case (~99.5% of step-days)
+  // still SKIPS the read and relies on Gate-12's unique index, preserving the
+  // #4 perf win. Boundary-adjacent days are ~0.5% of step-days, so the extra
+  // read is rare.
   const hasOverdueStep = windowSteps.some(
     (s) => stepDueDayUtcOf(s) < todayUtcDay,
   );
+  const needsFiredKeys =
+    hasOverdueStep || windowSteps.some((s) => stepDueDayIsBoundaryAdjacent(s));
   let firedKeys = new Set<string>();
   // Existing rows keyed by `${stepId}::${yearInCycle}` so the already-fired
   // short-circuit (below) can surface the matched row's id/dispatched_at in
@@ -503,7 +549,7 @@ async function dispatchOneCycleInner(
     string,
     { reminderEventId: string; dispatchedAt: string | null }
   >();
-  if (hasOverdueStep) {
+  if (needsFiredKeys) {
     // `listForCycle` is RLS-scoped (wraps its own runInTenant) so this read
     // stays tenant-isolated.
     const existing = await deps.reminderEventRepo.listForCycle(
@@ -518,35 +564,6 @@ async function dispatchOneCycleInner(
       });
     }
   }
-
-  // 063 residual — cross-VERSION dedup tolerance. The 063 #1 fix anchors the
-  // idempotency year on the step's due-DAY at UTC midnight. Rows written by
-  // THIS code always match. BUT a PRE-063 on-time row stored
-  // `computeYearInCycle(period_from, cron-RUN-INSTANT)` — the run instant
-  // carries a time-of-day, and `period_from` is a real (non-midnight) paid-at
-  // `timestamptz`. When a step's due-day is the SAME UTC day as a 365×N-day
-  // boundary from `period_from`, the run-instant on that day (>= midnight)
-  // pushes `floor((t - period_from)/day)` past the 365-multiple, so the legacy
-  // stored year is `stepAnchoredYear + 1` (the drift is monotonic in
-  // time-of-day → always 0 or +1, NEVER -1). A catch-up pass on the boundary
-  // day would compute `stepAnchoredYear`, MISS the legacy `+1` row in
-  // `firedKeys`, and mint a duplicate via Gate-12 `insertIfAbsent` (no unique
-  // conflict) → a DOUBLE member email during the rollout window.
-  //
-  // `stepDueDayIsBoundaryAdjacent` is true only when the step's day-offset
-  // from `period_from`'s day is within 1 day of an exact 365-multiple — the
-  // ONLY geometry where the legacy run-instant year can drift from the
-  // midnight-anchored year. Outside this thin zone the exact-year check is the
-  // sole guard (unchanged behaviour).
-  const periodFromDayUtc = Math.floor(
-    new Date(cycle.periodFrom).getTime() / MS_PER_DAY,
-  );
-  const stepDueDayIsBoundaryAdjacent = (s: ReminderStep): boolean => {
-    const offsetFromStart = stepDueDayUtcOf(s) - periodFromDayUtc;
-    if (offsetFromStart < 0) return false; // pre-cycle-start step — not reachable
-    const mod = offsetFromStart % 365;
-    return mod <= 1 || mod >= 364;
-  };
   // Return the `firedKeys` key that proves a step is already-fired, or null.
   // A step counts as already-fired when an existing row matches its
   // step-anchored year (the normal case — handles every multi-year same-step-
