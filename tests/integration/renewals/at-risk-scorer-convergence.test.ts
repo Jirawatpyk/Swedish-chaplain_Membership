@@ -25,10 +25,15 @@
  *        (correct — a downgrade is a move to a lower tier BUCKET).
  *
  * Both scorers now converge on the SPEC-correct definition:
- *   - e-blast: broadcasts the member ORIGINATED that hold/consume a
- *     quota slot, matching F7's canonical `countForMemberQuota`
- *     (`used` = sent-in-quota-year ∪ `reserved` = submitted/approved/
- *     failed_to_dispatch), divided by `eblast_per_year`.
+ *   - e-blast: broadcasts the member ORIGINATED that were SENT in the
+ *     current quota year, divided by `eblast_per_year`. This is F9's
+ *     benefit-usage `used` (computeQuotaCounter.used = countForMemberQuota
+ *     `sent`, the year-fenced sent bucket) — the engagement notion. It
+ *     intentionally DIVERGES from F7's quota-ENFORCEMENT count, which also
+ *     adds the `reserved` bucket (submitted/approved/failed_to_dispatch).
+ *     Reserved rows carry `quota_year_consumed IS NULL` (no year fence),
+ *     so a stale prior-year reservation would otherwise inflate this
+ *     year's usage and suppress the +15 risk signal (#8 refinement of #3).
  *   - tier: lower new-bucket ORDINAL than old-bucket ordinal.
  *
  * This file is the regression guard: it seeds members where the OLD

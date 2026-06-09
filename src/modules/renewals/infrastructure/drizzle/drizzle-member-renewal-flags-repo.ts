@@ -26,7 +26,9 @@ import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 // Cross-module adapter→barrel import for F7's canonical quota-year
 // helper (063 — single source of truth for the e-blast quota window;
-// matches drizzle-at-risk-scorer.ts + countForMemberQuota).
+// the at-risk usage count uses the SAME year fence as F9's benefit-usage
+// `used` (computeQuotaCounter.used) + the single-member scorer
+// drizzle-at-risk-scorer.ts).
 import { currentQuotaYear } from '@/modules/broadcasts';
 import { renewalCycles } from '../schema-renewal-cycles';
 import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
@@ -396,9 +398,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
      * members in one CTE round-trip. Joins: F4 invoices LATERAL
      * aggregate (overdue_count + last_paid_at), F2 membership_plans
      * (eblast_per_year benefit entitlement), F7 broadcasts LATERAL
-     * count (e-blasts consumed by member in current year), F1
-     * audit_log EXISTS (member_plan_changed events in last 12 months
-     * indicating tier-downgrade per FR-029 line 8).
+     * count (e-blasts the member ORIGINATED + SENT in the current quota
+     * year — F9 benefit-usage `used`, NOT F7's enforcement count; see the
+     * #8 note in the LATERAL below), F1 audit_log EXISTS
+     * (member_plan_changed events in last 12 months indicating
+     * tier-downgrade per FR-029 line 8).
      *
      * 6 of 8 FR-029 factors implemented end-to-end against real data
      * (only F6 events_attended_12mo + events_attended_3mo +
@@ -503,27 +507,34 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           -- Phase 6 review I7 — explicit tenant_id filter (defence-in-depth).
           WHERE b.tenant_id = m.tenant_id
             AND b.requested_by_member_id = m.member_id
-            -- 063 correctness fix — count the e-blast quota slots the
-            -- member ORIGINATED for the CURRENT quota year, matching F7's
-            -- canonical countForMemberQuota (drizzle-broadcasts-repo.ts):
-            -- USED (sent rows whose quota_year_consumed = the current
-            -- quota year) plus RESERVED (submitted/approved/
-            -- failed_to_dispatch rows, which per the broadcasts schema
-            -- CHECK have quota_year_consumed IS NULL and reserve against
-            -- the current year). The prior rolling-12mo
-            -- quota_consumed_at window (a) used the wrong window — quota
-            -- is per-quota-YEAR, not rolling — and (b) used a status set
-            -- (sent,sending,approved) that diverged from both F7's
-            -- canonical set and the single-member scorer. quotaYear is
-            -- computed once per batch in the tenant timezone and bound as
-            -- a param so the year boundary matches how F7 wrote the row.
-            -- 'sending' intentionally excluded: it has left the reserved
-            -- set and will imminently land in 'sent' or 'failed_to_dispatch';
-            -- counting it here would double-count against the quota cap.
-            AND (
-              (b.status = 'sent' AND b.quota_year_consumed = ${quotaYear})
-              OR b.status IN ('submitted', 'approved', 'failed_to_dispatch')
-            )
+            -- 063 axis fix (#3) — count the e-blast slots the member
+            -- ORIGINATED (requested_by_member_id), not received. The prior
+            -- rolling-12mo quota_consumed_at window used the wrong window
+            -- (quota is per-quota-YEAR, not rolling) and a status set
+            -- (sent,sending,approved) that diverged from the single-member
+            -- scorer.
+            --
+            -- 063 usage-notion refinement (#8) — the at-risk ENGAGEMENT
+            -- factor counts USAGE = F9 benefit-usage used (sent THIS quota
+            -- year only), matching computeQuotaCounter(...).counter.used
+            -- (= countForMemberQuota.sent, the year-fenced sent bucket).
+            -- This intentionally DIVERGES from F7's quota-ENFORCEMENT count
+            -- (which also includes the reserved bucket): enforcement must
+            -- refuse a send while a slot is in-flight, but engagement asks
+            -- whether the benefit was actually delivered THIS year.
+            --
+            -- Reserved rows (submitted/approved/failed_to_dispatch) are
+            -- DROPPED here. They carry quota_year_consumed IS NULL (schema
+            -- CHECK broadcasts_quota_year_only_on_sent), so they have NO
+            -- year fence: a terminal failed_to_dispatch from a PRIOR year
+            -- holds the slot forever (spec AS2). Counting it would inflate
+            -- this year's usage, push pct >= 30, and silently SUPPRESS the
+            -- +15 risk factor for a disengaged member (#8). Counting only
+            -- sent-this-year cannot leak a stale prior-year slot. quotaYear
+            -- is computed once per batch in the tenant timezone and bound
+            -- as a param so the year boundary matches how F7 wrote the row.
+            AND b.status = 'sent'
+            AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true
         WHERE m.status = 'active'
           AND EXISTS (

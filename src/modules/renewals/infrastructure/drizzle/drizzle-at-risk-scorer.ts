@@ -26,12 +26,17 @@
  *                                     lower tier BUCKET, not just a fee
  *                                     cut) (063 bucket-ordinal fix)
  *     ✓ eBlastQuotaPctUsed         — F7 broadcasts the member ORIGINATED
- *                                     (requested_by_member_id) that hold/
- *                                     consume a quota slot for the current
- *                                     quota year, vs plan benefit_matrix.
- *                                     eblast_per_year. Matches F7's
- *                                     canonical countForMemberQuota
- *                                     (063 axis + quota-year fix)
+ *                                     (requested_by_member_id) that were
+ *                                     SENT in the current quota year, vs
+ *                                     plan benefit_matrix.eblast_per_year.
+ *                                     Matches F9's benefit-usage `used`
+ *                                     (computeQuotaCounter.used = sent
+ *                                     this year), NOT F7's enforcement
+ *                                     count — reserved/in-flight rows are
+ *                                     excluded so a stale prior-year
+ *                                     reservation can't suppress the risk
+ *                                     signal (063 axis + quota-year +
+ *                                     #8 usage-notion fix)
  *
  *   F6-DEPENDENT (3):
  *     ⊘ eventsAttendedLast12Months — F6 EventCreate not shipped
@@ -254,28 +259,40 @@ export function makeDrizzleAtRiskScorer(
       // ----------------------------------------------------------------
       // F7 broadcast quota: eBlastQuotaPctUsed (FR-029 line 3).
       // Member's plan benefit_matrix.eblast_per_year is the per-quota-year
-      // SENDING budget. "Used %" = broadcasts the member ORIGINATED that
-      // hold OR consume a quota slot, divided by the cap — the exact
-      // number the member sees on their /portal/benefits page.
+      // SENDING budget. The at-risk ENGAGEMENT factor asks "did the member
+      // USE the benefit THIS year?" — so "used %" here = broadcasts the
+      // member ORIGINATED that were actually SENT in the current quota
+      // year, divided by the cap. This is the exact number the member
+      // sees as "used" on their /portal/benefits page.
       //
-      // 063 correctness fix — this previously counted `broadcast_deliveries
+      // 063 axis fix (#3) — this previously counted `broadcast_deliveries
       // WHERE recipient_member_id = member` (RECEIVED axis), which is the
       // WRONG axis: per F7 Q16 the e-blast quota is consumed by the
       // ORIGINATOR (`requested_by_member_id`) and the sender is EXCLUDED
       // from receiving their own broadcast, so received-count is unrelated
-      // to the member's own quota. It also diverged from the batch scorer
-      // (`drizzle-member-renewal-flags-repo.ts`). Both now count the
-      // ORIGINATED axis on the per-quota-year window.
+      // to the member's own quota. The ORIGINATED axis is correct + matches
+      // the batch scorer (`drizzle-member-renewal-flags-repo.ts`).
       //
-      // Status set is F7's canonical "held or consumed" slot definition,
-      // matching `broadcasts-repo.countForMemberQuota`
-      // (drizzle-broadcasts-repo.ts:780): `used` = sent rows whose
-      // `quota_year_consumed` equals the current quota year, plus
-      // `reserved` = submitted/approved/failed_to_dispatch rows (which by
-      // the schema CHECK have `quota_year_consumed IS NULL` and reserve
-      // against the current year by definition). cancelled/rejected
-      // RELEASE the slot and are excluded. This is the single source of
-      // truth — no third e-blast-counting variant.
+      // 063 usage-notion refinement (#8) — the at-risk engagement factor
+      // counts USAGE = F9 benefit-usage `used` (sent THIS quota year only),
+      // NOT F7's quota-ENFORCEMENT count (sent + reserved). This matches
+      // `computeQuotaCounter(...).counter.used`, which is `counts.sent`
+      // from `countForMemberQuota` (the year-fenced sent bucket); the
+      // separate `reserved`/`submittedOrApproved` bucket is deliberately
+      // EXCLUDED from `used`. The divergence from F7's enforcement count
+      // (which DOES include reserved) is intentional: enforcement must
+      // refuse a 6th send while a slot is in-flight, but engagement asks
+      // whether the benefit was actually delivered.
+      //
+      // Why reserved MUST be dropped here: a reserved row
+      // (submitted/approved/failed_to_dispatch) carries
+      // `quota_year_consumed IS NULL` (schema CHECK
+      // `broadcasts_quota_year_only_on_sent`), so it has NO year fence and
+      // a terminal `failed_to_dispatch` from a PRIOR year holds the slot
+      // forever (spec AS2). Counting it would inflate this year's usage,
+      // push pct >= 30, and SILENTLY SUPPRESS the +15 risk factor for a
+      // disengaged member (#8). Counting only sent-this-year cannot leak a
+      // stale prior-year slot.
       //
       // Returned `undefined` (skipped) when:
       //   - member's plan has no benefit_matrix (orphan)
@@ -307,21 +324,18 @@ export function makeDrizzleAtRiskScorer(
             new Date(),
             env.tenant.timezone,
           );
-          // used (sent, quota_year_consumed = quotaYear) ∪ reserved
-          // (submitted/approved/failed_to_dispatch). Mirrors
-          // countForMemberQuota's two-bucket count exactly.
-          // `sending` is intentionally excluded: it has already left
-          // the reserved set and will imminently land in `sent` or
-          // `failed_to_dispatch` — counting it here would double-count.
+          // F9 benefit-usage `used`: sent rows whose quota_year_consumed
+          // equals the current quota year. Mirrors countForMemberQuota's
+          // `sent` bucket (the value computeQuotaCounter assigns to
+          // `counter.used`). Reserved rows (submitted/approved/
+          // failed_to_dispatch) are EXCLUDED here — see the #8 note above.
           const usedRows = await tx.execute<{ used_count: string }>(sql`
             SELECT count(*)::text AS used_count
             FROM ${broadcasts} b
             WHERE b.tenant_id = ${tenantId}
               AND b.requested_by_member_id = ${memberId}
-              AND (
-                (b.status = 'sent' AND b.quota_year_consumed = ${quotaYear})
-                OR b.status IN ('submitted', 'approved', 'failed_to_dispatch')
-              )
+              AND b.status = 'sent'
+              AND b.quota_year_consumed = ${quotaYear}
           `);
           const usedCount = Number.parseInt(
             usedRows[0]?.used_count ?? '0',
