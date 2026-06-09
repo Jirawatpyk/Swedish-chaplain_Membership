@@ -48,6 +48,18 @@ export interface SeedF8PlanSpec {
   readonly maxDurationYears?: number | null;
   readonly maxMemberAge?: number | null;
   readonly isActive?: boolean;
+  /**
+   * F8 renewal tier-bucket (one of the 5 `TIER_BUCKETS`). Drives the
+   * at-risk tier-downgrade factor (bucket-ordinal comparison, FR-029
+   * line 8). Defaults to `'regular'` to match the DB column default
+   * (`membership_plans.renewal_tier_bucket NOT NULL DEFAULT 'regular'`).
+   */
+  readonly renewalTierBucket?:
+    | 'thai_alumni'
+    | 'start_up'
+    | 'regular'
+    | 'premium'
+    | 'partnership';
 }
 
 export async function seedF8MembershipPlan(
@@ -75,6 +87,7 @@ export async function seedF8MembershipPlan(
     maxDurationYears: spec.maxDurationYears ?? null,
     maxMemberAge: spec.maxMemberAge ?? null,
     benefitMatrix: spec.benefitMatrix,
+    renewalTierBucket: spec.renewalTierBucket ?? 'regular',
     isActive: spec.isActive ?? true,
     createdBy: spec.createdBy,
     updatedBy: spec.updatedBy ?? spec.createdBy,
