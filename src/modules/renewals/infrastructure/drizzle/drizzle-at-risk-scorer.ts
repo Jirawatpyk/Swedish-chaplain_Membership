@@ -190,9 +190,19 @@ export function makeDrizzleAtRiskScorer(
       // `tierBucketDowngradePredicateSql` fragment, derived from the
       // Domain `TIER_BUCKETS` tuple, so the two cannot drift.
       //
-      // The `~ '^[0-9]+$'` regex guard mirrors the batch (Phase 6 review
-      // C3): a malformed payload year for ONE member's audit row is
-      // treated as "no match" instead of aborting the whole query.
+      // The `CASE WHEN … ~ '^[0-9]+$' THEN (…)::int END` guard mirrors
+      // the batch (Phase 6 review C3): a malformed payload year for ONE
+      // member's audit row is treated as "no match" instead of aborting
+      // the whole query. The guard is at the EXPRESSION level (the cast
+      // is only reached inside the THEN branch), NOT a planner-order
+      // assumption: an `AND regex AND cast=…` pattern does NOT guarantee
+      // the regex evaluates before the `::int` cast (Postgres may reorder
+      // AND clauses), so a malformed year could still crash with
+      // `invalid input syntax for type integer`. CASE provably short-
+      // circuits — a non-matching year yields NULL, and `NULL = op.plan_year`
+      // is NULL (not true), so the row is excluded (no crash, no false
+      // downgrade). Years are zod-guarded on write today; this hardens
+      // against corrupt/legacy/future-drift payloads.
       //
       // audit_log has ENABLE + FORCE RLS, but its policy is PERMISSIVE:
       // rows with NULL tenant_id (F1 identity events) remain visible to
@@ -210,13 +220,17 @@ export function makeDrizzleAtRiskScorer(
           JOIN ${membershipPlans} op
             ON op.tenant_id = al.tenant_id
            AND op.plan_id = al.payload->>'old_plan_id'
-           AND al.payload->>'old_plan_year' ~ '^[0-9]+$'
-           AND op.plan_year = (al.payload->>'old_plan_year')::int
+           AND op.plan_year = CASE
+                 WHEN al.payload->>'old_plan_year' ~ '^[0-9]+$'
+                 THEN (al.payload->>'old_plan_year')::int
+               END
           JOIN ${membershipPlans} np
             ON np.tenant_id = al.tenant_id
            AND np.plan_id = al.payload->>'new_plan_id'
-           AND al.payload->>'new_plan_year' ~ '^[0-9]+$'
-           AND np.plan_year = (al.payload->>'new_plan_year')::int
+           AND np.plan_year = CASE
+                 WHEN al.payload->>'new_plan_year' ~ '^[0-9]+$'
+                 THEN (al.payload->>'new_plan_year')::int
+               END
           WHERE al.event_type = 'member_plan_changed'
             AND al.tenant_id = ${tenantId}
             AND al.payload->>'member_id' = ${memberId}

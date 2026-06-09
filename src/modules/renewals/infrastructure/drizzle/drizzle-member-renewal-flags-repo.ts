@@ -441,18 +441,28 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             JOIN membership_plans p_old
               ON p_old.tenant_id = al.tenant_id
               AND p_old.plan_id = al.payload->>'old_plan_id'
-              -- Phase 6 review C3: regex-guarded cast so a malformed
+              -- Phase 6 review C3: CASE-guarded cast so a malformed
               -- payload (non-numeric old_plan_year) for ONE member's
               -- audit row does not abort the whole CTE for the whole
-              -- tenant. The row is silently treated as "no match" —
-              -- equivalent to "not downgraded" for that audit entry.
-              AND al.payload->>'old_plan_year' ~ '^[0-9]+$'
-              AND p_old.plan_year = (al.payload->>'old_plan_year')::int
+              -- tenant. The cast lives inside the THEN branch, so the
+              -- regex provably short-circuits BEFORE the int cast runs.
+              -- An "AND regex AND cast=..." pattern does NOT guarantee
+              -- this: Postgres may reorder AND clauses and crash with
+              -- invalid-input-syntax-for-type-integer. A non-matching
+              -- year yields NULL, so p_old.plan_year = NULL is NULL (not
+              -- true) and the row is silently treated as "no match"
+              -- (= "not downgraded") -- no crash, no false downgrade.
+              AND p_old.plan_year = CASE
+                    WHEN al.payload->>'old_plan_year' ~ '^[0-9]+$'
+                    THEN (al.payload->>'old_plan_year')::int
+                  END
             JOIN membership_plans p_new
               ON p_new.tenant_id = al.tenant_id
               AND p_new.plan_id = al.payload->>'new_plan_id'
-              AND al.payload->>'new_plan_year' ~ '^[0-9]+$'
-              AND p_new.plan_year = (al.payload->>'new_plan_year')::int
+              AND p_new.plan_year = CASE
+                    WHEN al.payload->>'new_plan_year' ~ '^[0-9]+$'
+                    THEN (al.payload->>'new_plan_year')::int
+                  END
             WHERE al.event_type = 'member_plan_changed'
               AND al.tenant_id = ${tenantId}
               AND al.payload->>'member_id' = m.member_id::text
