@@ -46,14 +46,24 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 // Regular-tier T-7 step: expires_at = today + 7 means the T-7 step is due
 // TODAY. We instead make T-7 due 2 days in the PAST so the dispatcher must
 // catch up: expires_at = (now + 7) - 2 = now + 5.
-//   now (dispatcher clock) = 2026-06-15
-//   T-7 due-date          = expires_at - 7 = 2026-06-13  (2 days ago)
+//   now (dispatcher clock) = today midnight UTC
+//   T-7 due-date          = expires_at - 7 = today - 2  (2 days ago)
 //   → strictly past, but within the 7-day lookback → catch up.
-const NOW_ISO = '2026-06-15T08:00:00.000Z';
-const EXPIRES_AT = new Date('2026-06-20T00:00:00.000Z'); // now + 5 → T-7 due 2026-06-13
-const EXPECTED_DUE_DATE_ISO = '2026-06-13T00:00:00.000Z';
+//
+// Dates are anchored on the REAL wall-clock so the test never becomes stale:
+// the dispatch-candidate repo filters `expires_at >= NOW() - maxOffsetDays`
+// using the DB wall-clock (NOT the injected nowIso), so hardcoded future dates
+// silently stop matching once DB_NOW > EXPIRES_AT + DEFAULT_MAX_OFFSET_DAYS.
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const TODAY_UTC_MIDNIGHT_MS = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY;
+const EXPIRES_AT = new Date(TODAY_UTC_MIDNIGHT_MS + 5 * MS_PER_DAY); // today + 5d
+const NOW_ISO = new Date(TODAY_UTC_MIDNIGHT_MS).toISOString(); // today midnight
 // period_from 1y before expiry → year_in_cycle resolves to 1.
-const PERIOD_FROM = new Date('2025-06-20T00:00:00.000Z');
+const PERIOD_FROM = new Date(EXPIRES_AT.getTime() - 365 * MS_PER_DAY);
+// T-7 due-date = today - 2d (2 days overdue, inside the 7-day lookback).
+const EXPECTED_DUE_DATE_ISO = new Date(
+  EXPIRES_AT.getTime() - 7 * MS_PER_DAY,
+).toISOString();
 
 describe('063 dispatchRenewalCycle — missed-cron catch-up on live Neon', () => {
   let tenantA: TestTenant;

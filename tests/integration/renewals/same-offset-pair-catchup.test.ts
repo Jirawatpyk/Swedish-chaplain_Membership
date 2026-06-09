@@ -48,13 +48,19 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // premium t-60 pair (email + task) at offset -60.
-//   cron run-date = 2026-05-15
-//   last window day → t-60 due-date = run-date - 7 (full lookback) = 2026-05-08
-//   expires_at = due-date + 60 = 2026-07-07
-const NOW_ISO = '2026-05-15T08:00:00.000Z';
-const EXPIRES_AT = new Date('2026-07-07T00:00:00.000Z');
+//   cron run-date  = today midnight UTC
+//   last window day → t-60 due-date = run-date - 7 (full lookback) = today - 7
+//   expires_at     = due-date + 60 = today + 53
+//
+// Dates are anchored on the REAL wall-clock so the test never becomes stale:
+// the dispatch-candidate repo filters `expires_at >= NOW() - maxOffsetDays`
+// using the DB wall-clock (NOT the injected nowIso), so hardcoded future dates
+// silently stop matching once DB_NOW > EXPIRES_AT + DEFAULT_MAX_OFFSET_DAYS.
+const TODAY_UTC_MIDNIGHT_MS = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY;
+const NOW_ISO = new Date(TODAY_UTC_MIDNIGHT_MS).toISOString(); // today midnight
+const EXPIRES_AT = new Date(TODAY_UTC_MIDNIGHT_MS + 53 * MS_PER_DAY); // today + 53d
 // 1-year cycle anchored so year_in_cycle resolves to 1 for the step.
-const PERIOD_FROM = new Date('2025-07-07T00:00:00.000Z');
+const PERIOD_FROM = new Date(EXPIRES_AT.getTime() - 365 * MS_PER_DAY);
 const EXPECTED_DUE_DATE_ISO = new Date(
   Math.floor(EXPIRES_AT.getTime() / MS_PER_DAY) * MS_PER_DAY - 60 * MS_PER_DAY,
 ).toISOString();
