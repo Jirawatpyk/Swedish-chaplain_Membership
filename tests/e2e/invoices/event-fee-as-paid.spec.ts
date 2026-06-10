@@ -54,6 +54,24 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 /** SIMULATED 13-digit Thai TIN — same shape the form validates, never real. */
 const FAKE_TIN = '1234512345123';
 
+/**
+ * Accessible names of the issuance-mode radios. Base UI forwards `id` to the
+ * HIDDEN native `<input type="radio" aria-hidden tabindex="-1">` (that is
+ * what makes the Label `htmlFor` work), while `aria-checked` /
+ * `aria-disabled` / `aria-describedby` live on the VISIBLE `role="radio"`
+ * span — so `#issuance-mode-*` locators resolve to an element that NEVER
+ * carries the asserted aria state. Every radio-state assertion below targets
+ * the role=radio element by its accessible name instead (the title-span
+ * text only, via the explicit `aria-labelledby`).
+ */
+const MODE_ALREADY_PAID = 'Already paid — record & issue receipt';
+const MODE_BILL_FIRST = 'Bill first — issue an unpaid invoice';
+
+/** The VISIBLE issuance-mode radio (role=radio span) by accessible name. */
+function modeRadio(page: Page, name: string) {
+  return page.getByRole('radio', { name, exact: true });
+}
+
 /** Today in Asia/Bangkok as YYYY-MM-DD — mirrors the form's default seed. */
 function bangkokTodayIso(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -98,6 +116,12 @@ async function fillBuyer(
 test.describe('064 event-fee as-paid form modes @f4', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
 
+  // openEventFeeForm waits up to 60s for the picker row (Turbopack cold
+  // compile of /admin/invoices/new + picker fetch + min-skeleton) — the 30s
+  // default test timeout would kill that wait first. Same dev-compile
+  // budgeting pattern as broadcast-a11y.spec.ts.
+  test.describe.configure({ timeout: 120_000 });
+
   let fixture: SeedAsPaidFixtureResult;
 
   test.beforeAll(async () => {
@@ -109,12 +133,16 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
   test('paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document', async ({
     page,
   }) => {
+    // Cold compile (60s form-open budget) + the 45s toast budget for the
+    // two-step submit (PDF render + blob upload) + 30s detail-page URL wait
+    // stack past even the 120s describe budget — give this one 180s.
+    test.setTimeout(180_000);
     const today = bangkokTodayIso();
     await signInAsAdmin(page);
     await openEventFeeForm(page, fixture.registrationIds.paidTin, AS_PAID_ATTENDEES.paidTin);
 
     // Mode pre-selected from the F6 'paid' status.
-    await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+    await expect(modeRadio(page, MODE_ALREADY_PAID)).toHaveAttribute(
       'aria-checked',
       'true',
     );
@@ -165,7 +193,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
 
     // No TIN typed → bill_first is disabled with the VISIBLE reason wired
     // up for SR users via aria-describedby (no hover-only tooltip).
-    const billFirst = page.locator('#issuance-mode-bill-first');
+    const billFirst = modeRadio(page, MODE_BILL_FIRST);
     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
     await expect(billFirst).toHaveAttribute(
       'aria-describedby',
@@ -176,7 +204,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     );
 
     // paid status → already_paid is the (checked) default.
-    const alreadyPaid = page.locator('#issuance-mode-already-paid');
+    const alreadyPaid = modeRadio(page, MODE_ALREADY_PAID);
     await expect(alreadyPaid).toHaveAttribute('aria-checked', 'true');
 
     // Keyboard: arrow keys inside the radio group skip the disabled item;
@@ -204,17 +232,14 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await expect(explainer).toBeVisible();
     await expect(explainer).toContainText('wait for the money');
     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
-    await expect(page.locator('#issuance-mode-already-paid')).not.toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    const alreadyPaid = modeRadio(page, MODE_ALREADY_PAID);
+    await expect(alreadyPaid).not.toHaveAttribute('aria-checked', 'true');
 
     // Override — the admin attests the funds were received (F6 may lag).
-    await page.locator('#issuance-mode-already-paid').click();
-    await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    // Click the VISIBLE role=radio span — the `#issuance-mode-already-paid`
+    // native input is off-viewport (Base UI hides it) and never clickable.
+    await alreadyPaid.click();
+    await expect(alreadyPaid).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('as-paid-fields')).toBeVisible();
     await expect(explainer).toHaveCount(0);
     await expect(
@@ -264,7 +289,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // Type a TIN → §2.3 default flips to bill_first WITHOUT an explicit
     // pick; payment fields stay hidden (bill_first has none).
     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
-    const billFirst = page.locator('#issuance-mode-bill-first');
+    const billFirst = modeRadio(page, MODE_BILL_FIRST);
     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
@@ -417,7 +442,11 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
 
     // The as-paid FORM itself must not overflow horizontally — scoped to
     // the form element so dev-only document chrome (Next dev banner /
-    // scrollbar gutter) can't false-positive the check.
+    // scrollbar gutter) can't false-positive the check. Allow 2px for
+    // sub-pixel layout rounding (chromium reports scrollWidth 210 vs
+    // clientWidth 209 here with NO visually overflowing element — verified
+    // against the failure screenshot; same dev-mode-tolerance philosophy as
+    // broadcast-a11y.spec.ts). Anything beyond 2px is a real reflow bug.
     const form = page.locator('form').filter({ has: page.getByTestId('mode-selector') });
     const metrics = await form.evaluate((el) => ({
       scrollWidth: el.scrollWidth,
@@ -426,7 +455,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     expect(
       metrics.scrollWidth,
       'as-paid form must not scroll horizontally at 320px (sv)',
-    ).toBeLessThanOrEqual(metrics.clientWidth);
+    ).toBeLessThanOrEqual(metrics.clientWidth + 2);
 
     // Document-level guard with the repo's dev-mode tolerance (Next.js dev
     // banner + scrollbar gutter add ~16px — see broadcast-a11y.spec.ts).
