@@ -309,6 +309,16 @@ export const invoices = pgTable(
     uniqueIndex('invoices_event_registration_uniq')
       .on(table.tenantId, table.eventRegistrationId)
       .where(sql`invoice_subject = 'event' AND status <> 'void'`),
+    // 064-event-invoice-paid-flow (Task 10, migration 0213) — receipt-number
+    // uniqueness backstop. receipt_document_number_raw carries S87
+    // RECEIPT-stream numbers from two writers (recordPayment separate-mode +
+    // issueEventInvoiceAsPaid no-TIN beta); the invoice stream has
+    // invoices_tenant_fiscal_seq_unique as its duplicate backstop but the
+    // receipt stream had none. Partial: NULL rows (drafts, combined-mode)
+    // stay outside; per-tenant scope (tenants legitimately share raws).
+    uniqueIndex('invoices_tenant_receipt_raw_uniq')
+      .on(table.tenantId, table.receiptDocumentNumberRaw)
+      .where(sql`receipt_document_number_raw IS NOT NULL`),
     // FK DECISION (054-event-fee-invoices, Task 3+4):
     //   `(tenant_id, event_registration_id)` → `event_registrations
     //   (tenant_id, registration_id) ON DELETE RESTRICT` — a tenant-aware
