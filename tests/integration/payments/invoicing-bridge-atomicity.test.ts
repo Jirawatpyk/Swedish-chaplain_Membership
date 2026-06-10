@@ -169,6 +169,7 @@ describe('InvoicingBridge (F5 → F4) — live Neon', () => {
         planYear: 2026,
         planId,
         status: 'issued',
+        pdfDocKind: 'invoice',
         draftByUserId: user.userId,
         fiscalYear: 2026,
         sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,

@@ -82,6 +82,7 @@ describe('invoice listPaged — overdue filter (S1-P1-8)', () => {
       planId: 'od-plan',
       draftByUserId: user.userId,
       status: 'issued' as const,
+      pdfDocKind: 'invoice',
       fiscalYear: 2026,
       sequenceNumber: seq,
       documentNumber: `OD-2026-${String(seq).padStart(6, '0')}`,

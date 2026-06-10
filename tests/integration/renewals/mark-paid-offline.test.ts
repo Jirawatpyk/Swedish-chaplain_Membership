@@ -242,6 +242,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         planYear: 2026,
         planId: planIdA,
         status: 'issued',
+        pdfDocKind: 'invoice',
         draftByUserId: user.userId,
         fiscalYear: 2026,
         sequenceNumber: 1,

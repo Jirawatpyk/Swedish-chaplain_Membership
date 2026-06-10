@@ -164,6 +164,7 @@ describe('invoice listPaged — subject filter (054 Task 13)', () => {
           planId: 'sf-plan',
           draftByUserId: user.userId,
           status: 'issued',
+          pdfDocKind: 'invoice',
           fiscalYear: 2026,
           sequenceNumber: 1,
           documentNumber: 'SF-2026-000001',
@@ -196,6 +197,8 @@ describe('invoice listPaged — subject filter (054 Task 13)', () => {
           planId: null,
           draftByUserId: user.userId,
           status: 'issued',
+          // §105 receipt-titled main PDF — event subject + SNAP_BUYER has no TIN.
+          pdfDocKind: 'receipt_separate',
           fiscalYear: 2026,
           sequenceNumber: 2,
           documentNumber: 'SF-2026-000002',

@@ -97,6 +97,7 @@ async function seedInvoice(
       planId,
       draftByUserId: user.userId,
       status,
+      pdfDocKind: 'invoice',
       fiscalYear: 2026,
       sequenceNumber,
       documentNumber: `VDIT-2026-${String(sequenceNumber).padStart(6, '0')}`,

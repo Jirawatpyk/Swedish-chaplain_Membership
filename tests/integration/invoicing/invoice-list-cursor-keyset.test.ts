@@ -88,7 +88,7 @@ describe('invoice list() composite cursor keyset (S1-P1-9b)', () => {
     const issued = (id: string, seq: number, issueDate: string) => ({
       tenantId: tenant.ctx.slug, invoiceId: id, memberId: MEMBER_ID,
       planYear: 2026, planId: 'cur-plan', draftByUserId: user.userId,
-      status: 'issued' as const, fiscalYear: 2026, sequenceNumber: seq,
+      status: 'issued' as const, pdfDocKind: 'invoice', fiscalYear: 2026, sequenceNumber: seq,
       documentNumber: `CUR-2026-${String(seq).padStart(6, '0')}`,
       issueDate, dueDate: '2026-03-01',
       subtotalSatang: 100_000n, vatRateSnapshot: '0.0700', vatSatang: 7_000n,

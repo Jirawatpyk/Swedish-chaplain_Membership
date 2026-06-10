@@ -149,6 +149,7 @@ async function seedPaidPendingInvoice(
       planYear: 2026,
       planId,
       status: 'paid',
+      pdfDocKind: 'invoice',
       draftByUserId: user.userId,
       fiscalYear: 2026,
       sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,

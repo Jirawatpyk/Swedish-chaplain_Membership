@@ -111,6 +111,7 @@ async function seedInvoiceInStatus(
       planId,
       draftByUserId: user.userId,
       status,
+      pdfDocKind: 'invoice',
       // T166 — paid rows must have receipt_pdf_status NOT NULL per
       // migration 0056 CHECK. Issued/void rows leave it NULL.
       receiptPdfStatus: status === 'paid' ? 'rendered' : null,

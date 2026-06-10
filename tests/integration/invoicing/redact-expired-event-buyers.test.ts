@@ -270,6 +270,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2014,
           sequence_number = 900001,
           document_number = 'EVT14-900001',
@@ -309,6 +310,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2024,
           sequence_number = 900002,
           document_number = 'EVT24-900002',
@@ -350,6 +352,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2014,
           sequence_number = 900003,
           document_number = 'EVT14-900003',
@@ -680,6 +683,7 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2024,
           sequence_number = 910001,
           document_number = 'EVT24-910001',
@@ -924,6 +928,7 @@ describe('redact cron — retryable PDF-blob purge via pii_blob_purged_at (HIGH-
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2013,
           sequence_number = 920001,
           document_number = 'EVT13-920001',
@@ -1119,6 +1124,7 @@ describe('redact cron — audit-once under a concurrent pre-tombstone (FIX 1)', 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2013,
           sequence_number = 930001,
           document_number = 'EVT13-930001',

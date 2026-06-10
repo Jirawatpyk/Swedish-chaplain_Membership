@@ -123,6 +123,7 @@ describe('invoice list — draft exclusion when includeDrafts=false (060-D4 / #1
       planId: 'dl-plan',
       draftByUserId: user.userId,
       status,
+      pdfDocKind: 'invoice',
       fiscalYear: 2026,
       sequenceNumber: seq,
       documentNumber: `DL-2026-${String(seq).padStart(6, '0')}`,

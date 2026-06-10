@@ -139,6 +139,7 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
         planId: 'i5-plan',
         draftByUserId: user.userId,
         status: 'issued',
+        pdfDocKind: 'invoice',
         fiscalYear: 2026,
         sequenceNumber: 1,
         documentNumber: 'I5-2026-000001',
