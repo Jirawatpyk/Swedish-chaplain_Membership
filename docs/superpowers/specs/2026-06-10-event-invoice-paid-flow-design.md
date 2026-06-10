@@ -41,8 +41,8 @@ Secondary findings from the ruling:
 ## 2. Business reality (clarified 2026-06-10)
 
 1. **Both payment timings exist.** Most event fees are already paid (attendee paid via
-   EventCreate or另 channel before documentation), but some buyers must be **billed first**
-   (corporate sponsors, registered-then-pay).
+   EventCreate or another channel before documentation), but some buyers must be **billed
+   first** (corporate sponsors, registered-then-pay).
 2. **Bill-first is TIN-only.** Only buyers with a 13-digit TIN may be billed before payment
    (a pre-payment tax invoice legally requires the buyer's TIN per §86/4). A no-TIN buyer is
    always already-paid; there is no legal document for "no-TIN, unpaid".
@@ -62,10 +62,11 @@ Membership — unchanged:
    draft ──issue──> issued ──pay──> paid
 ```
 
-- `canTransition` (`src/modules/invoicing/domain/invoice.ts:370`) gains `draft → paid`,
-  **legal only when `invoiceSubject === 'event'`** (the subject must become an input to the
-  transition check, or the Application layer enforces the subject guard before calling it —
-  decide at plan time; membership must NOT be able to skip `issued`).
+- `canTransition` (`src/modules/invoicing/domain/invoice.ts:370`) becomes subject-aware:
+  `canTransition(from, to, subject)`. `draft → paid` is legal **only when
+  `subject === 'event'`**; for `'membership'` the legal map is unchanged (membership can
+  never skip `issued`). All existing call-sites pass the invoice's subject (small, mechanical
+  signature change; locked by domain unit tests in both directions).
 - A `paid` row created via this path carries everything a non-draft row needs in one step:
   §87 number, VAT split, snapshots, receipt PDF, `paidAt`, `paymentDate`.
 - `issueDate = dueDate = paymentDate` (real money-received date). No open receivable is
@@ -105,7 +106,11 @@ operator's compliance call).
 ### 3.3 Document numbering (§87)
 
 - TIN combined (`receipt_combined`) → **invoice** sequence stream (it IS a §86/4 tax
-  invoice). Same stream membership uses — continuity preserved.
+  invoice). Same stream membership uses — continuity preserved. The as-paid TIN path issues
+  `receipt_combined` **regardless of the tenant `receiptNumberingMode` setting** — that
+  setting governs the 2-step (bill-first / membership) flow's payment-time receipt; an
+  as-paid issuance is one payment documented by one §86/4+§105ทวิ document with one invoice
+  number. (Rationale per the auditor ruling; record in plan.md Complexity Tracking.)
 - no-TIN §105 (`receipt_separate`) → **receipt** sequence stream (the existing separate
   receipt stream), NOT the invoice stream. A §105 receipt is not a §86/4 document; mixing it
   into the tax-invoice stream is the part of the 054 design the auditor flagged as
@@ -127,9 +132,11 @@ operator's compliance call).
 - Mode detection: F6 `payment_status` → default mode, admin can override:
   - **already-paid** (default when F6=paid): show **payment-date** field (pre-filled) +
     doc-type preview (TIN → "ใบกำกับภาษี/ใบเสร็จรับเงิน", no-TIN → "ใบเสร็จรับเงิน") + single
-    button **"บันทึกรับเงิน + ออกใบเสร็จ" / "Record payment & issue receipt"** → calls
-    create-draft then `issueEventInvoiceAsPaid` (or a combined route) → lands on a `paid`
-    invoice with ONE document.
+    button **"บันทึกรับเงิน + ออกใบเสร็จ" / "Record payment & issue receipt"** → client calls
+    the existing event-draft route, then a new `POST /api/invoices/{invoiceId}/issue-as-paid`
+    route (admin-gated, zod-validated `paymentDate`) → lands on a `paid` invoice with ONE
+    document. If the second call fails, the invoice remains a plain draft (visible in the
+    list, re-actionable) — no partial document is produced.
   - **bill-first** (selectable only when buyer has TIN): existing flow unchanged
     (Create draft → Issue → later Record payment).
 - Selecting no-TIN + bill-first is blocked with explanatory copy (EN/TH/SV):
