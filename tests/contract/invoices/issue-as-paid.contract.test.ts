@@ -308,6 +308,32 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(issueEventInvoiceAsPaidMock).not.toHaveBeenCalled();
   });
 
+  it('400 — paymentReference exceeds the 200-char cap', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(
+      makePostRequest({
+        paymentDate: PAST_PAYMENT_DATE,
+        paymentReference: 'x'.repeat(201),
+      }),
+      routeParams,
+    );
+    expect(res.status).toBe(400);
+    expect(issueEventInvoiceAsPaidMock).not.toHaveBeenCalled();
+  });
+
+  it('400 — paymentNotes exceeds the 2000-char cap', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(
+      makePostRequest({
+        paymentDate: PAST_PAYMENT_DATE,
+        paymentNotes: 'x'.repeat(2001),
+      }),
+      routeParams,
+    );
+    expect(res.status).toBe(400);
+    expect(issueEventInvoiceAsPaidMock).not.toHaveBeenCalled();
+  });
+
   it('400 — non-JSON body', async () => {
     const { POST } = await importRoute();
     const req = new NextRequest(
@@ -579,6 +605,13 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     const lines = body['lines'] as Array<Record<string, unknown>>;
     expect(lines).toHaveLength(1);
     expect(lines[0]).toHaveProperty('kind', 'event_fee');
+
+    // RBAC policy-arg pin: admin-only WRITE on the invoice resource —
+    // a drift to a weaker policy (e.g. read) must fail this contract.
+    expect(requireAdminContextMock).toHaveBeenCalledWith(expect.anything(), {
+      resource: 'invoice',
+      action: 'write',
+    });
 
     // Input threading: ids from context, defaults applied by the route.
     expect(issueEventInvoiceAsPaidMock).toHaveBeenCalledTimes(1);
