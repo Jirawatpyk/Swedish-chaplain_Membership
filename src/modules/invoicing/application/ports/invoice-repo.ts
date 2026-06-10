@@ -230,6 +230,15 @@ export interface InvoiceRepo {
    * no-TIN β path carries NULLs + receiptDocumentNumberRaw (CHECK relax
    * lands in a later migration). WHERE status='draft' — 0 rows ⇒ throw
    * InvoiceApplyConflictError (concurrent issue/as-paid race loser).
+   *
+   * CALLER CONTRACT (mirrors issueInvoice ordering — see issue-invoice.ts:7):
+   *   1. MUST hold lockForUpdate(invoiceId) BEFORE sequenceAllocator.allocateNext
+   *      (lock order: invoice row → §87 advisory lock; reversing deadlocks
+   *      against concurrent issueInvoice).
+   *   2. MUST compute money/snapshots from a draft read taken AFTER the lock,
+   *      inside the same tx — the WHERE guard does not see draft-content edits.
+   *   3. fiscalYear / issueDate / documentNumber / subtotal+vat=total
+   *      consistency is caller-enforced; the DB does not cross-check them.
    */
   applyIssueAsPaid(
     tx: unknown,

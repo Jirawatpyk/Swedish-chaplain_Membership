@@ -93,7 +93,7 @@ import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
-import { resolveEventBuyerForIssue } from '../lib/resolve-event-buyer';
+import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -216,7 +216,7 @@ export async function issueInvoice(
     if (!draft) return err({ code: 'invoice_not_found' });
 
     // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7;
-    // extracted VERBATIM to `lib/resolve-event-buyer.ts` in 064 Task 3 so
+    // extracted VERBATIM to `lib/resolve-invoice-buyer.ts` in 064 Task 3 so
     // issueEventInvoiceAsPaid composes the same arms instead of copy-pasting).
     //
     //   MEMBERSHIP invoice (memberId non-null) → re-read + LOCK the member
@@ -237,7 +237,7 @@ export async function issueInvoice(
     // PRE-SEQUENCE zone (runs BEFORE allocateNext), so the plain
     // `return err(...)` discipline is unchanged.
     const memberId = draft.memberId;
-    const buyerResolution = await resolveEventBuyerForIssue(
+    const buyerResolution = await resolveInvoiceBuyerForIssue(
       deps.memberIdentity,
       tx,
       input.tenantId,

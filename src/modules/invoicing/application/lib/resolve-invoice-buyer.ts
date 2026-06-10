@@ -15,25 +15,23 @@
  * through this helper — keeping a separate inline membership copy would
  * duplicate the FR-037 archive-race guard, which is exactly the
  * copy-paste of tax-critical logic this extraction exists to avoid.
- *
- * Body moved verbatim from issue-invoice.ts (Task 3, plan 2026-06-10).
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 
-export type ResolveEventBuyerError =
+export type ResolveInvoiceBuyerError =
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
   | { code: 'no_buyer_snapshot' };
 
-export async function resolveEventBuyerForIssue(
+export async function resolveInvoiceBuyerForIssue(
   memberIdentity: MemberIdentityPort,
   tx: unknown,
   tenantId: string,
   draft: Invoice,
-): Promise<Result<MemberIdentitySnapshot, ResolveEventBuyerError>> {
+): Promise<Result<MemberIdentitySnapshot, ResolveInvoiceBuyerError>> {
   const memberId = draft.memberId;
   if (memberId !== null) {
     const member = await memberIdentity.getForIssue(

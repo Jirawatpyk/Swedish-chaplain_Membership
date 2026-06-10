@@ -923,6 +923,13 @@ export function makeDrizzleInvoiceRepo(
           paymentDate: input.paymentDate,
           receiptPdfStatus: 'rendered',
           receiptPdfBlobKey: null,
+          // M-1 — complete the defensive receipt-triplet null. The combined
+          // (or β separate) receipt IS the main PDF: its bytes metadata lives
+          // in pdf_sha256/pdf_template_version above, so no receipt_* bytes
+          // metadata may exist. A draft row already carries NULLs; writing
+          // them explicitly keeps the as-paid UPDATE self-describing.
+          receiptPdfSha256: null,
+          receiptPdfTemplateVersion: null,
           updatedAt: sql`now()`,
         })
         .where(
