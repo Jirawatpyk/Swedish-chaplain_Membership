@@ -94,3 +94,19 @@ export function bangkokLocalDate(utcIso: string): string {
 export function addDays(dateYmd: string, days: number): string {
   return LocalDate.parse(dateYmd).plusDays(days).toString();
 }
+
+/**
+ * True iff `ymd` is a real proleptic-Gregorian calendar date
+ * (YYYY-MM-DD). A shape-only `^\d{4}-\d{2}-\d{2}$` regex accepts
+ * impossible dates like `2026-02-31`; `LocalDate.parse` enforces actual
+ * month lengths + leap years, so boundary validators can reject before
+ * js-joda throws a raw exception deeper in the pipeline.
+ */
+export function isValidCalendarDate(ymd: string): boolean {
+  try {
+    LocalDate.parse(ymd);
+    return true;
+  } catch {
+    return false;
+  }
+}

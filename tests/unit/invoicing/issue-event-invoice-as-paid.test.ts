@@ -335,6 +335,22 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     ).toBe(false);
   });
 
+  it('schema — shape-valid but IMPOSSIBLE calendar dates rejected; real leap day accepted (review Important #2)', () => {
+    // `^\d{4}-\d{2}-\d{2}$` alone accepts 2026-02-31; js-joda would later
+    // throw a raw DateTimeParseException → 500. The refine rejects at parse.
+    expect(
+      issueEventInvoiceAsPaidSchema.safeParse({ ...input, paymentDate: '2026-02-31' }).success,
+    ).toBe(false);
+    // 2027 is not a leap year.
+    expect(
+      issueEventInvoiceAsPaidSchema.safeParse({ ...input, paymentDate: '2027-02-29' }).success,
+    ).toBe(false);
+    // 2028 IS a leap year — Feb 29 must remain accepted.
+    expect(
+      issueEventInvoiceAsPaidSchema.safeParse({ ...input, paymentDate: '2028-02-29' }).success,
+    ).toBe(true);
+  });
+
   // --- pre-tx guards ----------------------------------------------------------
 
   it('payment_date_future — paymentDate after Bangkok today → err, no tx opened, no settings read', async () => {
@@ -860,7 +876,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
-  it('blob.delete failure during orphan cleanup is swallowed (best-effort) — original error surfaces', async () => {
+  it('blob.delete failure during orphan cleanup is swallowed (best-effort) — original error surfaces + WARN logged with the key', async () => {
     const deps = makeDeps(makeEventDraft(), makeSettings(), null);
     deps.blob.uploadPdf = vi.fn(async () => {
       throw new Error('blob 503');
@@ -871,6 +887,15 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('blob_upload_failed');
+    // Review Minor #4 — the failed cleanup is no longer silent: ops needs the
+    // key to sweep the orphan manually.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blobKey: `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`,
+        invoiceId: INVOICE_ID,
+      }),
+      expect.stringContaining('orphan blob cleanup failed'),
+    );
   });
 
   it('applyIssueAsPaid race loser (kind=applyIssueAsPaid) → typed invoice_already_issued via throw-carrier (seq rolls back)', async () => {
@@ -884,6 +909,59 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       expect(r.error.code).toBe('invoice_already_issued');
       if (r.error.code === 'invoice_already_issued') expect(r.error.status).toBe('issued');
     }
+    // Conflict-kind EXCLUSION from orphan cleanup: the race WINNER may own
+    // bytes at this deterministic key — the loser must NOT delete them.
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  // --- post-apply raw-rethrow paths (review Important #1 + #3) ---------------------
+  //
+  // Failures AFTER the blob upload that reject the tx via RAW rethrow (not the
+  // typed carrier) used to leave an orphan PII blob at the deterministic key —
+  // and a retry would see "already exists" → success returning the OLD bytes
+  // while the row commits the NEW sha256 (silent tax-document drift). Each
+  // rejection below must (a) REJECT the use-case promise (audit-before-success /
+  // atomicity contracts) and (b) best-effort delete the uploaded blob.
+
+  const EXPECTED_BLOB_KEY = `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`;
+
+  it('audit.emit rejects on the SECOND in-tx call (invoice_paid, post-apply) → promise REJECTS + orphan blob deleted', async () => {
+    const emit = vi
+      .fn()
+      .mockResolvedValueOnce(undefined) // invoice_issued
+      .mockRejectedValueOnce(new Error('audit insert failed')); // invoice_paid
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), makeMember(), {
+      audit: { emit },
+    });
+    await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toThrow('audit insert failed');
+    // applyIssueAsPaid had already succeeded — only the audit broke the tx.
+    expect(deps.invoiceRepo.applyIssueAsPaid).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_BLOB_KEY);
+  });
+
+  it('outbox.enqueue throws → promise REJECTS (hard-fail, recordPayment parity) + orphan blob deleted', async () => {
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+      outbox: {
+        enqueue: vi.fn(async () => {
+          throw new Error('outbox insert failed');
+        }),
+      },
+    });
+    await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toThrow('outbox insert failed');
+    expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_BLOB_KEY);
+  });
+
+  it('F8 onPaid callback rejects → promise REJECTS (atomic rollback, recordPayment T008 parity) + orphan blob deleted', async () => {
+    const cb = vi.fn(async () => {
+      throw new Error('F8 listener failed');
+    });
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), makeMember(), {
+      onPaidCallbacks: [cb],
+    });
+    await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toThrow('F8 listener failed');
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_BLOB_KEY);
   });
 
   it('foreign InvoiceApplyConflictError kinds rethrow (not swallowed into the typed error)', async () => {

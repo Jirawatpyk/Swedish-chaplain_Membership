@@ -73,7 +73,7 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
-import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
@@ -88,7 +88,12 @@ export const issueEventInvoiceAsPaidSchema = z.object({
   actorUserId: z.string().min(1),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
-  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // Shape regex first, then real-calendar refine — the regex alone accepts
+  // impossible dates (2026-02-31) that js-joda would later throw RAW on → 500.
+  paymentDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isValidCalendarDate, { message: 'not a real calendar date' }),
   paymentMethod: z.enum(['bank_transfer', 'cheque', 'cash', 'other']),
   paymentReference: z.string().max(200).nullable().optional(),
   paymentNotes: z.string().max(2000).nullable().optional(),
@@ -181,9 +186,11 @@ export async function issueEventInvoiceAsPaid(
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
   if (!settings) return err({ code: 'settings_missing' });
 
-  // Hoisted for the outer catch: once set, a render/upload failure may have
-  // left partial bytes at the content-addressed key (orphan-blob mitigation,
-  // reliability L-1).
+  // Hoisted for the outer catch: once set, ANY tx-rejecting failure — typed
+  // render/upload errors AND raw rethrows (audit.emit, outbox.enqueue, F8
+  // callbacks, repo reload) — may have left bytes at the deterministic key
+  // that outlive the rollback (orphan-blob mitigation, reliability L-1 +
+  // review Important #1).
   let blobKeyForCleanup: string | null = null;
 
   try {
@@ -486,8 +493,11 @@ export async function issueEventInvoiceAsPaid(
       // L. Outbox — ONE `invoice_paid` receipt email, mirroring recordPayment
       // (tenant `autoEmailEnabled` gate; the as-paid path has no F5-style
       // suppress flag). The attached/linked PDF is the MAIN blob — the
-      // combined document IS the receipt. Best-effort: a skip leaves the
-      // issuance fully valid (admins can resend from the detail page).
+      // combined document IS the receipt. Best-effort applies ONLY to the
+      // empty-recipient SKIP below (a skip leaves the issuance fully valid —
+      // admins can resend from the detail page); an `enqueue` THROW hard-fails
+      // the whole issuance via tx rollback (recordPayment parity: the receipt
+      // email row and the paid row commit atomically or not at all).
       //
       // Empty-recipient guard (issueInvoice Task-14 A): a non-member buyer
       // snapshot may carry '' — trim + skip + warn (ids only, NO email/PII)
@@ -553,6 +563,27 @@ export async function issueEventInvoiceAsPaid(
       return ok(paid);
     });
   } catch (e) {
+    // Orphan-blob mitigation (reliability L-1 + review Important #1): ANY
+    // failure after the upload rejected the tx, so the bytes at the
+    // deterministic key outlive the rollback while OUR row stays draft (we
+    // held its lock until rollback — no committed row can reference the
+    // key). Worse, on retry the blob adapter treats "already exists" as
+    // success returning the OLD bytes while the row commits the NEW sha256
+    // — silent tax-document drift. So clean up on every caught error EXCEPT
+    // the `invoice_already_issued` conflict translation: the race WINNER may
+    // legitimately own that key. Best-effort delete (awaited, failure logged,
+    // never masks the original error).
+    const orphanBlobKey = blobKeyForCleanup;
+    const isConflictTranslation =
+      e instanceof IssueAsPaidInternalError && e.error.code === 'invoice_already_issued';
+    if (orphanBlobKey !== null && !isConflictTranslation) {
+      await deps.blob.delete(orphanBlobKey).catch((delErr: unknown) => {
+        logger.warn(
+          { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+          'issue-as-paid: orphan blob cleanup failed',
+        );
+      });
+    }
     if (e instanceof IssueAsPaidInternalError) {
       logger.warn(
         {
@@ -562,16 +593,6 @@ export async function issueEventInvoiceAsPaid(
         },
         'issueEventInvoiceAsPaid: internal error, rolling back',
       );
-      // Orphan-blob mitigation (reliability L-1): a render/upload failure may
-      // have left partial bytes at the content-addressed key while OUR row
-      // stays draft (we held its lock until rollback — no committed row can
-      // reference the key). Best-effort delete; never mask the typed error.
-      if (
-        blobKeyForCleanup !== null &&
-        (e.error.code === 'pdf_render_failed' || e.error.code === 'blob_upload_failed')
-      ) {
-        await deps.blob.delete(blobKeyForCleanup).catch(() => {});
-      }
       // T122 parity — post-rollback forensic audit for render failures (the
       // in-tx audit would have rolled back with the mutation). Fire-and-
       // forget: never mask the original error with an audit-write failure.
