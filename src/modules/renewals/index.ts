@@ -160,6 +160,8 @@ export {
 export {
   parseSchedulePolicySteps,
   findStepForDate,
+  findDueStepsForDate,
+  REMINDER_CATCH_UP_LOOKBACK_DAYS,
   type TenantRenewalSchedulePolicy,
   type SchedulePolicyError,
 } from './domain/tenant-renewal-schedule-policy';

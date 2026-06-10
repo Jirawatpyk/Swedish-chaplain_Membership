@@ -2469,7 +2469,11 @@
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "unknownCompany": "(Unknown company)",
         "emailUnverifiedHint": "Email unverified — recent bounces detected; system reminders are paused until the contact's email is updated and re-verified.",
-        "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}"
+        "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}",
+        "pagination": {
+          "next": "Next 50 →",
+          "showingFirst": "Showing first 50"
+        }
       },
       "actions": {
         "open": "Open cycle",

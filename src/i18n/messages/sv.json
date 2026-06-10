@@ -2469,7 +2469,11 @@
         "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
         "unknownCompany": "(Okänt företag)",
         "emailUnverifiedHint": "E-postadressen är overifierad — nyligen upptäckta studsar; systempåminnelser är pausade tills kontaktens e-post uppdateras och verifieras på nytt.",
-        "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}"
+        "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}",
+        "pagination": {
+          "next": "Nästa 50 →",
+          "showingFirst": "Visar första 50"
+        }
       },
       "actions": {
         "open": "Öppna cykel",

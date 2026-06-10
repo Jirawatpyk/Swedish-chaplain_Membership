@@ -1123,7 +1123,7 @@ These counters power the ops dashboard view of "what F8 actually did today". Dis
 
 | Metric | Type | Labels | Source | SLO ref |
 |---|---|---|---|---|
-| `renewals_reminders_sent_total` | counter | `tier_bucket` (5-enum), `offset_day` (~6-enum) | `dispatch-one-cycle.ts` success path | FR-010 |
+| `renewals_reminders_sent_total` | counter | `tier_bucket` (5-enum), `offset_day` (~6-enum), `caught_up` (bool) | `dispatch-one-cycle.ts` success path — `caught_up=true` means the send came from the bounded catch-up recovery path rather than the normal dispatch window; a spike here signals cron-health degradation (see F8-A13) | FR-010 |
 | `renewals_reminders_skipped_total` | counter | `reason` (FR-012 SkipReason union, ~10-enum) | `dispatch-one-cycle.ts:emitSkipAudit` | FR-012 |
 | `renewals_reminders_failed_total` | counter | `reason` (gateway error kind, ~5-enum) | `dispatch-one-cycle.ts` failure path | FR-010a |
 | `renewals_self_service_completed_total` | counter | `tenant` | `confirm-renewal.ts` success | US3 |
@@ -1196,6 +1196,21 @@ load only.
 | `renewals.escalation_task.overdue_count` | gauge | `tenant_id` | per page-load summary (existing port `countMatching`) | — |
 | `renewals.escalation_task.audit_emit_failed_total` | counter | `event_type ∈ {completed,skipped,reassigned}` | use-case catch arm (existing pino warn breadcrumb) | F8-A2 (rolls up into the existing audit-emit alarm) |
 
+#### 23.1.5 Reconcile-pending-reactivations — timeout outcome counters (branch 063)
+
+Added in branch `063-renewal-audit-fixes` to close the money-observability gap identified in the Round-2 reliability review. Each counter captures a distinct outcome path inside `processTimeout` so SRE can triage money-at-risk situations without reading Stripe refund histories manually.
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `renewals_reconcile_timeout_transition_failed_post_refund_total` | counter | `tenant` | `processTimeout` — refund succeeded, tx2 cycle-transition threw (non-conflict DB blip); cycle stays `pending_admin_reactivation` with refunded money; self-heals next cron run | F8-A13 (paging) |
+| `renewals_reconcile_timeout_transition_failed_no_refund_total` | counter | `tenant` | `processTimeout` — tx2 transition threw but no refund had been issued (no invoice / no settled charge); no money at stake; self-heals next cron run | informational |
+| `renewals_reconcile_timeout_refund_orphaned_total` | counter | `tenant` | `processTimeout` — refund issued, then admin/conflict won the tx2 window (accepted residual #6); money returned to member against a now-non-pending cycle | informational |
+| `renewals_reconcile_timeout_admin_race_skipped_total` | counter | `tenant` | `processTimeout` — re-read under lock found cycle no longer `pending_admin_reactivation`; admin won Step-1 before refund, NO money moved, clean no-op | informational |
+
+**Cardinality note**: all four counters carry a single `tenant` label. Tenant count is bounded (single-tenant deployed; MTA+STD path grows linearly with onboarded organisations, not with members), so cardinality is safe.
+
+**Paging distinction**: ONLY `renewals_reconcile_timeout_transition_failed_post_refund_total` pages on-call (F8-A13 below). The other three are 📉 Report / informational — a non-zero rate is expected under normal admin–cron contention. Do NOT add paging alerts to the informational counters; see § 1 alert philosophy.
+
 ### 23.2 SLOs — F8
 
 | SLO | Target | Window | Metric | Action on breach |
@@ -1230,6 +1245,11 @@ load only.
 | F8-A10 | `renewals.bounce_hook_failed_total{tenant_id IS NOT NULL}` ≥ 1 in any 5-min window per tenant | alarm | `#oncall-platform` — F8 detect-bounce-threshold use-case threw on a Resend webhook bounce event (R5-C3 split). With the per-tenant tag (vs `null` for upstream DB lookup failures), SRE can trace which tenant's `email_unverified` flag is at risk of staying FALSE. |
 | F8-A11 | `renewals_tier_upgrade_audit_emit_failed_total{audit_type, tenant_id}` ≥ 1 in any 5-min window | alarm | `#oncall-platform` — F8 tier-upgrade audit emit failed inside a swallowable catch arm (Staff-R004 close). Drift between the use-case's state-write success and the audit row landing → forensic chain gap per Constitution Principle VIII visibility. Per-`audit_type` slicing distinguishes the 4 known catch sites (member-notify happy/skip/fail + aggregate already-at-target). |
 | F8-A12 | `renewals_at_risk_audit_emit_failed_total{audit_type, tenant_id}` ≥ 1 in any 5-min window | alarm | `#oncall-platform` — F8 at-risk audit emit failed inside the skip-below-min-tenure swallowable catch arm (R5-S1 close). Counter is the alert signal (logger.warn alone is invisible to dashboard alerting). |
+| F8-A13 | `renewals_reconcile_timeout_transition_failed_post_refund_total` non-zero rate sustained ≥ 15 min | 🚨 page | PagerDuty primary (Renewals/Billing on-call) — Stripe refund succeeded but the F8 cycle-transition kept failing across multiple cron passes; refunded money is stuck on a `pending_admin_reactivation` cycle. The cron self-heals on each pass (F5 short-circuits re-refund), but a SUSTAINED rate means the self-heal is NOT clearing. Runbook: (1) query `SELECT * FROM renewal_cycles WHERE status = 'pending_admin_reactivation' AND tenant_id = '<tenant>'` and cross-check the Stripe refund status for those invoice IDs via F5 payment history; (2) inspect why `transitionStatus` keeps throwing (RLS regression, unique-constraint, Neon connection pool exhaustion); (3) manually transition the stuck cycle once the DB fault is resolved. |
+| F8-A14 | `renewals_reconcile_timeout_transition_failed_no_refund_total` — informational only; no alert fires | 📉 report | No page, no Slack — review weekly if the counter is elevated and sustained (signals a systemic tx2 DB fault on the reconcile path, but with zero money at stake; distinguish explicitly from F8-A13 which involves refunded money). |
+| F8-A15 | `renewals_reconcile_timeout_refund_orphaned_total` — informational only; no alert fires | 📉 report | No page, no Slack — review weekly; a sustained rate spike warrants checking whether the daily cron cadence + 30-day timeout window are aligned with admin reactivation workflows (accepted residual #6; member already received the refund, admin action was canonical). |
+| F8-A16 | `renewals_reconcile_timeout_admin_race_skipped_total` — informational only; no alert fires | 📉 report | No page, no Slack — review weekly; a sustained rate > 5 / cron-pass suggests the nightly cron is overlapping with a peak admin reactivation window; consider adjusting cron schedule to off-peak hours (no money moved on this path). |
+| F8-A17 | `rate(renewals_reminders_sent_total{caught_up="true"}) / rate(renewals_reminders_sent_total)` rising above baseline over a 1-h rolling window (healthy cron should have ~0 catch-up sends) | ⚠ warn | `#oncall-platform` — spike in `caught_up=true` dimension signals cron-health degradation: the bounded catch-up recovery path in 063 is compensating for missed dispatch cron passes. Runbook: (1) check cron-job.org dispatch-coordinator recent runs for failures or skips; (2) verify `CRON_SECRET` is still valid on the dispatch route; (3) if catch-up volume exceeds one full day of normal reminder volume, escalate to paging. |
 
 ### 23.4 Forbidden log fields (F8-specific extension to § 3 universal list)
 

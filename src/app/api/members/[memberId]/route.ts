@@ -188,10 +188,13 @@ export async function PATCH(
   const isPlanChange = typeof body['new_plan_id'] === 'string';
 
   if (isPlanChange) {
-    // F8 Phase 7 T188 — wire the F8 listener pair (supersede pending
-    // tier-upgrade + reschedule renewal cadence) into the change-plan
-    // call. Each listener runs inside the F3 tx atomically per
-    // Constitution Principle VIII.
+    // F8 Phase 7 T188 / 063 Option A — wire the F8 listener pair (supersede
+    // pending tier-upgrade + reschedule renewal cadence) into the change-plan
+    // call. The listeners run POST-COMMIT — AFTER the F3 plan-flip and
+    // member_plan_manually_changed audit have committed durably. Each listener
+    // opens its OWN runInTenant tx (best-effort; a listener failure is logged,
+    // counted, and swallowed and does NOT roll back the already-committed
+    // plan-flip). See f2-plan-change-bridge.ts § Failure semantics.
     const { f8OnManualPlanChangeCallbacks } = await import('@/modules/renewals');
     const planChangeDeps = {
       ...deps,

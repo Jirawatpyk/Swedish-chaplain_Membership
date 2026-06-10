@@ -56,9 +56,18 @@ export type SupersedePendingTierUpgradeError =
   | { readonly kind: 'server_error'; readonly message: string };
 
 /**
- * Listener entry — atomic with the F2 plan-change tx. Caller
- * (`f2-plan-change-bridge.ts`) threads the F2 tx so the supersede +
- * audit emit roll back if the F2 plan-change rolls back.
+ * InTx variant — receives an already-open tenant tx from the caller and
+ * runs within it, so the supersede + audit emit roll back together with
+ * the caller's transaction if it aborts. Intended for callers that need
+ * this work to be atomic with their own transaction.
+ *
+ * Since 063 (Option A) the F2 plan-change bridge (`f2-plan-change-bridge.ts`)
+ * calls the NON-`InTx` wrapper (`supersedePendingTierUpgrade`) POST-COMMIT —
+ * after the plan-flip has committed durably — opening its own
+ * `runInTenant` tx. This `InTx` variant is preserved for other callers
+ * that still need the in-transaction behaviour. The "atomic with the F2
+ * plan-change tx / threads the F2 tx so it rolls back together" semantics
+ * apply to this variant only, NOT to the current bridge path.
  */
 export async function supersedePendingTierUpgradeInTx(
   deps: RenewalsDeps,

@@ -70,9 +70,6 @@ export function DoneTaskDialog({
           disabled={isPending}
           rows={4}
           maxLength={MAX_NOTE_LENGTH}
-          // R10 S2 close — explicit autoFocus removes reliance on
-          // base-ui DOM-order focus resolution.
-          autoFocus
           aria-describedby="outcome-note-counter"
         />
         {/* R10 W1 close — dropped aria-live="polite" so SR doesn't

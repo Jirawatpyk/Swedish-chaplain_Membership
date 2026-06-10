@@ -15,12 +15,14 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
-import type { TenantTx } from '@/lib/db';
-
 /**
- * Event payload emitted by F3's `changeMemberPlan` after the
- * `member_plan_manually_changed` audit row commits. Mirrors the
- * audit payload shape so listeners can correlate with audit log.
+ * Event payload emitted by F3's `changeMemberPlan` AFTER its tx (the
+ * plan-flip + `member_plan_manually_changed` audit) has COMMITTED.
+ * Mirrors the audit payload shape so listeners can correlate with the
+ * audit log.
+ *
+ * 063 (Option A) — listeners are dispatched post-commit, not in-tx; see
+ * the `ManualPlanChangeListener` doc for the consistency model.
  */
 export interface ManualPlanChangeEvent {
   readonly tenantId: string;
@@ -33,11 +35,18 @@ export interface ManualPlanChangeEvent {
 }
 
 /**
- * Listener signature for F3's `changeMemberPlan` to invoke. Each
- * listener runs inside the F3 tx (the `tx` param) so failures roll
- * the F3 plan-change back per Constitution Principle VIII.
+ * Listener signature for F3's `changeMemberPlan` to invoke
+ * POST-COMMIT (063, Option A). Each listener runs in its OWN tenant
+ * transaction (re-establishing RLS) and is best-effort: it receives the
+ * event only — NOT F3's tx. A listener failure is logged + counted by
+ * the F8 bridge and does NOT roll back F3's already-committed plan-flip.
+ *
+ * The old in-tx contract (listener takes F3's `tx`, a throw rolls the
+ * plan-change back) could not actually deliver its swallow guarantee: a
+ * hard SQL failure poisoned the Postgres tx → COMMIT downgraded to
+ * ROLLBACK → the plan-flip was silently lost regardless of the swallow.
+ * Option A makes the plan-flip atomic and the bookkeeping eventual.
  */
 export type ManualPlanChangeListener = (
   evt: ManualPlanChangeEvent,
-  tx: TenantTx,
 ) => Promise<void>;

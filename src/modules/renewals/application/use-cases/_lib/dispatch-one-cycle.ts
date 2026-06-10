@@ -39,7 +39,9 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
 import { buildRenewalCtaUrl } from './build-renewal-redeem-link-url';
-import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
+import {
+  findDueStepsForDate,
+} from '../../../domain/tenant-renewal-schedule-policy';
 import { asCycleId } from '../../../domain/renewal-cycle';
 import { asTaskId } from '../../../domain/renewal-escalation-task';
 import type {
@@ -195,6 +197,18 @@ export type DispatchOneCycleOutcome =
 // ---------------------------------------------------------------------------
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * 063 — catch-up provenance threaded from Gate 8 into the success-path
+ * audit. `caughtUp` is true when the step's due-day was strictly before
+ * today (the daily cron missed the exact due-day and is recovering within
+ * the bounded lookback). `stepDueDate` is the ISO date the step was
+ * originally due (UTC day boundary) for forensic correlation.
+ */
+interface CatchUpInfo {
+  readonly caughtUp: boolean;
+  readonly stepDueDate: string;
+}
 
 /** `year_in_cycle = floor((now - period_from) / 365 days) + 1` per research.md:103. */
 export function computeYearInCycle(periodFromIso: string, nowIso: string): number {
@@ -352,7 +366,8 @@ async function dispatchOneCycleInner(
   candidate: DispatchCandidate,
   ctx: DispatchContext,
 ): Promise<DispatchOneCycleOutcome> {
-  const { cycle, member, primaryContact, schedulePolicy } = candidate;
+  // `primaryContact` is consumed per-step inside `fireStep` (Gate 11).
+  const { cycle, member, schedulePolicy } = candidate;
 
   // Gate 1 — feature flag.
   if (!env.features.f8Renewals) {
@@ -405,31 +420,222 @@ async function dispatchOneCycleInner(
     await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured');
     return { kind: 'skipped', reason: 'tenant_misconfigured' };
   }
-  // Gate 8 — step not due today (silent no-op; not an audit event).
-  const dueStep: ReminderStep | null = findStepForDate(
+  // Gate 8 — resolve the due (or recently-overdue) step(s) + bounded catch-up.
+  //
+  // 063 — was a STRICT day-equality match (`target === todayUtc`) which
+  // silently dropped a reminder forever whenever the daily cron missed the
+  // exact UTC day a step was due (Vercel reboot, READ_ONLY_MODE window,
+  // infra outage). Now `findDueStepsForDate` returns every step whose
+  // due-day is within `[todayUtc - REMINDER_CATCH_UP_LOOKBACK_DAYS, todayUtc]`
+  // (most-recent first), so a short cron miss recovers while a long outage
+  // does NOT blast a stale reminder (a step older than the lookback is
+  // excluded — firing a T-90 when it is now T-30 is worse than skipping).
+  //
+  // Among the window candidates we fire the MOST-RECENT step NOT yet sent
+  // for this (cycle, step, year_in_cycle), PLUS any sibling steps sharing
+  // its due-day (see § same-target co-resolution below). This is
+  // deliberately DIFFERENT from the admin reactivation ladder
+  // (`reconcile-pending-reactivations.ts` `decideRemindersToFire`) which
+  // fires EVERY crossed-unfired rung in a single pass. Here we fire only the
+  // most-recent due-DAY per pass — the no-spam tradeoff for member
+  // reminders: a member must never receive multiple catch-up emails for
+  // DIFFERENT due-days in one cron run. Older unfired in-window steps with
+  // an EARLIER due-day are dropped as stale on that pass; on the next daily
+  // run they slide below the lookback and are permanently skipped. The
+  // dropped step is always the older / less-urgent one, so urgency is
+  // preserved. The Gate-12 idempotency index stays the double-send guard.
+  // See spec.md:194 + FR-010 ("dispatch any reminder step whose offset_day
+  // is due").
+  //
+  // 063 #1 — `yearInCycle` (run-date based) is the CYCLE-position year used
+  // by Gate 9 (multi-year final-year gate) + the cron forensic year. It is
+  // NOT a safe idempotency namespace: a catch-up step whose due-date fell in
+  // the PRIOR quota year (the 365-day boundary lands inside the 7-day
+  // lookback) would drift run-date-year 1→2, miss the prior send's row in
+  // `firedKeys`, and mint a year-2 duplicate via Gate-12 `insertIfAbsent`
+  // (no unique conflict) → a DOUBLE SEND. The idempotency year MUST be
+  // anchored on each step's DUE-date (`stepYearInCycleOf`), so the catch-up
+  // pass resolves the step to the SAME year the original send recorded.
+  const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
+  const windowSteps = findDueStepsForDate(
     schedulePolicy,
     new Date(cycle.expiresAt),
     new Date(ctx.nowIso),
   );
-  if (!dueStep) {
+  if (windowSteps.length === 0) {
+    // No step is due-or-overdue within the lookback (a future step, or a
+    // step stale beyond the lookback). Silent no-op (not an audit event —
+    // too noisy; FR-012).
     return { kind: 'skipped', reason: 'not_due_today' };
   }
-  // Gate 9 — multi-year non-final year for email steps (Q4 / FR-010).
-  const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
-  const cycleYears = computeCycleYears(cycle.cycleLengthMonths);
-  if (
-    dueStep.channel === 'email' &&
-    cycleYears > 1 &&
-    yearInCycle < cycleYears
-  ) {
-    await emitSkipAudit(deps, candidate, ctx, 'multi_year_non_final_year', {
-      year_in_cycle: yearInCycle,
-      cycle_years: cycleYears,
-      step_id: dueStep.stepId,
-    });
-    return { kind: 'skipped', reason: 'multi_year_non_final_year' };
+  const anchorDayUtc = Math.floor(
+    new Date(cycle.expiresAt).getTime() / MS_PER_DAY,
+  );
+  const todayUtcDay = Math.floor(new Date(ctx.nowIso).getTime() / MS_PER_DAY);
+  // A step's due-DAY (UTC day index) is the cycle-expiry day + its offset.
+  const stepDueDayUtcOf = (s: ReminderStep): number =>
+    anchorDayUtc + s.offsetDays;
+  // 063 #1 — STEP-anchored year_in_cycle: the year the step BELONGS to,
+  // derived from its due-date (not the cron run-date). This is the
+  // idempotency namespace (firedKeys dedup + Gate-12 insertIfAbsent).
+  const stepYearInCycleOf = (s: ReminderStep): number =>
+    computeYearInCycle(
+      cycle.periodFrom,
+      new Date(stepDueDayUtcOf(s) * MS_PER_DAY).toISOString(),
+    );
+
+  // 063 residual — cross-VERSION dedup tolerance. The 063 #1 fix anchors the
+  // idempotency year on the step's due-DAY at UTC midnight. Rows written by
+  // THIS code always match. BUT a PRE-063 on-time row stored
+  // `computeYearInCycle(period_from, cron-RUN-INSTANT)` — the run instant
+  // carries a time-of-day, and `period_from` is a real (non-midnight) paid-at
+  // `timestamptz`. When a step's due-day is the SAME UTC day as a 365×N-day
+  // boundary from `period_from`, the run-instant on that day (>= midnight)
+  // pushes `floor((t - period_from)/day)` past the 365-multiple, so the legacy
+  // stored year is `stepAnchoredYear + 1` (the drift is monotonic in
+  // time-of-day → always 0 or +1, NEVER -1). A pass on the boundary day would
+  // compute `stepAnchoredYear`, MISS the legacy `+1` row in `firedKeys`, and
+  // mint a duplicate via Gate-12 `insertIfAbsent` (no unique conflict) → a
+  // DOUBLE member email during the rollout window.
+  //
+  // `stepDueDayIsBoundaryAdjacent` is true only when the step's day-offset
+  // from `period_from`'s day is within 1 day of an exact 365-multiple — the
+  // ONLY geometry where the legacy run-instant year can drift from the
+  // midnight-anchored year. Outside this thin zone the exact-year check is the
+  // sole guard (unchanged behaviour). Declared BEFORE the `firedKeys` read
+  // because the read-gate (`needsFiredKeys`) now depends on it.
+  const periodFromDayUtc = Math.floor(
+    new Date(cycle.periodFrom).getTime() / MS_PER_DAY,
+  );
+  const stepDueDayIsBoundaryAdjacent = (s: ReminderStep): boolean => {
+    const offsetFromStart = stepDueDayUtcOf(s) - periodFromDayUtc;
+    if (offsetFromStart < 0) return false; // pre-cycle-start step — not reachable
+    const mod = offsetFromStart % 365;
+    return mod <= 1 || mod >= 364;
+  };
+
+  // 063 #4 — the per-cycle history read (`listForCycle`) is a DB round-trip
+  // that previously fired for EVERY cycle with an in-window step (+N reads
+  // on every shared-renewal-window day → cron 60s-budget risk). It is NEEDED
+  // when EITHER:
+  //   (a) a CATCH-UP is possible — at least one window step is OVERDUE
+  //       (`target < todayUtc`); the `firedKeys` set lets the dispatcher skip
+  //       an already-fired most-recent step and fall back to the next-older
+  //       unfired one, and co-resolve same-offset siblings; OR
+  //   (b) a window step is BOUNDARY-ADJACENT — even on the today-exactly
+  //       (non-overdue) path. The cross-VERSION `+1` tolerance below reads
+  //       `firedKeys`; if the set is empty the tolerance is INERT and a
+  //       PRE-063 legacy run-date-year row (`stepAnchoredYear + 1`) is unseen
+  //       → Gate-12 `insertIfAbsent` at the step-anchored year does NOT
+  //       collide with the legacy row → a SECOND reminder email is dispatched
+  //       on a same-UTC-day deploy-day re-run (063 residual × #4 interaction).
+  //       Populating `firedKeys` here lets the tolerance recognise the legacy
+  //       row → idempotency hit → no double-send.
+  //
+  // The common today-exactly NON-boundary-adjacent case (~99.5% of step-days)
+  // still SKIPS the read and relies on Gate-12's unique index, preserving the
+  // #4 perf win. Boundary-adjacent days are ~0.5% of step-days, so the extra
+  // read is rare.
+  const hasOverdueStep = windowSteps.some(
+    (s) => stepDueDayUtcOf(s) < todayUtcDay,
+  );
+  const needsFiredKeys =
+    hasOverdueStep || windowSteps.some((s) => stepDueDayIsBoundaryAdjacent(s));
+  let firedKeys = new Set<string>();
+  // Existing rows keyed by `${stepId}::${yearInCycle}` so the already-fired
+  // short-circuit (below) can surface the matched row's id/dispatched_at in
+  // the `already_sent` outcome metadata (parity with the Gate-12 replay path).
+  const existingByKey = new Map<
+    string,
+    { reminderEventId: string; dispatchedAt: string | null }
+  >();
+  if (needsFiredKeys) {
+    // `listForCycle` is RLS-scoped (wraps its own runInTenant) so this read
+    // stays tenant-isolated.
+    const existing = await deps.reminderEventRepo.listForCycle(
+      ctx.tenantId,
+      asCycleId(cycle.cycleId),
+    );
+    firedKeys = new Set(existing.map((e) => `${e.stepId}::${e.yearInCycle}`));
+    for (const e of existing) {
+      existingByKey.set(`${e.stepId}::${e.yearInCycle}`, {
+        reminderEventId: e.reminderEventId,
+        dispatchedAt: e.dispatchedAt,
+      });
+    }
   }
-  // Gate 10 — 7-day pause after admin outreach (FR-033).
+  // Return the `firedKeys` key that proves a step is already-fired, or null.
+  // A step counts as already-fired when an existing row matches its
+  // step-anchored year (the normal case — handles every multi-year same-step-
+  // different-year occurrence correctly, since each year's due-date is ~365
+  // days apart and resolves to its own distinct year) OR, ONLY when the step
+  // is boundary-adjacent, when an existing row matches `stepAnchoredYear + 1`
+  // (the legacy run-date drift). This does NOT weaken the multi-year
+  // distinction: a legitimate year-(N+1) occurrence of the same step is ~365
+  // days later in due-date — far outside this pass's 7-day catch-up window —
+  // so the dispatcher is never trying to fire it on the same pass; that future
+  // pass dedups against its own exact-year row normally.
+  const firedKeyForStep = (s: ReminderStep): string | null => {
+    const stepYear = stepYearInCycleOf(s);
+    const exact = `${s.stepId}::${stepYear}`;
+    if (firedKeys.has(exact)) return exact;
+    const legacy = `${s.stepId}::${stepYear + 1}`;
+    if (stepDueDayIsBoundaryAdjacent(s) && firedKeys.has(legacy)) return legacy;
+    return null;
+  };
+  const stepAlreadyFired = (s: ReminderStep): boolean =>
+    firedKeyForStep(s) !== null;
+
+  // windowSteps is most-recent first → the first unfired one is the most
+  // relevant step to send now. When EVERY in-window step is already fired
+  // we deliberately fall back to the most-recent window step so Gate 12's
+  // `insertIfAbsent` reports the FR-011 idempotency-hit (`already_sent`) —
+  // preserving the existing replay-skip-reason contract (a same-day re-run
+  // must report `already_sent`, not `not_due_today`). Idempotency check is
+  // STEP-anchored (063 #1) + cross-version tolerant (063 residual).
+  //
+  // The `?? windowSteps[0]!` fallback is unreachable on the NON-boundary-
+  // adjacent today-exactly HOT path (needsFiredKeys is false → firedKeys is
+  // empty → stepAlreadyFired() is always false → find() always returns the
+  // first step). It IS reachable — and correctly yields `already_sent` — on
+  // two other paths:
+  //   (a) boundary-adjacent same-day re-run: needsFiredKeys is true →
+  //       firedKeys is populated → stepAlreadyFired() returns true for every
+  //       in-window step → find() returns undefined → fallback executes, and
+  //       Gate-12 `insertIfAbsent` then reports the idempotency-hit.
+  //   (b) catch-up pass where every overdue step already fired on a prior
+  //       pass: same outcome — find() returns undefined, fallback executes.
+  // The fallback is ALSO load-bearing for TypeScript: without it `primaryStep`
+  // would be `ReminderStep | undefined`, propagating undefined checks through
+  // every downstream use. Do NOT remove it as "dead code".
+  const primaryStep: ReminderStep =
+    windowSteps.find((s) => !stepAlreadyFired(s)) ?? windowSteps[0]!;
+
+  // 063 #5 — same-target (same-offsetDay) co-resolution. Some tiers seed TWO
+  // steps at the SAME offset_day (premium `t-60.email` + `t-60.task.phone_
+  // call`; partnership `t-90.email` + `t-90.task.meeting_proposed`). They
+  // are EQUALLY due — there is no reason to serialise them across passes.
+  // The old one-step-per-pass logic fired only the most-recent and deferred
+  // the sibling to the next pass; on the LAST window day the sibling would
+  // slide below the lookback the next day → PERMANENTLY DROPPED (an admin
+  // escalation task never created). We co-resolve: fire EVERY unfired step
+  // sharing the primary step's due-day this pass.
+  //
+  // Scope: co-resolution runs only on the CATCH-UP path (`hasOverdueStep`)
+  // where we already paid for `firedKeys`. On the hot today-exactly path a
+  // same-target sibling is NOT a permanent drop (it fires next pass, which
+  // is then a catch-up pass), so we keep the single-fire hot path (063 #4).
+  const primaryTargetDay = stepDueDayUtcOf(primaryStep);
+  const stepsToFire: ReminderStep[] = hasOverdueStep
+    ? windowSteps.filter(
+        (s) =>
+          stepDueDayUtcOf(s) === primaryTargetDay &&
+          (s === primaryStep || !stepAlreadyFired(s)),
+      )
+    : [primaryStep];
+
+  // Gate 10 — 7-day pause after admin outreach (FR-033). Per-CYCLE (member-
+  // level) decision — run ONCE for the whole cycle before firing any step.
   const pauseResult = await pauseRemindersAfterOutreach(deps, {
     tenantId: ctx.tenantId,
     memberId: member.memberId,
@@ -458,7 +664,7 @@ async function dispatchOneCycleInner(
     await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured', {
       gate: 'outreach_pause_check',
       err_kind: pauseResult.error.kind,
-      step_id: dueStep.stepId,
+      step_id: primaryStep.stepId,
     });
     return { kind: 'skipped', reason: 'tenant_misconfigured' };
   }
@@ -466,7 +672,7 @@ async function dispatchOneCycleInner(
     await emitSkipAudit(deps, candidate, ctx, 'outreach_in_progress', {
       latest_outreach_at: pauseResult.value.latestOutreachAt,
       expires_at: pauseResult.value.expiresAt,
-      step_id: dueStep.stepId,
+      step_id: primaryStep.stepId,
     });
     return {
       kind: 'skipped',
@@ -474,8 +680,173 @@ async function dispatchOneCycleInner(
       metadata: { latest_outreach_at: pauseResult.value.latestOutreachAt },
     };
   }
+
+  // Fire each co-resolved step (Gates 9, 11, 12 + channel dispatch are
+  // per-STEP). `dispatchOneCycle` returns a SINGLE outcome (the PRIMARY
+  // step's — typically the most-recent / email); any same-target sibling
+  // (typically the admin-escalation task) is fired as a fully-persisted
+  // side-effect (its reminder_event row + escalation_task + audit ARE
+  // written), but is NOT separately tallied in the cron summary counters.
+  // This keeps the single-outcome contract (no blast radius on
+  // `sendReminderNow` / the admin toast / the coordinator switch) while
+  // guaranteeing neither same-target step is permanently dropped (063 #5).
+  // Co-resolution is a rare path (only premium/partnership same-offset pairs
+  // on a catch-up day), so the summary undercount is bounded + documented.
+  let primaryOutcome: DispatchOneCycleOutcome | undefined;
+  for (const step of stepsToFire) {
+    // 063 residual — already-fired short-circuit. Only the `primaryStep`
+    // (selected via the all-fired fallback `?? windowSteps[0]`) can reach
+    // here already-fired; co-resolved siblings are filtered to NOT-fired.
+    // Crucially, when the match is a PRE-063 legacy `+1` row, the step-
+    // anchored `insertIfAbsent` year would NOT collide with the legacy row's
+    // year — so we MUST short-circuit to `already_sent` BEFORE the insert
+    // rather than relying on the unique-index conflict (which only fires for
+    // an exact-year match). This preserves the FR-011 idempotency-hit
+    // contract (`already_sent`, not a fresh send) across the version boundary.
+    const matchedKey = firedKeyForStep(step);
+    if (matchedKey !== null) {
+      const matched = existingByKey.get(matchedKey);
+      const outcome: DispatchOneCycleOutcome = {
+        kind: 'skipped',
+        reason: 'already_sent',
+        ...(matched !== undefined
+          ? {
+              metadata: {
+                existing_reminder_event_id: matched.reminderEventId,
+                existing_dispatched_at: matched.dispatchedAt,
+              },
+            }
+          : {}),
+      };
+      if (step === primaryStep) primaryOutcome = outcome;
+      continue;
+    }
+    const fireArgs = {
+      step,
+      stepYearInCycle: stepYearInCycleOf(step),
+      yearInCycleRunDate: yearInCycle,
+      caughtUp: stepDueDayUtcOf(step) < todayUtcDay,
+      stepDueDateIso: new Date(stepDueDayUtcOf(step) * MS_PER_DAY).toISOString(),
+    };
+    if (step === primaryStep) {
+      // PRIMARY step keeps NORMAL (non-swallowed) outcome semantics — its
+      // own fireStep already wraps the channel dispatch in a try/catch
+      // (J2-B2 defensive cleanup), and any throw BEFORE that (Gate 12
+      // insertIfAbsent) must still surface so the outer cron handler can
+      // tally + audit the crash.
+      primaryOutcome = await fireStep(deps, candidate, ctx, fireArgs);
+      continue;
+    }
+    // 063 residual — SIBLING fire is best-effort. A co-resolved sibling is a
+    // side-effect of the primary; if it throws in Gate 9/11/12 (BEFORE
+    // fireStep's inner try/catch) AFTER the primary already committed, the
+    // throw must NOT propagate — that would crash the whole cycle in the
+    // outer `dispatch-renewal-cycle` handler and corrupt the summary even
+    // though the primary's row + audit persisted. We log + count the failure
+    // (the existing failure metric) and continue; the primary's outcome
+    // stands.
+    //
+    // Recovery path for a thrown sibling: a throw that reaches this catch
+    // can only originate BEFORE Gate-12 commits any row (Gate 9/11/12 itself
+    // throws). Once Gate-12's `insertIfAbsent` has committed the pending row,
+    // any subsequent throw inside `fireStep` is caught by
+    // `defensivelyMarkFailedForRetry` (J2-B2), which NEVER re-throws —
+    // `fireStep` returns an outcome instead of throwing. So NO pending row
+    // is ever left behind when control reaches here.
+    //
+    // Recovery is the NEXT CRON PASS: `hasOverdueStep` (or boundary-adjacent
+    // re-check) re-fires the unfired sibling within the lookback window.
+    // The sibling is permanently dropped only if the fault persists for the
+    // entire lookback window duration without a successful cron pass.
+    try {
+      await fireStep(deps, candidate, ctx, fireArgs);
+    } catch (siblingErr) {
+      const errMsg =
+        siblingErr instanceof Error ? siblingErr.message : String(siblingErr);
+      logger.error(
+        {
+          err: siblingErr instanceof Error ? siblingErr : new Error(errMsg),
+          cycleId: cycle.cycleId,
+          memberId: member.memberId,
+          stepId: step.stepId,
+          channel: step.channel,
+          primaryStepId: primaryStep.stepId,
+          tenantId: ctx.tenantId,
+          correlationId: ctx.correlationId,
+        },
+        'dispatchOneCycleInner: co-resolved sibling step fire threw — swallowed (best-effort) so the primary step outcome stands',
+      );
+      // Count the sibling fault on the existing failure metric so it is not
+      // silently lost (cardinality bounded by the gateway error taxonomy +
+      // the synthetic dispatcher_crash kind).
+      renewalsMetrics.remindersFailed('dispatcher_crash');
+    }
+  }
+  // `primaryStep` is always a member of `stepsToFire`, so `primaryOutcome`
+  // is always assigned. The fallback satisfies the type checker.
+  return (
+    primaryOutcome ?? { kind: 'skipped', reason: 'already_sent' }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Per-step fire — Gates 9 (multi-year), 11 (no primary contact), 12
+// (idempotency) + the channel dispatch. Extracted so the cycle-level
+// decision tree can co-resolve same-offsetDay step pairs (063 #5) by
+// calling this once per step that shares the primary step's due-day.
+// ---------------------------------------------------------------------------
+
+interface FireStepArgs {
+  readonly step: ReminderStep;
+  /**
+   * 063 #1 — STEP-anchored year_in_cycle (derived from the step's DUE-date)
+   * — the idempotency namespace for Gate-12 `insertIfAbsent` + the
+   * reminder_event / task `year_in_cycle`. Defends against a cross-quota-
+   * year double-send when a catch-up step's due-date was in the prior year.
+   */
+  readonly stepYearInCycle: number;
+  /**
+   * Run-date `year_in_cycle` (cycle position). Used by Gate 9 (multi-year
+   * final-year gate) — that gate asks "are we BEFORE the final year of the
+   * multi-year cycle NOW?", which is genuinely a run-date question (an email
+   * step's due-date always sits in the final year, so a step-anchored year
+   * would defeat the gate). Kept distinct from `stepYearInCycle` on purpose.
+   */
+  readonly yearInCycleRunDate: number;
+  readonly caughtUp: boolean;
+  readonly stepDueDateIso: string;
+}
+
+async function fireStep(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+  args: FireStepArgs,
+): Promise<DispatchOneCycleOutcome> {
+  const { cycle, member, primaryContact } = candidate;
+  const { step, stepYearInCycle, yearInCycleRunDate } = args;
+  // Gate 9 — multi-year non-final year for email steps (Q4 / FR-010).
+  // EMAIL-ONLY: task-channel steps on the same offset_day are NOT gated here.
+  // On a catch-up pass where co-resolution is active (063 #5), a same-target
+  // task sibling (e.g. `t-60.task.phone_call`) may still fire this pass even
+  // when the email step is suppressed by Gate 9. The cron summary will show
+  // a `multi_year_non_final_year` skip while a task row was created — this
+  // is expected and correct (the task escalation is not year-gated).
+  const cycleYears = computeCycleYears(cycle.cycleLengthMonths);
+  if (
+    step.channel === 'email' &&
+    cycleYears > 1 &&
+    yearInCycleRunDate < cycleYears
+  ) {
+    await emitSkipAudit(deps, candidate, ctx, 'multi_year_non_final_year', {
+      year_in_cycle: yearInCycleRunDate,
+      cycle_years: cycleYears,
+      step_id: step.stepId,
+    });
+    return { kind: 'skipped', reason: 'multi_year_non_final_year' };
+  }
   // Gate 11 — email step + no primary contact (FR-019a graceful skip).
-  if (dueStep.channel === 'email' && primaryContact === null) {
+  if (step.channel === 'email' && primaryContact === null) {
     // Idempotently create a manual_outreach_required escalation task
     // so admin sees the queue. transitions inside a tx because we
     // also emit `escalation_task_created` + `renewal_reminder_skipped`
@@ -503,7 +874,7 @@ async function dispatchOneCycleInner(
               member_id: member.memberId as MemberId,
               cycle_id: cycle.cycleId,
               trigger_reason: 'no_primary_contact',
-              step_id: dueStep.stepId,
+              step_id: step.stepId,
             },
           },
           {
@@ -527,7 +898,7 @@ async function dispatchOneCycleInner(
             cycle_id: cycle.cycleId,
             member_id: member.memberId as MemberId,
             reason: 'no_primary_contact',
-            step_id: dueStep.stepId,
+            step_id: step.stepId,
             escalation_task_id: insert.row.taskId,
           },
         },
@@ -549,16 +920,19 @@ async function dispatchOneCycleInner(
   // Gate 12 — idempotency. Insert reminder_event with status=pending.
   // If the unique idem index already has a row, `created=false` and
   // we treat the dispatch as a replay (no audit, no gateway call).
+  // 063 #1 — the idempotency `yearInCycle` is the STEP-anchored year so a
+  // catch-up pass on a cross-quota-year step resolves to the SAME (cycle,
+  // step, year) the original send recorded → unique conflict → no duplicate.
   const reminderInsert = await runInTenant(deps.tenant, (tx) =>
     deps.reminderEventRepo.insertIfAbsent(tx, {
       tenantId: ctx.tenantId,
       cycleId: asCycleId(cycle.cycleId),
-      stepId: dueStep.stepId,
-      yearInCycle,
-      channel: dueStep.channel,
-      ...(dueStep.channel === 'email'
-        ? { templateId: dueStep.templateId }
-        : { taskType: dueStep.taskType }),
+      stepId: step.stepId,
+      yearInCycle: stepYearInCycle,
+      channel: step.channel,
+      ...(step.channel === 'email'
+        ? { templateId: step.templateId }
+        : { taskType: step.taskType }),
       ...(ctx.actorUserId !== null ? { actorUserId: ctx.actorUserId } : {}),
     }),
   );
@@ -584,17 +958,25 @@ async function dispatchOneCycleInner(
   // preserved (the cleanup tx writes BOTH the status flip + the
   // `renewal_reminder_send_failed` audit in the same tx).
   const reminderEventId = reminderInsert.row.reminderEventId;
+  // 063 — catch-up marker threaded into the success-path audit so the
+  // forensic trail distinguishes an on-time send from a recovered one.
+  const catchUp: CatchUpInfo = {
+    caughtUp: args.caughtUp,
+    stepDueDate: args.stepDueDateIso,
+  };
   try {
-    if (dueStep.channel === 'email') {
-      return await dispatchEmailStep(deps, candidate, ctx, dueStep, reminderEventId);
+    if (step.channel === 'email') {
+      return await dispatchEmailStep(deps, candidate, ctx, step, reminderEventId, catchUp);
     }
-    return await dispatchTaskStep(deps, candidate, ctx, dueStep, reminderEventId, yearInCycle);
+    // Task channel — the `year_in_cycle` recorded on the audit is the
+    // STEP-anchored year (063 #1) so it matches the reminder_event row.
+    return await dispatchTaskStep(deps, candidate, ctx, step, reminderEventId, stepYearInCycle, catchUp);
   } catch (e) {
     return await defensivelyMarkFailedForRetry(
       deps,
       candidate,
       ctx,
-      dueStep,
+      step,
       reminderEventId,
       e,
     );
@@ -736,6 +1118,7 @@ async function dispatchEmailStep(
   ctx: DispatchContext,
   step: ReminderStep & { channel: 'email' },
   reminderEventId: string,
+  catchUp: CatchUpInfo,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member, primaryContact } = candidate;
   // Type narrowing — Gate 11 already guarantees primaryContact !== null
@@ -806,6 +1189,10 @@ async function dispatchEmailStep(
             template_id: step.templateId,
             delivery_id: gatewayResult.value.deliveryId,
             recipient_locale: locale,
+            // 063 catch-up provenance — true when a missed-cron day was
+            // recovered within the bounded lookback (spec.md:194 FR-010).
+            caught_up: catchUp.caughtUp,
+            step_due_date: catchUp.stepDueDate,
           },
         },
         {
@@ -820,8 +1207,9 @@ async function dispatchEmailStep(
       // Phase 9 / T231 — business-volume counter (FR-010 dispatcher
       // cadence dashboard). `tier_bucket` is bounded 5-value enum,
       // `offset_day` is bounded by tier-bucket schedule policy
-      // (~6 distinct values across all 5 tiers).
-      renewalsMetrics.remindersSent(cycle.tierAtCycleStart, step.offsetDays);
+      // (~6 distinct values across all 5 tiers). `caught_up` is boolean
+      // (2-value) — cardinality stays bounded.
+      renewalsMetrics.remindersSent(cycle.tierAtCycleStart, step.offsetDays, catchUp.caughtUp);
       return {
         kind: 'sent',
         reminderEventId,
@@ -917,6 +1305,7 @@ async function dispatchTaskStep(
   step: ReminderStep & { channel: 'task' },
   reminderEventId: string,
   yearInCycle: number,
+  catchUp: CatchUpInfo,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member } = candidate;
   return runInTenant(deps.tenant, async (tx) => {
@@ -954,6 +1343,9 @@ async function dispatchTaskStep(
           step_id: step.stepId,
           assignee_role: step.assigneeRole,
           idempotent_replay: !insert.created,
+          // 063 catch-up provenance for task-channel steps.
+          caught_up: catchUp.caughtUp,
+          step_due_date: catchUp.stepDueDate,
         },
       },
       {

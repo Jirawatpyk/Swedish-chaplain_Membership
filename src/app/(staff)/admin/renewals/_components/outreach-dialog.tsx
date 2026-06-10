@@ -121,8 +121,15 @@ export function OutreachDialog({
   const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   return (
+    // Fix 4 a11y: form-bearing confirmation dialog — kept as Dialog +
+    // `role="alertdialog"`. DOM/a11y is correct: `initialFocus={cancelRef}`
+    // delivers focus-on-Cancel; `role="alertdialog"` signals AT this
+    // requires a response (ARIA 1.1 § 5.3.3). AlertDialogContent (===
+    // Base UI AlertDialog.Popup) WOULD also accept `initialFocus` — kept
+    // as Dialog is a stylistic choice, not a technical limitation.
+    // See snooze-dialog.tsx for full rationale (same pattern).
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent initialFocus={cancelRef}>
+      <DialogContent initialFocus={cancelRef} role="alertdialog">
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>

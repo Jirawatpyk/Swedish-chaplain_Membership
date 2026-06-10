@@ -9,11 +9,16 @@
  *   - T090 detect-bounce-threshold (Wave I2d) → `setEmailUnverified`
  *   - T091 reset-email-unverified (this wave) → `clearEmailUnverified`
  *
- * Tenant isolation is enforced by F3's RLS policy on `members` —
- * every method wraps its query in `runInTenant(ctx, …)` which sets
- * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`.
- * NO explicit `WHERE tenant_id = ?` — the policy adds it automatically
- * (research.md § 7.1).
+ * Tenant isolation: most tables (members, membership_plans, renewal_*,
+ * broadcasts) use strict isolating RLS policies — `runInTenant` SET LOCAL
+ * is sufficient and NO explicit `WHERE tenant_id = ?` is required for them.
+ * However, `audit_log` uses a PERMISSIVE policy where rows with NULL
+ * tenant_id (F1 identity events, migration 0007) remain visible to every
+ * tenant context. Therefore any `audit_log` query in this file MUST include
+ * an explicit `al.tenant_id = ${tenantId}` predicate — it is load-bearing,
+ * not optional. A future `audit_log` query added here MUST carry the same
+ * explicit filter. (Mirrors the corrected header in drizzle-at-risk-scorer.ts
+ * — same root cause.)
  *
  * Cross-module deep-import precedent: `drizzle-renewal-cycle-repo.ts`
  * line 26 imports F3's `members` schema for the LEFT JOIN to surface
@@ -21,9 +26,17 @@
  */
 import { and, asc, desc, eq, exists, gte, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
+import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+// Cross-module adapter→barrel import for F7's canonical quota-year
+// helper (063 — single source of truth for the e-blast quota window;
+// the at-risk usage count uses the SAME year fence as F9's benefit-usage
+// `used` (computeQuotaCounter.used) + the single-member scorer
+// drizzle-at-risk-scorer.ts).
+import { currentQuotaYear } from '@/modules/broadcasts';
 import { renewalCycles } from '../schema-renewal-cycles';
+import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
 import type {
   MemberFlagToggleResult,
   MemberRenewalFlagsRepo,
@@ -390,9 +403,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
      * members in one CTE round-trip. Joins: F4 invoices LATERAL
      * aggregate (overdue_count + last_paid_at), F2 membership_plans
      * (eblast_per_year benefit entitlement), F7 broadcasts LATERAL
-     * count (e-blasts consumed by member in current year), F1
-     * audit_log EXISTS (member_plan_changed events in last 12 months
-     * indicating tier-downgrade per FR-029 line 8).
+     * count (e-blasts the member ORIGINATED + SENT in the current quota
+     * year — F9 benefit-usage `used`, NOT F7's enforcement count; see the
+     * #8 note in the LATERAL below), F1 audit_log EXISTS
+     * (member_plan_changed events in last 12 months indicating
+     * tier-downgrade per FR-029 line 8).
      *
      * 6 of 8 FR-029 factors implemented end-to-end against real data
      * (only F6 events_attended_12mo + events_attended_3mo +
@@ -404,6 +419,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       tenantId: string,
     ): Promise<ReadonlyArray<AtRiskBatchFactorRow>> {
       const txDb = tx as typeof db;
+      // 063 correctness fix — compute the current quota year ONCE for the
+      // batch (tenant timezone) and bind it into the e-blast LATERAL so
+      // the per-quota-year window matches F7's canonical
+      // countForMemberQuota + the single-member scorer.
+      const quotaYear = currentQuotaYear(new Date(), env.tenant.timezone);
       const rows = await txDb.execute<{
         member_id: string;
         created_at: Date;
@@ -430,39 +450,46 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             JOIN membership_plans p_old
               ON p_old.tenant_id = al.tenant_id
               AND p_old.plan_id = al.payload->>'old_plan_id'
-              -- Phase 6 review C3: regex-guarded cast so a malformed
+              -- Phase 6 review C3: CASE-guarded cast so a malformed
               -- payload (non-numeric old_plan_year) for ONE member's
               -- audit row does not abort the whole CTE for the whole
-              -- tenant. The row is silently treated as "no match" —
-              -- equivalent to "not downgraded" for that audit entry.
-              AND al.payload->>'old_plan_year' ~ '^[0-9]+$'
-              AND p_old.plan_year = (al.payload->>'old_plan_year')::int
+              -- tenant. The cast lives inside the THEN branch, so the
+              -- regex provably short-circuits BEFORE the int cast runs.
+              -- An "AND regex AND cast=..." pattern does NOT guarantee
+              -- this: Postgres may reorder AND clauses and crash with
+              -- invalid-input-syntax-for-type-integer. A non-matching
+              -- year yields NULL, so p_old.plan_year = NULL is NULL (not
+              -- true) and the row is silently treated as "no match"
+              -- (= "not downgraded") -- no crash, no false downgrade.
+              AND p_old.plan_year = CASE
+                    WHEN al.payload->>'old_plan_year' ~ '^[0-9]+$'
+                    THEN (al.payload->>'old_plan_year')::int
+                  END
             JOIN membership_plans p_new
               ON p_new.tenant_id = al.tenant_id
               AND p_new.plan_id = al.payload->>'new_plan_id'
-              AND al.payload->>'new_plan_year' ~ '^[0-9]+$'
-              AND p_new.plan_year = (al.payload->>'new_plan_year')::int
+              AND p_new.plan_year = CASE
+                    WHEN al.payload->>'new_plan_year' ~ '^[0-9]+$'
+                    THEN (al.payload->>'new_plan_year')::int
+                  END
             WHERE al.event_type = 'member_plan_changed'
+              -- Load-bearing: audit_log has a PERMISSIVE RLS policy; NULL-
+              -- tenant F1 rows are cross-tenant-visible. This predicate is
+              -- not defence-in-depth — it is REQUIRED for correct isolation.
               AND al.tenant_id = ${tenantId}
               AND al.payload->>'member_id' = m.member_id::text
               AND al.timestamp > NOW() - INTERVAL '12 months'
-              AND CASE p_new.renewal_tier_bucket
-                    WHEN 'thai_alumni' THEN 0
-                    WHEN 'start_up' THEN 1
-                    WHEN 'regular' THEN 2
-                    WHEN 'premium' THEN 3
-                    WHEN 'partnership' THEN 4
-                    ELSE 99
-                  END
-                  <
-                  CASE p_old.renewal_tier_bucket
-                    WHEN 'thai_alumni' THEN 0
-                    WHEN 'start_up' THEN 1
-                    WHEN 'regular' THEN 2
-                    WHEN 'premium' THEN 3
-                    WHEN 'partnership' THEN 4
-                    ELSE 99
-                  END
+              -- 063 — bucket-ordinal downgrade test via the shared
+              -- fragment (derived from the Domain TIER_BUCKETS tuple) so
+              -- the single-member + batch scorers cannot drift. A
+              -- downgrade = lower NEW-bucket ordinal than OLD-bucket
+              -- ordinal (a move to a lower tier bucket, not a fee cut).
+              AND ${sql.raw(
+                tierBucketDowngradePredicateSql(
+                  'p_new.renewal_tier_bucket',
+                  'p_old.renewal_tier_bucket',
+                ),
+              )}
           ) AS tier_downgraded
         FROM members m
         LEFT JOIN membership_plans p
@@ -488,8 +515,34 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           -- Phase 6 review I7 — explicit tenant_id filter (defence-in-depth).
           WHERE b.tenant_id = m.tenant_id
             AND b.requested_by_member_id = m.member_id
-            AND b.status IN ('sent', 'sending', 'approved')
-            AND b.quota_consumed_at > NOW() - INTERVAL '12 months'
+            -- 063 axis fix (#3) — count the e-blast slots the member
+            -- ORIGINATED (requested_by_member_id), not received. The prior
+            -- rolling-12mo quota_consumed_at window used the wrong window
+            -- (quota is per-quota-YEAR, not rolling) and a status set
+            -- (sent,sending,approved) that diverged from the single-member
+            -- scorer.
+            --
+            -- 063 usage-notion refinement (#8) — the at-risk ENGAGEMENT
+            -- factor counts USAGE = F9 benefit-usage used (sent THIS quota
+            -- year only), matching computeQuotaCounter(...).counter.used
+            -- (= countForMemberQuota.sent, the year-fenced sent bucket).
+            -- This intentionally DIVERGES from F7's quota-ENFORCEMENT count
+            -- (which also includes the reserved bucket): enforcement must
+            -- refuse a send while a slot is in-flight, but engagement asks
+            -- whether the benefit was actually delivered THIS year.
+            --
+            -- Reserved rows (submitted/approved/failed_to_dispatch) are
+            -- DROPPED here. They carry quota_year_consumed IS NULL (schema
+            -- CHECK broadcasts_quota_year_only_on_sent), so they have NO
+            -- year fence: a terminal failed_to_dispatch from a PRIOR year
+            -- holds the slot forever (spec AS2). Counting it would inflate
+            -- this year's usage, push pct >= 30, and silently SUPPRESS the
+            -- +15 risk factor for a disengaged member (#8). Counting only
+            -- sent-this-year cannot leak a stale prior-year slot. quotaYear
+            -- is computed once per batch in the tenant timezone and bound
+            -- as a param so the year boundary matches how F7 wrote the row.
+            AND b.status = 'sent'
+            AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true
         WHERE m.status = 'active'
           AND EXISTS (

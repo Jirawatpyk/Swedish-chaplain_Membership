@@ -2303,19 +2303,22 @@ export const renewalsMetrics = {
   // ==========================================================================
 
   /**
-   * `renewals_reminders_sent_total{tier_bucket, offset_day}` — total
-   * count of reminder emails successfully dispatched. Pivot table for
+   * `renewals_reminders_sent_total{tier_bucket, offset_day, caught_up}` —
+   * total count of reminder emails successfully dispatched. Pivot table for
    * dispatcher health; correlates with Resend deliverability metrics.
-   * `tier_bucket` ∈ 5-value enum (regular | premium | partner_silver |
-   * partner_gold | partner_diamond). `offset_day` ∈ ~6-value bounded
-   * set (90 / 60 / 30 / 14 / 7 / 0).
+   * `tier_bucket` ∈ 5-value enum (thai_alumni | start_up | regular |
+   * premium | partnership). `offset_day` ∈ ~6-value bounded
+   * set (90 / 60 / 30 / 14 / 7 / 0). `caught_up` ∈ {true, false} —
+   * boolean dimension that surfaces catch-up spikes (a spike in
+   * `caught_up=true` signals cron-health degradation, exactly what
+   * the 063 recovery path addresses). Cardinality stays bounded.
    */
-  remindersSent(tier_bucket: string, offset_day: number): void {
+  remindersSent(tier_bucket: string, offset_day: number, caught_up: boolean): void {
     safeMetric(() => {
       counter(
         'renewals_reminders_sent_total',
         'F8 reminder emails successfully dispatched (FR-010)',
-      ).add(1, { tier_bucket, offset_day: String(offset_day) });
+      ).add(1, { tier_bucket, offset_day: String(offset_day), caught_up: String(caught_up) });
     });
   },
 
@@ -2895,6 +2898,135 @@ export const renewalsMetrics = {
         'renewals.pipeline.lapsed_tab_visit_total',
         'F8 admin visited the pipeline Lapsed tab (§ 23.1.1)',
       ).add(1, { tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_admin_race_skipped_total{tenant}` — 063
+   * reliability fix.
+   *
+   * Incremented in `processTimeout` when the per-cycle advisory lock
+   * re-read finds the cycle is no longer in `pending_admin_reactivation`
+   * (a concurrent admin approve / reject won the lock race before the
+   * cron). NO refund, NO transition happens on the skipped path; the
+   * admin's action is canonical. Without this counter, a spike in
+   * admin–cron contention (e.g. a batch of back-office reactivations
+   * landing at the same time as the nightly cron) is invisible on
+   * dashboards — only observable from `timeout_admin_race_skipped` in
+   * the JSON response body. A sustained non-zero rate warrants
+   * investigating whether the cron cadence + timeout window are
+   * correctly aligned with admin workflows.
+   *
+   * Alert rule: informational (non-zero rate is not an error; sustained
+   * rate > 5 / cron-pass may indicate admin–cron scheduling conflicts
+   * worth reviewing).
+   */
+  timeoutAdminRaceSkipped(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_admin_race_skipped_total',
+        'F8 reconcile-pending-reactivations timeout skipped — admin approve/reject won lock race before cron refund',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_refund_orphaned_total{tenant}` — 063
+   * xhigh-review money-observability fix.
+   *
+   * Incremented in `processTimeout` when the cron DID issue the refund
+   * (the Step-1 validate-under-lock re-read found the cycle still
+   * `pending_admin_reactivation`) but an admin approve/reject — or an
+   * optimistic-lock `CycleTransitionConflictError`/`CycleNotFoundError`
+   * — won the *Step-3* window between the refund and tx2's lock. The
+   * cycle ended up terminal (admin won) yet the member got their money
+   * back (cron already refunded) — the ACCEPTED residual per #6.
+   *
+   * Distinct from `timeoutAdminRaceSkipped` (Step-1: admin won BEFORE the
+   * refund, NO money moved) so SRE can tell a clean no-op race apart from
+   * a money-window residual. The OLD code silently folded this into
+   * `timed_out` via a fall-through `return;`, so the JSON `timed_out`
+   * count over-reported clean timeouts and the money window was invisible
+   * on dashboards.
+   *
+   * Alert rule: informational — a non-zero rate is expected under
+   * admin–cron contention; a SUSTAINED rate warrants reviewing whether
+   * the cron cadence + 30-day timeout window align with admin workflows
+   * (same alignment concern as `timeoutAdminRaceSkipped`).
+   */
+  timeoutRefundOrphaned(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_refund_orphaned_total',
+        'F8 reconcile-pending-reactivations timeout — refund issued then admin/conflict won the tx2 window (accepted residual #6; money refunded against a now-non-pending cycle)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_transition_failed_post_refund_total{tenant}`
+   * — 063 xhigh-review money-observability fix.
+   *
+   * Incremented in `processTimeout` when the cron issued the refund
+   * successfully but the tx2 cycle-transition / audit-emit threw a
+   * NON-conflict error (DB blip / RLS regression mid-tx). The refund is
+   * durable; the cycle stays `pending_admin_reactivation` and the NEXT
+   * cron run re-enters `processTimeout`, where F5 short-circuits the
+   * second refund (prior refund already settled) and the transition
+   * completes — i.e. the cron SELF-HEALS.
+   *
+   * Distinct from `timeoutRefundFailures` (the Stripe refund itself
+   * FAILED — no money moved). The OLD code returned `'refund_failed'`
+   * here, inflating `timeoutRefundFailures` and mislabelling a SUCCEEDED
+   * refund as a refund failure, which would mask a real Stripe-pipeline
+   * outage behind transient transition blips.
+   *
+   * Alert rule: any non-zero rate sustained for 15 min pages on-call — a
+   * persistent rate means the self-heal is NOT clearing (the transition
+   * keeps failing run after run, leaving refunded money on a pending
+   * cycle).
+   */
+  timeoutTransitionFailedPostRefund(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_transition_failed_post_refund_total',
+        'F8 reconcile-pending-reactivations timeout — refund succeeded but tx2 transition threw (non-conflict); money durable, next cron run self-heals',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_transition_failed_no_refund_total{tenant}`
+   * — 063 follow-up classification fix.
+   *
+   * Incremented in `processTimeout` when the tx2 cycle-transition /
+   * audit-emit threw a NON-conflict error (DB blip / RLS regression
+   * mid-tx) AND no refund had been issued (`refundIssued=false`): the
+   * cycle either had no linked invoice (Step 2 skipped) or the F5 bridge
+   * returned `no_payment_found` (no settled charge to claw back). NO money
+   * is at stake; the cycle stays `pending_admin_reactivation` and the NEXT
+   * cron run re-enters `processTimeout` and completes the transition — the
+   * cron SELF-HEALS exactly as in the post-refund variant, minus the money.
+   *
+   * Distinct from `timeoutTransitionFailedPostRefund` (refund DID move →
+   * paging alert, refunded money is stuck on a pending cycle) so a no-money
+   * transition blip does NOT page on-call. The prior 063 fix returned
+   * `'transition_failed_post_refund'` here UNCONDITIONALLY, so a no-money DB
+   * blip falsely fired the paging metric — SRE noise that buries real money
+   * residuals.
+   *
+   * Alert rule: INFORMATIONAL (mirrors `timeoutAdminRaceSkipped` /
+   * `timeoutRefundOrphaned`) — a non-zero rate is a transient-DB signal, not
+   * a money-at-risk page. A SUSTAINED rate warrants investigating chronic
+   * tx2 failures (the self-heal is not clearing), but on its own it never
+   * pages.
+   */
+  timeoutTransitionFailedNoRefund(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_transition_failed_no_refund_total',
+        'F8 reconcile-pending-reactivations timeout — tx2 transition threw (non-conflict) but NO refund issued; no money at stake, next cron run self-heals (informational, NOT paging)',
+      ).add(1, { tenant: tenantId });
     });
   },
 } as const;

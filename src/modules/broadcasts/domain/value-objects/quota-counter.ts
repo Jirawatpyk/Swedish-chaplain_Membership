@@ -14,12 +14,19 @@
  *   - `used + reserved <= cap`
  *   - `remaining = cap - used - reserved` (computed; not stored)
  *
- * `reserved` slots are broadcasts in `submitted` or `approved` state —
- * they have not been consumed (sent → quota_year_consumed) but they
- * MUST count against the cap so a member cannot submit their 7th
- * broadcast on a 6-cap plan while 1 is awaiting admin review. Per
- * Q1 / FR-003, reservation is released when the broadcast transitions
- * to `rejected`/`cancelled`/`failed_to_dispatch`.
+ * `reserved` slots are broadcasts in `submitted`, `approved`, or
+ * `failed_to_dispatch` state — they have not been consumed
+ * (sent → quota_year_consumed) but they MUST count against the cap so
+ * a member cannot submit their 7th broadcast on a 6-cap plan while 1
+ * is awaiting admin review. Reservation is released ONLY on transition
+ * to `rejected` or `cancelled`.
+ *
+ * NOTE — FR-003 wording says "released on failed_to_dispatch"; spec
+ * AS2 (spec.md line 324) and the implementation CONTRADICT this: a
+ * `failed_to_dispatch` row HOLDS its slot so an admin can re-trigger
+ * dispatch without losing the reservation. The AS2 behaviour is
+ * intentional. Do NOT "fix" the implementation to release on
+ * `failed_to_dispatch` without first reconciling the spec wording.
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */

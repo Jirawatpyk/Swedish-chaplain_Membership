@@ -114,6 +114,25 @@ export async function POST(
         reminders_failed: result.value.remindersFailed,
         timed_out: result.value.timedOut,
         timeout_refund_failures: result.value.timeoutRefundFailures,
+        // MONEY-SAFETY (063): cycles skipped because an admin approve/
+        // reject won the per-cycle lock race BEFORE the refund (Step-1;
+        // no money moved).
+        timeout_admin_race_skipped: result.value.timeoutAdminRaceSkipped,
+        // MONEY-SAFETY (063 xhigh): refund WAS issued, then admin/conflict
+        // won the tx2 window (Step-3; member terminal but refunded — the
+        // accepted residual per #6). Previously hidden inside `timed_out`.
+        timeout_refund_orphaned: result.value.timeoutRefundOrphaned,
+        // MONEY-SAFETY (063 xhigh): refund succeeded but tx2 transition
+        // threw (non-conflict); money durable, next cron run self-heals.
+        // Previously mislabelled as a refund failure. PAGES on-call.
+        timeout_transition_failed_post_refund:
+          result.value.timeoutTransitionFailedPostRefund,
+        // 063 follow-up: tx2 transition threw (non-conflict) but NO refund
+        // moved (no invoice OR no_payment_found); no money at stake, cycle
+        // self-heals next run. INFORMATIONAL — split from the paging
+        // post-refund counter so a no-money DB blip does not falsely page.
+        timeout_transition_failed_no_refund:
+          result.value.timeoutTransitionFailedNoRefund,
         duration_ms: Date.now() - startedAt,
       });
     });

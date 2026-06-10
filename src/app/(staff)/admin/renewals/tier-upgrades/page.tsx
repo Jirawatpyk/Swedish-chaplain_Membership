@@ -11,7 +11,7 @@
  */
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,6 +24,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
+import { fetchPlanDisplay } from '../[cycleId]/_lib/cycle-detail-fetchers';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
@@ -46,8 +47,11 @@ export default async function TierUpgradeQueuePage() {
     { headers: reqHeaders },
   );
   const tenantCtx = resolveTenantFromRequest(fakeRequest);
-  const deps = makeRenewalsDeps(tenantCtx.slug);
-  const t = await getTranslations('admin.renewals.tier_upgrades');
+  const [deps, locale, t] = await Promise.all([
+    Promise.resolve(makeRenewalsDeps(tenantCtx.slug)),
+    getLocale(),
+    getTranslations('admin.renewals.tier_upgrades'),
+  ]);
 
   let queueItems: Awaited<
     ReturnType<typeof deps.tierUpgradeRepo.listForAdminQueue>
@@ -67,6 +71,37 @@ export default async function TierUpgradeQueuePage() {
     logger.error(
       { err: e instanceof Error ? e : new Error(String(e)) },
       'admin.renewals.tier-upgrades.page_load_failed',
+    );
+  }
+
+  // Resolve plan names for the queue items. Collect unique plan IDs
+  // so we fire at most one query per distinct plan (most queues have
+  // ≤10 items, so N queries is acceptable; no batch-plan endpoint
+  // exists yet — matches the cycle-detail-fetchers pattern).
+  const planNameMap = new Map<string, string>();
+  if (!hasError && queueItems.length > 0) {
+    const uniquePlanIds = new Set<string>();
+    for (const s of queueItems) {
+      uniquePlanIds.add(s.fromPlanId);
+      uniquePlanIds.add(s.toPlanId);
+    }
+    await Promise.allSettled(
+      Array.from(uniquePlanIds).map(async (planId) => {
+        try {
+          const display = await fetchPlanDisplay({
+            tenantSlug: tenantCtx.slug,
+            planId,
+            locale,
+          });
+          if (display) planNameMap.set(planId, display.localisedName);
+        } catch (e) {
+          // Non-fatal: fall back to rendering the ID.
+          logger.warn(
+            { planId, err: e instanceof Error ? e : new Error(String(e)) },
+            'admin.renewals.tier-upgrades.plan_name_lookup_failed',
+          );
+        }
+      }),
     );
   }
 
@@ -107,15 +142,24 @@ export default async function TierUpgradeQueuePage() {
         </Card>
       ) : (
         <TierUpgradeQueueClient
-          items={queueItems.map((s) => ({
-            suggestionId: s.suggestionId,
-            memberId: s.memberId,
-            status: s.status,
-            fromPlanId: s.fromPlanId,
-            toPlanId: s.toPlanId,
-            reasonCode: s.reasonCode,
-            createdAt: s.createdAt,
-          }))}
+          items={queueItems.map((s) => {
+            const fromPlanName = planNameMap.get(s.fromPlanId);
+            const toPlanName = planNameMap.get(s.toPlanId);
+            return {
+              suggestionId: s.suggestionId,
+              memberId: s.memberId,
+              status: s.status,
+              fromPlanId: s.fromPlanId,
+              // Only spread optional keys when truthy to satisfy
+              // exactOptionalPropertyTypes (string | undefined is not
+              // assignable to optional string without this guard).
+              ...(fromPlanName !== undefined ? { fromPlanName } : {}),
+              toPlanId: s.toPlanId,
+              ...(toPlanName !== undefined ? { toPlanName } : {}),
+              reasonCode: s.reasonCode,
+              createdAt: s.createdAt,
+            };
+          })}
         />
       )}
     </TableContainer>

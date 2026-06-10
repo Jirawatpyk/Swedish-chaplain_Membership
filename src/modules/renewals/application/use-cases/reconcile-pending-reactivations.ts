@@ -81,6 +81,66 @@ export interface ReconcilePendingReactivationsOutput {
   /** Auto-timeouts where the F5 refund failed; cron will retry tomorrow. */
   readonly timeoutRefundFailures: number;
   /**
+   * MONEY-SAFETY (063 audit): timed-out cycles SKIPPED because the
+   * validate-under-lock re-read found the cycle was no longer
+   * `pending_admin_reactivation` — a concurrent admin approve (→ member
+   * kept, no refund) or reject (→ refund already issued) won the race.
+   * NO refund + NO transition happened. Distinct from `timedOut`
+   * (success) and `timeoutRefundFailures` (Stripe failed). Surfaced so
+   * SREs can see admin-vs-cron contention on the lapsed pipeline. Mirrors
+   * the `transitionRaceSkipped` counter in `lapseCyclesOnGraceExpiry`.
+   */
+  readonly timeoutAdminRaceSkipped: number;
+  /**
+   * MONEY-SAFETY (063 xhigh review): timed-out cycles where the cron
+   * DID issue the refund (the Step-1 validate-under-lock re-read found
+   * the cycle still `pending_admin_reactivation`) but a concurrent admin
+   * approve/reject — OR an optimistic-lock transition conflict — won the
+   * *Step-3* window (between the refund and tx2's lock). The tx2 re-read
+   * observed a non-pending status (or `transitionStatus` raised
+   * `CycleTransitionConflictError`/`CycleNotFoundError`), so the cron did
+   * NOT write the lapse transition. Net effect: the member ended up
+   * `completed` (admin approved) but got their money back (cron already
+   * refunded) — the ACCEPTED residual per #6, but a MONEY window SRE must
+   * see. Distinct from `timeoutAdminRaceSkipped` (Step-1: admin won BEFORE
+   * the refund, NO money moved) and `timedOut` (clean cancel+refund). The
+   * OLD code silently folded this into `timedOut` via a fall-through
+   * `return;`. Sustained non-zero alerts via
+   * `renewalsMetrics.timeoutRefundOrphaned`.
+   */
+  readonly timeoutRefundOrphaned: number;
+  /**
+   * MONEY-SAFETY (063 xhigh review): timed-out cycles where the cron
+   * issued the refund successfully but the tx2 transition/audit-emit
+   * THREW a NON-conflict error (DB blip / RLS regression mid-tx). The
+   * refund money is durable; the cycle stays `pending_admin_reactivation`
+   * and the NEXT cron run re-enters `processTimeout`, where the F5 bridge
+   * (`computeRemainingRefundable` returns null once the prior refund
+   * settled) short-circuits without a second Stripe call and the
+   * transition completes — i.e. the cron SELF-HEALS. The OLD code returned
+   * `'refund_failed'` here, inflating `timeoutRefundFailures` and
+   * mislabelling a SUCCEEDED refund as a refund failure. Distinct counter
+   * so the "refund OK, transition failed, will self-heal" case is not
+   * confused with a real Stripe failure. Alerts via
+   * `renewalsMetrics.timeoutTransitionFailedPostRefund`.
+   */
+  readonly timeoutTransitionFailedPostRefund: number;
+  /**
+   * 063 follow-up classification fix: timed-out cycles where the tx2
+   * transition/audit-emit threw a NON-conflict error (DB blip mid-tx) BUT
+   * no refund had been issued (`refundIssued=false`) — the cycle had no
+   * linked invoice (Step 2 skipped) OR the F5 bridge returned
+   * `no_payment_found`. NO money is at stake; the cycle stays
+   * `pending_admin_reactivation` and the next cron run self-heals (same as
+   * the post-refund variant, minus the money). The prior 063 fix folded
+   * this into `transitionFailedPostRefund`, which PAGES on-call after
+   * 15 min — so a no-money DB blip falsely paged. Split out into this
+   * INFORMATIONAL counter (mirrors `timeoutAdminRaceSkipped`) so the paging
+   * metric stays reserved for real refunded-money-stuck-on-pending residuals.
+   * Alerts via `renewalsMetrics.timeoutTransitionFailedNoRefund` (non-paging).
+   */
+  readonly timeoutTransitionFailedNoRefund: number;
+  /**
    * Round 2 review-fix (I-6): reminder-rung audit emits that THREW
    * (DB connection blip / RLS regression / unique-constraint conflict).
    * Round 1 silently swallowed these into a `logger.warn` — a
@@ -198,19 +258,63 @@ export async function reconcilePendingReactivations(
   let remindersFailed = 0;
   let timedOut = 0;
   let timeoutRefundFailures = 0;
+  let timeoutAdminRaceSkipped = 0;
+  let timeoutRefundOrphaned = 0;
+  let timeoutTransitionFailedPostRefund = 0;
+  let timeoutTransitionFailedNoRefund = 0;
 
   for (const cycle of page.items) {
     const daysPending = computeDaysPending(cycle, input.now);
     if (daysPending === null) continue; // missing entered_pending_at — defensive
     if (daysPending >= PENDING_TIMEOUT_DAYS) {
-      const ok = await processTimeout(
+      const outcome = await processTimeout(
         deps,
         cycle,
         input.correlationId,
         input.now,
       );
-      if (ok) timedOut += 1;
-      else timeoutRefundFailures += 1;
+      switch (outcome) {
+        case 'timed_out':
+          timedOut += 1;
+          break;
+        case 'refund_failed':
+          timeoutRefundFailures += 1;
+          break;
+        case 'admin_race_skipped':
+          timeoutAdminRaceSkipped += 1;
+          renewalsMetrics.timeoutAdminRaceSkipped(cycle.tenantId);
+          break;
+        case 'post_refund_admin_race':
+          // 063: refund WAS issued, then admin/conflict won the tx2
+          // window. NOT a timeout (no transition), NOT a refund failure
+          // (refund succeeded). The accepted money residual per #6 —
+          // surfaced via its own counter so SRE sees the window.
+          timeoutRefundOrphaned += 1;
+          renewalsMetrics.timeoutRefundOrphaned(cycle.tenantId);
+          break;
+        case 'transition_failed_post_refund':
+          // 063: refund succeeded, tx2 transition threw a non-conflict
+          // error. NOT a refund failure — the refund is durable and the
+          // next cron run self-heals (F5 short-circuits the second
+          // refund). Distinct counter so it is not confused with a real
+          // Stripe failure (`timeoutRefundFailures`). PAGES on-call.
+          timeoutTransitionFailedPostRefund += 1;
+          renewalsMetrics.timeoutTransitionFailedPostRefund(cycle.tenantId);
+          break;
+        case 'transition_failed_no_refund':
+          // 063 follow-up: tx2 transition threw a non-conflict error but NO
+          // refund had been issued (no linked invoice OR no_payment_found).
+          // No money at stake; the cycle stays pending + self-heals next
+          // run. INFORMATIONAL counter — NOT the paging post-refund metric,
+          // so a no-money DB blip does not falsely page on-call.
+          timeoutTransitionFailedNoRefund += 1;
+          renewalsMetrics.timeoutTransitionFailedNoRefund(cycle.tenantId);
+          break;
+        default: {
+          const _exhaustive: never = outcome;
+          void _exhaustive;
+        }
+      }
       continue;
     }
     // T138 catch-up review-fix: instead of equality-only firing
@@ -272,8 +376,64 @@ export async function reconcilePendingReactivations(
     remindersFailed,
     timedOut,
     timeoutRefundFailures,
+    timeoutAdminRaceSkipped,
+    timeoutRefundOrphaned,
+    timeoutTransitionFailedPostRefund,
+    timeoutTransitionFailedNoRefund,
   });
 }
+
+/**
+ * Outcome of `processTimeout` for one timed-out cycle. Six terminal
+ * states — counted independently by the caller (parity with
+ * `lapseCyclesOnGraceExpiry`'s `ProcessOneOutcome`):
+ *   - `'timed_out'`        — refund issued (or no payment) + cycle lapsed.
+ *   - `'refund_failed'`    — F5/Stripe refund FAILED (no refund issued);
+ *     cron retries tomorrow.
+ *   - `'admin_race_skipped'` — admin approve/reject — or an optimistic-lock
+ *     `CycleTransitionConflictError`/`CycleNotFoundError` — won a lock race
+ *     while NO money had moved. Covers both the *Step-1* window (admin won
+ *     BEFORE the refund — the cron never reached F5) AND the *Step-3* window
+ *     on a NO-MONEY cycle (no linked invoice OR `no_payment_found` →
+ *     `refundIssued=false`): nothing to reconcile, so the no-money Step-3
+ *     race collapses to the same clean no-op as Step-1. NO refund, NO
+ *     transition.
+ *   - `'post_refund_admin_race'` — 063 xhigh fix: the cron DID issue the
+ *     refund (`refundIssued=true` — Step-1 re-read saw pending AND the F5
+ *     bridge returned `refunded`) but an admin approve/reject — or an
+ *     optimistic-lock `CycleTransitionConflictError`/`CycleNotFoundError`
+ *     — won the *Step-3* window (between the refund and tx2's lock). The
+ *     tx2 re-read observed non-pending (or the transition raised a
+ *     conflict), so the cron did NOT write the lapse. Money WAS refunded
+ *     against a now-non-pending cycle — the accepted residual per #6,
+ *     surfaced (not hidden as `'timed_out'`) so the money window is
+ *     observable. **Precondition (063 follow-up): only fires when
+ *     `refundIssued`** — a no-money Step-3 race maps to `'admin_race_skipped'`
+ *     instead. Self-heals: the cycle is already terminal (admin won) so
+ *     no further cron action is needed; the F5 credit-note is durable.
+ *   - `'transition_failed_post_refund'` — 063 xhigh fix: **`refundIssued`**
+ *     succeeded but the tx2 transition/audit-emit threw a NON-conflict
+ *     error (DB blip mid-tx). The cycle stays pending; the NEXT cron run
+ *     re-enters `processTimeout`, F5 short-circuits the second refund
+ *     (prior refund already settled), and the transition completes — i.e.
+ *     the cron SELF-HEALS. Classified distinctly from `'refund_failed'`
+ *     because the refund SUCCEEDED (the money is durable). **Precondition
+ *     (063 follow-up): only fires when `refundIssued`** — PAGES on-call,
+ *     so a no-money tx2 blip must NOT land here (see below).
+ *   - `'transition_failed_no_refund'` — 063 follow-up: the tx2 transition/
+ *     audit-emit threw a NON-conflict error but `refundIssued=false` (no
+ *     linked invoice OR `no_payment_found`). Same self-heal as the
+ *     post-refund variant, minus the money — so it is classified distinctly
+ *     and routed to an INFORMATIONAL counter, NOT the paging post-refund
+ *     metric. Prevents a no-money DB blip from falsely paging on-call.
+ */
+type ProcessTimeoutOutcome =
+  | 'timed_out'
+  | 'refund_failed'
+  | 'admin_race_skipped'
+  | 'post_refund_admin_race'
+  | 'transition_failed_post_refund'
+  | 'transition_failed_no_refund';
 
 /**
  * T138 catch-up review-fix: pure decision fn — given a cycle's
@@ -374,8 +534,75 @@ async function processTimeout(
   cycle: RenewalCycle,
   correlationId: string,
   now: Date,
-): Promise<boolean> {
-  // Step 1: refund via F5 (outside tx — Stripe is external).
+): Promise<ProcessTimeoutOutcome> {
+  const cycleId = cycle.cycleId as CycleId;
+
+  // ---------------------------------------------------------------------
+  // Step 1 (MONEY SAFETY — 063 audit fix): re-confirm the cycle is STILL
+  // `pending_admin_reactivation` UNDER the per-cycle advisory lock BEFORE
+  // issuing the Stripe refund. Mirrors the validate-under-lock → refund-
+  // outside-tx → transition-in-tx ordering already used by
+  // `adminRejectReactivation` (the F8-canonical refund-a-pending-cycle
+  // pattern). The previous ordering refunded FIRST (no lock, no re-read),
+  // so an admin who APPROVED the reactivation in the race window — the
+  // member paid + was reactivated — still had their money clawed back by
+  // the cron. The advisory lock serialises this tx against the admin
+  // approve/reject use-cases on the (tenant, cycle) namespace: if the
+  // admin's tx committed first, this re-read observes a non-pending
+  // status and we skip the refund entirely (the admin's action wins).
+  //
+  // INVARIANT: an admin approval that lands before this lock MUST prevent
+  // the refund. The lock + tx-bound re-read enforce it.
+  const stillPending = await runInTenant(deps.tenant, async (tx) => {
+    await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
+    const reread = await deps.cyclesRepo.findByIdInTx(
+      tx,
+      cycle.tenantId,
+      cycleId,
+    );
+    return reread !== null && reread.status === 'pending_admin_reactivation';
+  });
+  if (!stillPending) {
+    // A concurrent admin approve (T136 → `completed`) or reject (T137 →
+    // `cancelled`, refund already issued) won the race before our lock.
+    // Skip silently — no refund, no transition. Counted as
+    // `admin_race_skipped` (NOT a timeout, NOT a refund failure).
+    logger.info(
+      { cycleId, tenantId: cycle.tenantId },
+      '[reconcile-pending-reactivations] cycle no longer pending at lock — admin action won race; skipping refund',
+    );
+    return 'admin_race_skipped';
+  }
+
+  // Step 2: refund via F5 (outside tx — Stripe is external; matches the
+  // F5 two-tx design + the admin-reject ordering). The advisory lock from
+  // Step 1 has been released at COMMIT, so this network call holds no DB
+  // lock.
+  //
+  // Double-refund protection is layered:
+  //
+  //   PRIMARY SERIALISERS (prevent concurrent in-flight double-refunds):
+  //     (a) Route-level per-tenant advisory lock `renewals:reconcile:<tenant>`
+  //         (acquired at the top of this POST handler) — serialises overlapping
+  //         cron retries for the same tenant so two cron passes cannot both
+  //         reach Step 2 concurrently for the same invoice.
+  //     (b) F5 `issueRefund` Phase A `SELECT…FOR UPDATE` on the `payments`
+  //         row + `pendingCount > 0 → refund_in_progress` guard — detects a
+  //         concurrently-in-progress refund from any other code path (admin,
+  //         other cron variant) and aborts before calling Stripe.
+  //
+  //   BACKSTOPS (defence-in-depth for already-completed prior refunds):
+  //     (c) `computeRemainingRefundable` counts only `status='succeeded'`
+  //         refund rows; if a prior refund settled, it returns null and
+  //         `issueRefund` short-circuits without calling Stripe.
+  //     (d) Stripe idempotency key per-(invoiceId, attempt) stops the
+  //         processor from charging twice even if our guard layers were
+  //         somehow bypassed.
+  // 063 xhigh fix: track whether a refund was actually issued so the
+  // Step-3 forensic logs + classification are accurate. A null-invoice
+  // cycle reaches Step 3 with `refundIssued=false` (no money at stake);
+  // a refunded/no-payment cycle reaches it with the F5 result recorded.
+  let refundIssued = false;
   if (cycle.linkedInvoiceId !== null) {
     // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
     // boundary — see same pattern in admin-reject-reactivation.
@@ -395,19 +622,35 @@ async function processTimeout(
         },
         '[reconcile-pending-reactivations] F5 refund failed — cycle stays pending; cron will retry tomorrow',
       );
-      return false;
+      return 'refund_failed';
     }
+    // `refunded` → money moved; `no_payment_found` → nothing to claw back
+    // (cycle entered pending without a settled charge). Only the former
+    // marks a money residual if the Step-3 transition is then skipped.
+    refundIssued = refundResult.status === 'refunded';
   }
 
-  // Step 2: transition cycle + emit timed_out audit atomically.
+  // Step 3: transition cycle + emit timed_out audit atomically.
   // R4-W1 (staff-review-2026-05-09): use injected `now` for clock
   // determinism — mirrors the WRN-12 fix in `lapseCyclesOnGraceExpiry`.
   // Without this, `closedAt` drifts from the page-cutoff timestamp under
   // heavy cron load and breaks log↔audit correlation.
-  const cycleId = cycle.cycleId as CycleId;
   const closedAt = now.toISOString();
+  // 063 xhigh fix: the tx2 lambda's skip paths (`return;`) used to fall
+  // through to the function-level `return 'timed_out'`, silently folding
+  // the POST-refund Step-3 residual into a benign timeout. The lambda
+  // now COMMUNICATES its terminal outcome via this captured variable so
+  // `processTimeout` returns the correct classification. Default
+  // `'timed_out'` = the happy path (transition + audit committed); the
+  // in-tx skip paths overwrite it to `'post_refund_admin_race'`.
+  let tx2Outcome: ProcessTimeoutOutcome = 'timed_out';
   try {
     await runInTenant(deps.tenant, async (tx) => {
+      // Re-acquire the per-cycle advisory lock + re-read inside tx2:
+      // Step 1 released the lock at COMMIT, then the F5 refund ran
+      // unlocked. A concurrent admin approve/reject could land in that
+      // window — re-confirm the cycle is still pending before writing
+      // the lapse transition. Mirrors `adminRejectReactivation`'s tx2.
       await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
       const reread = await deps.cyclesRepo.findByIdInTx(
         tx,
@@ -415,9 +658,29 @@ async function processTimeout(
         cycleId,
       );
       // Re-read protects against the admin-approve race: a concurrent
-      // T136/T137 might have moved the cycle out of pending while we
-      // were calling F5. Skip the timeout transition silently.
+      // T136/T137 moved the cycle out of pending in the Step-3 window
+      // (between the refund and this lock). Skip the timeout transition.
+      // 063: the refund (if issued) is durable against a now-non-pending
+      // cycle — surface this as `post_refund_admin_race` (NOT a benign
+      // `timed_out`) so SRE sees the money window. Forensic log records
+      // whether a refund actually moved + the status the admin landed on.
+      // 063 follow-up: gate the OUTCOME on `refundIssued` — a no-money cycle
+      // (no invoice OR `no_payment_found`) has no money window, so it is the
+      // same clean no-op as the Step-1 race → `admin_race_skipped`. Only a
+      // refund that actually moved makes this the money-orphan residual.
       if (!reread || reread.status !== 'pending_admin_reactivation') {
+        tx2Outcome = refundIssued ? 'post_refund_admin_race' : 'admin_race_skipped';
+        logger[refundIssued ? 'warn' : 'info'](
+          {
+            cycleId,
+            tenantId: cycle.tenantId,
+            refundIssued,
+            observedStatus: reread?.status ?? 'not_found',
+          },
+          refundIssued
+            ? '[reconcile-pending-reactivations] POST-refund admin race — refund issued against a now-non-pending cycle (accepted residual #6); cycle is already terminal, no further cron action'
+            : '[reconcile-pending-reactivations] admin won the Step-3 window before tx2 lock (no_payment cycle — no money moved); skipping transition',
+        );
         return;
       }
       try {
@@ -440,11 +703,20 @@ async function processTimeout(
           e instanceof CycleTransitionConflictError ||
           e instanceof CycleNotFoundError
         ) {
-          // Race / not-found — silently skip. Refund (if issued) is
-          // durable; admin can reconcile via F5 refund history.
-          logger.warn(
-            { cycleId, err: e.message },
-            '[reconcile-pending-reactivations] timeout transition lost race — skipping',
+          // Optimistic-lock conflict / not-found — the cycle moved out of
+          // pending between our re-read and the transition (a tighter
+          // Step-3 race). 063: same money residual as the non-pending
+          // re-read above — classify as `post_refund_admin_race`, NOT a
+          // fall-through `timed_out`. The refund (if issued) is durable;
+          // admin reconciles via F5 refund history. 063 follow-up: gate on
+          // `refundIssued` exactly as the non-pending re-read above — a
+          // no-money conflict is the clean no-op `admin_race_skipped`.
+          tx2Outcome = refundIssued ? 'post_refund_admin_race' : 'admin_race_skipped';
+          logger[refundIssued ? 'warn' : 'info'](
+            { cycleId, tenantId: cycle.tenantId, refundIssued, err: e.message },
+            refundIssued
+              ? '[reconcile-pending-reactivations] POST-refund timeout transition lost optimistic-lock race — refund issued against a now-non-pending cycle (accepted residual #6)'
+              : '[reconcile-pending-reactivations] timeout transition lost race (no money moved) — skipping',
           );
           return;
         }
@@ -468,14 +740,38 @@ async function processTimeout(
       );
     });
   } catch (e) {
+    // 063 xhigh fix: tx2 threw a NON-conflict error (DB blip / RLS
+    // regression mid-transition or mid-audit-emit). When the refund had
+    // already succeeded (`refundIssued`), the OLD code returned
+    // `'refund_failed'`, inflating `timeoutRefundFailures` and mislabelling
+    // a SUCCEEDED refund as a refund failure. Classify distinctly: the money
+    // is durable, the cycle stays pending, and the NEXT cron run re-enters
+    // `processTimeout` where F5 short-circuits the second refund (prior
+    // refund already settled) and the transition completes — i.e. the cron
+    // SELF-HEALS.
+    //
+    // 063 follow-up: gate the OUTCOME on `refundIssued`. When NO refund
+    // moved (no linked invoice OR `no_payment_found`), there is no money at
+    // stake — the cycle still self-heals next run, but it must NOT fire the
+    // PAGING `transition_failed_post_refund` metric (which exists to page
+    // on-call about refunded money stuck on a pending cycle). Route it to the
+    // INFORMATIONAL `transition_failed_no_refund` outcome instead so a
+    // no-money DB blip never falsely pages. `refundIssued` is carried in the
+    // log so the forensic trail shows whether real money awaits the self-heal.
     logger.error(
       {
         cycleId,
+        tenantId: cycle.tenantId,
+        refundIssued,
         err: e instanceof Error ? e.message : String(e),
       },
-      '[reconcile-pending-reactivations] timeout transition failed',
+      refundIssued
+        ? '[reconcile-pending-reactivations] timeout transition threw after refund — refund is durable, cycle stays pending; next cron run self-heals (F5 short-circuits the second refund)'
+        : '[reconcile-pending-reactivations] timeout transition threw (no money moved) — cycle stays pending; next cron run self-heals (informational, not a money residual)',
     );
-    return false;
+    return refundIssued
+      ? 'transition_failed_post_refund'
+      : 'transition_failed_no_refund';
   }
-  return true;
+  return tx2Outcome;
 }

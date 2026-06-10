@@ -85,15 +85,23 @@ export type RescheduleOnPlanChangeError =
   | { readonly kind: 'server_error'; readonly message: string };
 
 /**
- * Listener entry point — called by the F2 plan-change bridge inside
- * the F3-owned plan-change tx (members.change-plan use-case,
- * semantically a F2 plan-management operation).
+ * InTx variant — receives an already-open tenant tx from the caller and
+ * runs within it. Intended for callers that need this work to be atomic
+ * with their own transaction.
  *
  * **Not atomic with the surrounding tx by design** (Round 4 CRIT-1):
  * see the file-level "Failure semantics" block above for why both
  * audit emits use `emit()` (own tx) instead of `emitInTx(_tx)` —
  * `emitInTx` would taint the F3 caller's tx and cause silent
  * COMMIT→ROLLBACK on audit-row INSERT failure.
+ *
+ * Since 063 (Option A) the F2 plan-change bridge (`f2-plan-change-bridge.ts`)
+ * calls the NON-`InTx` wrapper (`rescheduleOnPlanChange`) POST-COMMIT —
+ * after the plan-flip has committed durably — opening its own
+ * `runInTenant` tx. This `InTx` variant is preserved for other callers
+ * that still need the in-transaction behaviour. The "inside the F3-owned
+ * plan-change tx" phrasing applies to this variant only, NOT to the
+ * current bridge path.
  */
 export async function rescheduleOnPlanChangeInTx(
   deps: RenewalsDeps,
