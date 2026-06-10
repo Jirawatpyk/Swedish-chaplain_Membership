@@ -8,15 +8,37 @@
  * unbounded `audit_log` table at SC-005 scale (5,000 members ×
  * ~50,000 audit rows).
  *
+ * Two-index reality (2026-06 hardening): `audit_log` carries TWO
+ * partial indexes with the IDENTICAL predicate
+ * `WHERE event_type = 'member_plan_changed'`:
+ *
+ *   - 0078 `audit_log_member_plan_changed_idx`
+ *     (tenant_id, (payload->>'memberId'), timestamp DESC, id DESC)
+ *     — F7 US3 benefits-page last-plan-change lookup.
+ *   - 0115 `audit_log_f8_tier_change_idx`
+ *     (tenant_id, timestamp) — F8 at-risk recompute EXISTS.
+ *
+ * The EXISTS shape below (tenant equality + timestamp range + LIMIT 1)
+ * is servable by EITHER index; which one the planner picks is a pure
+ * cost/statistics call that drifts with accumulated test traffic on
+ * the shared dev DB (observed 2026-06-10: planner chose 0078 via an
+ * Index Only Scan at lower cost). Pinning the EXPLAIN to ONE index
+ * name therefore makes the test assert planner *preference*, not the
+ * regression we actually guard against (index dropped / shadowed →
+ * Seq Scan at SC-005 scale).
+ *
  * This test pins:
- *   1. The index exists post-migration (regression guardrail against
- *      a future migration accidentally dropping or renaming it).
- *   2. The index is partial (filtered) — verifies the indexpred is
- *      present (cheap index, NOT the full ~50 MB composite).
- *   3. EXPLAIN (FORMAT JSON) on the production sub-query shape uses
- *      the index — proves the planner picks it up; a future migration
- *      that adds a wider composite would shadow this one without
- *      noticing.
+ *   1. `audit_log_f8_tier_change_idx` exists with the expected partial
+ *      predicate after migration. THIS is the real drop guard for
+ *      0115 — it fails if a future migration drops or renames the
+ *      index, regardless of what the planner does in test #2.
+ *   2. EXPLAIN (FORMAT JSON) on the production sub-query shape: IF
+ *      the plan mentions any index, it MUST be one of the
+ *      `member_plan_changed` partial indexes (dynamic allowlist from
+ *      `pg_indexes`). Any member of that set serves the EXISTS shape;
+ *      a plan citing an index OUTSIDE the set (or, at scale, a Seq
+ *      Scan after both partials are gone — caught by test #1 first)
+ *      is the regression.
  *
  * Round-5 H2 acknowledged the migration ships BEFORE the planner-cost
  * EXPLAIN was actually captured; this test fills that gap by running
@@ -52,7 +74,7 @@ describe('F8 migration 0115 — audit_log_f8_tier_change_idx (L4)', () => {
     expect(def).toMatch(/member_plan_changed/);
   });
 
-  it('partial index is queryable for the at-risk EXISTS shape (planner picks the index)', async () => {
+  it('at-risk EXISTS shape is served by a member_plan_changed partial index (dynamic allowlist)', async () => {
     // Mirror the at-risk recompute CTE's EXISTS sub-query shape
     // (`drizzle-member-renewal-flags-repo.ts`):
     //   SELECT 1 FROM audit_log
@@ -60,11 +82,28 @@ describe('F8 migration 0115 — audit_log_f8_tier_change_idx (L4)', () => {
     //      AND event_type = 'member_plan_changed'
     //      AND timestamp > NOW() - INTERVAL '12 months'
     //   LIMIT 1
-    // EXPLAIN at integration time against real Neon to confirm the
-    // planner picks the partial index. If a future migration drops or
-    // shadows the index, the plan node label changes from "Index Scan
-    // using audit_log_f8_tier_change_idx" to "Seq Scan" and the test
-    // fails. (FORMAT JSON makes the assertion robust to whitespace.)
+    //
+    // Build the allowlist dynamically from the catalog: EVERY index on
+    // audit_log whose definition carries the member_plan_changed
+    // partial predicate serves this shape (tenant equality + timestamp
+    // range over a tiny partial domain — 0078 and 0115 are both
+    // valid planner choices; see file header). Asserting a single
+    // name pinned planner *preference* and flaked when audit_log
+    // statistics drifted on the shared dev DB (2026-06-10).
+    const allowlistRows = await db.execute<{ indexname: string }>(drizzleSql`
+      SELECT indexname
+        FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'audit_log'
+         AND indexdef ~ 'member_plan_changed'
+    `);
+    const allowedIndexNames = allowlistRows.map((r) => r.indexname);
+    // The allowlist must at minimum contain OUR index (test #1 above
+    // asserts its existence + predicate; this keeps the allowlist
+    // honest — an empty set would make the conditional below
+    // vacuously green).
+    expect(allowedIndexNames).toContain(INDEX_NAME);
+
     const planRows = await db.execute<{
       'QUERY PLAN': Array<{ Plan: { 'Node Type': string; 'Index Name'?: string } }>;
     }>(drizzleSql`
@@ -78,18 +117,23 @@ describe('F8 migration 0115 — audit_log_f8_tier_change_idx (L4)', () => {
     `);
     const planJson = planRows[0]!['QUERY PLAN'];
     const planText = JSON.stringify(planJson);
-    // Either (a) the planner chose the partial index by name, or
-    // (b) on an empty audit_log the planner falls back to a Seq Scan
-    // (cheaper than index for ~0 rows). Both are acceptable — what we
-    // forbid is a Seq Scan when the index name is reachable AND the
-    // plan node would prefer it. So the assertion is: if the plan
-    // mentions any index, it MUST be ours.
-    if (/Index/i.test(planText)) {
-      expect(planText).toContain(INDEX_NAME);
+    // Either (a) the planner chose A member_plan_changed partial index
+    // by name, or (b) on an empty audit_log the planner falls back to
+    // a Seq Scan (cheaper than index for ~0 rows) — both acceptable.
+    // What we forbid is the plan citing an index OUTSIDE the partial
+    // set (a wider composite shadowing the partials). The
+    // dropped-entirely regression (Seq Scan because no
+    // member_plan_changed index exists at all) is caught by test #1's
+    // existence assertion, NOT here — an empty-table Seq Scan is
+    // indistinguishable from a no-index Seq Scan at EXPLAIN level.
+    const citedIndexNames = [...planText.matchAll(/"Index Name":"([^"]+)"/g)].map(
+      (m) => m[1]!,
+    );
+    for (const cited of citedIndexNames) {
+      expect(allowedIndexNames).toContain(cited);
     }
-    // Hard assertion: the index NAME must be reachable to the planner
-    // (the catalog row exists). The EXPLAIN doesn't 404 on the index
-    // — that's the regression we're locking in.
+    // Hard assertion: the EXPLAIN itself succeeded (no error/invalid
+    // markers in the plan output).
     expect(planText).not.toMatch(/error|invalid/i);
   });
 });
