@@ -153,6 +153,8 @@ export interface InvoiceRepo {
         readonly sha256: Sha256Hex;
         readonly templateVersion: number;
       };
+      /** 064 — what the rendered main PDF IS ('receipt_combined' never occurs at plain issue). */
+      readonly pdfDocKind: 'invoice' | 'receipt_separate';
     },
   ): Promise<Invoice>;
 

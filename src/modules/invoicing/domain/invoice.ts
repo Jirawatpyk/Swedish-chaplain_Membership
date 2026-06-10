@@ -226,6 +226,17 @@ export interface InvoiceCommon {
   } | null;
 
   /**
+   * 064 — WHAT the main {@link pdf} document actually is, persisted at issue
+   * time: §86/4 'invoice', combined §86/4+§105ทวิ 'receipt_combined', or §105
+   * 'receipt_separate'. NULL on draft ONLY (no main PDF yet) — the DB CHECK
+   * `invoices_non_draft_has_doc_kind` enforces presence on every non-draft
+   * row. Downstream re-renders (J2 credit-note annotation) MUST branch on
+   * this instead of re-deriving, so a receipt-titled original can never be
+   * overwritten by an invoice-titled document.
+   */
+  readonly pdfDocKind: 'invoice' | 'receipt_combined' | 'receipt_separate' | null;
+
+  /**
    * Receipt PDF metadata — written by record-payment at payment time for BOTH
    * numbering modes (separate from `pdf` so the invoice's issue-time hash stays
    * intact for audit). Null on draft/issued; **non-null on paid in either mode**

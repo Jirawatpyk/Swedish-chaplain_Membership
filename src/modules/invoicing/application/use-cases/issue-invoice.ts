@@ -429,6 +429,12 @@ export async function issueInvoice(
           sha256: rendered.sha256,
           templateVersion: deps.currentTemplateVersion,
         },
+        // 064 (Task 2) — persist WHAT the rendered main PDF is, faithful to
+        // the §86/4 gate above: `pdfKind` here is always 'invoice' or
+        // 'receipt_separate' (inferEventDocumentKind's range; a no-TIN event
+        // buyer CAN still reach plain issue today). The ternary narrows the
+        // wider `PdfDocKind` declaration to the port's two-value union.
+        pdfDocKind: pdfKind === 'invoice' ? 'invoice' : 'receipt_separate',
       });
     } catch (e) {
       if (e instanceof InvoiceApplyConflictError && e.kind === 'applyIssue') {

@@ -117,6 +117,8 @@ function makeDraftInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
     voidedByUserId: null,
     autoEmailOnIssue: null,
     pdf: null,
+    // 064 — NULL on draft only; applyIssue persists the §86/4 gate's kind.
+    pdfDocKind: null,
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,
@@ -191,7 +193,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       list: vi.fn(),
         listPaged: vi.fn(),
       applyIssue: vi.fn(async (_tx, input) =>
-        ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf }) as Invoice,
+        ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf, pdfDocKind: input.pdfDocKind }) as Invoice,
       ),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
@@ -656,6 +658,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
             sequenceNumber: 1,
             documentNumber: { raw: issueInput.documentNumber } as never,
             pdf: issueInput.pdf,
+            pdfDocKind: issueInput.pdfDocKind,
           } as Invoice;
         }),
       },
@@ -727,6 +730,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
     );
+    // 064 — the persisted pdf_doc_kind stays in lockstep with the render kind.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'invoice' }),
+    );
     // Non-member event → never enters the member-lock branch.
     expect(deps.memberIdentity.getForIssue).not.toHaveBeenCalled();
   });
@@ -739,6 +747,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'receipt_separate', vatInclusive: true }),
     );
+    // 064 — persisted in lockstep: a §105 receipt is recorded as such.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'receipt_separate' }),
+    );
   });
 
   it('event + whitespace-only buyer tax_id → treated as no-TIN → receipt_separate (trim branch)', async () => {
@@ -747,6 +760,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(r.ok).toBe(true);
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'receipt_separate' }),
+    );
+    // 064 — persisted pdf_doc_kind mirrors the rendered §105 receipt kind.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'receipt_separate' }),
     );
   });
 
@@ -779,6 +797,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
+    );
+    // 064 — matched-member TIN path persists 'invoice' in lockstep.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'invoice' }),
     );
   });
 
@@ -827,6 +850,11 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'receipt_separate' }),
+    );
+    // 064 — persisted pdf_doc_kind mirrors the rendered §105 receipt kind.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'receipt_separate' }),
     );
   });
 

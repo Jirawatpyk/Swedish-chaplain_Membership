@@ -45,6 +45,7 @@ function makeStub(): Invoice {
     voidedByUserId: null,
     autoEmailOnIssue: null,
     pdf: null,
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,

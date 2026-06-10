@@ -201,6 +201,27 @@ export function rowToSubjectFields(row: InvoiceRow): InvoiceSubjectFields {
   };
 }
 
+/**
+ * 064 (Task 2) — map the `pdf_doc_kind` text column onto the Domain literal
+ * union. The DB CHECK `invoices_pdf_doc_kind_valid` pins the value set, so an
+ * unknown NON-NULL string can only mean a corrupt row (manual DB patch,
+ * dropped CHECK) — THROW loudly (mirrors the corrupt-document_number /
+ * partial-pdf throw pattern in this file) rather than constructing an Invoice
+ * whose doc kind lies to the J2 credit-note re-render path.
+ */
+function pdfDocKindOrNull(
+  raw: string | null,
+  invoiceId: string,
+): Invoice['pdfDocKind'] {
+  if (raw === null) return null;
+  if (raw === 'invoice' || raw === 'receipt_combined' || raw === 'receipt_separate') {
+    return raw;
+  }
+  throw new Error(
+    `drizzle-invoice-repo: corrupt pdf_doc_kind on row ${invoiceId}: '${raw}'`,
+  );
+}
+
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
   if (row.documentNumber !== null) {
@@ -281,6 +302,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     autoEmailOnIssue: row.autoEmailOnIssue ?? null,
 
     pdf: buildPdfOrNull(row.pdfBlobKey, row.pdfSha256, row.pdfTemplateVersion, row.invoiceId, 'pdf'),
+    pdfDocKind: pdfDocKindOrNull(row.pdfDocKind, row.invoiceId),
     receiptPdf: buildPdfOrNull(
       row.receiptPdfBlobKey,
       row.receiptPdfSha256,
@@ -716,6 +738,9 @@ export function makeDrizzleInvoiceRepo(
           pdfBlobKey: input.pdf.blobKey,
           pdfSha256: input.pdf.sha256,
           pdfTemplateVersion: input.pdf.templateVersion,
+          // 064 (Task 2) — what the rendered main PDF IS; required on every
+          // non-draft row (`invoices_non_draft_has_doc_kind`).
+          pdfDocKind: input.pdfDocKind,
           updatedAt: sql`now()`,
         })
         .where(

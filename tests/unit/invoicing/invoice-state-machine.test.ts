@@ -164,6 +164,7 @@ describe('Invoice state machine', () => {
         sha256: Sha256Hex.ofUnsafe('0'.repeat(64)),
         templateVersion: 1,
       },
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,

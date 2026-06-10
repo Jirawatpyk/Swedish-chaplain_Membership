@@ -140,6 +140,17 @@ export const invoices = pgTable(
     pdfBlobKey: text('pdf_blob_key'),
     pdfSha256: char('pdf_sha256', { length: 64 }),
     pdfTemplateVersion: smallint('pdf_template_version'),
+    // 064-event-invoice-paid-flow (Task 2) — WHAT the main PDF actually is,
+    // persisted at issue time: §86/4 'invoice', combined §86/4+§105ทวิ
+    // 'receipt_combined', or §105 'receipt_separate'. NULL on draft ONLY
+    // (no main PDF yet) — `invoices_non_draft_has_doc_kind` enforces
+    // presence on every non-draft row, and `invoices_pdf_doc_kind_valid`
+    // pins the value set. Migration 0211 backfilled pre-existing rows
+    // (054 no-TIN event rows → 'receipt_separate'; all other non-draft →
+    // 'invoice'). Downstream (J2 credit-note annotation re-render) reads
+    // this instead of re-deriving, so a receipt-titled original can never
+    // be overwritten by an invoice-titled re-render.
+    pdfDocKind: text('pdf_doc_kind'),
     // Receipt PDF — written by applyPayment (sync) or render-receipt-pdf
     // worker (async, T166), separate from invoice PDF so the invoice's
     // audit hash stays intact after payment (F4 final-review C1).
@@ -243,6 +254,22 @@ export const invoices = pgTable(
           AND pdf_template_version IS NOT NULL
         )
       )`,
+    ),
+    // 064-event-invoice-paid-flow (Task 2) — pdf_doc_kind invariants.
+    // Mirror the LIVE predicates after migration 0211 exactly (same
+    // schema-fidelity treatment as `invoices_non_draft_has_snapshots`
+    // above): the value set is pinned, and every non-draft row must say
+    // what its main PDF is (drafts have no main PDF → NULL).
+    check(
+      'invoices_pdf_doc_kind_valid',
+      sql`(
+        pdf_doc_kind IS NULL
+        OR pdf_doc_kind IN ('invoice','receipt_combined','receipt_separate')
+      )`,
+    ),
+    check(
+      'invoices_non_draft_has_doc_kind',
+      sql`(status = 'draft' OR pdf_doc_kind IS NOT NULL)`,
     ),
     // 054-event-fee-invoices — one non-void event invoice per registration.
     // Predicate uses `status <> 'void'` because the void status value is

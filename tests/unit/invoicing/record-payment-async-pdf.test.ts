@@ -102,6 +102,7 @@ function makeIssuedInvoice(): Invoice {
       sha256: Sha256Hex.ofUnsafe('a'.repeat(64)),
       templateVersion: 1,
     },
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,

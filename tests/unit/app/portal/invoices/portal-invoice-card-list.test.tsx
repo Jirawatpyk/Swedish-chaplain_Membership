@@ -216,6 +216,7 @@ function buildInvoice(
     voidedByUserId: null,
     autoEmailOnIssue: null,
     pdf: { blobKey: 'k', sha256: sha(), templateVersion: 1 },
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,

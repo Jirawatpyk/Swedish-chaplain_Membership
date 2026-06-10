@@ -1478,6 +1478,13 @@
 			"when": 1798533900000,
 			"tag": "0210_member_number_audit_enum",
 			"breakpoints": true
+		},
+		{
+			"idx": 211,
+			"version": "7",
+			"when": 1798534000000,
+			"tag": "0211_invoices_pdf_doc_kind",
+			"breakpoints": true
 		}
 	]
 }
