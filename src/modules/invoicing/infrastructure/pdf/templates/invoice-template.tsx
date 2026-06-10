@@ -174,6 +174,15 @@ function beYear(isoDate: string | null): string {
 export function InvoiceTemplate(input: PdfRenderInput) {
   const isPreview = input.kind === 'invoice_preview';
   const isVoid = input.kind === 'void_stamped_invoice';
+  // 064 Task 12 — kinds whose MAIN blob can be a §86/10-creditable parent and
+  // therefore receive the J2 credited-annotation re-render: a bill-first
+  // §86/4 'invoice' OR an as-paid combined §86/4+§105ทวิ 'receipt_combined'
+  // (issueEventInvoiceAsPaid). The gate stays an explicit allow-list —
+  // 'receipt_separate' parents are rejected by the §86/10
+  // `receipt_not_creditable` guard before any annotation render, and a §105
+  // ใบเสร็จรับเงิน must never carry a credit-note stamp.
+  const isCreditAnnotatable =
+    input.kind === 'invoice' || input.kind === 'receipt_combined';
   let titleTh = 'ใบกำกับภาษี';
   let titleEn = 'Tax Invoice';
   if (input.kind === 'credit_note') {
@@ -202,7 +211,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
             VOID / {shapeThai('ยกเลิก')}
           </Text>
         )}
-        {input.kind === 'invoice' && input.creditedAnnotation && (
+        {isCreditAnnotatable && input.creditedAnnotation && (
           <Text style={styles.creditedStamp}>
             {input.creditedAnnotation.fullyCredited
               ? shapeThai('ลดหนี้แล้ว') + ' / CREDITED'
@@ -380,7 +389,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
         </Text>
         <Text style={styles.wordsLine}>({amountToEnglishWords(totalThb)})</Text>
 
-        {input.kind === 'invoice' &&
+        {isCreditAnnotatable &&
           input.creditedAnnotation &&
           input.creditedAnnotation.references.length > 0 && (
             <View style={styles.cnRefFooterBlock}>

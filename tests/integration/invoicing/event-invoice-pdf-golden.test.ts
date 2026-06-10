@@ -220,4 +220,73 @@ describe('054 Task 9 — event-invoice PDF golden (§86/4 doc-type render)', () 
       /VAT included/i,
     );
   }, 60_000);
+
+  it('064 Task 12 — receipt_combined + creditedAnnotation → combined title PRESERVED + credited stamp + CN-ref footer', async () => {
+    // The J2 credit-note annotation re-render of an AS-PAID parent re-renders
+    // the COMBINED ใบกำกับภาษี/ใบเสร็จรับเงิน (kind='receipt_combined') with
+    // the PARTIALLY CREDITED overlay + CN-reference footer. The template must
+    // (a) keep the combined dual-role title — re-titling it as a plain tax
+    // invoice destroys the only §105ทวิ receipt evidence — and (b) actually
+    // draw the annotation on the receipt_combined kind (the overlay gate was
+    // historically kind==='invoice'-only, which would silently DROP the
+    // credited stamp from the overwritten blob).
+    const creditedAnnotation = {
+      fullyCredited: false,
+      references: [
+        {
+          documentNumber: 'J2AC-2026-000001',
+          issueDate: '2026-09-20',
+          total: Money.fromSatangUnsafe(53_500n),
+        },
+      ],
+    };
+
+    // CONTROL — the same annotation on kind='invoice' (the long-shipped J2
+    // path for bill-first parents) must extract from the bytes. This calibrates
+    // the pdf-parse assertions below: if the stamp were unextractable per se,
+    // the control would fail too.
+    const controlInput: PdfRenderInput = {
+      ...makeEventRenderInput({ kind: 'invoice', buyerTaxId: '9876543210123' }),
+      creditedAnnotation,
+    };
+    const control = await reactPdfRenderAdapter.render(controlInput);
+    const controlText = await extractPdfText(control.bytes);
+    // The stamp is a rotated overlay — pdf-parse extracts its words on
+    // separate lines ("PARTIALLY\nCREDITED"), so match across whitespace.
+    expect(controlText, 'control: credited stamp on kind=invoice').toMatch(
+      /PARTIALLY\s+CREDITED/i,
+    );
+    expect(controlText, 'control: CN-ref footer on kind=invoice').toContain(
+      'J2AC-2026-000001',
+    );
+
+    // The receipt_combined re-render — same annotation, combined kind.
+    const input: PdfRenderInput = {
+      ...makeEventRenderInput({ kind: 'invoice', buyerTaxId: '9876543210123' }),
+      kind: 'receipt_combined',
+      creditedAnnotation,
+    };
+    const { bytes } = await reactPdfRenderAdapter.render(input);
+    expect(Buffer.from(bytes.slice(0, 5)).toString('latin1')).toBe('%PDF-');
+    const text = await extractPdfText(bytes);
+
+    // (a) Combined dual-role title preserved — BOTH legal labels present.
+    expect(text, 'expected Thai tax-invoice label in combined title').toMatch(
+      /ใบก[ำํ]​?า?กับภาษี/,
+    );
+    expect(text, 'expected Thai receipt label in combined title').toContain('ใบเสร็จรับเงิน');
+    expect(text).toMatch(/Tax Invoice/i);
+    expect(text).toMatch(/Official Receipt/i);
+
+    // (b) Credited stamp + CN-ref footer drawn on the receipt_combined kind.
+    expect(
+      text,
+      'PARTIALLY CREDITED stamp must render on a receipt_combined re-render',
+    ).toMatch(/PARTIALLY\s+CREDITED/i);
+    expect(
+      text,
+      'CN-reference footer must render on a receipt_combined re-render',
+    ).toContain('J2AC-2026-000001');
+    expect(text).toMatch(/Referenced by credit note/i);
+  }, 60_000);
 });

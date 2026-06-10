@@ -629,13 +629,24 @@ export async function issueCreditNote(
           { pdfRender: deps.pdfRender, blob: deps.blob },
           {
             renderInput: {
-              // §86/10 doc-type gate (final-review HIGH 1): a §105 receipt_separate
-              // parent is rejected by the `receipt_not_creditable` guard above
-              // BEFORE this point is ever reached, so ONLY kind='invoice' (§86/4
-              // ใบกำกับภาษี) parents arrive here. Hardcoding 'invoice' is therefore
-              // tax-correct — the CREDITED overlay can only ever stamp a genuine
-              // tax invoice, never a §105 ใบเสร็จรับเงิน.
-              kind: 'invoice',
+              // 064 Task 12 — reproduce what the MAIN blob actually holds.
+              // `invoices.pdf_doc_kind` (migration 0211) is the persisted
+              // record of the issue-time render; it WINS over any derivation
+              // (the as-paid TIN parent derives 'invoice' from its TIN, but
+              // its main blob IS the combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+              // Reachable parents after the §86/10 gate above:
+              //   - membership rows           → 'invoice'
+              //   - bill-first TIN event rows → 'invoice' (record-payment's
+              //     receipt_combined bytes live in the SEPARATE receipt blob;
+              //     the main blob stays frozen at issue — final-review C1)
+              //   - as-paid TIN event rows    → 'receipt_combined' (the main
+              //     blob is the only §105ทวิ receipt evidence, 10y retention)
+              // 'receipt_separate' parents are rejected by the
+              // `receipt_not_creditable` guard before this point. The NULL
+              // fallback is defensive only — `invoices_non_draft_has_doc_kind`
+              // forbids NULL on any non-draft row, and falling back to
+              // 'invoice' matches the pre-064 behaviour.
+              kind: loaded.pdfDocKind ?? 'invoice',
               templateVersion: loaded.pdf.templateVersion,
               documentNumber: loaded.documentNumber,
               issueDate: loaded.issueDate,
