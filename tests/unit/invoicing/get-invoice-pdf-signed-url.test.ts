@@ -124,6 +124,7 @@ function makeDeps(invoice: Invoice | null) {
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       },
       blob: { signDownloadUrl: blob.signDownloadUrl } as unknown as Parameters<
         typeof getInvoicePdfSignedUrl

@@ -79,6 +79,7 @@ function makeDeps(draft: Invoice | null): TestDeps {
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
     },
     audit: { emit: vi.fn(async () => {}) },
     _tx: tx,

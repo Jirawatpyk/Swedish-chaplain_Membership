@@ -152,6 +152,7 @@ function makeDeps(
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       applyReceiptPdf: vi.fn(async () =>
         invoice
           ? ({ ...invoice, receiptPdfStatus: 'rendered' } as Invoice)

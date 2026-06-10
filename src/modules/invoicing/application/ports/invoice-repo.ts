@@ -225,6 +225,39 @@ export interface InvoiceRepo {
   ): Promise<Invoice>;
 
   /**
+   * 064 — single UPDATE draft→paid (as-paid issuance, event subject only).
+   * Numbering: TIN path carries invoice-stream sequence/document numbers;
+   * no-TIN β path carries NULLs + receiptDocumentNumberRaw (CHECK relax
+   * lands in a later migration). WHERE status='draft' — 0 rows ⇒ throw
+   * InvoiceApplyConflictError (concurrent issue/as-paid race loser).
+   */
+  applyIssueAsPaid(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly fiscalYear: number;
+      readonly numbering:
+        | { readonly kind: 'invoice_stream'; readonly sequenceNumber: number; readonly documentNumber: string }
+        | { readonly kind: 'receipt_stream'; readonly receiptDocumentNumberRaw: string };
+      readonly issueDate: string;            // = paymentDate (YYYY-MM-DD)
+      readonly subtotalSatang: Satang;
+      readonly vatRate: string;
+      readonly vatSatang: Satang;
+      readonly totalSatang: Satang;
+      readonly tenantIdentitySnapshot: unknown;
+      readonly memberIdentitySnapshot: unknown;
+      readonly pdf: { readonly blobKey: string; readonly sha256: Sha256Hex; readonly templateVersion: number };
+      readonly pdfDocKind: 'receipt_combined' | 'receipt_separate';
+      readonly paymentMethod: 'bank_transfer' | 'cheque' | 'cash' | 'other';
+      readonly paymentReference: string | null;
+      readonly paymentNotes: string | null;
+      readonly paymentRecordedByUserId: string;
+      readonly paymentDate: string;          // YYYY-MM-DD (== issueDate)
+    },
+  ): Promise<Invoice>;
+
+  /**
    * T166-05 — Async receipt PDF worker callback. Flips
    * `receipt_pdf_status` from 'pending' → 'rendered' atomically with
    * the blob_key + sha256 + template_version write. Idempotent: a

@@ -78,6 +78,7 @@ describe('getInvoice', () => {
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'i' });
@@ -104,6 +105,7 @@ describe('getInvoice', () => {
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'missing' });
@@ -137,6 +139,7 @@ describe('getInvoice', () => {
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       },
       audit: { emit: auditEmit },
     };
@@ -190,6 +193,7 @@ describe('getInvoice', () => {
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       },
       audit: { emit: auditEmit },
     };

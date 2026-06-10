@@ -181,6 +181,7 @@ function makeDeps(
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
