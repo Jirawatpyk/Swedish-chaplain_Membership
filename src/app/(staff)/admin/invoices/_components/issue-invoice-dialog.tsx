@@ -93,11 +93,15 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
           description:
             // S1-P1-16 — surface a human-readable message for the company
             // tax_id gate instead of the raw error code (FR-009a).
+            // 064 §105 ROOT FIX — same for the no-TIN event guard, pointing
+            // the admin at the record-as-paid flow instead of plain issue.
             code === 'tax_id_required'
               ? t('errors.tax_id_required')
-              : code
-                ? t('errors.codeFallback', { code })
-                : t('errors.unknown'),
+              : code === 'event_no_tin_requires_paid_issue'
+                ? t('errors.event_no_tin_requires_paid_issue')
+                : code
+                  ? t('errors.codeFallback', { code })
+                  : t('errors.unknown'),
         });
         return;
       }

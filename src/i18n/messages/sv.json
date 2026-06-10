@@ -1941,6 +1941,7 @@
         "errors": {
           "failed": "Kunde inte utfärda",
           "tax_id_required": "Den här medlemmen är en företagsnivå men saknar skattenummer i registret. En thailändsk skattefaktura kräver köparens skattenummer — uppdatera medlemsposten innan du utfärdar.",
+          "event_no_tin_requires_paid_issue": "Köparen saknar skatteregistreringsnummer — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },

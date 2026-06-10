@@ -118,6 +118,12 @@ export type IssueInvoiceError =
    * hand-written draft) rather than a normal flow.
    */
   | { code: 'no_buyer_snapshot' }
+  /**
+   * 064 §105 ROOT FIX — an EVENT draft whose buyer has no TIN cannot be
+   * billed first: their only legal document is a §105 receipt, which may
+   * exist only at the moment payment is recorded (`issueEventInvoiceAsPaid`).
+   */
+  | { code: 'event_no_tin_requires_paid_issue' }
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
@@ -274,6 +280,16 @@ export async function issueInvoice(
     if (draft.invoiceSubject === 'membership' && !buyerHasTin(memberSnap.tax_id)) {
       return err({ code: 'tax_id_required' });
     }
+    // 064 §105 ROOT FIX — a no-TIN event buyer can never be billed first:
+    // the only legal document for them is a §105 receipt, which may exist
+    // only at the moment payment is recorded (issueEventInvoiceAsPaid).
+    if (draft.invoiceSubject === 'event' && !buyerHasTin(memberSnap.tax_id)) {
+      return err({ code: 'event_no_tin_requires_paid_issue' });
+    }
+    // After the two gates above, an event subject always resolves to 'invoice'
+    // here — 'receipt_separate' at plain issue is unreachable (applyIssue's
+    // port type still allows it; the as-paid path is the live writer of
+    // receipt kinds).
     const pdfKind: PdfDocKind = inferEventDocumentKind(
       draft.invoiceSubject,
       memberSnap.tax_id,

@@ -73,6 +73,7 @@ export async function POST(
       : result.error.code === 'member_archived' ? 409
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'tax_id_required' ? 422
+      : result.error.code === 'event_no_tin_requires_paid_issue' ? 422
       : result.error.code === 'invalid_lines' ? 422
       : result.error.code === 'no_buyer_snapshot' ? 422
       : result.error.code === 'overflow' ? 422

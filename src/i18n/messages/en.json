@@ -1941,6 +1941,7 @@
         "errors": {
           "failed": "Issue failed",
           "tax_id_required": "This member is a company tier but has no tax ID on record. A Thai tax invoice requires the buyer's tax ID — update the member before issuing.",
+          "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         },
