@@ -150,6 +150,17 @@ export {
   type IssueInvoiceError,
 } from './application/use-cases/issue-invoice';
 
+// 064 — one-shot draft→paid issuance for EVENT invoices (combined
+// tax-invoice/receipt; no intermediate issued state). TIN path live;
+// no-TIN numbering gated until the β migration (Task 9/10).
+export {
+  issueEventInvoiceAsPaid,
+  issueEventInvoiceAsPaidSchema,
+  type IssueEventInvoiceAsPaidInput,
+  type IssueEventInvoiceAsPaidError,
+  type IssueEventInvoiceAsPaidDeps,
+} from './application/use-cases/issue-event-invoice-as-paid';
+
 export {
   listInvoices,
   listInvoicesSchema,
@@ -351,6 +362,7 @@ export {
   makeCreateInvoiceDraftDeps,
   makeCreateEventInvoiceDraftDeps,
   makeIssueInvoiceDeps,
+  makeIssueEventInvoiceAsPaidDeps,
   makeListInvoicesDeps,
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
