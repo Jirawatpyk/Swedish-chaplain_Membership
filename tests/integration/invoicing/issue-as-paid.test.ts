@@ -27,15 +27,16 @@
  * draft→paid UPDATE passes; the SAME trigger then locks the row — pinned
  * by the post-paid raw-UPDATE rejection test below.
  *
- * NUMBERING SHAPE (β decision): only the TIN shape (`kind:
- * 'invoice_stream'` — sequence_number + document_number set,
- * receipt_document_number_raw NULL) is integration-tested HERE. The
- * no-TIN β shape (`kind: 'receipt_stream'` — seq/docnum NULL +
- * receipt_document_number_raw set) only satisfies
- * `invoices_non_draft_has_snapshots` after the Task 9 CHECK relax
- * migration; its test arrives with Task 9.
+ * NUMBERING SHAPE (β decision): the TIN shape (`kind: 'invoice_stream'` —
+ * sequence_number + document_number set, receipt_document_number_raw NULL)
+ * is tested in the first describe. The no-TIN β shape (`kind:
+ * 'receipt_stream'` — seq/docnum NULL + receipt_document_number_raw set)
+ * satisfies the two numbering CHECKs since the Task 9 conditional relax
+ * (migration 0212); its repo-level section (T9-1..T9-3, END of file) pins
+ * the happy commit AND that the relax stays scoped to (event subject AND
+ * receipt number present) — never blanket.
  *
- * Lives in tests/integration/** → hits live Neon. Migrations 0200–0211
+ * Lives in tests/integration/** → hits live Neon. Migrations 0200–0212
  * MUST be applied first (`pnpm db:migrate`).
  *
  * Task 6 EXTENSION — use-case-level sections for `issueEventInvoiceAsPaid`
@@ -1158,4 +1159,313 @@ describe('issueEventInvoiceAsPaid — cross-tenant probe (live Neon)', () => {
     expect(rowA!.status).toBe('draft');
     expect(rowA!.sequenceNumber).toBeNull();
   }, 60_000);
+});
+
+// =============================================================================
+// Task 9 (β numbering) — REPO-LEVEL no-TIN receipt_stream shape + conditional
+// CHECK relax (migration 0212, live Neon).
+//
+// An as-paid no-TIN EVENT invoice is a §105 receipt: its number comes from the
+// RECEIPT stream and lives in receipt_document_number_raw with
+// sequence_number/document_number NULL — the invoices_tenant_fiscal_seq_unique
+// index has NO stream discriminator, so a receipt-stream number occupying
+// sequence_number would collide with invoice-stream numbers in the same
+// (tenant, fiscal_year) bucket. Migration 0212 relaxes the two numbering
+// CHECKs (invoices_non_draft_has_snapshots + invoices_draft_has_no_number)
+// CONDITIONALLY: the invoice-stream pair may be absent ONLY when
+// invoice_subject='event' AND receipt_document_number_raw IS NOT NULL.
+// T9-2/T9-3 are the negative probes proving the condition holds.
+// =============================================================================
+
+/** β receipt-stream number (passes receipt_document_number_raw_format_check). */
+const NO_TIN_RECEIPT_RAW = 'RC-2026-000001';
+
+/** SIMULATED no-TIN walk-in buyer (tax_id null ⇒ §105 receipt) — never real PII. */
+const BUYER_NO_TIN = {
+  legal_name: 'Simulated Walk-in Guest Co',
+  tax_id: null,
+  address: '99 Simulated Lane, Bangkok 10110',
+  primary_contact_name: 'Sim Walkin',
+  primary_contact_email: 'sim.walkin@as-paid.test',
+} as const;
+
+/** Seller identity snapshot reused by the β happy path + raw-UPDATE probes. */
+const T9_TENANT_SNAPSHOT = {
+  legal_name_th: 'หอการค้าจำลอง',
+  legal_name_en: 'Simulated Chamber',
+  tax_id: '0000000000000',
+  address_th: 'Bangkok',
+  address_en: 'Bangkok',
+  logo_blob_key: null,
+} as const;
+
+/** Full β no-TIN applyIssueAsPaid input (receipt_stream + receipt_separate). */
+function buildNoTinInput(tenantSlug: string, invoiceId: InvoiceId, recordedBy: string) {
+  const split = splitVatInclusive(Money.fromSatangUnsafe(TOTAL_SATANG), 700n);
+  return {
+    tenantId: tenantSlug,
+    invoiceId,
+    fiscalYear: 2026,
+    numbering: {
+      kind: 'receipt_stream' as const,
+      receiptDocumentNumberRaw: NO_TIN_RECEIPT_RAW,
+    },
+    issueDate: ISSUE_DATE,
+    subtotalSatang: split.subtotal.satang,
+    vatRate: '0.0700',
+    vatSatang: split.vat.satang,
+    totalSatang: Money.fromSatangUnsafe(TOTAL_SATANG).satang,
+    tenantIdentitySnapshot: T9_TENANT_SNAPSHOT,
+    // snake_case — must satisfy BOTH the 0045 contact-email CHECK and the
+    // zod read-boundary parse (memberIdentitySnapshotSchema; tax_id is the
+    // one nullable field) on reload.
+    memberIdentitySnapshot: {
+      ...BUYER_NO_TIN,
+      member_number: null,
+      member_number_display: null,
+    },
+    pdf: {
+      blobKey: `invoices/${tenantSlug}/2026/${NO_TIN_RECEIPT_RAW}_v1.pdf`,
+      sha256: Sha256Hex.ofUnsafe('e'.repeat(64)),
+      templateVersion: 1,
+    },
+    pdfDocKind: 'receipt_separate' as const,
+    paymentMethod: 'cash' as const,
+    paymentReference: 'SIM-DOOR-RC-001',
+    paymentNotes: null,
+    paymentRecordedByUserId: recordedBy,
+    paymentDate: ISSUE_DATE,
+  };
+}
+
+/**
+ * Assert fn rejects with SQLSTATE 23514 (check_violation) raised by one of
+ * the two NUMBERING CHECKs. The probes below violate BOTH simultaneously;
+ * Postgres reports whichever it evaluates first, so match EITHER name (via
+ * postgres.js constraint_name, falling back to the error message text).
+ */
+async function expectNumberingCheckViolation(fn: () => Promise<unknown>): Promise<void> {
+  let caught: unknown = null;
+  try {
+    await fn();
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught, 'expected a check_violation (23514)').not.toBeNull();
+  // Drizzle 0.45+ wraps the PostgresError — walk the cause chain.
+  let code: string | null = null;
+  let constraint: string | null = null;
+  const messages: string[] = [];
+  let cur: unknown = caught;
+  while (cur !== null && typeof cur === 'object') {
+    const c = cur as {
+      code?: unknown;
+      constraint_name?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    if (code === null && typeof c.code === 'string') code = c.code;
+    if (constraint === null && typeof c.constraint_name === 'string') {
+      constraint = c.constraint_name;
+    }
+    if (typeof c.message === 'string') messages.push(c.message);
+    cur = c.cause ?? null;
+  }
+  expect(code).toBe('23514');
+  expect(`${constraint ?? ''} ${messages.join(' | ')}`).toMatch(
+    /invoices_(non_draft_has_snapshots|draft_has_no_number)/,
+  );
+}
+
+describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CHECK relax (0212, live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let noTinDraft: InvoiceId; // T9-1 happy path
+  let probeEventDraft: InvoiceId; // T9-2 — event, ALL numbering NULL
+  let probeMembershipDraft: string; // T9-3 — membership, NULL pair + raw SET
+  let memberId: string;
+  const planId = 'aspaid-t9-plan';
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    // Two genuine event drafts via the REAL use-case (one registration each —
+    // the partial unique index allows one non-void event invoice per
+    // registration). Buyer snapshot (incl. tax_id:null) pins at draft.
+    const regHappy = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: BUYER_NO_TIN.primary_contact_email,
+    });
+    noTinDraft = await createUcDraft(tenant, user, regHappy.registrationId, {
+      amountOverrideSatang: Number(TOTAL_SATANG),
+      buyer: BUYER_NO_TIN,
+    });
+    const regProbe = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: BUYER_NO_TIN.primary_contact_email,
+    });
+    probeEventDraft = await createUcDraft(tenant, user, regProbe.registrationId, {
+      amountOverrideSatang: Number(TOTAL_SATANG),
+      buyer: BUYER_NO_TIN,
+    });
+
+    // SIMULATED membership draft (fake plan + fake-TIN member) for the
+    // T9-3 subject-scope probe.
+    memberId = randomUUID();
+    probeMembershipDraft = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId,
+        planYear: 2026,
+        planName: { en: 'T9 Probe Plan' },
+        description: { en: 'Simulated plan for the Task 9 membership probe' },
+        sortOrder: 11,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: UC_MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Simulated T9 Probe Corp',
+        country: 'TH',
+        taxId: '1111111111111',
+        addressLine1: '9 Simulated Probe Avenue',
+        city: 'Pathum Wan',
+        province: 'Bangkok',
+        postalCode: '10330',
+        planId,
+        planYear: 2026,
+      });
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: probeMembershipDraft,
+        memberId,
+        planYear: 2026,
+        planId,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('T9-1 — receipt_stream commit: paid row, seq/docnum NULL, receipt raw set, receipt_separate; every other CHECK satisfied', async () => {
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    const paid = await repo.withTx(async (tx) =>
+      repo.applyIssueAsPaid(tx, buildNoTinInput(tenant.ctx.slug, noTinDraft, user.userId)),
+    );
+
+    // Domain mapping (rowsToInvoice handles the NULL document_number).
+    expect(paid.status).toBe('paid');
+    expect(paid.sequenceNumber).toBeNull();
+    expect(paid.documentNumber).toBeNull();
+    expect(paid.receiptDocumentNumberRaw).toBe(NO_TIN_RECEIPT_RAW);
+    expect(paid.pdfDocKind).toBe('receipt_separate');
+    expect(paid.fiscalYear).toBe(2026);
+
+    // Raw row — the single committing UPDATE satisfied EVERY live CHECK at
+    // once; pin which values made each one pass.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, noTinDraft);
+    expect(row!.status).toBe('paid');
+    // β numbering: receipt stream only — the invoice-stream pair stays NULL
+    // so it can never collide inside invoices_tenant_fiscal_seq_unique.
+    expect(row!.sequenceNumber).toBeNull();
+    expect(row!.documentNumber).toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBe(NO_TIN_RECEIPT_RAW);
+    expect(row!.pdfDocKind).toBe('receipt_separate');
+    // invoices_paid_has_payment + invoices_paid_has_receipt_status.
+    expect(row!.paidAt).not.toBeNull();
+    expect(row!.paymentMethod).toBe('cash');
+    expect(row!.paymentRecordedByUserId).toBe(user.userId);
+    expect(row!.receiptPdfStatus).toBe('rendered');
+    // β separate-at-as-paid: the §105 receipt IS the main PDF — no separate
+    // receipt bytes triplet.
+    expect(row!.receiptPdfBlobKey).toBeNull();
+    expect(row!.receiptPdfSha256).toBeNull();
+    // invoices_non_draft_has_snapshots — every NON-numbering leg present.
+    expect(row!.fiscalYear).toBe(2026);
+    expect(row!.issueDate).toBe(ISSUE_DATE);
+    expect(row!.dueDate).toBe(ISSUE_DATE); // as-paid ⇒ due = issue = payment
+    expect(row!.paymentDate).toBe(ISSUE_DATE);
+    expect(row!.netDaysSnapshot).toBe(0);
+    expect(row!.proRatePolicySnapshot).toBeNull(); // 0203 event carve-out preserved
+    expect(row!.tenantIdentitySnapshot).not.toBeNull();
+    expect(row!.memberIdentitySnapshot).not.toBeNull();
+    expect(row!.pdfBlobKey).not.toBeNull();
+    expect(row!.pdfSha256).toBe('e'.repeat(64));
+    expect(row!.pdfTemplateVersion).toBe(1);
+    expect(BigInt(row!.totalSatang!.toString())).toBe(TOTAL_SATANG);
+  }, 60_000);
+
+  it('T9-2 — NEGATIVE: non-draft EVENT row with NULL seq/docnum AND NULL receipt raw → still 23514 (relax requires the receipt number)', async () => {
+    // Raw owner-role UPDATE draft→issued satisfying every OTHER non-draft
+    // CHECK (member_identity_snapshot already pinned at draft) — ONLY the
+    // numbering legs are violated, so 23514 here pins exactly them. The
+    // immutability trigger early-returns for OLD.status='draft'.
+    await expectNumberingCheckViolation(() =>
+      db.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          subtotal_satang = 9350, vat_rate_snapshot = '0.0700',
+          vat_satang = 654, total_satang = 10004,
+          fiscal_year = 2026,
+          issue_date = ${ISSUE_DATE}, due_date = ${ISSUE_DATE}, net_days_snapshot = 0,
+          tenant_identity_snapshot = ${JSON.stringify(T9_TENANT_SNAPSHOT)}::jsonb,
+          pdf_blob_key = ${'invoices/t9-probe/event-null-numbering.pdf'},
+          pdf_sha256 = ${'f'.repeat(64)}, pdf_template_version = 1,
+          pdf_doc_kind = 'invoice'
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${probeEventDraft}
+      `),
+    );
+    // Rolled back — the probe draft is untouched.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, probeEventDraft);
+    expect(row!.status).toBe('draft');
+    expect(row!.sequenceNumber).toBeNull();
+  }, 30_000);
+
+  it('T9-3 — NEGATIVE: non-draft MEMBERSHIP row with NULL seq/docnum, even WITH receipt raw set → still 23514 (relax is subject-scoped)', async () => {
+    await expectNumberingCheckViolation(() =>
+      db.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          subtotal_satang = 1000000, vat_rate_snapshot = '0.0700',
+          vat_satang = 70000, total_satang = 1070000,
+          fiscal_year = 2026,
+          issue_date = ${ISSUE_DATE}, due_date = ${ISSUE_DATE}, net_days_snapshot = 0,
+          pro_rate_policy_snapshot = 'none',
+          tenant_identity_snapshot = ${JSON.stringify(T9_TENANT_SNAPSHOT)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify({
+            legal_name: 'Simulated T9 Probe Corp',
+            tax_id: '1111111111111',
+            address: '9 Simulated Probe Avenue, Bangkok',
+            primary_contact_name: 'Sim Probe',
+            primary_contact_email: 'sim.probe@as-paid.test',
+          })}::jsonb,
+          pdf_blob_key = ${'invoices/t9-probe/membership-null-pair.pdf'},
+          pdf_sha256 = ${'f'.repeat(64)}, pdf_template_version = 1,
+          pdf_doc_kind = 'invoice',
+          receipt_document_number_raw = 'RC-2026-000002'
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${probeMembershipDraft}
+      `),
+    );
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, probeMembershipDraft);
+    expect(row!.status).toBe('draft');
+    expect(row!.sequenceNumber).toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBeNull();
+  }, 30_000);
 });

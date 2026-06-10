@@ -1485,6 +1485,13 @@
 			"when": 1798534000000,
 			"tag": "0211_invoices_pdf_doc_kind",
 			"breakpoints": true
+		},
+		{
+			"idx": 212,
+			"version": "7",
+			"when": 1798534100000,
+			"tag": "0212_as_paid_no_tin_number_relax",
+			"breakpoints": true
 		}
 	]
 }
