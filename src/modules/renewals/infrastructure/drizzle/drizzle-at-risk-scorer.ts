@@ -152,6 +152,11 @@ export function makeDrizzleAtRiskScorer(
           MAX(paid_at) AS last_paid_at
         FROM ${invoices}
         WHERE member_id = ${memberId}
+          -- I7 defence-in-depth: invoices has a strict isolating RLS policy
+          -- so runInTenant already scopes this query; the explicit predicate
+          -- matches the batch scorer (drizzle-member-renewal-flags-repo.ts
+          -- ~line 502) for consistency. Result is RLS-identical.
+          AND tenant_id = ${tenantId}
       `);
       const aggRow = invoiceAgg[0];
 
