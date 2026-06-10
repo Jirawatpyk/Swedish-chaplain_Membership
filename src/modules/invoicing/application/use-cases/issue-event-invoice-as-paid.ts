@@ -448,9 +448,10 @@ export async function issueEventInvoiceAsPaid(
           // Race loser: the row was 'draft' under our lock but isn't anymore.
           // MUST throw (not `return err`) — the §87 allocation above has to
           // roll back with the tx, or the loser commits a sequence gap.
+          // status 'paid': the as-paid race winner can only have made it paid.
           throw new IssueAsPaidInternalError({
             code: 'invoice_already_issued',
-            status: 'issued',
+            status: 'paid',
           });
         }
         throw e;

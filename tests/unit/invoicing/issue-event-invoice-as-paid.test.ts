@@ -1029,7 +1029,9 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe('invoice_already_issued');
-      if (r.error.code === 'invoice_already_issued') expect(r.error.status).toBe('issued');
+      // status 'paid', not 'issued': on the as-paid path the race winner can
+      // only have made the row paid (final review fix 1).
+      if (r.error.code === 'invoice_already_issued') expect(r.error.status).toBe('paid');
     }
     // Conflict-kind EXCLUSION from orphan cleanup: the race WINNER may own
     // bytes at this deterministic key — the loser must NOT delete them.

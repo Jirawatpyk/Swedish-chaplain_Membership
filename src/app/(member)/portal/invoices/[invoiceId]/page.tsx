@@ -288,10 +288,12 @@ export default async function PortalInvoiceDetailPage({
                 // invoice button (separate-mode the member still gets
                 // the invoice; combined-mode the receipt IS the only
                 // doc so we show the preparing state on its own).
+                // 'pending' ONLY (S1 parity with invoice-row-view-model.ts
+                // receiptPending): a terminal 'failed' render must NOT show
+                // the aria-busy "preparing" spinner forever.
                 const receiptPending =
                   invoice.status === 'paid' &&
-                  invoice.receiptPdfStatus !== null &&
-                  invoice.receiptPdfStatus !== 'rendered';
+                  invoice.receiptPdfStatus === 'pending';
                 return (
                   <>
                     {showInvoicePdf && (
