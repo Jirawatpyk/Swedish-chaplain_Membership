@@ -1,15 +1,22 @@
 /**
  * Component tests for the event-fee invoice creation form
- * (054-event-fee-invoices Task 11).
+ * (054-event-fee-invoices Task 11; 064-event-invoice-paid-flow Task 13).
  *
  * Covers: VAT-inclusive preview math, doc-type badge flip on TIN presence,
  * the submit body shape (matched vs non-member, amountOverride only when
- * the price was edited), the 409 duplicate dialog, and non-member buyer
- * validation blocking submit.
+ * the price was edited), the 409 duplicate dialog, non-member buyer
+ * validation blocking submit, the §2.3 issuance-mode mapping
+ * (`defaultModeFor`, all 6 F6 payment statuses × TIN), and the two-step
+ * as-paid submit (event-draft POST → issue-as-paid POST, draft-remains
+ * error handling).
  *
  * The form's attendee picker fetches `/api/admin/events/[id]` — we mock
  * global fetch. `useTransition` + fetch require real timers, so this file
  * overrides the global fake-timer setup.
+ *
+ * Base UI Radio gotcha (same as invoice-create-switcher.test): the radio
+ * toggles via a click on its associated <label> text, not on the
+ * role=radio element itself.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -29,9 +36,12 @@ vi.mock('sonner', () => ({
 
 import {
   EventFeeForm,
+  defaultModeFor,
+  displayDocType,
   previewVatInclusive,
   resolveDocType,
   type EventOption,
+  type IssuanceMode,
 } from '@/app/(staff)/admin/invoices/new/_components/event-fee-form';
 import enMessages from '@/i18n/messages/en.json';
 
@@ -60,6 +70,33 @@ const nonMemberRegistration = {
   paymentStatus: 'pending',
   isPseudonymised: false,
 };
+
+const paidNonMemberRegistration = {
+  ...nonMemberRegistration,
+  registrationId: 'dddddddd-4444-4444-8444-dddddddddddd',
+  attendeeName: 'Dora (paid guest)',
+  paymentStatus: 'paid',
+};
+
+const refundedRegistration = {
+  ...nonMemberRegistration,
+  registrationId: 'cccccccc-3333-4333-8333-cccccccccccc',
+  attendeeName: 'Carol (refunded)',
+  paymentStatus: 'refunded',
+};
+
+const modeMessages = enMessages.admin.invoices.eventFeeForm.mode;
+const asPaidMessages = enMessages.admin.invoices.issueAsPaid;
+
+/** Same Bangkok-today derivation the form uses for the default paymentDate. */
+function bangkokToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
 
 function mockFetchRegistrations(rows: readonly unknown[]) {
   return vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
@@ -133,6 +170,61 @@ describe('resolveDocType (pure helper)', () => {
 
   it('non-member without TIN → receipt', () => {
     expect(resolveDocType(anyRow, false, '')).toBe('receipt');
+  });
+});
+
+describe('defaultModeFor (pure, 064 §2.3 — all 6 F6 statuses × TIN)', () => {
+  const cases: ReadonlyArray<
+    [status: string, hasTin: boolean, expected: { mode: IssuanceMode | null; locked: 'refunded' | null }]
+  > = [
+    // paid → always defaults to already_paid (bill_first switch is a UI
+    // affordance gated on TIN, not a default).
+    ['paid', true, { mode: 'already_paid', locked: null }],
+    ['paid', false, { mode: 'already_paid', locked: null }],
+    // pending/waitlisted → bill_first when TIN; NO default when no TIN
+    // (waiting explainer; already_paid override stays available in the UI).
+    ['pending', true, { mode: 'bill_first', locked: null }],
+    ['pending', false, { mode: null, locked: null }],
+    ['waitlisted', true, { mode: 'bill_first', locked: null }],
+    ['waitlisted', false, { mode: null, locked: null }],
+    // free → explicit choice (amountOverride path).
+    ['free', true, { mode: null, locked: null }],
+    ['free', false, { mode: null, locked: null }],
+    // refunded → hard block, no override.
+    ['refunded', true, { mode: null, locked: 'refunded' }],
+    ['refunded', false, { mode: null, locked: 'refunded' }],
+    // no_show → explicit choice.
+    ['no_show', true, { mode: null, locked: null }],
+    ['no_show', false, { mode: null, locked: null }],
+  ];
+
+  it.each(cases)('%s (hasTin=%s)', (status, hasTin, expected) => {
+    expect(defaultModeFor(status, hasTin)).toEqual(expected);
+  });
+
+  it('unrecognised / empty status → defensively no default, not locked', () => {
+    expect(defaultModeFor('', true)).toEqual({ mode: null, locked: null });
+    expect(defaultModeFor('something_new', false)).toEqual({ mode: null, locked: null });
+  });
+
+  it('never defaults to bill_first without a TIN (global no-TIN rule)', () => {
+    for (const status of ['paid', 'pending', 'refunded', 'free', 'waitlisted', 'no_show']) {
+      expect(defaultModeFor(status, false).mode).not.toBe('bill_first');
+    }
+  });
+});
+
+describe('displayDocType (pure — as-paid combined-document flip)', () => {
+  it('already_paid upgrades taxInvoice to the combined kind only', () => {
+    expect(displayDocType('taxInvoice', 'already_paid')).toBe('taxInvoiceReceipt');
+    expect(displayDocType('receipt', 'already_paid')).toBe('receipt');
+    expect(displayDocType('pending', 'already_paid')).toBe('pending');
+  });
+
+  it('bill_first / no mode leave the base kind unchanged', () => {
+    expect(displayDocType('taxInvoice', 'bill_first')).toBe('taxInvoice');
+    expect(displayDocType('taxInvoice', null)).toBe('taxInvoice');
+    expect(displayDocType('receipt', null)).toBe('receipt');
   });
 });
 
@@ -210,13 +302,28 @@ describe('<EventFeeForm>', () => {
       target: { value: '99 Rama IV' },
     });
 
-    // The attendee fetch already fired on mount; the NEXT fetch is the
-    // create POST. Queue its 201 response.
+    // pending + no TIN → no default mode (§2.3): override to already_paid.
+    fireEvent.click(screen.getByText(modeMessages.alreadyPaid.label));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.alreadyPaid.label) }),
+      ).toBeChecked(),
+    );
+
+    // The attendee fetch already fired on mount; the NEXT two fetches are
+    // the create POST (201) and the issue-as-paid POST (200).
     fetchMock.mockImplementationOnce(
       async () => new Response(JSON.stringify({ invoice_id: 'inv-9' }), { status: 201 }),
     );
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-9' }), { status: 200 }),
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: /Create event-fee draft/ }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-9'));
 
@@ -234,14 +341,23 @@ describe('<EventFeeForm>', () => {
       primary_contact_name: '',
       primary_contact_email: '',
     });
-    expect(toastSuccess).toHaveBeenCalled();
+    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success);
   });
 
-  it('matched member submit posts amountOverride when the price was edited', async () => {
+  it('matched member submit posts amountOverride when the price was edited (bill_first)', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    // paid → defaults to already_paid; a matched member counts as has-TIN
+    // so bill_first stays selectable — switch to keep the draft-only flow.
+    fireEvent.click(screen.getByText(modeMessages.billFirst.label));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
+      ).toBeChecked(),
+    );
 
     // Override the price 1000 → 1500.
     fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '1500' } });
@@ -258,6 +374,10 @@ describe('<EventFeeForm>', () => {
     const body = JSON.parse((postCall![1] as RequestInit).body as string);
     expect(body.amountOverride).toBe(150_000); // 1500 THB → satang
     expect(body.buyer).toBeUndefined(); // matched member sends no buyer
+    // bill_first must NOT call issue-as-paid.
+    expect(
+      fetchMock.mock.calls.find((c) => String(c[0]).includes('/issue-as-paid')),
+    ).toBeUndefined();
   });
 
   it('409 → opens the soft-duplicate dialog instead of redirecting', async () => {
@@ -270,7 +390,14 @@ describe('<EventFeeForm>', () => {
       async () =>
         new Response(JSON.stringify({ error: { code: 'duplicate' } }), { status: 409 }),
     );
-    fireEvent.click(screen.getByRole('button', { name: /Create event-fee draft/ }));
+    // paid → default mode is already_paid, so the single button reads
+    // "Record payment & issue receipt". The 409 fires on the FIRST call —
+    // no issue-as-paid call happens.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
 
     expect(
       await screen.findByText(
@@ -278,6 +405,9 @@ describe('<EventFeeForm>', () => {
       ),
     ).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.find((c) => String(c[0]).includes('/issue-as-paid')),
+    ).toBeUndefined();
   });
 
   it('non-member with empty buyer → inline errors + no POST', async () => {
@@ -286,7 +416,19 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Create event-fee draft/ }));
+    // pending + no TIN → no default mode; pick already_paid to enable submit.
+    fireEvent.click(screen.getByText(modeMessages.alreadyPaid.label));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.alreadyPaid.label) }),
+      ).toBeChecked(),
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
 
     expect(
       await screen.findByText(
@@ -302,5 +444,157 @@ describe('<EventFeeForm>', () => {
       (c) => String(c[0]) === '/api/invoices/event-draft',
     );
     expect(postCall).toBeUndefined();
+  });
+
+  // ── 064 Task 13 — issuance-mode selector + as-paid submit ──────────────
+
+  it('paid registration → already_paid pre-selected, payment fields visible, two-step POST', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    // F6 'paid' → already_paid is the pre-selected default.
+    expect(
+      screen.getByRole('radio', { name: new RegExp(modeMessages.alreadyPaid.label) }),
+    ).toBeChecked();
+    // Payment-date (defaulted to Bangkok today, max-clamped) + method select.
+    const dateInput = screen.getByLabelText(
+      enMessages.admin.invoices.pay.fields.date,
+    ) as HTMLInputElement;
+    expect(dateInput.value).toBe(bangkokToday());
+    expect(dateInput.max).toBe(bangkokToday());
+    expect(screen.getByTestId('as-paid-fields')).toBeInTheDocument();
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-11' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-11' }), { status: 200 }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-11'));
+    const issueCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes('/issue-as-paid'),
+    );
+    expect(issueCall).toBeTruthy();
+    expect(String(issueCall![0])).toBe('/api/invoices/inv-11/issue-as-paid');
+    const issueBody = JSON.parse((issueCall![1] as RequestInit).body as string);
+    expect(issueBody).toEqual({
+      paymentDate: bangkokToday(),
+      paymentMethod: 'bank_transfer',
+    });
+    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success);
+  });
+
+  it('issue-as-paid failure → mapped error toast + draft-remains notice + still lands on the draft', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-12' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'payment_date_future' } }), {
+          status: 422,
+        }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    // The draft EXISTS — the UI must not pretend nothing was created: the
+    // toast says the draft remains and we navigate to its detail page.
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-12'));
+    expect(toastError).toHaveBeenCalledWith(asPaidMessages.errors.payment_date_future, {
+      description: asPaidMessages.draftRemains,
+    });
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('refunded registration → hard-block card, no mode selector, submit disabled', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([refundedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Carol/ }));
+
+    expect(screen.getByTestId('mode-refunded-blocked')).toHaveTextContent(
+      modeMessages.refundedBlocked,
+    );
+    expect(screen.queryByTestId('mode-selector')).toBeNull();
+    expect(screen.queryByTestId('as-paid-fields')).toBeNull();
+    // No mode → submit stays disabled (label falls back to the draft copy).
+    expect(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.submit,
+      }),
+    ).toBeDisabled();
+  });
+
+  it('pending non-member without TIN → waiting explainer + bill_first disabled; typing a TIN flips the default to bill_first', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([nonMemberRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
+
+    // No default mode → waiting explainer + visible disabled-option reason.
+    expect(screen.getByTestId('mode-waiting-explainer')).toHaveTextContent(
+      modeMessages.waitingExplainer,
+    );
+    expect(screen.getByTestId('mode-bill-first-needs-tin')).toHaveTextContent(
+      modeMessages.billFirstNeedsTin,
+    );
+    const billFirstRadio = screen.getByRole('radio', {
+      name: new RegExp(modeMessages.billFirst.label),
+    });
+    // Base UI renders a disabled radio as <span role="radio"
+    // aria-disabled="true"> (not a natively-disabled element), so jest-dom's
+    // toBeDisabled() does not apply — assert the ARIA state directly.
+    expect(billFirstRadio).toHaveAttribute('aria-disabled', 'true');
+    expect(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.submit,
+      }),
+    ).toBeDisabled();
+
+    // Typing a TIN → §2.3 default for pending+TIN is bill_first (reactive,
+    // no explicit pick yet) and the option enables.
+    fireEvent.change(screen.getByLabelText('Tax ID (optional)'), {
+      target: { value: '1234567890123' },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
+      ).toBeChecked(),
+    );
+    expect(screen.queryByTestId('mode-waiting-explainer')).toBeNull();
+    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+  });
+
+  it('paid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind)', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([paidNonMemberRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Dora/ }));
+
+    // No TIN yet → plain receipt even on the as-paid path.
+    expect(screen.getByTestId('doc-type-badge')).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.docType.receipt,
+    );
+
+    fireEvent.change(screen.getByLabelText('Tax ID (optional)'), {
+      target: { value: '1234567890123' },
+    });
+    // paid → already_paid default + TIN → the ONE combined document.
+    expect(screen.getByTestId('doc-type-badge')).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.docType.taxInvoiceReceipt,
+    );
   });
 });

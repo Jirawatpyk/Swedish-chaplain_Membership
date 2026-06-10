@@ -17,6 +17,29 @@
  *      "set at issue" for a matched member whose TIN we can't see client-side).
  *   7. Submit → POST /api/invoices/event-draft.
  *
+ * Task 13 (064-event-invoice-paid-flow) adds the issuance-mode selector:
+ *
+ *   - `defaultModeFor` (pure, exported) maps the F6 registration
+ *     `payment_status` (paid | pending | refunded | free | waitlisted |
+ *     no_show — there is NO 'unpaid' value) + buyer-TIN presence to a
+ *     default mode per design §2.3. `refunded` is a hard block.
+ *   - `already_paid` shows a payment-date (max = today Bangkok; F6 carries
+ *     no payment date to prefill from, so it defaults to today) + a
+ *     payment-method select, and submits in two steps: the existing
+ *     event-draft POST, then POST /api/invoices/{id}/issue-as-paid. If the
+ *     SECOND call fails the draft remains — the error toast says so and we
+ *     still navigate to the (actionable) draft detail.
+ *   - `bill_first` keeps the existing create-draft flow unchanged and is
+ *     NEVER selectable for a no-TIN buyer (server guard
+ *     `event_no_tin_requires_paid_issue`; the option is disabled with a
+ *     visible reason — no hover-only tooltip, same philosophy as the
+ *     attendee picker's erased rows).
+ *
+ * NOTE (plan adaptation): the plan's Task-13 step text assumed an RHF+zod
+ * form schema; this form is plain useState + manual on-submit validation
+ * (054 convention), so mode/paymentDate/paymentMethod follow the existing
+ * manual pattern instead of a zod schema.
+ *
  * Mirrors `CreateDraftForm` (membership) for toasts / redirect / disabled
  * states (ux-standards). The amount is entered in THB and converted to
  * satang for the API; `amountOverride` is sent ONLY when the admin edited
@@ -26,7 +49,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -43,6 +66,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  TranslatedSelectValue,
+} from '@/components/ui/select';
 import {
   SearchableCombobox,
   type ComboboxOption,
@@ -97,7 +131,7 @@ function formatSatang(satang: number): string {
   return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
-type DocTypeKind = 'taxInvoice' | 'receipt' | 'pending';
+type DocTypeKind = 'taxInvoice' | 'taxInvoiceReceipt' | 'receipt' | 'pending';
 
 /**
  * Derives the document type for the preview badge.
@@ -118,6 +152,91 @@ export function resolveDocType(
   return taxId.trim().length > 0 ? 'taxInvoice' : 'receipt';
 }
 
+export type IssuanceMode = 'already_paid' | 'bill_first';
+
+/**
+ * Maps the F6 registration `payment_status` + buyer-TIN presence to the
+ * default issuance mode (design 064 §2.3). The REAL F6 enum is
+ * `paid | pending | refunded | free | waitlisted | no_show` — there is NO
+ * 'unpaid' value; an unrecognised status defensively gets no default.
+ *
+ * - `paid`               → default already_paid (switch to bill_first only with TIN).
+ * - `pending`/`waitlisted` → default bill_first when TIN; with NO TIN there is
+ *   no default ("wait for the money, then record as paid" explainer) BUT the
+ *   admin may still override to already_paid — F6 data may lag reality and
+ *   the admin attests the funds were received.
+ * - `free`               → no default (invoice only creatable via amountOverride).
+ * - `refunded`           → HARD BLOCK, no override.
+ * - `no_show`            → no default (attendance says nothing about payment).
+ *
+ * GLOBAL (enforced by the caller's UI + server guard
+ * `event_no_tin_requires_paid_issue`): bill_first is never selectable for a
+ * no-TIN buyer, which is why this function never defaults to bill_first when
+ * `hasTin` is false.
+ */
+export function defaultModeFor(
+  paymentStatus: string,
+  hasTin: boolean,
+): { mode: IssuanceMode | null; locked: 'refunded' | null } {
+  switch (paymentStatus) {
+    case 'paid':
+      return { mode: 'already_paid', locked: null };
+    case 'pending':
+    case 'waitlisted':
+      return { mode: hasTin ? 'bill_first' : null, locked: null };
+    case 'refunded':
+      return { mode: null, locked: 'refunded' };
+    // 'free', 'no_show', and anything unrecognised: explicit admin choice.
+    default:
+      return { mode: null, locked: null };
+  }
+}
+
+/**
+ * Display-only doc-type adjustment for the as-paid path: a TIN buyer whose
+ * fee is recorded as already paid gets the ONE combined document
+ * (ใบกำกับภาษี/ใบเสร็จรับเงิน — `receipt_combined` kind), not a plain tax
+ * invoice. Receipt (no-TIN) and pending (matched member) are unchanged.
+ */
+export function displayDocType(base: DocTypeKind, mode: IssuanceMode | null): DocTypeKind {
+  return mode === 'already_paid' && base === 'taxInvoice' ? 'taxInvoiceReceipt' : base;
+}
+
+/** Same set the record-payment form offers — out-of-band methods only. */
+const PAYMENT_METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
+type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/**
+ * Typed error codes of POST /api/invoices/[id]/issue-as-paid we have copy
+ * for (`admin.invoices.issueAsPaid.errors.*`); anything else falls back to
+ * codeFallback/unknown — mirrors the event-draft errors map below.
+ */
+const AS_PAID_ERROR_CODES = [
+  'invalid',
+  'not_event_subject',
+  'payment_date_future',
+  'invalid_lines',
+  'overflow',
+  'no_buyer_snapshot',
+  'member_archived',
+  'settings_missing',
+  'invoice_already_issued',
+  'invoice_not_found',
+  'member_not_found',
+  'pdf_render_failed',
+  'blob_upload_failed',
+] as const;
+
+/** Today in Asia/Bangkok as YYYY-MM-DD (en-CA gives the ISO date shape). */
+function bangkokTodayIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 export function EventFeeForm({
   events,
   initialEventId,
@@ -130,6 +249,9 @@ export function EventFeeForm({
   readonly initialRegistrationId?: string | undefined;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
+  // Payment-method labels are shared with the record-payment form.
+  const tPay = useTranslations('admin.invoices.pay');
+  const tAsPaid = useTranslations('admin.invoices.issueAsPaid');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -148,6 +270,27 @@ export function EventFeeForm({
   const [amountError, setAmountError] = useState<string | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
 
+  // Issuance mode — the admin's EXPLICIT pick. While null, the effective
+  // mode falls back to `defaultModeFor` so the default stays reactive to the
+  // buyer's TIN (typing a TIN on a pending non-member flips the default to
+  // bill_first per §2.3 without an effect).
+  const [modeChoice, setModeChoice] = useState<IssuanceMode | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_transfer');
+  const [paymentDate, setPaymentDate] = useState('');
+  const [todayBkk, setTodayBkk] = useState('');
+  const [paymentDateError, setPaymentDateError] = useState<string | null>(null);
+  useEffect(() => {
+    // Seed today (Asia/Bangkok) on the client only to avoid an SSR/CSR
+    // hydration mismatch from `new Date()` — same pattern as PaymentForm.
+    // F6 registrations carry no payment date to prefill from, so today is
+    // the default; max is also clamped to today (payment_date_future is a
+    // server reject anyway).
+    const today = bangkokTodayIso();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPaymentDate(today);
+    setTodayBkk(today);
+  }, []);
+
   const eventOptions: ComboboxOption[] = useMemo(
     () => events.map((e) => ({ value: e.eventId, label: e.label })),
     [events],
@@ -161,6 +304,9 @@ export function EventFeeForm({
     setBuyer(EMPTY_NON_MEMBER_BUYER);
     setBuyerErrors({});
     setAmountError(null);
+    setModeChoice(null);
+    setPaymentMethod('bank_transfer');
+    setPaymentDateError(null);
   }
 
   const handleAttendeeSelect = useCallback((row: AttendeeRow) => {
@@ -176,6 +322,10 @@ export function EventFeeForm({
     setBuyer(EMPTY_NON_MEMBER_BUYER);
     setBuyerErrors({});
     setAmountError(null);
+    // Mode re-derives from the new registration's payment status.
+    setModeChoice(null);
+    setPaymentMethod('bank_transfer');
+    setPaymentDateError(null);
   }, []);
 
   const handlePickerError = useCallback(() => {
@@ -188,9 +338,36 @@ export function EventFeeForm({
   const totalSatang = amountValid ? Math.round(amountNum * 100) : 0;
   const { subtotal, vat } = previewVatInclusive(totalSatang);
 
+  // TIN presence for the §2.3 mode rules. A matched member's TIN is NOT
+  // visible client-side (the server pins the F3 snapshot at issue), so we
+  // treat matched as has-TIN: bill_first stays selectable and the server's
+  // `event_no_tin_requires_paid_issue` guard rejects at plain issue with the
+  // already-mapped issue-dialog message if the member turns out TIN-less.
+  const hasTin = matched ? true : buyer.taxId.trim().length > 0;
+  const { mode: defaultMode, locked } =
+    attendee !== null
+      ? defaultModeFor(attendee.paymentStatus, hasTin)
+      : { mode: null, locked: null };
+  // A bill_first pick is invalidated when the TIN is cleared afterwards —
+  // fall back to the (no-TIN) default rather than keeping an illegal mode.
+  const effectiveMode: IssuanceMode | null = locked
+    ? null
+    : modeChoice === 'bill_first' && !hasTin
+      ? defaultMode
+      : (modeChoice ?? defaultMode);
+  const isWaitingNoTin =
+    attendee !== null &&
+    locked === null &&
+    !hasTin &&
+    (attendee.paymentStatus === 'pending' || attendee.paymentStatus === 'waitlisted');
+
   // Doc-type: resolved via pure helper — matched/no-attendee → 'pending';
-  // non-member with TIN → 'taxInvoice'; without → 'receipt'.
-  const docType = resolveDocType(attendee, matched, buyer.taxId);
+  // non-member with TIN → 'taxInvoice'; without → 'receipt'. The as-paid
+  // path upgrades taxInvoice to the combined document for the preview.
+  const docType = displayDocType(
+    resolveDocType(attendee, matched, buyer.taxId),
+    effectiveMode,
+  );
 
   function validateAmount(): string | null {
     if (amountThb === '' || !Number.isFinite(amountNum)) return t('amount.errors.required');
@@ -205,9 +382,25 @@ export function EventFeeForm({
       toast.error(t('errors.noAttendee'));
       return;
     }
+    // Defensive — the submit button is disabled in these states, but a
+    // programmatic submit must not slip through the §2.3 gates.
+    if (locked !== null || effectiveMode === null) return;
 
     const amtErr = validateAmount();
     setAmountError(amtErr);
+
+    // Payment date is required (and not in the future, Bangkok) only on the
+    // as-paid path. String comparison is safe on ISO YYYY-MM-DD.
+    let dateErr: string | null = null;
+    if (effectiveMode === 'already_paid') {
+      const today = todayBkk || bangkokTodayIso();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) {
+        dateErr = t('payment.errors.dateRequired');
+      } else if (paymentDate > today) {
+        dateErr = t('payment.errors.dateFuture');
+      }
+    }
+    setPaymentDateError(dateErr);
 
     let buyerInvalid = false;
     if (!matched) {
@@ -223,7 +416,7 @@ export function EventFeeForm({
       setBuyerErrors({});
     }
 
-    if (amtErr || buyerInvalid) return;
+    if (amtErr || buyerInvalid || dateErr) return;
 
     // Send amountOverride ONLY when the admin edited the pre-filled price.
     // Otherwise omit it so the server uses the registration's ticketPriceThb.
@@ -251,6 +444,41 @@ export function EventFeeForm({
       });
       if (res.status === 201) {
         const data = (await res.json()) as { invoice_id: string };
+        if (effectiveMode === 'already_paid') {
+          // Step 2 — one-shot draft→paid issuance. On failure the draft
+          // REMAINS (visible, re-actionable): say so in the toast and still
+          // land on the draft detail rather than pretending nothing was
+          // created.
+          const issueRes = await fetch(
+            `/api/invoices/${data.invoice_id}/issue-as-paid`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentDate, paymentMethod }),
+            },
+          );
+          if (issueRes.ok) {
+            toast.success(tAsPaid('success'));
+          } else {
+            const issuePayload = await issueRes.json().catch(() => ({}));
+            const issueCode = (issuePayload as { error?: { code?: string } })?.error
+              ?.code;
+            const issueKnown =
+              issueCode !== undefined &&
+              (AS_PAID_ERROR_CODES as readonly string[]).includes(issueCode);
+            toast.error(
+              issueKnown
+                ? tAsPaid(`errors.${issueCode}`)
+                : issueCode
+                  ? tAsPaid('errors.codeFallback', { code: issueCode })
+                  : tAsPaid('errors.unknown'),
+              { description: tAsPaid('draftRemains') },
+            );
+          }
+          router.push(`/admin/invoices/${data.invoice_id}`);
+          router.refresh();
+          return;
+        }
         toast.success(t('success'));
         router.push(`/admin/invoices/${data.invoice_id}`);
         return;
@@ -282,10 +510,14 @@ export function EventFeeForm({
   }
 
   // Enable submit as soon as an attendee is chosen — field-level validation
-  // (amount range, non-member buyer) runs ON submit and surfaces inline
-  // errors, rather than silently disabling the button with no explanation
-  // (ux-standards: never block submit without telling the user why).
-  const canSubmit = !pending && !noEvents && attendee !== null;
+  // (amount range, non-member buyer, payment date) runs ON submit and
+  // surfaces inline errors, rather than silently disabling the button with
+  // no explanation (ux-standards: never block submit without telling the
+  // user why). The two §2.3 disable states ARE explained in the mode
+  // section: `refunded` renders the hard-block card, and a null mode always
+  // renders the waiting explainer or the choose hint.
+  const canSubmit =
+    !pending && !noEvents && attendee !== null && locked === null && effectiveMode !== null;
 
   return (
     <>
@@ -342,6 +574,169 @@ export function EventFeeForm({
             />
           ))}
 
+        {/* 3b. Issuance mode (064 §2.3) — refunded hard-block, otherwise a
+            radio pair with the F6-derived default. Payment fields render
+            inside this section on the as-paid path. */}
+        {attendee !== null &&
+          (locked === 'refunded' ? (
+            <div
+              role="status"
+              className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm"
+              data-testid="mode-refunded-blocked"
+            >
+              {t('mode.refundedBlocked')}
+            </div>
+          ) : (
+            <fieldset className="flex flex-col gap-2" data-testid="mode-selector">
+              <legend className="mb-1 text-sm font-medium">{t('mode.label')}</legend>
+              <RadioGroup
+                value={effectiveMode}
+                onValueChange={(v) =>
+                  setModeChoice(v === 'already_paid' || v === 'bill_first' ? v : null)
+                }
+                className="gap-3 sm:grid-cols-2"
+              >
+                <div className="flex items-start gap-2 rounded-md border p-3">
+                  <RadioGroupItem
+                    id="issuance-mode-already-paid"
+                    value="already_paid"
+                    className="mt-0.5"
+                    disabled={pending}
+                  />
+                  {/* base-ui Radio auto-wires `aria-labelledby` to `{id}-label`
+                      — same pattern as the invoice-type switcher above. */}
+                  <Label
+                    htmlFor="issuance-mode-already-paid"
+                    className="flex cursor-pointer flex-col gap-0.5"
+                  >
+                    <span id="issuance-mode-already-paid-label" className="font-medium">
+                      {t('mode.alreadyPaid.label')}
+                    </span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {t('mode.alreadyPaid.hint')}
+                    </span>
+                  </Label>
+                </div>
+                <div className="flex items-start gap-2 rounded-md border p-3">
+                  <RadioGroupItem
+                    id="issuance-mode-bill-first"
+                    value="bill_first"
+                    className="mt-0.5"
+                    disabled={pending || !hasTin}
+                  />
+                  <Label
+                    htmlFor="issuance-mode-bill-first"
+                    className={
+                      hasTin
+                        ? 'flex cursor-pointer flex-col gap-0.5'
+                        : 'flex cursor-not-allowed flex-col gap-0.5 opacity-60'
+                    }
+                  >
+                    <span id="issuance-mode-bill-first-label" className="font-medium">
+                      {t('mode.billFirst.label')}
+                    </span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {t('mode.billFirst.hint')}
+                    </span>
+                  </Label>
+                </div>
+              </RadioGroup>
+              {/* Disabled-option reason is VISIBLE text (no hover-only
+                  tooltip — same philosophy as the attendee picker's erased
+                  rows: keyboard/SR/touch users must get it too). */}
+              {!hasTin && (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="mode-bill-first-needs-tin"
+                >
+                  {t('mode.billFirstNeedsTin')}
+                </p>
+              )}
+              {effectiveMode === null &&
+                (isWaitingNoTin ? (
+                  <p
+                    role="status"
+                    className="rounded-md border border-dashed p-3 text-sm text-muted-foreground"
+                    data-testid="mode-waiting-explainer"
+                  >
+                    {t('mode.waitingExplainer')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground" data-testid="mode-choose-hint">
+                    {t('mode.chooseHint')}
+                  </p>
+                ))}
+
+              {/* Payment details — as-paid path only. */}
+              {effectiveMode === 'already_paid' && (
+                <div
+                  className="mt-1 grid gap-4 sm:grid-cols-2"
+                  data-testid="as-paid-fields"
+                  suppressHydrationWarning
+                >
+                  <div className="flex flex-col gap-[var(--field-label-gap)]">
+                    <Label htmlFor="payment-date">{tPay('fields.date')}</Label>
+                    <Input
+                      id="payment-date"
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => {
+                        setPaymentDate(e.target.value);
+                        setPaymentDateError(null);
+                      }}
+                      required
+                      disabled={pending}
+                      {...(todayBkk ? { max: todayBkk } : {})}
+                      aria-invalid={paymentDateError ? true : undefined}
+                      aria-describedby={
+                        paymentDateError ? 'payment-date-error' : 'payment-date-hint'
+                      }
+                    />
+                    {paymentDateError ? (
+                      <p
+                        id="payment-date-error"
+                        className="text-xs text-destructive"
+                        role="alert"
+                      >
+                        {paymentDateError}
+                      </p>
+                    ) : (
+                      <p id="payment-date-hint" className="text-xs text-muted-foreground">
+                        {t('payment.dateHint')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-[var(--field-label-gap)]">
+                    <Label htmlFor="payment-method">{tPay('fields.method')}</Label>
+                    <Select
+                      value={paymentMethod}
+                      onValueChange={(v) => v && setPaymentMethod(v as PaymentMethod)}
+                    >
+                      <SelectTrigger
+                        id="payment-method"
+                        className="w-full"
+                        aria-label={tPay('fields.method')}
+                        disabled={pending}
+                      >
+                        <TranslatedSelectValue
+                          placeholder={tPay('fields.method')}
+                          translate={(v) => (v ? tPay(`methods.${v}`) : null)}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_METHODS.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {tPay(`methods.${m}`)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </fieldset>
+          ))}
+
         {/* 4. Amount */}
         {attendee !== null && (
           <div className="flex flex-col gap-[var(--field-label-gap)]">
@@ -387,10 +782,15 @@ export function EventFeeForm({
               </span>
               <Badge
                 role="status"
-                variant={docType === 'taxInvoice' ? 'default' : 'secondary'}
+                variant={
+                  docType === 'taxInvoice' || docType === 'taxInvoiceReceipt'
+                    ? 'default'
+                    : 'secondary'
+                }
                 aria-label={
                   ({
                     taxInvoice: t('docType.ariaTaxInvoice'),
+                    taxInvoiceReceipt: t('docType.ariaTaxInvoiceReceipt'),
                     receipt: t('docType.ariaReceipt'),
                     pending: t('docType.ariaPending'),
                   } satisfies Record<DocTypeKind, string>)[docType]
@@ -418,11 +818,19 @@ export function EventFeeForm({
         )}
 
         <div className="flex justify-end gap-3">
+          {/* Single button whose label switches by mode: as-paid = record &
+              issue in one shot; bill_first = the unchanged draft flow. */}
           <Button type="submit" disabled={!canSubmit} aria-busy={pending}>
             {pending && (
               <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
             )}
-            {pending ? t('submitting') : t('submit')}
+            {effectiveMode === 'already_paid'
+              ? pending
+                ? t('recordAndIssueSubmitting')
+                : t('recordAndIssue')
+              : pending
+                ? t('submitting')
+                : t('submit')}
           </Button>
         </div>
       </form>

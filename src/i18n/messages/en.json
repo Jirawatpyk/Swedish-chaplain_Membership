@@ -1759,9 +1759,11 @@
         },
         "docType": {
           "taxInvoice": "Tax Invoice / ใบกำกับภาษี",
+          "taxInvoiceReceipt": "Tax Invoice/Receipt / ใบกำกับภาษี/ใบเสร็จรับเงิน",
           "receipt": "Receipt / ใบเสร็จรับเงิน",
           "pending": "Document type set at issue",
           "ariaTaxInvoice": "This invoice will be issued as a tax invoice because the buyer has a tax ID.",
+          "ariaTaxInvoiceReceipt": "A combined tax invoice/receipt will be issued because the buyer has a tax ID and the fee is already paid.",
           "ariaReceipt": "This will be issued as a receipt because the buyer has no tax ID.",
           "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued."
         },
@@ -1786,7 +1788,31 @@
           "title": "An invoice already exists",
           "description": "An event-fee invoice has already been created for this attendee. View the existing invoice instead of creating a duplicate.",
           "cancel": "Close"
-        }
+        },
+        "mode": {
+          "label": "Issuance mode",
+          "alreadyPaid": {
+            "label": "Already paid — record & issue receipt",
+            "hint": "The fee has already been received (cash, bank transfer). One paid document is issued immediately."
+          },
+          "billFirst": {
+            "label": "Bill first — issue an unpaid invoice",
+            "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID."
+          },
+          "billFirstNeedsTin": "This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.",
+          "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
+          "refundedBlocked": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
+          "chooseHint": "Choose how to issue the document before submitting."
+        },
+        "payment": {
+          "dateHint": "Date the payment was received (CE, Gregorian calendar). Cannot be in the future.",
+          "errors": {
+            "dateRequired": "Enter the payment date.",
+            "dateFuture": "The payment date cannot be in the future."
+          }
+        },
+        "recordAndIssue": "Record payment & issue receipt",
+        "recordAndIssueSubmitting": "Recording…"
       },
       "form": {
         "submit": "Create draft",
@@ -1947,6 +1973,27 @@
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
+      },
+      "issueAsPaid": {
+        "success": "Payment recorded — receipt issued",
+        "draftRemains": "The draft invoice was still created and remains actionable — you can retry from its detail page.",
+        "errors": {
+          "invalid": "The payment details are invalid. Check the payment date and method.",
+          "not_event_subject": "This invoice is not an event-fee invoice and cannot be issued as paid.",
+          "payment_date_future": "The payment date cannot be in the future.",
+          "invalid_lines": "The invoice lines are invalid — delete the draft and recreate it.",
+          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support.",
+          "no_buyer_snapshot": "The draft has no buyer details — recreate it with the buyer filled in.",
+          "member_archived": "This member has been archived and cannot be invoiced. Restore the member first.",
+          "settings_missing": "Invoice settings have not been configured for this organisation yet.",
+          "invoice_already_issued": "This invoice has already been issued.",
+          "invoice_not_found": "The invoice could not be found.",
+          "member_not_found": "The member could not be found.",
+          "pdf_render_failed": "The PDF could not be generated — nothing was issued. Try again.",
+          "blob_upload_failed": "The PDF could not be stored — nothing was issued. Try again.",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        }
       },
       "deleteDraft": {
         "trigger": "Delete draft",

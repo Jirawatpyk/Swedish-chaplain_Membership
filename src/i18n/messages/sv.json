@@ -1759,9 +1759,11 @@
         },
         "docType": {
           "taxInvoice": "Skattefaktura / ใบกำกับภาษี",
+          "taxInvoiceReceipt": "Skattefaktura/kvitto / ใบกำกับภาษี/ใบเสร็จรับเงิน",
           "receipt": "Kvitto / ใบเสร็จรับเงิน",
           "pending": "Dokumenttyp sätts vid utfärdande",
           "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
+          "ariaTaxInvoiceReceipt": "En kombinerad skattefaktura/kvitto utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
           "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
           "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas."
         },
@@ -1786,7 +1788,31 @@
           "title": "En faktura finns redan",
           "description": "En evenemangsfaktura har redan skapats för denna deltagare. Visa den befintliga fakturan istället för att skapa en dubblett.",
           "cancel": "Stäng"
-        }
+        },
+        "mode": {
+          "label": "Utfärdandeläge",
+          "alreadyPaid": {
+            "label": "Redan betald — registrera betalning och utfärda kvitto",
+            "hint": "Avgiften har redan mottagits (kontant, banköverföring). Ett betalt dokument utfärdas omedelbart."
+          },
+          "billFirst": {
+            "label": "Fakturera först — utfärda en obetald faktura",
+            "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID."
+          },
+          "billFirstNeedsTin": "Köparen saknar skatte-ID — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning.",
+          "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
+          "refundedBlocked": "Denna registrering har återbetalats — en faktura eller ett kvitto kan inte skapas för en återbetald avgift.",
+          "chooseHint": "Välj hur dokumentet ska utfärdas innan du skickar."
+        },
+        "payment": {
+          "dateHint": "Datum då betalningen mottogs (gregoriansk kalender). Får inte ligga i framtiden.",
+          "errors": {
+            "dateRequired": "Ange betalningsdatumet.",
+            "dateFuture": "Betalningsdatumet får inte ligga i framtiden."
+          }
+        },
+        "recordAndIssue": "Registrera betalning och utfärda kvitto",
+        "recordAndIssueSubmitting": "Registrerar…"
       },
       "form": {
         "submit": "Skapa utkast",
@@ -1947,6 +1973,27 @@
         },
         "draftLabel": "Utkast",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
+      },
+      "issueAsPaid": {
+        "success": "Betalningen registrerades — kvitto utfärdat",
+        "draftRemains": "Fakturautkastet skapades ändå och kan fortfarande användas — försök igen från utkastets detaljsida.",
+        "errors": {
+          "invalid": "Betalningsuppgifterna är ogiltiga. Kontrollera betalningsdatum och betalningsmetod.",
+          "not_event_subject": "Denna faktura är inte en evenemangsfaktura och kan inte utfärdas som betald.",
+          "payment_date_future": "Betalningsdatumet får inte ligga i framtiden.",
+          "invalid_lines": "Fakturaraderna är ogiltiga — ta bort utkastet och skapa det på nytt.",
+          "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten.",
+          "no_buyer_snapshot": "Utkastet saknar köparuppgifter — skapa det på nytt med köparen ifylld.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
+          "settings_missing": "Fakturainställningarna för denna organisation har ännu inte konfigurerats.",
+          "invoice_already_issued": "Denna faktura har redan utfärdats.",
+          "invoice_not_found": "Fakturan kunde inte hittas.",
+          "member_not_found": "Medlemmen kunde inte hittas.",
+          "pdf_render_failed": "PDF-filen kunde inte genereras — inget har utfärdats. Försök igen.",
+          "blob_upload_failed": "PDF-filen kunde inte lagras — inget har utfärdats. Försök igen.",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        }
       },
       "deleteDraft": {
         "trigger": "Ta bort utkast",
