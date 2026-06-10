@@ -117,6 +117,7 @@ export type CreateEventInvoiceDraftError =
   | { code: 'registration_not_found' }
   | { code: 'member_archived' }
   | { code: 'attendee_erased' }
+  | { code: 'registration_refunded' }
   | { code: 'no_fee_free_event' }
   | { code: 'invalid_amount' }
   | { code: 'buyer_required' }
@@ -190,6 +191,13 @@ export async function createEventInvoiceDraft(
           'createEventInvoiceDraft: attendee data erased (pseudonymised) — cannot draft event invoice',
         );
         return err({ code: 'attendee_erased' });
+      }
+
+      // 064 M-A — spec §2.3: a refunded registration is HARD-blocked (no
+      // override): documenting a refunded fee would assert a payment that
+      // was returned. Server-side twin of the form's hard-block card.
+      if (reg.paymentStatus === 'refunded') {
+        return err({ code: 'registration_refunded' });
       }
 
       // 3. Resolve the VAT-INCLUSIVE amount in satang (Model B — line carries

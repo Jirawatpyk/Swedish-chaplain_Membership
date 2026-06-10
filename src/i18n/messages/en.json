@@ -1776,6 +1776,7 @@
           "member_archived": "This member has been archived and cannot be invoiced. Restore the member first.",
           "event_not_found": "That event could not be found.",
           "attendee_erased": "This attendee's personal data has been erased and cannot be invoiced.",
+          "registration_refunded": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
           "no_fee_free_event": "This attendee has no ticket fee. Enter an amount to invoice them.",
           "invalid_amount": "The amount is out of range (1 – 1,000,000 THB).",
           "buyer_required": "Buyer details are required for a non-member.",
@@ -1807,6 +1808,7 @@
         },
         "payment": {
           "dateHint": "Date the payment was received. Cannot be in the future.",
+          "vatPeriodWarning": "This payment date falls in a VAT period whose ภ.พ.30 (PP.30) filing deadline has passed — an additional filing with surcharge may be required. Confirm with your accountant.",
           "errors": {
             "dateRequired": "Enter the payment date.",
             "dateFuture": "The payment date cannot be in the future."

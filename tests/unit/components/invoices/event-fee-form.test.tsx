@@ -38,6 +38,7 @@ import {
   EventFeeForm,
   defaultModeFor,
   displayDocType,
+  isPastVatFilingDeadline,
   previewVatInclusive,
   resolveDocType,
   type EventOption,
@@ -225,6 +226,39 @@ describe('displayDocType (pure — as-paid combined-document flip)', () => {
     expect(displayDocType('taxInvoice', 'bill_first')).toBe('taxInvoice');
     expect(displayDocType('taxInvoice', null)).toBe('taxInvoice');
     expect(displayDocType('receipt', null)).toBe('receipt');
+  });
+});
+
+describe('isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)', () => {
+  it('payment in the SAME month as today → false (period still open)', () => {
+    expect(isPastVatFilingDeadline('2026-06-05', '2026-06-30')).toBe(false);
+    expect(isPastVatFilingDeadline('2026-06-30', '2026-06-30')).toBe(false);
+  });
+
+  it('prior month, today = the 15th of the following month → false (deadline day itself is still timely)', () => {
+    expect(isPastVatFilingDeadline('2026-05-31', '2026-06-15')).toBe(false);
+    expect(isPastVatFilingDeadline('2026-05-01', '2026-06-15')).toBe(false);
+  });
+
+  it('prior month, today = the 16th of the following month → true (deadline passed)', () => {
+    expect(isPastVatFilingDeadline('2026-05-31', '2026-06-16')).toBe(true);
+    expect(isPastVatFilingDeadline('2026-05-01', '2026-06-16')).toBe(true);
+  });
+
+  it('year boundary: December payment, today = Jan 16 next year → true; Jan 15 → false', () => {
+    expect(isPastVatFilingDeadline('2025-12-01', '2026-01-16')).toBe(true);
+    expect(isPastVatFilingDeadline('2025-12-31', '2026-01-16')).toBe(true);
+    expect(isPastVatFilingDeadline('2025-12-31', '2026-01-15')).toBe(false);
+  });
+
+  it('a payment several closed periods back → true', () => {
+    expect(isPastVatFilingDeadline('2020-01-10', '2026-06-11')).toBe(true);
+  });
+
+  it('malformed / empty inputs → false (no warning, defensive)', () => {
+    expect(isPastVatFilingDeadline('', '2026-06-11')).toBe(false);
+    expect(isPastVatFilingDeadline('2026-06-11', '')).toBe(false);
+    expect(isPastVatFilingDeadline('not-a-date', '2026-06-11')).toBe(false);
   });
 });
 
@@ -698,5 +732,45 @@ describe('<EventFeeForm>', () => {
     expect(
       fetchMock.mock.calls.find((c) => String(c[0]) === '/api/invoices/event-draft'),
     ).toBeUndefined();
+  });
+
+  // ── 064 H-1 — ภ.พ.30 closed-period backdate warning (spec §3.2) ─────────
+
+  it('backdated payment date in a closed ภ.พ.30 period → non-blocking warning visible, submit stays enabled', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    // Default payment date = today → no warning.
+    expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
+
+    // Backdate far into a closed VAT period.
+    fireEvent.change(screen.getByLabelText(enMessages.admin.invoices.pay.fields.date), {
+      target: { value: '2020-01-10' },
+    });
+
+    const warning = screen.getByTestId('payment-date-vat-warning');
+    expect(warning).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.payment.vatPeriodWarning,
+    );
+    // Warn, do NOT block (spec §3.2) — submit remains enabled.
+    expect(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    ).not.toBeDisabled();
+  });
+
+  it("today's payment date → no ภ.พ.30 warning; warning clears when the date returns to an open period", async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
+    expect(screen.getByTestId('payment-date-vat-warning')).toBeInTheDocument();
+
+    fireEvent.change(dateInput, { target: { value: bangkokToday() } });
+    expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
   });
 });

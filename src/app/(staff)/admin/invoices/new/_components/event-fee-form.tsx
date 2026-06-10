@@ -203,6 +203,34 @@ export function displayDocType(base: DocTypeKind, mode: IssuanceMode | null): Do
   return mode === 'already_paid' && base === 'taxInvoice' ? 'taxInvoiceReceipt' : base;
 }
 
+/**
+ * 064 H-1 (spec §3.2) — ภ.พ.30 (PP.30) closed-period check for a backdated
+ * payment date. Output VAT for a payment received in month M must be declared
+ * on that month's ภ.พ.30 return, due the 15th of month M+1. We deliberately
+ * use the statutory paper-filing 15th and IGNORE the e-filing extension
+ * (~the 23rd): the 15th is the conservative bound, so the warning can only
+ * over-warn (prompting an accountant check), never under-warn past a real
+ * deadline. Returns true iff `todayYmd` is strictly AFTER that deadline —
+ * i.e. the payment's VAT period is already closed and an additional filing
+ * with surcharge may be required.
+ *
+ * Pure string/date math on YYYY-MM-DD (lexicographic compare on the ISO
+ * shape is chronological — no Date/library needed). Malformed input → false
+ * (defensive: no warning rather than a wrong one).
+ */
+export function isPastVatFilingDeadline(paymentDateYmd: string, todayYmd: string): boolean {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(paymentDateYmd);
+  if (m === null || !/^\d{4}-\d{2}-\d{2}$/.test(todayYmd)) return false;
+  let year = Number(m[1]);
+  let month = Number(m[2]) + 1; // ภ.พ.30 deadline month = payment month + 1
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  const deadline = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-15`;
+  return todayYmd > deadline;
+}
+
 /** Same set the record-payment form offers — out-of-band methods only. */
 const PAYMENT_METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -370,6 +398,17 @@ export function EventFeeForm({
     effectiveMode,
   );
 
+  // 064 H-1 — non-blocking ภ.พ.30 closed-period warning (spec §3.2): the
+  // backdated payment date falls in a VAT month whose filing deadline has
+  // passed → an additional return with surcharge may be needed. Warn only;
+  // submit stays ENABLED (the admin attests the real receipt date — blocking
+  // would force a false date instead). todayBkk is '' until the client
+  // effect seeds it, which keeps the warning off during SSR/first paint.
+  const showVatPeriodWarning =
+    effectiveMode === 'already_paid' &&
+    todayBkk !== '' &&
+    isPastVatFilingDeadline(paymentDate, todayBkk);
+
   function validateAmount(): string | null {
     if (amountThb === '' || !Number.isFinite(amountNum)) return t('amount.errors.required');
     if (amountNum < MIN_THB) return t('amount.errors.min');
@@ -497,6 +536,7 @@ export function EventFeeForm({
             'member_archived',
             'event_not_found',
             'attendee_erased',
+            'registration_refunded',
             'no_fee_free_event',
             'invalid_amount',
             'buyer_required',
@@ -725,9 +765,10 @@ export function EventFeeForm({
                       disabled={pending}
                       {...(todayBkk ? { max: todayBkk } : {})}
                       aria-invalid={paymentDateError ? true : undefined}
-                      aria-describedby={
-                        paymentDateError ? 'payment-date-error' : 'payment-date-hint'
-                      }
+                      aria-describedby={[
+                        paymentDateError ? 'payment-date-error' : 'payment-date-hint',
+                        ...(showVatPeriodWarning ? ['payment-date-vat-warning'] : []),
+                      ].join(' ')}
                     />
                     {paymentDateError ? (
                       <p
@@ -740,6 +781,23 @@ export function EventFeeForm({
                     ) : (
                       <p id="payment-date-hint" className="text-xs text-muted-foreground">
                         {t('payment.dateHint')}
+                      </p>
+                    )}
+                    {/* 064 H-1 — amber warning-callout (same palette as the
+                        schedule-editor read-only notice): non-blocking, so
+                        role="status" (polite live region), NOT role="alert". */}
+                    {showVatPeriodWarning && (
+                      <p
+                        id="payment-date-vat-warning"
+                        role="status"
+                        data-testid="payment-date-vat-warning"
+                        className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
+                      >
+                        <AlertTriangleIcon
+                          aria-hidden="true"
+                          className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-500"
+                        />
+                        <span>{t('payment.vatPeriodWarning')}</span>
                       </p>
                     )}
                   </div>

@@ -1776,6 +1776,7 @@
           "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "event_not_found": "Det evenemanget kunde inte hittas.",
           "attendee_erased": "Denna deltagares personuppgifter har raderats och kan inte faktureras.",
+          "registration_refunded": "Denna registrering har återbetalats — en faktura eller ett kvitto kan inte skapas för en återbetald avgift.",
           "no_fee_free_event": "Denna deltagare har ingen biljettavgift. Ange ett belopp för att fakturera.",
           "invalid_amount": "Beloppet är utanför intervallet (1 – 1 000 000 THB).",
           "buyer_required": "Köparuppgifter krävs för en icke-medlem.",
@@ -1807,6 +1808,7 @@
         },
         "payment": {
           "dateHint": "Datum då betalningen mottogs. Får inte ligga i framtiden.",
+          "vatPeriodWarning": "Betalningsdatumet ligger i en momsperiod vars deklarationsfrist (PP.30) har passerat — en kompletterande deklaration med tillägg kan krävas. Stäm av med er revisor.",
           "errors": {
             "dateRequired": "Ange betalningsdatumet.",
             "dateFuture": "Betalningsdatumet får inte ligga i framtiden."
