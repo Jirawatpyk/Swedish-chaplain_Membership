@@ -594,12 +594,20 @@ async function dispatchOneCycleInner(
   // must report `already_sent`, not `not_due_today`). Idempotency check is
   // STEP-anchored (063 #1) + cross-version tolerant (063 residual).
   //
-  // The `?? windowSteps[0]!` fallback is unreachable at runtime on the
-  // today-exactly path (firedKeys is always empty there → find() always
-  // succeeds in finding an unfired step). It IS load-bearing for TypeScript:
-  // without it `primaryStep` would be `ReminderStep | undefined`, propagating
-  // undefined checks through every downstream use. Do NOT remove it as "dead
-  // code" — it keeps the type non-nullable.
+  // The `?? windowSteps[0]!` fallback is unreachable on the NON-boundary-
+  // adjacent today-exactly HOT path (needsFiredKeys is false → firedKeys is
+  // empty → stepAlreadyFired() is always false → find() always returns the
+  // first step). It IS reachable — and correctly yields `already_sent` — on
+  // two other paths:
+  //   (a) boundary-adjacent same-day re-run: needsFiredKeys is true →
+  //       firedKeys is populated → stepAlreadyFired() returns true for every
+  //       in-window step → find() returns undefined → fallback executes, and
+  //       Gate-12 `insertIfAbsent` then reports the idempotency-hit.
+  //   (b) catch-up pass where every overdue step already fired on a prior
+  //       pass: same outcome — find() returns undefined, fallback executes.
+  // The fallback is ALSO load-bearing for TypeScript: without it `primaryStep`
+  // would be `ReminderStep | undefined`, propagating undefined checks through
+  // every downstream use. Do NOT remove it as "dead code".
   const primaryStep: ReminderStep =
     windowSteps.find((s) => !stepAlreadyFired(s)) ?? windowSteps[0]!;
 
@@ -738,13 +746,16 @@ async function dispatchOneCycleInner(
     // (the existing failure metric) and continue; the primary's outcome
     // stands.
     //
-    // Recovery path for a thrown sibling: if the throw happens AFTER
-    // Gate 12 `insertIfAbsent` committed a `status='pending'` row, that
-    // pending row IS picked up by the retry/exhaustion sweep on the next
-    // pass. If the throw happens BEFORE any row was committed (e.g.
-    // Gate 12 itself throws), NO row was persisted — the sweep finds nothing.
-    // In that case recovery is the NEXT CRON PASS: `hasOverdueStep` +
-    // the boundary re-fires the unfired sibling within the lookback window.
+    // Recovery path for a thrown sibling: a throw that reaches this catch
+    // can only originate BEFORE Gate-12 commits any row (Gate 9/11/12 itself
+    // throws). Once Gate-12's `insertIfAbsent` has committed the pending row,
+    // any subsequent throw inside `fireStep` is caught by
+    // `defensivelyMarkFailedForRetry` (J2-B2), which NEVER re-throws —
+    // `fireStep` returns an outcome instead of throwing. So NO pending row
+    // is ever left behind when control reaches here.
+    //
+    // Recovery is the NEXT CRON PASS: `hasOverdueStep` (or boundary-adjacent
+    // re-check) re-fires the unfired sibling within the lookback window.
     // The sibling is permanently dropped only if the fault persists for the
     // entire lookback window duration without a successful cron pass.
     try {

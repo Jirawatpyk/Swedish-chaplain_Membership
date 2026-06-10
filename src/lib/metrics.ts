@@ -2306,8 +2306,8 @@ export const renewalsMetrics = {
    * `renewals_reminders_sent_total{tier_bucket, offset_day, caught_up}` —
    * total count of reminder emails successfully dispatched. Pivot table for
    * dispatcher health; correlates with Resend deliverability metrics.
-   * `tier_bucket` ∈ 5-value enum (regular | premium | partner_silver |
-   * partner_gold | partner_diamond). `offset_day` ∈ ~6-value bounded
+   * `tier_bucket` ∈ 5-value enum (thai_alumni | start_up | regular |
+   * premium | partnership). `offset_day` ∈ ~6-value bounded
    * set (90 / 60 / 30 / 14 / 7 / 0). `caught_up` ∈ {true, false} —
    * boolean dimension that surfaces catch-up spikes (a spike in
    * `caught_up=true` signals cron-health degradation, exactly what

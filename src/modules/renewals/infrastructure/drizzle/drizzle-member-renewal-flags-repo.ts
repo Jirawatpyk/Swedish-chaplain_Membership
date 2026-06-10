@@ -9,11 +9,16 @@
  *   - T090 detect-bounce-threshold (Wave I2d) → `setEmailUnverified`
  *   - T091 reset-email-unverified (this wave) → `clearEmailUnverified`
  *
- * Tenant isolation is enforced by F3's RLS policy on `members` —
- * every method wraps its query in `runInTenant(ctx, …)` which sets
- * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`.
- * NO explicit `WHERE tenant_id = ?` — the policy adds it automatically
- * (research.md § 7.1).
+ * Tenant isolation: most tables (members, membership_plans, renewal_*,
+ * broadcasts) use strict isolating RLS policies — `runInTenant` SET LOCAL
+ * is sufficient and NO explicit `WHERE tenant_id = ?` is required for them.
+ * However, `audit_log` uses a PERMISSIVE policy where rows with NULL
+ * tenant_id (F1 identity events, migration 0007) remain visible to every
+ * tenant context. Therefore any `audit_log` query in this file MUST include
+ * an explicit `al.tenant_id = ${tenantId}` predicate — it is load-bearing,
+ * not optional. A future `audit_log` query added here MUST carry the same
+ * explicit filter. (Mirrors the corrected header in drizzle-at-risk-scorer.ts
+ * — same root cause.)
  *
  * Cross-module deep-import precedent: `drizzle-renewal-cycle-repo.ts`
  * line 26 imports F3's `members` schema for the LEFT JOIN to surface
@@ -468,6 +473,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
                     THEN (al.payload->>'new_plan_year')::int
                   END
             WHERE al.event_type = 'member_plan_changed'
+              -- Load-bearing: audit_log has a PERMISSIVE RLS policy; NULL-
+              -- tenant F1 rows are cross-tenant-visible. This predicate is
+              -- not defence-in-depth — it is REQUIRED for correct isolation.
               AND al.tenant_id = ${tenantId}
               AND al.payload->>'member_id' = m.member_id::text
               AND al.timestamp > NOW() - INTERVAL '12 months'
