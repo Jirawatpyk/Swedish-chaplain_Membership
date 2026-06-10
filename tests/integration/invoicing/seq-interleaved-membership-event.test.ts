@@ -63,6 +63,8 @@ import {
   issueInvoice,
   type IssueInvoiceDeps,
 } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { issueEventInvoiceAsPaid } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
+import type { IssueEventInvoiceAsPaidDeps } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
@@ -145,6 +147,16 @@ function makeIssueDeps(
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
   };
+}
+
+/**
+ * 064 Task 6 — deps for the AS-PAID leg of the interleave. Identical adapter
+ * wiring to `makeIssueDeps` (real allocator/repos/audit/outbox; mocked
+ * PDF/Blob); `IssueEventInvoiceAsPaidDeps` is structurally identical to
+ * `IssueInvoiceDeps` plus an optional `onPaidCallbacks` we don't register.
+ */
+function makeAsPaidDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps {
+  return makeIssueDeps(tenantSlug);
 }
 
 // ---------------------------------------------------------------------------
@@ -459,5 +471,196 @@ describe('§87 interleaved membership+event sequence continuity (live Neon)', ()
       );
     },
     90_000,
+  );
+
+  it(
+    '064 Task 6 — as-paid leg: membership issue → bill-first event issue → as-paid TIN event are N, N+1, N+2 on the SAME stream',
+    async () => {
+      // Fresh fixtures — the first test consumed the original member +
+      // registration (duplicate-draft guard / partial unique index).
+      // All identities SIMULATED (fake names + fake 13-digit TINs).
+      const memberId3 = randomUUID();
+      const regBillFirst = randomUUID();
+      const regAsPaid = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: memberId3,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Interleave Member Corp 3',
+          country: 'TH',
+          taxId: '7777777777777',
+          addressLine1: '77 Simulated Road',
+          city: 'Bang Rak',
+          province: 'Bangkok',
+          postalCode: '10500',
+          planId,
+          planYear,
+        });
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: memberId3,
+          firstName: 'Member3',
+          lastName: 'Contact3',
+          email: 'member3.contact@interleave.example',
+          isPrimary: true,
+        });
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: regBillFirst,
+          eventId,
+          externalId: 'att_interleave_billfirst',
+          attendeeEmail: 'buyer@interleave.example',
+          attendeeName: 'Test Buyer',
+          attendeeCompany: 'Interleave Test Corp',
+          matchType: 'non_member',
+          ticketType: 'Standard',
+          ticketPriceThb: 500,
+          paymentStatus: 'paid',
+          registeredAt: new Date('2026-07-01T03:00:00Z'),
+        } satisfies NewEventRegistrationRow);
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: regAsPaid,
+          eventId,
+          externalId: 'att_interleave_aspaid',
+          attendeeEmail: 'buyer@interleave.example',
+          attendeeName: 'Test Buyer',
+          attendeeCompany: 'Interleave Test Corp',
+          matchType: 'non_member',
+          ticketType: 'Standard',
+          ticketPriceThb: 1070,
+          paymentStatus: 'paid',
+          registeredAt: new Date('2026-07-01T03:00:00Z'),
+        } satisfies NewEventRegistrationRow);
+      });
+
+      // ---------------------------------------------------------------------
+      // Step 1 — MEMBERSHIP draft + issue → seq N
+      // ---------------------------------------------------------------------
+      const memDraft = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-draft-mem-${memberId3}`,
+        memberId: memberId3,
+        planId,
+        planYear,
+      });
+      expect(memDraft.ok, memDraft.ok ? 'ok' : `mem draft err: ${memDraft.error.code}`).toBe(true);
+      if (!memDraft.ok) throw new Error(`mem draft failed: ${memDraft.error.code}`);
+      const memInvoiceId = memDraft.value.invoiceId;
+
+      const memIssue = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-mem-${memInvoiceId}`,
+        invoiceId: memInvoiceId,
+      });
+      expect(memIssue.ok, memIssue.ok ? 'ok' : `mem issue err: ${JSON.stringify(memIssue)}`).toBe(
+        true,
+      );
+      if (!memIssue.ok) throw new Error('mem issue failed');
+
+      // ---------------------------------------------------------------------
+      // Step 2 — EVENT bill-first draft + issue → seq N+1
+      // ---------------------------------------------------------------------
+      const evtDraft = await createEventInvoiceDraft(
+        makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId: `int-interleave-aspaid-draft-evt-${regBillFirst}`,
+          eventRegistrationId: regBillFirst,
+          amountOverride: 50_000, // 500 THB inclusive
+          buyer: EVENT_BUYER,
+        },
+      );
+      expect(evtDraft.ok, evtDraft.ok ? 'ok' : `evt draft err: ${evtDraft.error.code}`).toBe(true);
+      if (!evtDraft.ok) throw new Error(`evt draft failed: ${evtDraft.error.code}`);
+      const evtInvoiceId = evtDraft.value.invoiceId;
+
+      const evtIssue = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-evt-${evtInvoiceId}`,
+        invoiceId: evtInvoiceId,
+      });
+      expect(evtIssue.ok, evtIssue.ok ? 'ok' : `evt issue err: ${JSON.stringify(evtIssue)}`).toBe(
+        true,
+      );
+      if (!evtIssue.ok) throw new Error('evt issue failed');
+
+      // ---------------------------------------------------------------------
+      // Step 3 — EVENT as-paid (TIN buyer → receipt_combined) → seq N+2
+      // ---------------------------------------------------------------------
+      const asPaidDraft = await createEventInvoiceDraft(
+        makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId: `int-interleave-aspaid-draft-aspaid-${regAsPaid}`,
+          eventRegistrationId: regAsPaid,
+          amountOverride: 107_000, // 1,070 THB inclusive
+          buyer: EVENT_BUYER,
+        },
+      );
+      expect(
+        asPaidDraft.ok,
+        asPaidDraft.ok ? 'ok' : `as-paid draft err: ${asPaidDraft.error.code}`,
+      ).toBe(true);
+      if (!asPaidDraft.ok) throw new Error(`as-paid draft failed: ${asPaidDraft.error.code}`);
+      const asPaidInvoiceId = asPaidDraft.value.invoiceId;
+
+      // paymentDate == Bangkok "today" for the fixed 2026-07-01T09:00:00Z
+      // clock — same FY2026 bucket as the two issue legs above.
+      const asPaidResult = await issueEventInvoiceAsPaid(makeAsPaidDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-aspaid-${asPaidInvoiceId}`,
+        invoiceId: asPaidInvoiceId,
+        paymentDate: '2026-07-01',
+        paymentMethod: 'cash',
+      });
+      expect(
+        asPaidResult.ok,
+        asPaidResult.ok ? 'ok' : `as-paid err: ${JSON.stringify(asPaidResult)}`,
+      ).toBe(true);
+      if (!asPaidResult.ok) throw new Error('as-paid issue failed');
+
+      // ---------------------------------------------------------------------
+      // Assert: three rows on ONE strictly consecutive §87 stream
+      // ---------------------------------------------------------------------
+      const rowMem = await readInvoiceRow(memInvoiceId);
+      const rowEvt = await readInvoiceRow(evtInvoiceId);
+      const rowAsPaid = await readInvoiceRow(asPaidInvoiceId);
+
+      expect(rowMem!.status).toBe('issued');
+      expect(rowEvt!.status).toBe('issued');
+      expect(rowAsPaid!.status).toBe('paid'); // one-shot draft→paid
+
+      expect(rowMem!.invoiceSubject).toBe('membership');
+      expect(rowEvt!.invoiceSubject).toBe('event');
+      expect(rowAsPaid!.invoiceSubject).toBe('event');
+      expect(rowAsPaid!.pdfDocKind).toBe('receipt_combined');
+
+      // Same FY bucket — the as-paid leg's paymentDate-derived FY matches
+      // the clock-derived FY of the two issue legs.
+      expect(rowEvt!.fiscalYear).toBe(rowMem!.fiscalYear);
+      expect(rowAsPaid!.fiscalYear).toBe(rowMem!.fiscalYear);
+
+      // Strictly consecutive, in execution order (sequential awaits).
+      const seqMem = rowMem!.sequenceNumber!;
+      const seqEvt = rowEvt!.sequenceNumber!;
+      const seqAsPaid = rowAsPaid!.sequenceNumber!;
+      expect(seqEvt).toBe(seqMem + 1);
+      expect(seqAsPaid).toBe(seqMem + 2);
+
+      // One shared prefix — same document sequence.
+      expect(rowMem!.documentNumber).toMatch(/^INV/);
+      expect(rowEvt!.documentNumber).toMatch(/^INV/);
+      expect(rowAsPaid!.documentNumber).toMatch(/^INV/);
+    },
+    120_000,
   );
 });

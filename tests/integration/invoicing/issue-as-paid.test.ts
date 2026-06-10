@@ -37,8 +37,17 @@
  *
  * Lives in tests/integration/** → hits live Neon. Migrations 0200–0211
  * MUST be applied first (`pnpm db:migrate`).
+ *
+ * Task 6 EXTENSION — use-case-level sections for `issueEventInvoiceAsPaid`
+ * follow the repo-level describe: end-to-end TIN happy path (non-member +
+ * matched member audit branches), same-route double-call concurrency,
+ * cross-route race vs `issueInvoice`, FY-from-paymentDate boundary,
+ * blob-upload rollback (no §87 gap), and the Principle-I cross-tenant probe.
+ * Deps pattern mirrors `issue-event-invoice.test.ts` / `event-invoice-
+ * schema.test.ts`: REAL repos + allocator + identity + audit + outbox,
+ * mocked PDF render + Blob.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
@@ -49,16 +58,48 @@ import {
   type NewEventRegistrationRow,
 } from '@/modules/events/infrastructure/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
-import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
+import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import {
+  createEventInvoiceDraft,
+  type CreateEventInvoiceDraftInput,
+} from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
 import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
+import { issueEventInvoiceAsPaid } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
+import type { IssueEventInvoiceAsPaidDeps } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
+import {
+  issueInvoice,
+  type IssueInvoiceDeps,
+} from '@/modules/invoicing/application/use-cases/issue-invoice';
+import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
+import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { asFiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { splitVatInclusive } from '@/modules/invoicing';
 import type { Invoice, InvoiceId } from '@/modules/invoicing/domain/invoice';
-import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
-import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import {
+  createTestTenant,
+  createTwoTestTenants,
+  type TestTenant,
+} from '../helpers/test-tenant';
+import {
+  createActiveTestUser,
+  deleteTestUser,
+  type TestUser,
+} from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 // Non-member buyer WITH a Thai TIN → receipt_combined doc kind at as-paid.
 const BUYER_WITH_TIN = {
@@ -280,4 +321,841 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
     }
     expect(parts.join(' | ')).toMatch(/snapshot columns are immutable/i);
   }, 30_000);
+});
+
+// =============================================================================
+// Task 6 — USE-CASE-LEVEL sections (`issueEventInvoiceAsPaid`, live Neon).
+// Real repos + §87 allocator + identity adapter + audit adapter + outbox
+// adapter; PDF render + Blob mocked (issue-event-invoice.test.ts pattern).
+// All fixture buyers/members are SIMULATED (fake names + fake 13-digit TINs).
+// =============================================================================
+
+/** Fixed Bangkok-safe clock for the use-case sections (matches "today"). */
+const UC_NOW_ISO = '2026-06-10T10:00:00Z';
+/** Out-of-band payment settled a few days before UC_NOW_ISO. */
+const UC_PAYMENT_DATE = '2026-06-07';
+/** FY containing UC_PAYMENT_DATE under fiscalYearStartMonth=1 (default). */
+const UC_FISCAL_YEAR = 2026;
+
+/** SIMULATED non-member buyer WITH a fake 13-digit Thai TIN — never real PII. */
+const UC_BUYER_TIN = {
+  legal_name: 'Simulated As-Paid Co Ltd',
+  tax_id: '1234512345123',
+  address: '123 Simulated Road, Bangkok 10110',
+  primary_contact_name: 'Sim Buyer',
+  primary_contact_email: 'sim.buyer@as-paid.test',
+} as const;
+
+const UC_MATRIX: BenefitMatrix = {
+  eblast_per_year: 1,
+  website_page_type: 'member_news_update',
+  homepage_logo_category: 'regular',
+  directory_listing_size: 'half_page',
+  event_discount_scope: 'all_employees',
+  events_cobranded_access: false,
+  cultural_tickets_per_year: 0,
+  m2m_benefits_access: true,
+  business_referrals: true,
+  tailor_made_services: false,
+  partnership: null,
+};
+
+interface UseCaseDepsOptions {
+  readonly nowIso: string;
+  /** Records every PDF render input so tests can pin the doc-kind + dates. */
+  readonly captured?: PdfRenderInput[];
+  /** Override the uploadPdf mock (section E blob-failure injection). */
+  readonly uploadPdf?: (input: { key: string }) => Promise<{ key: string; url: string }>;
+  /** Spy on the orphan-blob cleanup delete (section E). */
+  readonly blobDelete?: (key: string) => Promise<void>;
+}
+
+/**
+ * REAL repos/allocator/identity/audit/outbox + mocked PDF/Blob. The
+ * intersection type lets ONE builder feed both routes in the cross-route
+ * race — `IssueInvoiceDeps` and `IssueEventInvoiceAsPaidDeps` are
+ * structurally identical (the latter only adds optional onPaidCallbacks).
+ */
+function makeUseCaseDeps(
+  tenantSlug: string,
+  opts: UseCaseDepsOptions,
+): IssueInvoiceDeps & IssueEventInvoiceAsPaidDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    memberIdentity: memberIdentityAdapter,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: {
+      render: vi.fn(async (renderInput: PdfRenderInput) => {
+        opts.captured?.push(renderInput);
+        return {
+          bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+          sha256: Sha256Hex.ofUnsafe('d'.repeat(64)),
+        };
+      }),
+    },
+    blob: {
+      uploadPdf: vi.fn(
+        opts.uploadPdf ??
+          (async ({ key }: { key: string }) => ({
+            key,
+            url: `https://blob.test/${key}`,
+          })),
+      ),
+      uploadLogo: vi.fn(),
+      signDownloadUrl: vi.fn(),
+      downloadBytes: vi.fn(),
+      delete: vi.fn(opts.blobDelete ?? (async () => {})),
+      list: vi.fn(),
+    },
+    audit: f4AuditAdapter,
+    clock: { nowIso: () => opts.nowIso },
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: 1,
+  };
+}
+
+/** Seed minimal tenant invoice settings (defaults: VAT 7%, FY start Jan, auto-email ON). */
+async function seedUcSettings(tenant: TestTenant, prefix: string): Promise<void> {
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(tenantInvoiceSettings).values({
+      tenantId: tenant.ctx.slug,
+      currencyCode: 'THB',
+      vatRate: '0.0700',
+      registrationFeeSatang: 0n,
+      legalNameTh: 'หอการค้าจำลอง',
+      legalNameEn: 'Simulated Chamber',
+      taxId: '0000000000000',
+      registeredAddressTh: 'Bangkok',
+      registeredAddressEn: 'Bangkok',
+      invoiceNumberPrefix: prefix,
+      creditNoteNumberPrefix: `${prefix}C`,
+    });
+  });
+}
+
+/** Seed one F6 event + one registration; returns ids. */
+async function seedUcEventWithRegistration(
+  tenant: TestTenant,
+  opts?: {
+    readonly matchType?: 'non_member' | 'member_domain';
+    readonly matchedMemberId?: string;
+    readonly ticketPriceThb?: number;
+    readonly attendeeEmail?: string;
+  },
+): Promise<{ eventId: string; registrationId: string }> {
+  const eventId = randomUUID();
+  const registrationId = randomUUID();
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId,
+      source: 'eventcreate',
+      externalId: `evt-aspaid-uc-${registrationId.slice(0, 8)}`,
+      name: 'As-Paid Use-Case Gala',
+      startDate: new Date('2026-09-10T11:00:00Z'),
+    } satisfies NewEventRow);
+    await tx.insert(eventRegistrations).values({
+      tenantId: tenant.ctx.slug,
+      registrationId,
+      eventId,
+      externalId: `att-aspaid-uc-${registrationId.slice(0, 8)}`,
+      attendeeEmail: opts?.attendeeEmail ?? UC_BUYER_TIN.primary_contact_email,
+      attendeeName: 'Sim Attendee',
+      attendeeCompany: 'Simulated As-Paid Co Ltd',
+      matchType: opts?.matchType ?? 'non_member',
+      ...(opts?.matchedMemberId !== undefined
+        ? { matchedMemberId: opts.matchedMemberId }
+        : {}),
+      ticketType: 'Standard',
+      ticketPriceThb: opts?.ticketPriceThb ?? 1000,
+      paymentStatus: 'paid',
+      registeredAt: new Date('2026-09-01T03:00:00Z'),
+    } satisfies NewEventRegistrationRow);
+  });
+  return { eventId, registrationId };
+}
+
+/** Create a genuine event draft via the REAL use-case; throws on err. */
+async function createUcDraft(
+  tenant: TestTenant,
+  user: TestUser,
+  registrationId: string,
+  opts?: {
+    readonly amountOverrideSatang?: number;
+    readonly buyer?: CreateEventInvoiceDraftInput['buyer'];
+  },
+): Promise<InvoiceId> {
+  const draft = await createEventInvoiceDraft(
+    makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+    {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-draft-${registrationId}`,
+      eventRegistrationId: registrationId,
+      ...(opts?.amountOverrideSatang !== undefined
+        ? { amountOverride: opts.amountOverrideSatang }
+        : {}),
+      ...(opts?.buyer !== undefined ? { buyer: opts.buyer } : {}),
+    },
+  );
+  if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
+  return draft.value.invoiceId;
+}
+
+/** Owner-role (BYPASSRLS) read of one invoice row. */
+async function readInvoiceRowOwner(tenantSlug: string, invoiceId: string) {
+  const [row] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.tenantId, tenantSlug), eq(invoices.invoiceId, invoiceId)));
+  return row;
+}
+
+/** §87 counter for (tenant, 'invoice', fy) — null when never allocated. */
+async function readInvoiceSeqCounter(
+  tenantSlug: string,
+  fiscalYear: number,
+): Promise<number | null> {
+  const [row] = await db
+    .select()
+    .from(tenantDocumentSequences)
+    .where(
+      and(
+        eq(tenantDocumentSequences.tenantId, tenantSlug),
+        eq(tenantDocumentSequences.documentType, 'invoice'),
+        eq(tenantDocumentSequences.fiscalYear, fiscalYear),
+      ),
+    );
+  return row?.nextSequenceNumber ?? null;
+}
+
+/** All audit rows whose payload.invoice_id matches (owner read). */
+async function auditRowsForInvoice(tenantSlug: string, invoiceId: string) {
+  const rows = await db
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.tenantId, tenantSlug));
+  return rows.filter(
+    (r) => (r.payload as Record<string, unknown> | null)?.invoice_id === invoiceId,
+  );
+}
+
+/** All invoice_auto_email outbox rows for one invoice (owner read). */
+async function outboxRowsForInvoice(tenantSlug: string, invoiceId: string) {
+  const rows = await db
+    .select()
+    .from(notificationsOutbox)
+    .where(
+      and(
+        eq(notificationsOutbox.tenantId, tenantSlug),
+        eq(notificationsOutbox.notificationType, 'invoice_auto_email'),
+      ),
+    );
+  return rows.filter(
+    (r) => (r.contextData as Record<string, unknown>).invoice_id === invoiceId,
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Section A — TIN as-paid end-to-end (non-member + matched-member audit branch)
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  const planId = 'aspaid-uc-plan';
+  let memberId: string;
+  let regNonMember: string;
+  let regMatched: string;
+  let draftNonMember: InvoiceId;
+  let draftMatched: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVP');
+
+    // SIMULATED matched company member (fake TIN) + primary contact.
+    memberId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId,
+        planYear: 2026,
+        planName: { en: 'As-Paid UC Plan' },
+        description: { en: 'Simulated plan for as-paid use-case test' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: UC_MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Simulated Matched Corp',
+        country: 'TH',
+        taxId: '3210987654321',
+        addressLine1: '1 Simulated Avenue',
+        city: 'Pathum Wan',
+        province: 'Bangkok',
+        postalCode: '10330',
+        planId,
+        planYear: 2026,
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Sim',
+        lastName: 'Contact',
+        email: 'sim.contact@as-paid.test',
+        isPrimary: true,
+      });
+    });
+
+    ({ registrationId: regNonMember } = await seedUcEventWithRegistration(tenant));
+    ({ registrationId: regMatched } = await seedUcEventWithRegistration(tenant, {
+      matchType: 'member_domain',
+      matchedMemberId: memberId,
+      ticketPriceThb: 2000,
+      attendeeEmail: 'sim.contact@as-paid.test',
+    }));
+
+    draftNonMember = await createUcDraft(tenant, user, regNonMember, {
+      amountOverrideSatang: 10004, // 100.04 THB inclusive — VAT-exact case
+      buyer: UC_BUYER_TIN,
+    });
+    draftMatched = await createUcDraft(tenant, user, regMatched);
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('A1 — non-member TIN: ONE paid row, combined PDF + as-paid date pin, dual in-tx audits (non-timeline), exactly ONE outbox email', async () => {
+    const captured: PdfRenderInput[] = [];
+    const deps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO, captured });
+    const reqId = `int-aspaid-uc-a1-${draftNonMember}`;
+
+    const res = await issueEventInvoiceAsPaid(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: reqId,
+      invoiceId: draftNonMember,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+      paymentReference: 'SIM-DOOR-001',
+    });
+    expect(res.ok, res.ok ? 'ok' : `as-paid err: ${JSON.stringify(res)}`).toBe(true);
+    if (!res.ok) throw new Error('as-paid failed');
+
+    // Exactly ONE invoice row exists for the registration — the one-shot
+    // issuance produced no sibling/intermediate row.
+    const rows = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.eventRegistrationId, regNonMember),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.status).toBe('paid');
+    expect(row.pdfDocKind).toBe('receipt_combined');
+    // As-paid date pin: issue = due = payment (raw row).
+    expect(row.issueDate).toBe(UC_PAYMENT_DATE);
+    expect(row.dueDate).toBe(UC_PAYMENT_DATE);
+    expect(row.paymentDate).toBe(UC_PAYMENT_DATE);
+    expect(row.netDaysSnapshot).toBe(0);
+    // Model-B exact VAT round-trip on the 100.04 THB case.
+    const split = splitVatInclusive(Money.fromSatangUnsafe(10004n), 700n);
+    expect(BigInt(row.totalSatang!.toString())).toBe(10004n);
+    expect(BigInt(row.subtotalSatang!.toString())).toBe(split.subtotal.satang);
+    expect(BigInt(row.vatSatang!.toString())).toBe(split.vat.satang);
+
+    // Render input — the ONE combined document, inclusive, dates pinned.
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.kind).toBe('receipt_combined');
+    expect(captured[0]!.vatInclusive).toBe(true);
+    expect(captured[0]!.issueDate).toBe(UC_PAYMENT_DATE);
+    expect(captured[0]!.dueDate).toBe(UC_PAYMENT_DATE);
+
+    // Audits — BOTH lifecycle facts committed with the row.
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.requestId, reqId)));
+    const issued = audits.filter((a) => a.eventType === 'invoice_issued');
+    const paid = audits.filter((a) => a.eventType === 'invoice_paid');
+    expect(issued).toHaveLength(1);
+    expect(paid).toHaveLength(1);
+    for (const a of [issued[0]!, paid[0]!]) {
+      const payload = a.payload as Record<string, unknown>;
+      expect(payload.invoice_id).toBe(draftNonMember);
+      expect(payload.invoice_subject).toBe('event');
+      expect(payload.event_registration_id).toBe(regNonMember);
+      // Non-member → non-timeline branch: member_id key FORBIDDEN.
+      expect('member_id' in payload).toBe(false);
+    }
+    // W9 — raw payment reference never lands in audit (sha256 only).
+    const paidPayload = paid[0]!.payload as Record<string, unknown>;
+    expect(paidPayload.payment_reference_sha256).toBeTruthy();
+    expect(JSON.stringify(paidPayload)).not.toContain('SIM-DOOR-001');
+
+    // Outbox — exactly ONE invoice_paid receipt email for the buyer, with
+    // the §87/3 PDPA transparency footer (non-member event buyer).
+    const outboxRows = await outboxRowsForInvoice(tenant.ctx.slug, draftNonMember);
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]!.toEmail).toBe(UC_BUYER_TIN.primary_contact_email);
+    const ctx = outboxRows[0]!.contextData as Record<string, unknown>;
+    expect(ctx.event_type).toBe('invoice_paid');
+    expect(ctx.privacy_footer_kind).toBe('event_non_member');
+  }, 60_000);
+
+  it('A2 — matched member: audits use the TIMELINE branch (member_id present), combined receipt to the member contact', async () => {
+    const deps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
+    const reqId = `int-aspaid-uc-a2-${draftMatched}`;
+
+    const res = await issueEventInvoiceAsPaid(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: reqId,
+      invoiceId: draftMatched,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'bank_transfer',
+      paymentReference: 'SIM-KBANK-002',
+    });
+    expect(res.ok, res.ok ? 'ok' : `as-paid err: ${JSON.stringify(res)}`).toBe(true);
+    if (!res.ok) throw new Error('as-paid failed');
+
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, draftMatched);
+    expect(row!.status).toBe('paid');
+    expect(row!.pdfDocKind).toBe('receipt_combined');
+    expect(row!.memberId).toBe(memberId);
+
+    // Member branch ⇒ member_id present on BOTH audit rows (F3 timeline),
+    // alongside the event correlation fields.
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.requestId, reqId)));
+    const issued = audits.filter((a) => a.eventType === 'invoice_issued');
+    const paid = audits.filter((a) => a.eventType === 'invoice_paid');
+    expect(issued).toHaveLength(1);
+    expect(paid).toHaveLength(1);
+    for (const a of [issued[0]!, paid[0]!]) {
+      const payload = a.payload as Record<string, unknown>;
+      expect(payload.member_id).toBe(memberId);
+      expect(payload.invoice_subject).toBe('event');
+      expect(payload.event_registration_id).toBe(regMatched);
+    }
+
+    // Matched member → no PDPA non-member footer on the receipt email.
+    const outboxRows = await outboxRowsForInvoice(tenant.ctx.slug, draftMatched);
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]!.toEmail).toBe('sim.contact@as-paid.test');
+    const ctx = outboxRows[0]!.contextData as Record<string, unknown>;
+    expect(ctx.event_type).toBe('invoice_paid');
+    expect(ctx.privacy_footer_kind).toBeNull();
+  }, 60_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section B — same-route double-call concurrency
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid — same-route double-call concurrency (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let invoiceId: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVB');
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('two concurrent as-paid calls: exactly one ok, loser typed invoice_already_issued, §87 consumes exactly 1, ONE audit pair', async () => {
+    const before = (await readInvoiceSeqCounter(tenant.ctx.slug, UC_FISCAL_YEAR)) ?? 1;
+
+    // SAME deps object for both calls (same route, double-submit).
+    const deps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
+    const mkInput = (n: number) => ({
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-b${n}-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash' as const,
+    });
+
+    const settled = await Promise.allSettled([
+      issueEventInvoiceAsPaid(deps, mkInput(1)),
+      issueEventInvoiceAsPaid(deps, mkInput(2)),
+    ]);
+    const results = settled.map((s) => {
+      if (s.status !== 'fulfilled') {
+        throw new Error(`unexpected rejection: ${String(s.reason)}`);
+      }
+      return s.value;
+    });
+    const winners = results.filter((r) => r.ok);
+    const losers = results.filter((r) => !r.ok);
+    // NB: summarise codes only — a winner Invoice carries BigInt satang,
+    // which JSON.stringify cannot serialize (and the message arg is eager).
+    const summary = results
+      .map((r) => (r.ok ? 'ok' : `err:${r.error.code}`))
+      .join(', ');
+    expect(winners, `results: ${summary}`).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    const loser = losers[0]!;
+    if (loser.ok) throw new Error('unreachable');
+    // Deterministic under the FOR UPDATE row lock: the loser re-reads the
+    // committed status. The applyIssueAsPaid conflict translation lands on
+    // the SAME code, so this assertion holds either way.
+    expect(loser.error.code).toBe('invoice_already_issued');
+
+    // §87 consumption = exactly 1 (counter advanced by one).
+    const after = await readInvoiceSeqCounter(tenant.ctx.slug, UC_FISCAL_YEAR);
+    expect(after).toBe(before + 1);
+
+    // Winner's row took the pre-increment number.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row!.status).toBe('paid');
+    expect(row!.sequenceNumber).toBe(before);
+
+    // Exactly ONE pair of lifecycle audits for the invoice.
+    const audits = await auditRowsForInvoice(tenant.ctx.slug, invoiceId);
+    expect(audits.filter((a) => a.eventType === 'invoice_issued')).toHaveLength(1);
+    expect(audits.filter((a) => a.eventType === 'invoice_paid')).toHaveLength(1);
+  }, 90_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section C — cross-route race (issueInvoice vs issueEventInvoiceAsPaid)
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid vs issueInvoice — cross-route race (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let invoiceId: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVC');
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('exactly one winner across routes (either is legal), loser typed conflict, NO §87 gap — next allocation = winner seq + 1', async () => {
+    const depsIssue = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
+    const depsAsPaid = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
+
+    const settled = await Promise.allSettled([
+      issueInvoice(depsIssue, {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-aspaid-uc-c-issue-${invoiceId}`,
+        invoiceId: invoiceId as string,
+      }),
+      issueEventInvoiceAsPaid(depsAsPaid, {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-aspaid-uc-c-aspaid-${invoiceId}`,
+        invoiceId: invoiceId as string,
+        paymentDate: UC_PAYMENT_DATE,
+        paymentMethod: 'cash',
+      }),
+    ]);
+    const results = settled.map((s) => {
+      if (s.status !== 'fulfilled') {
+        throw new Error(`unexpected rejection: ${String(s.reason)}`);
+      }
+      return s.value;
+    });
+    const winners = results.filter((r) => r.ok);
+    const losers = results.filter((r) => !r.ok);
+    // NB: codes-only summary — Invoice payloads carry BigInt satang which
+    // JSON.stringify rejects (and the message arg is evaluated eagerly).
+    const summary = results
+      .map((r) => (r.ok ? 'ok' : `err:${r.error.code}`))
+      .join(', ');
+    expect(winners, `results: ${summary}`).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    const loser = losers[0]!;
+    if (loser.ok) throw new Error('unreachable');
+    // Both routes translate the race loss to the same typed code.
+    expect(loser.error.code).toBe('invoice_already_issued');
+
+    // Either winner is legal — bill-first leaves 'issued', as-paid 'paid'.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(['issued', 'paid']).toContain(row!.status);
+    expect(row!.sequenceNumber).not.toBeNull();
+    const winnerSeq = row!.sequenceNumber!;
+
+    // §87 no-gap proof: the NEXT allocation from the shared invoice stream
+    // is exactly winnerSeq + 1 — the loser's rolled-back attempt left no hole.
+    const fyRes = asFiscalYear(row!.fiscalYear!);
+    if (!fyRes.ok) throw new Error(`bad fiscal year on winner row: ${row!.fiscalYear}`);
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    const nextSeq = await repo.withTx(async (tx) =>
+      postgresSequenceAllocator.allocateNext(tx, {
+        tenantId: tenant.ctx.slug,
+        documentType: 'invoice',
+        fiscalYear: fyRes.value,
+      }),
+    );
+    expect(nextSeq).toBe(winnerSeq + 1);
+  }, 90_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section D — fiscal year derives from paymentDate, not now()
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid — FY boundary from paymentDate (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let invoiceId: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVD'); // fiscalYearStartMonth defaults to 1
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 50000,
+      buyer: UC_BUYER_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('January 2027 back-dated December 2026 payment numbers into FY2026 (doc number, row, blob path)', async () => {
+    // Clock is January 2027 — the admin back-dates a December payment.
+    const deps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: '2027-01-15T10:00:00Z' });
+    const res = await issueEventInvoiceAsPaid(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-d-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: '2026-12-28',
+      paymentMethod: 'bank_transfer',
+    });
+    expect(res.ok, res.ok ? 'ok' : `as-paid err: ${JSON.stringify(res)}`).toBe(true);
+    if (!res.ok) throw new Error('as-paid failed');
+
+    // Fresh tenant ⇒ FY2026 allocator starts at 1 ⇒ fully deterministic.
+    expect(res.value.documentNumber?.raw).toBe('EVD-2026-000001');
+
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row!.fiscalYear).toBe(2026); // NOT 2027 — bucket follows the payment
+    expect(row!.documentNumber).toBe('EVD-2026-000001');
+    expect(row!.issueDate).toBe('2026-12-28');
+    expect(row!.dueDate).toBe('2026-12-28');
+    expect(row!.paymentDate).toBe('2026-12-28');
+    expect(row!.pdfBlobKey).toContain('/2026/');
+  }, 60_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section E — blob-upload failure rollback (no §87 gap, retry reuses the number)
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid — blob-upload failure rollback (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let invoiceId: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVE');
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('failed upload → typed err, row stays draft, counter unchanged, ZERO audits, orphan cleanup; retry succeeds with the SAME number', async () => {
+    const before = await readInvoiceSeqCounter(tenant.ctx.slug, UC_FISCAL_YEAR);
+    const expectedSeq = before ?? 1;
+
+    const deleteSpy = vi.fn(async () => {});
+    const failingDeps = makeUseCaseDeps(tenant.ctx.slug, {
+      nowIso: UC_NOW_ISO,
+      uploadPdf: async () => {
+        throw new Error('simulated blob outage');
+      },
+      blobDelete: deleteSpy,
+    });
+    const res1 = await issueEventInvoiceAsPaid(failingDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-e1-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res1.ok).toBe(false);
+    if (res1.ok) throw new Error('expected blob_upload_failed');
+    expect(res1.error.code).toBe('blob_upload_failed');
+
+    // Row STILL draft — the single UPDATE never committed.
+    const rowAfterFail = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(rowAfterFail!.status).toBe('draft');
+    expect(rowAfterFail!.sequenceNumber).toBeNull();
+
+    // §87 counter unchanged — the allocator INSERT/UPDATE rolled back
+    // with the tx (both reads null on a fresh tenant, or the same value).
+    const counterAfterFail = await readInvoiceSeqCounter(tenant.ctx.slug, UC_FISCAL_YEAR);
+    expect(counterAfterFail).toBe(before);
+
+    // Orphan-blob mitigation fired against the deterministic key.
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(deleteSpy).toHaveBeenCalledWith(
+      `invoicing/${tenant.ctx.slug}/${UC_FISCAL_YEAR}/${invoiceId}_v1.pdf`,
+    );
+
+    // ZERO LIFECYCLE audit rows for the invoice — issued/paid emitted
+    // in-tx and rolled back; blob failure has no post-rollback forensic
+    // event (only pdf_render_failed does). The draft-created audit from
+    // the beforeAll seeding legitimately exists, so filter to lifecycle.
+    const audits = (await auditRowsForInvoice(tenant.ctx.slug, invoiceId)).filter(
+      (a) => a.eventType === 'invoice_issued' || a.eventType === 'invoice_paid',
+    );
+    expect(audits).toHaveLength(0);
+
+    // Retry with a WORKING blob → succeeds with the SAME sequence number
+    // the failed attempt would have used (no §87 gap).
+    const retryDeps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
+    const res2 = await issueEventInvoiceAsPaid(retryDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-e2-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res2.ok, res2.ok ? 'ok' : `retry err: ${JSON.stringify(res2)}`).toBe(true);
+    if (!res2.ok) throw new Error('retry failed');
+    expect(res2.value.sequenceNumber).toBe(expectedSeq);
+
+    const row2 = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row2!.status).toBe('paid');
+    expect(row2!.sequenceNumber).toBe(expectedSeq);
+  }, 90_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section G — cross-tenant probe (Constitution Principle I clause 3)
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid — cross-tenant probe (live Neon)', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  let user: TestUser;
+  let draftA: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    ({ a: tenantA, b: tenantB } = await createTwoTestTenants());
+    // Tenant B needs settings — the use-case reads getForIssue BEFORE the
+    // tx; without them it would short-circuit on settings_missing and the
+    // probe would never fire.
+    await seedUcSettings(tenantA, 'EVA');
+    await seedUcSettings(tenantB, 'EVX');
+    const { registrationId } = await seedUcEventWithRegistration(tenantA);
+    draftA = await createUcDraft(tenantA, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenantA.cleanup().catch(() => {});
+    await tenantB.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it("tenant B as-paid against tenant A's draft → invoice_not_found + invoice_cross_tenant_probe audit with the as-paid route tag", async () => {
+    const reqId = `int-aspaid-uc-probe-${draftA}`;
+    const depsB = makeUseCaseDeps(tenantB.ctx.slug, { nowIso: UC_NOW_ISO });
+
+    const res = await issueEventInvoiceAsPaid(depsB, {
+      tenantId: tenantB.ctx.slug,
+      actorUserId: user.userId,
+      requestId: reqId,
+      invoiceId: draftA as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error('expected invoice_not_found');
+    expect(res.error.code).toBe('invoice_not_found');
+
+    // Probe audit landed in TENANT B's namespace (null tx — survives the
+    // withTx rollback), tagged with the new as-paid route.
+    const [probe] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenantB.ctx.slug),
+          eq(auditLog.eventType, 'invoice_cross_tenant_probe'),
+          eq(auditLog.requestId, reqId),
+        ),
+      );
+    expect(probe, 'expected an invoice_cross_tenant_probe audit row').toBeDefined();
+    const payload = probe!.payload as Record<string, unknown>;
+    expect(payload.route).toBe('issue-event-invoice-as-paid');
+    expect(payload.attempted_invoice_id).toBe(draftA);
+
+    // Tenant A's draft is untouched — RLS hid it, nothing mutated it.
+    const rowA = await readInvoiceRowOwner(tenantA.ctx.slug, draftA);
+    expect(rowA!.status).toBe('draft');
+    expect(rowA!.sequenceNumber).toBeNull();
+  }, 60_000);
 });
