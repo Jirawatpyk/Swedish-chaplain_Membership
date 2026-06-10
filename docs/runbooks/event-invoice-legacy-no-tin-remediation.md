@@ -56,13 +56,19 @@ ORDER BY tenant_id, issue_date;
 -- (b) ALREADY-DOUBLED rows: no-TIN event invoices PAID under the old flow
 --     (receipt #2 was already minted pre-064). Nothing to void in-system;
 --     hand the list to the accountant for the §6 item 5 ภ.พ.30 review.
+--     Discriminator: legacy bill-first rows hold an INVOICE-stream §87
+--     number (sequence_number set at issue); 064 as-paid no-TIN (β) rows
+--     allocate from the RECEIPT stream only and keep sequence_number NULL
+--     (their official number is receipt_document_number_raw) — so
+--     `sequence_number IS NOT NULL` selects exactly the legacy rows,
+--     independent of any cutover date.
 SELECT tenant_id, invoice_id, document_number, receipt_document_number_raw,
        issue_date, payment_date, total_satang
 FROM invoices
 WHERE invoice_subject = 'event'
   AND status = 'paid'
   AND NULLIF(BTRIM(member_identity_snapshot->>'tax_id'), '') IS NULL
-  AND issue_date < DATE '2026-06-11'   -- pre-064 cutover; as-paid rows have issue_date = payment_date
+  AND sequence_number IS NOT NULL   -- legacy invoice-stream rows; β (as-paid) rows are NULL
 ORDER BY tenant_id, issue_date;
 ```
 
@@ -101,14 +107,28 @@ records from Step 2.
 
 A post-064 as-paid receipt keyed wrongly (amount / buyer) has **no in-system
 correction path**: `paid → void` is illegal and §105 receipts are not
-creditable. Manual accountant-approved procedure:
+creditable. Worse, a correction against the **same registration is a
+dead-end in-system**: the erroneous row sits at `paid` (cannot be voided),
+and the partial unique index `invoices_event_registration_uniq` blocks a
+second non-void invoice on that registration — so the as-paid flow cannot
+mint a replacement document for it. Until a maintenance path exists
+(spec §6 item 6), the accountant-approved **interim** procedure is manual,
+NOT an in-system reissue:
 
 1. Retain the erroneous receipt (original + copies) with a written
    cancellation note — same §87/3 retention rule as Step 2.2.
-2. Issue a corrected receipt through the as-paid flow against the correct
-   registration / amount.
-3. Record the pairing (cancelled number ↔ corrected number) in the
-   accountant's correction register.
+2. Prepare a corrected **manual receipt** outside the system (accountant
+   issues it under the chamber's manual receipt book / process), for the
+   correct amount and buyer.
+3. Record the pairing (cancelled in-system number ↔ manual corrected
+   receipt) as an entry in the accountant's correction register, so the
+   audit trail closes.
+
+(Only when the error is on a DIFFERENT registration — i.e. the fee was keyed
+against the wrong attendee and the correct registration has no non-void
+invoice yet — can the corrected receipt be issued in-system via the as-paid
+flow against that correct registration; the erroneous row still follows
+1 + 3 above.)
 
 ## Step 5 — Seeds
 
