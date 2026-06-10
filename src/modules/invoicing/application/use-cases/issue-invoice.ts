@@ -93,6 +93,7 @@ import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
+import { resolveEventBuyerForIssue } from '../lib/resolve-event-buyer';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -214,7 +215,9 @@ export async function issueInvoice(
     const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
 
-    // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7).
+    // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7;
+    // extracted VERBATIM to `lib/resolve-event-buyer.ts` in 064 Task 3 so
+    // issueEventInvoiceAsPaid composes the same arms instead of copy-pasting).
     //
     //   MEMBERSHIP invoice (memberId non-null) → re-read + LOCK the member
     //   (FR-037 archive-race), snapshot pinned HERE at issue. Also matched-
@@ -228,26 +231,20 @@ export async function issueInvoice(
     // The `invoices_subject_fields_ck` DB CHECK guarantees member_id IS NOT NULL
     // for `invoice_subject='membership'`, so a null memberId here implies an
     // event invoice with a non-member buyer.
+    //
+    // Err codes pass through 1:1 — member_not_found / member_archived /
+    // no_buyer_snapshot are all `IssueInvoiceError` variants. Still in the
+    // PRE-SEQUENCE zone (runs BEFORE allocateNext), so the plain
+    // `return err(...)` discipline is unchanged.
     const memberId = draft.memberId;
-    let memberSnap: MemberIdentitySnapshot;
-    if (memberId !== null) {
-      const member = await deps.memberIdentity.getForIssue(
-        tx,
-        input.tenantId,
-        memberId,
-        { forUpdate: true },
-      );
-      if (!member) return err({ code: 'member_not_found' });
-      if (member.isArchived) return err({ code: 'member_archived' });
-      memberSnap = member.snapshot;
-    } else {
-      // Non-member event buyer — the snapshot was pinned at draft. Validate it
-      // is present (data-integrity guard; the draft use-case always pins it).
-      if (draft.memberIdentitySnapshot === null) {
-        return err({ code: 'no_buyer_snapshot' });
-      }
-      memberSnap = draft.memberIdentitySnapshot;
-    }
+    const buyerResolution = await resolveEventBuyerForIssue(
+      deps.memberIdentity,
+      tx,
+      input.tenantId,
+      draft,
+    );
+    if (!buyerResolution.ok) return err(buyerResolution.error);
+    const memberSnap: MemberIdentitySnapshot = buyerResolution.value;
 
     // §86/4 doc-type gate (054-event-fee-invoices Task 9) — subject-based, NOT
     // tier-based. The PDF document kind is chosen at ISSUE from
