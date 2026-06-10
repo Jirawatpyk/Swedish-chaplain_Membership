@@ -1974,6 +1974,7 @@
         "errors": {
           "failed": "Could not record payment",
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
+          "legacy_no_tin_event_needs_remediation": "This event invoice was issued to a buyer without a tax ID under the old flow — its issued PDF is already the official receipt, so recording a payment would create a second receipt. Please follow the remediation runbook instead.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         },

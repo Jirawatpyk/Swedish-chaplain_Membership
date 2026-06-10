@@ -45,7 +45,10 @@ import type {
 } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
-import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
+import {
+  buyerHasTin,
+  inferEventDocumentKind,
+} from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
@@ -118,6 +121,15 @@ export type RecordPaymentError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  /**
+   * 064 INTERIM (remove after spec §6 item 1 remediation completes) — the
+   * invoice is a LEGACY issued no-TIN EVENT row that predates the as-paid
+   * redesign. Its issue-time PDF already IS the buyer's §105 ใบเสร็จรับเงิน;
+   * recording a payment here would mint receipt #2 (the §105 double-receipt
+   * the redesign kills). New no-TIN event fees take `issueEventInvoiceAsPaid`
+   * exclusively; legacy rows go through the remediation runbook.
+   */
+  | { code: 'legacy_no_tin_event_needs_remediation' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -292,6 +304,20 @@ export async function recordPayment(
     if (memberId === null && loaded.invoiceSubject !== 'event') {
       return err({ code: 'no_snapshot_on_invoice' });
     }
+    // 064 INTERIM (remove after spec §6 item 1 remediation completes):
+    // a LEGACY issued no-TIN event row predates the as-paid redesign — paying
+    // it here would mint receipt #2 (the §105 double-receipt this redesign
+    // kills). Operators: see the remediation runbook. NEW no-TIN event rows
+    // can no longer reach 'issued' (issueInvoice rejects them with
+    // `event_no_tin_requires_paid_issue`), so only pre-064 rows hit this.
+    // The branch above already returned for paid-replay / non-issued rows,
+    // so `lockedStatus === 'issued'` is guaranteed here — no status check.
+    if (
+      loaded.invoiceSubject === 'event' &&
+      !buyerHasTin(loaded.memberIdentitySnapshot.tax_id)
+    ) {
+      return err({ code: 'legacy_no_tin_event_needs_remediation' });
+    }
 
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a
@@ -322,6 +348,10 @@ export async function recordPayment(
     // byte-identical to the former inline `buyerHasTin(tax_id)` check, because a
     // MEMBERSHIP invoice always carries a TIN by pay-time (the issue-invoice gate
     // requires it), so `!forceSeparate` ≡ `buyerHasTin` on every reachable row.
+    // 064 — legacy-row defensive (remove with spec §6 item 1): after the interim
+    // no-TIN guard above, no TIN-less event row reaches this point, so the
+    // `receipt_separate` verdict below is unreachable in practice. Kept for
+    // lockstep with the issue-/credit-time gates (FIX 5 rationale unchanged).
     const forceSeparate =
       inferEventDocumentKind(
         loaded.invoiceSubject,

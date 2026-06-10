@@ -98,6 +98,9 @@ export async function POST(
       result.error.code === 'invoice_not_found' ? 404
       : result.error.code === 'invalid_status' ? 409
       : result.error.code === 'concurrent_state_change' ? 409
+      // 064 INTERIM — legacy issued no-TIN event row: paying would mint a
+      // §105 receipt #2; conflicts with the row's remediation state → 409.
+      : result.error.code === 'legacy_no_tin_event_needs_remediation' ? 409
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'no_snapshot_on_invoice' ? 422
       : result.error.code === 'overflow' ? 422

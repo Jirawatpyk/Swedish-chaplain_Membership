@@ -12,11 +12,17 @@
  * stamp "ใบกำกับภาษี / Tax Invoice" onto a §105 receipt. The fix BLOCKS the
  * credit note entirely with `receipt_not_creditable`.
  *
- * End-to-end through the REAL use-cases:
- *   createEventInvoiceDraft (non-member, NO TIN → buyer snapshot pinned at DRAFT)
- *     → issueInvoice (resolves kind 'receipt_separate' — §105 receipt)
- *     → recordPayment (now works after HIGH 2; flips issued → paid)
- *     → issueCreditNote → MUST return err({ code: 'receipt_not_creditable' })
+ * Fixture (REVISED by 064 §105 ROOT FIX): the paid no-TIN event row is
+ * DIRECT-inserted (raw insert, pre-064 prod shape: status 'paid', pdf_doc_kind
+ * 'receipt_separate', full payment + receipt fields). It can no longer be
+ * built through the use-case chain because (a) plain issueInvoice now REJECTS
+ * a no-TIN event draft (`event_no_tin_requires_paid_issue`), (b) recordPayment
+ * rejects a legacy issued no-TIN row (`legacy_no_tin_event_needs_remediation`),
+ * and (c) the no-TIN leg of `issueEventInvoiceAsPaid` is β-GATED until Task 10
+ * (returns `no_tin_numbering_pending`). TODO(064 Task 10): rebuild this
+ * fixture on the real `issueEventInvoiceAsPaid` no-TIN path once the gate
+ * lifts. The use-case under test is unchanged:
+ *   issueCreditNote → MUST return err({ code: 'receipt_not_creditable' })
  *
  * Asserts (per HIGH 1 spec):
  *   1. issueCreditNote returns err({ code: 'receipt_not_creditable' }).
@@ -43,17 +49,6 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
-import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
-import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
-import {
-  issueInvoice,
-  type IssueInvoiceDeps,
-} from '@/modules/invoicing/application/use-cases/issue-invoice';
-import {
-  recordPayment,
-  type RecordPaymentDeps,
-} from '@/modules/invoicing/application/use-cases/record-payment';
-import { makeRecordPaymentDeps } from '@/modules/invoicing/application/invoicing-deps';
 import {
   issueCreditNote,
   type IssueCreditNoteDeps,
@@ -79,56 +74,16 @@ const BUYER_NO_TIN = {
 const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
 const ISSUE_SHA = 'b'.repeat(64);
 
-function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
-  return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
-    tenantSettingsRepo: drizzleTenantSettingsRepo,
-    memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
-    sequenceAllocator: postgresSequenceAllocator,
-    pdfRender: {
-      render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe(ISSUE_SHA) })),
-    },
-    blob: {
-      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({ key, url: `https://blob.test/${key}` })),
-      uploadLogo: vi.fn(),
-      signDownloadUrl: vi.fn(),
-      downloadBytes: vi.fn(async () => PDF_BYTES),
-      delete: vi.fn(),
-      list: vi.fn(async () => []),
-    } as unknown as IssueInvoiceDeps['blob'],
-    audit: f4AuditAdapter,
-    clock: { nowIso: () => '2026-04-18T10:00:00Z' },
-    outbox: { enqueue: vi.fn(async () => {}) },
-    currentTemplateVersion: 1,
-  };
-}
-
-/**
- * Real recordPayment composition root with PDF/Blob mocked + the async-receipt
- * flag forced OFF (the shared integration setup forces it ON, which skips the
- * inline receipt render). We don't assert on the receipt here — we only need the
- * invoice to reach `paid` so issueCreditNote's status guard passes.
- */
-function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
-  const real = makeRecordPaymentDeps(tenantSlug);
-  const { receiptPdfRenderEnqueue: _omitEnqueue, ...rest } = real;
-  void _omitEnqueue;
-  return {
-    ...rest,
-    asyncReceiptPdf: false,
-    pdfRender: {
-      render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe('c'.repeat(64)) })),
-    },
-    blob: {
-      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({ key, url: `https://blob.test/${key}` })),
-      uploadLogo: vi.fn(),
-      signDownloadUrl: vi.fn(),
-      downloadBytes: vi.fn(async () => PDF_BYTES),
-      delete: vi.fn(),
-      list: vi.fn(async () => []),
-    } as unknown as RecordPaymentDeps['blob'],
-  };
-}
+// Tenant identity snapshot for the DIRECT-inserted legacy row — mirrors the
+// tenant_invoice_settings seeded in beforeAll (snake_case snapshot shape).
+const SNAP_TENANT = {
+  legal_name_th: 'หอการค้า',
+  legal_name_en: 'Chamber',
+  tax_id: '0000000000000',
+  address_th: 'Bangkok',
+  address_en: 'Bangkok',
+  logo_blob_key: null,
+} as const;
 
 function makeCreditNoteDeps(tenantSlug: string): {
   deps: IssueCreditNoteDeps;
@@ -220,38 +175,62 @@ describe('issueCreditNote — BLOCKS §105 receipt_separate (HIGH 1, live Neon)'
       } satisfies NewEventRegistrationRow);
     });
 
-    // 1) Draft (non-member, NO TIN → 250 THB inclusive → 25000 satang).
-    const draft = await createEventInvoiceDraft(makeCreateEventInvoiceDraftDeps(tenant.ctx.slug), {
-      tenantId: tenant.ctx.slug,
-      actorUserId: user.userId,
-      requestId: `int-cnblock-draft-${regId}`,
-      eventRegistrationId: regId,
-      buyer: BUYER_NO_TIN,
-    });
-    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
-    invoiceId = draft.value.invoiceId;
-
-    // 2) Issue — resolves kind 'receipt_separate' (§105 receipt; no-TIN event buyer).
-    const issued = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
-      tenantId: tenant.ctx.slug,
-      actorUserId: user.userId,
-      requestId: `int-cnblock-issue-${invoiceId}`,
-      invoiceId,
-    });
-    if (!issued.ok) throw new Error(`issue failed: ${JSON.stringify(issued)}`);
-
-    // 3) Pay via the REAL recordPayment use-case (works after HIGH 2) → paid.
-    const paid = await runInTenant(tenant.ctx, async () =>
-      recordPayment(makeRecordPaymentDepsForPay(tenant.ctx.slug), {
+    // PAID §105 no-TIN event row — DIRECT insert (064 §105 ROOT FIX killed the
+    // use-case chain that previously built this: plain issueInvoice now rejects
+    // a no-TIN event draft, recordPayment rejects legacy issued no-TIN rows,
+    // and the no-TIN as-paid leg is β-gated until Task 10 returning
+    // `no_tin_numbering_pending`). The raw insert mirrors the pre-064 prod
+    // shape exactly (migration 0211 backfill: pdf_doc_kind 'receipt_separate')
+    // and populates every paid-row CHECK field (paid_at + payment_method per
+    // 0019, receipt_pdf_status per 0056, snapshots/numbering/pdf per 0203).
+    // TODO(064 Task 10): switch to the real issueEventInvoiceAsPaid no-TIN
+    // path once the β gate lifts.
+    invoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
         tenantId: tenant.ctx.slug,
-        actorUserId: user.userId,
-        requestId: `int-cnblock-pay-${invoiceId}`,
         invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planYear: null,
+        planId: null,
+        draftByUserId: user.userId,
+        status: 'paid',
+        pdfDocKind: 'receipt_separate',
+        fiscalYear: 2026,
+        sequenceNumber: 1,
+        documentNumber: 'RCP-2026-000001',
+        issueDate: '2026-04-18',
+        dueDate: '2026-05-18',
+        // 250 THB = 25000 satang inclusive @ 7% → subtotal 23364, vat 1636.
+        subtotalSatang: 23_364n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 1_636n,
+        totalSatang: 25_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: null,
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: BUYER_NO_TIN,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_v1.pdf`,
+        pdfSha256: ISSUE_SHA,
+        pdfTemplateVersion: 1,
+        // Payment fields (CHECK invoices_paid_has_payment) + the separate-mode
+        // receipt artefacts a pre-064 paid no-TIN row carries.
+        paidAt: new Date('2026-04-19T10:00:00Z'),
         paymentMethod: 'cash',
         paymentDate: '2026-04-19',
-      }),
-    );
-    if (!paid.ok) throw new Error(`pay failed: ${JSON.stringify(paid)}`);
+        paymentRecordedByUserId: user.userId,
+        receiptPdfStatus: 'rendered',
+        receiptPdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt_v1.pdf`,
+        receiptPdfSha256: 'c'.repeat(64),
+        receiptPdfTemplateVersion: 1,
+        receiptDocumentNumberRaw: 'RCPR-2026-000001',
+      });
+    });
   }, 120_000);
 
   afterAll(async () => {

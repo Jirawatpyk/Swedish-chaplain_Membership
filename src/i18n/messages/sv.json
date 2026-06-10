@@ -1974,6 +1974,7 @@
         "errors": {
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
+          "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatteregistreringsnummer enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },

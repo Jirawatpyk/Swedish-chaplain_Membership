@@ -589,18 +589,23 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(payload.invoice_id).toBe(INVOICE_ID);
   });
 
-  it('FIX 5 — combined mode + TIN-less event buyer → shared inferEventDocumentKind FORCES receipt_separate allocation', async () => {
-    // The shared `inferEventDocumentKind` discriminator must override the
-    // tenant's `combined` setting for a TIN-less EVENT buyer (a §105
-    // ใบเสร็จรับเงิน can never carry the combined tax-invoice/receipt label).
-    // This is the one path where the refactor is semantically load-bearing —
-    // `combinedMode` resolves to FALSE despite `receiptNumberingMode==='combined'`,
-    // so a separate receipt sequence IS allocated (byte-identical to the prior
-    // inline `buyerHasTin` gate, now sourced from the shared Domain helper).
-    const noTinEventInvoice = makeNonMemberEventInvoice({
+  it('064 INTERIM — LEGACY issued no-TIN event row → legacy_no_tin_event_needs_remediation, NO receipt #2 side-effects', async () => {
+    // legacy-row defensive (remove with spec §6 item 1).
+    //
+    // Supersedes the former "FIX 5" pin that drove a no-TIN event invoice
+    // through recordPayment expecting SUCCESS (forceSeparate receipt) — that
+    // business meaning died with the 064 §105 ROOT FIX: a no-TIN event buyer
+    // can no longer reach 'issued' via plain issueInvoice
+    // (`event_no_tin_requires_paid_issue`), and a LEGACY issued no-TIN row
+    // that predates the as-paid redesign must NOT be payable here — its issue-
+    // time PDF already IS the §105 ใบเสร็จรับเงิน, so paying it would mint
+    // receipt #2 (the §105 double-receipt the redesign kills). The interim
+    // guard rejects with a typed code so operators route the row to the
+    // spec §6 item 1 remediation runbook instead.
+    const legacyNoTinRow = makeNonMemberEventInvoice({
       memberIdentitySnapshot: {
         legal_name: 'Walk-in Buyer Co',
-        tax_id: null, // TIN-less → §105 receipt_separate forced
+        tax_id: null, // TIN-less → legacy §105 receipt-shaped row
         address: '50 Sukhumvit Road',
         primary_contact_name: 'Jane',
         primary_contact_email: 'jane@buyer.example',
@@ -610,38 +615,19 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     });
     const deps = makeDeps(
       true,
-      noTinEventInvoice,
+      legacyNoTinRow,
       makeSettings({ receiptNumberingMode: 'combined' }),
     );
-    let call = 0;
-    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
-      call++;
-      return call === 1
-        ? noTinEventInvoice
-        : makeNonMemberEventInvoice({
-            status: 'paid',
-            memberIdentitySnapshot: {
-              legal_name: 'Walk-in Buyer Co',
-              tax_id: null,
-              address: '50 Sukhumvit Road',
-              primary_contact_name: 'Jane',
-              primary_contact_email: 'jane@buyer.example',
-              member_number: null,
-              member_number_display: null,
-            },
-          });
-    });
     const r = await recordPayment(deps, input);
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
-    // forceSeparate → a receipt sequence IS allocated despite combined mode.
-    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ documentType: 'receipt' }),
-    );
-    // The rendered receipt carries the plain receipt_separate kind, NOT combined.
-    expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
-    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('legacy_no_tin_event_needs_remediation');
+    // The guard fires BEFORE any side-effect: no §87 receipt sequence burned,
+    // no receipt render, no issued→paid UPDATE, no audit emit, no outbox row.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 
   it('non-member EVENT invoice → does NOT flip registration_fee_paid (no F3 member) even with a registration_fee line', async () => {

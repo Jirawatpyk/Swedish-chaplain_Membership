@@ -16,12 +16,17 @@
  * `createEventInvoiceDraft` + `issueInvoice` so the non-member buyer snapshot
  * (pinned at DRAFT) flows end-to-end into the receipt render at payment time.
  *
- * Two non-member cases (matrix on §86/4 doc-type):
+ * Two non-member cases (matrix on §86/4 doc-type, REVISED by 064 §105 ROOT FIX):
  *   1. Buyer WITH a 13-digit TIN → issued as kind 'invoice' (ใบกำกับภาษี); the
  *      payment-time receipt is the post-payment combined/separate receipt.
- *   2. Buyer WITHOUT a TIN → issued as kind 'receipt_separate' (ใบเสร็จรับเงิน);
- *      the payment-time receipt MUST be `receipt_separate` (a TIN-less buyer can
- *      NEVER receive a `receipt_combined` ใบกำกับภาษี label — the §86/4 gate).
+ *   2. Buyer WITHOUT a TIN → can no longer be issued via plain issueInvoice
+ *      (`event_no_tin_requires_paid_issue` — see issue-event-invoice.test.ts);
+ *      new no-TIN event fees take `issueEventInvoiceAsPaid` exclusively. A
+ *      LEGACY pre-064 issued no-TIN row (whose issue-time PDF already IS the
+ *      §105 ใบเสร็จรับเงิน) must be REJECTED by recordPayment with
+ *      `legacy_no_tin_event_needs_remediation` — paying it would mint receipt
+ *      #2. The legacy row is direct-inserted below (the only way such a row
+ *      can exist now, exactly as pre-064 rows exist in prod).
  *
  * Asserts per case:
  *   - recordPayment returns ok + the invoice row flips to `status='paid'`.
@@ -105,6 +110,17 @@ const BUYER_NO_TIN = {
   address: '99 Charoen Krung Road, Bangkok 10500',
   primary_contact_name: 'Walk-in Guest',
   primary_contact_email: 'walkin-pay@example.com',
+} as const;
+
+// Tenant identity snapshot for the DIRECT-inserted legacy row — mirrors the
+// tenant_invoice_settings seeded in beforeAll (snake_case snapshot shape).
+const SNAP_TENANT = {
+  legal_name_th: 'หอการค้า',
+  legal_name_en: 'Chamber',
+  tax_id: '0000000000000',
+  address_th: 'Bangkok',
+  address_en: 'Bangkok',
+  logo_blob_key: null,
 } as const;
 
 /**
@@ -430,42 +446,81 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
     expect(payload.invoice_id).toBe(invoiceId);
   }, 90_000);
 
-  it('non-member WITHOUT tin: recordPayment flips issued→paid, receipt render is receipt_separate (no ใบกำกับภาษี for a TIN-less buyer)', async () => {
-    const invoiceId = await draftAndIssueNonMember(regNoTinId, BUYER_NO_TIN, `notin-${regNoTinId}`);
+  it('064 INTERIM — LEGACY issued no-TIN event row (direct insert, pre-064 shape) → recordPayment rejects with legacy_no_tin_event_needs_remediation', async () => {
+    // legacy-row defensive (remove with spec §6 item 1).
+    //
+    // A no-TIN event invoice can no longer be issued via issueInvoice (the 064
+    // root fix rejects it with `event_no_tin_requires_paid_issue`), so the
+    // legacy shape is DIRECT-inserted — exactly how pre-064 rows exist in prod
+    // (migration 0211 backfilled their pdf_doc_kind to 'receipt_separate').
+    // Direct-insert pattern follows invoice-subject-filter.test.ts; every
+    // non-draft CHECK field is populated. Sequence 999001 avoids colliding
+    // with the real §87 allocator used by the sibling tests in this file.
+    const legacyInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: legacyInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regNoTinId,
+        vatInclusive: true,
+        memberId: null,
+        planYear: null,
+        planId: null,
+        draftByUserId: user.userId,
+        status: 'issued',
+        // Pre-064 shape: the issue-time main PDF already IS the §105
+        // ใบเสร็จรับเงิน for a no-TIN event buyer.
+        pdfDocKind: 'receipt_separate',
+        fiscalYear: 2026,
+        sequenceNumber: 999_001,
+        documentNumber: 'EVP-2026-999001',
+        issueDate: '2026-04-18',
+        dueDate: '2026-05-18',
+        // 250 THB = 25000 satang inclusive @ 7% → subtotal 23364, vat 1636.
+        subtotalSatang: 23_364n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 1_636n,
+        totalSatang: 25_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: null,
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: BUYER_NO_TIN,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${legacyInvoiceId}_v1.pdf`,
+        pdfSha256: 'b'.repeat(64),
+        pdfTemplateVersion: 1,
+      });
+    });
 
     const captured: PdfRenderInput[] = [];
-    const payReqId = `int-pay-record-notin-${invoiceId}`;
+    const payReqId = `int-pay-record-legacy-notin-${legacyInvoiceId}`;
     const result = await runInTenant(tenant.ctx, async () =>
       recordPayment(makeRecordPaymentDepsWithCapture(tenant.ctx.slug, captured), {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
         requestId: payReqId,
-        invoiceId,
+        invoiceId: legacyInvoiceId,
         paymentMethod: 'cash',
         paymentDate: '2026-05-01',
       }),
     );
-    expect(result.ok, result.ok ? 'ok' : `pay err: ${JSON.stringify(result)}`).toBe(true);
-    if (!result.ok) throw new Error(`pay failed: ${JSON.stringify(result)}`);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected legacy_no_tin_event_needs_remediation, got ok');
+    expect(result.error.code).toBe('legacy_no_tin_event_needs_remediation');
 
-    const row = await readInvoiceRow(invoiceId);
-    expect(row!.status).toBe('paid');
-    expect(row!.memberId).toBeNull();
+    // The row is untouched: still issued, no payment fields, no receipt #2.
+    const row = await readInvoiceRow(legacyInvoiceId);
+    expect(row!.status).toBe('issued');
+    expect(row!.paidAt).toBeNull();
+    expect(row!.paymentMethod).toBeNull();
+    expect(row!.receiptPdfStatus).toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBeNull();
 
-    // §86/4: a TIN-less buyer must NEVER get a `receipt_combined` (ใบกำกับภาษี
-    // label). The render kind MUST be `receipt_separate` (ใบเสร็จรับเงิน), even
-    // though the tenant setting is `receiptNumberingMode='separate'` here anyway
-    // — the buyerHasTin gate is the authoritative driver.
-    const receiptRender = captured.find(
-      (c) => c.kind === 'receipt_separate' || c.kind === 'receipt_combined',
-    );
-    expect(receiptRender, 'expected a receipt render').toBeDefined();
-    expect(receiptRender!.kind).toBe('receipt_separate');
-    expect(receiptRender!.member.tax_id).toBeNull();
-    expect(receiptRender!.vatInclusive).toBe(true);
-
-    // NON-timeline audit again.
-    const [auditRow] = await db
+    // No receipt render happened, and no invoice_paid audit was committed.
+    expect(captured).toHaveLength(0);
+    const auditRows = await db
       .select()
       .from(auditLog)
       .where(
@@ -475,9 +530,7 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
           eq(auditLog.requestId, payReqId),
         ),
       );
-    const payload = auditRow!.payload as Record<string, unknown>;
-    expect('member_id' in payload).toBe(false);
-    expect(payload.event_registration_id).toBe(regNoTinId);
+    expect(auditRows).toHaveLength(0);
   }, 90_000);
 
   it('regression — matched-member event invoice still flips to paid + TIMELINE invoice_paid audit (payload HAS member_id)', async () => {
