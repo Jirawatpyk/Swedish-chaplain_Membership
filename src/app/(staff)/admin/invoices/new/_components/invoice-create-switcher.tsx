@@ -55,14 +55,16 @@ export function InvoiceCreateSwitcher({
           className="gap-3 sm:grid-cols-2"
         >
           <div className="flex items-start gap-2 rounded-md border p-3">
+            {/* Explicit `aria-labelledby` → the name-span (the hint stays out
+                of the accessible name). Without it, Base UI's labelable
+                fallback ASSIGNS `{id}-label` to the (id-less) <label> itself,
+                duplicating the span's hardcoded id (axe duplicate-id-aria). */}
             <RadioGroupItem
               id="invoice-type-membership"
               value="membership"
               className="mt-0.5"
+              aria-labelledby="invoice-type-membership-label"
             />
-            {/* base-ui Radio auto-wires `aria-labelledby` to `{id}-label`, so
-                the name-span carries that id to give the radio its accessible
-                name (membership). The hint sits outside the labelledby span. */}
             <Label
               htmlFor="invoice-type-membership"
               className="flex cursor-pointer flex-col gap-0.5"
@@ -76,7 +78,12 @@ export function InvoiceCreateSwitcher({
             </Label>
           </div>
           <div className="flex items-start gap-2 rounded-md border p-3">
-            <RadioGroupItem id="invoice-type-event" value="event" className="mt-0.5" />
+            <RadioGroupItem
+              id="invoice-type-event"
+              value="event"
+              className="mt-0.5"
+              aria-labelledby="invoice-type-event-label"
+            />
             <Label
               htmlFor="invoice-type-event"
               className="flex cursor-pointer flex-col gap-0.5"

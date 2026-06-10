@@ -527,6 +527,11 @@ describe('<EventFeeForm>', () => {
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Carol/ }));
 
+    // Canonical destructive-card pattern (archived-banner): semibold title +
+    // factual body. The icon is decorative (aria-hidden).
+    expect(screen.getByTestId('mode-refunded-blocked')).toHaveTextContent(
+      modeMessages.refundedBlockedTitle,
+    );
     expect(screen.getByTestId('mode-refunded-blocked')).toHaveTextContent(
       modeMessages.refundedBlocked,
     );
@@ -559,6 +564,15 @@ describe('<EventFeeForm>', () => {
     // aria-disabled="true"> (not a natively-disabled element), so jest-dom's
     // toBeDisabled() does not apply — assert the ARIA state directly.
     expect(billFirstRadio).toHaveAttribute('aria-disabled', 'true');
+    // The visible disabled-option reason is programmatically associated with
+    // the radio (SR users hear WHY it is disabled, not just that it is).
+    expect(billFirstRadio).toHaveAttribute(
+      'aria-describedby',
+      'mode-bill-first-needs-tin',
+    );
+    expect(document.getElementById('mode-bill-first-needs-tin')).toBe(
+      screen.getByTestId('mode-bill-first-needs-tin'),
+    );
     expect(
       screen.getByRole('button', {
         name: enMessages.admin.invoices.eventFeeForm.submit,
@@ -577,6 +591,10 @@ describe('<EventFeeForm>', () => {
     );
     expect(screen.queryByTestId('mode-waiting-explainer')).toBeNull();
     expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+    // The reason is gone → the describedby reference must go with it.
+    expect(
+      screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
+    ).not.toHaveAttribute('aria-describedby');
   });
 
   it('paid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind)', async () => {
@@ -596,5 +614,89 @@ describe('<EventFeeForm>', () => {
     expect(screen.getByTestId('doc-type-badge')).toHaveTextContent(
       enMessages.admin.invoices.eventFeeForm.docType.taxInvoiceReceipt,
     );
+  });
+
+  it('mode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria)', async () => {
+    // Base UI's labelable provider assigns `label.id = "{radioId}-label"` to
+    // an id-less associated <label> — colliding with the hardcoded ids on the
+    // inner name-spans. The explicit `aria-labelledby` prop on each
+    // RadioGroupItem suppresses that assignment. jsdom runs the same layout
+    // effect, so a regression reproduces here; the authoritative proof for
+    // real browsers is the axe (`duplicate-id-aria`) run in Task 14.
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    const { container } = renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    expect(screen.getByTestId('mode-selector')).toBeInTheDocument();
+
+    const labelIds = Array.from(container.querySelectorAll('[id$="-label"]')).map(
+      (el) => el.id,
+    );
+    const duplicates = labelIds.filter((id, i) => labelIds.indexOf(id) !== i);
+    expect(duplicates).toEqual([]);
+
+    // Each mode radio is named by its span (not the whole label incl. hint).
+    expect(
+      screen.getByRole('radio', { name: modeMessages.alreadyPaid.label }),
+    ).toHaveAttribute('aria-labelledby', 'issuance-mode-already-paid-label');
+    expect(
+      screen.getByRole('radio', { name: modeMessages.billFirst.label }),
+    ).toHaveAttribute('aria-labelledby', 'issuance-mode-bill-first-label');
+  });
+
+  // ── I3 — noValidate: inline i18n date errors instead of native bubbles ──
+
+  it('as-paid submit with an empty payment date → inline dateRequired error, no POST', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    // The form opts out of native constraint validation so the i18n inline
+    // errors below are what the user actually sees (the `required`/`max`
+    // attributes stay for picker clamping + semantics).
+    expect(container.querySelector('form')).toHaveProperty('noValidate', true);
+
+    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    fireEvent.change(dateInput, { target: { value: '' } });
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        enMessages.admin.invoices.eventFeeForm.payment.errors.dateRequired,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.find((c) => String(c[0]) === '/api/invoices/event-draft'),
+    ).toBeUndefined();
+  });
+
+  it('as-paid submit with a future payment date → inline dateFuture error, no POST', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    const dateInput = screen.getByLabelText(enMessages.admin.invoices.pay.fields.date);
+    // Beyond the `max` clamp — jsdom (like a paste/manual entry in some
+    // browsers) accepts it; the manual validator must catch it inline.
+    fireEvent.change(dateInput, { target: { value: '2099-01-01' } });
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        enMessages.admin.invoices.eventFeeForm.payment.errors.dateFuture,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.find((c) => String(c[0]) === '/api/invoices/event-draft'),
+    ).toBeUndefined();
   });
 });

@@ -1801,6 +1801,7 @@
           },
           "billFirstNeedsTin": "This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
+          "refundedBlockedTitle": "Registration refunded",
           "refundedBlocked": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
           "chooseHint": "Choose how to issue the document before submitting."
         },

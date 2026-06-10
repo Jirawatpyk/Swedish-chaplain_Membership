@@ -51,9 +51,10 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
+import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -521,7 +522,15 @@ export function EventFeeForm({
 
   return (
     <>
-      <form onSubmit={submit} className="flex flex-col gap-[var(--page-section-gap)]">
+      {/* noValidate: validation is manual (amount/buyer/payment-date above)
+          so the inline i18n errors render instead of the browser's native
+          locale-fixed bubbles; `required`/`max` attributes stay on the
+          inputs for picker clamping + semantics. */}
+      <form
+        onSubmit={submit}
+        noValidate
+        className="flex flex-col gap-[var(--page-section-gap)]"
+      >
         {/* 1. Event picker */}
         <div className="flex flex-col gap-[var(--field-label-gap)]">
           <Label htmlFor="eventId">{t('eventPicker.label')}</Label>
@@ -579,13 +588,29 @@ export function EventFeeForm({
             inside this section on the as-paid path. */}
         {attendee !== null &&
           (locked === 'refunded' ? (
-            <div
+            /* Canonical destructive hard-block card — same pattern as the
+               member archived-banner (destructive-toned Card + decorative
+               warning icon + semibold title + factual body). */
+            <Card
               role="status"
-              className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm"
+              className="border-destructive/40 bg-destructive/5 p-4"
               data-testid="mode-refunded-blocked"
             >
-              {t('mode.refundedBlocked')}
-            </div>
+              <div className="flex gap-3">
+                <AlertTriangleIcon
+                  className="mt-0.5 size-5 shrink-0 text-destructive"
+                  aria-hidden="true"
+                />
+                <div>
+                  <p className="text-sm font-semibold">
+                    {t('mode.refundedBlockedTitle')}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t('mode.refundedBlocked')}
+                  </p>
+                </div>
+              </div>
+            </Card>
           ) : (
             <fieldset className="flex flex-col gap-2" data-testid="mode-selector">
               <legend className="mb-1 text-sm font-medium">{t('mode.label')}</legend>
@@ -597,14 +622,18 @@ export function EventFeeForm({
                 className="gap-3 sm:grid-cols-2"
               >
                 <div className="flex items-start gap-2 rounded-md border p-3">
+                  {/* Explicit `aria-labelledby` → the name-span. Without it,
+                      Base UI's labelable fallback ASSIGNS `{id}-label` to the
+                      (id-less) <label> itself, duplicating the span's
+                      hardcoded id (axe duplicate-id-aria). Same pattern as
+                      the invoice-type switcher. */}
                   <RadioGroupItem
                     id="issuance-mode-already-paid"
                     value="already_paid"
                     className="mt-0.5"
                     disabled={pending}
+                    aria-labelledby="issuance-mode-already-paid-label"
                   />
-                  {/* base-ui Radio auto-wires `aria-labelledby` to `{id}-label`
-                      — same pattern as the invoice-type switcher above. */}
                   <Label
                     htmlFor="issuance-mode-already-paid"
                     className="flex cursor-pointer flex-col gap-0.5"
@@ -618,11 +647,18 @@ export function EventFeeForm({
                   </Label>
                 </div>
                 <div className="flex items-start gap-2 rounded-md border p-3">
+                  {/* When disabled for a no-TIN buyer, the visible reason
+                      below is also wired up via `aria-describedby` so SR
+                      users hear WHY the option is unavailable. */}
                   <RadioGroupItem
                     id="issuance-mode-bill-first"
                     value="bill_first"
                     className="mt-0.5"
                     disabled={pending || !hasTin}
+                    aria-labelledby="issuance-mode-bill-first-label"
+                    {...(!hasTin
+                      ? { 'aria-describedby': 'mode-bill-first-needs-tin' }
+                      : {})}
                   />
                   <Label
                     htmlFor="issuance-mode-bill-first"
@@ -646,6 +682,7 @@ export function EventFeeForm({
                   rows: keyboard/SR/touch users must get it too). */}
               {!hasTin && (
                 <p
+                  id="mode-bill-first-needs-tin"
                   className="text-xs text-muted-foreground"
                   data-testid="mode-bill-first-needs-tin"
                 >

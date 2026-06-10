@@ -1801,6 +1801,7 @@
           },
           "billFirstNeedsTin": "Köparen saknar skatte-ID — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning.",
           "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
+          "refundedBlockedTitle": "Registreringen är återbetald",
           "refundedBlocked": "Denna registrering har återbetalats — en faktura eller ett kvitto kan inte skapas för en återbetald avgift.",
           "chooseHint": "Välj hur dokumentet ska utfärdas innan du skickar."
         },
@@ -1811,7 +1812,7 @@
             "dateFuture": "Betalningsdatumet får inte ligga i framtiden."
           }
         },
-        "recordAndIssue": "Registrera betalning och utfärda kvitto",
+        "recordAndIssue": "Registrera och utfärda kvitto",
         "recordAndIssueSubmitting": "Registrerar…"
       },
       "form": {
