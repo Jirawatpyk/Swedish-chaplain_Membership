@@ -260,11 +260,28 @@ export default async function PortalInvoiceDetailPage({
                 // `receiptNumberingMode` column would violate
                 // Principle X — the proxy is correct, just
                 // documented here.
+                //
+                // 064 — as-paid TIN event invoices persist the MAIN pdf
+                // as the final combined document (`pdfDocKind ===
+                // 'receipt_combined'`; receipt blob columns stay NULL,
+                // receiptPdfStatus lands 'rendered'). Pre-fix these rows
+                // matched `isCombinedPaid` (main download hidden) while
+                // `showReceiptPdf` pointed at the NULL receipt blob —
+                // the member's only button 502'd (blob_missing). The
+                // stale-draft-hiding rule applies ONLY when the main pdf
+                // is an issue-time 'invoice', and the receipt button is
+                // gated on the blob it actually serves.
+                const mainPdfIsFinalCombined =
+                  invoice.pdfDocKind === 'receipt_combined';
                 const isCombinedPaid =
-                  invoice.status === 'paid' && invoice.receiptDocumentNumberRaw === null;
+                  invoice.status === 'paid' &&
+                  invoice.receiptDocumentNumberRaw === null &&
+                  !mainPdfIsFinalCombined;
                 const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
                 const showReceiptPdf =
-                  invoice.status === 'paid' && invoice.receiptPdfStatus === 'rendered';
+                  invoice.status === 'paid' &&
+                  invoice.receiptPdfStatus === 'rendered' &&
+                  invoice.receiptPdf !== null;
                 // T166-10 — async receipt PDF gate. When the receipt
                 // is still being rendered by the cron worker, surface
                 // a polite "preparing…" affordance ALONGSIDE the
@@ -281,15 +298,23 @@ export default async function PortalInvoiceDetailPage({
                       <PortalInvoiceDownloadButton
                         invoiceId={invoice.invoiceId}
                         documentNumber={documentNumber}
+                        // 064 — as-paid TIN rows: the main pdf IS the final
+                        // combined Tax Invoice / Receipt; flip label + aria to
+                        // the combined dual-role wording (same keys the
+                        // receipt button uses in bill-first combined mode).
                         label={
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : tList('actions.download')
+                            : mainPdfIsFinalCombined
+                              ? tList('actions.downloadCombined')
+                              : tList('actions.download')
                         }
                         ariaLabel={`${
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : tList('actions.downloadInvoiceAria', { number: documentNumber })
+                            : mainPdfIsFinalCombined
+                              ? tList('actions.downloadCombinedAria', { number: documentNumber })
+                              : tList('actions.downloadInvoiceAria', { number: documentNumber })
                         }`}
                         className={cn(
                           buttonVariants({ variant: 'default', size: 'sm' }),

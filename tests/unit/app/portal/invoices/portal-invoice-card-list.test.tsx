@@ -285,10 +285,15 @@ describe('<PortalInvoiceCardList> — issued + pdf present', () => {
 // ===========================================================================
 describe('<PortalInvoiceCardList> — combined-paid', () => {
   it('shows the combined "Tax invoice / Receipt" download, NO separate invoice anchor, and OMITS the receipt-number line', () => {
+    // 064 — bill-first rows persist the receipt BLOB together with
+    // 'rendered'; the fixture carries it so this stays the bill-first
+    // combined shape (an as-paid row — 'rendered' + NULL blob — is the
+    // separate case below).
     renderCardFor({
       status: 'paid',
       receiptDocumentNumberRaw: null,
       receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
 
     // Combined-paid hides the (stale) invoice anchor → no invoice button…
@@ -313,6 +318,38 @@ describe('<PortalInvoiceCardList> — combined-paid', () => {
 });
 
 // ===========================================================================
+// 2b. as-paid TIN event invoice (064 — main pdf IS the final combined doc)
+// ===========================================================================
+describe('<PortalInvoiceCardList> — as-paid combined (main pdf is the document)', () => {
+  it('shows the MAIN download with the combined label + aria; no receipt button (no receipt blob exists)', () => {
+    // `applyIssueAsPaid` shape: paid + raw NULL + receiptPdfStatus
+    // 'rendered' + receipt blob columns NULL + pdfDocKind
+    // 'receipt_combined'. Pre-064 fix the card hid the invoice anchor AND
+    // rendered a receipt button whose download 502'd (blob_missing).
+    renderCardFor({
+      status: 'paid',
+      receiptDocumentNumberRaw: null,
+      receiptPdfStatus: 'rendered',
+      receiptPdf: null,
+      pdfDocKind: 'receipt_combined',
+    });
+
+    // The main download survives, wearing the combined dual-role label…
+    const invoice = screen.getByTestId('invoice-download');
+    expect(invoice).toHaveTextContent('Tax invoice / Receipt');
+    expect(invoice).toHaveAttribute(
+      'aria-label',
+      'Download combined Tax Invoice / Official Receipt PDF for INV-2026-000001',
+    );
+    // …and no receipt button points at the non-existent receipt blob.
+    expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
+    // No spinner/failed affordances either — the document is right there.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(theCard()).not.toHaveTextContent('Receipt unavailable');
+  });
+});
+
+// ===========================================================================
 // 3. separate-paid (paid + receiptDocumentNumberRaw set + rendered)
 // ===========================================================================
 describe('<PortalInvoiceCardList> — separate-paid', () => {
@@ -321,6 +358,7 @@ describe('<PortalInvoiceCardList> — separate-paid', () => {
       status: 'paid',
       receiptDocumentNumberRaw: 'RCP-2026-000009',
       receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
 
     // Both downloads present; the receipt uses the SHORT separate label.

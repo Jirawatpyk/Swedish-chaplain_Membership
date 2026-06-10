@@ -462,15 +462,24 @@ export default async function PortalInvoicesPage({
                                   <PortalInvoiceDownloadButton
                                     invoiceId={vm.invoiceId}
                                     documentNumber={vm.documentNumber ?? vm.invoiceId}
+                                    // 064 — as-paid TIN rows: the main pdf IS the
+                                    // final combined Tax Invoice / Receipt, so the
+                                    // label + aria flip to the combined dual-role
+                                    // wording (same keys the receipt button uses in
+                                    // bill-first combined mode). Mirrors the card.
                                     label={
                                       vm.displayStatus === 'void'
                                         ? t('actions.downloadVoided')
-                                        : t('actions.download')
+                                        : vm.mainPdfIsFinalCombined
+                                          ? t('actions.downloadCombined')
+                                          : t('actions.download')
                                     }
                                     ariaLabel={t(
                                       vm.displayStatus === 'void'
                                         ? 'actions.downloadVoidedAria'
-                                        : 'actions.downloadInvoiceAria',
+                                        : vm.mainPdfIsFinalCombined
+                                          ? 'actions.downloadCombinedAria'
+                                          : 'actions.downloadInvoiceAria',
                                       {
                                         number: vm.documentNumber ?? vm.invoiceId,
                                       },

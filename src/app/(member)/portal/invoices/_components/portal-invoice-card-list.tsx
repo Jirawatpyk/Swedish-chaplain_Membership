@@ -185,20 +185,34 @@ export function PortalInvoiceCardList({
                       <PortalInvoiceDownloadButton
                         invoiceId={vm.invoiceId}
                         documentNumber={vm.documentNumber ?? vm.invoiceId}
+                        // 064 — as-paid TIN rows: the main pdf IS the final
+                        // combined Tax Invoice / Receipt, so the label + aria
+                        // flip to the combined dual-role wording (same keys
+                        // the receipt button uses in bill-first combined
+                        // mode). Mirrors the desktop table.
                         label={
                           vm.displayStatus === 'void'
                             ? t('actions.downloadVoided')
-                            : t('actions.download')
+                            : vm.mainPdfIsFinalCombined
+                              ? t('actions.downloadCombined')
+                              : t('actions.download')
                         }
                         ariaLabel={t(
                           vm.displayStatus === 'void'
                             ? 'actions.downloadVoidedAria'
-                            : 'actions.downloadInvoiceAria',
+                            : vm.mainPdfIsFinalCombined
+                              ? 'actions.downloadCombinedAria'
+                              : 'actions.downloadInvoiceAria',
                           { number: vm.documentNumber ?? vm.invoiceId },
                         )}
                         className={cn(
                           buttonVariants({ variant: 'outline', size: 'sm' }),
                           'min-h-11 px-3',
+                          // Same wrap treatment the receipt button applies to
+                          // its combined label — let the longer dual-role text
+                          // wrap inside a 320px card instead of clipping.
+                          vm.mainPdfIsFinalCombined &&
+                            'h-auto min-h-11 whitespace-normal text-left',
                         )}
                       />
                     )}

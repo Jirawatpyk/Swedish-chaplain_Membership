@@ -51,6 +51,16 @@ export interface InvoiceMoreMenuProps {
    * roles (Thai RD §86/4 allows one combined document).
    */
   readonly showDownloadReceipt?: boolean;
+  /**
+   * 064 — the MAIN pdf (served by `showDownload`) already IS the final
+   * combined §86/4+§105ทวิ document (`invoice.pdfDocKind ===
+   * 'receipt_combined'`, i.e. an as-paid TIN event invoice issued straight
+   * to paid; its receipt_* blob columns stay NULL). When true the Download
+   * item reuses the combined dual-role label (`actions.downloadCombined`)
+   * instead of the plain invoice label — the file the admin grabs is the
+   * one legal Tax Invoice / Receipt, not a pre-payment invoice.
+   */
+  readonly mainDownloadIsCombined?: boolean;
 }
 
 export function InvoiceMoreMenu({
@@ -60,12 +70,16 @@ export function InvoiceMoreMenu({
   showResendInvoice,
   showResendReceipt,
   showDownloadReceipt = false,
+  mainDownloadIsCombined = false,
 }: InvoiceMoreMenuProps) {
   // Derive combined-mode receipt label state from the existing prop
   // matrix instead of exposing a separate `combinedModeReceipt` prop —
   // they were perfectly correlated (combined-mode hides the pre-payment
   // invoice PDF, so `showDownload === false && showDownloadReceipt`
-  // uniquely identifies the combined-paid state).
+  // uniquely identifies the combined-paid state). 064 — as-paid TIN rows
+  // are a THIRD state (main pdf IS the combined doc, no receipt blob at
+  // all); they arrive via the explicit `mainDownloadIsCombined` prop and
+  // never set `showDownloadReceipt`, so this derivation is undisturbed.
   const combinedModeReceipt = showDownloadReceipt && !showDownload;
   const t = useTranslations('admin.invoices.detail');
 
@@ -266,7 +280,12 @@ export function InvoiceMoreMenu({
             ) : (
               <Download aria-hidden="true" />
             )}
-            {t('actions.download')}
+            {/* 064 — as-paid TIN rows: the main pdf IS the combined Tax
+                Invoice / Receipt, so reuse the dual-role label instead of
+                the plain invoice one. */}
+            {mainDownloadIsCombined
+              ? t('actions.downloadCombined')
+              : t('actions.download')}
           </DropdownMenuItem>
         )}
         {showDownloadReceipt && (

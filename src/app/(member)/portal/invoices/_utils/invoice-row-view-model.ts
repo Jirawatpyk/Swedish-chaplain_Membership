@@ -77,15 +77,32 @@ export interface InvoiceRowViewModel {
   readonly dueDate: string | null;
   readonly total: Money | null;
   /**
-   * Combined-mode paid invoice: the invoice PDF *is* the receipt (no
-   * separate receipt number) and its receipt PDF has finished rendering.
-   * When true the table/card hides the (stale) invoice anchor and shows
-   * only the combined Receipt download.
+   * Combined-mode paid invoice (bill-first): the issue-time invoice PDF is
+   * a stale pre-payment draft and the SEPARATE receipt blob (rendered at
+   * record-payment, reusing the invoice number) is the combined legal
+   * document. When true the table/card hides the (stale) invoice anchor and
+   * shows only the combined Receipt download. 064 — excludes as-paid rows
+   * (`mainPdfIsFinalCombined`): their MAIN pdf already IS the final combined
+   * doc, so hiding it would remove the row's only download.
    */
   readonly isCombinedPaid: boolean;
+  /**
+   * 064 — the MAIN pdf is the final combined §86/4+§105ทวิ document
+   * (`pdfDocKind === 'receipt_combined'`, an as-paid TIN event invoice).
+   * Table + card flip the invoice download's label/aria to the combined
+   * dual-role wording (`actions.downloadCombined[Aria]`) when set.
+   */
+  readonly mainPdfIsFinalCombined: boolean;
   /** Show the invoice-PDF download (PDF exists and it is not combined-paid). */
   readonly showInvoice: boolean;
-  /** Show the receipt-PDF download (paid + receipt PDF rendered). */
+  /**
+   * Show the receipt-PDF download (paid + receipt PDF rendered + the
+   * receipt BLOB actually present). 064 — `receiptPdf !== null` matters:
+   * as-paid rows land `receiptPdfStatus 'rendered'` with NULL receipt blob
+   * columns (their main pdf is the document); a receipt action on them
+   * 502'd (blob_missing). Bill-first rows always write blob + 'rendered'
+   * together, so this is behaviour-identical for them.
+   */
   readonly showReceipt: boolean;
   /**
    * Paid invoice whose receipt PDF is GENUINELY in-progress
@@ -141,9 +158,11 @@ export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
  *
  * `isCombinedPaid` / `showInvoice` / `showReceipt` / `resendable` are a
  * verbatim copy of the former D3 inline expressions in `page.tsx`;
- * `receiptPending` was narrowed and `receiptFailed` added by the S1 fix —
- * see the per-flag comments below for each flag's exact condition and
- * provenance.
+ * `receiptPending` was narrowed and `receiptFailed` added by the S1 fix;
+ * 064 made `isCombinedPaid` pdfDocKind-aware, gated `showReceipt` on the
+ * receipt blob's presence, and added `mainPdfIsFinalCombined` (as-paid
+ * event invoices whose MAIN pdf is the final legal document) — see the
+ * per-flag comments below for each flag's exact condition and provenance.
  */
 export function toInvoiceRowViewModel(
   row: Invoice,
@@ -155,16 +174,32 @@ export function toInvoiceRowViewModel(
     ? 'overdue'
     : row.status;
 
-  // Combined-mode paid: receipt reuses the invoice number (no separate
-  // receipt number) AND the receipt PDF has finished rendering.
+  // 064 — as-paid TIN event invoices persist the MAIN pdf as the final
+  // combined §86/4+§105ทวิ document (issued straight to paid; receipt blob
+  // columns stay NULL, receiptPdfStatus lands 'rendered'). Pre-fix these
+  // rows matched `isCombinedPaid` (hiding the main download) while
+  // `showReceipt` pointed at the NULL receipt blob (502 blob_missing) —
+  // the member's only affordance was a broken button.
+  const mainPdfIsFinalCombined = row.pdfDocKind === 'receipt_combined';
+
+  // Combined-mode paid (bill-first): receipt reuses the invoice number (no
+  // separate receipt number) AND the receipt PDF has finished rendering.
+  // Applies ONLY when the main pdf is an issue-time stale draft — never to
+  // as-paid rows whose main pdf is itself the combined document.
   const isCombinedPaid =
     row.status === 'paid' &&
     row.receiptDocumentNumberRaw === null &&
-    row.receiptPdfStatus === 'rendered';
+    row.receiptPdfStatus === 'rendered' &&
+    !mainPdfIsFinalCombined;
 
   const showInvoice = row.pdf !== null && !isCombinedPaid;
 
-  const showReceipt = row.status === 'paid' && row.receiptPdfStatus === 'rendered';
+  // Gate the receipt action on the artifact it serves: the receipt BLOB.
+  // (064 — 'rendered' alone is not enough; see mainPdfIsFinalCombined note.)
+  const showReceipt =
+    row.status === 'paid' &&
+    row.receiptPdfStatus === 'rendered' &&
+    row.receiptPdf !== null;
 
   // Paid invoice whose §105ทวิ receipt is GENUINELY mid-render — the
   // single non-terminal, non-rendered state (`receiptPdfStatus` enum is
@@ -190,6 +225,7 @@ export function toInvoiceRowViewModel(
     dueDate: row.dueDate,
     total: row.total,
     isCombinedPaid,
+    mainPdfIsFinalCombined,
     showInvoice,
     showReceipt,
     receiptPending,
