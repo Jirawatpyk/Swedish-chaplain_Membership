@@ -122,12 +122,14 @@ export type RecordPaymentError =
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
   /**
-   * 064 INTERIM (remove after spec §6 item 1 remediation completes) — the
-   * invoice is a LEGACY issued no-TIN EVENT row that predates the as-paid
-   * redesign. Its issue-time PDF already IS the buyer's §105 ใบเสร็จรับเงิน;
-   * recording a payment here would mint receipt #2 (the §105 double-receipt
-   * the redesign kills). New no-TIN event fees take `issueEventInvoiceAsPaid`
-   * exclusively; legacy rows go through the remediation runbook.
+   * REMOVE-WITH-064-REMEDIATION (site 2/7 — full checklist at the guard
+   * below + docs/runbooks/event-invoice-legacy-no-tin-remediation.md) —
+   * 064 INTERIM: the invoice is a LEGACY issued no-TIN EVENT row that
+   * predates the as-paid redesign. Its issue-time PDF already IS the
+   * buyer's §105 ใบเสร็จรับเงิน; recording a payment here would mint
+   * receipt #2 (the §105 double-receipt the redesign kills). New no-TIN
+   * event fees take `issueEventInvoiceAsPaid` exclusively; legacy rows go
+   * through the remediation runbook.
    */
   | { code: 'legacy_no_tin_event_needs_remediation' }
   | { code: 'settings_missing' }
@@ -304,14 +306,32 @@ export async function recordPayment(
     if (memberId === null && loaded.invoiceSubject !== 'event') {
       return err({ code: 'no_snapshot_on_invoice' });
     }
+    // REMOVE-WITH-064-REMEDIATION (site 1/7 — the guard itself).
     // 064 INTERIM (remove after spec §6 item 1 remediation completes):
     // a LEGACY issued no-TIN event row predates the as-paid redesign — paying
     // it here would mint receipt #2 (the §105 double-receipt this redesign
-    // kills). Operators: see the remediation runbook. NEW no-TIN event rows
-    // can no longer reach 'issued' (issueInvoice rejects them with
+    // kills). Operators: see
+    // docs/runbooks/event-invoice-legacy-no-tin-remediation.md. NEW no-TIN
+    // event rows can no longer reach 'issued' (issueInvoice rejects them with
     // `event_no_tin_requires_paid_issue`), so only pre-064 rows hit this.
     // The branch above already returned for paid-replay / non-issued rows,
     // so `lockedStatus === 'issued'` is guaranteed here — no status check.
+    //
+    // FULL REMOVAL CHECKLIST — when remediation completes, grep
+    // `REMOVE-WITH-064-REMEDIATION` and delete every site (i18n keys carry
+    // no marker — JSON has no comments — so they are enumerated here):
+    //   1. THIS guard branch (record-payment.ts)
+    //   2. the `legacy_no_tin_event_needs_remediation` member of
+    //      `RecordPaymentError` above (record-payment.ts)
+    //   3. the `'legacy_no_tin_event_needs_remediation' ? 409` map line in
+    //      src/app/api/invoices/[invoiceId]/pay/route.ts
+    //   4. the `errors.legacy_no_tin_event_needs_remediation` i18n key in
+    //      src/i18n/messages/{en,th,sv}.json (×3 — grep the key name)
+    //   5. the toast branch in
+    //      src/app/(staff)/admin/invoices/_components/payment-form.tsx
+    //   6. the unit pin in tests/unit/invoicing/record-payment.test.ts
+    //   7. the integration pin (incl. its direct-insert legacy fixture) in
+    //      tests/integration/invoicing/record-payment-event-invoice.test.ts
     if (
       loaded.invoiceSubject === 'event' &&
       !buyerHasTin(loaded.memberIdentitySnapshot.tax_id)

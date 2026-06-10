@@ -90,6 +90,8 @@ export function PaymentForm({
         const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
           description:
+            // REMOVE-WITH-064-REMEDIATION (site 5/7 — checklist at the guard
+            // in record-payment.ts; also drop the i18n key ×3 locales).
             // 064 INTERIM — surface a human-readable message for the legacy
             // no-TIN event-row guard (raw code is useless to an admin); same
             // explicit-equality pattern as issue-invoice-dialog's error map.

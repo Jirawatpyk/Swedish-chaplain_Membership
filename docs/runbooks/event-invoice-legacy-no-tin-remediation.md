@@ -1,0 +1,145 @@
+# Runbook — Legacy no-TIN event-invoice remediation (064)
+
+**Severity**: none (planned operator action, not an incident)
+**Owner**: Operator + accountant
+**Tracked as**: spec §6 items 1, 5, 6 — `docs/superpowers/specs/2026-06-10-event-invoice-paid-flow-design.md`
+**Must complete**: BEFORE the 064 flag-flip (items 1 + 5 + 6)
+
+## Background
+
+Before 064, an event fee for a buyer **without** a 13-digit Thai TIN could be
+issued bill-first: `issueInvoice` rendered a §105 ใบเสร็จรับเงิน at *issue*
+time (status `issued`, money not yet received). Recording the payment later
+would render a **second** receipt for the same payment — the §105
+double-receipt failure mode the 064 redesign kills. Post-064:
+
+- **New** no-TIN event fees can only go through `issueEventInvoiceAsPaid`
+  (one document, issued at the moment of payment). `issueInvoice` rejects
+  no-TIN event drafts with `event_no_tin_requires_paid_issue` (422).
+- **Legacy** rows issued under the old flow still sit at `status='issued'`
+  with a pseudo-receipt PDF already in Blob. They cannot be fixed in code —
+  this runbook is the fix.
+
+## Interim guard (what the system does until remediation completes)
+
+`recordPayment` rejects `invoice_subject='event' AND buyer has no TIN AND
+status='issued'` with the typed error `legacy_no_tin_event_needs_remediation`:
+
+- `/api/invoices/{id}/pay` returns **409** with that code.
+- The admin payment form shows: *"This event invoice was issued to a buyer
+  without a tax ID under the old flow — its issued PDF is already the
+  official receipt, so recording a payment would create a second receipt.
+  Please follow the remediation runbook instead."*
+- `resend-pdf` intentionally keeps re-signing the pinned (legally wrong)
+  blob for legacy rows — remediation, not code, fixes those documents.
+
+The guard is **interim**: every code site carries the grep-stable marker
+`REMOVE-WITH-064-REMEDIATION` (removal checklist below).
+
+## Step 1 — Identify the affected rows (SQL, read-only)
+
+Run as `neondb_owner` (cross-tenant maintenance read). `buyerHasTin` trims,
+so a whitespace-only `tax_id` counts as no-TIN — mirror that with
+`NULLIF(BTRIM(...), '')`.
+
+```sql
+-- (a) BLOCKED rows: issued, unpaid, no-TIN event invoices.
+--     These are what the interim guard rejects; each needs void + reissue.
+SELECT tenant_id, invoice_id, document_number, issue_date, due_date,
+       total_satang, member_identity_snapshot->>'legal_name' AS buyer_name
+FROM invoices
+WHERE invoice_subject = 'event'
+  AND status = 'issued'
+  AND NULLIF(BTRIM(member_identity_snapshot->>'tax_id'), '') IS NULL
+ORDER BY tenant_id, issue_date;
+
+-- (b) ALREADY-DOUBLED rows: no-TIN event invoices PAID under the old flow
+--     (receipt #2 was already minted pre-064). Nothing to void in-system;
+--     hand the list to the accountant for the §6 item 5 ภ.พ.30 review.
+SELECT tenant_id, invoice_id, document_number, receipt_document_number_raw,
+       issue_date, payment_date, total_satang
+FROM invoices
+WHERE invoice_subject = 'event'
+  AND status = 'paid'
+  AND NULLIF(BTRIM(member_identity_snapshot->>'tax_id'), '') IS NULL
+  AND issue_date < DATE '2026-06-11'   -- pre-064 cutover; as-paid rows have issue_date = payment_date
+ORDER BY tenant_id, issue_date;
+```
+
+(Known example from the spec: `SC-2026-000022`.)
+
+## Step 2 — Void + reissue, per row, WITH the accountant (spec §6 item 1)
+
+For each row from query (a):
+
+1. **Void the issue-time pseudo-receipt in-system** (`issued → void` is a
+   legal transition): admin invoice detail → Void, reason
+   `legacy no-TIN event document — 064 remediation`. This emits
+   `invoice_voided` and preserves the §87 number (voided, never reused).
+2. **Retain the original AND all copies** of the erroneous document with a
+   written cancellation note attached, for the full §87/3 10-year retention
+   period. Do NOT delete the blob — the void row keeps pointing at it as the
+   retained evidence copy.
+3. **If the fee was actually received**: reissue correctly via the new flow —
+   `/admin/invoices/new` → Event fee → the registration → *Already paid —
+   record & issue receipt* with the REAL payment date. The system issues
+   exactly one §105 ใบเสร็จรับเงิน (receipt-stream number). The buyer must
+   end up holding **exactly one valid receipt per payment**.
+4. **If the fee was never received**: stop after the void — the new draft can
+   be created when (and if) the money arrives.
+
+## Step 3 — ภ.พ.30 period correction (spec §6 item 5)
+
+For each legacy no-TIN document (queries (a) AND (b)): if the **issue-date
+month** (when output VAT was declared on ภ.พ.30) differs from the **real
+payment month** (the §78/1 tax point for these fees), the accountant files
+additional ภ.พ.30 returns for the affected months. Surcharge: 1.5%/month on
+the underpaid amount. Keep the filed corrections with the cancellation
+records from Step 2.
+
+## Step 4 — As-paid receipt error correction going forward (spec §6 item 6)
+
+A post-064 as-paid receipt keyed wrongly (amount / buyer) has **no in-system
+correction path**: `paid → void` is illegal and §105 receipts are not
+creditable. Manual accountant-approved procedure:
+
+1. Retain the erroneous receipt (original + copies) with a written
+   cancellation note — same §87/3 retention rule as Step 2.2.
+2. Issue a corrected receipt through the as-paid flow against the correct
+   registration / amount.
+3. Record the pairing (cancelled number ↔ corrected number) in the
+   accountant's correction register.
+
+## Step 5 — Seeds
+
+Regenerate any E2E/demo seeds that produced legacy-shaped no-TIN issued
+event rows (spec §6 item 1 tail). As of T15 the committed fixtures were
+swept (`tests/e2e/helpers/event-fee-as-paid-seed.ts` resets its own rows);
+verify with query (a) against the dev tenant after a seed run.
+
+## Removal checklist — interim guard (after Steps 1–3 are signed off)
+
+Query (a) MUST return zero rows on every production tenant first. Then
+delete every site marked `REMOVE-WITH-064-REMEDIATION`:
+
+| # | Site | What to remove |
+|---|---|---|
+| 1 | `src/modules/invoicing/application/use-cases/record-payment.ts` | the guard branch (`legacy_no_tin_event_needs_remediation` early-return) |
+| 2 | `src/modules/invoicing/application/use-cases/record-payment.ts` | the `legacy_no_tin_event_needs_remediation` member of `RecordPaymentError` |
+| 3 | `src/app/api/invoices/[invoiceId]/pay/route.ts` | the `=== 'legacy_no_tin_event_needs_remediation' ? 409` map line |
+| 4 | `src/i18n/messages/en.json` + `th.json` + `sv.json` | the `errors.legacy_no_tin_event_needs_remediation` key (×3 locales; JSON cannot carry the marker — grep the key name) |
+| 5 | `src/app/(staff)/admin/invoices/_components/payment-form.tsx` | the `code === 'legacy_no_tin_event_needs_remediation'` toast branch |
+| 6 | `tests/unit/invoicing/record-payment.test.ts` | the `064 INTERIM — LEGACY issued no-TIN event row` unit pin |
+| 7 | `tests/integration/invoicing/record-payment-event-invoice.test.ts` | the `064 INTERIM — LEGACY issued no-TIN event row` integration pin (incl. its direct-insert fixture) |
+
+Then run `pnpm check:i18n` (key parity), the invoicing unit + contract
+suites, and `pnpm vitest run --config vitest.integration.config.ts
+tests/integration/invoicing/` before merging the removal PR. Finally mark
+spec §6 items 1 + 5 as DONE in the design doc.
+
+## References
+
+- `docs/superpowers/specs/2026-06-10-event-invoice-paid-flow-design.md`
+  §3.4 (interim guard rationale) + §6 (items 1, 5, 6).
+- Thai RD: §105 (receipt duty), §86/4 (tax-invoice contents), §78/1 (tax
+  point), §87/3 (10-year retention), ภ.พ.30 monthly VAT return.
