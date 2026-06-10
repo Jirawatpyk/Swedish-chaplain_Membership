@@ -600,6 +600,38 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     expect(r.error.code).toBe('receipt_not_creditable');
   });
 
+  it('064 Task 10 — BLOCKS a β receipt-STREAM row (documentNumber NULL + receipt raw set) with receipt_not_creditable, NOT no_snapshot_on_invoice', async () => {
+    // An as-paid no-TIN event invoice (issueEventInvoiceAsPaid β path) is a
+    // LEGAL paid row whose invoice-stream pair is genuinely NULL — its number
+    // lives in receipt_document_number_raw (migration 0212). The §86/10 gate
+    // must fire BEFORE the snapshot-completeness guard, otherwise the legal β
+    // shape is misclassified as a corrupted row (`!loaded.documentNumber` →
+    // no_snapshot_on_invoice) and the operator gets the wrong error.
+    const invoice = makeIssuedEventInvoice({
+      memberIdentitySnapshot: BUYER_SNAP_NO_TIN,
+      sequenceNumber: null,
+      documentNumber: null,
+      receiptDocumentNumberRaw: 'RC-2026-000007',
+      pdfDocKind: 'receipt_separate',
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      tenantId: 'test-swecham',
+      actorUserId: 'actor-user',
+      invoiceId: INVOICE_ID,
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected receipt_not_creditable, got ok');
+    expect(r.error.code).toBe('receipt_not_creditable');
+    // No §87 CN number burned, no render — same pre-allocation discipline.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+  });
+
   it('does NOT block a MEMBERSHIP invoice with no TIN (subject gate — the guard is event-only)', async () => {
     // A membership invoice can never legitimately be no-TIN (issue-invoice
     // blocks it with tax_id_required), but if such a row existed the §86/10

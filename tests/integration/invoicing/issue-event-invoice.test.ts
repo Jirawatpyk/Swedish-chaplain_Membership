@@ -463,9 +463,8 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     // record-as-paid flow (`issueEventInvoiceAsPaid`). What moved where:
     //   - the §105 receipt render + non-timeline audit coverage for non-member
     //     event buyers lives in issue-as-paid.test.ts (section A1 covers the
-    //     TIN/receipt_combined shape today; the no-TIN/receipt_separate shape
-    //     arrives with Task 9/10 once the β `no_tin_numbering_pending` gate
-    //     lifts);
+    //     TIN/receipt_combined shape; the no-TIN/receipt_separate β shape is
+    //     covered by its Task 10 receipt-stream section);
     //   - the persisted no-TIN buyer-snapshot assertion (tax_id NULL, pinned
     //     at DRAFT) is preserved HERE against the draft row;
     //   - the 25000-satang Model-B VAT-exact split is already pinned by the

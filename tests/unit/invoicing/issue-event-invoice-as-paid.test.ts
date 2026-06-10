@@ -14,10 +14,9 @@
  *   pre-sequence  — invoice_not_found (+ null-tx probe), invoice_already_issued
  *                   (lock status race), not_event_subject, invalid_lines,
  *                   member_not_found / member_archived / no_buyer_snapshot
- *                   (shared resolveInvoiceBuyerForIssue arms),
- *                   no_tin_numbering_pending (β numbering GATED until Task 10)
- *   post-sequence — overflow, pdf_render_failed (+ post-rollback audit),
- *                   blob_upload_failed (+ orphan-blob delete),
+ *                   (shared resolveInvoiceBuyerForIssue arms)
+ *   post-sequence — overflow (BOTH streams), pdf_render_failed (+ post-rollback
+ *                   audit), blob_upload_failed (+ orphan-blob delete),
  *                   applyIssueAsPaid conflict (race loser rolls back the seq)
  *   invariants    — canTransition table violation THROWS, vatInclusive=false
  *                   event draft THROWS (Model-B corruption)
@@ -25,6 +24,12 @@
  *                   paymentDate, dual audits in-tx + in-order, ONE outbox
  *                   enqueue (privacy footer for non-members), F8 onPaid
  *                   callbacks for matched members only.
+ *   no-TIN (β)    — 064 Task 10: receipt-STREAM allocation (documentType
+ *                   'receipt', receipt prefix from settings with the 'RE'
+ *                   fallback — recordPayment separate-mode parity), apply
+ *                   numbering kind 'receipt_stream', pdfDocKind
+ *                   'receipt_separate', §105 render kind, audit/outbox/F8
+ *                   parity with the TIN path, receipt-stream overflow.
  *
  * Ports are mocked with vi.fn(); the tx parameter is the module-level
  * OPAQUE_TX symbol so in-tx audit emission can be asserted by identity.
@@ -163,6 +168,22 @@ function makeMatchedEventDraft(overrides: InvoiceFixtureOverrides = {}): Invoice
   return makeEventDraft({
     memberId: 'member-1',
     memberIdentitySnapshot: null,
+    ...overrides,
+  });
+}
+
+/** Non-member NO-TIN draft (tax_id null) — §105 receipt_separate arm (β). */
+function makeNoTinDraft(overrides: InvoiceFixtureOverrides = {}): Invoice {
+  return makeEventDraft({
+    memberIdentitySnapshot: Object.freeze({
+      legal_name: 'Walk-in Guest',
+      tax_id: null,
+      address: '50 Sukhumvit Road, Bangkok 10110',
+      primary_contact_name: 'Buyer',
+      primary_contact_email: 'buyer@example.com',
+      member_number: null,
+      member_number_display: null,
+    }),
     ...overrides,
   });
 }
@@ -506,78 +527,133 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
-  // --- no-TIN gate (β numbering pending) ----------------------------------------
+  // --- no-TIN β path (064 Task 10 — receipt-stream numbering LIVE) ---------------
 
-  it('no-TIN buyer → err no_tin_numbering_pending BEFORE any allocation (no §87 burn)', async () => {
-    const noTinDraft = makeEventDraft({
-      memberIdentitySnapshot: Object.freeze({
-        legal_name: 'Walk-in Guest',
-        tax_id: null,
-        address: '50 Sukhumvit Road, Bangkok 10110',
-        primary_contact_name: 'Buyer',
-        primary_contact_email: 'buyer@example.com',
-        member_number: null,
-        member_number_display: null,
-      }),
-    });
-    const deps = makeDeps(noTinDraft, makeSettings(), null);
+  it('β: no-TIN as-paid allocates documentType:"receipt" ONCE — never the invoice stream', async () => {
+    const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('no_tin_numbering_pending');
-    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
-    expect(deps.pdfRender.render).not.toHaveBeenCalled();
-    expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
-  });
-
-  // GATED until Task 10 (β migration) — no-TIN as-paid allocates from the
-  // RECEIPT stream (accountant ruling β) once the Task 9 CHECK-relax lands.
-  it.skip('β: no-TIN as-paid allocates documentType:"receipt" with the receipt prefix', async () => {
-    const noTinDraft = makeEventDraft({
-      memberIdentitySnapshot: Object.freeze({
-        legal_name: 'Walk-in Guest',
-        tax_id: null,
-        address: '50 Sukhumvit Road, Bangkok 10110',
-        primary_contact_name: 'Buyer',
-        primary_contact_email: 'buyer@example.com',
-        member_number: null,
-        member_number_display: null,
-      }),
-    });
-    const deps = makeDeps(noTinDraft, makeSettings({ receiptNumberPrefix: 'RC' }), null);
-    const r = await issueEventInvoiceAsPaid(deps, input);
-    expect(r.ok).toBe(true);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledTimes(1);
     expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
       OPAQUE_TX,
       expect.objectContaining({ documentType: 'receipt', fiscalYear: 2026 }),
     );
+    // The shared §87 invoice stream is NEVER burned for a §105 receipt.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalledWith(
+      OPAQUE_TX,
+      expect.objectContaining({ documentType: 'invoice' }),
+    );
   });
 
-  // GATED until Task 10 (β migration).
-  it.skip('β: no-TIN apply input carries numbering kind receipt_stream + pdfDocKind receipt_separate', async () => {
-    const noTinDraft = makeEventDraft({
-      memberIdentitySnapshot: Object.freeze({
-        legal_name: 'Walk-in Guest',
-        tax_id: null,
-        address: '50 Sukhumvit Road, Bangkok 10110',
-        primary_contact_name: 'Buyer',
-        primary_contact_email: 'buyer@example.com',
-        member_number: null,
-        member_number_display: null,
-      }),
-    });
-    const deps = makeDeps(noTinDraft, makeSettings({ receiptNumberPrefix: 'RC' }), null);
+  it('β: no-TIN apply input carries receipt_stream numbering (formatted RC number) + pdfDocKind receipt_separate; render = §105 receipt with the RC number', async () => {
+    const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
-    expect(r.ok).toBe(true);
-    expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
-    );
-    expect(deps.invoiceRepo.applyIssueAsPaid).toHaveBeenCalledWith(
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    // §105 receipt render carries the RECEIPT document number — the printed
+    // number on the ใบเสร็จรับเงิน is the receipt-stream number.
+    expect(deps.pdfRender.render).toHaveBeenCalledTimes(1);
+    const renderInput = vi.mocked(deps.pdfRender.render).mock.calls[0]![0];
+    expect(renderInput.kind).toBe('receipt_separate');
+    expect(renderInput.documentNumber?.raw).toBe('RC-2026-000001');
+    expect(renderInput.issueDate).toBe(input.paymentDate);
+    expect(renderInput.dueDate).toBe(input.paymentDate);
+    // Apply input — receipt_stream arm: NO invoice-stream pair, raw set.
+    expect(deps.invoiceRepo.applyIssueAsPaid).toHaveBeenCalledTimes(1);
+    const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
+    expect(applyInput.numbering).toEqual({
+      kind: 'receipt_stream',
+      receiptDocumentNumberRaw: 'RC-2026-000001',
+    });
+    expect(applyInput.pdfDocKind).toBe('receipt_separate');
+  });
+
+  it("β: no-TIN with NO configured receipt prefix falls back to 'RE' (recordPayment separate-mode parity)", async () => {
+    // makeSettings() leaves receiptNumberPrefix undefined — same fallback
+    // record-payment.ts uses for separate-mode receipt allocation.
+    const deps = makeDeps(makeNoTinDraft(), makeSettings(), null);
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
+    expect(applyInput.numbering).toEqual({
+      kind: 'receipt_stream',
+      receiptDocumentNumberRaw: 'RE-2026-000001',
+    });
+  });
+
+  it('β: no-TIN audits mirror the TIN path — non-timeline branch, in-tx dual emits, invoice_paid carries receipt_document_number = RC number', async () => {
+    const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null);
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    const emitCalls = vi.mocked(deps.audit.emit).mock.calls;
+    expect(emitCalls).toHaveLength(2);
+    expect(emitCalls[0]![0]).toBe(OPAQUE_TX);
+    expect((emitCalls[0]![1] as { eventType: string }).eventType).toBe('invoice_issued');
+    expect(emitCalls[1]![0]).toBe(OPAQUE_TX);
+    expect((emitCalls[1]![1] as { eventType: string }).eventType).toBe('invoice_paid');
+    for (const call of emitCalls) {
+      const payload = (call[1] as { payload: Record<string, unknown> }).payload;
+      // Non-member → non-timeline branch (member_id key FORBIDDEN).
+      expect('member_id' in payload).toBe(false);
+      expect(payload.event_registration_id).toBe('reg-uuid-1');
+      expect(payload.invoice_subject).toBe('event');
+      // Receipt-stream numbering: the RC number is the forensic document
+      // number on BOTH lifecycle payloads.
+      expect(payload.receipt_document_number).toBe('RC-2026-000001');
+    }
+    // Issued payload keeps the TIN-path shape — the invoice-stream pair is
+    // genuinely absent (null), never fabricated from the receipt stream.
+    const issuedPayload = (emitCalls[0]![1] as { payload: Record<string, unknown> }).payload;
+    expect(issuedPayload.sequence_number).toBeNull();
+    expect(issuedPayload.document_number).toBeNull();
+    // ONE outbox row with the non-member PDPA footer (TIN-path parity).
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
       OPAQUE_TX,
       expect.objectContaining({
-        numbering: expect.objectContaining({ kind: 'receipt_stream' }),
-        pdfDocKind: 'receipt_separate',
+        eventType: 'invoice_paid',
+        recipientEmail: 'buyer@example.com',
+        privacyFooterKind: 'event_non_member',
       }),
     );
+  });
+
+  it('β: matched-member no-TIN → F8 onPaidCallbacks fire with the recordPayment event shape (TIN-path parity)', async () => {
+    const cb = vi.fn(async () => {});
+    const deps = makeDeps(
+      makeMatchedEventDraft(),
+      makeSettings({ receiptNumberPrefix: 'RC' }),
+      makeMember({
+        snapshot: Object.freeze({
+          legal_name: 'Acme Co',
+          tax_id: null, // member WITHOUT a TIN → §105 receipt arm
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'John Doe',
+          primary_contact_email: 'john@acme.example',
+          member_number: null,
+          member_number_display: null,
+        }),
+      }),
+      { onPaidCallbacks: [cb] },
+    );
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memberId: 'member-1',
+        paymentMethod: 'bank_transfer',
+        triggeredBy: 'admin_manual',
+      }),
+      OPAQUE_TX,
+    );
+    // Member branch + receipt stream: timeline audits carry member_id.
+    const emitCalls = vi.mocked(deps.audit.emit).mock.calls;
+    expect(emitCalls).toHaveLength(2);
+    for (const call of emitCalls) {
+      const payload = (call[1] as { payload: Record<string, unknown> }).payload;
+      expect(payload.member_id).toBe('member-1');
+      expect(payload.receipt_document_number).toBe('RC-2026-000001');
+    }
   });
 
   // --- happy TIN path -------------------------------------------------------------
@@ -834,6 +910,51 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       if (r.error.code === 'overflow') expect(r.error.fiscalYear).toBe(2026);
     }
     expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
+  });
+
+  it('β: RECEIPT-stream overflow (seq > 999_999) → err overflow via throw-carrier; sequence rolls back, apply never called', async () => {
+    const allocateNext = vi.fn(async () => 1_000_000);
+    const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null, {
+      sequenceAllocator: { allocateNext },
+    });
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('overflow');
+      if (r.error.code === 'overflow') expect(r.error.fiscalYear).toBe(2026);
+    }
+    // The overflow came from the RECEIPT allocation (post-sequence zone —
+    // the throw aborts the tx so the receipt counter increment rolls back).
+    expect(allocateNext).toHaveBeenCalledTimes(1);
+    expect(allocateNext).toHaveBeenCalledWith(
+      OPAQUE_TX,
+      expect.objectContaining({ documentType: 'receipt' }),
+    );
+    expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+  });
+
+  it('β: no-TIN pdf_render_failed → post-rollback forensic audit carries render_kind receipt_separate (not the TIN combined kind)', async () => {
+    const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null, {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+    });
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('pdf_render_failed');
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'pdf_render_failed',
+        payload: expect.objectContaining({
+          invoice_id: input.invoiceId,
+          render_kind: 'receipt_separate',
+        }),
+      }),
+    );
   });
 
   it('pdf_render_failed → err + post-rollback null-tx pdf_render_failed audit; applyIssueAsPaid not called', async () => {

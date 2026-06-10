@@ -418,6 +418,14 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
     expect(row!.paidAt).not.toBeNull();
     expect(row!.memberId).toBeNull(); // non-member event invoice.
 
+    // 064 Task 10 (reviewer carry-forward) — α-shape explicit pin: a TIN
+    // bill-first row paid under SEPARATE receipt numbering legitimately
+    // carries the FULL §87 invoice-stream pair AND a receipt-stream raw
+    // number side by side. Migration 0212's relaxed leg applies only when
+    // the pair is ABSENT — this α shape must stay legal under it.
+    expect(row!.sequenceNumber).not.toBeNull();
+    expect(row!.receiptDocumentNumberRaw).not.toBeNull();
+
     // Receipt render invoked with the PRE-PINNED non-member buyer snapshot
     // (NOT a deref of a null member) + Model-B vatInclusive threaded.
     const receiptRender = captured.find(
@@ -449,10 +457,14 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
   it('064 INTERIM — LEGACY issued no-TIN event row (direct insert, pre-064 shape) → recordPayment rejects with legacy_no_tin_event_needs_remediation', async () => {
     // legacy-row defensive (remove with spec §6 item 1).
     //
-    // A no-TIN event invoice can no longer be issued via issueInvoice (the 064
-    // root fix rejects it with `event_no_tin_requires_paid_issue`), so the
-    // legacy shape is DIRECT-inserted — exactly how pre-064 rows exist in prod
-    // (migration 0211 backfilled their pdf_doc_kind to 'receipt_separate').
+    // This fixture stays DIRECT-INSERTED BY DESIGN — even after Task 10 made
+    // the as-paid no-TIN β path live. It models a PRE-064 legacy row (status
+    // 'issued', INVOICE-stream numbering, no payment fields) that the real
+    // flow can no longer produce: issueInvoice rejects no-TIN event drafts
+    // (`event_no_tin_requires_paid_issue`) and issueEventInvoiceAsPaid goes
+    // straight to 'paid' on the RECEIPT stream. Pre-064 rows shaped exactly
+    // like this exist in prod (migration 0211 backfilled their pdf_doc_kind
+    // to 'receipt_separate'), and THIS guard is their remediation fence.
     // Direct-insert pattern follows invoice-subject-filter.test.ts; every
     // non-draft CHECK field is populated. Sequence 999001 avoids colliding
     // with the real §87 allocator used by the sibling tests in this file.

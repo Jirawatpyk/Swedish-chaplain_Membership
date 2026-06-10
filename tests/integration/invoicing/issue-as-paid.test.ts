@@ -32,9 +32,11 @@
  * is tested in the first describe. The no-TIN β shape (`kind:
  * 'receipt_stream'` — seq/docnum NULL + receipt_document_number_raw set)
  * satisfies the two numbering CHECKs since the Task 9 conditional relax
- * (migration 0212); its repo-level section (T9-1..T9-4, END of file) pins
- * the happy commit AND that the relax stays scoped to (event subject AND
- * receipt number present) — never blanket.
+ * (migration 0212); its repo-level section (T9-1..T9-4) pins the happy
+ * commit AND that the relax stays scoped to (event subject AND receipt
+ * number present) — never blanket. The Task 10 section (END of file) then
+ * proves the USE-CASE wires the β shape end-to-end: receipt-STREAM
+ * allocation, invoice-stream counter untouched, audits + outbox parity.
  *
  * Lives in tests/integration/** → hits live Neon. Migrations 0200–0212
  * MUST be applied first (`pnpm db:migrate`).
@@ -417,7 +419,11 @@ function makeUseCaseDeps(
 }
 
 /** Seed minimal tenant invoice settings (defaults: VAT 7%, FY start Jan, auto-email ON). */
-async function seedUcSettings(tenant: TestTenant, prefix: string): Promise<void> {
+async function seedUcSettings(
+  tenant: TestTenant,
+  prefix: string,
+  opts?: { readonly receiptPrefix?: string },
+): Promise<void> {
   await runInTenant(tenant.ctx, async (tx) => {
     await tx.insert(tenantInvoiceSettings).values({
       tenantId: tenant.ctx.slug,
@@ -431,6 +437,9 @@ async function seedUcSettings(tenant: TestTenant, prefix: string): Promise<void>
       registeredAddressEn: 'Bangkok',
       invoiceNumberPrefix: prefix,
       creditNoteNumberPrefix: `${prefix}C`,
+      ...(opts?.receiptPrefix !== undefined
+        ? { receiptNumberPrefix: opts.receiptPrefix }
+        : {}),
     });
   });
 }
@@ -513,9 +522,10 @@ async function readInvoiceRowOwner(tenantSlug: string, invoiceId: string) {
   return row;
 }
 
-/** §87 counter for (tenant, 'invoice', fy) — null when never allocated. */
-async function readInvoiceSeqCounter(
+/** §87 counter for (tenant, docType, fy) — null when never allocated. */
+async function readSeqCounterFor(
   tenantSlug: string,
+  documentType: 'invoice' | 'receipt' | 'credit_note',
   fiscalYear: number,
 ): Promise<number | null> {
   const [row] = await db
@@ -524,11 +534,19 @@ async function readInvoiceSeqCounter(
     .where(
       and(
         eq(tenantDocumentSequences.tenantId, tenantSlug),
-        eq(tenantDocumentSequences.documentType, 'invoice'),
+        eq(tenantDocumentSequences.documentType, documentType),
         eq(tenantDocumentSequences.fiscalYear, fiscalYear),
       ),
     );
   return row?.nextSequenceNumber ?? null;
+}
+
+/** §87 counter for (tenant, 'invoice', fy) — null when never allocated. */
+async function readInvoiceSeqCounter(
+  tenantSlug: string,
+  fiscalYear: number,
+): Promise<number | null> {
+  return readSeqCounterFor(tenantSlug, 'invoice', fiscalYear);
 }
 
 /** All audit rows whose payload.invoice_id matches (owner read). */
@@ -1512,4 +1530,155 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
     expect(row!.sequenceNumber).toBeNull();
     expect(row!.receiptDocumentNumberRaw).toBeNull();
   }, 30_000);
+});
+
+// =============================================================================
+// Task 10 (β numbering) — USE-CASE-LEVEL no-TIN as-paid end-to-end: the
+// receipt-STREAM allocation is live in `issueEventInvoiceAsPaid` (the Task 9
+// repo-level section above proved only the persistence seam). Real repos +
+// REAL §87 allocator + audit + outbox; mocked PDF/Blob.
+// =============================================================================
+
+describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let regNoTin: string;
+  let draftNoTin: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    // Receipt prefix 'RC' configured — fresh tenant ⇒ the FIRST receipt-stream
+    // allocation is fully deterministic: RC-2026-000001.
+    await seedUcSettings(tenant, 'EVN', { receiptPrefix: 'RC' });
+    ({ registrationId: regNoTin } = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: BUYER_NO_TIN.primary_contact_email,
+    }));
+    draftNoTin = await createUcDraft(tenant, user, regNoTin, {
+      amountOverrideSatang: 10004, // 100.04 THB inclusive — VAT-exact case
+      buyer: BUYER_NO_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('T10-1 — no-TIN as-paid: §105 receipt on the RECEIPT stream (RC-2026-000001), invoice-stream counter UNTOUCHED, dual non-timeline audits + outbox', async () => {
+    // BOTH stream counters before the act — the core β claim is that the
+    // shared §87 invoice stream is never burned for a §105 receipt.
+    const invoiceCounterBefore = await readSeqCounterFor(
+      tenant.ctx.slug,
+      'invoice',
+      UC_FISCAL_YEAR,
+    );
+    const receiptCounterBefore = await readSeqCounterFor(
+      tenant.ctx.slug,
+      'receipt',
+      UC_FISCAL_YEAR,
+    );
+    expect(receiptCounterBefore).toBeNull(); // fresh tenant — lazy bootstrap in-tx
+
+    const captured: PdfRenderInput[] = [];
+    const deps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO, captured });
+    const reqId = `int-aspaid-uc-t10-${draftNoTin}`;
+
+    const res = await issueEventInvoiceAsPaid(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: reqId,
+      invoiceId: draftNoTin,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+      paymentReference: 'SIM-DOOR-T10',
+    });
+    expect(res.ok, res.ok ? 'ok' : `as-paid err: ${JSON.stringify(res)}`).toBe(true);
+    if (!res.ok) throw new Error('as-paid failed');
+
+    // Domain mapping — receipt-stream numbering, NO invoice-stream pair.
+    expect(res.value.status).toBe('paid');
+    expect(res.value.sequenceNumber).toBeNull();
+    expect(res.value.documentNumber).toBeNull();
+    expect(res.value.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(res.value.pdfDocKind).toBe('receipt_separate');
+
+    // Raw row — β shape committed through the REAL use-case path.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, draftNoTin);
+    expect(row!.status).toBe('paid');
+    expect(row!.sequenceNumber).toBeNull();
+    expect(row!.documentNumber).toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(row!.pdfDocKind).toBe('receipt_separate');
+    expect(row!.fiscalYear).toBe(UC_FISCAL_YEAR);
+    // As-paid date pin + payment fields (TIN-path parity).
+    expect(row!.issueDate).toBe(UC_PAYMENT_DATE);
+    expect(row!.dueDate).toBe(UC_PAYMENT_DATE);
+    expect(row!.paymentDate).toBe(UC_PAYMENT_DATE);
+    expect(row!.netDaysSnapshot).toBe(0);
+    expect(row!.paymentMethod).toBe('cash');
+    expect(row!.receiptPdfStatus).toBe('rendered');
+    // The §105 receipt IS the main PDF — no separate receipt-bytes triplet.
+    expect(row!.receiptPdfBlobKey).toBeNull();
+    expect(row!.receiptPdfSha256).toBeNull();
+
+    // Render input — ONE §105 receipt carrying the RECEIPT document number
+    // (the printed number on the ใบเสร็จรับเงิน), dates pinned to payment.
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.kind).toBe('receipt_separate');
+    expect(captured[0]!.documentNumber?.raw).toBe('RC-2026-000001');
+    expect(captured[0]!.vatInclusive).toBe(true);
+    expect(captured[0]!.issueDate).toBe(UC_PAYMENT_DATE);
+    expect(captured[0]!.dueDate).toBe(UC_PAYMENT_DATE);
+
+    // §87 — invoice-stream counter UNTOUCHED (no burn for a §105 receipt);
+    // receipt stream lazily bootstrapped in-tx, next = 2.
+    const invoiceCounterAfter = await readSeqCounterFor(
+      tenant.ctx.slug,
+      'invoice',
+      UC_FISCAL_YEAR,
+    );
+    expect(invoiceCounterAfter).toBe(invoiceCounterBefore);
+    const receiptCounterAfter = await readSeqCounterFor(
+      tenant.ctx.slug,
+      'receipt',
+      UC_FISCAL_YEAR,
+    );
+    expect(receiptCounterAfter).toBe(2);
+
+    // Audits — BOTH lifecycle facts, non-timeline branch (non-member buyer),
+    // RC number as the forensic document number.
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.requestId, reqId)));
+    const issued = audits.filter((a) => a.eventType === 'invoice_issued');
+    const paid = audits.filter((a) => a.eventType === 'invoice_paid');
+    expect(issued).toHaveLength(1);
+    expect(paid).toHaveLength(1);
+    for (const a of [issued[0]!, paid[0]!]) {
+      const payload = a.payload as Record<string, unknown>;
+      expect(payload.invoice_id).toBe(draftNoTin);
+      expect(payload.invoice_subject).toBe('event');
+      expect(payload.event_registration_id).toBe(regNoTin);
+      expect('member_id' in payload).toBe(false);
+      expect(payload.receipt_document_number).toBe('RC-2026-000001');
+    }
+    const issuedPayload = issued[0]!.payload as Record<string, unknown>;
+    expect(issuedPayload.sequence_number).toBeNull();
+    expect(issuedPayload.document_number).toBeNull();
+    // W9 — raw payment reference never lands in audit (sha256 only).
+    const paidPayload = paid[0]!.payload as Record<string, unknown>;
+    expect(paidPayload.payment_reference_sha256).toBeTruthy();
+    expect(JSON.stringify(paidPayload)).not.toContain('SIM-DOOR-T10');
+
+    // Outbox — exactly ONE receipt email with the §87/3 PDPA transparency
+    // footer (non-member event buyer).
+    const outboxRows = await outboxRowsForInvoice(tenant.ctx.slug, draftNoTin);
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]!.toEmail).toBe(BUYER_NO_TIN.primary_contact_email);
+    const ctx = outboxRows[0]!.contextData as Record<string, unknown>;
+    expect(ctx.event_type).toBe('invoice_paid');
+    expect(ctx.privacy_footer_kind).toBe('event_non_member');
+  }, 60_000);
 });

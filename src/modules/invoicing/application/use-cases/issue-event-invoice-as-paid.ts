@@ -16,11 +16,13 @@
  * overridden (that mode governs the two-step pay flow where a standalone
  * receipt document exists; as-paid has exactly one document).
  *
- * No-TIN buyers (`receipt_separate`, §105 receipt on the RECEIPT numbering
- * stream — accountant ruling β) are GATED until the Task 9 CHECK-relax
- * migration + Task 10 allocation land: this use case returns a typed
- * `no_tin_numbering_pending` error BEFORE any sequence allocation, so no §87
- * number is burned on the blocked path.
+ * No-TIN buyers receive the §105 ใบเสร็จรับเงิน (`receipt_separate`) numbered
+ * from the RECEIPT stream (accountant ruling β, live since Task 10 +
+ * migration 0212): `documentType:'receipt'` allocation with the tenant's
+ * receipt prefix (`'RE'` fallback — recordPayment separate-mode parity), the
+ * number lands in `receipt_document_number_raw` and the invoice-stream pair
+ * stays NULL, so the shared §87 invoice stream is never burned for a receipt
+ * document.
  *
  * Canonical lock order (mirrors issueInvoice — R7-S1 deadlock rationale at
  * issue-invoice.ts:14 applies verbatim):
@@ -110,12 +112,6 @@ export type IssueEventInvoiceAsPaidError =
   | { code: 'member_archived' }
   | { code: 'no_buyer_snapshot' }
   | { code: 'payment_date_future' }
-  /**
-   * 064 — the no-TIN (§105 receipt) arm is blocked until the Task 9 CHECK-
-   * relax migration + Task 10 receipt-stream allocation land. Returned
-   * PRE-allocation so the blocked path never burns a §87 number.
-   */
-  | { code: 'no_tin_numbering_pending' }
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
@@ -192,6 +188,11 @@ export async function issueEventInvoiceAsPaid(
   // that outlive the rollback (orphan-blob mitigation, reliability L-1 +
   // review Important #1).
   let blobKeyForCleanup: string | null = null;
+  // Hoisted for the post-rollback pdf_render_failed forensic audit: the
+  // failed render is `receipt_combined` on the TIN arm but `receipt_separate`
+  // on the no-TIN β arm — the forensic row must not lie about which document
+  // failed. Always set before any render can run.
+  let pdfKindForForensics: 'receipt_combined' | 'receipt_separate' | null = null;
 
   try {
     return await deps.invoiceRepo.withTx(async (tx) => {
@@ -274,14 +275,11 @@ export async function issueEventInvoiceAsPaid(
       // §86/4 + §105 doc-kind pin — as-paid renders the COMBINED
       // tax-invoice/receipt for TIN buyers REGARDLESS of the tenant's
       // receiptNumberingMode (see header). No-TIN buyers get the §105
-      // receipt_separate arm, which is numbering-GATED until Task 10 (β
-      // migration) — return PRE-allocation so no §87 number burns.
+      // receipt_separate arm numbered from the RECEIPT stream (β, Task 10).
       const pdfKind = buyerHasTin(memberSnap.tax_id)
         ? ('receipt_combined' as const)
         : ('receipt_separate' as const);
-      if (pdfKind === 'receipt_separate') {
-        return err({ code: 'no_tin_numbering_pending' });
-      }
+      pdfKindForForensics = pdfKind;
 
       // Event Model-B invariant: as-paid event pricing is VAT-INCLUSIVE by
       // construction (the ticket price is all-in). A false here is a corrupt
@@ -315,16 +313,60 @@ export async function issueEventInvoiceAsPaid(
       // --- POST-SEQUENCE ZONE. Every error path below MUST throw
       // IssueAsPaidInternalError so withTx rolls back the allocator increment.
 
-      // E. Allocate from the SHARED §87 invoice stream (events + membership
-      // intentionally share `documentType:'invoice'` — see issueInvoice E).
-      const seq = await deps.sequenceAllocator.allocateNext(tx, {
-        tenantId: input.tenantId,
-        documentType: 'invoice',
-        fiscalYear: fy,
-      });
-      const docNum = DocumentNumber.of(settings.invoiceNumberPrefix, fy, seq);
-      if (!docNum.ok) {
-        throw new IssueAsPaidInternalError({ code: 'overflow', fiscalYear: fy });
+      // E. Numbering — stream depends on the §86/4 doc-kind:
+      //   TIN    → the SHARED §87 invoice stream (events + membership
+      //            intentionally share `documentType:'invoice'` — see
+      //            issueInvoice E) with the invoice prefix.
+      //   no-TIN → the RECEIPT stream (`documentType:'receipt'`) with the
+      //            tenant receipt prefix, `'RE'` fallback — EXACT parity with
+      //            recordPayment's separate-mode allocation so a β receipt
+      //            number is indistinguishable from a payment-time receipt
+      //            number. The invoice-stream pair stays NULL on the row
+      //            (migration 0212 relaxed leg) so a receipt number can never
+      //            collide inside invoices_tenant_fiscal_seq_unique.
+      // `docNum` is the document's PRINTED number either way — threaded into
+      // the PDF render and both audit summaries below.
+      let numbering:
+        | { kind: 'invoice_stream'; sequenceNumber: number; documentNumber: string }
+        | { kind: 'receipt_stream'; receiptDocumentNumberRaw: string };
+      let docNum: DocumentNumber;
+      if (pdfKind === 'receipt_combined') {
+        const seq = await deps.sequenceAllocator.allocateNext(tx, {
+          tenantId: input.tenantId,
+          documentType: 'invoice',
+          fiscalYear: fy,
+        });
+        const invoiceDoc = DocumentNumber.of(settings.invoiceNumberPrefix, fy, seq);
+        if (!invoiceDoc.ok) {
+          throw new IssueAsPaidInternalError({ code: 'overflow', fiscalYear: fy });
+        }
+        numbering = {
+          kind: 'invoice_stream',
+          sequenceNumber: seq,
+          documentNumber: invoiceDoc.value.raw,
+        };
+        docNum = invoiceDoc.value;
+      } else {
+        const receiptSeq = await deps.sequenceAllocator.allocateNext(tx, {
+          tenantId: input.tenantId,
+          documentType: 'receipt',
+          fiscalYear: fy,
+        });
+        const receiptDoc = DocumentNumber.of(
+          settings.receiptNumberPrefix ?? 'RE',
+          fy,
+          receiptSeq,
+        );
+        if (!receiptDoc.ok) {
+          // Throw so the tx rolls back and the receipt-sequence increment is
+          // NOT consumed by a failed number assignment (recordPayment parity).
+          throw new IssueAsPaidInternalError({ code: 'overflow', fiscalYear: fy });
+        }
+        numbering = {
+          kind: 'receipt_stream',
+          receiptDocumentNumberRaw: receiptDoc.value.raw,
+        };
+        docNum = receiptDoc.value;
       }
 
       // G+H+I. Snapshots + render + upload the ONE combined PDF.
@@ -342,7 +384,9 @@ export async function issueEventInvoiceAsPaid(
           renderInput: {
             kind: pdfKind,
             templateVersion: deps.currentTemplateVersion,
-            documentNumber: docNum.value,
+            // TIN arm: the invoice-stream number; no-TIN β arm: the RECEIPT
+            // number — the printed number on the §105 ใบเสร็จรับเงิน.
+            documentNumber: docNum,
             // As-paid date pin: the document is settled the moment it exists.
             issueDate: input.paymentDate,
             dueDate: input.paymentDate,
@@ -368,11 +412,7 @@ export async function issueEventInvoiceAsPaid(
           tenantId: input.tenantId,
           invoiceId,
           fiscalYear: fy,
-          numbering: {
-            kind: 'invoice_stream',
-            sequenceNumber: seq,
-            documentNumber: docNum.value.raw,
-          },
+          numbering,
           issueDate: input.paymentDate,
           subtotalSatang: asSatang(subtotal.satang),
           vatRate: settings.vatRate.raw,
@@ -414,27 +454,36 @@ export async function issueEventInvoiceAsPaid(
       const paymentReferenceSha256 = input.paymentReference
         ? sha256Hex(input.paymentReference)
         : null;
-      const issuedSummary = `Invoice ${docNum.value.raw} issued`;
-      const paidSummary = `Invoice ${docNum.value.raw} marked paid`;
-      const issuedPayloadBase = {
+      const issuedSummary = `Invoice ${docNum.raw} issued`;
+      const paidSummary = `Invoice ${docNum.raw} marked paid`;
+      const issuedPayloadBase: Record<string, unknown> = {
         invoice_id: invoiceId,
         fiscal_year: fy,
-        sequence_number: seq,
-        document_number: docNum.value.raw,
+        // Receipt-stream (β no-TIN) rows genuinely carry NO invoice-stream
+        // pair — null here, never a number fabricated from the receipt
+        // stream; the RC number is added under its own key below.
+        sequence_number:
+          numbering.kind === 'invoice_stream' ? numbering.sequenceNumber : null,
+        document_number:
+          numbering.kind === 'invoice_stream' ? numbering.documentNumber : null,
+        ...(numbering.kind === 'receipt_stream'
+          ? { receipt_document_number: numbering.receiptDocumentNumberRaw }
+          : {}),
         total_satang: total.satang.toString(),
         pdf_sha256: rendered.sha256,
         invoice_subject: 'event',
-      } as const;
+      };
       const paidPayloadBase: Record<string, unknown> = {
         invoice_id: invoiceId,
         payment_method: input.paymentMethod,
         payment_reference_sha256: paymentReferenceSha256,
         payment_date: input.paymentDate,
         recorded_by_user_id: input.actorUserId,
-        // Combined mode: the receipt number IS the invoice document number.
-        receipt_document_number: docNum.value.raw,
+        // Combined mode: the receipt number IS the invoice document number;
+        // β separate mode: the receipt-stream RC number.
+        receipt_document_number: docNum.raw,
         receipt_pdf_sha256: rendered.sha256,
-        // The combined PDF rendered synchronously above — never async here.
+        // The as-paid PDF rendered synchronously above — never async here.
         receipt_pdf_async: false,
         invoice_subject: 'event',
       };
@@ -606,8 +655,11 @@ export async function issueEventInvoiceAsPaid(
             summary: `PDF render failed for invoice ${input.invoiceId}`,
             payload: {
               invoice_id: input.invoiceId,
-              // The as-paid TIN path renders exactly one combined document.
-              render_kind: 'receipt_combined',
+              // As-paid renders exactly one document; the kind was resolved
+              // from the buyer snapshot before any render could run (TIN →
+              // receipt_combined, no-TIN β → receipt_separate). The fallback
+              // is defensive only — a render failure implies the kind was set.
+              render_kind: pdfKindForForensics ?? 'receipt_combined',
               reason: e.error.reason,
             },
           });
