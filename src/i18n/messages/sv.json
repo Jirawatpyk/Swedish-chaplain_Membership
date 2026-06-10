@@ -1763,7 +1763,7 @@
           "receipt": "Kvitto / ใบเสร็จรับเงิน",
           "pending": "Dokumenttyp sätts vid utfärdande",
           "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
-          "ariaTaxInvoiceReceipt": "En kombinerad skattefaktura/kvitto utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
+          "ariaTaxInvoiceReceipt": "Ett kombinerat dokument (skattefaktura/kvitto) utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
           "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
           "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas."
         },
@@ -1806,7 +1806,7 @@
           "chooseHint": "Välj hur dokumentet ska utfärdas innan du skickar."
         },
         "payment": {
-          "dateHint": "Datum då betalningen mottogs (gregoriansk kalender). Får inte ligga i framtiden.",
+          "dateHint": "Datum då betalningen mottogs. Får inte ligga i framtiden.",
           "errors": {
             "dateRequired": "Ange betalningsdatumet.",
             "dateFuture": "Betalningsdatumet får inte ligga i framtiden."
@@ -1968,7 +1968,7 @@
         "errors": {
           "failed": "Kunde inte utfärda",
           "tax_id_required": "Den här medlemmen är en företagsnivå men saknar skattenummer i registret. En thailändsk skattefaktura kräver köparens skattenummer — uppdatera medlemsposten innan du utfärdar.",
-          "event_no_tin_requires_paid_issue": "Köparen saknar skatteregistreringsnummer — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
+          "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
@@ -2022,7 +2022,7 @@
         "errors": {
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
-          "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatteregistreringsnummer enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
+          "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatte-ID enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },

@@ -1806,7 +1806,7 @@
           "chooseHint": "Choose how to issue the document before submitting."
         },
         "payment": {
-          "dateHint": "Date the payment was received (CE, Gregorian calendar). Cannot be in the future.",
+          "dateHint": "Date the payment was received. Cannot be in the future.",
           "errors": {
             "dateRequired": "Enter the payment date.",
             "dateFuture": "The payment date cannot be in the future."
