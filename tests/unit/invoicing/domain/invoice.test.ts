@@ -317,14 +317,14 @@ describe('assertSnapshotsSet — non-draft snapshot completeness', () => {
 
 describe('canTransition — invoice state-machine table (data-model.md § 3.1)', () => {
   const ok = (from: InvoiceStatus, to: InvoiceStatus) =>
-    expect(canTransition(from, to).ok).toBe(true);
+    expect(canTransition(from, to, 'membership').ok).toBe(true);
 
   const err = (
     from: InvoiceStatus,
     to: InvoiceStatus,
     expectedCode: 'invalid_transition' | 'terminal_state',
   ) => {
-    const r = canTransition(from, to);
+    const r = canTransition(from, to, 'membership');
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe(expectedCode);
@@ -344,8 +344,6 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
   });
 
   describe('illegal transitions — invalid_transition', () => {
-    it('draft → paid (must go through issued)', () =>
-      err('draft', 'paid', 'invalid_transition'));
     it('issued → credited (must pay first)', () =>
       err('issued', 'credited', 'invalid_transition'));
     it('issued → partially_credited (must pay first)', () =>
@@ -354,6 +352,21 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
       err('paid', 'void', 'invalid_transition'));
     it('paid → issued (no rollback)', () =>
       err('paid', 'issued', 'invalid_transition'));
+  });
+
+  describe('subject-aware draft → paid (064 as-paid issuance)', () => {
+    it('draft→paid is legal for event subject (as-paid issuance)', () => {
+      expect(canTransition('draft', 'paid', 'event').ok).toBe(true);
+    });
+    it('draft→paid stays ILLEGAL for membership (must pass issued)', () => {
+      const r = canTransition('draft', 'paid', 'membership');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('invalid_transition');
+    });
+    it('draft→issued stays legal for BOTH subjects (bill-first)', () => {
+      expect(canTransition('draft', 'issued', 'event').ok).toBe(true);
+      expect(canTransition('draft', 'issued', 'membership').ok).toBe(true);
+    });
   });
 
   describe('terminal-state guard', () => {
@@ -371,7 +384,7 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
   });
 
   it('reports the actual `from` status in terminal_state error', () => {
-    const r = canTransition('void', 'paid');
+    const r = canTransition('void', 'paid', 'membership');
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.code === 'terminal_state') {
       expect(r.error.status).toBe('void');
@@ -379,7 +392,7 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
   });
 
   it('reports both from + to in invalid_transition error', () => {
-    const r = canTransition('draft', 'paid');
+    const r = canTransition('draft', 'paid', 'membership');
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.code === 'invalid_transition') {
       expect(r.error.from).toBe('draft');

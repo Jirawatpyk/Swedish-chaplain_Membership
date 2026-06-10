@@ -370,10 +370,15 @@ export function assertSnapshotsSet(inv: Invoice): Result<void, InvoiceTransition
 export function canTransition(
   from: InvoiceStatus,
   to: InvoiceStatus,
+  /**
+   * 064 — `draft → paid` (as-paid issuance) is legal ONLY for the event
+   * subject; membership must always pass `issued` (the §86/4 two-step).
+   */
+  subject: 'membership' | 'event',
 ): Result<void, InvoiceTransitionError> {
   if (isTerminal(from)) return err({ code: 'terminal_state', status: from });
   const legal: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
-    draft: ['issued'],
+    draft: subject === 'event' ? ['issued', 'paid'] : ['issued'],
     issued: ['paid', 'void'],
     paid: ['partially_credited', 'credited'],
     partially_credited: ['partially_credited', 'credited'],
