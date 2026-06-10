@@ -139,6 +139,22 @@ describe('computeIsOverdue', () => {
     const inv = issuedInvoice({ dueDate: '2026-03-30' });
     expect(computeIsOverdue(inv, '2026-03-30T17:30:00Z')).toBe(true);
   });
+
+  it('(7 — 064 T15 pin) an AS-PAID event invoice is never overdue: status=paid + due=issue=payment date in the past', () => {
+    // issueEventInvoiceAsPaid pins issue_date = due_date = payment_date and
+    // lands directly on 'paid' (never 'issued'). Even though that dueDate is
+    // necessarily in the past relative to any later "today", branch (1)
+    // (status !== 'issued') must short-circuit FIRST — an as-paid row can
+    // never surface as overdue regardless of its back-dated due date.
+    const inv = issuedInvoice({
+      status: 'paid',
+      issueDate: '2026-04-18',
+      dueDate: '2026-04-18',
+      paymentDate: '2026-04-18',
+      paidAt: '2026-04-18T10:00:00Z',
+    });
+    expect(computeIsOverdue(inv, '2026-06-11T03:00:00Z')).toBe(false);
+  });
 });
 
 describe('deriveOverdue', () => {

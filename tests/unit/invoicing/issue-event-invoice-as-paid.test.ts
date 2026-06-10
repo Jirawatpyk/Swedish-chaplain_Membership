@@ -53,6 +53,7 @@ import type { MemberIdentityView } from '@/modules/invoicing/application/ports/m
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
+import { sha256Hex } from '@/lib/crypto';
 
 // Mirror issue-invoice.test.ts — stub only the log methods; keep the rest of
 // the logger module (PAN regex, child loggers) real via importActual spread.
@@ -1091,6 +1092,137 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       throw new InvoiceApplyConflictError('applyPayment');
     });
     await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toThrow(InvoiceApplyConflictError);
+  });
+
+  // --- T15 branch-closure pins (vitest.config 100% file entry) ----------------------
+
+  it('invoice_not_found probe with requestId OMITTED → probe row records requestId null', async () => {
+    const deps = makeDeps(null, makeSettings(), null);
+    const { requestId: _omit, ...withoutRequestId } = input;
+    const r = await issueEventInvoiceAsPaid(deps, withoutRequestId);
+    expect(r.ok).toBe(false);
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_cross_tenant_probe',
+        requestId: null,
+      }),
+    );
+  });
+
+  it('lock acquired on a draft row but findByIdInTx returns null → invoice_not_found, NO probe (post-lock load gap)', async () => {
+    // Defensive arm: lockForUpdate saw status 'draft' but the full load came
+    // back empty (e.g. the row vanished between probe and load under an
+    // anomalous replica read). Distinct from the not-found probe arm — the
+    // lock SUCCEEDED, so this is not a cross-tenant signal.
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => null);
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  it('paymentReference provided → paid audit carries payment_reference_sha256; the RAW reference NEVER appears in any payload (W9)', async () => {
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    const reference = 'KBANK-TRF-20260418-0042';
+    const r = await issueEventInvoiceAsPaid(deps, {
+      ...input,
+      paymentReference: reference,
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    const emitCalls = vi.mocked(deps.audit.emit).mock.calls;
+    const paidPayload = (emitCalls[1]![1] as { payload: Record<string, unknown> }).payload;
+    expect(paidPayload.payment_reference_sha256).toBe(sha256Hex(reference));
+    for (const call of emitCalls) {
+      expect(JSON.stringify(call[1])).not.toContain(reference);
+    }
+    // The reference itself IS persisted on the row (apply input) — only the
+    // audit log gets the hash.
+    const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
+    expect(applyInput.paymentReference).toBe(reference);
+  });
+
+  it('matched member + requestId OMITTED → member-branch (timeline) audits record requestId null', async () => {
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), makeMember());
+    const { requestId: _omit, ...withoutRequestId } = input;
+    const r = await issueEventInvoiceAsPaid(deps, withoutRequestId);
+    expect(r.ok).toBe(true);
+    const emitCalls = vi.mocked(deps.audit.emit).mock.calls;
+    expect(emitCalls).toHaveLength(2);
+    for (const call of emitCalls) {
+      expect((call[1] as { requestId: string | null }).requestId).toBeNull();
+    }
+  });
+
+  it('malformed legacy snapshot with NULL primary_contact_email → auto-email skipped (defensive ?? guard), issuance unaffected', async () => {
+    // The TS type says `string`, but the snapshot is a DB JSON column — a
+    // legacy row can carry null despite the type. The `?? ''` arm must
+    // degrade to the empty-recipient skip, never crash on .trim().
+    const skipMetric = vi.spyOn(invoicingMetrics, 'autoEmailSkipped');
+    const deps = makeDeps(
+      makeEventDraft({
+        memberIdentitySnapshot: Object.freeze({
+          legal_name: 'Beta Imports Ltd',
+          tax_id: '9876543210123',
+          address: '50 Sukhumvit Road, Bangkok 10110',
+          primary_contact_name: 'Jane Buyer',
+          primary_contact_email: null as unknown as string,
+          member_number: null,
+          member_number_display: null,
+        }),
+      }),
+      makeSettings({ autoEmailEnabled: true }),
+      null,
+    );
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(skipMetric).toHaveBeenCalledWith('event', 'no_recipient');
+    skipMetric.mockRestore();
+  });
+
+  it('applyIssueAsPaid returns paidAt null → F8 event falls back to clock.nowIso()', async () => {
+    const cb = vi.fn(async () => {});
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), makeMember(), {
+      onPaidCallbacks: [cb],
+    });
+    const base = deps.invoiceRepo.applyIssueAsPaid;
+    deps.invoiceRepo.applyIssueAsPaid = vi.fn(async (tx, applyInput) => ({
+      ...(await base(tx, applyInput)),
+      paidAt: null,
+    }));
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(cb).toHaveBeenCalledWith(
+      expect.objectContaining({ paidAt: '2026-04-18T10:00:00Z' }),
+      OPAQUE_TX,
+    );
+  });
+
+  it('pdf_render_failed forensic audit emit ALSO fails → swallowed (warn), original typed error surfaces', async () => {
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+      audit: {
+        emit: vi.fn(async () => {
+          throw new Error('audit store down');
+        }),
+      },
+    });
+    // requestId omitted — also pins the forensic row's `requestId ?? null` arm.
+    const { requestId: _omit, ...withoutRequestId } = input;
+    const r = await issueEventInvoiceAsPaid(deps, withoutRequestId);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('pdf_render_failed');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      expect.stringContaining('pdf_render_failed audit emit also failed'),
+    );
   });
 
   // --- programming-error invariants (throw, never err) -------------------------------

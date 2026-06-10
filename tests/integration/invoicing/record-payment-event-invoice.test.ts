@@ -455,6 +455,8 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
   }, 90_000);
 
   it('064 INTERIM — LEGACY issued no-TIN event row (direct insert, pre-064 shape) → recordPayment rejects with legacy_no_tin_event_needs_remediation', async () => {
+    // REMOVE-WITH-064-REMEDIATION (site 7/7 — checklist at the guard in
+    // record-payment.ts; delete this pin AND its direct-insert fixture).
     // legacy-row defensive (remove with spec §6 item 1).
     //
     // This fixture stays DIRECT-INSERTED BY DESIGN — even after Task 10 made

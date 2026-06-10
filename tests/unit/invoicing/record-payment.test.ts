@@ -590,7 +590,8 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
   });
 
   it('064 INTERIM — LEGACY issued no-TIN event row → legacy_no_tin_event_needs_remediation, NO receipt #2 side-effects', async () => {
-    // legacy-row defensive (remove with spec §6 item 1).
+    // REMOVE-WITH-064-REMEDIATION (site 6/7 — checklist at the guard in
+    // record-payment.ts). legacy-row defensive (remove with spec §6 item 1).
     //
     // Supersedes the former "FIX 5" pin that drove a no-TIN event invoice
     // through recordPayment expecting SUCCESS (forceSeparate receipt) — that

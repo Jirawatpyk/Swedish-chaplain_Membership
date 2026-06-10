@@ -606,6 +606,10 @@ describe('064 Task 14 — as-paid PDF goldens via the REAL chain (live Neon)', (
 
     // §86/4 — the combined document carries the buyer's Tax ID.
     expect(text).toContain(G14_BUYER_TIN.tax_id);
+    // T15 positive control for golden (ii)'s `^Tax ID:` NEGATIVE: the buyer
+    // Tax-ID line really does render at line start in this exact shape, so
+    // the (ii) `not.toMatch(/^Tax ID:/m)` proof cannot rot silently.
+    expect(text).toMatch(/^Tax ID: 1234512345123/m);
   }, 120_000);
 
   it('(ii) no-TIN as-paid → §105 receipt title, RC receipt-stream number on the face, same VAT-inclusive breakdown, NO buyer Tax ID line', async () => {

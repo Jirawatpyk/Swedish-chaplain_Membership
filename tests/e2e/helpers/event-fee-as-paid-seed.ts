@@ -27,6 +27,11 @@
  * All attendees/buyers are SIMULATED (fake names, fake emails); the fake
  * 13-digit TIN is typed by the spec, not stored here. Connects via
  * `neondb_owner` (bypasses RLS) — same pattern as `eventcreate-seed.ts`.
+ *
+ * §87 NOTE (T15): each re-run's submit scenarios consume real §87 sequence
+ * numbers, and the invoice DELETE above leaves those consumed numbers as
+ * gaps in the DEV tenant's invoice stream — acceptable on the dev/E2E
+ * tenant only; a production tenant must never run this seed.
  */
 import postgres from 'postgres';
 

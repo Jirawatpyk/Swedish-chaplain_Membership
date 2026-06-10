@@ -205,6 +205,42 @@ describe('exportPaidInvoicesCsv', () => {
     expect(result.value.csv).toMatch(/,promptpay\r?\n?$/);
   });
 
+  it('includes an AS-PAID event invoice with its paidAt + payment date rendered (064 T15 pin)', async () => {
+    // issueEventInvoiceAsPaid lands draft→paid directly with
+    // issue_date = due_date = payment_date and pdfDocKind receipt_combined.
+    // The export keys on status='paid' + paidAt-in-range — an as-paid row
+    // (never 'issued') MUST appear in the bookkeeper CSV exactly like a
+    // two-step paid row, with the as-paid date pin visible in Issue Date.
+    const asPaid = makeInvoice({
+      invoiceId: asInvoiceId('i-as-paid'),
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      eventId: 'event-1',
+      eventRegistrationId: 'reg-1',
+      vatInclusive: true,
+      pdfDocKind: 'receipt_combined',
+      issueDate: '2026-05-16',
+      dueDate: '2026-05-16',
+      paymentDate: '2026-05-16',
+      paidAt: '2026-05-16T03:00:00Z', // Bangkok 2026-05-16 → in range
+      receiptDocumentNumberRaw: null, // combined: receipt no. column stays blank
+    } as Partial<Invoice>);
+    const deps = makeDeps([asPaid]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.rowCount).toBe(1);
+    // Issue Date = the as-paid payment date; Paid At = the raw ISO instant.
+    expect(result.value.csv).toMatch(/2026-05-16,INV-2026-000001,,/);
+    expect(result.value.csv).toContain('2026-05-16T03:00:00Z');
+  });
+
   it('filters out rows whose paidAt falls outside the inclusive range', async () => {
     const insideMay = makeInvoice({
       invoiceId: asInvoiceId('i-may'),

@@ -36,6 +36,13 @@
  * typed below is simulated.
  *
  * Run: pnpm test:e2e tests/e2e/invoices/event-fee-as-paid.spec.ts --workers=1
+ *
+ * WORKERS HAZARD (T15): `--workers=1` is not just the repo convention here —
+ * the beforeAll seed DELETEs + re-creates this fixture's registrations and
+ * invoices. A parallel worker re-running the seed (or another invoices spec
+ * touching the same dev tenant) races those deletes mid-test and produces
+ * phantom 409s / missing-row failures that look like product bugs. Never
+ * raise the worker count for this spec.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -171,6 +178,15 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]{36}$/, { timeout: 30_000 });
     await expect(page.locator('h1')).toContainText(/[A-Z]+-\d{4}-\d{6}/);
     await expect(page.locator('h1')).toContainText('Paid');
+
+    // T15 QA carry-forward — the detail "⋯" menu offers the main download
+    // under the COMBINED dual-role label (the as-paid main pdf IS the one
+    // legal Tax Invoice / Receipt; `mainDownloadIsCombined` wiring).
+    await page.getByRole('button', { name: /More actions for/ }).click();
+    const downloadItem = page.getByTestId('download-invoice-trigger');
+    await expect(downloadItem).toBeVisible();
+    await expect(downloadItem).toContainText('Download invoice/receipt');
+    await page.keyboard.press('Escape');
 
     // Persisted row: paid + the COMBINED §86/4+§105ทวิ doc kind, payment
     // date pinned to the submitted (default-today) date.

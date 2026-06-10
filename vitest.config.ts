@@ -371,6 +371,21 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // 064 — as-paid issuance is tax-critical (§87 numbering + §86/4
+        // doc-kind pin + §105 receipt stream): same 100% bar as its siblings
+        // issue-invoice/record-payment (T15).
+        'src/modules/invoicing/application/use-cases/issue-event-invoice-as-paid.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        // 064 — shared buyer resolution (FR-037 archive-race guard) extracted
+        // from issueInvoice; carries the same tax-critical bar as its callers.
+        'src/modules/invoicing/application/lib/resolve-invoice-buyer.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
         // F5: Payments Application — security-critical use cases require
         // 100% branch coverage per Constitution Principle II. The three
         // paths below are the PCI-adjacent entry points whose branches

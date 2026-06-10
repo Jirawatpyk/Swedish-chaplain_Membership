@@ -669,8 +669,10 @@ export async function issueEventInvoiceAsPaid(
               // As-paid renders exactly one document; the kind was resolved
               // from the buyer snapshot before any render could run (TIN →
               // receipt_combined, no-TIN β → receipt_separate). The fallback
-              // is defensive only — a render failure implies the kind was set.
-              render_kind: pdfKindForForensics ?? 'receipt_combined',
+              // is defensive only — a render failure implies the kind was set,
+              // so the `??` arm is unreachable (v8-ignored, repo precedent:
+              // verify-renewal-link-token.ts L181).
+              render_kind: /* v8 ignore next */ pdfKindForForensics ?? 'receipt_combined',
               reason: e.error.reason,
             },
           });
