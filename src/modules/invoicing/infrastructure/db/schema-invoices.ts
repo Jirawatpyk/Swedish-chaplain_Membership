@@ -233,12 +233,14 @@ export const invoices = pgTable(
     //       event invoice legitimately leaves NULL (pro-rating has no meaning
     //       for a ticket fee);
     //   (2) 0212 (064 Task 9, beta numbering) — the invoice-stream pair
-    //       `sequence_number` + `document_number` may be absent ONLY when
-    //       `invoice_subject = 'event' AND receipt_document_number_raw IS NOT
-    //       NULL`: an as-paid no-TIN event invoice is a S105 receipt numbered
-    //       from the RECEIPT stream, and `invoices_tenant_fiscal_seq_unique`
-    //       has no stream discriminator, so a receipt number must never
-    //       occupy `sequence_number`.
+    //       `sequence_number` + `document_number` must BOTH be NULL on the
+    //       relaxed leg, which applies ONLY when `invoice_subject = 'event'
+    //       AND receipt_document_number_raw IS NOT NULL`: an as-paid no-TIN
+    //       event invoice is a S105 receipt numbered from the RECEIPT
+    //       stream, and `invoices_tenant_fiscal_seq_unique` has no stream
+    //       discriminator, so a receipt number must never occupy
+    //       `sequence_number` — and a half-pair (a S87 sequence slot
+    //       consumed without a document number) must never slip through.
     // `member_identity_snapshot` stays REQUIRED for both subjects (the S86/4
     // buyer snapshot). Pre-0203 this CHECK lived only in migration 0019/0024
     // SQL; the matching builder exists for schema fidelity.
@@ -254,7 +256,8 @@ export const invoices = pgTable(
           AND fiscal_year IS NOT NULL
           AND (
             (sequence_number IS NOT NULL AND document_number IS NOT NULL)
-            OR (invoice_subject = 'event' AND receipt_document_number_raw IS NOT NULL)
+            OR (invoice_subject = 'event' AND receipt_document_number_raw IS NOT NULL
+                AND sequence_number IS NULL AND document_number IS NULL)
           )
           AND issue_date IS NOT NULL
           AND due_date IS NOT NULL

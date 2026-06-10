@@ -32,7 +32,7 @@
  * is tested in the first describe. The no-TIN β shape (`kind:
  * 'receipt_stream'` — seq/docnum NULL + receipt_document_number_raw set)
  * satisfies the two numbering CHECKs since the Task 9 conditional relax
- * (migration 0212); its repo-level section (T9-1..T9-3, END of file) pins
+ * (migration 0212); its repo-level section (T9-1..T9-4, END of file) pins
  * the happy commit AND that the relax stays scoped to (event subject AND
  * receipt number present) — never blanket.
  *
@@ -1172,9 +1172,11 @@ describe('issueEventInvoiceAsPaid — cross-tenant probe (live Neon)', () => {
 // sequence_number would collide with invoice-stream numbers in the same
 // (tenant, fiscal_year) bucket. Migration 0212 relaxes the two numbering
 // CHECKs (invoices_non_draft_has_snapshots + invoices_draft_has_no_number)
-// CONDITIONALLY: the invoice-stream pair may be absent ONLY when
-// invoice_subject='event' AND receipt_document_number_raw IS NOT NULL.
-// T9-2/T9-3 are the negative probes proving the condition holds.
+// CONDITIONALLY: the invoice-stream pair must BOTH be NULL and the relax
+// applies ONLY when invoice_subject='event' AND receipt_document_number_raw
+// IS NOT NULL. T9-2/T9-3/T9-4 are the negative probes proving the condition
+// holds (T9-4 pins the half-pair §87 anomaly: a sequence slot consumed
+// without a document number must never slip through the relaxed leg).
 // =============================================================================
 
 /** β receipt-stream number (passes receipt_document_number_raw_format_check). */
@@ -1240,8 +1242,10 @@ function buildNoTinInput(tenantSlug: string, invoiceId: InvoiceId, recordedBy: s
 
 /**
  * Assert fn rejects with SQLSTATE 23514 (check_violation) raised by one of
- * the two NUMBERING CHECKs. The probes below violate BOTH simultaneously;
- * Postgres reports whichever it evaluates first, so match EITHER name (via
+ * the two NUMBERING CHECKs. T9-2/T9-3 violate BOTH simultaneously (Postgres
+ * reports whichever it evaluates first); T9-4's half-pair satisfies
+ * `invoices_draft_has_no_number` (sequence_number IS NOT NULL) and violates
+ * only `invoices_non_draft_has_snapshots` — so match EITHER name (via
  * postgres.js constraint_name, falling back to the error message text).
  */
 async function expectNumberingCheckViolation(fn: () => Promise<unknown>): Promise<void> {
@@ -1283,6 +1287,7 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
   let noTinDraft: InvoiceId; // T9-1 happy path
   let probeEventDraft: InvoiceId; // T9-2 — event, ALL numbering NULL
   let probeMembershipDraft: string; // T9-3 — membership, NULL pair + raw SET
+  let probeHalfPairDraft: InvoiceId; // T9-4 — event, seq SET + docnum NULL + raw SET
   let memberId: string;
   const planId = 'aspaid-t9-plan';
 
@@ -1304,6 +1309,13 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
       attendeeEmail: BUYER_NO_TIN.primary_contact_email,
     });
     probeEventDraft = await createUcDraft(tenant, user, regProbe.registrationId, {
+      amountOverrideSatang: Number(TOTAL_SATANG),
+      buyer: BUYER_NO_TIN,
+    });
+    const regHalfPair = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: BUYER_NO_TIN.primary_contact_email,
+    });
+    probeHalfPairDraft = await createUcDraft(tenant, user, regHalfPair.registrationId, {
       amountOverrideSatang: Number(TOTAL_SATANG),
       buyer: BUYER_NO_TIN,
     });
@@ -1464,6 +1476,38 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
       `),
     );
     const row = await readInvoiceRowOwner(tenant.ctx.slug, probeMembershipDraft);
+    expect(row!.status).toBe('draft');
+    expect(row!.sequenceNumber).toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBeNull();
+  }, 30_000);
+
+  it('T9-4 — NEGATIVE: non-draft EVENT row with HALF-PAIR (seq SET, docnum NULL) + receipt raw set → still 23514 (no §87 sequence slot without a document number)', async () => {
+    // The relaxed leg must require BOTH invoice-stream numbers NULL — a
+    // half-pair (sequence_number consumed, document_number missing) is a §87
+    // gap-numbering anomaly the pre-0212 predicate rejected and the tightened
+    // 0212 leg must keep rejecting. Same surgical-UPDATE pattern as T9-2:
+    // every OTHER non-draft CHECK is satisfied so 23514 pins the numbering
+    // legs (here only invoices_non_draft_has_snapshots — the half sequence
+    // satisfies invoices_draft_has_no_number).
+    await expectNumberingCheckViolation(() =>
+      db.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          subtotal_satang = 9350, vat_rate_snapshot = '0.0700',
+          vat_satang = 654, total_satang = 10004,
+          fiscal_year = 2026,
+          sequence_number = 424242,
+          receipt_document_number_raw = 'RC-2026-000003',
+          issue_date = ${ISSUE_DATE}, due_date = ${ISSUE_DATE}, net_days_snapshot = 0,
+          tenant_identity_snapshot = ${JSON.stringify(T9_TENANT_SNAPSHOT)}::jsonb,
+          pdf_blob_key = ${'invoices/t9-probe/event-half-pair.pdf'},
+          pdf_sha256 = ${'f'.repeat(64)}, pdf_template_version = 1,
+          pdf_doc_kind = 'invoice'
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${probeHalfPairDraft}
+      `),
+    );
+    // Rolled back — the probe draft is untouched.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, probeHalfPairDraft);
     expect(row!.status).toBe('draft');
     expect(row!.sequenceNumber).toBeNull();
     expect(row!.receiptDocumentNumberRaw).toBeNull();
