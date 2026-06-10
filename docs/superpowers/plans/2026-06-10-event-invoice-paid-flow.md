@@ -13,7 +13,7 @@
 
 **Conventions for every task:** `pnpm typecheck && pnpm lint` before each commit (typecheck via a temp tsconfig excluding `.next` if the dev server runs); integration tests hit live Neon via `.env.local`; apply migrations (`pnpm db:migrate`) + run the touched integration suite BEFORE committing schema changes (F4-R8 discipline); Conventional Commits; F4 = tax/PII surface → final PR needs ≥2 reviewers (or solo-maintainer substitute) + thai-tax auditor re-review covering document FLOW.
 
-**⚠️ GATE (read first):** Tasks 9–10 (no-TIN β path) are **blocked on spec §6 item 2** (RD-accountant numbering ruling). Confirm status with the operator before starting them. Everything else proceeds now. If the accountant rules **α (shared invoice stream)**: SKIP Tasks 9–10 entirely and apply the small α-box in Task 11 instead.
+**⚠️ GATE — RESOLVED 2026-06-10:** the operator chose **β (separate receipt stream)** without waiting for the accountant (accountant confirmation moved to ship-time verification, spec §6 item 2). Tasks 9–10 are UNBLOCKED — execute them in order. The α-box below Task 8 remains only as the fallback if the accountant later mandates stream-sharing.
 
 ---
 

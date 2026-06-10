@@ -186,19 +186,20 @@ failing the CHECK (23514). The v1 "§3.6 no new migrations" claim is withdrawn.
   one payment, one document, one invoice number; `receipt_document_number_raw` stays NULL per
   the combined-mode precedent). Issued **regardless of tenant `receiptNumberingMode`** — that
   setting governs the 2-step flow's payment-time receipt. (Complexity Tracking entry.)
-- **no-TIN as-paid → DECISION GATED ON §6 item 2 (now a DESIGN blocker, not a ship gate):**
-  - **Path β (default — the auditor's "safe reading"):** the §105 receipt number comes from the
+- **no-TIN as-paid → DECIDED 2026-06-10: Path β** (operator decision — proceed without
+  waiting for the accountant; confirmation downgraded to ship-time verification, §6 item 2):
+  - **Path β (CHOSEN — the auditor's "safe reading"):** the §105 receipt number comes from the
     existing **receipt stream** and is stored in `receipt_document_number_raw`;
     `sequence_number`/`document_number` stay NULL for these rows → requires ONE migration
     relaxing `invoices_non_draft_has_snapshots` + `invoices_draft_has_no_number` with predicate
     `invoice_subject='event' AND receipt_document_number_raw IS NOT NULL` (new migration; never
-    edit applied ones; Drizzle `check()` builders synced).
-  - **Path α (if the RD accountant approves stream-sharing):** keep the 054 status quo — the
-    no-TIN receipt is numbered from the shared invoice stream (`sequence_number`/
-    `document_number` as today, no migration). Mid-FY the no-TIN receipts simply continue in
-    the same stream they already occupy (no renumbering split).
-  - Implementation does NOT start on the no-TIN path until the accountant answers; the TIN
-    path and all guards are independent and can proceed.
+    edit applied ones; Drizzle `check()` builders synced). Rationale: §105 receipts are not
+    §86/4 documents (no phantom numbers in the tax-invoice ledger), and ALL other receipts in
+    the system already number from the receipt stream (separate-mode recordPayment) — β makes
+    numbering uniform: receipts on the receipt stream, tax invoices on the invoice stream.
+  - **Path α (fallback only):** if the accountant later mandates stream-sharing, the no-TIN
+    arm switches to the shared invoice stream (α is a strict subset of β's code — drop the
+    receipt allocation + use the TIN branch); the β migration is harmless to keep.
 - FY for BOTH streams derives from `paymentDate` (§3.1). The receipt stream lazy-bootstraps
   per (tenant, type, fy) via the allocator's `ON CONFLICT DO NOTHING` — no seeding migration.
 - Mid-year stream change (β) must be explained to the auditors/accountant in writing —
@@ -368,7 +369,7 @@ tenant's configured rate; acceptable for v1, noted).
 | # | Item | Owner | When | Status |
 |---|---|---|---|---|
 | 1 | **Remediate already-issued no-TIN event documents** (e.g. `SC-2026-000022`): with the accountant, void the issue-time pseudo-receipt and keep exactly one valid §105 receipt per payment; retain originals+copies with cancellation notes for the full §87/3 period; regenerate affected E2E/demo seeds. **Must complete BEFORE flag-flip** (until then the §3.4 interim guard blocks legacy double-receipts) | Operator + accountant | Before flag-flip / ship | OPEN |
-| 2 | **Confirm §105 numbering stream with an RD accountant** — **DESIGN BLOCKER for the no-TIN path** (β = separate receipt stream + 1 migration, α = shared invoice stream + none; §3.3). TIN path + guards proceed independently | Operator + accountant | Before implementing the no-TIN path | OPEN |
+| 2 | **Verify the §105 numbering-stream choice with an RD accountant** — engineering proceeded with **β (separate receipt stream)** per the operator's 2026-06-10 go-ahead (§3.3 rationale). If the accountant mandates the shared stream instead, switch the no-TIN arm to α (small code change; β migration harmless to keep) | Operator + accountant | Before ship sign-off | OPEN (β chosen, verify at ship) |
 | 3 | **Tax-point question for EventCreate-collected fees**: attendee-payment date (assumed; drives the paymentDate pre-fill) vs remittance date | Operator + tax advisor | Before heavy production use | OPEN |
 | 4 | **Advance-billing question**: may a TIN sponsor be billed before the event takes place? Current design allows it (§78/1 pre-payment tax invoice) | Operator + tax advisor | Before first pre-event sponsor bill | OPEN |
 | 5 | **ภ.พ.30 period correction for mis-issued documents** (tax HIGH #4): for each legacy no-TIN event document, if the issue-date month (when output VAT was declared) ≠ the real payment month, file additional ภ.พ.30 returns (surcharge 1.5%/month on underpaid months) | Operator + accountant | With item 1 | OPEN |
