@@ -25,12 +25,21 @@ import type { TenantContext } from '@/modules/tenants';
 
 const ctx = { slug: 'swecham' } as unknown as TenantContext;
 
-/** Fake directory: 'actor-1' → display name; 'actor-noname' → null name; rest absent. */
+// `isResolvableActor` (9aad9ae0) only forwards UUID-SHAPED ids to the
+// directory — sentinels / any non-UUID id render raw and never reach
+// `inArray(users.id, …)`. Resolution fixtures must therefore be UUID-shaped.
+const RESOLVABLE_ACTOR = '11111111-1111-4111-8111-111111111111';
+const RESOLVABLE_ACTOR_NO_NAME = '22222222-2222-4222-8222-222222222222';
+/** UUID-shaped but absent from the directory (e.g. a member id) → raw-id fallback. */
+const UNRESOLVED_USER_ID = '33333333-3333-4333-8333-333333333333';
+
+/** Fake directory: RESOLVABLE_ACTOR → display name; RESOLVABLE_ACTOR_NO_NAME → null name; rest absent. */
 const fakeActorDirectory: ActorDirectory = {
   async labelsFor(ids) {
     const map = new Map<string, { displayName: string | null }>();
-    if (ids.includes('actor-1')) map.set('actor-1', { displayName: 'Jane Admin' });
-    if (ids.includes('actor-noname')) map.set('actor-noname', { displayName: null });
+    if (ids.includes(RESOLVABLE_ACTOR)) map.set(RESOLVABLE_ACTOR, { displayName: 'Jane Admin' });
+    if (ids.includes(RESOLVABLE_ACTOR_NO_NAME))
+      map.set(RESOLVABLE_ACTOR_NO_NAME, { displayName: null });
     return map;
   },
 };
@@ -44,7 +53,7 @@ function row(over: Partial<AuditSourceRow> = {}): AuditSourceRow {
   return {
     id: over.id ?? '00000000-0000-0000-0000-000000000001',
     eventType: over.eventType ?? 'role_changed',
-    actorUserId: over.actorUserId ?? 'actor-1',
+    actorUserId: over.actorUserId ?? RESOLVABLE_ACTOR,
     targetUserId: over.targetUserId ?? null,
     summary: over.summary ?? 'role changed',
     occurredAt,
@@ -81,7 +90,7 @@ function deps(rows: readonly AuditSourceRow[]): AuditQueryDeps & { _record: Retu
 }
 
 const meta = (role: 'admin' | 'manager' | 'member') => ({
-  actorUserId: 'actor-1',
+  actorUserId: RESOLVABLE_ACTOR,
   actorRole: role,
   requestId: 'req-1',
 });
@@ -132,7 +141,7 @@ describe('auditQuery', () => {
     expect(adminRes.ok).toBe(true);
     if (adminRes.ok) {
       expect(adminRes.value.rows[0]!.payload).toHaveProperty('reason');
-      expect(adminRes.value.rows[0]!.actorUserId).toBe('actor-1');
+      expect(adminRes.value.rows[0]!.actorUserId).toBe(RESOLVABLE_ACTOR);
       expect(adminRes.value.rows[0]!.actorLabel).toBe('Jane Admin');
     }
 
@@ -140,41 +149,69 @@ describe('auditQuery', () => {
     expect(mgrRes.ok).toBe(true);
     if (mgrRes.ok) {
       expect(mgrRes.value.rows[0]!.payload).not.toHaveProperty('reason');
-      expect(mgrRes.value.rows[0]!.actorUserId).toBe('actor-1'); // identity NOT redacted
+      expect(mgrRes.value.rows[0]!.actorUserId).toBe(RESOLVABLE_ACTOR); // identity NOT redacted
     }
   });
 
-  it('falls back to the raw id (NEVER email) when no display name resolves', async () => {
-    const res = await auditQuery({}, meta('admin'), ctx, deps([row({ actorUserId: 'actor-noname' })]));
+  it('falls back to the raw id (NEVER email) when the resolved user has no display name', async () => {
+    const res = await auditQuery(
+      {},
+      meta('admin'),
+      ctx,
+      deps([row({ actorUserId: RESOLVABLE_ACTOR_NO_NAME })]),
+    );
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.rows[0]!.actorLabel).toBe('actor-noname');
+    if (res.ok) expect(res.value.rows[0]!.actorLabel).toBe(RESOLVABLE_ACTOR_NO_NAME);
   });
 
-  it('renders a system:* sentinel actor verbatim (not resolved)', async () => {
-    const res = await auditQuery({}, meta('admin'), ctx, deps([row({ actorUserId: 'system:cron' })]));
+  it('falls back to the raw id (NEVER email) on a directory MISS for a UUID-shaped actor', async () => {
+    const res = await auditQuery(
+      {},
+      meta('admin'),
+      ctx,
+      deps([row({ actorUserId: UNRESOLVED_USER_ID })]),
+    );
     expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.value.rows[0]!.actorUserId).toBe('system:cron');
-      expect(res.value.rows[0]!.actorLabel).toBe('system:cron');
+    if (res.ok) expect(res.value.rows[0]!.actorLabel).toBe(UNRESOLVED_USER_ID);
+  });
+
+  it('renders sentinel / non-UUID actor ids verbatim — skipped, never sent to the directory (9aad9ae0)', async () => {
+    // Incl. the bare 'system' that slipped the old startsWith('system:') check.
+    for (const sentinel of ['system:cron', 'system:auto-retry', 'system', 'anonymous']) {
+      const { source } = makeSource([row({ actorUserId: sentinel })]);
+      const labelsFor = vi.fn(async () => new Map<string, { displayName: string | null }>());
+      const res = await auditQuery({}, meta('admin'), ctx, {
+        source,
+        audit: makeAudit().audit,
+        actorDirectory: { labelsFor },
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.rows[0]!.actorUserId).toBe(sentinel);
+        expect(res.value.rows[0]!.actorLabel).toBe(sentinel);
+      }
+      expect(labelsFor).not.toHaveBeenCalled(); // non-UUID never reaches inArray(users.id, …)
     }
   });
 
-  it('resolves a target user id to a label; leaves an unresolved/sentinel target as id/null', async () => {
+  it('resolves a target user id to a label; directory-miss UUID → raw id; non-UUID/absent → null', async () => {
     const res = await auditQuery(
       {},
       meta('admin'),
       ctx,
       deps([
-        row({ id: 'a', targetUserId: 'actor-1' }), // resolvable
-        row({ id: 'b', targetUserId: 'unknown-id' }), // unresolved → raw id
+        row({ id: 'a', targetUserId: RESOLVABLE_ACTOR }), // resolvable
+        row({ id: 'b', targetUserId: UNRESOLVED_USER_ID }), // UUID-shaped miss (e.g. member id) → raw id
         row({ id: 'c', targetUserId: null }), // none
+        row({ id: 'd', targetUserId: 'system:auto-retry' }), // non-UUID sentinel → null (9aad9ae0)
       ]),
     );
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.value.rows[0]!.targetLabel).toBe('Jane Admin');
-      expect(res.value.rows[1]!.targetLabel).toBe('unknown-id');
+      expect(res.value.rows[1]!.targetLabel).toBe(UNRESOLVED_USER_ID);
       expect(res.value.rows[2]!.targetLabel).toBeNull();
+      expect(res.value.rows[3]!.targetLabel).toBeNull();
     }
   });
 
@@ -262,15 +299,19 @@ describe('auditQuery', () => {
   });
 
   it('degrades to raw ids (does not fail) when identity resolution throws', async () => {
-    const { source } = makeSource([row({ actorUserId: 'actor-1' })]);
+    // Actor MUST be UUID-shaped: a non-UUID id is filtered out before the
+    // directory call, so the rejection would never fire (vacuous green).
+    const { source } = makeSource([row({ actorUserId: RESOLVABLE_ACTOR })]);
+    const labelsFor = vi.fn().mockRejectedValue(new Error('users table down'));
     const failingDeps: AuditQueryDeps = {
       source,
       audit: makeAudit().audit,
-      actorDirectory: { labelsFor: vi.fn().mockRejectedValue(new Error('users table down')) },
+      actorDirectory: { labelsFor },
     };
     const res = await auditQuery({}, meta('admin'), ctx, failingDeps);
+    expect(labelsFor).toHaveBeenCalledTimes(1); // the throw path was actually exercised
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.rows[0]!.actorLabel).toBe('actor-1'); // raw id fallback
+    if (res.ok) expect(res.value.rows[0]!.actorLabel).toBe(RESOLVABLE_ACTOR); // raw id fallback
   });
 
   void pad;
