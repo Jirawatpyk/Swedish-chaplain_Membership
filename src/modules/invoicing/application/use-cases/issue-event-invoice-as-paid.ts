@@ -31,6 +31,17 @@
  *      buyers — snapshot pinned at draft)
  *   3. §87 advisory lock + sequence row FOR UPDATE (inside allocateNext)
  *
+ * Known benign AB-BA edge (β arm + matched no-TIN member — T10 reliability
+ * review Minor #2): step 2→3 here means the member row lock is held BEFORE
+ * advisory('receipt'), while recordPayment separate-mode takes
+ * advisory('receipt') first and only later updates the SAME member row
+ * (markRegistrationFeePaid). A concurrent β as-paid + recordPayment on the
+ * same member in the same (tenant, fy) can therefore hit 40P01 — Postgres'
+ * deadlock detector resolves it in ~1s with a FULL rollback on the losing
+ * side (no §87 gap, rows stay draft/issued), surfacing as a 500. Accepted:
+ * do NOT reorder locks here without auditing every sibling §87 caller;
+ * route-level retry guidance belongs to the route task.
+ *
  * Zone discipline (mirrors issueInvoice):
  *   - PRE-SEQUENCE failures `return err(...)` — the tx has no §87 state yet.
  *   - POST-SEQUENCE failures `throw IssueAsPaidInternalError` so withTx rolls

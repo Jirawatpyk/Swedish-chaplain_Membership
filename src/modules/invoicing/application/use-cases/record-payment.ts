@@ -365,6 +365,10 @@ export async function recordPayment(
       // Separate mode — allocate receipt sequence. fiscalYear presence
       // was validated above (no_snapshot_on_invoice), so loaded.fiscalYear
       // is the frozen issue-time FY, never 0.
+      // Lock-order note: advisory('receipt') is acquired HERE, before the
+      // member-row update in markRegistrationFeePaid below — the β as-paid
+      // path takes the same pair in the OPPOSITE order (benign 40P01 edge;
+      // see the issue-event-invoice-as-paid.ts header).
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
         documentType: 'receipt',

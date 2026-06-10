@@ -1682,3 +1682,124 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
     expect(ctx.privacy_footer_kind).toBe('event_non_member');
   }, 60_000);
 });
+
+// -----------------------------------------------------------------------------
+// Section Eβ — no-TIN blob-upload failure rollback (RECEIPT stream, live Neon).
+// β twin of Section E above (T10 reliability review Important #1): the no-TIN
+// arm allocates from the RECEIPT stream, so the §87 no-gap proof must cover
+// THAT counter — Section E only proves the invoice stream rolls back.
+// -----------------------------------------------------------------------------
+
+describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let invoiceId: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    // Receipt prefix 'RC' (T10 pattern) — fresh tenant ⇒ the first SUCCESSFUL
+    // receipt-stream allocation is fully deterministic: RC-2026-000001.
+    await seedUcSettings(tenant, 'EVB', { receiptPrefix: 'RC' });
+    const { registrationId } = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: BUYER_NO_TIN.primary_contact_email,
+    });
+    invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 10004,
+      buyer: BUYER_NO_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('failed upload → typed err, row stays draft, RECEIPT counter unchanged, ZERO audits, orphan cleanup; retry gets RC-2026-000001 (no RC burn)', async () => {
+    // Fresh tenant: neither stream has ever allocated (absent → null). On a
+    // reused tenant the same assertions degrade gracefully to value→same.
+    const receiptBefore = await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR);
+    const invoiceBefore = await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR);
+    expect(receiptBefore).toBeNull();
+
+    const deleteSpy = vi.fn(async () => {});
+    const failingDeps = makeUseCaseDeps(tenant.ctx.slug, {
+      nowIso: UC_NOW_ISO,
+      uploadPdf: async () => {
+        throw new Error('simulated blob outage');
+      },
+      blobDelete: deleteSpy,
+    });
+    const res1 = await issueEventInvoiceAsPaid(failingDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-eb1-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res1.ok).toBe(false);
+    if (res1.ok) throw new Error('expected blob_upload_failed');
+    expect(res1.error.code).toBe('blob_upload_failed');
+
+    // Row STILL draft — the single UPDATE never committed; the β shape never
+    // landed (no receipt raw, no invoice-stream pair).
+    const rowAfterFail = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(rowAfterFail!.status).toBe('draft');
+    expect(rowAfterFail!.sequenceNumber).toBeNull();
+    expect(rowAfterFail!.receiptDocumentNumberRaw).toBeNull();
+
+    // §87 — the RECEIPT-stream counter rolled back with the tx (the β arm's
+    // allocateNext ran with documentType:'receipt' before the upload threw).
+    // Fresh tenant ⇒ absent→absent: the failed attempt burned NO RC number.
+    const receiptAfterFail = await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR);
+    expect(receiptAfterFail).toBe(receiptBefore);
+    // β never touches the invoice stream — failure path included.
+    const invoiceAfterFail = await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR);
+    expect(invoiceAfterFail).toBe(invoiceBefore);
+
+    // Orphan-blob mitigation fired against the deterministic key (built from
+    // the invoiceId — IDENTICAL on both arms, never from the RC number).
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(deleteSpy).toHaveBeenCalledWith(
+      `invoicing/${tenant.ctx.slug}/${UC_FISCAL_YEAR}/${invoiceId}_v1.pdf`,
+    );
+
+    // ZERO LIFECYCLE audit rows — issued/paid emitted in-tx and rolled back
+    // (Section E rationale verbatim; the draft-created seed audit is legal).
+    const audits = (await auditRowsForInvoice(tenant.ctx.slug, invoiceId)).filter(
+      (a) => a.eventType === 'invoice_issued' || a.eventType === 'invoice_paid',
+    );
+    expect(audits).toHaveLength(0);
+
+    // Retry with a WORKING blob → succeeds with the FIRST receipt-stream
+    // number — RC-2026-000001 proves the failed attempt left no RC gap.
+    const retryDeps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
+    const res2 = await issueEventInvoiceAsPaid(retryDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-eb2-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res2.ok, res2.ok ? 'ok' : `retry err: ${JSON.stringify(res2)}`).toBe(true);
+    if (!res2.ok) throw new Error('retry failed');
+    expect(res2.value.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(res2.value.sequenceNumber).toBeNull();
+    expect(res2.value.documentNumber).toBeNull();
+
+    const row2 = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row2!.status).toBe('paid');
+    expect(row2!.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(row2!.sequenceNumber).toBeNull();
+    expect(row2!.pdfDocKind).toBe('receipt_separate');
+
+    // Exactly ONE receipt allocation across fail+retry (next = 2); the
+    // invoice stream stayed untouched end-to-end.
+    expect(await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR)).toBe(2);
+    expect(await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR)).toBe(
+      invoiceBefore,
+    );
+  }, 90_000);
+});
