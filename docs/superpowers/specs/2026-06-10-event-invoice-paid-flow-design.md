@@ -366,6 +366,8 @@ tenant's configured rate; acceptable for v1, noted).
 
 ## 6. Out-of-code follow-ups (operator actions — tracked here so they are not lost)
 
+> **Engineering complete (T1–T15, 2026-06-11)** — the §3.4 interim guard is live (every code site greppable via `REMOVE-WITH-064-REMEDIATION`) and the operator runbook for items 1+5+6 now exists at `docs/runbooks/event-invoice-legacy-no-tin-remediation.md`. All table rows below remain operator-side OPEN.
+
 | # | Item | Owner | When | Status |
 |---|---|---|---|---|
 | 1 | **Remediate already-issued no-TIN event documents** (e.g. `SC-2026-000022`): with the accountant, void the issue-time pseudo-receipt and keep exactly one valid §105 receipt per payment; retain originals+copies with cancellation notes for the full §87/3 period; regenerate affected E2E/demo seeds. **Must complete BEFORE flag-flip** (until then the §3.4 interim guard blocks legacy double-receipts) | Operator + accountant | Before flag-flip / ship | OPEN |
