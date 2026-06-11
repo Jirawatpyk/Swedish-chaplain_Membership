@@ -461,6 +461,24 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(body.error.code).toBe('payment_date_future');
   });
 
+  it('422 payment_date_too_old — >365-day backdate (typo-year guard, wave-3 S10)', async () => {
+    issueEventInvoiceAsPaidMock.mockResolvedValueOnce(
+      err({ code: 'payment_date_too_old' }),
+    );
+
+    const { POST } = await importRoute();
+    // Schema-valid date; the PAST bound is Bangkok-clock-relative inside
+    // the use-case (mirrors payment_date_future), so the route forwards it
+    // as a typed 422.
+    const res = await POST(
+      makePostRequest({ paymentDate: '2020-06-09' }),
+      routeParams,
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('payment_date_too_old');
+  });
+
   it('422 not_event_subject — membership draft cannot use the as-paid path', async () => {
     issueEventInvoiceAsPaidMock.mockResolvedValueOnce(
       err({ code: 'not_event_subject' }),

@@ -428,6 +428,41 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
+  it('payment_date_too_old — paymentDate >365 days before Bangkok today → err, no tx opened, no settings read (wave-3 S10 typo-year guard)', async () => {
+    // Bangkok "today" = 2026-06-10 → past cutoff = 2025-06-10 (365 days back).
+    // 2025-06-09 is 366 days old — almost certainly a typo'd YEAR, and a
+    // wrong-year document would number into the WRONG fiscal year's §87
+    // stream. Same deps.clock source as the future check (never disagree).
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+      clock: { nowIso: () => '2026-06-09T18:30:00Z' },
+    });
+    const r = await issueEventInvoiceAsPaid(deps, { ...input, paymentDate: '2025-06-09' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('payment_date_too_old');
+    expect(deps.tenantSettingsRepo.getForIssue).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.withTx).not.toHaveBeenCalled();
+  });
+
+  it('payment_date_too_old boundary — exactly 365 days before Bangkok today is ACCEPTED (and 364 days too)', async () => {
+    // The bound is "OLDER than 365 days": the cutoff day itself must pass —
+    // a legitimate one-year-ago closed-period backdate is the accountant's
+    // call (non-blocking ภ.พ.30 warning in the form), not a hard reject.
+    for (const paymentDate of ['2025-06-10', '2025-06-11']) {
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+        clock: { nowIso: () => '2026-06-09T18:30:00Z' },
+      });
+      const r = await issueEventInvoiceAsPaid(deps, { ...input, paymentDate });
+      expect(r.ok, `expected ${paymentDate} accepted: ${JSON.stringify(!r.ok && r.error)}`).toBe(
+        true,
+      );
+      // FY derives from the (old) PAYMENT date — 2025, not the clock's 2026.
+      expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
+        OPAQUE_TX,
+        expect.objectContaining({ documentType: 'invoice', fiscalYear: 2025 }),
+      );
+    }
+  });
+
   it('settings_missing → err (read happens BEFORE withTx — R17-03 pool-deadlock parity)', async () => {
     const deps = makeDeps(makeEventDraft(), null, null);
     const r = await issueEventInvoiceAsPaid(deps, input);

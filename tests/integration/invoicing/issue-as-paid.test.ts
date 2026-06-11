@@ -325,6 +325,34 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
     }
     expect(parts.join(' | ')).toMatch(/snapshot columns are immutable/i);
   }, 30_000);
+
+  it('post-paid direct UPDATE of pdf_doc_kind → rejected by the immutability trigger (migration 0214, wave-3 S11)', async () => {
+    // The §86/4 document identity of a paid row is frozen: flipping
+    // receipt_combined → invoice would let a later re-render silently
+    // re-title the legal document into a different RD document class.
+    // 0214 added pdf_doc_kind to the trigger's locked-column lists; the
+    // draft→paid single-UPDATE writers (applyIssue / applyIssueAsPaid) are
+    // unaffected — OLD.status='draft' early-return, proven by this file's
+    // beforeAll having committed pdf_doc_kind='receipt_combined' above.
+    let caught: unknown = null;
+    try {
+      await db.execute(sql`
+        UPDATE invoices
+           SET pdf_doc_kind = 'invoice'
+         WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught, 'expected the immutability trigger to raise on pdf_doc_kind').not.toBeNull();
+    const parts: string[] = [];
+    let cur: unknown = caught;
+    while (cur instanceof Error) {
+      parts.push(cur.message);
+      cur = (cur as { cause?: unknown }).cause;
+    }
+    expect(parts.join(' | ')).toMatch(/snapshot columns are immutable/i);
+  }, 30_000);
 });
 
 // =============================================================================

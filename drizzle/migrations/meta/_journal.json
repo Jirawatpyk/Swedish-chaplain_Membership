@@ -1499,6 +1499,13 @@
 			"when": 1798534200000,
 			"tag": "0213_invoices_receipt_raw_uniq",
 			"breakpoints": true
+		},
+		{
+			"idx": 214,
+			"version": "7",
+			"when": 1798534300000,
+			"tag": "0214_invoices_immutability_lock_pdf_doc_kind",
+			"breakpoints": true
 		}
 	]
 }

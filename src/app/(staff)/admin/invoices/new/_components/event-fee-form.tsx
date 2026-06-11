@@ -250,6 +250,9 @@ const AS_PAID_ERROR_CODES = [
   'invalid',
   'not_event_subject',
   'payment_date_future',
+  // Wave-3 S10 — >365-day backdate rejected server-side (typo-year guard);
+  // the copy tells the admin to check the year / confirm with an accountant.
+  'payment_date_too_old',
   // 064 S1 — registration refunded between draft and as-paid issuance
   // (issuance-time TOCTOU re-check). `registration_lookup_failed` stays on
   // codeFallback — it is an internal verification error, not operator-fixable.

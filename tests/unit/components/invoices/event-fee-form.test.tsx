@@ -562,6 +562,39 @@ describe('<EventFeeForm>', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  it('issue-as-paid 422 payment_date_too_old → mapped error toast (wave-3 S10 typo-year guard)', async () => {
+    // The past-bound is server-side only (the date input clamps max= but not
+    // min=); the form must surface the SPECIFIC mapped copy — telling the
+    // admin the year looks mistyped / to check with the accountant — not the
+    // generic codeFallback.
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-31' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'payment_date_too_old' } }), {
+          status: 422,
+        }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-31'));
+    expect(toastError).toHaveBeenCalledWith(
+      asPaidMessages.errors.payment_date_too_old,
+      expect.objectContaining({ description: asPaidMessages.draftRemains }),
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
   // ── 064 remediation S6 — honest retry action on the draft-remains toast ──
 
   it('S6: clicking the toast Retry re-POSTs issue-as-paid; on success → success toast + happy-path navigation', async () => {

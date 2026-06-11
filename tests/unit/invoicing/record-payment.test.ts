@@ -589,6 +589,59 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(payload.invoice_id).toBe(INVOICE_ID);
   });
 
+  it('non-member EVENT invoice → receipt-email outbox row carries privacyFooterKind event_non_member (wave-3 S13, §87/3 footer parity)', async () => {
+    // issueInvoice (Task-14 B) + issueEventInvoiceAsPaid both thread the
+    // PDPA transparency footer for a non-member event buyer; the legacy /
+    // bill-first row paid through recordPayment must receive the SAME footer
+    // on its receipt email — previously it silently got NULL.
+    const invoice = makeNonMemberEventInvoice();
+    const deps = makeDeps(
+      true,
+      invoice,
+      makeSettings({ receiptNumberingMode: 'separate', autoEmailEnabled: true }),
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'invoice_paid',
+        recipientEmail: 'jane@buyer.example',
+        privacyFooterKind: 'event_non_member',
+      }),
+    );
+  });
+
+  it('matched-member EVENT invoice → receipt-email outbox row has NO privacyFooterKind key (footer is non-member-only)', async () => {
+    const matched = makeNonMemberEventInvoice({ memberId: 'member-matched-1' });
+    const deps = makeDeps(
+      true,
+      matched,
+      makeSettings({ receiptNumberingMode: 'separate', autoEmailEnabled: true }),
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? matched
+        : makeNonMemberEventInvoice({ memberId: 'member-matched-1', status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    const enqueueCall = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect(enqueueCall, 'expected an invoice_paid outbox enqueue').toBeDefined();
+    // The key must be ABSENT (exactOptionalPropertyTypes discipline), not
+    // present-with-undefined — the adapter persists context_data verbatim.
+    expect('privacyFooterKind' in (enqueueCall![1] as object)).toBe(false);
+  });
+
   it('064 INTERIM — LEGACY issued no-TIN event row → legacy_no_tin_event_needs_remediation, NO receipt #2 side-effects', async () => {
     // REMOVE-WITH-064-REMEDIATION (site 6/15 — checklist at the guard in
     // record-payment.ts). legacy-row defensive (remove with spec §6 item 1).

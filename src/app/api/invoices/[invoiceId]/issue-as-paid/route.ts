@@ -114,6 +114,9 @@ export async function POST(
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'not_event_subject' ? 422
       : result.error.code === 'payment_date_future' ? 422
+      // Wave-3 S10 — >365-day backdate (typo-year guard); same 422 class
+      // as the future bound.
+      : result.error.code === 'payment_date_too_old' ? 422
       // 064 S1 — registration refunded between draft and as-paid issuance
       // (TOCTOU re-check): unprocessable business state, mirrors the
       // event-draft route's 422 for the same code. Lookup failure is an

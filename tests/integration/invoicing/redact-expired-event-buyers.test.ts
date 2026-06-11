@@ -896,6 +896,17 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
     expect(msg!).toMatch(/snapshot columns are immutable/i);
   }, 60_000);
 
+  it('NORMAL path locks pdf_doc_kind (raises — migration 0214, wave-3 S11)', async () => {
+    // No legitimate writer updates pdf_doc_kind post-draft: applyIssue /
+    // applyIssueAsPaid set it only in the draft→X transition (trigger
+    // early-return), and every re-render path (J2 receipt, void stamp,
+    // pdf-regeneration) updates sha256/receipt_* columns ONLY. Re-titling
+    // the persisted §86/4 document class on a live row is corruption.
+    const msg = await expectNormalRaise(sql`pdf_doc_kind = 'receipt_separate'`);
+    expect(msg, 'expected immutability raise on pdf_doc_kind change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
   it('GUC path STILL locks the 4 event cols + financials (raises with the redaction-only message)', async () => {
     // Under the GUC, every event/financial column is still rejected — only
     // member_identity_snapshot + pii_blob_purged_at may change.
@@ -905,6 +916,9 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
       sql`event_registration_id = ${randomUUID()}`,
       sql`vat_inclusive = false`,
       sql`total_satang = 1`,
+      // 0214 (wave-3 S11) — the redaction sweeper tombstones snapshot PII
+      // only; the §86/4 document class stays locked even under the GUC.
+      sql`pdf_doc_kind = 'receipt_separate'`,
     ]) {
       let caught: unknown = null;
       try {

@@ -87,7 +87,7 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
-import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
+import { addDays, bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
@@ -124,6 +124,15 @@ export type IssueEventInvoiceAsPaidError =
   | { code: 'member_archived' }
   | { code: 'no_buyer_snapshot' }
   | { code: 'payment_date_future' }
+  /**
+   * Wave-3 S10 — paymentDate is more than 365 days before Bangkok today.
+   * Almost always a typo'd YEAR (e.g. 2025-06-10 entered for 2026-06-10):
+   * a wrong-year document numbers into the WRONG fiscal year's §87 stream
+   * and mis-periods the output VAT. Legitimate closed-period backdates
+   * WITHIN the year stay allowed — the non-blocking ภ.พ.30 warning in the
+   * form covers their accounting follow-up.
+   */
+  | { code: 'payment_date_too_old' }
   /**
    * 064 S1 — the F6 registration was refunded AFTER the draft was created
    * (createEventInvoiceDraft only hard-blocks refunded at DRAFT time).
@@ -202,6 +211,19 @@ export async function issueEventInvoiceAsPaid(
   const bangkokToday = bangkokLocalDate(deps.clock.nowIso());
   if (input.paymentDate > bangkokToday) {
     return err({ code: 'payment_date_future' });
+  }
+
+  // 1b. …and not absurdly far in the PAST either (wave-3 S10 typo-year
+  // guard): >365 days back is almost always a mistyped year, and a
+  // wrong-year document numbers into the WRONG fiscal year's §87 stream.
+  // The bound lives HERE (next to the future bound, same deps.clock
+  // Bangkok source — the two can never disagree) rather than in the static
+  // zod schema, which has no injectable clock; every caller goes through
+  // this use case, so all of them inherit it. Exactly-365-days passes
+  // (the bound is "OLDER than"); legitimate closed-period backdates within
+  // the year get the non-blocking ภ.พ.30 warning in the form instead.
+  if (input.paymentDate < addDays(bangkokToday, -365)) {
+    return err({ code: 'payment_date_too_old' });
   }
 
   // 2. Settings — read BEFORE withTx (R17-03 parity with recordPayment /

@@ -1986,6 +1986,7 @@
           "invalid": "The payment details are invalid. Check the payment date and method.",
           "not_event_subject": "This invoice is not an event-fee invoice and cannot be issued as paid.",
           "payment_date_future": "The payment date cannot be in the future.",
+          "payment_date_too_old": "The payment date is more than a year in the past — this usually means the year was mistyped. Check the date, or confirm the backdate with your accountant.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
           "invalid_lines": "The invoice lines are invalid — delete the draft and recreate it.",
           "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support.",

@@ -710,6 +710,18 @@ export async function recordPayment(
       recipientEmail &&
       !input.suppressReceiptEmail
     ) {
+      // Wave-3 S13 — §87/3 PDPA privacy-footer parity with issueInvoice
+      // (Task-14 B) and issueEventInvoiceAsPaid: a NON-member EVENT buyer's
+      // receipt email must carry the same transparency footer the issue-time
+      // email carried. Reachable for legacy / bill-first non-member event
+      // rows (TIN buyers — the no-TIN interim guard returned above); without
+      // this the dispatcher persisted a NULL footer for them. The subject
+      // check is defensive narrowing — a null memberId on a non-event
+      // subject already returned `no_snapshot_on_invoice` above.
+      const privacyFooterKind =
+        memberId === null && loaded.invoiceSubject === 'event'
+          ? ('event_non_member' as const)
+          : undefined;
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
@@ -722,6 +734,7 @@ export async function recordPayment(
         // send on `invoices.receipt_pdf_status='rendered'` to avoid
         // shipping a dead Blob link.
         dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
+        ...(privacyFooterKind ? { privacyFooterKind } : {}),
       });
     } else if (
       settings.autoEmailEnabled &&
