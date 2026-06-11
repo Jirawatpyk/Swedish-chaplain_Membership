@@ -18,8 +18,11 @@ jspm_packages/
 .env.local
 .env.*.local
 .env.local.bak.*
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
 *.pem
 *.key
