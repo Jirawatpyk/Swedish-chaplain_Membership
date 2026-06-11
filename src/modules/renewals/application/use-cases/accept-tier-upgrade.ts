@@ -233,6 +233,12 @@ export async function acceptTierUpgrade(
               scheduledByUserId: input.actorUserId,
               reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
             },
+            // 065 S8 — thread the OUTER tx so this F2 supersede+insert is
+            // atomic with the step-(c) F8 CAS below. A CAS-losing second
+            // accepter rolls BOTH back together — pre-fix the repo opened
+            // its own tx and committed step (a) before the CAS fired,
+            // leaving an orphaned loser-attributed pending row.
+            tx,
           );
         scheduledChangeId = scheduled.inserted.scheduledChangeId;
         // Capture the superseded prior-pending row id (if any) so the

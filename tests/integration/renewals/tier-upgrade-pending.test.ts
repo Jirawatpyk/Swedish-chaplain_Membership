@@ -777,11 +777,11 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
   // `TierUpgradeStatusConflictError` → tx rollback → typed
   // `suggestion_not_open` loser result.
   //
-  // Known accepted residual (out of CAS scope): #2's step-(a)
-  // `supersedeAndInsertPendingAtomically` commits in its OWN tx before
-  // the CAS fires, so the surviving pending `scheduled_plan_changes`
-  // row is #2's (content-identical to #1's — same suggestion drives
-  // both). Not asserted here.
+  // 065 S8 (was: known residual) — step-(a)
+  // `supersedeAndInsertPendingAtomically` now runs on the OUTER tx, so
+  // a CAS-losing accepter rolls its F2 insert back atomically with the
+  // F8 transition. The surviving pending `scheduled_plan_changes` row is
+  // therefore the WINNER's (#1) — asserted at the end of this test.
   // ---------------------------------------------------------------------------
   it('W-011b deterministic double-accept probe — CAS on transitionStatus rejects the stale-read second accepter', async () => {
     const seeded = await seedSuggestionState(tenant, admin, {
@@ -887,22 +887,28 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     );
     expect(accepted).toHaveLength(1);
 
-    // 065 S8 — money-safety backstop pin (regression guard for tracked
-    // task #34). The known accepted residual of this probe is that #2's
-    // step-(a) `supersedeAndInsertPendingAtomically` commits in its OWN
-    // tx before the CAS fires, so the surviving pending
-    // `scheduled_plan_changes` row may be #2's (content-identical to
-    // #1's). The PARTIAL UNIQUE `scheduled_plan_changes_pending_uniq`
+    // 065 S8 — atomic step-(a) money-safety pin. The PARTIAL UNIQUE
+    // `scheduled_plan_changes_pending_uniq`
     // (`(tenant_id, member_id, effective_at_cycle_id) WHERE status =
-    // 'pending'`) is the DB-level invariant that keeps at most ONE
-    // pending plan-change per (member, cycle) — i.e. the member is never
-    // double-billed at renewal even when two accepts raced. Asserting
-    // exactly one pending row pins that index so a future migration
-    // dropping it is caught here (the full step-(a)-into-outer-tx
-    // refactor is task #34, out of scope).
+    // 'pending'`) keeps at most ONE pending plan-change per (member,
+    // cycle) — the member is never double-billed even when two accepts
+    // race. Asserting exactly one pending row pins that index so a
+    // future migration dropping it is caught here.
+    //
+    // S8 fix — accept step-(a) `supersedeAndInsertPendingAtomically`
+    // now runs on the OUTER tx, so a CAS-losing accepter rolls BOTH its
+    // F2 insert AND its F8 transition back atomically. The surviving
+    // pending row therefore belongs to the WINNER (#1, admin.userId),
+    // NOT the loser (#2, admin2.userId) — pre-fix, #2's step-(a)
+    // committed in its own tx before the CAS fired and left an orphaned
+    // loser-attributed row. The `scheduledByUserId` assertion catches a
+    // regression of that atomicity.
     const pendingChanges = await runInTenant(tenant.ctx, (tx) =>
       (tx as unknown as typeof db)
-        .select({ id: scheduledPlanChanges.scheduledChangeId })
+        .select({
+          id: scheduledPlanChanges.scheduledChangeId,
+          scheduledByUserId: scheduledPlanChanges.scheduledByUserId,
+        })
         .from(scheduledPlanChanges)
         .where(
           and(
@@ -913,6 +919,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
         ),
     );
     expect(pendingChanges).toHaveLength(1);
+    // The surviving pending row is the WINNER's (no orphaned loser row).
+    expect(pendingChanges[0]?.scheduledByUserId).toBe(admin.userId);
   }, 60_000);
 
   // ---------------------------------------------------------------------------
