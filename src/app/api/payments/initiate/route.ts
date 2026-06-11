@@ -93,6 +93,14 @@ function httpStatusForUseCaseError(code: string): {
       return { status: 403, routeCode: 'invoice_not_accessible' };
     case 'invoice_not_payable':
       return { status: 409, routeCode: 'invoice_not_payable' };
+    // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+    // at the guard in record-payment.ts) — LEGACY issued no-TIN event
+    // invoice (S0 money trap). Reuses the EXISTING 409 envelope (the
+    // invoice genuinely is not payable; client UX + i18n already handle
+    // it); the dedicated use-case code stays visible server-side via the
+    // `useCaseErrorCode` warn-log field below.
+    case 'legacy_no_tin_event_not_payable':
+      return { status: 409, routeCode: 'invoice_not_payable' };
     case 'online_payment_disabled':
       return { status: 409, routeCode: 'online_payment_disabled' };
     case 'method_not_enabled':

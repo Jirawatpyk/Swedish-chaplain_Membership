@@ -33,6 +33,31 @@ status='issued'` with the typed error `legacy_no_tin_event_needs_remediation`:
 - `resend-pdf` intentionally keeps re-signing the pinned (legally wrong)
   blob for legacy rows — remediation, not code, fixes those documents.
 
+**Online-payment fence (S0 money trap)** — a MATCHED-member legacy row is
+portal-visible and was previously Stripe-payable: the webhook flip then hit
+the `recordPayment` guard, which the dispatcher classifies PERMANENT →
+200-ack, **no retry, no auto-refund** — money captured against a
+stuck-`issued` invoice. The online path is now fenced at every layer:
+
+- F4's payability read (`getInvoiceForPayment` — the read the F5 bridge
+  performs before creating a PaymentIntent) rejects the row with the typed
+  error `legacy_no_tin_event_not_payable`, so no new PI can be created.
+- `POST /api/payments/initiate` returns **409** (existing
+  `invoice_not_payable` envelope; the dedicated code stays in the route's
+  `useCaseErrorCode` warn log).
+- The member portal invoice detail hides the Pay-now button and shows a
+  localized "under document correction — contact staff" notice
+  (`portal.invoices.detail.legacyNoTinNotPayable`).
+- **In-flight PIs** (created before this fence deployed) that confirm via
+  webhook still capture money and fail the invoice flip — the webhook now
+  emits the dedicated error log
+  `payments.confirm.legacy_no_tin_event_money_captured` (tenantId,
+  invoiceId, paymentId, paymentIntentId, amountSatang). **On seeing this
+  log**: refund the PI via the Stripe Dashboard (out-of-band; the
+  `charge.refunded` webhook records the forensic
+  `out_of_band_refund_detected` audit) and remediate the invoice per
+  Step 2 below.
+
 The guard is **interim**: every code site carries the grep-stable marker
 `REMOVE-WITH-064-REMEDIATION` (removal checklist below).
 
@@ -151,6 +176,14 @@ delete every site marked `REMOVE-WITH-064-REMEDIATION`:
 | 5 | `src/app/(staff)/admin/invoices/_components/payment-form.tsx` | the `code === 'legacy_no_tin_event_needs_remediation'` toast branch |
 | 6 | `tests/unit/invoicing/record-payment.test.ts` | the `064 INTERIM — LEGACY issued no-TIN event row` unit pin |
 | 7 | `tests/integration/invoicing/record-payment-event-invoice.test.ts` | the `064 INTERIM — LEGACY issued no-TIN event row` integration pin (incl. its direct-insert fixture) |
+| 8 | `src/modules/invoicing/application/use-cases/get-invoice-for-payment.ts` | the `legacy_no_tin_event_not_payable` guard + its `GetInvoiceForPaymentError` member |
+| 9 | `src/modules/payments/application/ports/invoicing-bridge-port.ts` + `src/modules/payments/infrastructure/invoicing-bridge.ts` | the bridge-union member + the `mapF4GetError` case |
+| 10 | `src/modules/payments/application/use-cases/initiate-payment.ts` | the `legacy_no_tin_event_not_payable` error-union member + the short-circuit branch |
+| 11 | `src/app/api/payments/initiate/route.ts` | the `legacy_no_tin_event_not_payable` → 409 map case |
+| 12 | `src/modules/payments/application/use-cases/confirm-payment.ts` | the `'issued'` resolver arm + the `payments.confirm.legacy_no_tin_event_money_captured` ops log (+ its logger import) |
+| 13 | `src/app/(member)/portal/invoices/[invoiceId]/page.tsx` + `src/i18n/messages/{en,th,sv}.json` | the portal pay-gate + notice + the `portal.invoices.detail.legacyNoTinNotPayable` key (×3 locales; grep the key name) |
+| 14 | `tests/unit/invoicing/get-invoice-for-payment.test.ts`, `tests/unit/payments/invoicing-bridge.test.ts`, `tests/unit/payments/application/initiate-payment.test.ts`, `tests/unit/payments/application/confirm-payment.test.ts`, `tests/contract/payments/post-payments-initiate.contract.test.ts` | the `REMOVE-WITH-064-REMEDIATION` unit/contract pins |
+| 15 | `tests/integration/invoicing/record-payment-event-invoice.test.ts` | the matched-member `legacy_no_tin_event_not_payable` integration pin (incl. its direct-insert fixture) |
 
 Then run `pnpm check:i18n` (key parity), the invoicing unit + contract
 suites, and `pnpm vitest run --config vitest.integration.config.ts

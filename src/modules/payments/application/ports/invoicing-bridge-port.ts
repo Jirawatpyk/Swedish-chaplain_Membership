@@ -35,7 +35,17 @@ export type GetInvoiceForPaymentBridgeError =
    * wrong amount. Instead surface a discrete error so the use-case can
    * emit a `payment_invoice_data_corrupt` audit + return a typed 422.
    */
-  | { readonly code: 'corrupted_total'; readonly invoiceId: string };
+  | { readonly code: 'corrupted_total'; readonly invoiceId: string }
+  /**
+   * REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+   * at the guard in record-payment.ts) — F4's payability read rejected a
+   * LEGACY issued no-TIN EVENT invoice (S0 money trap: Stripe would
+   * capture money the webhook-side `recordPayment` guard then refuses to
+   * apply, with no auto-refund). Carried VERBATIM (not collapsed into
+   * `not_payable`) so initiate-payment's warn log + the route's
+   * `useCaseErrorCode` keep the remediation-runbook pointer.
+   */
+  | { readonly code: 'legacy_no_tin_event_not_payable' };
 
 export interface MarkPaidFromProcessorInput {
   readonly tenantId: string;

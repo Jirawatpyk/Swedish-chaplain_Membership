@@ -4099,6 +4099,7 @@
         },
         "title": "Faktura",
         "subtitle": "Skrivskyddad vy — ladda ner PDF för det officiella skattedokumentet.",
+        "legacyNoTinNotPayable": "Denna faktura genomgår en dokumentkorrigering och kan inte betalas online. Vänligen kontakta kansliet.",
         "linesHeading": "Rader",
         "backToList": "Tillbaka till fakturor",
         "fields": {

@@ -104,6 +104,11 @@ function mapF4GetError(
       return { code: 'forbidden' };
     case 'not_payable':
       return { code: 'not_payable', status: e.status };
+    // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+    // at the guard in record-payment.ts) — carried verbatim; see the
+    // bridge-port union member for rationale.
+    case 'legacy_no_tin_event_not_payable':
+      return { code: 'legacy_no_tin_event_not_payable' };
   }
 }
 

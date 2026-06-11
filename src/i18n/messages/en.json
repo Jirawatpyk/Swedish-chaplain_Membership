@@ -4099,6 +4099,7 @@
         },
         "title": "Invoice",
         "subtitle": "Read-only view — download the PDF for the official tax document.",
+        "legacyNoTinNotPayable": "This invoice is undergoing a document correction and cannot be paid online. Please contact the chamber staff.",
         "linesHeading": "Line items",
         "backToList": "Back to invoices",
         "fields": {

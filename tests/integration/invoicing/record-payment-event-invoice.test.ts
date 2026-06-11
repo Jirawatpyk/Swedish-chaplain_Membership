@@ -70,6 +70,9 @@ import {
   type RecordPaymentDeps,
 } from '@/modules/invoicing/application/use-cases/record-payment';
 import { makeRecordPaymentDeps } from '@/modules/invoicing/application/invoicing-deps';
+// REMOVE-WITH-064-REMEDIATION — S0 money-trap pin (the exact payability
+// read the F5 bridge performs before creating a Stripe PI).
+import { getInvoiceForPayment, makeGetInvoiceDeps } from '@/modules/invoicing';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
@@ -455,7 +458,7 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
   }, 90_000);
 
   it('064 INTERIM — LEGACY issued no-TIN event row (direct insert, pre-064 shape) → recordPayment rejects with legacy_no_tin_event_needs_remediation', async () => {
-    // REMOVE-WITH-064-REMEDIATION (site 7/7 — checklist at the guard in
+    // REMOVE-WITH-064-REMEDIATION (site 7/15 — checklist at the guard in
     // record-payment.ts; delete this pin AND its direct-insert fixture).
     // legacy-row defensive (remove with spec §6 item 1).
     //
@@ -599,5 +602,91 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
       );
     const payload = auditRow!.payload as Record<string, unknown>;
     expect(payload.member_id).toBe(memberId);
+  }, 90_000);
+
+  it('064 INTERIM — F5 payability read rejects a LEGACY matched-member issued no-TIN event row with legacy_no_tin_event_not_payable', async () => {
+    // REMOVE-WITH-064-REMEDIATION (S0 money trap — online-payment site;
+    // checklist at the guard in record-payment.ts; delete this pin AND
+    // its direct-insert fixture).
+    //
+    // The MATCHED-member variant of the legacy fixture above: member_id is
+    // non-null, so the row is portal-visible AND passes F5's null-member
+    // gate — pre-fix, a member could Stripe-pay it, the webhook flip would
+    // hit `legacy_no_tin_event_needs_remediation` (permanent ack, no
+    // auto-refund), and the money would be stranded. This exercises the
+    // REAL `getInvoiceForPayment` (the exact read the F5 bridge performs
+    // for the portal pay path) against live Neon. Direct-insert mirrors
+    // the null-member legacy fixture; the no-TIN buyer snapshot is a
+    // SIMULATED legacy edge (member row has a TIN today, but the snapshot
+    // was frozen pre-064 without one). Sequence 999002 avoids the live
+    // §87 allocator used by sibling tests.
+    const regLegacyMatchedId = randomUUID();
+    const legacyMatchedInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regLegacyMatchedId,
+        eventId,
+        externalId: 'pay_att_legacy_matched',
+        attendeeEmail: 'som.pay@gamma.example',
+        attendeeName: 'Som Pay',
+        attendeeCompany: 'Gamma Pay Corp',
+        matchType: 'member_domain',
+        matchedMemberId: memberId,
+        ticketType: 'Standard',
+        ticketPriceThb: 250,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: legacyMatchedInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regLegacyMatchedId,
+        vatInclusive: true,
+        memberId,
+        planYear: null,
+        planId: null,
+        draftByUserId: user.userId,
+        status: 'issued',
+        // Pre-064 shape: issue-time main PDF already IS the §105 receipt.
+        pdfDocKind: 'receipt_separate',
+        fiscalYear: 2026,
+        sequenceNumber: 999_002,
+        documentNumber: 'EVP-2026-999002',
+        issueDate: '2026-04-18',
+        dueDate: '2026-05-18',
+        subtotalSatang: 23_364n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 1_636n,
+        totalSatang: 25_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: null,
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        // Matched member, but the FROZEN legacy snapshot carries no TIN —
+        // the snapshot (not the live member row) drives §86/4 + the guard.
+        memberIdentitySnapshot: {
+          legal_name: 'Gamma Pay Corp',
+          tax_id: null,
+          address: '1 Wireless Road, Pathum Wan, Bangkok 10330',
+          primary_contact_name: 'Som Pay',
+          primary_contact_email: 'som.pay@gamma.example',
+        },
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${legacyMatchedInvoiceId}_v1.pdf`,
+        pdfSha256: 'd'.repeat(64),
+        pdfTemplateVersion: 1,
+      });
+    });
+
+    const result = await getInvoiceForPayment(
+      makeGetInvoiceDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected legacy_no_tin_event_not_payable, got ok');
+    expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
   }, 90_000);
 });

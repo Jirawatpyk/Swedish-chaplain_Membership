@@ -131,3 +131,113 @@ describe('getInvoiceForPayment — payability error paths', () => {
     expect(result.error.code).toBe('not_payable');
   });
 });
+
+// ---------------------------------------------------------------------------
+// REMOVE-WITH-064-REMEDIATION — S0 money-trap guard. A LEGACY pre-064
+// issued no-TIN EVENT invoice (matched member, so portal-visible AND
+// member-payable) must NOT be online-payable: its issue-time PDF already
+// IS the buyer's §105 ใบเสร็จรับเงิน. Letting Stripe capture money against
+// it strands the funds — recordPayment rejects the webhook-side flip with
+// `legacy_no_tin_event_needs_remediation` (permanent, no auto-refund), so
+// the payment succeeds processor-side while the invoice stays `issued`.
+// Block at the payability read so the PI is never created. Delete this
+// block with the master removal checklist in record-payment.ts.
+// ---------------------------------------------------------------------------
+const SIMULATED_NO_TIN_SNAPSHOT = {
+  legal_name: 'Somchai Guest (SIMULATED)',
+  tax_id: null,
+  address: '123 Demo Road, Bangkok 10110',
+  primary_contact_name: 'Somchai Guest',
+  primary_contact_email: 'somchai.guest@example.com',
+  member_number: null,
+  member_number_display: null,
+};
+
+describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN event guard', () => {
+  it('rejects a matched-member ISSUED event invoice whose buyer snapshot has no TIN', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      invoiceSubject: 'event',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(25_000n),
+      memberIdentitySnapshot: SIMULATED_NO_TIN_SNAPSHOT,
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
+  });
+
+  it('treats a whitespace-only tax_id as no-TIN (buyerHasTin trims)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      invoiceSubject: 'event',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(25_000n),
+      memberIdentitySnapshot: { ...SIMULATED_NO_TIN_SNAPSHOT, tax_id: '   ' },
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
+  });
+
+  it('event invoice WITH a buyer TIN stays payable (064 bill-first path unaffected)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      invoiceSubject: 'event',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(25_000n),
+      memberIdentitySnapshot: {
+        ...SIMULATED_NO_TIN_SNAPSHOT,
+        tax_id: '1234567890123',
+      },
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('membership invoices are unaffected (guard is subject-scoped)', async () => {
+    // A membership invoice can never legally lack a TIN (issue-invoice
+    // gate), but the guard must still be subject-scoped so a data-edge
+    // membership row stays on its existing behaviour.
+    const invoice = makeInvoice({
+      status: 'issued',
+      invoiceSubject: 'membership',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_000_00n),
+      memberIdentitySnapshot: SIMULATED_NO_TIN_SNAPSHOT,
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('PAID no-TIN event invoices are not rejected by this guard (status-scoped — read/refund flows unaffected)', async () => {
+    const invoice = makeInvoice({
+      status: 'paid',
+      invoiceSubject: 'event',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(25_000n),
+      memberIdentitySnapshot: SIMULATED_NO_TIN_SNAPSHOT,
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('paid');
+  });
+});

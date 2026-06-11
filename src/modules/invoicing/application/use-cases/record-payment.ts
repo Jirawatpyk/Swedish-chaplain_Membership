@@ -122,7 +122,7 @@ export type RecordPaymentError =
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
   /**
-   * REMOVE-WITH-064-REMEDIATION (site 2/7 — full checklist at the guard
+   * REMOVE-WITH-064-REMEDIATION (site 2/15 — full checklist at the guard
    * below + docs/runbooks/event-invoice-legacy-no-tin-remediation.md) —
    * 064 INTERIM: the invoice is a LEGACY issued no-TIN EVENT row that
    * predates the as-paid redesign. Its issue-time PDF already IS the
@@ -306,7 +306,7 @@ export async function recordPayment(
     if (memberId === null && loaded.invoiceSubject !== 'event') {
       return err({ code: 'no_snapshot_on_invoice' });
     }
-    // REMOVE-WITH-064-REMEDIATION (site 1/7 — the guard itself).
+    // REMOVE-WITH-064-REMEDIATION (site 1/15 — the guard itself).
     // 064 INTERIM (remove after spec §6 item 1 remediation completes):
     // a LEGACY issued no-TIN event row predates the as-paid redesign — paying
     // it here would mint receipt #2 (the §105 double-receipt this redesign
@@ -319,7 +319,10 @@ export async function recordPayment(
     //
     // FULL REMOVAL CHECKLIST — when remediation completes, grep
     // `REMOVE-WITH-064-REMEDIATION` and delete every site (i18n keys carry
-    // no marker — JSON has no comments — so they are enumerated here):
+    // no marker — JSON has no comments — so they are enumerated here).
+    // Sites 1–7 are the ADMIN record-payment fence; sites 8–15 are the
+    // ONLINE-payment fence (S0 money trap: a member Stripe-pays a legacy
+    // row → webhook flip rejected permanently → captured money stranded):
     //   1. THIS guard branch (record-payment.ts)
     //   2. the `legacy_no_tin_event_needs_remediation` member of
     //      `RecordPaymentError` above (record-payment.ts)
@@ -331,6 +334,32 @@ export async function recordPayment(
     //      src/app/(staff)/admin/invoices/_components/payment-form.tsx
     //   6. the unit pin in tests/unit/invoicing/record-payment.test.ts
     //   7. the integration pin (incl. its direct-insert legacy fixture) in
+    //      tests/integration/invoicing/record-payment-event-invoice.test.ts
+    //   8. the `legacy_no_tin_event_not_payable` guard + error-union member
+    //      in src/modules/invoicing/application/use-cases/get-invoice-for-payment.ts
+    //   9. the bridge-union member (invoicing-bridge-port.ts) + the
+    //      `mapF4GetError` case (invoicing-bridge.ts) in src/modules/payments
+    //  10. the `legacy_no_tin_event_not_payable` error-union member + the
+    //      short-circuit branch in
+    //      src/modules/payments/application/use-cases/initiate-payment.ts
+    //  11. the `legacy_no_tin_event_not_payable` → 409 map case in
+    //      src/app/api/payments/initiate/route.ts
+    //  12. the 'issued' resolver arm + the
+    //      `payments.confirm.legacy_no_tin_event_money_captured` ops log
+    //      (+ its logger import) in
+    //      src/modules/payments/application/use-cases/confirm-payment.ts
+    //  13. the portal pay-gate + notice in
+    //      src/app/(member)/portal/invoices/[invoiceId]/page.tsx AND the
+    //      `portal.invoices.detail.legacyNoTinNotPayable` i18n key in
+    //      src/i18n/messages/{en,th,sv}.json (×3 — grep the key name)
+    //  14. the unit/contract pins in
+    //      tests/unit/invoicing/get-invoice-for-payment.test.ts,
+    //      tests/unit/payments/invoicing-bridge.test.ts,
+    //      tests/unit/payments/application/initiate-payment.test.ts,
+    //      tests/unit/payments/application/confirm-payment.test.ts,
+    //      tests/contract/payments/post-payments-initiate.contract.test.ts
+    //  15. the matched-member integration pin (incl. its direct-insert
+    //      fixture) in
     //      tests/integration/invoicing/record-payment-event-invoice.test.ts
     if (
       loaded.invoiceSubject === 'event' &&

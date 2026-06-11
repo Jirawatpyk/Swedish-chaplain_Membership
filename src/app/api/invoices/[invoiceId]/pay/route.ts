@@ -98,7 +98,7 @@ export async function POST(
       result.error.code === 'invoice_not_found' ? 404
       : result.error.code === 'invalid_status' ? 409
       : result.error.code === 'concurrent_state_change' ? 409
-      // REMOVE-WITH-064-REMEDIATION (site 3/7 — checklist at the guard in
+      // REMOVE-WITH-064-REMEDIATION (site 3/15 — checklist at the guard in
       // record-payment.ts). 064 INTERIM — legacy issued no-TIN event row:
       // paying would mint a §105 receipt #2; conflicts with the row's
       // remediation state → 409.

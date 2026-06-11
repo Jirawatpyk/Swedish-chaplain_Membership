@@ -886,6 +886,28 @@ describe('initiatePayment (T055)', () => {
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
   });
 
+  // REMOVE-WITH-064-REMEDIATION — S0 money-trap guard. A LEGACY issued
+  // no-TIN EVENT invoice must never reach Stripe: its issue-time PDF
+  // already IS the §105 receipt, and the webhook-side `recordPayment`
+  // guard would permanently strand the captured money (`bridge_error` is
+  // ack-no-retry AND no auto-refund). The bridge surfaces the typed
+  // discriminator; this use-case must short-circuit with its own typed
+  // code (so the route warn-log keeps the runbook pointer) BEFORE any
+  // insert / createPaymentIntent. Delete with the master checklist in
+  // record-payment.ts.
+  it('legacy no-TIN event invoice (bridge legacy_no_tin_event_not_payable) — typed reject, no insert / no Stripe call (REMOVE-WITH-064-REMEDIATION)', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'legacy_no_tin_event_not_payable' }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+  });
+
   // W1 (audit 2026-04-25 follow-up): F4's `getInvoiceForPayment` returns
   // `ok({status: 'paid'})` for already-settled invoices (it only hard-
   // rejects on `null`/zero `total`). Without an explicit gate in the

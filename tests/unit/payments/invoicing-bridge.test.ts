@@ -193,4 +193,24 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
       expect(result.error.status).toBe('paid');
     }
   });
+
+  // REMOVE-WITH-064-REMEDIATION — S0 money-trap guard. The F4 payability
+  // read rejects LEGACY issued no-TIN event invoices; the bridge must
+  // carry the discriminator VERBATIM (not collapse to `not_payable`) so
+  // initiate-payment's warn log + the route's `useCaseErrorCode` keep the
+  // remediation-runbook pointer. Delete with the master checklist in
+  // record-payment.ts.
+  it('F4 legacy_no_tin_event_not_payable propagates verbatim (REMOVE-WITH-064-REMEDIATION)', async () => {
+    f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
+      err({ code: 'legacy_no_tin_event_not_payable' as const }),
+    );
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
+    }
+  });
 });

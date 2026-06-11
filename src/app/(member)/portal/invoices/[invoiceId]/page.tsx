@@ -32,7 +32,13 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps, computeIsOverdue } from '@/modules/invoicing';
+import {
+  getInvoice,
+  makeGetInvoiceDeps,
+  computeIsOverdue,
+  // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate below.
+  buyerHasTin,
+} from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
 // page. An Application-layer use-case is a Phase-10 consolidation
@@ -186,9 +192,25 @@ export default async function PortalInvoiceDetailPage({
         .catch(() => null)
     : null;
 
+  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
+  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
+  // invoice must not surface the Pay-now button: its issue-time PDF already
+  // IS the §105 receipt, and a Stripe payment against it gets captured but
+  // never applied (the webhook-side `recordPayment` guard rejects the flip
+  // with no auto-refund — S0 money trap). The F4 payability read
+  // (`getInvoiceForPayment`) + the initiate route reject it server-side;
+  // this is the matching member-facing surface, replaced by a localized
+  // "under document correction — contact staff" notice below. Mirrors the
+  // guard predicate exactly (subject + issued + trimmed-TIN check).
+  const isLegacyNoTinEventInvoice =
+    invoice.invoiceSubject === 'event' &&
+    invoice.status === 'issued' &&
+    !buyerHasTin(invoice.memberIdentitySnapshot?.tax_id);
+
   const canPayOnline =
     env.features.f5OnlinePayment &&
     invoice.status === 'issued' &&
+    !isLegacyNoTinEventInvoice &&
     paymentSettings !== null &&
     paymentSettings.onlinePaymentEnabled &&
     paymentSettings.enabledMethods.length > 0 &&
@@ -625,7 +647,21 @@ export default async function PortalInvoiceDetailPage({
        * static <Badge>, no portal children.
        */}
       {invoice.status === 'issued' ? (
-        canPayOnline && paymentSettings ? (
+        isLegacyNoTinEventInvoice ? (
+          // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event row: no pay
+          // surface AND no "online payment disabled" card (which would
+          // misleadingly suggest the tenant config is the blocker). The
+          // member is told the document is being corrected and to contact
+          // staff; the remediation runbook voids + reissues the row.
+          <section
+            data-testid="portal-invoice-legacy-no-tin-notice"
+            className="rounded-md border border-border bg-muted/50 p-4"
+          >
+            <p className="text-sm text-muted-foreground">
+              {t('legacyNoTinNotPayable')}
+            </p>
+          </section>
+        ) : canPayOnline && paymentSettings ? (
           <PayNowButton
             invoice={{
               id: invoice.invoiceId,
