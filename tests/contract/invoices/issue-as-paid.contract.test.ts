@@ -11,8 +11,8 @@
  *   - 404 invoice_not_found / member_not_found
  *   - 409 invoice_already_issued (sequential double-POST) /
  *         member_archived / settings_missing
- *   - 422 not_event_subject / payment_date_future / invalid_lines (reason
- *         stripped) / overflow / no_buyer_snapshot
+ *   - 422 not_event_subject / payment_date_future / payment_date_too_old /
+ *         invalid_lines (reason stripped) / overflow / no_buyer_snapshot
  *   - 429 rate-limited (includes Retry-After header)
  *   - 500 pdf_render_failed / blob_upload_failed — `reason` MUST be
  *         stripped from the response body (infra detail, L-carry-forward)

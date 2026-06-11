@@ -20,6 +20,27 @@ double-receipt failure mode the 064 redesign kills. Post-064:
   with a pseudo-receipt PDF already in Blob. They cannot be fixed in code —
   this runbook is the fix.
 
+## Deploy choreography — migrations 0211–0214 vs pre-064 code (wave-3 S8)
+
+The 064 schema changes enforce **instantly** at `db:migrate` time, but a
+rolling deploy keeps **pre-064 instances** serving traffic for the deploy
+window. In particular `invoices_non_draft_has_doc_kind` (0211) requires
+`pdf_doc_kind IS NOT NULL` on every non-draft row — and pre-064
+`applyIssue` never writes that column — so **an issuance executed by an
+old instance against the migrated database fails with 23514** (and 0214
+additionally rejects any post-draft `pdf_doc_kind` write a hotfix script
+might attempt). Therefore:
+
+- Apply migrations **0211–0214 together with the 064 release promotion**
+  (migrate → promote in one operation; reads and already-issued rows are
+  unaffected either way).
+- Do **NOT** run pre-064 code against the migrated database for issuance
+  work during the window. If production must be rolled back to a pre-064
+  build for longer than the deploy window, hold invoice issuance until the
+  064 build is restored (the migrations are not designed to be rolled
+  back — `pdf_doc_kind` data written by 064 code is meaningful and the
+  trigger lock protects it).
+
 ## Interim guard (what the system does until remediation completes)
 
 `recordPayment` rejects `invoice_subject='event' AND buyer has no TIN AND

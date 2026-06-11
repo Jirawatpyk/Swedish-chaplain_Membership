@@ -179,8 +179,9 @@ export interface RecordPaymentDeps {
   readonly asyncReceiptPdf?: boolean;
   /**
    * F8 Phase 2 Wave A (T008) — cross-module on-paid hooks. Fired in
-   * registration order INSIDE the same `withTx` after applyPayment +
-   * audit emit + outbox enqueue + registration-fee flip have all
+   * registration order INSIDE the same `withTx` after the registration-
+   * fee flip (hoisted pre-allocation, wave-3 S12) + applyPayment +
+   * audit emit + outbox enqueue have all
    * succeeded, but BEFORE the tx commits. Any rejection rolls back the
    * entire transaction (invoice stays `issued`, audit + outbox + reg-
    * fee flip are unwound). Atomic by construction — no separate
@@ -368,6 +369,49 @@ export async function recordPayment(
       return err({ code: 'legacy_no_tin_event_needs_remediation' });
     }
 
+    // Spec § 398 — "registration fee once per member lifecycle". If the
+    // invoice being paid contains a registration_fee line, flip
+    // members.registration_fee_paid = true so the NEXT invoice doesn't
+    // double-charge. Runs inside the same transaction as applyPayment below
+    // so a rollback unwinds both writes atomically. Idempotent — the
+    // adapter's WHERE registration_fee_paid=FALSE makes replay on an
+    // already-true row a no-op.
+    //
+    // LOCK-ORDER (wave-3 S12 — supersedes the former "benign AB-BA" note):
+    // this member-row UPDATE is deliberately HOISTED ABOVE the separate-mode
+    // `allocateNext` below so recordPayment acquires the member row BEFORE
+    // advisory('receipt') — the same member→advisory order the β as-paid
+    // path takes (member FOR UPDATE in resolveInvoiceBuyerForIssue, then
+    // its receipt-stream allocation). With both flows ordering
+    // member→advisory, the AB-BA deadlock window (40P01 under a concurrent
+    // β as-paid + recordPayment touching the same member) is structurally
+    // gone. The flip does not depend on the allocated number; its failure
+    // semantics are UNCHANGED (raw throw → withTx rollback, hard-fail) and
+    // now SAFER — a throw here is PRE-sequence, so no §87 receipt number is
+    // burned by a failed member flip. This block must stay BELOW the last
+    // `return err(...)` above (a normal return from the withTx callback
+    // COMMITS — an early-exit after the flip would commit the flip alone)
+    // and ABOVE `allocateNext`. Order is pinned by the S12 unit test.
+    //
+    // 054-event-fee-invoices — registration-fee is a MEMBERSHIP concept (the
+    // one-off joining fee on a member's first invoice). A non-member EVENT
+    // invoice (memberId null) carries only an `event_fee` line — never a
+    // `registration_fee` — and there is no F3 member row to flip, so the
+    // `memberId !== null` guard both skips the no-op flip AND satisfies the
+    // `markRegistrationFeePaid(tx, tenantId, memberId: string)` non-null
+    // contract for the membership path. (The `hasRegistrationFee` check stays
+    // first so a membership invoice without the line still short-circuits.)
+    const hasRegistrationFee = loaded.lines.some(
+      (l) => l.kind === 'registration_fee',
+    );
+    if (hasRegistrationFee && memberId !== null) {
+      await deps.memberIdentity.markRegistrationFeePaid(
+        tx,
+        input.tenantId,
+        memberId,
+      );
+    }
+
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a
     // single "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; separate mode
@@ -414,10 +458,11 @@ export async function recordPayment(
       // Separate mode — allocate receipt sequence. fiscalYear presence
       // was validated above (no_snapshot_on_invoice), so loaded.fiscalYear
       // is the frozen issue-time FY, never 0.
-      // Lock-order note: advisory('receipt') is acquired HERE, before the
-      // member-row update in markRegistrationFeePaid below — the β as-paid
-      // path takes the same pair in the OPPOSITE order (benign 40P01 edge;
-      // see the issue-event-invoice-as-paid.ts header).
+      // Lock-order note (wave-3 S12): advisory('receipt') is acquired HERE,
+      // AFTER the member-row update (markRegistrationFeePaid, hoisted above)
+      // — member→advisory, the SAME order the β as-paid path takes. Do not
+      // move the flip back below this allocation; see the hoisted block's
+      // comment + the issue-event-invoice-as-paid.ts header.
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
         documentType: 'receipt',
@@ -772,36 +817,10 @@ export async function recordPayment(
       );
     }
 
-    // Spec § 398 — "registration fee once per member lifecycle". If
-    // the paid invoice contained a registration_fee line, flip
-    // members.registration_fee_paid = true so the NEXT invoice
-    // doesn't double-charge. Runs inside the same transaction as
-    // applyPayment so a rollback unwinds both writes atomically.
-    // Idempotent — the adapter's WHERE registration_fee_paid=FALSE
-    // makes replay on an already-true row a no-op.
-    //
-    // 054-event-fee-invoices — registration-fee is a MEMBERSHIP concept (the
-    // one-off joining fee on a member's first invoice). A non-member EVENT
-    // invoice (memberId null) carries only an `event_fee` line — never a
-    // `registration_fee` — and there is no F3 member row to flip, so the
-    // `memberId !== null` guard both skips the no-op flip AND satisfies the
-    // `markRegistrationFeePaid(tx, tenantId, memberId: string)` non-null
-    // contract for the membership path. (The `hasRegistrationFee` check stays
-    // first so a membership invoice without the line still short-circuits.)
-    const hasRegistrationFee = loaded.lines.some(
-      (l) => l.kind === 'registration_fee',
-    );
-    if (hasRegistrationFee && memberId !== null) {
-      await deps.memberIdentity.markRegistrationFeePaid(
-        tx,
-        input.tenantId,
-        memberId,
-      );
-    }
-
     // F8 Phase 2 Wave A (T008) — fire registered on-paid callbacks
     // INSIDE the still-open withTx, after every other side-effect
-    // (applyPayment, audit, outbox enqueue, registration-fee flip)
+    // (registration-fee flip — hoisted pre-allocation, wave-3 S12 —
+    // then applyPayment, audit, outbox enqueue)
     // has succeeded. A callback rejection propagates out of `withTx`
     // and rolls back the entire transaction — F4 invoice goes back to
     // `issued`, audit + outbox + reg-fee flip are unwound. Atomic

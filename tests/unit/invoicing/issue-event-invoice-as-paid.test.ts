@@ -463,6 +463,42 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     }
   });
 
+  it('wave-3 S27 — tenant logo bytes are fetched BEFORE withTx opens (outside the §87 critical section)', async () => {
+    // The logo depends only on the pre-tx settings read + the pinned
+    // template version; fetching it inside the tx needlessly extended the
+    // row-lock/advisory-lock hold time by a Blob round-trip. Template v2
+    // (v1 renders are logo-less by the R3-H3 pinned-template guard) +
+    // unique key so the module-level logo cache from sibling tests can't
+    // satisfy it.
+    const deps = makeDeps(
+      makeEventDraft(),
+      makeSettings({
+        identity: Object.freeze({
+          legal_name_th: 'หอการค้าไทย-สวีเดน',
+          legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+          tax_id: '0000000000000',
+          address_th: 'กรุงเทพฯ',
+          address_en: 'Bangkok',
+          logo_blob_key: `invoicing/test-swecham/logos/${Math.random().toString(36).slice(2)}.png`,
+        }),
+      }),
+      null,
+      { currentTemplateVersion: 2 },
+    );
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    const downloadMock = deps.blob.downloadBytes as ReturnType<typeof vi.fn>;
+    const withTxMock = deps.invoiceRepo.withTx as ReturnType<typeof vi.fn>;
+    expect(downloadMock).toHaveBeenCalledTimes(1);
+    expect(downloadMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      withTxMock.mock.invocationCallOrder[0]!,
+    );
+    // The fetched bytes still reach the render.
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantLogo: expect.objectContaining({ format: 'png' }) }),
+    );
+  });
+
   it('settings_missing → err (read happens BEFORE withTx — R17-03 pool-deadlock parity)', async () => {
     const deps = makeDeps(makeEventDraft(), null, null);
     const r = await issueEventInvoiceAsPaid(deps, input);
@@ -1017,6 +1053,10 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
         }),
       }),
     );
+    // Wave-3 S29 — render fails BEFORE upload: nothing exists at the key,
+    // so the orphan cleanup must NOT fire a pointless (or, against a
+    // successor's bytes, harmful) delete.
+    expect(deps.blob.delete).not.toHaveBeenCalled();
   });
 
   it('pdf_render_failed → err + post-rollback null-tx pdf_render_failed audit; applyIssueAsPaid not called', async () => {
@@ -1041,6 +1081,11 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
         payload: expect.objectContaining({ invoice_id: input.invoiceId }),
       }),
     );
+    // Wave-3 S29 — a render failure happens BEFORE the upload inside
+    // renderAndUploadPdf: no bytes were written at the deterministic key by
+    // THIS attempt, so the orphan-blob cleanup must be skipped (mirrors the
+    // invoice_already_issued conflict-translation exclusion).
+    expect(deps.blob.delete).not.toHaveBeenCalled();
   });
 
   it('blob_upload_failed AFTER allocation → err; applyIssueAsPaid NOT called; best-effort blob.delete with the blobKey', async () => {

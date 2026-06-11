@@ -419,6 +419,13 @@ export async function issueInvoice(
     // H+I. Render PDF + upload to Blob (T126 shared helper).
     // Throws via `IssueInvoiceInternalError` on either failure so
     // `withTx` rolls back — sequence allocation is NOT consumed.
+    //
+    // Wave-3 S27 note: issueEventInvoiceAsPaid hoists this logo fetch
+    // OUT of the §87 critical section (its settings read is pre-tx, so the
+    // logo key is known before withTx opens). HERE the settings read lives
+    // INSIDE withTx (step A above), so hoisting the logo would mean
+    // restructuring that read too — left in-tx deliberately; the in-process
+    // logo cache keeps the steady-state cost at ~0 anyway.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
     const tenantLogo = await loadTenantLogo(
       deps.blob,

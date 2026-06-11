@@ -31,16 +31,13 @@
  *      buyers — snapshot pinned at draft)
  *   3. §87 advisory lock + sequence row FOR UPDATE (inside allocateNext)
  *
- * Known benign AB-BA edge (β arm + matched no-TIN member — T10 reliability
- * review Minor #2): step 2→3 here means the member row lock is held BEFORE
- * advisory('receipt'), while recordPayment separate-mode takes
- * advisory('receipt') first and only later updates the SAME member row
- * (markRegistrationFeePaid). A concurrent β as-paid + recordPayment on the
- * same member in the same (tenant, fy) can therefore hit 40P01 — Postgres'
- * deadlock detector resolves it in ~1s with a FULL rollback on the losing
- * side (no §87 gap, rows stay draft/issued), surfacing as a 500. Accepted:
- * do NOT reorder locks here without auditing every sibling §87 caller;
- * route-level retry guidance belongs to the route task.
+ * Lock-order parity (wave-3 S12 — resolves the former "benign AB-BA edge"
+ * from the T10 reliability review): recordPayment's separate-mode path now
+ * acquires the SAME pair in the SAME order — its markRegistrationFeePaid
+ * member-row UPDATE is hoisted ABOVE its advisory('receipt') allocation —
+ * so the member↔advisory 40P01 window between a β as-paid and a concurrent
+ * recordPayment on the same member is structurally gone. Any NEW §87
+ * caller that touches a member row must keep this member→advisory order.
  *
  * Zone discipline (mirrors issueInvoice):
  *   - PRE-SEQUENCE failures `return err(...)` — the tx has no §87 state yet.
@@ -234,6 +231,20 @@ export async function issueEventInvoiceAsPaid(
   // outside read is safe.
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
   if (!settings) return err({ code: 'settings_missing' });
+
+  // 3. Tenant logo — fetched BEFORE withTx (wave-3 S27): the bytes depend
+  // only on the settings read above + the pinned template version, so a
+  // slow/unavailable Blob endpoint must not extend the §87 critical section
+  // (invoice row lock → member lock → advisory + sequence row). Failure
+  // semantics unchanged: the helper swallows fetch errors and returns null
+  // (warn + metric inside) — a logo miss never blocks legal-document
+  // issuance. issueInvoice keeps its in-tx call because ITS settings read
+  // lives inside withTx (see the note at its H+I block).
+  const tenantLogo = await loadTenantLogo(
+    deps.blob,
+    settings.identity.logo_blob_key,
+    deps.currentTemplateVersion,
+  );
 
   // Hoisted for the outer catch: once set, ANY tx-rejecting failure — typed
   // render/upload errors AND raw rethrows (audit.emit, outbox.enqueue, F8
@@ -445,11 +456,7 @@ export async function issueEventInvoiceAsPaid(
       const tenantSnap = settings.identity;
       const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
       blobKeyForCleanup = blobKey;
-      const tenantLogo = await loadTenantLogo(
-        deps.blob,
-        tenantSnap.logo_blob_key,
-        deps.currentTemplateVersion,
-      );
+      // `tenantLogo` was fetched pre-tx (wave-3 S27) — see step 3 above.
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
@@ -691,14 +698,28 @@ export async function issueEventInvoiceAsPaid(
     // held its lock until rollback — no committed row can reference the
     // key). Worse, on retry the blob adapter treats "already exists" as
     // success returning the OLD bytes while the row commits the NEW sha256
-    // — silent tax-document drift. So clean up on every caught error EXCEPT
-    // the `invoice_already_issued` conflict translation: the race WINNER may
-    // legitimately own that key. Best-effort delete (awaited, failure logged,
-    // never masks the original error).
+    // — silent tax-document drift. So clean up on every caught error EXCEPT:
+    //   - the `invoice_already_issued` conflict translation: the race WINNER
+    //     may legitimately own that key; and
+    //   - `pdf_render_failed` (wave-3 S29): the render runs BEFORE the
+    //     upload inside renderAndUploadPdf, so THIS attempt wrote nothing at
+    //     the key — there is nothing to delete.
+    // Best-effort delete (awaited, failure logged, never masks the original
+    // error).
+    //
+    // Residual (wave-3 S33, accepted): this post-rollback delete can race a
+    // SUCCESSOR issuance of the same invoice re-uploading to the SAME
+    // deterministic key — a late delete may remove the successor's fresh
+    // bytes, leaving its committed row with a dangling key. Accepted
+    // because the key is deterministic (a re-render/resend restores
+    // byte-identical content and the invoice-detail Blob-miss recovery
+    // tolerates a dangling key), and the in-tx winner case is already
+    // covered by the conflict-translation exemption above.
     const orphanBlobKey = blobKeyForCleanup;
-    const isConflictTranslation =
-      e instanceof IssueAsPaidInternalError && e.error.code === 'invoice_already_issued';
-    if (orphanBlobKey !== null && !isConflictTranslation) {
+    const skipOrphanCleanup =
+      e instanceof IssueAsPaidInternalError &&
+      (e.error.code === 'invoice_already_issued' || e.error.code === 'pdf_render_failed');
+    if (orphanBlobKey !== null && !skipOrphanCleanup) {
       await deps.blob.delete(orphanBlobKey).catch((delErr: unknown) => {
         logger.warn(
           { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },

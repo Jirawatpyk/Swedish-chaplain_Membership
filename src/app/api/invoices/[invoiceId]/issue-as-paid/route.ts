@@ -7,8 +7,9 @@
  * (no-TIN, β) document, and persists the paid row atomically — see the
  * use-case header for the full contract.
  *
- * Raw throws (the documented benign 40P01 AB-BA edge + the 0213 unique-index
- * 23505 backstop) deliberately propagate to Next's default 500 handler —
+ * Raw throws (residual transient deadlocks + the 0213 unique-index 23505
+ * backstop; the former member↔advisory AB-BA edge was resolved at the root
+ * in wave-3 S12) deliberately propagate to Next's default 500 handler —
  * sibling parity with /issue, /pay and /event-draft, none of which wrap the
  * use-case call. Next's production handler returns a generic 500 without the
  * error message, so no `err.message` passthrough occurs at this layer either.

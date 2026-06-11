@@ -494,6 +494,43 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
+  it('wave-3 S12 lock-order — markRegistrationFeePaid runs BEFORE the separate-mode receipt allocation (member→advisory, as-paid parity)', async () => {
+    // The β as-paid path locks the member row (FOR UPDATE in
+    // resolveInvoiceBuyerForIssue) BEFORE taking advisory('receipt') in
+    // allocateNext. recordPayment used to take the pair in the OPPOSITE
+    // order (advisory first, member-row UPDATE at the tail) — the AB-BA
+    // 40P01 edge. The flip is hoisted above the allocation so both flows
+    // order member→advisory; this pin keeps it that way.
+    const regFeeLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-order-pin'),
+      kind: 'registration_fee',
+      descriptionTh: 'ค่าลงทะเบียนแรกเข้า',
+      descriptionEn: 'Registration fee (one-off)',
+      unitPrice: Money.fromTHB(5000),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromTHB(5000),
+      position: 2,
+    };
+    const invoiceWithRegFee = makeIssuedInvoice({
+      lines: [makeIssuedInvoice().lines[0]!, regFeeLine],
+    });
+    const deps = makeDeps(
+      true,
+      invoiceWithRegFee,
+      makeSettings({ receiptNumberingMode: 'separate' }),
+    );
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    const flipMock = deps.memberIdentity.markRegistrationFeePaid as ReturnType<typeof vi.fn>;
+    const allocMock = deps.sequenceAllocator.allocateNext as ReturnType<typeof vi.fn>;
+    expect(flipMock).toHaveBeenCalledTimes(1);
+    expect(allocMock).toHaveBeenCalledTimes(1);
+    expect(flipMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      allocMock.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it('does NOT flip registration_fee_paid when invoice has only membership_fee line', async () => {
     const invoiceOnlyMembership = makeIssuedInvoice(); // default fixture has 1 membership line
     const deps = makeDeps(true, invoiceOnlyMembership, makeSettings());
