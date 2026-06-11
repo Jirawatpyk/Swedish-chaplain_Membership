@@ -61,7 +61,7 @@ import {
   type NewEventRegistrationRow,
 } from '@/modules/events/infrastructure/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
-import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -462,29 +462,28 @@ function makeUseCaseDeps(
   };
 }
 
-/** Seed minimal tenant invoice settings (defaults: VAT 7%, FY start Jan, auto-email ON). */
+/**
+ * Seed minimal tenant invoice settings (defaults: VAT 7%, FY start Jan,
+ * auto-email ON). Wave-4 S18 — thin wrapper over the shared
+ * `seedTenantFiscal` helper (this file's identity values + per-test prefix
+ * threading preserved verbatim).
+ */
 async function seedUcSettings(
   tenant: TestTenant,
   prefix: string,
   opts?: { readonly receiptPrefix?: string },
 ): Promise<void> {
-  await runInTenant(tenant.ctx, async (tx) => {
-    await tx.insert(tenantInvoiceSettings).values({
-      tenantId: tenant.ctx.slug,
-      currencyCode: 'THB',
-      vatRate: '0.0700',
-      registrationFeeSatang: 0n,
-      legalNameTh: 'หอการค้าจำลอง',
-      legalNameEn: 'Simulated Chamber',
-      taxId: '0000000000000',
-      registeredAddressTh: 'Bangkok',
-      registeredAddressEn: 'Bangkok',
-      invoiceNumberPrefix: prefix,
-      creditNoteNumberPrefix: `${prefix}C`,
-      ...(opts?.receiptPrefix !== undefined
-        ? { receiptNumberPrefix: opts.receiptPrefix }
-        : {}),
-    });
+  await seedTenantFiscal({
+    tenant,
+    legalNameTh: 'หอการค้าจำลอง',
+    legalNameEn: 'Simulated Chamber',
+    registeredAddressTh: 'Bangkok',
+    registeredAddressEn: 'Bangkok',
+    invoiceNumberPrefix: prefix,
+    creditNoteNumberPrefix: `${prefix}C`,
+    ...(opts?.receiptPrefix !== undefined
+      ? { receiptNumberPrefix: opts.receiptPrefix }
+      : {}),
   });
 }
 

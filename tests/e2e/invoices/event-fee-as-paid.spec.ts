@@ -54,6 +54,11 @@ import {
   seedEventFeeAsPaidFixture,
   type SeedAsPaidFixtureResult,
 } from '../helpers/event-fee-as-paid-seed';
+import { openSeedClient, type SeedClient } from '../helpers/open-seed-client';
+// Today in Asia/Bangkok — the SAME shared helper the form uses for its
+// default/max payment date (wave-4 S14), so the spec's expectation can
+// never drift from the form's seed.
+import { bangkokTodayIso } from '@/lib/bangkok-today';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -77,16 +82,6 @@ const MODE_BILL_FIRST = 'Bill first — issue an unpaid invoice';
 /** The VISIBLE issuance-mode radio (role=radio span) by accessible name. */
 function modeRadio(page: Page, name: string) {
   return page.getByRole('radio', { name, exact: true });
-}
-
-/** Today in Asia/Bangkok as YYYY-MM-DD — mirrors the form's default seed. */
-function bangkokTodayIso(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
 }
 
 /**
@@ -130,11 +125,20 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
   test.describe.configure({ timeout: 120_000 });
 
   let fixture: SeedAsPaidFixtureResult;
+  // Wave-4 S30 — ONE owner-role connection shared by every
+  // readInvoiceForRegistration verification read in this spec (formerly a
+  // fresh Neon client per call). Closed in afterAll.
+  let dbReader: SeedClient | null = null;
 
   test.beforeAll(async () => {
     const seeded = await seedEventFeeAsPaidFixture();
     test.skip(seeded === null, 'DATABASE_URL missing — cannot seed the as-paid fixture');
     fixture = seeded!;
+    dbReader = openSeedClient('e2e 064 as-paid reads');
+  });
+
+  test.afterAll(async () => {
+    await dbReader?.end();
   });
 
   test('paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document', async ({
@@ -190,7 +194,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
 
     // Persisted row: paid + the COMBINED §86/4+§105ทวิ doc kind, payment
     // date pinned to the submitted (default-today) date.
-    const row = await readInvoiceForRegistration(fixture.registrationIds.paidTin);
+    const row = await readInvoiceForRegistration(fixture.registrationIds.paidTin, undefined, dbReader ?? undefined);
     expect(row, 'expected ONE non-void invoice for the paid-TIN registration').not.toBeNull();
     expect(row!.status).toBe('paid');
     expect(row!.pdfDocKind).toBe('receipt_combined');
@@ -395,7 +399,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // Blocked client-side: still on the create page, NO draft was created.
     expect(page.url()).toContain('/admin/invoices/new');
     expect(
-      await readInvoiceForRegistration(fixture.registrationIds.paidNoTin),
+      await readInvoiceForRegistration(fixture.registrationIds.paidNoTin, undefined, dbReader ?? undefined),
       'client-side date error must block the create-draft POST entirely',
     ).toBeNull();
   });
@@ -442,7 +446,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await expect(page.locator('h1')).toContainText('Draft');
 
     // Persisted: the draft survived, nothing was numbered or issued.
-    const row = await readInvoiceForRegistration(fixture.registrationIds.twoStep);
+    const row = await readInvoiceForRegistration(fixture.registrationIds.twoStep, undefined, dbReader ?? undefined);
     expect(row, 'the draft must remain after the failed issue step').not.toBeNull();
     expect(row!.status).toBe('draft');
     expect(row!.documentNumber).toBeNull();

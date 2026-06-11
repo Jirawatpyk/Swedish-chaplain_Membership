@@ -53,7 +53,7 @@ import {
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
-import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { createInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
 import { makeCreateInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
@@ -197,23 +197,18 @@ describe('§87 interleaved membership+event sequence continuity (live Neon)', ()
     eventId = randomUUID();
     eventRegId = randomUUID();
 
-    await runInTenant(tenant.ctx, async (tx) => {
-      // Tenant invoice settings — same prefix for all document types so
-      // the interleaved document_number carries one shared prefix.
-      await tx.insert(tenantInvoiceSettings).values({
-        tenantId: tenant.ctx.slug,
-        currencyCode: 'THB',
-        vatRate: '0.0700',
-        registrationFeeSatang: 0n,
-        legalNameTh: 'หอการค้าทดสอบ',
-        legalNameEn: 'Test Chamber',
-        taxId: '0000000000000',
-        registeredAddressTh: 'Bangkok',
-        registeredAddressEn: 'Bangkok',
-        invoiceNumberPrefix: 'INV',
-        creditNoteNumberPrefix: 'CN',
-      });
+    // Tenant invoice settings — same prefix for all document types so the
+    // interleaved document_number carries one shared prefix. Wave-4 S18 —
+    // shared helper (row values identical to the former inline insert).
+    await seedTenantFiscal({
+      tenant,
+      legalNameTh: 'หอการค้าทดสอบ',
+      legalNameEn: 'Test Chamber',
+      registeredAddressTh: 'Bangkok',
+      registeredAddressEn: 'Bangkok',
+    });
 
+    await runInTenant(tenant.ctx, async (tx) => {
       // F2 membership plan — company scope.
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,

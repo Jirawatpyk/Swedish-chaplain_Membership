@@ -33,9 +33,12 @@
  * gaps in the DEV tenant's invoice stream — acceptable on the dev/E2E
  * tenant only; a production tenant must never run this seed.
  */
-import postgres from 'postgres';
+import { openSeedClient, type SeedClient } from './open-seed-client';
 
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? process.env.TENANT_SLUG ?? 'swecham';
+
+/** Warn-label prefix for the shared owner-role client (wave-4 S20). */
+const SEED_LABEL = 'e2e seed 064 as-paid';
 
 const EXT_EVENT_AS_PAID = 'e2e-064-event-as-paid';
 
@@ -66,25 +69,10 @@ export interface SeedAsPaidFixtureResult {
   };
 }
 
-interface SeedClient {
-  sql: ReturnType<typeof postgres>;
-  end: () => Promise<void>;
-}
-
-function openClient(): SeedClient | null {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) {
-    console.warn('[e2e seed 064 as-paid] skipped — DATABASE_URL missing');
-    return null;
-  }
-  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
-  return { sql, end: () => sql.end() };
-}
-
 export async function seedEventFeeAsPaidFixture(
   tenantSlug: string = TENANT_ID,
 ): Promise<SeedAsPaidFixtureResult | null> {
-  const client = openClient();
+  const client = openSeedClient(SEED_LABEL);
   if (!client) return null;
   try {
     // 1. Webhook config — enabled so the F6 admin surfaces treat the
@@ -252,12 +240,18 @@ export interface InvoiceRowForRegistration {
  * lets the spec verify what the two-step flow actually PERSISTED (e.g.
  * `pdf_doc_kind = 'receipt_combined'` after the TIN as-paid submit; status
  * stays `draft` after the intercepted issue failure).
+ *
+ * Wave-4 S30 — pass `sharedClient` (spec-managed, e.g. opened in
+ * `beforeAll` / ended in `afterAll`) to reuse ONE connection across the
+ * spec's reads instead of opening + tearing down a fresh Neon client per
+ * call; ownership stays with the caller (this function never ends it).
  */
 export async function readInvoiceForRegistration(
   registrationId: string,
   tenantSlug: string = TENANT_ID,
+  sharedClient?: SeedClient,
 ): Promise<InvoiceRowForRegistration | null> {
-  const client = openClient();
+  const client = sharedClient ?? openSeedClient(SEED_LABEL);
   if (!client) {
     throw new Error(
       'readInvoiceForRegistration requires DATABASE_URL — the calling spec ' +
@@ -289,6 +283,8 @@ export async function readInvoiceForRegistration(
       paymentDate: row.payment_date,
     };
   } finally {
-    await client.end();
+    // Only close a connection THIS call opened — a shared client's
+    // lifecycle belongs to the spec (S30).
+    if (!sharedClient) await client.end();
   }
 }

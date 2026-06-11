@@ -23,6 +23,11 @@ export interface SeedTenantFiscalInput {
   readonly registrationFeeSatang?: bigint;
   readonly invoiceNumberPrefix?: string;
   readonly creditNoteNumberPrefix?: string;
+  /**
+   * Wave-4 S18 — receipt-stream prefix (separate-mode / as-paid β tests).
+   * Omitted → column default (NULL; runtime falls back to 'RE').
+   */
+  readonly receiptNumberPrefix?: string;
   readonly legalNameTh?: string;
   readonly legalNameEn?: string;
   readonly taxId?: string;
@@ -55,6 +60,9 @@ export async function seedTenantFiscal(input: SeedTenantFiscalInput): Promise<vo
       registeredAddressEn: input.registeredAddressEn ?? 'Test Address EN',
       invoiceNumberPrefix: input.invoiceNumberPrefix ?? 'INV',
       creditNoteNumberPrefix: input.creditNoteNumberPrefix ?? 'CN',
+      ...(input.receiptNumberPrefix !== undefined
+        ? { receiptNumberPrefix: input.receiptNumberPrefix }
+        : {}),
     }),
   );
 }

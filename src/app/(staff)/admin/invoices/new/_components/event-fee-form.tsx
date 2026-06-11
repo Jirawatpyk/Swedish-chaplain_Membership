@@ -103,6 +103,8 @@ import {
 } from './non-member-buyer-fields';
 // Wave-4 S19 — leaf module on purpose (see AS_PAID_ERROR_CODES below).
 import { ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes';
+// Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
+import { bangkokTodayIso } from '@/lib/bangkok-today';
 
 export type EventOption = {
   readonly eventId: string;
@@ -266,14 +268,300 @@ const AS_PAID_ERROR_CODES: readonly string[] = [
   ),
 ];
 
-/** Today in Asia/Bangkok as YYYY-MM-DD (en-CA gives the ISO date shape). */
-function bangkokTodayIso(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
+/* ------------------------------------------------------------------------- *
+ * Wave-4 S25 — section-3b subcomponents.
+ *
+ * MODULE-LEVEL on purpose (never define these inside EventFeeForm's render:
+ * an inline component re-creates its type identity every parent render,
+ * remounting the subtree and dropping focus from the controlled inputs).
+ * Markup / ids / testids / aria are extracted VERBATIM from the former
+ * ~210-line inline section-3b expression, so existing tests pass unchanged.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Refunded hard-block — canonical destructive card (same pattern as the
+ * member archived-banner: destructive-toned Card + decorative warning icon
+ * + semibold title + factual body).
+ */
+function RefundedBlockedCard() {
+  const t = useTranslations('admin.invoices.eventFeeForm');
+  return (
+    <Card
+      role="status"
+      className="border-destructive/40 bg-destructive/5 p-4"
+      data-testid="mode-refunded-blocked"
+    >
+      <div className="flex gap-3">
+        <AlertTriangleIcon
+          className="mt-0.5 size-5 shrink-0 text-destructive"
+          aria-hidden="true"
+        />
+        <div>
+          <p className="text-sm font-semibold">{t('mode.refundedBlockedTitle')}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('mode.refundedBlocked')}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Issuance-mode radio pair (064 §2.3) + the visible bill-first-needs-TIN
+ * reason + the null-mode hints. The as-paid payment grid renders INSIDE the
+ * fieldset via `children` so the parent keeps the mode-derived composition.
+ */
+function IssuanceModeFieldset({
+  effectiveMode,
+  onModeChoice,
+  disabled,
+  hasTin,
+  isWaitingNoTin,
+  children,
+}: {
+  readonly effectiveMode: IssuanceMode | null;
+  readonly onModeChoice: (mode: IssuanceMode | null) => void;
+  readonly disabled: boolean;
+  readonly hasTin: boolean;
+  readonly isWaitingNoTin: boolean;
+  readonly children?: React.ReactNode;
+}) {
+  const t = useTranslations('admin.invoices.eventFeeForm');
+  return (
+    <fieldset className="flex flex-col gap-2" data-testid="mode-selector">
+      <legend className="mb-1 text-sm font-medium">{t('mode.label')}</legend>
+      <RadioGroup
+        value={effectiveMode}
+        onValueChange={(v) =>
+          onModeChoice(v === 'already_paid' || v === 'bill_first' ? v : null)
+        }
+        className="gap-3 sm:grid-cols-2"
+      >
+        <div className="flex items-start gap-2 rounded-md border p-3">
+          {/* Explicit `aria-labelledby` → the name-span. Without it,
+              Base UI's labelable fallback ASSIGNS `{id}-label` to the
+              (id-less) <label> itself, duplicating the span's
+              hardcoded id (axe duplicate-id-aria). Same pattern as
+              the invoice-type switcher. */}
+          <RadioGroupItem
+            id="issuance-mode-already-paid"
+            value="already_paid"
+            className="mt-0.5"
+            disabled={disabled}
+            aria-labelledby="issuance-mode-already-paid-label"
+          />
+          <Label
+            htmlFor="issuance-mode-already-paid"
+            className="flex cursor-pointer flex-col gap-0.5"
+          >
+            <span id="issuance-mode-already-paid-label" className="font-medium">
+              {t('mode.alreadyPaid.label')}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {t('mode.alreadyPaid.hint')}
+            </span>
+          </Label>
+        </div>
+        <div className="flex items-start gap-2 rounded-md border p-3">
+          {/* When disabled for a no-TIN buyer, the visible reason
+              below is also wired up via `aria-describedby` so SR
+              users hear WHY the option is unavailable. */}
+          <RadioGroupItem
+            id="issuance-mode-bill-first"
+            value="bill_first"
+            className="mt-0.5"
+            disabled={disabled || !hasTin}
+            aria-labelledby="issuance-mode-bill-first-label"
+            {...(!hasTin ? { 'aria-describedby': 'mode-bill-first-needs-tin' } : {})}
+          />
+          <Label
+            htmlFor="issuance-mode-bill-first"
+            className={
+              hasTin
+                ? 'flex cursor-pointer flex-col gap-0.5'
+                : 'flex cursor-not-allowed flex-col gap-0.5 opacity-60'
+            }
+          >
+            <span id="issuance-mode-bill-first-label" className="font-medium">
+              {t('mode.billFirst.label')}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {t('mode.billFirst.hint')}
+            </span>
+          </Label>
+        </div>
+      </RadioGroup>
+      {/* Disabled-option reason is VISIBLE text (no hover-only
+          tooltip — same philosophy as the attendee picker's erased
+          rows: keyboard/SR/touch users must get it too). */}
+      {!hasTin && (
+        <p
+          id="mode-bill-first-needs-tin"
+          className="text-xs text-muted-foreground"
+          data-testid="mode-bill-first-needs-tin"
+        >
+          {t('mode.billFirstNeedsTin')}
+        </p>
+      )}
+      {effectiveMode === null &&
+        (isWaitingNoTin ? (
+          <p
+            role="status"
+            className="rounded-md border border-dashed p-3 text-sm text-muted-foreground"
+            data-testid="mode-waiting-explainer"
+          >
+            {t('mode.waitingExplainer')}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground" data-testid="mode-choose-hint">
+            {t('mode.chooseHint')}
+          </p>
+        ))}
+      {children}
+    </fieldset>
+  );
+}
+
+/**
+ * As-paid payment grid — date (max = Bangkok today; ภ.พ.30 closed-period
+ * warning) + method select + the W2 optional reference/notes evidence
+ * fields mirrored from the record-payment dialog.
+ */
+function AsPaidPaymentFields({
+  paymentDate,
+  onPaymentDateChange,
+  paymentDateError,
+  todayBkk,
+  showVatPeriodWarning,
+  paymentMethod,
+  onPaymentMethodChange,
+  paymentReference,
+  onPaymentReferenceChange,
+  paymentNotes,
+  onPaymentNotesChange,
+  disabled,
+}: {
+  readonly paymentDate: string;
+  readonly onPaymentDateChange: (value: string) => void;
+  readonly paymentDateError: string | null;
+  readonly todayBkk: string;
+  readonly showVatPeriodWarning: boolean;
+  readonly paymentMethod: PaymentMethod;
+  readonly onPaymentMethodChange: (method: PaymentMethod) => void;
+  readonly paymentReference: string;
+  readonly onPaymentReferenceChange: (value: string) => void;
+  readonly paymentNotes: string;
+  readonly onPaymentNotesChange: (value: string) => void;
+  readonly disabled: boolean;
+}) {
+  const t = useTranslations('admin.invoices.eventFeeForm');
+  // Payment-method labels are shared with the record-payment form.
+  const tPay = useTranslations('admin.invoices.pay');
+  return (
+    <div
+      className="mt-1 grid gap-4 sm:grid-cols-2"
+      data-testid="as-paid-fields"
+      suppressHydrationWarning
+    >
+      <div className="flex flex-col gap-[var(--field-label-gap)]">
+        <Label htmlFor="payment-date">{tPay('fields.date')}</Label>
+        <Input
+          id="payment-date"
+          type="date"
+          value={paymentDate}
+          onChange={(e) => onPaymentDateChange(e.target.value)}
+          required
+          disabled={disabled}
+          {...(todayBkk ? { max: todayBkk } : {})}
+          aria-invalid={paymentDateError ? true : undefined}
+          aria-describedby={[
+            paymentDateError ? 'payment-date-error' : 'payment-date-hint',
+            ...(showVatPeriodWarning ? ['payment-date-vat-warning'] : []),
+          ].join(' ')}
+        />
+        {paymentDateError ? (
+          <p id="payment-date-error" className="text-xs text-destructive" role="alert">
+            {paymentDateError}
+          </p>
+        ) : (
+          <p id="payment-date-hint" className="text-xs text-muted-foreground">
+            {t('payment.dateHint')}
+          </p>
+        )}
+        {/* 064 H-1 — amber warning-callout (same palette as the
+            schedule-editor read-only notice): non-blocking, so
+            role="status" (polite live region), NOT role="alert". */}
+        {showVatPeriodWarning && (
+          <p
+            id="payment-date-vat-warning"
+            role="status"
+            data-testid="payment-date-vat-warning"
+            className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
+          >
+            <AlertTriangleIcon
+              aria-hidden="true"
+              className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-500"
+            />
+            <span>{t('payment.vatPeriodWarning')}</span>
+          </p>
+        )}
+      </div>
+      <div className="flex flex-col gap-[var(--field-label-gap)]">
+        <Label htmlFor="payment-method">{tPay('fields.method')}</Label>
+        <Select
+          value={paymentMethod}
+          onValueChange={(v) => v && onPaymentMethodChange(v as PaymentMethod)}
+        >
+          <SelectTrigger
+            id="payment-method"
+            className="w-full"
+            aria-label={tPay('fields.method')}
+            disabled={disabled}
+          >
+            <TranslatedSelectValue
+              placeholder={tPay('fields.method')}
+              translate={(v) => (v ? tPay(`methods.${v}`) : null)}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_METHODS.map((m) => (
+              <SelectItem key={m} value={m}>
+                {tPay(`methods.${m}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {/* W2 (064 remediation) — optional payment evidence,
+          mirrored from the record-payment dialog (same i18n
+          labels + copy). maxLength mirrors the server zod caps
+          (200 / 2000) so the inline clamp and the 400 guard
+          agree. */}
+      <div className="flex flex-col gap-[var(--field-label-gap)]">
+        <Label htmlFor="payment-reference">{tPay('fields.reference')}</Label>
+        <Input
+          id="payment-reference"
+          value={paymentReference}
+          onChange={(e) => onPaymentReferenceChange(e.target.value)}
+          placeholder={tPay('fields.referencePlaceholder')}
+          maxLength={200}
+          disabled={disabled}
+        />
+      </div>
+      <div className="flex flex-col gap-[var(--field-label-gap)]">
+        <Label htmlFor="payment-notes">{tPay('fields.notes')}</Label>
+        <Textarea
+          id="payment-notes"
+          value={paymentNotes}
+          onChange={(e) => onPaymentNotesChange(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  );
 }
 
 export function EventFeeForm({
@@ -288,8 +576,7 @@ export function EventFeeForm({
   readonly initialRegistrationId?: string | undefined;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
-  // Payment-method labels are shared with the record-payment form.
-  const tPay = useTranslations('admin.invoices.pay');
+  // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
   const tAsPaid = useTranslations('admin.invoices.issueAsPaid');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -724,242 +1011,42 @@ export function EventFeeForm({
             />
           ))}
 
-        {/* 3b. Issuance mode (064 §2.3) — refunded hard-block, otherwise a
-            radio pair with the F6-derived default. Payment fields render
-            inside this section on the as-paid path. */}
+        {/* 3b. Issuance mode (064 §2.3) — refunded hard-block, otherwise the
+            radio pair with the F6-derived default; the as-paid payment grid
+            renders inside the fieldset. Subcomponents extracted wave-4 S25
+            (markup/ids/testids verbatim — see the module-level defs above). */}
         {attendee !== null &&
           (locked === 'refunded' ? (
-            /* Canonical destructive hard-block card — same pattern as the
-               member archived-banner (destructive-toned Card + decorative
-               warning icon + semibold title + factual body). */
-            <Card
-              role="status"
-              className="border-destructive/40 bg-destructive/5 p-4"
-              data-testid="mode-refunded-blocked"
-            >
-              <div className="flex gap-3">
-                <AlertTriangleIcon
-                  className="mt-0.5 size-5 shrink-0 text-destructive"
-                  aria-hidden="true"
-                />
-                <div>
-                  <p className="text-sm font-semibold">
-                    {t('mode.refundedBlockedTitle')}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t('mode.refundedBlocked')}
-                  </p>
-                </div>
-              </div>
-            </Card>
+            <RefundedBlockedCard />
           ) : (
-            <fieldset className="flex flex-col gap-2" data-testid="mode-selector">
-              <legend className="mb-1 text-sm font-medium">{t('mode.label')}</legend>
-              <RadioGroup
-                value={effectiveMode}
-                onValueChange={(v) =>
-                  setModeChoice(v === 'already_paid' || v === 'bill_first' ? v : null)
-                }
-                className="gap-3 sm:grid-cols-2"
-              >
-                <div className="flex items-start gap-2 rounded-md border p-3">
-                  {/* Explicit `aria-labelledby` → the name-span. Without it,
-                      Base UI's labelable fallback ASSIGNS `{id}-label` to the
-                      (id-less) <label> itself, duplicating the span's
-                      hardcoded id (axe duplicate-id-aria). Same pattern as
-                      the invoice-type switcher. */}
-                  <RadioGroupItem
-                    id="issuance-mode-already-paid"
-                    value="already_paid"
-                    className="mt-0.5"
-                    disabled={pending}
-                    aria-labelledby="issuance-mode-already-paid-label"
-                  />
-                  <Label
-                    htmlFor="issuance-mode-already-paid"
-                    className="flex cursor-pointer flex-col gap-0.5"
-                  >
-                    <span id="issuance-mode-already-paid-label" className="font-medium">
-                      {t('mode.alreadyPaid.label')}
-                    </span>
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {t('mode.alreadyPaid.hint')}
-                    </span>
-                  </Label>
-                </div>
-                <div className="flex items-start gap-2 rounded-md border p-3">
-                  {/* When disabled for a no-TIN buyer, the visible reason
-                      below is also wired up via `aria-describedby` so SR
-                      users hear WHY the option is unavailable. */}
-                  <RadioGroupItem
-                    id="issuance-mode-bill-first"
-                    value="bill_first"
-                    className="mt-0.5"
-                    disabled={pending || !hasTin}
-                    aria-labelledby="issuance-mode-bill-first-label"
-                    {...(!hasTin
-                      ? { 'aria-describedby': 'mode-bill-first-needs-tin' }
-                      : {})}
-                  />
-                  <Label
-                    htmlFor="issuance-mode-bill-first"
-                    className={
-                      hasTin
-                        ? 'flex cursor-pointer flex-col gap-0.5'
-                        : 'flex cursor-not-allowed flex-col gap-0.5 opacity-60'
-                    }
-                  >
-                    <span id="issuance-mode-bill-first-label" className="font-medium">
-                      {t('mode.billFirst.label')}
-                    </span>
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {t('mode.billFirst.hint')}
-                    </span>
-                  </Label>
-                </div>
-              </RadioGroup>
-              {/* Disabled-option reason is VISIBLE text (no hover-only
-                  tooltip — same philosophy as the attendee picker's erased
-                  rows: keyboard/SR/touch users must get it too). */}
-              {!hasTin && (
-                <p
-                  id="mode-bill-first-needs-tin"
-                  className="text-xs text-muted-foreground"
-                  data-testid="mode-bill-first-needs-tin"
-                >
-                  {t('mode.billFirstNeedsTin')}
-                </p>
-              )}
-              {effectiveMode === null &&
-                (isWaitingNoTin ? (
-                  <p
-                    role="status"
-                    className="rounded-md border border-dashed p-3 text-sm text-muted-foreground"
-                    data-testid="mode-waiting-explainer"
-                  >
-                    {t('mode.waitingExplainer')}
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground" data-testid="mode-choose-hint">
-                    {t('mode.chooseHint')}
-                  </p>
-                ))}
-
+            <IssuanceModeFieldset
+              effectiveMode={effectiveMode}
+              onModeChoice={setModeChoice}
+              disabled={pending}
+              hasTin={hasTin}
+              isWaitingNoTin={isWaitingNoTin}
+            >
               {/* Payment details — as-paid path only. */}
               {effectiveMode === 'already_paid' && (
-                <div
-                  className="mt-1 grid gap-4 sm:grid-cols-2"
-                  data-testid="as-paid-fields"
-                  suppressHydrationWarning
-                >
-                  <div className="flex flex-col gap-[var(--field-label-gap)]">
-                    <Label htmlFor="payment-date">{tPay('fields.date')}</Label>
-                    <Input
-                      id="payment-date"
-                      type="date"
-                      value={paymentDate}
-                      onChange={(e) => {
-                        setPaymentDate(e.target.value);
-                        setPaymentDateError(null);
-                      }}
-                      required
-                      disabled={pending}
-                      {...(todayBkk ? { max: todayBkk } : {})}
-                      aria-invalid={paymentDateError ? true : undefined}
-                      aria-describedby={[
-                        paymentDateError ? 'payment-date-error' : 'payment-date-hint',
-                        ...(showVatPeriodWarning ? ['payment-date-vat-warning'] : []),
-                      ].join(' ')}
-                    />
-                    {paymentDateError ? (
-                      <p
-                        id="payment-date-error"
-                        className="text-xs text-destructive"
-                        role="alert"
-                      >
-                        {paymentDateError}
-                      </p>
-                    ) : (
-                      <p id="payment-date-hint" className="text-xs text-muted-foreground">
-                        {t('payment.dateHint')}
-                      </p>
-                    )}
-                    {/* 064 H-1 — amber warning-callout (same palette as the
-                        schedule-editor read-only notice): non-blocking, so
-                        role="status" (polite live region), NOT role="alert". */}
-                    {showVatPeriodWarning && (
-                      <p
-                        id="payment-date-vat-warning"
-                        role="status"
-                        data-testid="payment-date-vat-warning"
-                        className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
-                      >
-                        <AlertTriangleIcon
-                          aria-hidden="true"
-                          className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-500"
-                        />
-                        <span>{t('payment.vatPeriodWarning')}</span>
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-[var(--field-label-gap)]">
-                    <Label htmlFor="payment-method">{tPay('fields.method')}</Label>
-                    <Select
-                      value={paymentMethod}
-                      onValueChange={(v) => v && setPaymentMethod(v as PaymentMethod)}
-                    >
-                      <SelectTrigger
-                        id="payment-method"
-                        className="w-full"
-                        aria-label={tPay('fields.method')}
-                        disabled={pending}
-                      >
-                        <TranslatedSelectValue
-                          placeholder={tPay('fields.method')}
-                          translate={(v) => (v ? tPay(`methods.${v}`) : null)}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PAYMENT_METHODS.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {tPay(`methods.${m}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {/* W2 (064 remediation) — optional payment evidence,
-                      mirrored from the record-payment dialog (same i18n
-                      labels + copy). maxLength mirrors the server zod caps
-                      (200 / 2000) so the inline clamp and the 400 guard
-                      agree. */}
-                  <div className="flex flex-col gap-[var(--field-label-gap)]">
-                    <Label htmlFor="payment-reference">
-                      {tPay('fields.reference')}
-                    </Label>
-                    <Input
-                      id="payment-reference"
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                      placeholder={tPay('fields.referencePlaceholder')}
-                      maxLength={200}
-                      disabled={pending}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-[var(--field-label-gap)]">
-                    <Label htmlFor="payment-notes">{tPay('fields.notes')}</Label>
-                    <Textarea
-                      id="payment-notes"
-                      value={paymentNotes}
-                      onChange={(e) => setPaymentNotes(e.target.value)}
-                      rows={3}
-                      maxLength={2000}
-                      disabled={pending}
-                    />
-                  </div>
-                </div>
+                <AsPaidPaymentFields
+                  paymentDate={paymentDate}
+                  onPaymentDateChange={(value) => {
+                    setPaymentDate(value);
+                    setPaymentDateError(null);
+                  }}
+                  paymentDateError={paymentDateError}
+                  todayBkk={todayBkk}
+                  showVatPeriodWarning={showVatPeriodWarning}
+                  paymentMethod={paymentMethod}
+                  onPaymentMethodChange={setPaymentMethod}
+                  paymentReference={paymentReference}
+                  onPaymentReferenceChange={setPaymentReference}
+                  paymentNotes={paymentNotes}
+                  onPaymentNotesChange={setPaymentNotes}
+                  disabled={pending}
+                />
               )}
-            </fieldset>
+            </IssuanceModeFieldset>
           ))}
 
         {/* 4. Amount */}
