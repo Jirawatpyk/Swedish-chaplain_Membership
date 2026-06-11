@@ -31,9 +31,9 @@
  *
  * Operations (all inside a single DB transaction):
  *   A. load tenant settings (no lock; read-only snapshot)
- *   B. load + lock member (archive-race guard — SKIPPED for non-member
+ *   B. load + lock invoice draft
+ *   C. load + lock member (archive-race guard — SKIPPED for non-member
  *      event invoices; buyer snapshot was pinned at draft)
- *   C. load + lock invoice draft
  *   D. compute fiscal year (Bangkok TZ)
  *   E. allocate sequence number
  *   F. compute subtotal + VAT + total from DRAFT lines
@@ -45,10 +45,11 @@
  *   L. enqueue auto-email outbox row if auto_email_on_issue resolves true
  *   M. COMMIT
  *
- * Any throw in A-L rolls back the whole tx — seq is NOT consumed, Blob
- * upload leaves an orphan that the transactional sweeper cleans up
- * (orphans are deterministic and safe to delete because the Blob key is
- * content-addressed on tenant+id+template).
+ * Any throw in A-L rolls back the whole tx — seq is NOT consumed; the
+ * Blob upload may leave an orphan at the deterministic content-addressed
+ * key (tenant+id+template). No sweeper exists (accepted residual, 064
+ * design §3.2 L-1) — issueEventInvoiceAsPaid's catch-path delete is the
+ * only mitigation today.
  *
  * RBAC: admin only (route handler guard).
  * Rate limit: 20 / 5min per (tenant, actor) — applied at route level.

@@ -27,8 +27,10 @@
  *   M. COMMIT
  *
  * Any throw in A–L rolls back the whole tx — seq is NOT consumed,
- * credited_total stays intact, Blob upload leaves a deterministic
- * content-addressed orphan that the post-commit sweeper reclaims.
+ * credited_total stays intact; the Blob upload may leave an orphan at
+ * the deterministic content-addressed key. No sweeper exists (accepted
+ * residual, 064 design §3.2 L-1) — issueEventInvoiceAsPaid's catch-path
+ * delete is the only mitigation today.
  *
  * RBAC: admin only (route handler guard).
  * Concurrent race: two admins issuing partial credit notes against the

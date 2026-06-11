@@ -17,8 +17,10 @@
  * receipt document exists; as-paid has exactly one document).
  *
  * No-TIN buyers receive the §105 ใบเสร็จรับเงิน (`receipt_separate`) numbered
- * from the RECEIPT stream (accountant ruling β, live since Task 10 +
- * migration 0212): `documentType:'receipt'` allocation with the tenant's
+ * from the RECEIPT stream (Path β — operator decision 2026-06-10 per the
+ * tax auditor's safe reading; accountant verification still OPEN, design
+ * §6 item 2; live since Task 10 + migration 0212): `documentType:'receipt'`
+ * allocation with the tenant's
  * receipt prefix (`'RE'` fallback — recordPayment separate-mode parity), the
  * number lands in `receipt_document_number_raw` and the invoice-stream pair
  * stays NULL, so the shared §87 invoice stream is never burned for a receipt

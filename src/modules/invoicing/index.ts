@@ -152,8 +152,9 @@ export {
 } from './application/use-cases/issue-invoice';
 
 // 064 — one-shot draft→paid issuance for EVENT invoices (combined
-// tax-invoice/receipt; no intermediate issued state). TIN path live;
-// no-TIN numbering gated until the β migration (Task 9/10).
+// tax-invoice/receipt; no intermediate issued state). TIN →
+// receipt_combined on the invoice stream; no-TIN → §105 receipt on the
+// receipt stream (β, migration 0212).
 export {
   issueEventInvoiceAsPaid,
   issueEventInvoiceAsPaidSchema,

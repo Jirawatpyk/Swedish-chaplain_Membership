@@ -392,8 +392,9 @@ export async function runToggleEventCategory(
  *
  * **Staff-review-4 SUGG-2 update**: archive NOW needs
  * `quotaAccountingPort` to compute actual `allotmentAfter` per
- * `quota_credit_back_archive` audit row (matching the refund credit-
- * back pattern at `ingest-webhook-attendee.ts:786`). The previous
+ * `quota_credit_back_archive` audit row (matching the
+ * `quota_credit_back_refund` flow in the ingest-webhook-attendee
+ * pipeline — emitted via `_helpers/process-attendee-in-tx.ts`). The previous
  * design hardcoded `allotmentAfter: 0` as a sentinel, which forensic
  * dashboards filtering on `allotmentAfter > 0` would silently skip.
  * The macro `event_archived` audit still carries the aggregate

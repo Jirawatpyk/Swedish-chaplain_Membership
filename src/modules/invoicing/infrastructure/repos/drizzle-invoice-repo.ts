@@ -912,10 +912,10 @@ export function makeDrizzleInvoiceRepo(
      *   - 'invoice_stream' (TIN buyer) → sequence_number +
      *     document_number set, receipt_document_number_raw NULL.
      *   - 'receipt_stream' (no-TIN β) → both NULL +
-     *     receipt_document_number_raw set. NOTE: this shape only passes
-     *     `invoices_non_draft_has_snapshots` after the Task 9 CHECK
-     *     relax migration lands — until then Postgres rejects it (by
-     *     design; the use-case gates the β path).
+     *     receipt_document_number_raw set. This shape passes
+     *     `invoices_non_draft_has_snapshots` via the 0212 relaxed leg
+     *     (event subject + receipt_document_number_raw present,
+     *     invoice-stream pair NULL).
      *
      * receipt_pdf_status lands as 'rendered' (NEVER 'pending'): for
      * as-paid the rendered main PDF IS the receipt (combined) or the
