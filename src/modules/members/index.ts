@@ -187,6 +187,12 @@ export { countActiveMembersOnPlan } from './infrastructure/db/count-active-membe
 // W0-02 — tx-bound variant for use inside an existing runInTenant tx
 // (plan-repo `softDeleteGuarded` uses this to count within the advisory-lock tx).
 export { countActiveMembersOnPlanInTx } from './infrastructure/db/count-active-members-on-plan';
+// 064 remediation B5 — batched tax-id PRESENCE lookup (boolean only, never
+// the raw tax-id) backing the F6 event-detail `buyerHasTin` enrichment.
+// Same free-function-through-the-barrel composition pattern as the
+// countActiveMembersOnPlan pair above; callers thread their own
+// runInTenant tx (Principle I).
+export { memberTinPresenceByIdsInTx } from './infrastructure/db/member-tin-presence';
 
 // --- US1 invite-portal use case ---------------------------------------------
 

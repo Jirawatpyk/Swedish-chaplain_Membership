@@ -526,7 +526,7 @@ describe('<EventFeeForm>', () => {
     expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success);
   });
 
-  it('issue-as-paid failure → mapped error toast + draft-remains notice + still lands on the draft', async () => {
+  it('issue-as-paid failure → mapped error toast + draft-remains notice + Retry action + still lands on the draft', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
@@ -548,12 +548,325 @@ describe('<EventFeeForm>', () => {
     );
 
     // The draft EXISTS — the UI must not pretend nothing was created: the
-    // toast says the draft remains and we navigate to its detail page.
+    // toast says the draft remains (honest copy: created + visible in the
+    // list — there is no detail-page retry button) and we navigate to its
+    // detail page. S6 — the toast itself carries the Retry action.
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-12'));
-    expect(toastError).toHaveBeenCalledWith(asPaidMessages.errors.payment_date_future, {
-      description: asPaidMessages.draftRemains,
-    });
+    expect(toastError).toHaveBeenCalledWith(
+      asPaidMessages.errors.payment_date_future,
+      expect.objectContaining({
+        description: asPaidMessages.draftRemains,
+        action: expect.objectContaining({ label: asPaidMessages.retry }),
+      }),
+    );
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  // ── 064 remediation S6 — honest retry action on the draft-remains toast ──
+
+  it('S6: clicking the toast Retry re-POSTs issue-as-paid; on success → success toast + happy-path navigation', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-21' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'pdf_render_failed' } }), {
+          status: 500,
+        }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+
+    const options = toastError.mock.calls[0]![1] as {
+      action: { label: string; onClick: () => void };
+    };
+    expect(options.action.label).toBe(asPaidMessages.retry);
+
+    // Retry — the SECOND issue-as-paid POST succeeds this time.
+    pushMock.mockReset();
+    const callsBeforeRetry = fetchMock.mock.calls.length;
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-21' }), { status: 200 }),
+    );
+    options.action.onClick();
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success));
+    expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-21');
+    // The retry (the call AFTER the snapshot) hit the SAME invoice id with
+    // the saved payment details.
+    const retryCall = fetchMock.mock.calls[callsBeforeRetry];
+    expect(String(retryCall![0])).toBe('/api/invoices/inv-21/issue-as-paid');
+    const retryBody = JSON.parse((retryCall![1] as RequestInit).body as string);
+    expect(retryBody.paymentDate).toBe(bangkokToday());
+    expect(retryBody.paymentMethod).toBe('bank_transfer');
+  });
+
+  it('S6: invoice_already_issued failure → draft-remains toast WITHOUT a Retry action (row already final)', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-22' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'invoice_already_issued' } }), {
+          status: 409,
+        }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-22'));
+    expect(toastError).toHaveBeenCalledTimes(1);
+    const options = toastError.mock.calls[0]![1] as Record<string, unknown>;
+    expect(options.description).toBe(asPaidMessages.draftRemains);
+    // Retrying an already-issued row cannot help — the action is suppressed.
+    expect(options).not.toHaveProperty('action');
+  });
+
+  // ── 064 remediation S4 — try/catch around the whole two-step submit ──────
+
+  it('S4: network rejection on the issue-as-paid POST → unknown-error toast WITH draft-remains + retry; lands on the draft; no unhandled rejection', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-23' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(async () => {
+      throw new TypeError('network down');
+    });
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-23'));
+    expect(toastError).toHaveBeenCalledWith(
+      asPaidMessages.errors.unknown,
+      expect.objectContaining({
+        description: asPaidMessages.draftRemains,
+        action: expect.objectContaining({ label: asPaidMessages.retry }),
+      }),
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('S4: network rejection on the FIRST (event-draft) POST → plain unknown-error toast, no navigation', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(async () => {
+      throw new TypeError('network down');
+    });
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        enMessages.admin.invoices.eventFeeForm.errors.unknown,
+      ),
+    );
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  // ── 064 remediation W0 — payment date resets on attendee switch ─────────
+
+  it('W0: a backdated payment date resets to Bangkok-today when a DIFFERENT attendee is selected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRegistrations([matchedRegistration, paidNonMemberRegistration]),
+    );
+    renderForm({ initialEventId: 'ev-1' });
+
+    // First attendee (paid → as-paid fields visible) + backdate.
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    const dateInput = screen.getByLabelText(
+      enMessages.admin.invoices.pay.fields.date,
+    ) as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2020-01-10' } });
+    expect(dateInput.value).toBe('2020-01-10');
+
+    // Switch attendee → the backdate must NOT carry over: the date snaps
+    // back to today (the field default) and the stale ภ.พ.30 warning goes.
+    fireEvent.click(screen.getByRole('button', { name: /Dora/ }));
+    expect(
+      (screen.getByLabelText(enMessages.admin.invoices.pay.fields.date) as HTMLInputElement)
+        .value,
+    ).toBe(bangkokToday());
+    expect(screen.queryByTestId('payment-date-vat-warning')).toBeNull();
+  });
+
+  // ── 064 remediation W2 — optional payment reference / notes ─────────────
+
+  it('W2: reference + notes thread into the issue-as-paid body (and reset on attendee switch)', async () => {
+    const fetchMock = mockFetchRegistrations([
+      matchedRegistration,
+      paidNonMemberRegistration,
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    const refInput = screen.getByLabelText(
+      enMessages.admin.invoices.pay.fields.reference,
+    ) as HTMLInputElement;
+    const notesInput = screen.getByLabelText(
+      enMessages.admin.invoices.pay.fields.notes,
+    ) as HTMLTextAreaElement;
+    fireEvent.change(refInput, { target: { value: '  TRX-12345  ' } });
+    fireEvent.change(notesInput, { target: { value: 'Paid at the door (simulated)' } });
+
+    // W0 sibling — switching attendee clears the evidence fields too.
+    fireEvent.click(screen.getByRole('button', { name: /Dora/ }));
+    expect(
+      (screen.getByLabelText(enMessages.admin.invoices.pay.fields.reference) as HTMLInputElement)
+        .value,
+    ).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: /Alice/ }));
+
+    // Re-enter and submit — the trimmed values reach the step-2 POST.
+    fireEvent.change(
+      screen.getByLabelText(enMessages.admin.invoices.pay.fields.reference),
+      { target: { value: '  TRX-12345  ' } },
+    );
+    fireEvent.change(
+      screen.getByLabelText(enMessages.admin.invoices.pay.fields.notes),
+      { target: { value: 'Paid at the door (simulated)' } },
+    );
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-31' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-31' }), { status: 200 }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-31'));
+    const issueCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes('/issue-as-paid'),
+    );
+    const issueBody = JSON.parse((issueCall![1] as RequestInit).body as string);
+    expect(issueBody.paymentReference).toBe('TRX-12345');
+    expect(issueBody.paymentNotes).toBe('Paid at the door (simulated)');
+  });
+
+  it('W2: blank reference/notes are OMITTED from the issue-as-paid body (route records null)', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-32' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-32' }), { status: 200 }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-32'));
+    const issueCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes('/issue-as-paid'),
+    );
+    const issueBody = JSON.parse((issueCall![1] as RequestInit).body as string);
+    expect(issueBody).toEqual({
+      paymentDate: bangkokToday(),
+      paymentMethod: 'bank_transfer',
+    });
+    expect(issueBody).not.toHaveProperty('paymentReference');
+    expect(issueBody).not.toHaveProperty('paymentNotes');
+  });
+
+  // ── 064 remediation B5 — server-truth TIN for matched members ───────────
+
+  it('B5: matched member with buyerHasTin=false → no-TIN rules (bill_first aria-disabled + visible reason)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRegistrations([{ ...matchedRegistration, buyerHasTin: false }]),
+    );
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    // paid + no TIN → already_paid stays the default…
+    expect(
+      screen.getByRole('radio', { name: new RegExp(modeMessages.alreadyPaid.label) }),
+    ).toBeChecked();
+    // …and bill_first is DISABLED with the visible needs-TIN reason — the
+    // pre-fix "matched ⇒ has TIN" guess wrongly left it selectable.
+    const billFirst = screen.getByRole('radio', {
+      name: new RegExp(modeMessages.billFirst.label),
+    });
+    expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+    expect(billFirst).toHaveAttribute(
+      'aria-describedby',
+      'mode-bill-first-needs-tin',
+    );
+    expect(screen.getByTestId('mode-bill-first-needs-tin')).toHaveTextContent(
+      modeMessages.billFirstNeedsTin,
+    );
+  });
+
+  it('B5: matched member with buyerHasTin=true → bill_first selectable (explicit server truth)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRegistrations([{ ...matchedRegistration, buyerHasTin: true }]),
+    );
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fireEvent.click(screen.getByText(modeMessages.billFirst.label));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
+      ).toBeChecked(),
+    );
+    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
+  });
+
+  it('B5: buyerHasTin ABSENT (older API shape) → legacy matched⇒has-TIN guess keeps bill_first selectable', async () => {
+    // `matchedRegistration` deliberately carries NO buyerHasTin field —
+    // backward compat for the API shape: the form falls back to the guess.
+    vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    const billFirst = screen.getByRole('radio', {
+      name: new RegExp(modeMessages.billFirst.label),
+    });
+    expect(billFirst).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
   });
 
   it('refunded registration → hard-block card, no mode selector, submit disabled', async () => {

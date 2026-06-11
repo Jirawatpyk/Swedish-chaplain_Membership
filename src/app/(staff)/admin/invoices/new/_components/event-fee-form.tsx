@@ -24,11 +24,16 @@
  *     no_show — there is NO 'unpaid' value) + buyer-TIN presence to a
  *     default mode per design §2.3. `refunded` is a hard block.
  *   - `already_paid` shows a payment-date (max = today Bangkok; F6 carries
- *     no payment date to prefill from, so it defaults to today) + a
- *     payment-method select, and submits in two steps: the existing
+ *     no payment date to prefill from, so it defaults to today; 064
+ *     remediation W0 — the date + reference/notes RESET to defaults on any
+ *     event/attendee change so a backdate never leaks across attendees) +
+ *     a payment-method select + optional reference/notes (W2, mirrored from
+ *     the record-payment dialog), and submits in two steps: the existing
  *     event-draft POST, then POST /api/invoices/{id}/issue-as-paid. If the
- *     SECOND call fails the draft remains — the error toast says so and we
- *     still navigate to the (actionable) draft detail.
+ *     SECOND call fails the draft remains — the error toast says so and
+ *     offers an inline Retry action (S6; suppressed for
+ *     invoice_already_issued) — and we still navigate to the (actionable)
+ *     draft detail. The whole two-step submit is try/catch-guarded (S4).
  *   - `bill_first` keeps the existing create-draft flow unchanged and is
  *     NEVER selectable for a no-TIN buyer (server guard
  *     `event_no_tin_requires_paid_issue`; the option is disabled with a
@@ -57,6 +62,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
@@ -310,6 +316,11 @@ export function EventFeeForm({
   const [modeChoice, setModeChoice] = useState<IssuanceMode | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_transfer');
   const [paymentDate, setPaymentDate] = useState('');
+  // W2 (064 remediation) — optional out-of-band payment evidence, mirrored
+  // from the record-payment form (same i18n labels). Sent to issue-as-paid
+  // ONLY when non-blank (the route maps absent → null).
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   const [todayBkk, setTodayBkk] = useState('');
   const [paymentDateError, setPaymentDateError] = useState<string | null>(null);
   useEffect(() => {
@@ -339,6 +350,13 @@ export function EventFeeForm({
     setAmountError(null);
     setModeChoice(null);
     setPaymentMethod('bank_transfer');
+    // W0 (064 remediation) — a backdated payment date (and any reference/
+    // notes typed for the PREVIOUS attendee) must not silently carry over
+    // to a different event/attendee. Reset to the field default
+    // (Bangkok-today) exactly like the mount effect does.
+    setPaymentDate(bangkokTodayIso());
+    setPaymentReference('');
+    setPaymentNotes('');
     setPaymentDateError(null);
   }
 
@@ -358,6 +376,11 @@ export function EventFeeForm({
     // Mode re-derives from the new registration's payment status.
     setModeChoice(null);
     setPaymentMethod('bank_transfer');
+    // W0 (064 remediation) — see handleEventChange: per-attendee payment
+    // details never leak across a selection change.
+    setPaymentDate(bangkokTodayIso());
+    setPaymentReference('');
+    setPaymentNotes('');
     setPaymentDateError(null);
   }, []);
 
@@ -371,12 +394,18 @@ export function EventFeeForm({
   const totalSatang = amountValid ? Math.round(amountNum * 100) : 0;
   const { subtotal, vat } = previewVatInclusive(totalSatang);
 
-  // TIN presence for the §2.3 mode rules. A matched member's TIN is NOT
-  // visible client-side (the server pins the F3 snapshot at issue), so we
-  // treat matched as has-TIN: bill_first stays selectable and the server's
-  // `event_no_tin_requires_paid_issue` guard rejects at plain issue with the
-  // already-mapped issue-dialog message if the member turns out TIN-less.
-  const hasTin = matched ? true : buyer.taxId.trim().length > 0;
+  // TIN presence for the §2.3 mode rules. 064 remediation B5 — matched
+  // members now use SERVER-TRUTH presence (`buyerHasTin`, derived from the
+  // F3 member's tax_id by the registrations endpoint; only the boolean
+  // crosses the wire). A TIN-less matched member therefore gets the correct
+  // no-TIN rules (bill_first disabled, receipt-path default) instead of the
+  // legacy "matched ⇒ has TIN" guess. The guess survives ONLY as the
+  // fallback when the field is absent/null (older API shape / degraded
+  // lookup) — the server's `event_no_tin_requires_paid_issue` guard stays
+  // authoritative either way. Non-members: the manual tax-id field rules.
+  const hasTin = matched
+    ? (attendee?.buyerHasTin ?? true)
+    : buyer.taxId.trim().length > 0;
   const { mode: defaultMode, locked } =
     attendee !== null
       ? defaultModeFor(attendee.paymentStatus, hasTin)
@@ -418,6 +447,81 @@ export function EventFeeForm({
     if (amountNum < MIN_THB) return t('amount.errors.min');
     if (amountNum > MAX_THB) return t('amount.errors.max');
     return null;
+  }
+
+  /**
+   * Step 2 — one-shot draft→paid issuance, shared by the submit flow AND
+   * the toast Retry action (S6/S4, 064 remediation). NEVER throws: the
+   * fetch + json parses are fully guarded, so a network-level rejection
+   * after the draft POST succeeded surfaces as an error toast carrying the
+   * draft-remains info instead of an unhandled rejection.
+   *
+   * On failure the draft REMAINS (visible in the invoice list): the toast
+   * says exactly that and offers a Retry action that re-POSTs with the
+   * captured payment details — suppressed for `invoice_already_issued`
+   * (the row is already final; retrying cannot help). Both outcomes land
+   * on the invoice detail; a retry fired later from the toast re-runs the
+   * same navigation so a success refreshes onto the paid row.
+   */
+  async function issueDraftAsPaid(invoiceId: string): Promise<void> {
+    let issueRes: Response | null = null;
+    try {
+      const refTrim = paymentReference.trim();
+      const notesTrim = paymentNotes.trim();
+      issueRes = await fetch(`/api/invoices/${invoiceId}/issue-as-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentDate,
+          paymentMethod,
+          // W2 — optional evidence fields; omitted when blank so the route
+          // records null (server zod caps: 200 / 2000 chars).
+          ...(refTrim !== '' ? { paymentReference: refTrim } : {}),
+          ...(notesTrim !== '' ? { paymentNotes: notesTrim } : {}),
+        }),
+      });
+    } catch {
+      // S4 — network-level rejection (offline, DNS, aborted): fall through
+      // to the unknown-error toast below WITH the draft-remains context.
+      issueRes = null;
+    }
+    if (issueRes?.ok) {
+      toast.success(tAsPaid('success'));
+    } else {
+      let issueCode: string | undefined;
+      if (issueRes !== null) {
+        const issuePayload = await issueRes.json().catch(() => ({}));
+        issueCode = (issuePayload as { error?: { code?: string } })?.error?.code;
+      }
+      const issueKnown =
+        issueCode !== undefined &&
+        (AS_PAID_ERROR_CODES as readonly string[]).includes(issueCode);
+      toast.error(
+        issueKnown
+          ? tAsPaid(`errors.${issueCode}`)
+          : issueCode
+            ? tAsPaid('errors.codeFallback', { code: issueCode })
+            : tAsPaid('errors.unknown'),
+        {
+          description: tAsPaid('draftRemains'),
+          // S6 — honest retry: the draft survived, so offer to re-run the
+          // issue step right from the toast. Suppressed when the row is
+          // ALREADY issued (terminal for this flow — just navigate).
+          ...(issueCode === 'invoice_already_issued'
+            ? {}
+            : {
+                action: {
+                  label: tAsPaid('retry'),
+                  onClick: () => {
+                    void issueDraftAsPaid(invoiceId);
+                  },
+                },
+              }),
+        },
+      );
+    }
+    router.push(`/admin/invoices/${invoiceId}`);
+    router.refresh();
   }
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -481,76 +585,70 @@ export function EventFeeForm({
     }
 
     startTransition(async () => {
-      const res = await fetch('/api/invoices/event-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.status === 201) {
-        const data = (await res.json()) as { invoice_id: string };
-        if (effectiveMode === 'already_paid') {
-          // Step 2 — one-shot draft→paid issuance. On failure the draft
-          // REMAINS (visible, re-actionable): say so in the toast and still
-          // land on the draft detail rather than pretending nothing was
-          // created.
-          const issueRes = await fetch(
-            `/api/invoices/${data.invoice_id}/issue-as-paid`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentDate, paymentMethod }),
-            },
-          );
-          if (issueRes.ok) {
-            toast.success(tAsPaid('success'));
-          } else {
-            const issuePayload = await issueRes.json().catch(() => ({}));
-            const issueCode = (issuePayload as { error?: { code?: string } })?.error
-              ?.code;
-            const issueKnown =
-              issueCode !== undefined &&
-              (AS_PAID_ERROR_CODES as readonly string[]).includes(issueCode);
-            toast.error(
-              issueKnown
-                ? tAsPaid(`errors.${issueCode}`)
-                : issueCode
-                  ? tAsPaid('errors.codeFallback', { code: issueCode })
-                  : tAsPaid('errors.unknown'),
-              { description: tAsPaid('draftRemains') },
-            );
+      // S4 (064 remediation) — the WHOLE two-step submit is guarded: a
+      // network-level rejection can no longer escape as an unhandled
+      // promise rejection. `createdInvoiceId` discriminates the catch —
+      // once the draft POST succeeded, the error toast must carry the
+      // draft-remains info (and we still land on the surviving draft).
+      let createdInvoiceId: string | null = null;
+      try {
+        const res = await fetch('/api/invoices/event-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status === 201) {
+          const data = (await res.json()) as { invoice_id: string };
+          createdInvoiceId = data.invoice_id;
+          if (effectiveMode === 'already_paid') {
+            // Step 2 — one-shot draft→paid issuance (shared helper; also
+            // the toast Retry path). Never throws; handles its own toasts
+            // + navigation.
+            await issueDraftAsPaid(data.invoice_id);
+            return;
           }
+          toast.success(t('success'));
           router.push(`/admin/invoices/${data.invoice_id}`);
-          router.refresh();
           return;
         }
-        toast.success(t('success'));
-        router.push(`/admin/invoices/${data.invoice_id}`);
-        return;
+        if (res.status === 409) {
+          setDuplicateOpen(true);
+          return;
+        }
+        const payload = await res.json().catch(() => ({}));
+        const code = (payload as { error?: { code?: string } })?.error?.code;
+        const known = code
+          ? // Only map codes we have copy for; otherwise fall back.
+            [
+              'registration_not_found',
+              'member_archived',
+              'event_not_found',
+              'attendee_erased',
+              'registration_refunded',
+              'no_fee_free_event',
+              'invalid_amount',
+              'buyer_required',
+              'invalid_tax_id_format',
+              'invalid_buyer_snapshot',
+            ].includes(code)
+          : false;
+        toast.error(known ? t(`errors.${code}`) : t('errors.unknown'), {
+          description: code && !known ? t('errors.codeFallback', { code }) : undefined,
+        });
+      } catch {
+        if (createdInvoiceId !== null) {
+          // The draft exists but something after its creation threw (e.g.
+          // the 201 body failed to parse mid-flight). Tell the truth: the
+          // draft remains, and land on it.
+          toast.error(tAsPaid('errors.unknown'), {
+            description: tAsPaid('draftRemains'),
+          });
+          router.push(`/admin/invoices/${createdInvoiceId}`);
+          router.refresh();
+        } else {
+          toast.error(t('errors.unknown'));
+        }
       }
-      if (res.status === 409) {
-        setDuplicateOpen(true);
-        return;
-      }
-      const payload = await res.json().catch(() => ({}));
-      const code = (payload as { error?: { code?: string } })?.error?.code;
-      const known = code
-        ? // Only map codes we have copy for; otherwise fall back.
-          [
-            'registration_not_found',
-            'member_archived',
-            'event_not_found',
-            'attendee_erased',
-            'registration_refunded',
-            'no_fee_free_event',
-            'invalid_amount',
-            'buyer_required',
-            'invalid_tax_id_format',
-            'invalid_buyer_snapshot',
-          ].includes(code)
-        : false;
-      toast.error(known ? t(`errors.${code}`) : t('errors.unknown'), {
-        description: code && !known ? t('errors.codeFallback', { code }) : undefined,
-      });
     });
   }
 
@@ -830,6 +928,35 @@ export function EventFeeForm({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  {/* W2 (064 remediation) — optional payment evidence,
+                      mirrored from the record-payment dialog (same i18n
+                      labels + copy). maxLength mirrors the server zod caps
+                      (200 / 2000) so the inline clamp and the 400 guard
+                      agree. */}
+                  <div className="flex flex-col gap-[var(--field-label-gap)]">
+                    <Label htmlFor="payment-reference">
+                      {tPay('fields.reference')}
+                    </Label>
+                    <Input
+                      id="payment-reference"
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                      placeholder={tPay('fields.referencePlaceholder')}
+                      maxLength={200}
+                      disabled={pending}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-[var(--field-label-gap)]">
+                    <Label htmlFor="payment-notes">{tPay('fields.notes')}</Label>
+                    <Textarea
+                      id="payment-notes"
+                      value={paymentNotes}
+                      onChange={(e) => setPaymentNotes(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      disabled={pending}
+                    />
                   </div>
                 </div>
               )}

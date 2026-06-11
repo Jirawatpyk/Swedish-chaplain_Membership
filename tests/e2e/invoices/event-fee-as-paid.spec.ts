@@ -420,14 +420,20 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
 
     // Error toast with the mapped code copy + the draft-remains description.
+    // 064 remediation S6 — the copy now promises only what is true (the
+    // draft exists and is visible in the list; there is no detail-page
+    // retry button) and the toast itself carries an inline Retry action.
     const toaster = page.locator('[data-sonner-toaster]');
     await expect(
       toaster.getByText('The PDF could not be generated — nothing was issued. Try again.'),
     ).toBeVisible({ timeout: 30_000 });
     await expect(
       toaster.getByText(
-        'The draft invoice was still created and remains actionable — you can retry from its detail page.',
+        'The draft invoice was still created and is visible in the invoice list.',
       ),
+    ).toBeVisible();
+    await expect(
+      toaster.getByRole('button', { name: 'Retry issuing' }),
     ).toBeVisible();
 
     // Still navigates to the (actionable) draft detail — not a dead end.

@@ -1980,7 +1980,8 @@
       },
       "issueAsPaid": {
         "success": "Betalningen registrerades — kvitto utfärdat",
-        "draftRemains": "Fakturautkastet skapades ändå och kan fortfarande användas — försök igen från utkastets detaljsida.",
+        "draftRemains": "Fakturautkastet skapades ändå och visas i fakturalistan.",
+        "retry": "Försök igen",
         "errors": {
           "invalid": "Betalningsuppgifterna är ogiltiga. Kontrollera betalningsdatum och betalningsmetod.",
           "not_event_subject": "Denna faktura är inte en evenemangsfaktura och kan inte utfärdas som betald.",

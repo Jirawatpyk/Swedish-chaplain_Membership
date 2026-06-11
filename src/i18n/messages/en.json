@@ -1980,7 +1980,8 @@
       },
       "issueAsPaid": {
         "success": "Payment recorded — receipt issued",
-        "draftRemains": "The draft invoice was still created and remains actionable — you can retry from its detail page.",
+        "draftRemains": "The draft invoice was still created and is visible in the invoice list.",
+        "retry": "Retry issuing",
         "errors": {
           "invalid": "The payment details are invalid. Check the payment date and method.",
           "not_event_subject": "This invoice is not an event-fee invoice and cannot be issued as paid.",

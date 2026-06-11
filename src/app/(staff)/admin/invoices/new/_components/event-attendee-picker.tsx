@@ -60,6 +60,18 @@ export type AttendeeRow = {
   readonly ticketPriceThb: number | null;
   readonly paymentStatus: string;
   readonly isPseudonymised: boolean;
+  /**
+   * 064 remediation B5 — server-truth tax-id PRESENCE for MATCHED members
+   * (derived server-side from the F3 member's tax_id; only the boolean
+   * crosses the wire, never the raw TIN):
+   *   - `true` / `false` — matched member, presence resolved;
+   *   - `null`           — non-member (the manual buyer tax-id field rules
+   *                        there) OR a matched id the lookup couldn't
+   *                        resolve (degraded enrichment);
+   *   - absent           — an older API response shape; callers fall back
+   *                        to the legacy "matched ⇒ has TIN" guess.
+   */
+  readonly buyerHasTin?: boolean | null;
 };
 
 /** A matched member is any attendee with a resolved `matchedMemberId`. */
