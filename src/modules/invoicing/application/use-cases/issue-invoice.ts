@@ -48,8 +48,12 @@
  * Any throw in A-L rolls back the whole tx — seq is NOT consumed; the
  * Blob upload may leave an orphan at the deterministic content-addressed
  * key (tenant+id+template). No sweeper exists (accepted residual, 064
- * design §3.2 L-1) — issueEventInvoiceAsPaid's catch-path delete is the
- * only mitigation today.
+ * design §3.2 L-1), but this use-case carries its OWN best-effort
+ * catch-path delete of that key (065 L-3, ported from
+ * issueEventInvoiceAsPaid — see the outer catch below); the as-paid path
+ * does the same. The delete is best-effort: a failure is logged + counted
+ * and never masks the original error, so a swept-later orphan remains the
+ * accepted worst case.
  *
  * RBAC: admin only (route handler guard).
  * Rate limit: 20 / 5min per (tenant, actor) — applied at route level.

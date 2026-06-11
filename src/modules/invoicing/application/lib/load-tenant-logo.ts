@@ -84,10 +84,13 @@ const logoNegativeCache = new Map<string, number>(); // key → expires-at epoch
  * — when 1, this helper returns null regardless of `logoBlobKey` so
  * the re-render output stays identical to the original v1 bytes.
  *
- * NEW (issue-time) renders pass `pinnedTemplateVersion = CURRENT`
- * (= 2) and the helper resolves normally. Combined-mode receipts
- * + separate-mode receipts + credit notes — all render under
- * CURRENT_TEMPLATE_VERSION at issue time so they're always v2+.
+ * NEW (issue-time) renders pass `pinnedTemplateVersion =
+ * CURRENT_TEMPLATE_VERSION` (the registry's current value, ≥ 2) and the
+ * helper resolves normally. Combined-mode receipts + separate-mode
+ * receipts + credit notes — all render under CURRENT_TEMPLATE_VERSION at
+ * issue time, so they are never the logo-less v1. Only `=== 1` returns
+ * null here; every later template version (v2, v3, …) renders the logo,
+ * so this comment intentionally avoids pinning a specific current number.
  */
 export async function loadTenantLogo(
   blob: BlobStoragePort,

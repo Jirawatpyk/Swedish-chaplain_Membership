@@ -28,9 +28,14 @@
  *
  * Any throw in A–L rolls back the whole tx — seq is NOT consumed,
  * credited_total stays intact; the Blob upload may leave an orphan at
- * the deterministic content-addressed key. No sweeper exists (accepted
- * residual, 064 design §3.2 L-1) — issueEventInvoiceAsPaid's catch-path
- * delete is the only mitigation today.
+ * the content-addressed key. No sweeper exists (accepted residual, 064
+ * design §3.2 L-1). Both issueInvoice and issueEventInvoiceAsPaid now
+ * carry a catch-path delete to mitigate the orphan; credit notes do NOT
+ * need one because they are EXEMPT from the byte-drift class that motivates
+ * it: each attempt mints a FRESH `creditNoteId` via `randomUUID()` (line
+ * ~200), so the blob key is unique per attempt — a retry never collides
+ * with a prior attempt's orphan, and re-render byte-drift cannot corrupt a
+ * later success. The orphan is at worst dead bytes a future sweeper reclaims.
  *
  * RBAC: admin only (route handler guard).
  * Concurrent race: two admins issuing partial credit notes against the
