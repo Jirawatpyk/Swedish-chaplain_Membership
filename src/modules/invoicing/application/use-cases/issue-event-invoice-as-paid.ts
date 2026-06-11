@@ -64,6 +64,7 @@ import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
+import type { EventRegistrationLookupPort } from '../ports/event-registration-lookup-port';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
@@ -123,6 +124,19 @@ export type IssueEventInvoiceAsPaidError =
   | { code: 'member_archived' }
   | { code: 'no_buyer_snapshot' }
   | { code: 'payment_date_future' }
+  /**
+   * 064 S1 — the F6 registration was refunded AFTER the draft was created
+   * (createEventInvoiceDraft only hard-blocks refunded at DRAFT time).
+   * Issuing would assert a fee the buyer already got back — re-checked
+   * in-tx at issuance, PRE-allocation (no §87 burn).
+   */
+  | { code: 'registration_refunded' }
+  /**
+   * 064 S1 — the issuance-time registration re-read failed (port err) or
+   * returned null (row vanished / RLS anomaly). Refuse to issue a tax
+   * document against a registration we can no longer verify.
+   */
+  | { code: 'registration_lookup_failed' }
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
@@ -145,6 +159,12 @@ export interface IssueEventInvoiceAsPaidDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
   readonly memberIdentity: MemberIdentityPort;
+  /**
+   * 064 S1 — issuance-time refunded re-check (TOCTOU vs the draft-time
+   * check in createEventInvoiceDraft). REQUIRED: an optional safety dep
+   * could silently not run (the soft-deleted-plan-hole class).
+   */
+  readonly eventRegistrationLookup: EventRegistrationLookupPort;
   readonly sequenceAllocator: SequenceAllocatorPort;
   readonly pdfRender: PdfRenderPort;
   readonly blob: BlobStoragePort;
@@ -249,6 +269,25 @@ export async function issueEventInvoiceAsPaid(
 
       if (draft.invoiceSubject !== 'event') {
         return err({ code: 'not_event_subject' });
+      }
+
+      // 064 S1 — refunded re-check at ISSUANCE (TOCTOU close). The draft-time
+      // check in createEventInvoiceDraft only covers the moment of drafting;
+      // a registration refunded between draft and issue would otherwise still
+      // get a paid §105/§86-4 document asserting a fee the buyer got back.
+      // Runs in-tx (same RLS context, after the row lock) and PRE-allocation,
+      // so a refunded reject burns no §87 number. `ok(null)`/port-err are a
+      // verification failure — never issue against an unverifiable row.
+      const regResult = await deps.eventRegistrationLookup.findById(
+        tx,
+        input.tenantId,
+        draft.eventRegistrationId,
+      );
+      if (!regResult.ok || regResult.value === null) {
+        return err({ code: 'registration_lookup_failed' });
+      }
+      if (regResult.value.paymentStatus === 'refunded') {
+        return err({ code: 'registration_refunded' });
       }
 
       // Domain transition-table sanity: `draft → paid` is legal ONLY for the

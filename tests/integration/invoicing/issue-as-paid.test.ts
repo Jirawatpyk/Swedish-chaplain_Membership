@@ -103,6 +103,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // Non-member buyer WITH a Thai TIN → receipt_combined doc kind at as-paid.
 const BUYER_WITH_TIN = {
@@ -387,6 +388,8 @@ function makeUseCaseDeps(
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
@@ -1800,6 +1803,117 @@ describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (li
     expect(await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR)).toBe(2);
     expect(await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR)).toBe(
       invoiceBefore,
+    );
+  }, 90_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section G — 064 S1: registration refunded BETWEEN draft and issuance (TOCTOU)
+// -----------------------------------------------------------------------------
+// createEventInvoiceDraft hard-blocks refunded registrations at DRAFT time
+// only. These tests flip the registration row to 'refunded' AFTER the real
+// draft was created (direct UPDATE under runInTenant — the same shape the F6
+// refund webhook/CSV import writes), then prove BOTH issuance paths reject
+// with `registration_refunded`, the row stays draft, and no §87/receipt
+// sequence is consumed.
+
+describe('064 S1 — registration refunded between draft and issuance (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVG', { receiptPrefix: 'RG' });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  async function flipRegistrationToRefunded(registrationId: string): Promise<void> {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(eventRegistrations)
+        .set({ paymentStatus: 'refunded' })
+        .where(
+          and(
+            eq(eventRegistrations.tenantId, tenant.ctx.slug),
+            eq(eventRegistrations.registrationId, registrationId),
+          ),
+        );
+    });
+  }
+
+  it('as-paid path: refunded flip after drafting → registration_refunded, row stays draft, NO sequence burned', async () => {
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    const invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+    await flipRegistrationToRefunded(registrationId);
+
+    const invoiceSeqBefore = await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR);
+    const receiptSeqBefore = await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR);
+
+    const r = await issueEventInvoiceAsPaid(
+      makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO }),
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-aspaid-uc-g1-${invoiceId}`,
+        invoiceId: invoiceId as string,
+        paymentDate: UC_PAYMENT_DATE,
+        paymentMethod: 'cash',
+      },
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected registration_refunded, got ok');
+    expect(r.error.code).toBe('registration_refunded');
+
+    // Row untouched — still a draft with no numbering and no payment fields.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row!.status).toBe('draft');
+    expect(row!.sequenceNumber).toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBeNull();
+    expect(row!.paidAt).toBeNull();
+
+    // PRE-allocation reject: neither stream's counter moved.
+    expect(await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR)).toBe(
+      invoiceSeqBefore,
+    );
+    expect(await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR)).toBe(
+      receiptSeqBefore,
+    );
+  }, 90_000);
+
+  it('bill-first path (issueInvoice): refunded flip after drafting → registration_refunded, row stays draft, NO §87 burn', async () => {
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    const invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+    await flipRegistrationToRefunded(registrationId);
+
+    const invoiceSeqBefore = await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR);
+
+    const r = await issueInvoice(makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO }), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-g2-${invoiceId}`,
+      invoiceId: invoiceId as string,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected registration_refunded, got ok');
+    expect(r.error.code).toBe('registration_refunded');
+
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row!.status).toBe('draft');
+    expect(row!.sequenceNumber).toBeNull();
+
+    expect(await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR)).toBe(
+      invoiceSeqBefore,
     );
   }, 90_000);
 });

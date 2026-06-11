@@ -1971,6 +1971,7 @@
           "failed": "Kunde inte utfärda",
           "tax_id_required": "Den här medlemmen är en företagsnivå men saknar skattenummer i registret. En thailändsk skattefaktura kräver köparens skattenummer — uppdatera medlemsposten innan du utfärdar.",
           "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
+          "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
@@ -1984,6 +1985,7 @@
           "invalid": "Betalningsuppgifterna är ogiltiga. Kontrollera betalningsdatum och betalningsmetod.",
           "not_event_subject": "Denna faktura är inte en evenemangsfaktura och kan inte utfärdas som betald.",
           "payment_date_future": "Betalningsdatumet får inte ligga i framtiden.",
+          "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
           "invalid_lines": "Fakturaraderna är ogiltiga — ta bort utkastet och skapa det på nytt.",
           "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten.",
           "no_buyer_snapshot": "Utkastet saknar köparuppgifter — skapa det på nytt med köparen ifylld.",

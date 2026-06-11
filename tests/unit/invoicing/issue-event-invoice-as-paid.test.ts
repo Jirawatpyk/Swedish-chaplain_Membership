@@ -50,6 +50,8 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
+import type { EventRegistrationView } from '@/modules/invoicing/application/ports/event-registration-lookup-port';
+import { ok, err } from '@/lib/result';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
@@ -235,6 +237,25 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
   };
 }
 
+/** 064 S1 — registration view the refunded re-check reads at issuance. */
+function makeRegistrationView(
+  overrides: Partial<EventRegistrationView> = {},
+): EventRegistrationView {
+  return {
+    registrationId: 'reg-uuid-1',
+    eventId: 'event-uuid-1',
+    attendeeName: 'Jane Buyer',
+    attendeeEmail: 'jane@beta.example',
+    attendeeCompany: 'Beta Imports Ltd',
+    ticketPriceThb: 1070,
+    paymentStatus: 'paid',
+    matchType: 'non_member',
+    matchedMemberId: null,
+    pseudonymised: false,
+    ...overrides,
+  };
+}
+
 function makeDeps(
   draft: Invoice | null,
   settings: TenantInvoiceSettingsView | null,
@@ -293,6 +314,11 @@ function makeDeps(
     memberIdentity: {
       getForIssue: vi.fn(async () => member),
       markRegistrationFeePaid: vi.fn(async () => {}),
+    },
+    // 064 S1 — default: the registration is still 'paid' at issuance so
+    // every pre-existing test flows through the re-check untouched.
+    eventRegistrationLookup: {
+      findById: vi.fn(async () => ok(makeRegistrationView())),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),
@@ -1243,5 +1269,67 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const deps = makeDeps(makeEventDraft({ vatInclusive: false }), makeSettings(), null);
     await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toThrow(/vatInclusive/);
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  // --- 064 S1 — refunded re-check at issuance (TOCTOU vs createEventInvoiceDraft) ----
+
+  describe('064 S1 — registration refunded between draft and issuance', () => {
+    it('registration flipped to refunded after drafting → err registration_refunded, allocator NEVER called (no §87 burn)', async () => {
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+        eventRegistrationLookup: {
+          findById: vi.fn(async () =>
+            ok(makeRegistrationView({ paymentStatus: 'refunded' })),
+          ),
+        },
+      });
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('registration_refunded');
+      // PRE-sequence reject: the §87 allocator must not run, nothing renders,
+      // nothing applies.
+      expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+      expect(deps.pdfRender.render).not.toHaveBeenCalled();
+      expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
+      // The re-check reads the registration on the SAME tx (RLS isolation).
+      expect(deps.eventRegistrationLookup.findById).toHaveBeenCalledWith(
+        OPAQUE_TX,
+        'test-swecham',
+        'reg-uuid-1',
+      );
+    });
+
+    it('lookup err → registration_lookup_failed (pre-allocation)', async () => {
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+        eventRegistrationLookup: {
+          findById: vi.fn(async () => err({ kind: 'lookup_failed' as const })),
+        },
+      });
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
+      expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    });
+
+    it('lookup ok(null) — registration row vanished → registration_lookup_failed (pre-allocation)', async () => {
+      // A draft always points at a registration that existed at draft time;
+      // a null read here is an RLS anomaly or out-of-band delete — refuse to
+      // issue a tax document against a row we can no longer verify.
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+        eventRegistrationLookup: {
+          findById: vi.fn(async () => ok(null)),
+        },
+      });
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
+      expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    });
+
+    it('still-paid registration → flows through to the happy path (re-check is non-intrusive)', async () => {
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+      expect(deps.eventRegistrationLookup.findById).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -137,6 +137,7 @@ import {
   type MemberIdentitySnapshot,
 } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // --- Inline dependency builders (mirror invoicing-deps.ts, minus F5) ---------
 
@@ -157,6 +158,8 @@ function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: vercelBlobAdapter,

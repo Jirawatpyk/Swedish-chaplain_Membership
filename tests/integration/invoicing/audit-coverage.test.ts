@@ -57,6 +57,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { F4AuditEventType } from '@/modules/invoicing/application/ports/audit-port';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // MVP-reachable subset. 17 of 18 F4AuditEventType values probed at DB
 // level below (`invoice_pdf_regenerated` is absent from this array +
@@ -419,6 +420,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         })),
         markRegistrationFeePaid: vi.fn(async () => {}),
       },
+      // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+      eventRegistrationLookup: eventRegistrationLookupAdapter,
       sequenceAllocator: postgresSequenceAllocator,
       pdfRender: failingPdf,
       blob: {

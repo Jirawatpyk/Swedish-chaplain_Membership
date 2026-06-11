@@ -76,6 +76,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -135,6 +136,8 @@ function makeIssueDeps(
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {

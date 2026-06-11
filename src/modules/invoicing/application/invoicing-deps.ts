@@ -95,6 +95,8 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check for event drafts.
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: vercelBlobAdapter,
@@ -125,6 +127,8 @@ export function makeIssueEventInvoiceAsPaidDeps(
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (TOCTOU vs draft-time check).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: vercelBlobAdapter,

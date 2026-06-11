@@ -35,6 +35,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -170,6 +171,8 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
         })),
         markRegistrationFeePaid: vi.fn(async () => {}),
       },
+      // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+      eventRegistrationLookup: eventRegistrationLookupAdapter,
       sequenceAllocator: postgresSequenceAllocator,
       pdfRender: {
         render: vi.fn(async () => ({

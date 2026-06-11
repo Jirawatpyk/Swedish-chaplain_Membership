@@ -114,6 +114,11 @@ export async function POST(
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'not_event_subject' ? 422
       : result.error.code === 'payment_date_future' ? 422
+      // 064 S1 — registration refunded between draft and as-paid issuance
+      // (TOCTOU re-check): unprocessable business state, mirrors the
+      // event-draft route's 422 for the same code. Lookup failure is an
+      // internal verification error → 500 (default arm).
+      : result.error.code === 'registration_refunded' ? 422
       : result.error.code === 'invalid_lines' ? 422
       : result.error.code === 'overflow' ? 422
       : result.error.code === 'no_buyer_snapshot' ? 422

@@ -99,9 +99,14 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
               ? t('errors.tax_id_required')
               : code === 'event_no_tin_requires_paid_issue'
                 ? t('errors.event_no_tin_requires_paid_issue')
-                : code
-                  ? t('errors.codeFallback', { code })
-                  : t('errors.unknown'),
+                // 064 S1 — registration refunded between draft and issue
+                // (issuance-time TOCTOU re-check); human-readable copy so
+                // the admin knows the draft is now a dead end, not retryable.
+                : code === 'registration_refunded'
+                  ? t('errors.registration_refunded')
+                  : code
+                    ? t('errors.codeFallback', { code })
+                    : t('errors.unknown'),
         });
         return;
       }

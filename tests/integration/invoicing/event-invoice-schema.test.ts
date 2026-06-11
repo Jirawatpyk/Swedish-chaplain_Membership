@@ -46,6 +46,7 @@ import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 const SEED_FAR_FUTURE = new Date('2099-01-01T00:00:00Z');
 
@@ -373,6 +374,8 @@ describe('invoices.pdf_doc_kind — 064-event-invoice-paid-flow Task 2 (live Neo
       invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
       tenantSettingsRepo: drizzleTenantSettingsRepo,
       memberIdentity: memberIdentityAdapter,
+      // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+      eventRegistrationLookup: eventRegistrationLookupAdapter,
       sequenceAllocator: postgresSequenceAllocator,
       pdfRender: {
         render: vi.fn(async () => ({

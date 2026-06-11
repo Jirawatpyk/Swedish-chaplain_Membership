@@ -24,6 +24,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
+import { ok, err } from '@/lib/result';
 import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
@@ -219,6 +220,25 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     memberIdentity: {
       getForIssue: vi.fn(async () => member),
       markRegistrationFeePaid: vi.fn(async () => {}),
+    },
+    // 064 S1 — default: the registration is still 'paid' at issuance so
+    // every pre-existing event test flows through the re-check untouched
+    // (membership drafts never invoke the port — subject-scoped).
+    eventRegistrationLookup: {
+      findById: vi.fn(async () =>
+        ok({
+          registrationId: 'reg-uuid-9',
+          eventId: 'event-uuid-9',
+          attendeeName: 'Jane Buyer',
+          attendeeEmail: 'buyer@example.com',
+          attendeeCompany: 'Beta Imports Ltd',
+          ticketPriceThb: 1070,
+          paymentStatus: 'paid',
+          matchType: 'non_member',
+          matchedMemberId: null,
+          pseudonymised: false,
+        }),
+      ),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),
@@ -766,6 +786,58 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('event_no_tin_requires_paid_issue');
     // Pre-sequence guard → no §87 sequence number burned.
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  // --- 064 S1 — refunded re-check at issuance (TOCTOU vs createEventInvoiceDraft) ----
+  // createEventInvoiceDraft hard-blocks refunded registrations at DRAFT time
+  // only; without an issuance-time re-check, a registration refunded AFTER
+  // drafting could still be billed (asserting a fee the buyer got back).
+
+  it('064 S1 — event registration flipped to refunded after drafting → err registration_refunded, allocator NEVER called', async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null, {
+      eventRegistrationLookup: {
+        findById: vi.fn(async () =>
+          ok({
+            registrationId: 'reg-uuid-9',
+            eventId: 'event-uuid-9',
+            attendeeName: 'Jane Buyer',
+            attendeeEmail: 'buyer@example.com',
+            attendeeCompany: 'Beta Imports Ltd',
+            ticketPriceThb: 1070,
+            paymentStatus: 'refunded',
+            matchType: 'non_member',
+            matchedMemberId: null,
+            pseudonymised: false,
+          }),
+        ),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('registration_refunded');
+    // PRE-sequence guard → no §87 number burned, nothing rendered/applied.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
+  });
+
+  it('064 S1 — event registration lookup err → registration_lookup_failed (pre-allocation)', async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null, {
+      eventRegistrationLookup: {
+        findById: vi.fn(async () => err({ kind: 'lookup_failed' as const })),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  it('064 S1 — MEMBERSHIP invoices never invoke the registration lookup (subject-scoped re-check)', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.eventRegistrationLookup.findById).not.toHaveBeenCalled();
   });
 
   it('matched-member event + member carries a TIN → kind:invoice (member branch, snapshot pinned at issue)', async () => {

@@ -244,6 +244,10 @@ const AS_PAID_ERROR_CODES = [
   'invalid',
   'not_event_subject',
   'payment_date_future',
+  // 064 S1 — registration refunded between draft and as-paid issuance
+  // (issuance-time TOCTOU re-check). `registration_lookup_failed` stays on
+  // codeFallback — it is an internal verification error, not operator-fixable.
+  'registration_refunded',
   'invalid_lines',
   'overflow',
   'no_buyer_snapshot',

@@ -71,6 +71,7 @@ import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/ada
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // Non-member buyer WITHOUT a Thai TIN → issued as `receipt_separate` (§105).
 const BUYER_NO_TIN = {
@@ -95,6 +96,8 @@ function makeAsPaidFixtureDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps 
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
       render: vi.fn(async () => ({

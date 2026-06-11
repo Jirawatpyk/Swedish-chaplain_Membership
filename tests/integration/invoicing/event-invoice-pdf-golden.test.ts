@@ -71,6 +71,7 @@ import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audi
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 import {
   createActiveTestUser,
   deleteTestUser,
@@ -431,6 +432,8 @@ function makeGoldenDeps(
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: {
