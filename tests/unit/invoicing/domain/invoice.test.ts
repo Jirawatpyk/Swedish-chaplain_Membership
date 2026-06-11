@@ -20,11 +20,13 @@ import {
   enforceOneSubjectLine,
   assertSnapshotsSet,
   canTransition,
+  displayDocumentNumber,
   INVOICE_STATUSES,
   type Invoice,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
@@ -90,6 +92,47 @@ describe('parseInvoiceId — UUID validate-and-brand', () => {
 describe('asInvoiceId — trusted brand cast', () => {
   it('does NOT validate (trusted contexts only)', () => {
     expect(asInvoiceId('trusted-id')).toBe('trusted-id');
+  });
+});
+
+describe('displayDocumentNumber — printed §87/§105 number for display (064 remediation A1)', () => {
+  const docNum = (raw: string): DocumentNumber => {
+    const r = DocumentNumber.parse(raw);
+    if (!r.ok) throw new Error('bad fixture doc number');
+    return r.value;
+  };
+
+  it('prefers the invoice document number when present', () => {
+    expect(
+      displayDocumentNumber({
+        documentNumber: docNum('INV-2026-000001'),
+        receiptDocumentNumberRaw: null,
+      }),
+    ).toBe('INV-2026-000001');
+  });
+
+  it('invoice number wins even when a separate receipt number also exists (paid separate-mode row)', () => {
+    expect(
+      displayDocumentNumber({
+        documentNumber: docNum('INV-2026-000001'),
+        receiptDocumentNumberRaw: 'RC-2026-000009',
+      }),
+    ).toBe('INV-2026-000001');
+  });
+
+  it('β as-paid no-TIN row (NULL docnum) falls back to the printed §105 receipt number', () => {
+    expect(
+      displayDocumentNumber({
+        documentNumber: null,
+        receiptDocumentNumberRaw: 'RC-2026-000777',
+      }),
+    ).toBe('RC-2026-000777');
+  });
+
+  it('returns null only when BOTH numbers are absent (true draft)', () => {
+    expect(
+      displayDocumentNumber({ documentNumber: null, receiptDocumentNumberRaw: null }),
+    ).toBeNull();
   });
 });
 

@@ -15,6 +15,7 @@ export {
   isTerminal,
   canTransition,
   enforceOneSubjectLine,
+  displayDocumentNumber,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,

@@ -362,9 +362,13 @@ export default async function PortalInvoicesPage({
                           <Link
                             href={`/portal/invoices/${vm.invoiceId}`}
                             className="underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                            aria-label={`${t('actions.viewDetail')} ${vm.documentNumber ?? vm.invoiceId}`}
+                            // 064 remediation S3 — displayNumber resolves β
+                            // rows to their printed §105 receipt number so
+                            // the cell never shows an em-dash/UUID for a
+                            // paid, numbered document.
+                            aria-label={`${t('actions.viewDetail')} ${vm.displayNumber ?? vm.invoiceId}`}
                           >
-                            {vm.documentNumber ?? '—'}
+                            {vm.displayNumber ?? '—'}
                           </Link>
                         </TableCell>
                         <TableCell className="align-middle whitespace-nowrap">
@@ -452,7 +456,7 @@ export default async function PortalInvoicesPage({
                                 {vm.resendable ? (
                                   <ResendInvoiceButton
                                     invoiceId={vm.invoiceId}
-                                    documentNumber={vm.documentNumber ?? vm.invoiceId}
+                                    documentNumber={vm.displayNumber ?? vm.invoiceId}
                                     variant="ghost"
                                     layout="compact"
                                     className="min-h-11 min-w-11"
@@ -461,27 +465,32 @@ export default async function PortalInvoicesPage({
                                 {vm.showInvoice && (
                                   <PortalInvoiceDownloadButton
                                     invoiceId={vm.invoiceId}
-                                    documentNumber={vm.documentNumber ?? vm.invoiceId}
-                                    // 064 — as-paid TIN rows: the main pdf IS the
-                                    // final combined Tax Invoice / Receipt, so the
-                                    // label + aria flip to the combined dual-role
-                                    // wording (same keys the receipt button uses in
-                                    // bill-first combined mode). Mirrors the card.
+                                    documentNumber={vm.displayNumber ?? vm.invoiceId}
+                                    // 064 — as-paid rows: the main pdf IS the
+                                    // final legal document. 'combined' (TIN)
+                                    // flips label + aria to the dual-role
+                                    // wording; 'receipt' (β no-TIN — 064
+                                    // remediation S3) flips to the receipt
+                                    // wording. Mirrors the card.
                                     label={
                                       vm.displayStatus === 'void'
                                         ? t('actions.downloadVoided')
-                                        : vm.mainPdfIsFinalCombined
+                                        : vm.mainPdfKind === 'combined'
                                           ? t('actions.downloadCombined')
-                                          : t('actions.download')
+                                          : vm.mainPdfKind === 'receipt'
+                                            ? t('actions.downloadReceipt')
+                                            : t('actions.download')
                                     }
                                     ariaLabel={t(
                                       vm.displayStatus === 'void'
                                         ? 'actions.downloadVoidedAria'
-                                        : vm.mainPdfIsFinalCombined
+                                        : vm.mainPdfKind === 'combined'
                                           ? 'actions.downloadCombinedAria'
-                                          : 'actions.downloadInvoiceAria',
+                                          : vm.mainPdfKind === 'receipt'
+                                            ? 'actions.downloadReceiptAria'
+                                            : 'actions.downloadInvoiceAria',
                                       {
-                                        number: vm.documentNumber ?? vm.invoiceId,
+                                        number: vm.displayNumber ?? vm.invoiceId,
                                       },
                                     )}
                                     className={cn(
@@ -501,7 +510,7 @@ export default async function PortalInvoicesPage({
                                     // and the SR aria can never diverge. Mirrors
                                     // the card.
                                     const receiptRef =
-                                      vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId;
+                                      vm.receiptNumber ?? vm.displayNumber ?? vm.invoiceId;
                                     return (
                                       <PortalReceiptDownloadButton
                                         invoiceId={vm.invoiceId}

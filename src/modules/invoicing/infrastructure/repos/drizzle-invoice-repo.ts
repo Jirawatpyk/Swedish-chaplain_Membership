@@ -517,7 +517,17 @@ export function makeDrizzleInvoiceRepo(
         }
         if (opts.memberId) filters.push(eq(invoices.memberId, opts.memberId));
         if (opts.search && opts.search.length > 0) {
-          filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+          // W1 (064 remediation) — β as-paid no-TIN rows carry their printed
+          // §105 number in receipt_document_number_raw with document_number
+          // NULL, and paid separate-mode rows ALSO have an RC number admins
+          // search by. Match EITHER column so every printed §87/§105 number
+          // is findable. Kept in lockstep with `listPaged` below.
+          filters.push(
+            or(
+              ilike(invoices.documentNumber, `%${opts.search}%`),
+              ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+            )!,
+          );
         }
         if (opts.cursor) {
           // S1-P1-9b: composite (issueDate, invoiceId) keyset matching the
@@ -649,7 +659,14 @@ export function makeDrizzleInvoiceRepo(
           filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
         }
         if (opts.search && opts.search.length > 0) {
-          filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+          // W1 (064 remediation) — match invoice doc number OR the §105
+          // receipt number; see the `list` variant above for the rationale.
+          filters.push(
+            or(
+              ilike(invoices.documentNumber, `%${opts.search}%`),
+              ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+            )!,
+          );
         }
         if (opts.paidOnlineOnly) {
           // F5 US3 reconciliation filter — invoice has at least one

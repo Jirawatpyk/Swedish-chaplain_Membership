@@ -34,6 +34,7 @@ import {
   Money,
   calculateVat,
   computeIsOverdue,
+  displayDocumentNumber,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
 } from '@/modules/invoicing';
@@ -320,7 +321,13 @@ export default async function InvoiceDetailPage({
     }
   }
 
-  const breadcrumbLabel = invoice.documentNumber?.raw ?? t('draftTitle');
+  // 064 remediation S2 — β as-paid no-TIN rows have a NULL invoice document
+  // number; their printed §105 number lives in receiptDocumentNumberRaw.
+  // `displayDocumentNumber` resolves whichever exists so a PAID β row never
+  // renders under the "Draft invoice" title/breadcrumb. Both-null = a true
+  // draft → the draft label.
+  const displayNumber = displayDocumentNumber(invoice);
+  const breadcrumbLabel = displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
   // can be rendered conditionally on succeeded-payment + remaining-
@@ -356,7 +363,7 @@ export default async function InvoiceDetailPage({
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            <span>{invoice.documentNumber?.raw ?? t('draftTitle')}</span>
+            <span>{displayNumber ?? t('draftTitle')}</span>
             <Badge variant={statusBadgeVariant(displayStatus)}>
               {tStatus(displayStatus)}
             </Badge>
@@ -485,13 +492,16 @@ export default async function InvoiceDetailPage({
                 invoice PDF only. 064 as-paid TIN → the MAIN pdf IS the final
                 combined doc (no receipt blob), so the main Download/Resend stay
                 visible and the Download item carries the combined label via
-                `mainDownloadIsCombined`. isPaidCombined + hasReceiptPdf are
+                `mainDownloadKind`. isPaidCombined + hasReceiptPdf are
                 hoisted above (shared with the FR-026 failure banner so both
                 surfaces gate identically). */}
             {!isDraft && (
               <InvoiceMoreMenu
                 invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                // 064 remediation S2 — display number, never a raw UUID: β
+                // rows resolve to their printed §105 receipt number (drives
+                // the download filename + every aria inside the menu).
+                documentNumber={displayNumber ?? invoice.invoiceId}
                 showDownload={Boolean(invoice.pdf) && !isPaidCombined}
                 showResendInvoice={
                   isAdmin &&
@@ -501,7 +511,16 @@ export default async function InvoiceDetailPage({
                 }
                 showResendReceipt={isAdmin && hasReceiptPdf}
                 showDownloadReceipt={hasReceiptPdf}
-                mainDownloadIsCombined={mainPdfIsFinalCombined}
+                // 064 remediation A4 — what the main pdf IS: combined for
+                // as-paid TIN rows, receipt for β/legacy §105 rows whose
+                // main pdf is itself the receipt; plain invoice otherwise.
+                mainDownloadKind={
+                  invoice.pdfDocKind === 'receipt_combined'
+                    ? 'combined'
+                    : invoice.pdfDocKind === 'receipt_separate'
+                      ? 'receipt'
+                      : undefined
+                }
                 // combinedModeReceipt is derived inside the menu component
                 // from (showDownloadReceipt && !showDownload).
               />

@@ -7,10 +7,12 @@
  * 'receipt_combined'`, receipt_* blob columns NULL). The detail page's
  * pre-064 heuristic (`paid && receiptDocumentNumberRaw === null` → hide the
  * main download as a "stale pre-payment draft") wrongly suppressed the ONLY
- * downloadable document on such rows. The fix threads a new
- * `mainDownloadIsCombined` prop into this menu so the main Download item
- * stays visible AND carries the combined dual-role label
- * (`actions.downloadCombined`, reused — no new i18n keys).
+ * downloadable document on such rows. The fix threads a `mainDownloadKind`
+ * prop into this menu (064-remediation A4 generalised the original
+ * `mainDownloadIsCombined` boolean) so the main Download item stays visible
+ * AND carries the combined dual-role label for as-paid TIN rows, or the
+ * receipt label for β no-TIN rows (`actions.downloadCombined` /
+ * `actions.downloadReceipt`, reused — no new i18n keys).
  *
  * Base UI Menu renders its Popup only while open (portal + positioner +
  * pointer interactions jsdom does not model), so the `@/components/ui/
@@ -122,12 +124,12 @@ function labelOf(testId: string): string | null {
 }
 
 describe('InvoiceMoreMenu — as-paid combined main download (064 gap fix)', () => {
-  it('shows the main Download item with the COMBINED dual-role label when mainDownloadIsCombined', () => {
+  it("shows the main Download item with the COMBINED dual-role label when mainDownloadKind='combined'", () => {
     render(
       <InvoiceMoreMenu
         {...BASE}
         showDownload
-        mainDownloadIsCombined
+        mainDownloadKind="combined"
       />,
     );
     expect(labelOf('download-invoice-trigger')).toBe(
@@ -138,9 +140,32 @@ describe('InvoiceMoreMenu — as-paid combined main download (064 gap fix)', () 
     expect(screen.queryByTestId('download-receipt-trigger')).toBeNull();
   });
 
-  it('keeps the plain invoice label when mainDownloadIsCombined is omitted (bill-first/membership rows byte-identical)', () => {
+  it('keeps the plain invoice label when mainDownloadKind is omitted (bill-first/membership rows byte-identical)', () => {
     render(<InvoiceMoreMenu {...BASE} showDownload />);
     expect(labelOf('download-invoice-trigger')).toBe('actions.download');
+  });
+});
+
+describe("InvoiceMoreMenu — β receipt main download (064 remediation A4, mainDownloadKind='receipt')", () => {
+  it('shows the main Download item with the RECEIPT label + receipt aria (the β main pdf IS the §105 receipt)', () => {
+    render(
+      <InvoiceMoreMenu
+        {...BASE}
+        documentNumber="RC-2026-000777"
+        showDownload
+        mainDownloadKind="receipt"
+      />,
+    );
+    const item = screen.getByTestId('download-invoice-trigger');
+    expect(item.textContent).toBe('actions.downloadReceipt');
+    // The aria flips to the receipt wording with the printed §105 number —
+    // never the invoice wording (the file the admin grabs is a receipt).
+    expect(item).toHaveAttribute(
+      'aria-label',
+      'actions.downloadReceiptAria {"number":"RC-2026-000777"}',
+    );
+    // β rows have NO separate receipt blob — no second receipt item.
+    expect(screen.queryByTestId('download-receipt-trigger')).toBeNull();
   });
 });
 

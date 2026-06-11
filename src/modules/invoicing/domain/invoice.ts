@@ -307,6 +307,30 @@ export function isTerminal(status: InvoiceStatus): boolean {
 }
 
 /**
+ * 064 remediation (A1) — the printed §87/§105 number an invoice row should
+ * be DISPLAYED under, shared by the admin detail/list, the portal list/card/
+ * detail, and the more-menu so every surface resolves the same number.
+ *
+ * - Normal rows (membership, bill-first event, as-paid TIN event): the
+ *   invoice-stream `documentNumber` — even when a separate-mode RC receipt
+ *   number also exists, the invoice number stays the row's identity.
+ * - β as-paid no-TIN event rows (and legacy issued no-TIN event rows): the
+ *   invoice-stream pair is legitimately NULL and the printed §105 number
+ *   lives in `receiptDocumentNumberRaw` — fall back to it so the row never
+ *   renders as a "Draft" / em-dash / raw UUID.
+ * - True drafts: both NULL → `null` (callers supply their own draft label).
+ *
+ * Pure + framework-free (Domain); accepts the narrow Pick so presentation
+ * view-models that only carry the two raw strings can call it too.
+ */
+export function displayDocumentNumber(inv: {
+  readonly documentNumber: DocumentNumber | null;
+  readonly receiptDocumentNumberRaw: string | null;
+}): string | null {
+  return inv.documentNumber?.raw ?? inv.receiptDocumentNumberRaw;
+}
+
+/**
  * LOW-14 — per-subject rule for the "exactly-one subject-defining line"
  * invariant. Each subject pins (1) the line `kind` that must appear exactly
  * once and (2) the two error builders for the 0-line and >1-line cases. A new

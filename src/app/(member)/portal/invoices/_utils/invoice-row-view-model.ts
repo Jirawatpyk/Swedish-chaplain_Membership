@@ -37,7 +37,7 @@
  * — Simplicity; Reusable Components). The card reuses the column keys.
  */
 import type { Invoice } from '@/modules/invoicing';
-import { computeIsOverdue } from '@/modules/invoicing';
+import { computeIsOverdue, displayDocumentNumber } from '@/modules/invoicing';
 import type { Money } from '@/modules/invoicing';
 import type { InvoiceRowDisplayStatus } from './format';
 
@@ -69,6 +69,16 @@ export interface InvoiceRowViewModel {
   readonly invoiceId: Invoice['invoiceId'];
   /** Raw invoice document number (e.g. `INV-2026-000001`), null on draft. */
   readonly documentNumber: string | null;
+  /**
+   * 064 remediation S3 — the printed §87/§105 number the row should be
+   * DISPLAYED under (shared `displayDocumentNumber` helper): the invoice
+   * document number, else — for β as-paid no-TIN event rows whose invoice-
+   * stream pair is legitimately NULL — the printed §105 receipt number.
+   * Null only on true drafts (which the portal never lists). Surfaces MUST
+   * use this for the visible number + aria so a β row never renders as an
+   * em-dash or a raw UUID.
+   */
+  readonly displayNumber: string | null;
   /** Presentation status (issued → overdue swap applied — T109 / FR-028). */
   readonly displayStatus: InvoiceRowDisplayStatus;
   /** Raw separate-mode receipt document number; null in combined-mode. */
@@ -82,17 +92,25 @@ export interface InvoiceRowViewModel {
    * record-payment, reusing the invoice number) is the combined legal
    * document. When true the table/card hides the (stale) invoice anchor and
    * shows only the combined Receipt download. 064 — excludes as-paid rows
-   * (`mainPdfIsFinalCombined`): their MAIN pdf already IS the final combined
+   * (`mainPdfKind 'combined'`): their MAIN pdf already IS the final combined
    * doc, so hiding it would remove the row's only download.
    */
   readonly isCombinedPaid: boolean;
   /**
-   * 064 — the MAIN pdf is the final combined §86/4+§105ทวิ document
-   * (`pdfDocKind === 'receipt_combined'`, an as-paid TIN event invoice).
-   * Table + card flip the invoice download's label/aria to the combined
-   * dual-role wording (`actions.downloadCombined[Aria]`) when set.
+   * 064 — what the MAIN pdf actually is (the 064-remediation S3
+   * generalisation of the former `mainPdfIsFinalCombined` boolean):
+   *
+   *   - `'combined'` — `pdfDocKind 'receipt_combined'` (as-paid TIN event
+   *     invoice): table + card flip the main download's label/aria to the
+   *     combined dual-role wording (`actions.downloadCombined[Aria]`).
+   *   - `'receipt'` — `pdfDocKind 'receipt_separate'` (β as-paid no-TIN
+   *     event row / legacy issued no-TIN row): the main pdf IS the §105
+   *     receipt, so the label/aria flip to the receipt wording
+   *     (`actions.downloadReceipt[Aria]`).
+   *   - `'invoice'` — everything else (incl. NULL pdfDocKind legacy rows):
+   *     the plain invoice label.
    */
-  readonly mainPdfIsFinalCombined: boolean;
+  readonly mainPdfKind: 'invoice' | 'combined' | 'receipt';
   /** Show the invoice-PDF download (PDF exists and it is not combined-paid). */
   readonly showInvoice: boolean;
   /**
@@ -159,9 +177,10 @@ export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
  * `isCombinedPaid` / `showInvoice` / `showReceipt` / `resendable` are a
  * verbatim copy of the former D3 inline expressions in `page.tsx`;
  * `receiptPending` was narrowed and `receiptFailed` added by the S1 fix;
- * 064 made `isCombinedPaid` pdfDocKind-aware, gated `showReceipt` on the
- * receipt blob's presence, and added `mainPdfIsFinalCombined` (as-paid
- * event invoices whose MAIN pdf is the final legal document) — see the
+ * 064 made `isCombinedPaid` pdfDocKind-aware and gated `showReceipt` on the
+ * receipt blob's presence; the 064 remediation generalised the former
+ * `mainPdfIsFinalCombined` boolean into `mainPdfKind` (β receipt_separate
+ * rows now get receipt labelling too) and added `displayNumber` — see the
  * per-flag comments below for each flag's exact condition and provenance.
  */
 export function toInvoiceRowViewModel(
@@ -174,13 +193,19 @@ export function toInvoiceRowViewModel(
     ? 'overdue'
     : row.status;
 
-  // 064 — as-paid TIN event invoices persist the MAIN pdf as the final
-  // combined §86/4+§105ทวิ document (issued straight to paid; receipt blob
-  // columns stay NULL, receiptPdfStatus lands 'rendered'). Pre-fix these
-  // rows matched `isCombinedPaid` (hiding the main download) while
-  // `showReceipt` pointed at the NULL receipt blob (502 blob_missing) —
-  // the member's only affordance was a broken button.
-  const mainPdfIsFinalCombined = row.pdfDocKind === 'receipt_combined';
+  // 064 — as-paid event invoices persist the MAIN pdf as the final legal
+  // document (issued straight to paid; receipt blob columns stay NULL,
+  // receiptPdfStatus lands 'rendered'): 'receipt_combined' for TIN buyers,
+  // 'receipt_separate' (a bare §105 receipt) for the no-TIN β stream.
+  // Pre-064-fix the combined rows matched `isCombinedPaid` (hiding the main
+  // download) while `showReceipt` pointed at the NULL receipt blob (502
+  // blob_missing) — the member's only affordance was a broken button.
+  const mainPdfKind: 'invoice' | 'combined' | 'receipt' =
+    row.pdfDocKind === 'receipt_combined'
+      ? 'combined'
+      : row.pdfDocKind === 'receipt_separate'
+        ? 'receipt'
+        : 'invoice';
 
   // Combined-mode paid (bill-first): receipt reuses the invoice number (no
   // separate receipt number) AND the receipt PDF has finished rendering.
@@ -190,12 +215,12 @@ export function toInvoiceRowViewModel(
     row.status === 'paid' &&
     row.receiptDocumentNumberRaw === null &&
     row.receiptPdfStatus === 'rendered' &&
-    !mainPdfIsFinalCombined;
+    mainPdfKind !== 'combined';
 
   const showInvoice = row.pdf !== null && !isCombinedPaid;
 
   // Gate the receipt action on the artifact it serves: the receipt BLOB.
-  // (064 — 'rendered' alone is not enough; see mainPdfIsFinalCombined note.)
+  // (064 — 'rendered' alone is not enough; see the mainPdfKind note above.)
   const showReceipt =
     row.status === 'paid' &&
     row.receiptPdfStatus === 'rendered' &&
@@ -219,13 +244,18 @@ export function toInvoiceRowViewModel(
   return {
     invoiceId: row.invoiceId,
     documentNumber: row.documentNumber?.raw ?? null,
+    // 064 remediation S3 — the printed §87/§105 number for display: the
+    // shared Domain helper falls back to the §105 receipt number on β rows
+    // (NULL invoice docnum) so surfaces never show an em-dash/UUID for a
+    // paid, numbered document.
+    displayNumber: displayDocumentNumber(row),
     displayStatus,
     receiptNumber: row.receiptDocumentNumberRaw,
     issueDate: row.issueDate,
     dueDate: row.dueDate,
     total: row.total,
     isCombinedPaid,
-    mainPdfIsFinalCombined,
+    mainPdfKind,
     showInvoice,
     showReceipt,
     receiptPending,

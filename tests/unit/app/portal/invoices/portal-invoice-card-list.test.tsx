@@ -350,6 +350,54 @@ describe('<PortalInvoiceCardList> — as-paid combined (main pdf is the document
 });
 
 // ===========================================================================
+// 2c. β as-paid no-TIN event invoice (064 remediation S3 — main pdf IS the
+//     §105 receipt; invoice-stream docnum legitimately NULL)
+// ===========================================================================
+describe('<PortalInvoiceCardList> — β as-paid receipt (main pdf is the §105 receipt)', () => {
+  it('h2 shows the printed §105 number (never the UUID); main download wears the Receipt label + receipt aria', () => {
+    // `applyIssueAsPaid` β shape: paid + documentNumber NULL +
+    // receiptDocumentNumberRaw set + receiptPdfStatus 'rendered' + receipt
+    // blob NULL + pdfDocKind 'receipt_separate'. Pre-fix the card heading
+    // fell back to the raw invoice UUID and the main download wore the
+    // plain "Invoice" label on a document that is legally a receipt.
+    renderCardFor({
+      status: 'paid',
+      documentNumber: null,
+      receiptDocumentNumberRaw: 'RCP-2026-000777',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: null,
+      pdfDocKind: 'receipt_separate',
+    });
+
+    // The printed §105 number is the card heading — NOT the row UUID.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'RCP-2026-000777' }),
+    ).toBeInTheDocument();
+    expect(theCard()).not.toHaveTextContent(INVOICE_UUID);
+
+    // Main download: short Receipt label + the receipt aria carrying the
+    // §105 number (never the combined dual-role wording — that stays
+    // TIN-combined only).
+    const invoice = screen.getByTestId('invoice-download');
+    expect(invoice).toHaveTextContent('Receipt');
+    expect(invoice).not.toHaveTextContent('Tax invoice / Receipt');
+    expect(invoice).toHaveAttribute(
+      'aria-label',
+      'Download tax receipt PDF for invoice RCP-2026-000777',
+    );
+
+    // No broken receipt button (no receipt blob exists) and no async
+    // affordances ('rendered').
+    expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    // The separate-mode receipt-number line still renders.
+    expect(theCard()).toHaveTextContent('Receipt No.');
+    expect(theCard()).toHaveTextContent('RCP-2026-000777');
+  });
+});
+
+// ===========================================================================
 // 3. separate-paid (paid + receiptDocumentNumberRaw set + rendered)
 // ===========================================================================
 describe('<PortalInvoiceCardList> — separate-paid', () => {

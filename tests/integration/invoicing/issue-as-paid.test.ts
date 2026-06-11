@@ -1445,6 +1445,63 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
     expect(BigInt(row!.totalSatang!.toString())).toBe(TOTAL_SATANG);
   }, 60_000);
 
+  it('W1 (064 remediation) — admin search by the printed §105 receipt number finds the β row in BOTH list variants', async () => {
+    // β rows have document_number NULL — pre-fix, the search predicate
+    // ilike'd ONLY invoices.document_number so the row's printed RC number
+    // was unfindable in /admin/invoices. Seed an INDEPENDENT β row (own
+    // registration + RC number — the 0213 receipt-raw unique backstop bars
+    // reuse of NO_TIN_RECEIPT_RAW) and prove a SUBSTRING of the RC number
+    // surfaces it through both `list` (cursor) and `listPaged` (offset).
+    const W1_RECEIPT_RAW = 'RC-2026-000771';
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    const reg = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: BUYER_NO_TIN.primary_contact_email,
+    });
+    const draftId = await createUcDraft(tenant, user, reg.registrationId, {
+      amountOverrideSatang: Number(TOTAL_SATANG),
+      buyer: BUYER_NO_TIN,
+    });
+    const base = buildNoTinInput(tenant.ctx.slug, draftId, user.userId);
+    await repo.withTx(async (tx) =>
+      repo.applyIssueAsPaid(tx, {
+        ...base,
+        numbering: {
+          kind: 'receipt_stream' as const,
+          receiptDocumentNumberRaw: W1_RECEIPT_RAW,
+        },
+        pdf: {
+          ...base.pdf,
+          blobKey: `invoices/${tenant.ctx.slug}/2026/${W1_RECEIPT_RAW}_v1.pdf`,
+        },
+      }),
+    );
+
+    // Cursor variant (`list`) — substring match, case-insensitive ilike.
+    const cursorPage = await repo.list(tenant.ctx.slug, {
+      pageSize: 20,
+      search: '000771',
+    });
+    expect(cursorPage.rows.map((r) => r.invoiceId)).toContain(draftId);
+
+    // Offset variant (`listPaged`) — the /admin/invoices list path.
+    const paged = await repo.listPaged(tenant.ctx.slug, {
+      offset: 0,
+      pageSize: 20,
+      search: '000771',
+    });
+    expect(paged.rows.map((r) => r.invoiceId)).toContain(draftId);
+    expect(paged.total).toBeGreaterThanOrEqual(1);
+
+    // Searching by the FULL printed number works too (the obvious admin
+    // paste-from-PDF flow).
+    const byFull = await repo.listPaged(tenant.ctx.slug, {
+      offset: 0,
+      pageSize: 20,
+      search: W1_RECEIPT_RAW,
+    });
+    expect(byFull.rows.map((r) => r.invoiceId)).toContain(draftId);
+  }, 90_000);
+
   it('T9-2 — NEGATIVE: non-draft EVENT row with NULL seq/docnum AND NULL receipt raw → still 23514 (relax requires the receipt number)', async () => {
     // Raw owner-role UPDATE draft→issued satisfying every OTHER non-draft
     // CHECK (member_identity_snapshot already pinned at draft) — ONLY the

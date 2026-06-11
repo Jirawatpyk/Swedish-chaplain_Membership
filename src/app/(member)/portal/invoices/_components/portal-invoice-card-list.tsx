@@ -113,7 +113,10 @@ export function PortalInvoiceCardList({
         return (
           <li
             key={vm.invoiceId}
-            aria-label={`${t('detail.title')} ${vm.documentNumber ?? vm.invoiceId}, ${statusLabel}`}
+            // 064 remediation S3 — displayNumber resolves β as-paid rows to
+            // their printed §105 receipt number; the row UUID fallback is a
+            // last-resort that no numbered row reaches any more.
+            aria-label={`${t('detail.title')} ${vm.displayNumber ?? vm.invoiceId}, ${statusLabel}`}
           >
             <Card>
               <CardContent className="flex flex-col gap-3">
@@ -122,10 +125,10 @@ export function PortalInvoiceCardList({
                   <Link
                     href={`/portal/invoices/${vm.invoiceId}`}
                     className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                    aria-label={`${t('actions.viewDetail')} ${vm.documentNumber ?? vm.invoiceId}`}
+                    aria-label={`${t('actions.viewDetail')} ${vm.displayNumber ?? vm.invoiceId}`}
                   >
                     <h2 className="font-mono text-sm font-medium leading-snug">
-                      {vm.documentNumber ?? vm.invoiceId}
+                      {vm.displayNumber ?? vm.invoiceId}
                     </h2>
                   </Link>
                   <InvoiceStatusBadge
@@ -184,26 +187,30 @@ export function PortalInvoiceCardList({
                     {vm.showInvoice && (
                       <PortalInvoiceDownloadButton
                         invoiceId={vm.invoiceId}
-                        documentNumber={vm.documentNumber ?? vm.invoiceId}
-                        // 064 — as-paid TIN rows: the main pdf IS the final
-                        // combined Tax Invoice / Receipt, so the label + aria
-                        // flip to the combined dual-role wording (same keys
-                        // the receipt button uses in bill-first combined
-                        // mode). Mirrors the desktop table.
+                        documentNumber={vm.displayNumber ?? vm.invoiceId}
+                        // 064 — as-paid rows: the main pdf IS the final legal
+                        // document. 'combined' (TIN) flips label + aria to the
+                        // dual-role wording; 'receipt' (β no-TIN — 064
+                        // remediation S3) flips to the receipt wording.
+                        // Mirrors the desktop table.
                         label={
                           vm.displayStatus === 'void'
                             ? t('actions.downloadVoided')
-                            : vm.mainPdfIsFinalCombined
+                            : vm.mainPdfKind === 'combined'
                               ? t('actions.downloadCombined')
-                              : t('actions.download')
+                              : vm.mainPdfKind === 'receipt'
+                                ? t('actions.downloadReceipt')
+                                : t('actions.download')
                         }
                         ariaLabel={t(
                           vm.displayStatus === 'void'
                             ? 'actions.downloadVoidedAria'
-                            : vm.mainPdfIsFinalCombined
+                            : vm.mainPdfKind === 'combined'
                               ? 'actions.downloadCombinedAria'
-                              : 'actions.downloadInvoiceAria',
-                          { number: vm.documentNumber ?? vm.invoiceId },
+                              : vm.mainPdfKind === 'receipt'
+                                ? 'actions.downloadReceiptAria'
+                                : 'actions.downloadInvoiceAria',
+                          { number: vm.displayNumber ?? vm.invoiceId },
                         )}
                         className={cn(
                           buttonVariants({ variant: 'outline', size: 'sm' }),
@@ -211,7 +218,7 @@ export function PortalInvoiceCardList({
                           // Same wrap treatment the receipt button applies to
                           // its combined label — let the longer dual-role text
                           // wrap inside a 320px card instead of clipping.
-                          vm.mainPdfIsFinalCombined &&
+                          vm.mainPdfKind === 'combined' &&
                             'h-auto min-h-11 whitespace-normal text-left',
                         )}
                       />
@@ -225,7 +232,7 @@ export function PortalInvoiceCardList({
                         // `number`). Hoist it so the visible doc-ref and the SR
                         // aria can never diverge. Mirrors the desktop table.
                         const receiptRef =
-                          vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId;
+                          vm.receiptNumber ?? vm.displayNumber ?? vm.invoiceId;
                         return (
                           <PortalReceiptDownloadButton
                             invoiceId={vm.invoiceId}
@@ -297,7 +304,7 @@ export function PortalInvoiceCardList({
                     {vm.resendable ? (
                       <ResendInvoiceButton
                         invoiceId={vm.invoiceId}
-                        documentNumber={vm.documentNumber ?? vm.invoiceId}
+                        documentNumber={vm.displayNumber ?? vm.invoiceId}
                         variant="outline"
                         layout="compact"
                         className="min-h-11 min-w-11"

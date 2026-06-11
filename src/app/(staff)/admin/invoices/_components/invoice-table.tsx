@@ -148,6 +148,16 @@ export type InvoicesTableRow = {
    * signal that the §86/4 + §105ทวิ legal doc is on its way.
    */
   readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
+  /**
+   * 064 remediation S7 — the MAIN pdf IS a §105 receipt (`pdfDocKind
+   * 'receipt_separate'`: a β as-paid no-TIN event row, or a legacy issued
+   * no-TIN row). The main download button then wears the Receipt label +
+   * receipt aria instead of the Invoice ones — the file the admin grabs is
+   * legally a receipt. `documentNumber` on these rows is the printed §105
+   * number (mapped via `displayDocumentNumber` in page.tsx), so the
+   * download filename follows automatically.
+   */
+  readonly mainDownloadIsReceipt: boolean;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -569,9 +579,18 @@ export function InvoicesTable({
                             )
                           }
                           disabled={downloadingKeys.has(`invoice:${r.invoiceId}`)}
-                          aria-label={t('actions.downloadInvoiceAria', {
-                            number: r.documentNumber,
-                          })}
+                          // 064 remediation S7 — β rows: the main pdf IS the
+                          // §105 receipt, so label + aria flip to the receipt
+                          // wording (the endpoint/testid stay the main-pdf
+                          // ones; only the presentation changes).
+                          aria-label={t(
+                            r.mainDownloadIsReceipt
+                              ? 'actions.downloadReceiptAria'
+                              : 'actions.downloadInvoiceAria',
+                            {
+                              number: r.documentNumber,
+                            },
+                          )}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),
                             'min-h-11 px-3 gap-1',
@@ -584,7 +603,9 @@ export function InvoicesTable({
                               aria-hidden="true"
                             />
                           )}
-                          {t('actions.download')}
+                          {r.mainDownloadIsReceipt
+                            ? t('actions.downloadReceipt')
+                            : t('actions.download')}
                         </button>
                       )}
                       {r.hasReceiptPdf && (

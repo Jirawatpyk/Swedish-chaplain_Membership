@@ -36,6 +36,7 @@ import {
   getInvoice,
   makeGetInvoiceDeps,
   computeIsOverdue,
+  displayDocumentNumber,
   // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate below.
   buyerHasTin,
 } from '@/modules/invoicing';
@@ -175,7 +176,11 @@ export default async function PortalInvoiceDetailPage({
     <InvoiceStatusBadge status={status} label={tStatus(status)} />
   );
 
-  const documentNumber = invoice.documentNumber?.raw ?? '—';
+  // 064 remediation S3 — β as-paid no-TIN rows have a NULL invoice document
+  // number; their printed §105 number lives in receiptDocumentNumberRaw. The
+  // shared helper resolves whichever exists so the title never reads
+  // "Invoice —" on a paid, numbered receipt.
+  const documentNumber = displayDocumentNumber(invoice) ?? '—';
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
@@ -293,12 +298,20 @@ export default async function PortalInvoiceDetailPage({
                 // stale-draft-hiding rule applies ONLY when the main pdf
                 // is an issue-time 'invoice', and the receipt button is
                 // gated on the blob it actually serves.
-                const mainPdfIsFinalCombined =
-                  invoice.pdfDocKind === 'receipt_combined';
+                // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
+                // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
+                // legacy §105 rows) flips the main download to the receipt
+                // wording; 'invoice' = plain label.
+                const mainPdfKind: 'invoice' | 'combined' | 'receipt' =
+                  invoice.pdfDocKind === 'receipt_combined'
+                    ? 'combined'
+                    : invoice.pdfDocKind === 'receipt_separate'
+                      ? 'receipt'
+                      : 'invoice';
                 const isCombinedPaid =
                   invoice.status === 'paid' &&
                   invoice.receiptDocumentNumberRaw === null &&
-                  !mainPdfIsFinalCombined;
+                  mainPdfKind !== 'combined';
                 const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
                 const showReceiptPdf =
                   invoice.status === 'paid' &&
@@ -322,23 +335,27 @@ export default async function PortalInvoiceDetailPage({
                       <PortalInvoiceDownloadButton
                         invoiceId={invoice.invoiceId}
                         documentNumber={documentNumber}
-                        // 064 — as-paid TIN rows: the main pdf IS the final
-                        // combined Tax Invoice / Receipt; flip label + aria to
-                        // the combined dual-role wording (same keys the
-                        // receipt button uses in bill-first combined mode).
+                        // 064 — as-paid rows: the main pdf IS the final legal
+                        // document. 'combined' (TIN) flips label + aria to the
+                        // dual-role wording; 'receipt' (β no-TIN — 064
+                        // remediation S3) flips to the receipt wording.
                         label={
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : mainPdfIsFinalCombined
+                            : mainPdfKind === 'combined'
                               ? tList('actions.downloadCombined')
-                              : tList('actions.download')
+                              : mainPdfKind === 'receipt'
+                                ? tList('actions.downloadReceipt')
+                                : tList('actions.download')
                         }
                         ariaLabel={`${
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : mainPdfIsFinalCombined
+                            : mainPdfKind === 'combined'
                               ? tList('actions.downloadCombinedAria', { number: documentNumber })
-                              : tList('actions.downloadInvoiceAria', { number: documentNumber })
+                              : mainPdfKind === 'receipt'
+                                ? tList('actions.downloadReceiptAria', { number: documentNumber })
+                                : tList('actions.downloadInvoiceAria', { number: documentNumber })
                         }`}
                         className={cn(
                           buttonVariants({ variant: 'default', size: 'sm' }),
