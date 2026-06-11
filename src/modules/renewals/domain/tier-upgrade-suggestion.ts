@@ -35,6 +35,40 @@ export function parseSuggestionId(
   return ok(raw as SuggestionId);
 }
 
+/**
+ * Canonical prefix `acceptTierUpgrade` writes into the F2
+ * `scheduled_plan_changes.reason` column to link a pending plan-change
+ * row back to its originating tier-upgrade suggestion
+ * (`acceptTierUpgrade` writes `${PREFIX}${suggestionId}`). Single source
+ * of truth for both the writer (Application: accept-tier-upgrade) and the
+ * reader (Infrastructure: the F4→F8 on-paid F2 finaliser gate).
+ */
+export const TIER_UPGRADE_ACCEPTED_REASON_PREFIX = 'tier_upgrade_accepted:';
+
+/**
+ * 065 Fix A precision — extract the originating `SuggestionId` from an F2
+ * `scheduled_plan_changes.reason` string. Returns the id ONLY when the
+ * reason was written by `acceptTierUpgrade` (matches
+ * `TIER_UPGRADE_ACCEPTED_REASON_PREFIX`) AND the suffix is a valid UUID;
+ * otherwise `null` (standalone schedule with no suggestion link, an empty
+ * reason, or a malformed suffix). The F2 finaliser uses this to gate on
+ * the pending row's OWN linked suggestion status (re-accept precision)
+ * instead of a coarse cycle-wide existence probe.
+ *
+ * Guards the stringly-typed format: a `null`/empty/non-matching reason
+ * returns `null` (treated as "standalone — proceed"), so a malformed
+ * reason can never be misread as a suggestion id.
+ */
+export function parseSuggestionIdFromReason(
+  reason: string | null,
+): SuggestionId | null {
+  if (typeof reason !== 'string') return null;
+  if (!reason.startsWith(TIER_UPGRADE_ACCEPTED_REASON_PREFIX)) return null;
+  const suffix = reason.slice(TIER_UPGRADE_ACCEPTED_REASON_PREFIX.length);
+  const parsed = parseSuggestionId(suffix);
+  return parsed.ok ? parsed.value : null;
+}
+
 export const TIER_UPGRADE_STATUSES = [
   'open',
   'accepted_pending_apply',

@@ -73,37 +73,6 @@ export interface TierUpgradeSuggestionRepo {
   ): Promise<ReadonlyArray<TierUpgradeSuggestion>>;
 
   /**
-   * 065 Fix A (S1 retry-heal) — does a `superseded` suggestion target
-   * `cycleId`? The F4 → F8 on-paid bridge gates its post-tx F2 finaliser
-   * on this being FALSE.
-   *
-   * Background: the prior S6 gate keyed the F2 finaliser on THIS-run's
-   * F8 apply count (`appliedSuggestionCount > 0`), which broke webhook
-   * retry self-heal — on a Stripe re-delivery the apply finds the
-   * suggestion ALREADY `applied`, returns `[]`, and the gate stranded the
-   * F2 `scheduled_plan_changes` row in `pending` forever. The correct
-   * signal is the SUGGESTION STATUS, not the run-local apply count: run
-   * the finaliser UNLESS the F8 suggestion for the cycle was superseded
-   * (a manual override cancelled the upgrade — flipping the orphan F2 row
-   * → applied would re-bill the cancelled upgrade, the S6 money bug).
-   *
-   * Only the `superseded_from_accepted` arm retains
-   * `target_apply_at_cycle_id` (the suggestion was accepted before the
-   * override, so it carries the cycle + has an F2 pending row created at
-   * accept-time) — that IS the orphan this guard must catch. `applied`,
-   * `accepted_pending_apply`, and "no suggestion at all" (standalone F2
-   * schedule, S0) all return FALSE → the finaliser proceeds (and is
-   * itself a no-op when there is no pending F2 row).
-   *
-   * Scoped tenant + cycle (explicit `eq(tenant_id, …)` belt-and-suspenders
-   * over RLS, matching the S9 house style on this aggregate).
-   */
-  hasSupersededSuggestionForCycle(
-    tenantId: string,
-    cycleId: string,
-  ): Promise<boolean>;
-
-  /**
    * 065 Fix 1 (W-011 double-accept TOCTOU) — compare-and-swap
    * transition. The UPDATE matches only while the row is still in the
    * expected FROM state; a concurrent transition that committed after

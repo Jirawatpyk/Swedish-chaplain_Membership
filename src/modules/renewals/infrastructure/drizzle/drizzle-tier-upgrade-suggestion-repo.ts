@@ -328,34 +328,6 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
       });
     },
 
-    async hasSupersededSuggestionForCycle(
-      tenantId: string,
-      cycleId: string,
-    ): Promise<boolean> {
-      // 065 Fix A (S1 retry-heal) — existence probe for a `superseded`
-      // suggestion targeting this cycle. Only the
-      // `superseded_from_accepted` arm retains `target_apply_at_cycle_id`
-      // (set at accept-time, preserved by the manual-override supersede),
-      // so this match precisely identifies the cancelled-upgrade orphan
-      // the F2 finaliser must NOT re-bill. Explicit `eq(tenant_id, …)`
-      // belt-and-suspenders over RLS (S9 house style on this aggregate).
-      return runInTenant(tenant, async (tx) => {
-        const txDb = tx as unknown as typeof db;
-        const [row] = await txDb
-          .select({ id: tierUpgradeSuggestions.suggestionId })
-          .from(tierUpgradeSuggestions)
-          .where(
-            and(
-              eq(tierUpgradeSuggestions.tenantId, tenantId),
-              eq(tierUpgradeSuggestions.targetApplyAtCycleId, cycleId),
-              eq(tierUpgradeSuggestions.status, 'superseded'),
-            ),
-          )
-          .limit(1);
-        return Boolean(row);
-      });
-    },
-
     async transitionStatus(
       tx: TenantTx,
       tenantId: string,

@@ -75,6 +75,7 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
   parseSuggestionId,
+  TIER_UPGRADE_ACCEPTED_REASON_PREFIX,
   type SuggestionId,
 } from '../../domain/tier-upgrade-suggestion';
 import { asTaskId, type TaskId } from '../../domain/renewal-escalation-task';
@@ -259,7 +260,12 @@ export async function acceptTierUpgrade(
               fromPlanId: suggestion.fromPlanId,
               toPlanId: suggestion.toPlanId,
               scheduledByUserId: input.actorUserId,
-              reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
+              // 065 Fix A precision — shared prefix const (single source of
+              // truth with the F2 finaliser's reason-parsing gate). This is
+              // the LOAD-BEARING column write: the F4→F8 on-paid finaliser
+              // parses this `reason` to gate on the pending row's OWN
+              // suggestion status.
+              reason: `${TIER_UPGRADE_ACCEPTED_REASON_PREFIX}${suggestion.suggestionId}`,
             },
             // 065 S8 — thread the OUTER tx so this F2 supersede+insert is
             // atomic with the step-(c) F8 CAS below. A CAS-losing second
@@ -456,7 +462,9 @@ export async function acceptTierUpgrade(
             effective_at_cycle_id: activeCycle.cycleId,
             from_plan_id: suggestion.fromPlanId,
             to_plan_id: suggestion.toPlanId,
-            reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
+            // F2-domain audit-payload echo of the column-write above —
+            // same shared prefix const so the two never drift.
+            reason: `${TIER_UPGRADE_ACCEPTED_REASON_PREFIX}${suggestion.suggestionId}`,
           },
         },
       );

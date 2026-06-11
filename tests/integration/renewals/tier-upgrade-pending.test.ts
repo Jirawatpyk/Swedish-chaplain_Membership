@@ -1676,4 +1676,203 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     );
     expect(appliedAudit).toHaveLength(1);
   }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // 065 Fix A precision (re-accept same cycle) — the cycle-wide gate is too
+  // coarse
+  //
+  // A member can have TWO suggestions targeting the SAME active cycle when an
+  // upgrade is accepted, manually overridden, then re-suggested + re-accepted:
+  //
+  //   1. suggestion1 accepted → F8 accepted_pending_apply + F2 pending row
+  //      (reason `tier_upgrade_accepted:<S1>`).
+  //   2. manual override (`supersedePendingTierUpgrade`) → suggestion1
+  //      `superseded` (RETAINS target_apply_at_cycle_id; its F2 row is the
+  //      orphan the prior S6 test covers). NOTE: the supersede listener only
+  //      touches the F8 suggestion — it does NOT flip the F2 pending row.
+  //   3. The partial-unique `tier_upgrade_suggestions_member_open_uniq`
+  //      (status IN open, accepted_pending_apply) no longer covers the now-
+  //      `superseded` suggestion1, so a FRESH suggestion2 can be inserted
+  //      `open` for the same member + cycle.
+  //   4. suggestion2 accepted → its `supersedeAndInsertPendingAtomically`
+  //      supersedes the orphan F2 row (suggestion1's) and inserts a FRESH
+  //      pending F2 row (reason `tier_upgrade_accepted:<S2>`), targeting the
+  //      same active cycle. suggestion2 is now `accepted_pending_apply`.
+  //   5. Renewal paid → bridge fires. F8 apply transitions suggestion2 →
+  //      `applied`. The F2 finaliser SHOULD flip suggestion2's pending row.
+  //
+  // BUG (cycle-wide gate): `hasSupersededSuggestionForCycle(tenant, cycle)`
+  // finds suggestion1 (`superseded`, target = cycle) → returns true → the
+  // gate SKIPS the finaliser → suggestion2's VALID upgrade strands `pending`
+  // forever (money-safe direction — strand, not over-bill — but wrong).
+  //
+  // FIX (per-pending-row gate): the finaliser gates on the pending F2 row's
+  // OWN linked suggestion (`reason` → suggestion2 → `applied`, NOT
+  // `superseded`) → finalise. RED on the cycle-wide gate; GREEN after.
+  // ---------------------------------------------------------------------------
+  it('Fix A re-accept precision — F2 finaliser flips suggestion2 pending→applied even when a SUPERSEDED suggestion1 also targets the cycle', async () => {
+    // seedSuggestionState seeds member + cycle + suggestion1 (open).
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // 1) Accept suggestion1 → F8 accepted_pending_apply + F2 pending row.
+    const accept1 = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(accept1.ok).toBe(true);
+
+    // 2) Manual override — supersedes suggestion1 (retains its cycle target).
+    //    The supersede listener does NOT touch the F2 pending row; it is left
+    //    as the orphan that step (4)'s accept will atomically supersede.
+    const supersede = await supersedePendingTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      memberId: seeded.memberId,
+      manualChangeActorUserId: admin.userId,
+      supersedingPlanId: 'enterprise',
+      correlationId: randomUUID(),
+    });
+    expect(supersede.ok).toBe(true);
+    if (!supersede.ok) return;
+    expect(supersede.value.supersededSuggestionId).toBe(seeded.suggestionId);
+
+    // Sanity: suggestion1 is `superseded` AND still targets this cycle (so the
+    // cycle-wide gate will match it). This is the coarse-gate trigger.
+    const [s1Row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(s1Row?.status).toBe('superseded');
+    expect(s1Row?.targetApplyAtCycleId).toBe(seeded.cycleId);
+
+    // 3) Insert a FRESH open suggestion2 for the same member + cycle (now
+    //    allowed — suggestion1 is terminal, so the member_open partial-unique
+    //    no longer covers it).
+    const suggestion2Uuid = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tierUpgradeSuggestions).values({
+        tenantId: tenant.ctx.slug,
+        suggestionId: suggestion2Uuid,
+        memberId: seeded.memberId,
+        fromPlanId: 'regular',
+        toPlanId: 'premium',
+        reasonCode: 'declared_turnover_above_threshold',
+        evidenceJsonb: {
+          reasonCode: 'declared_turnover_above_threshold',
+          turnoverThb: 120_000_000,
+          thresholdMetAt: new Date().toISOString(),
+        },
+        status: 'open',
+      });
+    });
+    const s2IdResult = parseSuggestionId(suggestion2Uuid);
+    if (!s2IdResult.ok) throw new Error('suggestion2 id failed parse');
+    const suggestion2Id = s2IdResult.value;
+
+    // 4) Accept suggestion2 → supersedes the orphan F2 row + inserts a FRESH
+    //    pending F2 row (reason `tier_upgrade_accepted:<S2>`) for the cycle.
+    const accept2 = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: suggestion2Id,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(accept2.ok).toBe(true);
+
+    // The fresh pending F2 row is suggestion2's; capture its id for the audit
+    // assertion. Exactly one pending row survives (partial-unique).
+    const [s2Pending] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(
+          and(
+            eq(scheduledPlanChanges.memberId, seeded.memberId),
+            eq(scheduledPlanChanges.effectiveAtCycleId, seeded.cycleId),
+            eq(scheduledPlanChanges.status, 'pending'),
+          ),
+        ),
+    );
+    expect(s2Pending?.status).toBe('pending');
+    expect(s2Pending?.reason).toBe(
+      `tier_upgrade_accepted:${suggestion2Id}`,
+    );
+
+    // 5) Fire the F4 onPaid bridge for the cycle's invoice.
+    const fakeInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: fakeInvoiceId,
+        memberId: seeded.memberId,
+        planYear: 2026,
+        planId: 'regular',
+        draftByUserId: admin.userId,
+        status: 'draft',
+        currency: 'THB',
+      });
+      await (tx as unknown as typeof db)
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: fakeInvoiceId })
+        .where(eq(renewalCycles.cycleId, seeded.cycleId));
+    });
+
+    const evt: F4InvoicePaidEvent = {
+      tenantId: tenant.ctx.slug,
+      invoiceId: fakeInvoiceId,
+      memberId: seeded.memberId,
+      paidAt: new Date().toISOString(),
+      amountSatang: asSatang(5_000_000n),
+      vatSatang: asSatang(327_103n),
+      currency: 'THB',
+      paymentMethod: 'bank_transfer',
+      triggeredBy: 'webhook',
+    };
+    const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
+    await callbacks[1]!(evt, undefined);
+
+    // ASSERT: suggestion2's F2 pending row flipped to `applied` (its OWN
+    // suggestion is `applied`, NOT superseded — the cycle-wide gate wrongly
+    // skipped this because suggestion1 is superseded).
+    const [s2After] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.scheduledChangeId, s2Pending!.scheduledChangeId)),
+    );
+    expect(s2After?.status).toBe('applied');
+    expect(s2After?.appliedAt).not.toBeNull();
+
+    // suggestion2 is `applied`.
+    const [s2Suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, suggestion2Id)),
+    );
+    expect(s2Suggestion?.status).toBe('applied');
+
+    // plan_change_applied audit emitted for suggestion2's scheduled change.
+    const appliedAudit = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'plan_change_applied'),
+            sql`${auditLog.payload}->>'scheduled_change_id' = ${s2Pending!.scheduledChangeId}`,
+          ),
+        ),
+    );
+    expect(appliedAudit).toHaveLength(1);
+  }, 60_000);
 });
