@@ -41,12 +41,16 @@ import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema
 import { tierUpgradeSuggestions } from '@/modules/renewals/infrastructure/schema-tier-upgrade-suggestions';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import {
   acceptTierUpgrade,
   applyPendingTierUpgrade,
   supersedePendingTierUpgrade,
   makeRenewalsDeps,
+  f8OnPaidCallbacks,
 } from '@/modules/renewals';
+import { asSatang } from '@/lib/money';
+import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import {
   parseSuggestionId,
   type SuggestionId,
@@ -188,6 +192,9 @@ async function clearTenant(tenant: TestTenant): Promise<void> {
     db
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, tenant.ctx.slug)),
+    // invoices must be deleted AFTER renewal_cycles (cycle→invoice FK)
+    // and BEFORE members (invoice→member FK).
+    db.delete(invoices).where(eq(invoices.tenantId, tenant.ctx.slug)),
     db.delete(contacts).where(eq(contacts.tenantId, tenant.ctx.slug)),
     db.delete(members).where(eq(members.tenantId, tenant.ctx.slug)),
     db
@@ -231,6 +238,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       db
         .delete(renewalCycles)
         .where(eq(renewalCycles.tenantId, tenant.ctx.slug)),
+      // invoices: AFTER renewal_cycles (cycle→invoice FK), BEFORE members.
+      db.delete(invoices).where(eq(invoices.tenantId, tenant.ctx.slug)),
       db.delete(contacts).where(eq(contacts.tenantId, tenant.ctx.slug)),
       db.delete(members).where(eq(members.tenantId, tenant.ctx.slug)),
       db.delete(auditLog).where(eq(auditLog.tenantId, tenant.ctx.slug)),
@@ -1104,5 +1113,223 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
         ),
     );
     expect(supersededAudit).toHaveLength(1);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // 065 S6 — F2 finaliser must be gated on the F8 apply result
+  //
+  // The F4 onPaid bridge runs F8 `applyPendingTierUpgradeInTx` (which
+  // transitions the `accepted_pending_apply` suggestion → `applied` and
+  // returns the applied suggestion-ids) THEN a post-tx F2 finaliser
+  // (`finaliseF2ScheduledPlanChangeForCycle`) that flips the F2
+  // `scheduled_plan_changes` pending row → applied and emits
+  // `plan_change_applied`.
+  //
+  // PRE-FIX BUG: the finaliser fired whenever `resolvedCycleId !== null`
+  // (set the moment a cycle was found, BEFORE the apply ran) — fully
+  // DECOUPLED from whether F8 actually applied a suggestion. If a
+  // supersede cancelled the F8 suggestion but the F2 pending row was
+  // missed (the orphan state), F8 apply no-ops (returns []) yet the F2
+  // finaliser still flips pending → applied + emits plan_change_applied
+  // → BILLS a tier upgrade the supersede meant to cancel (money bug).
+  //
+  // POST-FIX: the finaliser is gated on the apply having applied a
+  // suggestion for the cycle (`suggestionsApplied.length > 0`). In the
+  // orphan state the F2 row stays `pending` and no plan_change_applied
+  // is emitted.
+  //
+  // Orphan seed: accept (→ F8 accepted_pending_apply + F2 pending), then
+  // directly flip the F8 suggestion to `superseded` in the DB WITHOUT
+  // touching the F2 row — exactly the missed-supersede orphan the
+  // S6 finding describes. Then fire the bridge for the cycle's invoice.
+  // ---------------------------------------------------------------------------
+  it('S6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // 1) Accept → F8 accepted_pending_apply + F2 pending row.
+    const accept = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(accept.ok).toBe(true);
+
+    // 2) Orphan the F8 suggestion: flip it to `superseded` directly,
+    //    leaving the F2 pending row UNTOUCHED (the supersede that missed
+    //    the F2 row). The F8 apply will now no-op (no
+    //    accepted_pending_apply row for the cycle).
+    const fakeInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await (tx as unknown as typeof db)
+        .update(tierUpgradeSuggestions)
+        .set({ status: 'superseded', closedAt: sql`now()` })
+        .where(
+          eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId),
+        );
+      // Seed the draft invoice the cycle FK references, then link it
+      // (renewal_cycles_linked_invoice_fk → invoices(invoice_id)).
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: fakeInvoiceId,
+        memberId: seeded.memberId,
+        planYear: 2026,
+        planId: 'regular',
+        draftByUserId: admin.userId,
+        status: 'draft',
+        currency: 'THB',
+      });
+      // Link the cycle to the invoice the bridge resolves by.
+      await (tx as unknown as typeof db)
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: fakeInvoiceId })
+        .where(eq(renewalCycles.cycleId, seeded.cycleId));
+    });
+
+    // Sanity: F2 row IS pending pre-bridge (the orphan).
+    const [beforeRow] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.memberId, seeded.memberId)),
+    );
+    expect(beforeRow?.status).toBe('pending');
+
+    // 3) Fire the F4 onPaid bridge (callback[1] = tier-upgrade-apply)
+    //    inside a real tenant tx with the linked invoice id.
+    const evt: F4InvoicePaidEvent = {
+      tenantId: tenant.ctx.slug,
+      invoiceId: fakeInvoiceId,
+      memberId: seeded.memberId,
+      paidAt: new Date().toISOString(),
+      amountSatang: asSatang(5_000_000n),
+      vatSatang: asSatang(327_103n),
+      currency: 'THB',
+      paymentMethod: 'bank_transfer',
+      triggeredBy: 'webhook',
+    };
+    // Invoke via the no-tx fallback path: the apply opens its OWN
+    // runInTenant + commits before the post-tx F2 finaliser runs (the
+    // production post-commit ordering). Wrapping in an outer
+    // runInTenant would NEST the finaliser's own runInTenant and stall
+    // on the pooled connection.
+    const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
+    await callbacks[1]!(evt, undefined);
+
+    // 4) ASSERT: the F2 pending row must NOT have flipped to applied —
+    //    the supersede cancelled the upgrade; billing it is the bug.
+    const [afterRow] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.memberId, seeded.memberId)),
+    );
+    expect(afterRow?.status).toBe('pending');
+    expect(afterRow?.appliedAt).toBeNull();
+
+    // No plan_change_applied audit for this scheduled change.
+    const appliedAudit = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'plan_change_applied'),
+            sql`${auditLog.payload}->>'scheduled_change_id' = ${beforeRow!.scheduledChangeId}`,
+          ),
+        ),
+    );
+    expect(appliedAudit).toHaveLength(0);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // 065 S6 — positive regression: a normally accepted-then-paid upgrade
+  // STILL applies BOTH the F8 suggestion AND the F2 plan-change.
+  // ---------------------------------------------------------------------------
+  it('S6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block)', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    const accept = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(accept.ok).toBe(true);
+
+    const fakeInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: fakeInvoiceId,
+        memberId: seeded.memberId,
+        planYear: 2026,
+        planId: 'regular',
+        draftByUserId: admin.userId,
+        status: 'draft',
+        currency: 'THB',
+      });
+      await (tx as unknown as typeof db)
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: fakeInvoiceId })
+        .where(eq(renewalCycles.cycleId, seeded.cycleId));
+    });
+
+    const evt: F4InvoicePaidEvent = {
+      tenantId: tenant.ctx.slug,
+      invoiceId: fakeInvoiceId,
+      memberId: seeded.memberId,
+      paidAt: new Date().toISOString(),
+      amountSatang: asSatang(5_000_000n),
+      vatSatang: asSatang(327_103n),
+      currency: 'THB',
+      paymentMethod: 'bank_transfer',
+      triggeredBy: 'webhook',
+    };
+    const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
+    await callbacks[1]!(evt, undefined);
+
+    // F8 suggestion applied.
+    const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(suggestion?.status).toBe('applied');
+
+    // F2 plan-change applied.
+    const [scheduled] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.memberId, seeded.memberId)),
+    );
+    expect(scheduled?.status).toBe('applied');
+    expect(scheduled?.appliedAt).not.toBeNull();
+
+    // plan_change_applied audit emitted for this scheduled change.
+    const appliedAudit = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'plan_change_applied'),
+            sql`${auditLog.payload}->>'scheduled_change_id' = ${scheduled!.scheduledChangeId}`,
+          ),
+        ),
+    );
+    expect(appliedAudit).toHaveLength(1);
   }, 60_000);
 });

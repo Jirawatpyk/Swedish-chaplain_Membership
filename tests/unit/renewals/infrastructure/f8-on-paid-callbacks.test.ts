@@ -485,13 +485,17 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
       cycleId: 'cyc-replay',
       memberId: 'mem-replay',
     });
-    // Second call: applyPendingTierUpgradeInTx returns
-    // `suggestionsApplied: []` because findPendingForCycle finds zero
-    // rows (the first call already transitioned the suggestion to
-    // `applied`, which the partial index excludes).
+    // Second call: applyPendingTierUpgradeInTx returns an EMPTY array
+    // because findPendingForCycle finds zero rows (the first call
+    // already transitioned the suggestion to `applied`, which the
+    // partial index excludes). NOTE: the InTx variant returns a bare
+    // `ReadonlyArray<SuggestionId>` (NOT the `{ suggestionsApplied }`
+    // wrapper that the standalone `applyPendingTierUpgrade` returns) —
+    // 065 S6 reads `.length` off this return to gate the F2 finaliser,
+    // so the mock MUST match the real bare-array shape.
     applyPendingTierUpgradeInTxMock
-      .mockResolvedValueOnce({ suggestionsApplied: ['sug-1'] })
-      .mockResolvedValueOnce({ suggestionsApplied: [] });
+      .mockResolvedValueOnce(['sug-1'])
+      .mockResolvedValueOnce([]);
 
     const callbacks = f8OnPaidCallbacks('test-tenant');
 
@@ -517,12 +521,17 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
   // `_internal` export. This integration assertion pins the OUTER
   // callback factory's wiring:
   //   1. `resolvedCycleId` is captured from the in-tx cycle lookup.
-  //   2. The `if (resolvedCycleId !== null)` gate fires the F2
-  //      finaliser exactly once on renewal-cycle invoices.
+  //   2. The `if (resolvedCycleId !== null && appliedSuggestionCount
+  //      > 0)` gate (065 S6) fires the F2 finaliser exactly once on
+  //      renewal-cycle invoices WHERE the apply transitioned a
+  //      suggestion.
   //   3. The `renewalsMetrics.f2FinaliseBeforeF4Commit` counter is
   //      bumped before the finaliser runs.
   //   4. On non-renewal invoices (cycle === null short-circuit), the
   //      F2 finaliser MUST NOT be invoked + the metric MUST NOT bump.
+  //   5. (065 S6) When the apply transitions nothing
+  //      (`suggestionsApplied=[]`), the finaliser MUST NOT be entered —
+  //      see the dedicated S6 test below.
   // A refactor that drops the `resolvedCycleId = cycle.cycleId`
   // assignment at the apply()-closure site would fail (3).
   // ─────────────────────────────────────────────────────────────────
@@ -532,9 +541,8 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
       cycleId: 'cyc-with-pending-plan-change',
       memberId: 'mem-1',
     });
-    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce({
-      suggestionsApplied: ['sug-A'],
-    });
+    // InTx variant returns a bare array (065 S6 gate reads `.length`).
+    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce(['sug-A']);
     // F2 finaliser path: pending row exists for (member, cycle).
     f2FindPendingForCycleMock.mockResolvedValueOnce({
       tenantId: 'test-tenant',
@@ -601,23 +609,29 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     expect(f2FinaliseBeforeF4CommitMock).not.toHaveBeenCalled();
   });
 
-  it('R2-I8: F2 finaliser is no-op (no audit emit) when cycle resolved but no pending row exists (same-tier renewal)', async () => {
+  it('065 S6: F2 finaliser is NOT entered when the apply transitions nothing (suggestionsApplied=[] — same-tier renewal or orphan supersede)', async () => {
     cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
-      cycleId: 'cyc-no-pending',
+      cycleId: 'cyc-no-apply',
       memberId: 'mem-1',
     });
-    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce({
-      suggestionsApplied: [],
-    });
-    // Default beforeEach already sets f2FindPendingForCycleMock to null.
+    // Apply no-ops: no `accepted_pending_apply` suggestion for the cycle.
+    // This is both the common same-tier-renewal case AND the orphan
+    // state (supersede cancelled the F8 suggestion). In BOTH the
+    // finaliser MUST be skipped entirely — gating on the apply result
+    // closes the S6 re-bill hole where a pending F2 row left behind by a
+    // missed supersede would otherwise be flipped pending → applied.
+    // InTx variant returns a bare array (065 S6 gate reads `.length`).
+    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce([]);
 
     const callbacks = f8OnPaidCallbacks('test-tenant');
     await callbacks[1]!(buildEvent(), fakeValidTenantTx);
 
-    // Counter fires (we ENTER the finaliser code path) but lookup
-    // returns null → no transition + no audit.
-    expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledTimes(1);
-    expect(f2FindPendingForCycleMock).toHaveBeenCalledTimes(1);
+    // 065 S6 — the finaliser code path is NOT entered: the counter does
+    // NOT fire AND `findPendingForCycle` is NOT queried. A pending F2 row
+    // for the cycle (the orphan) is therefore left untouched, never
+    // re-billed.
+    expect(f2FinaliseBeforeF4CommitMock).not.toHaveBeenCalled();
+    expect(f2FindPendingForCycleMock).not.toHaveBeenCalled();
     expect(f2TransitionStatusMock).not.toHaveBeenCalled();
     expect(f2AuditRecordMock).not.toHaveBeenCalled();
   });

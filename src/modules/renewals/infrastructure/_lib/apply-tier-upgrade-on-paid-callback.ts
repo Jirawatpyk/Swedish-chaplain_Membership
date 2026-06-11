@@ -193,6 +193,18 @@ export function makeApplyTierUpgradeOnPaidCallback(
     // read (which the F2 finaliser does NOT need — it only consults
     // `scheduled_plan_changes`).
     let resolvedCycleId: string | null = null;
+    // 065 S6 — count of F8 suggestions the apply ACTUALLY transitioned
+    // to `applied` for this cycle. The post-tx F2 finaliser is gated on
+    // this being > 0 (see the gate below). Decoupling the finaliser
+    // from the apply result re-bills a supersede-cancelled upgrade: if a
+    // manual override superseded the F8 suggestion but missed the F2
+    // pending row (the orphan state), the apply no-ops (returns []) yet
+    // the finaliser would flip the orphan F2 row pending → applied and
+    // emit `plan_change_applied`. Both aggregates MUST agree — there is
+    // no production path where the F2 row is finalised without an F8
+    // suggestion having been applied (every F2 pending row is created by
+    // `acceptTierUpgrade` alongside its F8 suggestion).
+    let appliedSuggestionCount = 0;
     const apply = async (tx: TenantTx, isFallback: boolean) => {
       // Resolve the cycle linked to this invoice. Non-renewal
       // invoices return null and the callback is a no-op.
@@ -204,13 +216,14 @@ export function makeApplyTierUpgradeOnPaidCallback(
       if (!cycle) return;
       resolvedCycleId = cycle.cycleId;
       try {
-        await applyPendingTierUpgradeInTx(deps, tx, {
+        const applied = await applyPendingTierUpgradeInTx(deps, tx, {
           tenantId: evt.tenantId,
           cycleId: cycle.cycleId,
           invoiceId: evt.invoiceId as unknown as InvoiceId,
           correlationId: `f8-onPaid:${evt.invoiceId}`,
           requestId: null,
         });
+        appliedSuggestionCount = applied.length;
       } catch (e) {
         logger.error(
           {
@@ -319,7 +332,18 @@ export function makeApplyTierUpgradeOnPaidCallback(
     // counter. If repeated firing surfaces in prod, the architectural
     // fix is `RecordPaymentDeps.onAfterCommitCallbacks` — tracked as
     // Round-4+ feature.
-    if (resolvedCycleId !== null) {
+    //
+    // 065 S6 — gate the F2 finaliser on the F8 apply having actually
+    // transitioned a suggestion for this cycle (`appliedSuggestionCount
+    // > 0`). When the apply no-ops (no `accepted_pending_apply`
+    // suggestion — same-tier renewal OR the orphan state where a
+    // supersede cancelled the F8 suggestion but missed the F2 pending
+    // row), the F2 row MUST NOT be flipped pending → applied: doing so
+    // re-bills an upgrade the supersede meant to cancel (money bug). The
+    // two aggregates agree by construction — every F2 pending row is
+    // created by `acceptTierUpgrade` alongside its F8 suggestion, so a
+    // zero-apply cycle has no legitimate F2 finalisation to perform.
+    if (resolvedCycleId !== null && appliedSuggestionCount > 0) {
       renewalsMetrics.f2FinaliseBeforeF4Commit(evt.tenantId);
       await finaliseF2ScheduledPlanChangeForCycle(
         deps,
