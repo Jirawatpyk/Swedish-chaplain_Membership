@@ -37,8 +37,15 @@ export function stripReason<E extends { code: string }>(error: E): Omit<E, 'reas
  *     ABSENT (internal verification error → the 500 default).
  *   - pdf_render_failed / blob_upload_failed → 500: infrastructure
  *     failures after rollback.
+ *
+ * Exported (065 review follow-up) ONLY for the unit pin in
+ * tests/unit/invoicing/issue-error-status.test.ts, which asserts the full
+ * map INCLUDING the deliberate `registration_lookup_failed` absence — a
+ * semantic `issueErrorStatus` alone cannot distinguish (absent and
+ * mapped-to-500 are behaviourally identical). Routes must keep calling
+ * `issueErrorStatus`, never index this map directly.
  */
-const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
+export const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
   invoice_not_found: 404,
   member_not_found: 404,
   invoice_already_issued: 409,

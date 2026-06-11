@@ -158,4 +158,36 @@ describe('contract: POST /api/invoices/[invoiceId]/issue — no-TIN event guard 
       errorCode: 'event_no_tin_requires_paid_issue',
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 065 review follow-up [Sev 6, item 2b] — route-level pins for the 064 S1
+  // registration re-check codes. `issueInvoice` re-reads the F6 registration
+  // at issuance (event subject only); the route must forward both codes
+  // through the shared wave-4 S16 status map.
+  // ---------------------------------------------------------------------------
+
+  it('422 registration_refunded — refunded between draft and issuance (064 S1 TOCTOU re-check), bare code', async () => {
+    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'registration_refunded' }));
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest(), routeParams);
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    // Exactly the typed code — no reason / message / registration detail.
+    expect(body.error).toEqual({ code: 'registration_refunded' });
+  });
+
+  it('500 registration_lookup_failed — TYPED body (the route serialises the code; NOT the bodyless Next generic 500)', async () => {
+    // Deliberately absent from ISSUE_ERROR_STATUS_BASE → the 500 DEFAULT arm
+    // (see _serialise.ts + tests/unit/invoicing/issue-error-status.test.ts).
+    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'registration_lookup_failed' }));
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest(), routeParams);
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({ code: 'registration_lookup_failed' });
+  });
 });

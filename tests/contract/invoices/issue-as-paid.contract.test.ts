@@ -540,6 +540,22 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(body.error.code).toBe('no_buyer_snapshot');
   });
 
+  it('422 registration_refunded — refunded between draft and issuance (064 S1 TOCTOU re-check), bare code', async () => {
+    issueEventInvoiceAsPaidMock.mockResolvedValueOnce(
+      err({ code: 'registration_refunded' }),
+    );
+
+    const { POST } = await importRoute();
+    const res = await POST(
+      makePostRequest({ paymentDate: PAST_PAYMENT_DATE }),
+      routeParams,
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    // Exactly the typed code — no reason / message / registration detail.
+    expect(body.error).toEqual({ code: 'registration_refunded' });
+  });
+
   // -------------------------------------------------------------------------
   // 429 — rate limited
   // -------------------------------------------------------------------------
@@ -601,6 +617,25 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(body.error).not.toHaveProperty('reason');
   });
 
+  it('500 registration_lookup_failed — TYPED body (the route serialises the code; NOT the bodyless Next generic 500)', async () => {
+    // Deliberately absent from ISSUE_ERROR_STATUS_BASE → the 500 DEFAULT arm
+    // (see _serialise.ts + tests/unit/invoicing/issue-error-status.test.ts).
+    // The typed `{error:{code}}` body is what distinguishes this from a raw
+    // throw hitting Next's generic 500 handler — clients/support can grep it.
+    issueEventInvoiceAsPaidMock.mockResolvedValueOnce(
+      err({ code: 'registration_lookup_failed' }),
+    );
+
+    const { POST } = await importRoute();
+    const res = await POST(
+      makePostRequest({ paymentDate: PAST_PAYMENT_DATE }),
+      routeParams,
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({ code: 'registration_lookup_failed' });
+  });
+
   // -------------------------------------------------------------------------
   // 200 — happy path
   // -------------------------------------------------------------------------
@@ -651,6 +686,11 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(input.paymentMethod).toBe('other');
     expect(input.paymentReference).toBeNull();
     expect(input.paymentNotes).toBeNull();
+
+    // F8 dark (env mock pins f8Renewals=false): the deps factory must get
+    // NO callbacks — the flag-TRUE arm is pinned by the sibling
+    // issue-as-paid-f8.contract.test.ts.
+    expect(makeDepsMock).toHaveBeenCalledWith('test-swecham', undefined);
   });
 
   it('200 happy — explicit paymentMethod / reference / notes thread through', async () => {

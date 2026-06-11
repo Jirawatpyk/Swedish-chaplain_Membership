@@ -210,8 +210,8 @@ delete every site marked `REMOVE-WITH-064-REMEDIATION`:
 | 10 | `src/modules/payments/application/use-cases/initiate-payment.ts` | the `legacy_no_tin_event_not_payable` error-union member + the short-circuit branch |
 | 11 | `src/app/api/payments/initiate/route.ts` | the `legacy_no_tin_event_not_payable` → 409 map case |
 | 12 | `src/modules/payments/application/use-cases/confirm-payment.ts` | the `'issued'` resolver arm + the `payments.confirm.legacy_no_tin_event_money_captured` ops log (+ its logger import) |
-| 13 | `src/app/(member)/portal/invoices/[invoiceId]/page.tsx` + `src/i18n/messages/{en,th,sv}.json` | the portal pay-gate + notice + the `portal.invoices.detail.legacyNoTinNotPayable` key (×3 locales; grep the key name) |
-| 14 | `tests/unit/invoicing/get-invoice-for-payment.test.ts`, `tests/unit/payments/invoicing-bridge.test.ts`, `tests/unit/payments/application/initiate-payment.test.ts`, `tests/unit/payments/application/confirm-payment.test.ts`, `tests/contract/payments/post-payments-initiate.contract.test.ts` | the `REMOVE-WITH-064-REMEDIATION` unit/contract pins |
+| 13 | `src/app/(member)/portal/invoices/_utils/legacy-no-tin.ts` (whole file) + `tests/unit/portal/legacy-no-tin.test.ts` (whole file) + `src/app/(member)/portal/invoices/[invoiceId]/page.tsx` + `src/i18n/messages/{en,th,sv}.json` | the extracted pay-gate predicate helper + its unit pin + the page's gate + notice + the `portal.invoices.detail.legacyNoTinNotPayable` key (×3 locales; grep the key name) |
+| 14 | `tests/unit/invoicing/get-invoice-for-payment.test.ts`, `tests/unit/payments/invoicing-bridge.test.ts`, `tests/unit/payments/application/initiate-payment.test.ts`, `tests/unit/payments/application/confirm-payment.test.ts`, `tests/contract/payments/post-payments-initiate.contract.test.ts`, `tests/contract/invoices/pay-route-guard.contract.test.ts` | the `REMOVE-WITH-064-REMEDIATION` unit/contract pins |
 | 15 | `tests/integration/invoicing/record-payment-event-invoice.test.ts` | the matched-member `legacy_no_tin_event_not_payable` integration pin (incl. its direct-insert fixture) |
 
 Then run `pnpm check:i18n` (key parity), the invoicing unit + contract
