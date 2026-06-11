@@ -142,6 +142,7 @@ function makeDeps(invoice: Invoice | null) {
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),

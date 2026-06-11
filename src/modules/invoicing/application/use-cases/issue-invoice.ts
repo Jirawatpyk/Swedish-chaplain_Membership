@@ -491,12 +491,15 @@ export async function issueInvoice(
           sha256: rendered.sha256,
           templateVersion: deps.currentTemplateVersion,
         },
-        // 064 (Task 2) — persist WHAT the rendered main PDF is, faithful to
-        // the §86/4 gate above: `pdfKind` here is always 'invoice' or
-        // 'receipt_separate' (inferEventDocumentKind's range; a no-TIN event
-        // buyer CAN still reach plain issue today). The ternary narrows the
-        // wider `PdfDocKind` declaration to the port's two-value union.
-        pdfDocKind: pdfKind === 'invoice' ? 'invoice' : 'receipt_separate',
+        // 064 (Task 2, comment + dead arm fixed wave-4 S21) — persist WHAT
+        // the rendered main PDF is. After the two §86/4 gates above
+        // (membership no-TIN → tax_id_required; event no-TIN →
+        // event_no_tin_requires_paid_issue) every plain-issue path resolves
+        // `pdfKind === 'invoice'` — 'receipt_separate' is unreachable here
+        // (the as-paid use case is the only live writer of receipt kinds),
+        // so the constant is faithful and the former narrowing ternary's
+        // false arm was dead code.
+        pdfDocKind: 'invoice',
       });
     } catch (e) {
       if (e instanceof InvoiceApplyConflictError && e.kind === 'applyIssue') {

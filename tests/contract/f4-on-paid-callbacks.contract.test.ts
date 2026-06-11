@@ -175,6 +175,7 @@ function makeDepsWithCallbacks(
         paidAt: '2026-05-18T10:00:00Z',
       } as Invoice)),
       applyDraftUpdate: vi.fn(),
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as InvoiceStatus),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),

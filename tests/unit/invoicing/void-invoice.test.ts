@@ -209,6 +209,7 @@ function makeDeps(
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => loaded?.status ?? null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(async () => {}),

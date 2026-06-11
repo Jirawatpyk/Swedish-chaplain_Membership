@@ -221,10 +221,18 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
     invoiceId = draft.value.invoiceId;
 
     // The act under test — single UPDATE draft→paid inside the repo tx.
+    // Wave-4 S26/S28 — mirror the production caller contract: lock + load
+    // the draft via the combined findByIdInTxForUpdate read and pass ITS
+    // lines through (the repo no longer re-selects them).
     const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
-    paidInvoice = await repo.withTx(async (tx) =>
-      repo.applyIssueAsPaid(tx, buildTinInput(tenant.ctx.slug, invoiceId, user.userId)),
-    );
+    paidInvoice = await repo.withTx(async (tx) => {
+      const locked = await repo.findByIdInTxForUpdate(tx, invoiceId, tenant.ctx.slug);
+      if (!locked) throw new Error('locked draft load failed');
+      return repo.applyIssueAsPaid(tx, {
+        ...buildTinInput(tenant.ctx.slug, invoiceId, user.userId),
+        lines: locked.lines,
+      });
+    });
   }, 60_000);
 
   afterAll(async () => {
@@ -291,7 +299,12 @@ describe('applyIssueAsPaid — single UPDATE draft→paid (TIN / invoice_stream 
     let thrown: unknown = null;
     try {
       await repo.withTx(async (tx) =>
-        repo.applyIssueAsPaid(tx, buildTinInput(tenant.ctx.slug, invoiceId, user.userId)),
+        repo.applyIssueAsPaid(tx, {
+          ...buildTinInput(tenant.ctx.slug, invoiceId, user.userId),
+          // S26 — lines from the already-paid row; the WHERE status='draft'
+          // guard throws before they are ever echoed.
+          lines: paidInvoice.lines,
+        }),
       );
     } catch (e) {
       thrown = e;
@@ -1427,9 +1440,16 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
 
   it('T9-1 — receipt_stream commit: paid row, seq/docnum NULL, receipt raw set, receipt_separate; every other CHECK satisfied', async () => {
     const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
-    const paid = await repo.withTx(async (tx) =>
-      repo.applyIssueAsPaid(tx, buildNoTinInput(tenant.ctx.slug, noTinDraft, user.userId)),
-    );
+    const paid = await repo.withTx(async (tx) => {
+      // Wave-4 S26/S28 — production caller contract: combined locked read
+      // supplies the lines (the repo no longer re-selects them).
+      const locked = await repo.findByIdInTxForUpdate(tx, noTinDraft, tenant.ctx.slug);
+      if (!locked) throw new Error('locked draft load failed');
+      return repo.applyIssueAsPaid(tx, {
+        ...buildNoTinInput(tenant.ctx.slug, noTinDraft, user.userId),
+        lines: locked.lines,
+      });
+    });
 
     // Domain mapping (rowsToInvoice handles the NULL document_number).
     expect(paid.status).toBe('paid');
@@ -1490,9 +1510,13 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
       buyer: BUYER_NO_TIN,
     });
     const base = buildNoTinInput(tenant.ctx.slug, draftId, user.userId);
-    await repo.withTx(async (tx) =>
-      repo.applyIssueAsPaid(tx, {
+    await repo.withTx(async (tx) => {
+      // Wave-4 S26/S28 — combined locked read supplies the lines.
+      const locked = await repo.findByIdInTxForUpdate(tx, draftId, tenant.ctx.slug);
+      if (!locked) throw new Error('locked draft load failed');
+      return repo.applyIssueAsPaid(tx, {
         ...base,
+        lines: locked.lines,
         numbering: {
           kind: 'receipt_stream' as const,
           receiptDocumentNumberRaw: W1_RECEIPT_RAW,
@@ -1501,8 +1525,8 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
           ...base.pdf,
           blobKey: `invoices/${tenant.ctx.slug}/2026/${W1_RECEIPT_RAW}_v1.pdf`,
         },
-      }),
-    );
+      });
+    });
 
     // Cursor variant (`list`) — substring match, case-insensitive ilike.
     const cursorPage = await repo.list(tenant.ctx.slug, {

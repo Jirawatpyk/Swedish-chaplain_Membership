@@ -173,6 +173,7 @@ function makeDeps(
       // the row doesn't exist (null), otherwise surface whatever
       // status the fixture was built with so the state-machine
       // branches all exercise correctly.
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () =>
         rowExists ? ((draft?.status ?? 'issued') as InvoiceStatus) : null,
       ),

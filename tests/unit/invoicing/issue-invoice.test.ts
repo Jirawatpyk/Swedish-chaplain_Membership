@@ -202,6 +202,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       // Default: returns the status of the provided draft fixture so
       // the lock check passes through to findByIdInTx. Individual
       // tests override this to test status-race branches.
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),

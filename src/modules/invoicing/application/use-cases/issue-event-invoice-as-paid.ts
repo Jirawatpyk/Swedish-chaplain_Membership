@@ -26,7 +26,8 @@
  *
  * Canonical lock order (mirrors issueInvoice — R7-S1 deadlock rationale at
  * issue-invoice.ts:14 applies verbatim):
- *   1. invoice row FOR UPDATE (lockForUpdate)
+ *   1. invoice row FOR UPDATE (findByIdInTxForUpdate — locked read + draft
+ *      load in one round-trip, wave-4 S28)
  *   2. member FOR UPDATE (archive-race guard FR-037; skipped for non-member
  *      buyers — snapshot pinned at draft)
  *   3. §87 advisory lock + sequence row FOR UPDATE (inside allocateNext)
@@ -266,12 +267,20 @@ export async function issueEventInvoiceAsPaid(
       // to the throw-carrier — committing a partial tx that consumed a
       // sequence number creates a §87 gap.
 
-      // C1. Row-lock the invoice BEFORE reading the draft — serialises
-      // concurrent issue/as-paid attempts on the same invoice id (lock order
-      // step 1; the applyIssueAsPaid CALLER CONTRACT requires this to be
-      // held before allocateNext).
-      const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
-      if (!lockedStatus) {
+      // C. Row-lock + draft load in ONE round-trip (wave-4 S28 — formerly a
+      // lockForUpdate status probe followed by a findByIdInTx reload). The
+      // SELECT ... FOR UPDATE serialises concurrent issue/as-paid attempts on
+      // the same invoice id (lock order step 1; the applyIssueAsPaid CALLER
+      // CONTRACT requires this lock to be held before allocateNext) and the
+      // money/snapshots below all come from this post-lock read. The combined
+      // read also closes the former "lock OK but reload returned null"
+      // defensive gap — the locked row cannot vanish mid-tx.
+      const draft = await deps.invoiceRepo.findByIdInTxForUpdate(
+        tx,
+        invoiceId,
+        input.tenantId,
+      );
+      if (!draft) {
         // R7-W1 parity — probe on not-found (an RLS-hidden row is
         // indistinguishable from a truly-missing id; audit either way per
         // Constitution Principle I clause 4). NULL tx so the audit survives
@@ -290,15 +299,9 @@ export async function issueEventInvoiceAsPaid(
         });
         return err({ code: 'invoice_not_found' });
       }
-      if (lockedStatus !== 'draft') {
-        return err({ code: 'invoice_already_issued', status: lockedStatus });
+      if (draft.status !== 'draft') {
+        return err({ code: 'invoice_already_issued', status: draft.status });
       }
-
-      // C2. Draft load (now safely inside the row lock — per the
-      // applyIssueAsPaid CALLER CONTRACT, money/snapshots MUST come from
-      // this post-lock read).
-      const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
-      if (!draft) return err({ code: 'invoice_not_found' });
 
       if (draft.invoiceSubject !== 'event') {
         return err({ code: 'not_event_subject' });
@@ -408,49 +411,30 @@ export async function issueEventInvoiceAsPaid(
       //            (migration 0212 relaxed leg) so a receipt number can never
       //            collide inside invoices_tenant_fiscal_seq_unique.
       // `docNum` is the document's PRINTED number either way — threaded into
-      // the PDF render and both audit summaries below.
-      let numbering:
-        | { kind: 'invoice_stream'; sequenceNumber: number; documentNumber: string }
-        | { kind: 'receipt_stream'; receiptDocumentNumberRaw: string };
-      let docNum: DocumentNumber;
-      if (pdfKind === 'receipt_combined') {
-        const seq = await deps.sequenceAllocator.allocateNext(tx, {
-          tenantId: input.tenantId,
-          documentType: 'invoice',
-          fiscalYear: fy,
-        });
-        const invoiceDoc = DocumentNumber.of(settings.invoiceNumberPrefix, fy, seq);
-        if (!invoiceDoc.ok) {
-          throw new IssueAsPaidInternalError({ code: 'overflow', fiscalYear: fy });
-        }
-        numbering = {
-          kind: 'invoice_stream',
-          sequenceNumber: seq,
-          documentNumber: invoiceDoc.value.raw,
-        };
-        docNum = invoiceDoc.value;
-      } else {
-        const receiptSeq = await deps.sequenceAllocator.allocateNext(tx, {
-          tenantId: input.tenantId,
-          documentType: 'receipt',
-          fiscalYear: fy,
-        });
-        const receiptDoc = DocumentNumber.of(
-          settings.receiptNumberPrefix ?? 'RE',
-          fy,
-          receiptSeq,
-        );
-        if (!receiptDoc.ok) {
-          // Throw so the tx rolls back and the receipt-sequence increment is
-          // NOT consumed by a failed number assignment (recordPayment parity).
-          throw new IssueAsPaidInternalError({ code: 'overflow', fiscalYear: fy });
-        }
-        numbering = {
-          kind: 'receipt_stream',
-          receiptDocumentNumberRaw: receiptDoc.value.raw,
-        };
-        docNum = receiptDoc.value;
+      // the PDF render and both audit summaries below. (Wave-4 S22: the two
+      // formerly copy-pasted allocate/build/overflow arms are collapsed —
+      // only documentType + prefix differ; the overflow throw rolls the tx
+      // back so the consumed increment never commits, either stream.)
+      const stream =
+        pdfKind === 'receipt_combined'
+          ? ({ documentType: 'invoice', prefix: settings.invoiceNumberPrefix } as const)
+          : ({ documentType: 'receipt', prefix: settings.receiptNumberPrefix ?? 'RE' } as const);
+      const seq = await deps.sequenceAllocator.allocateNext(tx, {
+        tenantId: input.tenantId,
+        documentType: stream.documentType,
+        fiscalYear: fy,
+      });
+      const doc = DocumentNumber.of(stream.prefix, fy, seq);
+      if (!doc.ok) {
+        throw new IssueAsPaidInternalError({ code: 'overflow', fiscalYear: fy });
       }
+      const docNum: DocumentNumber = doc.value;
+      const numbering:
+        | { kind: 'invoice_stream'; sequenceNumber: number; documentNumber: string }
+        | { kind: 'receipt_stream'; receiptDocumentNumberRaw: string } =
+        stream.documentType === 'invoice'
+          ? { kind: 'invoice_stream', sequenceNumber: seq, documentNumber: docNum.raw }
+          : { kind: 'receipt_stream', receiptDocumentNumberRaw: docNum.raw };
 
       // G+H+I. Snapshots + render + upload the ONE combined PDF.
       const tenantSnap = settings.identity;
@@ -491,6 +475,9 @@ export async function issueEventInvoiceAsPaid(
           tenantId: input.tenantId,
           invoiceId,
           fiscalYear: fy,
+          // S26 — post-lock draft lines, echoed into the returned Invoice
+          // (the repo no longer re-selects them).
+          lines: draft.lines,
           numbering,
           issueDate: input.paymentDate,
           subtotalSatang: asSatang(subtotal.satang),
@@ -751,11 +738,11 @@ export async function issueEventInvoiceAsPaid(
               invoice_id: input.invoiceId,
               // As-paid renders exactly one document; the kind was resolved
               // from the buyer snapshot before any render could run (TIN →
-              // receipt_combined, no-TIN β → receipt_separate). The fallback
-              // is defensive only — a render failure implies the kind was set,
-              // so the `??` arm is unreachable (v8-ignored, repo precedent:
-              // verify-renewal-link-token.ts L181).
-              render_kind: /* v8 ignore next */ pdfKindForForensics ?? 'receipt_combined',
+              // receipt_combined, no-TIN β → receipt_separate), so this is
+              // never null on a pdf_render_failed path. No fabricated
+              // fallback (wave-4 S23): if the impossible ever happened, an
+              // honest null in the forensic row beats a lying kind.
+              render_kind: pdfKindForForensics,
               reason: e.error.reason,
             },
           });

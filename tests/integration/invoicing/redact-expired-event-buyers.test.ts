@@ -430,6 +430,10 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
           tenantId: tenant.ctx.slug,
           invoiceId: asInvoiceId(oldAsPaidInvoiceId),
           fiscalYear: 2014,
+          // Wave-4 S26 — the raw-inserted draft above carries NO lines, so
+          // the echoed lines are honestly empty (matches the DB truth; this
+          // redaction fixture never reads them).
+          lines: [],
           numbering: {
             kind: 'invoice_stream',
             sequenceNumber: 900004,

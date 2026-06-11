@@ -267,6 +267,11 @@ function makeDeps(
       withTx: vi.fn(async (fn) => fn(OPAQUE_TX)),
       insertDraft: vi.fn(),
       findByIdInTx: vi.fn(async () => draft),
+      // Wave-4 S28 — the use case takes the row lock + draft load in ONE
+      // combined read now: null fixture → invoice_not_found probe; a
+      // non-draft fixture status → invoice_already_issued (formerly split
+      // across lockForUpdate + findByIdInTx).
+      findByIdInTxForUpdate: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),
       listPaged: vi.fn(),
@@ -274,8 +279,6 @@ function makeDeps(
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
-      // Default: surface the fixture's status so the lock check passes
-      // through to findByIdInTx; individual tests override for races.
       lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
@@ -1218,19 +1221,10 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
-  it('lock acquired on a draft row but findByIdInTx returns null → invoice_not_found, NO probe (post-lock load gap)', async () => {
-    // Defensive arm: lockForUpdate saw status 'draft' but the full load came
-    // back empty (e.g. the row vanished between probe and load under an
-    // anomalous replica read). Distinct from the not-found probe arm — the
-    // lock SUCCEEDED, so this is not a cross-tenant signal.
-    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
-    deps.invoiceRepo.findByIdInTx = vi.fn(async () => null);
-    const r = await issueEventInvoiceAsPaid(deps, input);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
-    expect(deps.audit.emit).not.toHaveBeenCalled();
-    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
-  });
+  // Wave-4 S28 — the former "lock OK but findByIdInTx returned null" gap test
+  // was deleted: the combined findByIdInTxForUpdate read makes that interleave
+  // structurally impossible (the locked row cannot vanish mid-tx), so the
+  // defensive branch it covered no longer exists in the use case.
 
   it('paymentReference provided → paid audit carries payment_reference_sha256; the RAW reference NEVER appears in any payload (W9)', async () => {
     const deps = makeDeps(makeEventDraft(), makeSettings(), null);

@@ -466,6 +466,34 @@ export function makeDrizzleInvoiceRepo(
       return rowsToInvoice(row as InvoiceRow, lines);
     },
 
+    /**
+     * Wave-4 S28 — `findByIdInTx` + row lock in one round-trip. The
+     * `.for('update')` modifier takes the SAME row lock `lockForUpdate`'s
+     * raw `FOR UPDATE` takes (drizzle-tenant-settings-repo precedent), so
+     * the caller-contract lock ordering is unchanged — one SELECT instead
+     * of the former lock-then-reload pair.
+     */
+    async findByIdInTxForUpdate(
+      txUnknown,
+      invoiceId: InvoiceId,
+      tenantIdArg: string,
+    ): Promise<Invoice | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select()
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)))
+        .limit(1)
+        .for('update');
+      if (!row) return null;
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(and(eq(invoiceLines.tenantId, tenantIdArg), eq(invoiceLines.invoiceId, invoiceId)))
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine));
+    },
+
     async findById(invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
       return runInTenant(ctx, async (tx) => {
         const [row] = await tx
@@ -961,17 +989,11 @@ export function makeDrizzleInvoiceRepo(
         .returning();
       if (!updated) throw new InvoiceApplyConflictError('applyIssueAsPaid');
 
-      const lineRows = await tx
-        .select()
-        .from(invoiceLines)
-        .where(
-          and(
-            eq(invoiceLines.tenantId, input.tenantId),
-            eq(invoiceLines.invoiceId, input.invoiceId),
-          ),
-        )
-        .orderBy(asc(invoiceLines.position));
-      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+      // Wave-4 S26 — no line re-select: the CALLER CONTRACT requires
+      // `input.lines` to be the post-lock draft read from this same tx,
+      // and the held invoice row lock makes the lines immutable until
+      // commit, so echoing them is byte-identical to re-reading.
+      return rowsToInvoice(updated as InvoiceRow, input.lines);
     },
 
     /**

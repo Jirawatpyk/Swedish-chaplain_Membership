@@ -120,6 +120,7 @@ function makeDeps(
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as const),
     },
     tenantSettingsRepo: {

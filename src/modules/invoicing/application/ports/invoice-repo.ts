@@ -75,6 +75,21 @@ export interface InvoiceRepo {
    */
   findByIdInTx(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
 
+  /**
+   * Wave-4 S28 — `findByIdInTx` + row lock in ONE round-trip: the invoice
+   * row is SELECTed `FOR UPDATE` (serialising concurrent issue / as-paid /
+   * pay attempts exactly like `lockForUpdate`) and the full Invoice —
+   * including lines — is returned from that same locked read. Returns
+   * `null` when no row exists (caller emits the cross-tenant probe).
+   * Status-agnostic like `findByIdInTx`; callers discriminate `.status`.
+   * Callers that only need the status keep using `lockForUpdate`.
+   */
+  findByIdInTxForUpdate(
+    tx: unknown,
+    invoiceId: InvoiceId,
+    tenantId: string,
+  ): Promise<Invoice | null>;
+
   /** Generic loader used by detail / portal / signed-url paths. */
   findById(invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
 
@@ -235,8 +250,11 @@ export interface InvoiceRepo {
    *   1. MUST hold lockForUpdate(invoiceId) BEFORE sequenceAllocator.allocateNext
    *      (lock order: invoice row → §87 advisory lock; reversing deadlocks
    *      against concurrent issueInvoice).
-   *   2. MUST compute money/snapshots from a draft read taken AFTER the lock,
-   *      inside the same tx — the WHERE guard does not see draft-content edits.
+   *   2. MUST compute money/snapshots AND pass `lines` from a draft read taken
+   *      AFTER the lock, inside the same tx — the WHERE guard does not see
+   *      draft-content edits. The repo builds the returned Invoice from the
+   *      caller's `lines` (wave-4 S26 — no re-select; the rows are immutable
+   *      under the held invoice row lock, so the post-lock read IS current).
    *   3. fiscalYear / issueDate / documentNumber / subtotal+vat=total
    *      consistency is caller-enforced; the DB does not cross-check them.
    */
@@ -246,6 +264,8 @@ export interface InvoiceRepo {
       readonly tenantId: string;
       readonly invoiceId: InvoiceId;
       readonly fiscalYear: number;
+      /** Post-lock draft lines — echoed into the returned Invoice (S26, no re-select). */
+      readonly lines: readonly InvoiceLine[];
       readonly numbering:
         | { readonly kind: 'invoice_stream'; readonly sequenceNumber: number; readonly documentNumber: string }
         | { readonly kind: 'receipt_stream'; readonly receiptDocumentNumberRaw: string };
