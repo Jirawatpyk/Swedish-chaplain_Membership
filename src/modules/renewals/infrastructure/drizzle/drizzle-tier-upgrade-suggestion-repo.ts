@@ -397,12 +397,20 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         args.expectedFromIn !== undefined
           ? args.expectedFromIn.join('|')
           : args.expectedFrom!;
+      // 065 S9 — explicit `tenant_id` scoping on BOTH the CAS UPDATE and
+      // the disambiguation SELECT below. RLS already filters cross-tenant
+      // rows (every method runs under `SET LOCAL app.current_tenant`),
+      // but the house style on this aggregate (`findById` /
+      // `findActiveForMember`) is belt-and-suspenders: an explicit
+      // `eq(tenantId, …)` predicate so a future RLS-policy regression or
+      // a BYPASSRLS connection can't silently CAS a foreign-tenant row.
       const [row] = await txDb
         .update(tierUpgradeSuggestions)
         .set(updateValues)
         .where(
           and(
             eq(tierUpgradeSuggestions.suggestionId, suggestionId),
+            eq(tierUpgradeSuggestions.tenantId, tenantId),
             fromPredicate,
           ),
         )
@@ -412,10 +420,21 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         // follow-up read in the same tx (failure path only; the
         // success path stays single-RTT). A 0-row UPDATE is NOT a SQL
         // error, so the surrounding tx is not poisoned by this probe.
+        // 065 S9 — scope the probe to the tenant too: a foreign-tenant
+        // row (RLS bypassed) is treated as not-found, mirroring the
+        // `findById` `row.tenantId !== tenantId → null` guard.
         const [existing] = await txDb
-          .select({ status: tierUpgradeSuggestions.status })
+          .select({
+            status: tierUpgradeSuggestions.status,
+            tenantId: tierUpgradeSuggestions.tenantId,
+          })
           .from(tierUpgradeSuggestions)
-          .where(eq(tierUpgradeSuggestions.suggestionId, suggestionId));
+          .where(
+            and(
+              eq(tierUpgradeSuggestions.suggestionId, suggestionId),
+              eq(tierUpgradeSuggestions.tenantId, tenantId),
+            ),
+          );
         if (!existing) {
           throw new TierUpgradeSuggestionNotFoundError(suggestionId);
         }
@@ -425,7 +444,6 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           existing.status,
         );
       }
-      void tenantId;
       return rowToDomain(row);
     },
 
