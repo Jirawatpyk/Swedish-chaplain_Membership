@@ -49,23 +49,68 @@ const SCAN_ROOTS = [
   join(PROJECT_ROOT, 'src', 'components'),
 ] as const;
 
-/** Forbidden deep-import patterns (canonical aliased + relative forms). */
+/**
+ * Forbidden deep-import patterns (canonical aliased + relative forms),
+ * for BOTH static `from '...'` and dynamic `import('...')` syntax.
+ *
+ * 065 QC S11 — the original scanner matched ONLY `from '...'`, so a dynamic
+ * `await import('@/modules/invoicing/...')` in a presentation file was
+ * INVISIBLE (false-green: a deep import could land via dynamic syntax with
+ * nothing checking it). The dynamic forms below close that gap. They are
+ * authored to match a quoted invoicing-internal specifier inside an
+ * `import(...)` call — including the multi-line shape where the specifier
+ * sits on its own continuation line (e.g. admin/invoices/page.tsx's
+ * `await import(\n  '@/modules/invoicing/infrastructure/db'\n)`), handled by
+ * the whole-source multiline pass in `findDeepImports`. Both single (')
+ * and double (") quotes are matched; import specifiers always use `/`
+ * separators, so Windows path quirks only affect the FILE key (normalised
+ * via `replaceAll(sep, '/')` below), never the specifier match.
+ */
 const FORBIDDEN_PATH_PATTERNS: readonly RegExp[] = [
+  // Static `from '...'` (aliased + relative).
   /from\s+['"]@\/modules\/invoicing\/(domain|application|infrastructure)\//,
   /from\s+['"]\.{1,2}(?:\/\.\.)*\/modules\/invoicing\/(domain|application|infrastructure)\//,
+  // Dynamic `import('...')` with/without `await`, single-line (aliased +
+  // relative). The multi-line shape is caught by the source-wide pass.
+  /import\s*\(\s*['"]@\/modules\/invoicing\/(domain|application|infrastructure)\//,
+  /import\s*\(\s*['"]\.{1,2}(?:\/\.\.)*\/modules\/invoicing\/(domain|application|infrastructure)\//,
 ] as const;
 
 /**
- * Allowlist of CURRENT deep imports (captured 2026-06-11, 065 item 6).
- * Total: 11 entries — 1 application leaf + 10 infrastructure
- * composition-root sites across 8 consumer files. src/components/** is
+ * Whole-source (multiline) dynamic-import patterns — catch the case where
+ * the `import(` and its quoted specifier are on DIFFERENT lines. `[\s\S]*?`
+ * spans the newline lazily up to the first quoted specifier. The capturing
+ * group is the import path (extracted directly, since the per-line
+ * `from '...'` extractor cannot see it).
+ */
+const FORBIDDEN_DYNAMIC_MULTILINE_PATTERNS: readonly RegExp[] = [
+  /import\s*\(\s*['"](@\/modules\/invoicing\/(?:domain|application|infrastructure)\/[^'"]+)['"]/g,
+  /import\s*\(\s*['"](\.{1,2}(?:\/\.\.)*\/modules\/invoicing\/(?:domain|application|infrastructure)\/[^'"]+)['"]/g,
+] as const;
+
+/**
+ * Allowlist of CURRENT deep imports (captured 2026-06-11, 065 item 6;
+ * refreshed 065 QC S10/S11).
+ * Total: 12 entries — 1 application leaf + 11 infrastructure
+ * composition-root sites across 9 consumer files. src/components/** is
  * CLEAN (zero entries) — keep it that way.
+ *
+ * 065 QC S11 note: the LAST infra entry below (admin/invoices/page.tsx's
+ * dynamic `await import('@/modules/invoicing/infrastructure/db')`) was
+ * PREVIOUSLY INVISIBLE to this scanner — it only matched static `from`
+ * syntax. Extending the scan to dynamic imports surfaced this pre-existing,
+ * sanctioned class-(b) composition root (a server page reading the CN
+ * schema for an N+1-avoiding count query). It is NOT a new violation; it is
+ * a previously-unguarded site now correctly under the allowlist.
  */
 const KNOWN_ALLOWLIST: ReadonlySet<string> = new Set([
   // --- (a) APPLICATION leaf — the ONLY sanctioned non-infra deep import.
   // Client-bundle rationale (wave-4 S19): pure-constants error-code leaf
-  // consumed by the client form; the barrel's runtime graph is server-only.
-  "src/app/(staff)/admin/invoices/new/_components/event-fee-form.tsx::@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes",
+  // consumed by the client form's display-set helper; the barrel's runtime
+  // graph is server-only. (065 QC S10 relocated this import from
+  // event-fee-form.tsx into its co-located as-paid-error-codes.ts leaf so
+  // the i18n test can pin against the form's real set.)
+  "src/app/(staff)/admin/invoices/new/_components/as-paid-error-codes.ts::@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes",
   // --- (b) INFRASTRUCTURE composition roots (documented escape-hatch;
   // each site carries its own rationale comment + consolidation note).
   // Admin invoice detail — tenant settings + CN list + outbox adapter reads.
@@ -84,6 +129,10 @@ const KNOWN_ALLOWLIST: ReadonlySet<string> = new Set([
   "src/app/api/cron/invoicing/redact-expired-event-buyers/route.ts::@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter",
   // Cron: receipt-PDF reconcile — direct schema read for the sweep query.
   "src/app/api/internal/cron/receipt-pdf-reconcile/route.ts::@/modules/invoicing/infrastructure/db/schema-invoices",
+  // Admin invoice LIST — dynamic `await import(...)` of the CN schema for
+  // the credit-note-count GROUP BY (N+1 avoidance). Multi-line dynamic
+  // import surfaced by the 065 QC S11 scanner extension (see header note).
+  "src/app/(staff)/admin/invoices/page.tsx::@/modules/invoicing/infrastructure/db",
 ]);
 
 async function* walkTs(dir: string): AsyncGenerator<string> {
@@ -120,37 +169,53 @@ interface DeepImport {
 
 /**
  * Extract the deep-import PATH from a violating line (drift-resistant
- * content key — broadcasts R3.5 M-4). Single-line scanner: multi-line
- * imports still match on their `from '...'` line (broadcasts R4.3 M-12
- * known limitation carries over).
+ * content key — broadcasts R3.5 M-4). Handles BOTH static `from '...'` and
+ * SINGLE-LINE dynamic `import('...')` syntax (065 QC S11). A dynamic import
+ * whose specifier sits on a CONTINUATION line is handled separately by the
+ * whole-source multiline pass in `findDeepImports`.
  */
 function extractImportPath(line: string): string | null {
-  const match = line.match(/from\s+['"]([^'"]+)['"]/);
-  return match?.[1] ?? null;
+  const fromMatch = line.match(/from\s+['"]([^'"]+)['"]/);
+  if (fromMatch?.[1] !== undefined) return fromMatch[1];
+  const dynMatch = line.match(/import\s*\(\s*['"]([^'"]+)['"]/);
+  return dynMatch?.[1] ?? null;
 }
 
 async function findDeepImports(): Promise<DeepImport[]> {
-  const offenders: DeepImport[] = [];
+  // Keyed by `${file}::${importPath}` so the per-line and whole-source passes
+  // dedupe automatically (a single-line dynamic import matches both passes).
+  const byKey = new Map<string, DeepImport>();
   for (const root of SCAN_ROOTS) {
     for await (const file of walkTs(root)) {
       const source = await readFile(file, 'utf8');
+      const repoRel = file.replace(PROJECT_ROOT + sep, '').replaceAll(sep, '/');
+
+      // Pass 1 — per-line (static `from` + single-line dynamic `import(`).
       const lines = source.split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i] ?? '';
         if (FORBIDDEN_PATH_PATTERNS.some((re) => re.test(line))) {
-          const repoRel = file
-            .replace(PROJECT_ROOT + sep, '')
-            .replaceAll(sep, '/');
           const importPath = extractImportPath(line) ?? `<line ${i + 1}>`;
-          offenders.push({
-            key: `${repoRel}::${importPath}`,
-            text: line.trim(),
-          });
+          const key = `${repoRel}::${importPath}`;
+          if (!byKey.has(key)) byKey.set(key, { key, text: line.trim() });
+        }
+      }
+
+      // Pass 2 — whole-source multiline dynamic `import(` … 'specifier'
+      // (catches the continuation-line shape the per-line pass misses).
+      for (const re of FORBIDDEN_DYNAMIC_MULTILINE_PATTERNS) {
+        for (const m of source.matchAll(re)) {
+          const importPath = m[1];
+          if (importPath === undefined) continue;
+          const key = `${repoRel}::${importPath}`;
+          if (!byKey.has(key)) {
+            byKey.set(key, { key, text: m[0].replace(/\s+/g, ' ').trim() });
+          }
         }
       }
     }
   }
-  return offenders;
+  return [...byKey.values()];
 }
 
 describe('invoicing module barrel — presentation deep-import guard (065 item 6)', () => {
@@ -208,7 +273,7 @@ describe('invoicing module barrel — presentation deep-import guard (065 item 6
       (o) => !o.key.includes('/modules/invoicing/infrastructure/'),
     );
     expect(nonInfra.map((o) => o.key)).toEqual([
-      "src/app/(staff)/admin/invoices/new/_components/event-fee-form.tsx::@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes",
+      "src/app/(staff)/admin/invoices/new/_components/as-paid-error-codes.ts::@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes",
     ]);
   });
 });

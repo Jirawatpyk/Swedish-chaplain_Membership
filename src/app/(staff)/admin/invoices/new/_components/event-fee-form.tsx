@@ -101,8 +101,12 @@ import {
   type NonMemberBuyer,
   type NonMemberBuyerErrors,
 } from './non-member-buyer-fields';
-// Wave-4 S19 — leaf module on purpose (see AS_PAID_ERROR_CODES below).
-import { ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes';
+// 065 QC S10 — the as-paid error display-set lives in its own leaf module
+// (extracted from this file) so the i18n-coverage test can pin against the
+// REAL set, not a hand-copied duplicate. The leaf carries the wave-4 S19
+// deep import of the pure-constants codes module (client-safe; the barrel's
+// runtime graph is server-only).
+import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 
@@ -245,28 +249,9 @@ export function isPastVatFilingDeadline(paymentDateYmd: string, todayYmd: string
 const PAYMENT_METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-/**
- * Typed error codes of POST /api/invoices/[id]/issue-as-paid we have copy
- * for (`admin.invoices.issueAsPaid.errors.*`); anything else falls back to
- * codeFallback/unknown — mirrors the event-draft errors map below.
- *
- * Wave-4 S19 — derived from the use-case's canonical exported list (a new
- * error variant lands here automatically; add its `errors.*` copy in all
- * three locales when one is introduced) with two deliberate deltas:
- *   - MINUS `registration_lookup_failed`: internal verification error, not
- *     operator-fixable — stays on the codeFallback toast (no copy key).
- *   - PLUS `'invalid'`: the route-level 400 zod reject, which is not a
- *     use-case code.
- * Deep leaf-module import (not the barrel): the barrel's runtime graph is
- * server-only (pino/crypto via the use-cases) and must not enter this
- * client bundle; the codes leaf has a type-only dependency.
- */
-const AS_PAID_ERROR_CODES: readonly string[] = [
-  'invalid',
-  ...ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES.filter(
-    (code) => code !== 'registration_lookup_failed',
-  ),
-];
+// `AS_PAID_ERROR_CODES` (the issue-as-paid error display-set: the canonical
+// leaf codes + 'invalid', − registration_lookup_failed) is imported from the
+// './as-paid-error-codes' leaf above (065 QC S10 — pinned by the i18n test).
 
 /* ------------------------------------------------------------------------- *
  * Wave-4 S25 — section-3b subcomponents.
