@@ -746,6 +746,16 @@ export async function recordPayment(
     // manually from /admin/invoices once ops investigates.
     const recipientEmail =
       loaded.memberIdentitySnapshot.primary_contact_email ?? null;
+    // Wave-4 S15 — issueInvoice + issueEventInvoiceAsPaid share
+    // `lib/enqueue-invoice-email.ts` for this block's shape; THIS block is
+    // deliberately NOT folded into that helper because its semantics differ
+    // in four load-bearing ways: (1) the F5 `suppressReceiptEmail` THREE-arm
+    // branch incl. an info-log arm, (2) the `dependsOnReceiptPdf` async-PDF
+    // dispatcher gate, (3) the recipient is truthiness-checked, NOT trimmed
+    // (legacy-snapshot tolerance documented above), and (4) the skip warn
+    // carries memberId/documentNumber instead of the helper's fixed fields.
+    // Folding would mean a 4-mode helper — worse than the duplication.
+    //
     // T128a: F5 caller may suppress the receipt-email enqueue when the
     // tenant has disabled `auto_email_on_payment`. Status flip + audit +
     // outbox-skip log row still run — only the dispatcher enqueue is

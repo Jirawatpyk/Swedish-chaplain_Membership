@@ -161,6 +161,10 @@ export {
   type IssueEventInvoiceAsPaidError,
   type IssueEventInvoiceAsPaidDeps,
 } from './application/use-cases/issue-event-invoice-as-paid';
+// Wave-4 S19 — canonical error-code list (leaf module; client components
+// needing the runtime array import the leaf path directly to keep the
+// use-case's server-only graph out of the client bundle).
+export { ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES } from './application/use-cases/issue-event-invoice-as-paid-codes';
 
 export {
   listInvoices,

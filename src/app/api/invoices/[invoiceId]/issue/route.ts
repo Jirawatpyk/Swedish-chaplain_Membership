@@ -12,7 +12,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { issueInvoice, issueInvoiceSchema, makeIssueInvoiceDeps } from '@/modules/invoicing';
-import { serialiseInvoice, stripReason } from '../../_serialise';
+import { issueErrorStatus, serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -66,25 +66,12 @@ export async function POST(
       },
       'POST /api/invoices/[id]/issue failed',
     );
-    const status =
-      result.error.code === 'invoice_not_found' ? 404
-      : result.error.code === 'member_not_found' ? 404
-      : result.error.code === 'invoice_already_issued' ? 409
-      : result.error.code === 'member_archived' ? 409
-      : result.error.code === 'settings_missing' ? 409
-      : result.error.code === 'tax_id_required' ? 422
-      : result.error.code === 'event_no_tin_requires_paid_issue' ? 422
-      // 064 S1 — registration refunded between draft and issue (TOCTOU
-      // re-check): unprocessable business state, mirrors the event-draft
-      // route's 422 for the same code. Lookup failure is an internal
-      // verification error → 500 (default arm).
-      : result.error.code === 'registration_refunded' ? 422
-      : result.error.code === 'invalid_lines' ? 422
-      : result.error.code === 'no_buyer_snapshot' ? 422
-      : result.error.code === 'overflow' ? 422
-      : result.error.code === 'pdf_render_failed' ? 500
-      : result.error.code === 'blob_upload_failed' ? 500
-      : 500;
+    // Wave-4 S16 — shared issuance-route map; overrides carry ONLY the
+    // codes this plain-issue route can see (§86/4 TIN gates).
+    const status = issueErrorStatus(result.error.code, {
+      tax_id_required: 422,
+      event_no_tin_requires_paid_issue: 422,
+    });
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
   return NextResponse.json(serialiseInvoice(result.value), { status: 200 });

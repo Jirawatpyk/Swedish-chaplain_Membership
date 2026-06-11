@@ -170,6 +170,41 @@ export const rowHasAnyAction = (vm: InvoiceRowViewModel): boolean =>
   vm.resendable;
 
 /**
+ * Wave-4 S17 — i18n key pair (in the `portal.invoices` list namespace) for
+ * the MAIN pdf download button, keyed by what the main pdf actually IS.
+ * Consumed by the desktop table, the mobile card AND the detail page so the
+ * three surfaces can never drift on the 064 combined/receipt wording:
+ *
+ *   'combined' → dual-role ใบกำกับภาษี/ใบเสร็จรับเงิน wording (as-paid TIN);
+ *   'receipt'  → §105 receipt wording (β as-paid no-TIN / legacy rows);
+ *   'invoice'  → the plain invoice label.
+ *
+ * The VOID overlay stays per-surface on purpose: the list surfaces use
+ * `actions.downloadVoided[Aria]` while the detail page deliberately uses its
+ * own `void.downloadVoidedPdf` copy — folding it here would force one of
+ * them to change keys.
+ */
+export function downloadLabelKeys(mainPdfKind: InvoiceRowViewModel['mainPdfKind']): {
+  readonly labelKey:
+    | 'actions.downloadCombined'
+    | 'actions.downloadReceipt'
+    | 'actions.download';
+  readonly ariaKey:
+    | 'actions.downloadCombinedAria'
+    | 'actions.downloadReceiptAria'
+    | 'actions.downloadInvoiceAria';
+} {
+  switch (mainPdfKind) {
+    case 'combined':
+      return { labelKey: 'actions.downloadCombined', ariaKey: 'actions.downloadCombinedAria' };
+    case 'receipt':
+      return { labelKey: 'actions.downloadReceipt', ariaKey: 'actions.downloadReceiptAria' };
+    case 'invoice':
+      return { labelKey: 'actions.download', ariaKey: 'actions.downloadInvoiceAria' };
+  }
+}
+
+/**
  * Pure mapper. `nowUtcIso` MUST be supplied by the caller (do NOT call
  * `new Date()` here) so overdue derivation stays deterministic and the
  * view-model is testable at boundaries.

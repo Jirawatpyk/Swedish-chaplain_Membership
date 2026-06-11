@@ -95,6 +95,7 @@ import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
+import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -595,39 +596,25 @@ export async function issueInvoice(
     const shouldAutoEmail =
       draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
     if (shouldAutoEmail) {
-      const recipientEmail = (memberSnap.primary_contact_email ?? '').trim();
-      if (recipientEmail === '') {
-        // (A) — no deliverable address. Skip the enqueue; the invoice still
-        // issues successfully. Log ids only (no email / buyer PII) AND bump a
-        // metric so ops can alert (the warn alone is unobservable; this brings
-        // the issue path to parity with the credit-note `skipped_no_recipient`
-        // surface).
-        invoicingMetrics.autoEmailSkipped(draft.invoiceSubject, 'no_recipient');
-        logger.warn(
-          {
-            event: 'invoice_auto_email_skipped_no_recipient',
-            tenantId: input.tenantId,
-            invoiceId,
-            invoiceSubject: draft.invoiceSubject,
-          },
-          'issueInvoice: auto-email skipped — buyer has no contact email',
-        );
-      } else {
-        // (B) — non-member event buyer → PDPA privacy footer.
-        const privacyFooterKind =
+      // (A)+(B) live in the shared helper (wave-4 S15) — trim + skip-with-
+      // warn+metric on an empty buyer email; otherwise ONE outbox row with
+      // the non-member-event PDPA footer. An enqueue THROW still rolls the
+      // whole issue tx back (the helper only swallows the empty-recipient
+      // skip).
+      await enqueueInvoiceAutoEmail(deps.outbox, tx, {
+        tenantId: input.tenantId,
+        invoiceId,
+        invoiceSubject: draft.invoiceSubject,
+        eventType: 'invoice_issued',
+        recipientEmail: memberSnap.primary_contact_email ?? null,
+        pdfBlobKey: blobKey,
+        pdfTemplateVersion: deps.currentTemplateVersion,
+        privacyFooterKind:
           draft.invoiceSubject === 'event' && draft.memberId === null
             ? ('event_non_member' as const)
-            : undefined;
-        await deps.outbox.enqueue(tx, {
-          tenantId: input.tenantId,
-          eventType: 'invoice_issued',
-          recipientEmail,
-          invoiceId,
-          pdfBlobKey: blobKey,
-          pdfTemplateVersion: deps.currentTemplateVersion,
-          ...(privacyFooterKind ? { privacyFooterKind } : {}),
-        });
-      }
+            : undefined,
+        skipLogMessage: 'issueInvoice: auto-email skipped — buyer has no contact email',
+      });
     }
 
     // T113 — happy-path emit. Count + duration fire together so

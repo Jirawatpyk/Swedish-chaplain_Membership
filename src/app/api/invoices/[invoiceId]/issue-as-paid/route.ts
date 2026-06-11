@@ -29,7 +29,7 @@ import { env } from '@/lib/env';
 // `FEATURE_F8_RENEWALS=true` — pay-route Round-6 parity: a top-level static
 // import would load the entire renewals barrel (~50-150ms cold-start +
 // bundle pollution) on every request even when F8 is dark.
-import { serialiseInvoice, stripReason } from '../../_serialise';
+import { issueErrorStatus, serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -107,28 +107,15 @@ export async function POST(
       },
       'POST /api/invoices/[id]/issue-as-paid failed',
     );
-    const status =
-      result.error.code === 'invoice_not_found' ? 404
-      : result.error.code === 'member_not_found' ? 404
-      : result.error.code === 'invoice_already_issued' ? 409
-      : result.error.code === 'member_archived' ? 409
-      : result.error.code === 'settings_missing' ? 409
-      : result.error.code === 'not_event_subject' ? 422
-      : result.error.code === 'payment_date_future' ? 422
-      // Wave-3 S10 — >365-day backdate (typo-year guard); same 422 class
-      // as the future bound.
-      : result.error.code === 'payment_date_too_old' ? 422
-      // 064 S1 — registration refunded between draft and as-paid issuance
-      // (TOCTOU re-check): unprocessable business state, mirrors the
-      // event-draft route's 422 for the same code. Lookup failure is an
-      // internal verification error → 500 (default arm).
-      : result.error.code === 'registration_refunded' ? 422
-      : result.error.code === 'invalid_lines' ? 422
-      : result.error.code === 'overflow' ? 422
-      : result.error.code === 'no_buyer_snapshot' ? 422
-      : result.error.code === 'pdf_render_failed' ? 500
-      : result.error.code === 'blob_upload_failed' ? 500
-      : 500;
+    // Wave-4 S16 — shared issuance-route map; overrides carry ONLY the
+    // codes this as-paid route can see: the event-subject guard and the
+    // payment-date bounds (future + the wave-3 S10 >365-day typo-year
+    // backdate — same 422 class).
+    const status = issueErrorStatus(result.error.code, {
+      not_event_subject: 422,
+      payment_date_future: 422,
+      payment_date_too_old: 422,
+    });
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
   return NextResponse.json(serialiseInvoice(result.value), { status: 200 });

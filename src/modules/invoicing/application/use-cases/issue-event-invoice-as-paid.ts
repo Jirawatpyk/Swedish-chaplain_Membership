@@ -94,6 +94,7 @@ import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
+import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
 
 export const issueEventInvoiceAsPaidSchema = z.object({
   tenantId: z.string().min(1),
@@ -618,34 +619,25 @@ export async function issueEventInvoiceAsPaid(
       // Empty-recipient guard (issueInvoice Task-14 A): a non-member buyer
       // snapshot may carry '' — trim + skip + warn (ids only, NO email/PII)
       // + metric so ops can alert on the otherwise-silent skip.
-      const recipientEmail = (memberSnap.primary_contact_email ?? '').trim();
       if (settings.autoEmailEnabled) {
-        if (recipientEmail === '') {
-          invoicingMetrics.autoEmailSkipped('event', 'no_recipient');
-          logger.warn(
-            {
-              event: 'invoice_auto_email_skipped_no_recipient',
-              tenantId: input.tenantId,
-              invoiceId,
-              invoiceSubject: 'event',
-            },
+        // Shared helper (wave-4 S15) — trim + empty-recipient skip (warn +
+        // metric, ids only) else ONE outbox row; the non-member buyer gets
+        // the §87/3 PDPA transparency footer (recordPayment/issueInvoice
+        // Task-14 B parity). An enqueue THROW still hard-fails the whole
+        // issuance via tx rollback.
+        await enqueueInvoiceAutoEmail(deps.outbox, tx, {
+          tenantId: input.tenantId,
+          invoiceId,
+          invoiceSubject: 'event',
+          eventType: 'invoice_paid',
+          recipientEmail: memberSnap.primary_contact_email ?? null,
+          pdfBlobKey: blobKey,
+          pdfTemplateVersion: deps.currentTemplateVersion,
+          privacyFooterKind:
+            memberId === null ? ('event_non_member' as const) : undefined,
+          skipLogMessage:
             'issueEventInvoiceAsPaid: receipt auto-email skipped — buyer has no contact email',
-          );
-        } else {
-          // Non-member event buyer → §87/3 PDPA transparency footer
-          // (recordPayment/issueInvoice Task-14 B parity).
-          const privacyFooterKind =
-            memberId === null ? ('event_non_member' as const) : undefined;
-          await deps.outbox.enqueue(tx, {
-            tenantId: input.tenantId,
-            eventType: 'invoice_paid',
-            recipientEmail,
-            invoiceId,
-            pdfBlobKey: blobKey,
-            pdfTemplateVersion: deps.currentTemplateVersion,
-            ...(privacyFooterKind ? { privacyFooterKind } : {}),
-          });
-        }
+        });
       }
 
       // M. F8 on-paid callbacks — matched members only (the cross-module

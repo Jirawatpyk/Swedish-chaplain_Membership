@@ -101,6 +101,8 @@ import {
   type NonMemberBuyer,
   type NonMemberBuyerErrors,
 } from './non-member-buyer-fields';
+// Wave-4 S19 — leaf module on purpose (see AS_PAID_ERROR_CODES below).
+import { ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes';
 
 export type EventOption = {
   readonly eventId: string;
@@ -245,29 +247,24 @@ type PaymentMethod = (typeof PAYMENT_METHODS)[number];
  * Typed error codes of POST /api/invoices/[id]/issue-as-paid we have copy
  * for (`admin.invoices.issueAsPaid.errors.*`); anything else falls back to
  * codeFallback/unknown — mirrors the event-draft errors map below.
+ *
+ * Wave-4 S19 — derived from the use-case's canonical exported list (a new
+ * error variant lands here automatically; add its `errors.*` copy in all
+ * three locales when one is introduced) with two deliberate deltas:
+ *   - MINUS `registration_lookup_failed`: internal verification error, not
+ *     operator-fixable — stays on the codeFallback toast (no copy key).
+ *   - PLUS `'invalid'`: the route-level 400 zod reject, which is not a
+ *     use-case code.
+ * Deep leaf-module import (not the barrel): the barrel's runtime graph is
+ * server-only (pino/crypto via the use-cases) and must not enter this
+ * client bundle; the codes leaf has a type-only dependency.
  */
-const AS_PAID_ERROR_CODES = [
+const AS_PAID_ERROR_CODES: readonly string[] = [
   'invalid',
-  'not_event_subject',
-  'payment_date_future',
-  // Wave-3 S10 — >365-day backdate rejected server-side (typo-year guard);
-  // the copy tells the admin to check the year / confirm with an accountant.
-  'payment_date_too_old',
-  // 064 S1 — registration refunded between draft and as-paid issuance
-  // (issuance-time TOCTOU re-check). `registration_lookup_failed` stays on
-  // codeFallback — it is an internal verification error, not operator-fixable.
-  'registration_refunded',
-  'invalid_lines',
-  'overflow',
-  'no_buyer_snapshot',
-  'member_archived',
-  'settings_missing',
-  'invoice_already_issued',
-  'invoice_not_found',
-  'member_not_found',
-  'pdf_render_failed',
-  'blob_upload_failed',
-] as const;
+  ...ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES.filter(
+    (code) => code !== 'registration_lookup_failed',
+  ),
+];
 
 /** Today in Asia/Bangkok as YYYY-MM-DD (en-CA gives the ISO date shape). */
 function bangkokTodayIso(): string {
@@ -497,8 +494,7 @@ export function EventFeeForm({
         issueCode = (issuePayload as { error?: { code?: string } })?.error?.code;
       }
       const issueKnown =
-        issueCode !== undefined &&
-        (AS_PAID_ERROR_CODES as readonly string[]).includes(issueCode);
+        issueCode !== undefined && AS_PAID_ERROR_CODES.includes(issueCode);
       toast.error(
         issueKnown
           ? tAsPaid(`errors.${issueCode}`)

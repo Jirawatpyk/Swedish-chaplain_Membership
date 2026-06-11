@@ -47,6 +47,7 @@ import { InvoiceStatusBadge } from './_components/invoice-status-badge';
 import {
   toInvoiceRowViewModel,
   rowHasAnyAction,
+  downloadLabelKeys,
 } from './_utils/invoice-row-view-model';
 import {
   InvoiceFilters,
@@ -467,28 +468,19 @@ export default async function PortalInvoicesPage({
                                     invoiceId={vm.invoiceId}
                                     documentNumber={vm.displayNumber ?? vm.invoiceId}
                                     // 064 — as-paid rows: the main pdf IS the
-                                    // final legal document. 'combined' (TIN)
-                                    // flips label + aria to the dual-role
-                                    // wording; 'receipt' (β no-TIN — 064
-                                    // remediation S3) flips to the receipt
-                                    // wording. Mirrors the card.
+                                    // final legal document; the shared
+                                    // downloadLabelKeys helper (wave-4 S17)
+                                    // maps mainPdfKind → label/aria keys so
+                                    // table + card + detail can never drift.
                                     label={
                                       vm.displayStatus === 'void'
                                         ? t('actions.downloadVoided')
-                                        : vm.mainPdfKind === 'combined'
-                                          ? t('actions.downloadCombined')
-                                          : vm.mainPdfKind === 'receipt'
-                                            ? t('actions.downloadReceipt')
-                                            : t('actions.download')
+                                        : t(downloadLabelKeys(vm.mainPdfKind).labelKey)
                                     }
                                     ariaLabel={t(
                                       vm.displayStatus === 'void'
                                         ? 'actions.downloadVoidedAria'
-                                        : vm.mainPdfKind === 'combined'
-                                          ? 'actions.downloadCombinedAria'
-                                          : vm.mainPdfKind === 'receipt'
-                                            ? 'actions.downloadReceiptAria'
-                                            : 'actions.downloadInvoiceAria',
+                                        : downloadLabelKeys(vm.mainPdfKind).ariaKey,
                                       {
                                         number: vm.displayNumber ?? vm.invoiceId,
                                       },

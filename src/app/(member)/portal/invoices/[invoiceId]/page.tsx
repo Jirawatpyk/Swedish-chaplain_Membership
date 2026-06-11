@@ -86,6 +86,7 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from '../_components/portal-pdf-download-button';
+import { downloadLabelKeys } from '../_utils/invoice-row-view-model';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
@@ -336,26 +337,21 @@ export default async function PortalInvoiceDetailPage({
                         invoiceId={invoice.invoiceId}
                         documentNumber={documentNumber}
                         // 064 — as-paid rows: the main pdf IS the final legal
-                        // document. 'combined' (TIN) flips label + aria to the
-                        // dual-role wording; 'receipt' (β no-TIN — 064
-                        // remediation S3) flips to the receipt wording.
+                        // document; shared downloadLabelKeys helper (wave-4
+                        // S17) maps mainPdfKind → label/aria keys (list
+                        // namespace). The void overlay keeps THIS page's own
+                        // `void.downloadVoidedPdf` copy.
                         label={
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : mainPdfKind === 'combined'
-                              ? tList('actions.downloadCombined')
-                              : mainPdfKind === 'receipt'
-                                ? tList('actions.downloadReceipt')
-                                : tList('actions.download')
+                            : tList(downloadLabelKeys(mainPdfKind).labelKey)
                         }
                         ariaLabel={`${
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : mainPdfKind === 'combined'
-                              ? tList('actions.downloadCombinedAria', { number: documentNumber })
-                              : mainPdfKind === 'receipt'
-                                ? tList('actions.downloadReceiptAria', { number: documentNumber })
-                                : tList('actions.downloadInvoiceAria', { number: documentNumber })
+                            : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
+                                number: documentNumber,
+                              })
                         }`}
                         className={cn(
                           buttonVariants({ variant: 'default', size: 'sm' }),
