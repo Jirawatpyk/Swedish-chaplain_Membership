@@ -840,13 +840,16 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     expect(okCount).toBe(1);
     expect(r2.ok).toBe(false);
     if (!r2.ok) {
-      // Same tolerated loser set as W-011.
-      expect([
-        'suggestion_not_open',
-        'open_conflict',
-        'plan_change_failed',
-        'server_error',
-      ]).toContain(r2.error.kind);
+      // 065 S3 — UNLIKE the timing-dependent W-011 (which tolerates a
+      // set of loser kinds because the loser may exit at different
+      // seams), THIS probe is deterministic: #2's step-(a) succeeds and
+      // its step-(c) CAS provably loses, throwing
+      // `TierUpgradeStatusConflictError`, which `acceptTierUpgrade`'s
+      // outer catch maps to EXACTLY `suggestion_not_open`. Pinning the
+      // exact kind makes the test fail if the CAS ever throws an
+      // UNMAPPED error that degrades to `server_error` (i.e. a
+      // regression where the conflict no longer maps cleanly).
+      expect(r2.error.kind).toBe('suggestion_not_open');
     }
 
     // `accepted_by_user_id` belongs to the winner (#1) — NOT
@@ -874,6 +877,33 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
         ),
     );
     expect(accepted).toHaveLength(1);
+
+    // 065 S8 — money-safety backstop pin (regression guard for tracked
+    // task #34). The known accepted residual of this probe is that #2's
+    // step-(a) `supersedeAndInsertPendingAtomically` commits in its OWN
+    // tx before the CAS fires, so the surviving pending
+    // `scheduled_plan_changes` row may be #2's (content-identical to
+    // #1's). The PARTIAL UNIQUE `scheduled_plan_changes_pending_uniq`
+    // (`(tenant_id, member_id, effective_at_cycle_id) WHERE status =
+    // 'pending'`) is the DB-level invariant that keeps at most ONE
+    // pending plan-change per (member, cycle) — i.e. the member is never
+    // double-billed at renewal even when two accepts raced. Asserting
+    // exactly one pending row pins that index so a future migration
+    // dropping it is caught here (the full step-(a)-into-outer-tx
+    // refactor is task #34, out of scope).
+    const pendingChanges = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select({ id: scheduledPlanChanges.scheduledChangeId })
+        .from(scheduledPlanChanges)
+        .where(
+          and(
+            eq(scheduledPlanChanges.memberId, seeded.memberId),
+            eq(scheduledPlanChanges.effectiveAtCycleId, seeded.cycleId),
+            eq(scheduledPlanChanges.status, 'pending'),
+          ),
+        ),
+    );
+    expect(pendingChanges).toHaveLength(1);
   }, 60_000);
 
   // ---------------------------------------------------------------------------
@@ -940,5 +970,139 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       | { superseded_from_status?: string }
       | null;
     expect(payload?.superseded_from_status).toBe('open');
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // 065 S7 — supersede set-membership CAS (stale-pinned-CAS regression)
+  //
+  // 065 added a CAS to `transitionStatus` and supersede threaded its
+  // `findActiveForMember`-read status as `expectedFrom`. But that read
+  // runs in its OWN tx (the port has no tx arg) — it is STALE by the
+  // time the CAS UPDATE fires. A concurrent accept that commits
+  // `open → accepted_pending_apply` in the read→update window makes the
+  // pinned `expectedFrom: 'open'` CAS match 0 rows ⇒ supersede silently
+  // no-ops (returns null) and the now-orphaned `accepted_pending_apply`
+  // suggestion survives. It is NOT on a terminal cycle and (when the
+  // admin's new plan == the upgrade target) NOT plan-diverged either, so
+  // the W-002 reconcile backstop does NOT catch it → the upgrade
+  // re-applies at renewal even though the admin reverted the plan
+  // (money bug).
+  //
+  // Pre-065 supersede used an id-only WHERE — it cancelled the pending
+  // upgrade from ANY active status. The correct CAS for supersede is a
+  // SET-membership guard (`status IN ('open','accepted_pending_apply')`)
+  // — both are valid FROM states for a manual override (use-case
+  // docstring FR-039 step 5) — NOT a value-pinned guard.
+  //
+  // This probe FORCES the window deterministically: supersede's
+  // `findActiveForMember` returns `open`, then parks; the concurrent
+  // accept commits `open → accepted_pending_apply`; supersede resumes
+  // carrying its stale `open` snapshot and runs the CAS.
+  //
+  //   - Pre-fix (`expectedFrom: fromStatus` = 'open'): CAS matches 0
+  //     rows ⇒ silent no-op ⇒ suggestion STAYS `accepted_pending_apply`
+  //     (RED — assertion below fails).
+  //   - Post-fix (`expectedFromIn: ['open','accepted_pending_apply']`):
+  //     CAS matches the now-`accepted_pending_apply` row ⇒ transitions
+  //     to `superseded` (GREEN).
+  // ---------------------------------------------------------------------------
+  it('S7 stale-read race — concurrent accept then supersede MUST still supersede (set-membership CAS)', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // Gate: supersede's tier-upgrade `findActiveForMember` does the real
+    // read (sees `open`), signals it reached the seam, then parks until
+    // released. The returned snapshot is therefore STALE by the time the
+    // CAS UPDATE runs — exactly the TOCTOU window the fix must survive.
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let signalReached!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      signalReached = resolve;
+    });
+
+    const gatedDeps: typeof deps = {
+      ...deps,
+      tierUpgradeRepo: {
+        ...deps.tierUpgradeRepo,
+        findActiveForMember: async (tenantId: string, memberId: string) => {
+          const snapshot = await deps.tierUpgradeRepo.findActiveForMember(
+            tenantId,
+            memberId,
+          );
+          signalReached();
+          await gate;
+          return snapshot;
+        },
+      },
+    };
+
+    // Supersede starts first: reads `open`, then parks at the gate.
+    const supersedeP = supersedePendingTierUpgrade(gatedDeps, {
+      tenantId: tenant.ctx.slug,
+      memberId: seeded.memberId,
+      manualChangeActorUserId: admin.userId,
+      // Admin manually flips to the SAME plan the upgrade targets
+      // ('premium') — the worst case: the W-002 plan-diverged backstop
+      // would NOT catch the orphan (members.plan_id == to_plan_id), so
+      // supersede is the only safety net.
+      supersedingPlanId: 'premium',
+      correlationId: randomUUID(),
+    });
+    await reached;
+
+    // Concurrent accept runs to FULL completion (commit included),
+    // moving the row `open → accepted_pending_apply` while supersede is
+    // parked holding its stale `open` read.
+    const accept = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(accept.ok).toBe(true);
+
+    // Release supersede — it resumes carrying the stale `open` snapshot.
+    releaseGate();
+    const result = await supersedeP;
+    expect(result.ok).toBe(true);
+
+    // The manual override MUST win: the suggestion is `superseded`, NOT
+    // an orphaned `accepted_pending_apply` that re-applies at renewal.
+    const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(suggestion?.status).toBe('superseded');
+    expect(suggestion?.closedAt).not.toBeNull();
+
+    // Exactly one supersede audit row landed (the manual override is
+    // recorded once). The `superseded_from_status` label carries the
+    // stale read ('open') by design — supersede keeps the captured
+    // `fromStatus` for the audit label only; the row PRESENCE is what
+    // proves the override committed.
+    const supersededAudit = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(
+              auditLog.eventType,
+              'tier_upgrade_pending_superseded_by_manual_change',
+            ),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
+          ),
+        ),
+    );
+    expect(supersededAudit).toHaveLength(1);
   }, 60_000);
 });

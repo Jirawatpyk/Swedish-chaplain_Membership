@@ -27,6 +27,10 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
+// 065 S1/S2 — discriminate the benign CAS-loser (a concurrent
+// transition already resolved the orphan between the list read and this
+// dismiss UPDATE) from a genuine dismiss failure.
+import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 
 export const reconcilePendingApplicationsInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -41,6 +45,18 @@ export type ReconcilePendingApplicationsInput = z.infer<
 export interface ReconcilePendingApplicationsOutput {
   readonly orphansDetected: number;
   readonly orphansDismissed: number;
+  /**
+   * 065 S1/S2 — orphans that were ALREADY transitioned by a concurrent
+   * accept / supersede / apply between the `listOrphanedPending` read
+   * and this cron's dismiss UPDATE (CAS-loser, `TierUpgradeStatusConflictError`).
+   * These are NOT failures — the orphan is already resolved — so they
+   * are counted here separately and do NOT bump the alertable
+   * `tierUpgradeReconcileErrors` counter. The accounting invariant is
+   * `orphansDetected === orphansDismissed + orphansSkippedBenign +
+   * (genuine failures)`, so `detected > dismissed` no longer implies a
+   * failure on its own.
+   */
+  readonly orphansSkippedBenign: number;
   readonly durationMs: number;
 }
 
@@ -69,6 +85,8 @@ export async function reconcilePendingApplications(
 
   const startedAt = Date.now();
   let dismissed = 0;
+  // 065 S1/S2 — benign CAS-losers (orphan already resolved concurrently).
+  let skippedBenign = 0;
 
   let orphans: Awaited<
     ReturnType<typeof deps.tierUpgradeRepo.listOrphanedPending>
@@ -137,6 +155,27 @@ export async function reconcilePendingApplications(
       });
       dismissed++;
     } catch (e) {
+      // 065 S1/S2 — benign CAS-loser FIRST, BEFORE the alertable
+      // counter + error log. `listOrphanedPending` only returns
+      // `accepted_pending_apply` rows; if a concurrent accept /
+      // supersede / apply transitioned the row off that state between
+      // the list read and this dismiss UPDATE, the CAS throws
+      // `TierUpgradeStatusConflictError`. That is NOT a failure — the
+      // orphan is already resolved — so it must NOT bump
+      // `tierUpgradeReconcileErrors` (which routes Vercel alerts) and
+      // must NOT log at `error` level (which would page on-call for a
+      // self-healing race). Count it as a benign skip and continue.
+      if (e instanceof TierUpgradeStatusConflictError) {
+        skippedBenign++;
+        logger.info(
+          {
+            suggestionId: orphan.suggestion.suggestionId,
+            actualStatus: e.actualStatus,
+          },
+          '[reconcile-pending-applications] orphan already transitioned concurrently — benign skip',
+        );
+        continue;
+      }
       // Phase 7 review-fix S-3-errors: per-tenant counter so multi-
       // tenant fan-out can route alerts when one tenant's orphans
       // persistently fail to dismiss. The aggregate
@@ -157,6 +196,7 @@ export async function reconcilePendingApplications(
   return ok({
     orphansDetected: orphans.length,
     orphansDismissed: dismissed,
+    orphansSkippedBenign: skippedBenign,
     durationMs: Date.now() - startedAt,
   });
 }

@@ -105,11 +105,20 @@ export async function supersedePendingTierUpgradeInTx(
       active.suggestionId,
       {
         to: 'superseded' as const,
-        // 065 Fix 1 — CAS guard: pin the exact status this use-case
-        // read (the only caller-side transition with TWO valid FROM
-        // states, so the captured value is threaded rather than a
-        // hardcoded literal).
-        expectedFrom: fromStatus,
+        // 065 S7 — set-membership CAS, NOT a value-pinned one. A manual
+        // override is valid from EITHER `open` OR `accepted_pending_apply`
+        // (FR-039 step 5). The `findActiveForMember` read above runs in
+        // its OWN tx (the port has no tx arg) and is STALE by the time
+        // this UPDATE fires: pinning `expectedFrom: fromStatus` made the
+        // CAS no-op when a concurrent accept moved the row across the
+        // open→accepted_pending_apply boundary in the read→update window,
+        // orphaning the suggestion (it would then re-apply at renewal —
+        // money bug). The set guard supersedes regardless of which in-set
+        // state the row committed to, mirroring the pre-065 id-only WHERE.
+        // `fromStatus` (captured above) is retained for the audit label
+        // ONLY — it reflects this use-case's belief at read time, not the
+        // committed FROM state.
+        expectedFromIn: ['open', 'accepted_pending_apply'] as const,
         closedAt: now,
       },
     );
