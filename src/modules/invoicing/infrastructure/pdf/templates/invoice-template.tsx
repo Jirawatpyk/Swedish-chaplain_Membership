@@ -19,6 +19,11 @@ import type { PdfRenderInput } from '../../../application/ports/pdf-render-port'
 import { amountToThaiWords } from '../amount-to-thai';
 import { amountToEnglishWords } from '../amount-to-english';
 import { shapeThai } from '../fonts/register-sarabun';
+import {
+  KIND_AWARE_CITATION_MIN_VERSION,
+  LEGACY_FOOTER_CITATION,
+  revenueCodeCitation,
+} from './revenue-code-citation';
 
 const styles = StyleSheet.create({
   page: { fontFamily: 'Sarabun', fontSize: 10, padding: 36, color: '#111' },
@@ -213,6 +218,17 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   // original or a copy. Previews + voids have their own watermark;
   // all other rendered tax documents are the tenant's ORIGINAL copy.
   const originalMarker = isPreview || isVoid ? null : 'ต้นฉบับ / ORIGINAL';
+  // 065 Task 31 (tax-auditor M-D) — kind-aware Revenue-Code citation,
+  // gated on template v3+. Versions 1/2 keep the historical
+  // unconditional §86/4 string BYTE-FOR-BYTE: every pinned-version
+  // re-render path (void overlay, J2 credited annotation, async
+  // receipt worker) passes the row's stored `pdf_template_version`
+  // here (R3-E4), so the gate is what preserves SC-003 for all
+  // already-issued documents. See templates/revenue-code-citation.ts.
+  const footerCitation =
+    input.templateVersion >= KIND_AWARE_CITATION_MIN_VERSION
+      ? revenueCodeCitation(input.kind, input.voidUnderlyingKind)
+      : LEGACY_FOOTER_CITATION;
 
   const totalThb = Number(input.total.satang) / 100;
 
@@ -423,7 +439,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
           )}
 
         <Text style={styles.footer}>
-          Rendered by Chamber-OS ({shapeThai('เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4')})
+          Rendered by Chamber-OS ({shapeThai(footerCitation)})
         </Text>
       </Page>
     </Document>

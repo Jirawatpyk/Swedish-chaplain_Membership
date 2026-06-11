@@ -22,11 +22,23 @@
  *     v2 with a logo, re-render under v2 also stays byte-identical
  *     (logo bytes are immutable in Blob — same input → same output via
  *     deterministic-render seed).
+ *   - **v3** (2026-06-11, 065-review-followups Task 31 / tax-auditor
+ *     M-D) — kind-aware Revenue-Code §-citation in the footer
+ *     (invoice §86/4 · receipt_combined §86/4+105ทวิ ·
+ *     receipt_separate §105 · credit_note §86/10 · void per
+ *     voidUnderlyingKind). The template branches INTERNALLY on
+ *     `templateVersion >= KIND_AWARE_CITATION_MIN_VERSION` (see
+ *     `templates/revenue-code-citation.ts`): v1/v2 renders keep the
+ *     legacy unconditional §86/4 string byte-for-byte, so every
+ *     pinned-version re-render path (void overlay, J2 credited
+ *     annotation, async receipt worker) reproduces the original
+ *     output (SC-003). Measured: docs/Bug/065-t31-footer-
+ *     {pre,post}change.txt.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 2 as const;
+export const CURRENT_TEMPLATE_VERSION = 3 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {
