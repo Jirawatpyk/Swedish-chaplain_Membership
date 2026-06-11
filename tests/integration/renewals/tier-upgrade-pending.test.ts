@@ -1133,7 +1133,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
   // `scheduled_plan_changes` pending row → applied and emits
   // `plan_change_applied`.
   //
-  // PRE-FIX BUG: the finaliser fired whenever `resolvedCycleId !== null`
+  // ORIGINAL BUG: the finaliser fired whenever `resolvedCycleId !== null`
   // (set the moment a cycle was found, BEFORE the apply ran) — fully
   // DECOUPLED from whether F8 actually applied a suggestion. If a
   // supersede cancelled the F8 suggestion but the F2 pending row was
@@ -1141,17 +1141,19 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
   // finaliser still flips pending → applied + emits plan_change_applied
   // → BILLS a tier upgrade the supersede meant to cancel (money bug).
   //
-  // POST-FIX: the finaliser is gated on the apply having applied a
-  // suggestion for the cycle (`suggestionsApplied.length > 0`). In the
-  // orphan state the F2 row stays `pending` and no plan_change_applied
-  // is emitted.
+  // 065 Fix A (supersedes the original S6 apply-count gate): the finaliser
+  // is now gated on the F8 SUGGESTION STATUS — it is SKIPPED only when a
+  // `superseded` suggestion targets the cycle (this orphan case). The
+  // apply-count gate that the original S6 fix used broke webhook retry
+  // self-heal (see the Fix-A S1 retry-heal test above); the status gate
+  // closes BOTH the re-bill hole (here) AND the retry-strand hole.
   //
   // Orphan seed: accept (→ F8 accepted_pending_apply + F2 pending), then
   // directly flip the F8 suggestion to `superseded` in the DB WITHOUT
   // touching the F2 row — exactly the missed-supersede orphan the
   // S6 finding describes. Then fire the bridge for the cycle's invoice.
   // ---------------------------------------------------------------------------
-  it('S6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing', async () => {
+  it('S6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when the suggestion was superseded (cancelled upgrade)', async () => {
     const seeded = await seedSuggestionState(tenant, admin, {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
@@ -1335,6 +1337,138 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
           and(
             eq(auditLog.eventType, 'plan_change_applied'),
             sql`${auditLog.payload}->>'scheduled_change_id' = ${scheduled!.scheduledChangeId}`,
+          ),
+        ),
+    );
+    expect(appliedAudit).toHaveLength(1);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // 065 Fix A (S1) — webhook retry self-heal of a stranded F2 row
+  //
+  // Stripe webhook delivery is at-least-once. On the FIRST delivery the
+  // in-tx F8 apply commits the suggestion `accepted_pending_apply` →
+  // `applied`, but the POST-tx F2 finaliser can fail transiently
+  // (findPendingForCycle / transitionStatus `return`-non-rollback),
+  // leaving the F2 `scheduled_plan_changes` row stuck `pending`. The
+  // Stripe RE-delivery must heal it.
+  //
+  // The PRIOR S6 gate keyed the finaliser on THIS-run's apply count
+  // (`appliedSuggestionCount > 0`): on the retry the apply finds the
+  // suggestion ALREADY `applied`, returns [], the gate SKIPS the
+  // finaliser → the F2 row is stranded `pending` FOREVER (RED on the old
+  // gate). The Fix-A gate keys on suggestion-not-superseded instead — the
+  // applied (NOT superseded) suggestion lets the finaliser run + heal the
+  // stranded row.
+  //
+  // Strand seed (deterministic, no deps-injection needed): accept (→ F8
+  // accepted_pending_apply + F2 pending), then flip the F8 suggestion to
+  // `applied` directly in the DB while leaving the F2 row `pending` —
+  // exactly the "first delivery applied F8 but its finaliser failed"
+  // state. Then fire the bridge (the retry).
+  // ---------------------------------------------------------------------------
+  it('Fix A S1 retry-heal — F2 finaliser heals a stranded pending row even when F8 apply no-ops on the retry (suggestion already applied)', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // 1) Accept → F8 accepted_pending_apply + F2 pending row.
+    const accept = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(accept.ok).toBe(true);
+
+    const fakeInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      // 2) Strand: flip the F8 suggestion to `applied` (the first
+      //    delivery's apply committed), but DO NOT touch the F2 pending
+      //    row (its post-tx finaliser failed). Set the applied anchors so
+      //    the `applied` CHECK constraint passes + the disambiguation read
+      //    is realistic.
+      await (tx as unknown as typeof db)
+        .update(tierUpgradeSuggestions)
+        .set({
+          status: 'applied',
+          appliedAt: sql`now()`,
+          appliedAtInvoiceId: fakeInvoiceId,
+          closedAt: sql`now()`,
+        })
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId));
+      // Seed the draft invoice the cycle FK references, then link it.
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: fakeInvoiceId,
+        memberId: seeded.memberId,
+        planYear: 2026,
+        planId: 'regular',
+        draftByUserId: admin.userId,
+        status: 'draft',
+        currency: 'THB',
+      });
+      await (tx as unknown as typeof db)
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: fakeInvoiceId })
+        .where(eq(renewalCycles.cycleId, seeded.cycleId));
+    });
+
+    // Sanity: the F2 row IS pending pre-retry (the strand), F8 IS applied.
+    const [strandRow] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.memberId, seeded.memberId)),
+    );
+    expect(strandRow?.status).toBe('pending');
+    const [strandSuggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(strandSuggestion?.status).toBe('applied');
+
+    // 3) Fire the F4 onPaid bridge (retry). The apply finds the
+    //    suggestion already `applied` → returns [] (no transition). The
+    //    OLD count gate skipped here; the Fix-A gate finalises.
+    const evt: F4InvoicePaidEvent = {
+      tenantId: tenant.ctx.slug,
+      invoiceId: fakeInvoiceId,
+      memberId: seeded.memberId,
+      paidAt: new Date().toISOString(),
+      amountSatang: asSatang(5_000_000n),
+      vatSatang: asSatang(327_103n),
+      currency: 'THB',
+      paymentMethod: 'bank_transfer',
+      triggeredBy: 'webhook',
+    };
+    const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
+    await callbacks[1]!(evt, undefined);
+
+    // 4) ASSERT: the stranded F2 row is healed → applied.
+    const [healedRow] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.memberId, seeded.memberId)),
+    );
+    expect(healedRow?.status).toBe('applied');
+    expect(healedRow?.appliedAt).not.toBeNull();
+
+    // plan_change_applied audit emitted for the healed change.
+    const appliedAudit = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'plan_change_applied'),
+            sql`${auditLog.payload}->>'scheduled_change_id' = ${strandRow!.scheduledChangeId}`,
           ),
         ),
     );

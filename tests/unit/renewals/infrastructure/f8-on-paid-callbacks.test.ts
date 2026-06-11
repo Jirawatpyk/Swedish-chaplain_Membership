@@ -58,6 +58,10 @@ const {
   f2TransitionStatusMock,
   f2AuditRecordMock,
   f2FinaliseBeforeF4CommitMock,
+  // 065 Fix A (S1 retry-heal) — the F2 finaliser gate now keys on the
+  // F8 SUGGESTION STATUS (`hasSupersededSuggestionForCycle`), not the
+  // this-run apply count. Spy so each test drives superseded vs not.
+  hasSupersededSuggestionForCycleMock,
 } = vi.hoisted(() => ({
   onPaidInvalidTxAdd: vi.fn(),
   onPaidUnknownOutcomeKindAdd: vi.fn(),
@@ -73,6 +77,7 @@ const {
   f2TransitionStatusMock: vi.fn(),
   f2AuditRecordMock: vi.fn(),
   f2FinaliseBeforeF4CommitMock: vi.fn(),
+  hasSupersededSuggestionForCycleMock: vi.fn(),
 }));
 
 vi.mock('@/lib/metrics', async (importOriginal) => {
@@ -139,6 +144,21 @@ vi.mock(
     makeDrizzleRenewalAuditEmitter: () => ({
       emit: auditEmitterEmitMock,
       emitInTx: vi.fn(async () => undefined),
+    }),
+  }),
+);
+
+// 065 Fix A — stub the F8 tier-upgrade suggestion repo factory so the
+// callback's new `hasSupersededSuggestionForCycle` gate query is
+// observable + does NOT hit live DB. The apply use-case is mocked
+// separately, so only the gate method matters here. Default: NOT
+// superseded (the common case) — per-test overrides drive the orphan
+// path.
+vi.mock(
+  '@/modules/renewals/infrastructure/drizzle/drizzle-tier-upgrade-suggestion-repo',
+  () => ({
+    makeDrizzleTierUpgradeSuggestionRepo: () => ({
+      hasSupersededSuggestionForCycle: hasSupersededSuggestionForCycleMock,
     }),
   }),
 );
@@ -260,6 +280,10 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     f2AuditRecordMock.mockReset();
     f2AuditRecordMock.mockResolvedValue({ ok: true, value: undefined });
     f2FinaliseBeforeF4CommitMock.mockReset();
+    // 065 Fix A — default: NO superseded suggestion for the cycle, so
+    // the F2 finaliser gate is OPEN (it then no-ops if no pending row).
+    hasSupersededSuggestionForCycleMock.mockReset();
+    hasSupersededSuggestionForCycleMock.mockResolvedValue(false);
   });
 
   it('valid TenantTx threaded → InTx variant called, no metric bumped (I3 atomic-tx happy path)', async () => {
@@ -521,17 +545,20 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
   // `_internal` export. This integration assertion pins the OUTER
   // callback factory's wiring:
   //   1. `resolvedCycleId` is captured from the in-tx cycle lookup.
-  //   2. The `if (resolvedCycleId !== null && appliedSuggestionCount
-  //      > 0)` gate (065 S6) fires the F2 finaliser exactly once on
-  //      renewal-cycle invoices WHERE the apply transitioned a
-  //      suggestion.
+  //   2. (065 Fix A — supersedes the prior S6 apply-count gate) The
+  //      `if (resolvedCycleId !== null && !supersededForCycle)` gate
+  //      fires the F2 finaliser on renewal-cycle invoices UNLESS the F8
+  //      suggestion for the cycle was superseded. `supersededForCycle`
+  //      is read via `tierUpgradeRepo.hasSupersededSuggestionForCycle`
+  //      — NOT the run-local apply count (which broke webhook retry
+  //      self-heal, see the S1 retry-heal test below).
   //   3. The `renewalsMetrics.f2FinaliseBeforeF4Commit` counter is
   //      bumped before the finaliser runs.
   //   4. On non-renewal invoices (cycle === null short-circuit), the
   //      F2 finaliser MUST NOT be invoked + the metric MUST NOT bump.
-  //   5. (065 S6) When the apply transitions nothing
-  //      (`suggestionsApplied=[]`), the finaliser MUST NOT be entered —
-  //      see the dedicated S6 test below.
+  //   5. (065 Fix A) When a `superseded` suggestion targets the cycle
+  //      (the cancelled-upgrade orphan), the finaliser MUST NOT be
+  //      entered — see the dedicated S6/Fix-A test below.
   // A refactor that drops the `resolvedCycleId = cycle.cycleId`
   // assignment at the apply()-closure site would fail (3).
   // ─────────────────────────────────────────────────────────────────
@@ -590,6 +617,12 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     // R2-C1 operational counter — bumped exactly once before finaliser
     expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledTimes(1);
     expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledWith('test-tenant');
+    // 065 Fix A — the gate signal is the SUGGESTION STATUS read, not the
+    // run-local apply count. The gate query ran for this cycle.
+    expect(hasSupersededSuggestionForCycleMock).toHaveBeenCalledWith(
+      'test-tenant',
+      'cyc-with-pending-plan-change',
+    );
   });
 
   it('R2-I8: F2 finaliser NOT invoked + metric NOT bumped when cycle is null (non-renewal invoice)', async () => {
@@ -609,29 +642,124 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     expect(f2FinaliseBeforeF4CommitMock).not.toHaveBeenCalled();
   });
 
-  it('065 S6: F2 finaliser is NOT entered when the apply transitions nothing (suggestionsApplied=[] — same-tier renewal or orphan supersede)', async () => {
+  it('065 Fix A: F2 finaliser is NOT entered when a SUPERSEDED suggestion targets the cycle (cancelled-upgrade orphan — no re-bill)', async () => {
     cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
-      cycleId: 'cyc-no-apply',
+      cycleId: 'cyc-superseded',
       memberId: 'mem-1',
     });
-    // Apply no-ops: no `accepted_pending_apply` suggestion for the cycle.
-    // This is both the common same-tier-renewal case AND the orphan
-    // state (supersede cancelled the F8 suggestion). In BOTH the
-    // finaliser MUST be skipped entirely — gating on the apply result
-    // closes the S6 re-bill hole where a pending F2 row left behind by a
-    // missed supersede would otherwise be flipped pending → applied.
-    // InTx variant returns a bare array (065 S6 gate reads `.length`).
+    // Apply no-ops: the suggestion was superseded, so no
+    // `accepted_pending_apply` row for the cycle. The gate query reports
+    // a superseded suggestion targeting the cycle → the finaliser MUST
+    // be skipped so the orphaned F2 pending row is never flipped →
+    // applied (the S6 re-bill money bug).
     applyPendingTierUpgradeInTxMock.mockResolvedValueOnce([]);
+    hasSupersededSuggestionForCycleMock.mockResolvedValueOnce(true);
 
     const callbacks = f8OnPaidCallbacks('test-tenant');
     await callbacks[1]!(buildEvent(), fakeValidTenantTx);
 
-    // 065 S6 — the finaliser code path is NOT entered: the counter does
-    // NOT fire AND `findPendingForCycle` is NOT queried. A pending F2 row
-    // for the cycle (the orphan) is therefore left untouched, never
-    // re-billed.
+    // Gate query ran; reported superseded → finaliser code path NOT
+    // entered: counter does NOT fire + `findPendingForCycle` NOT queried.
+    expect(hasSupersededSuggestionForCycleMock).toHaveBeenCalledWith(
+      'test-tenant',
+      'cyc-superseded',
+    );
     expect(f2FinaliseBeforeF4CommitMock).not.toHaveBeenCalled();
     expect(f2FindPendingForCycleMock).not.toHaveBeenCalled();
+    expect(f2TransitionStatusMock).not.toHaveBeenCalled();
+    expect(f2AuditRecordMock).not.toHaveBeenCalled();
+  });
+
+  it('065 Fix A (S1 retry-heal): apply returns [] (suggestion already applied) but NOT superseded → finaliser STILL runs + heals the stranded F2 row', async () => {
+    // Webhook re-delivery (Stripe at-least-once): the FIRST delivery
+    // applied the F8 suggestion (→ `applied`) but its post-tx F2
+    // finaliser failed transiently, leaving the F2 row `pending`. On the
+    // retry the apply finds the suggestion ALREADY `applied` and returns
+    // [] — the OLD `appliedSuggestionCount > 0` gate would skip the
+    // finaliser, stranding the F2 row in `pending` forever. The NEW gate
+    // keys on suggestion STATUS: not superseded → the finaliser runs +
+    // heals the stranded row.
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
+      cycleId: 'cyc-retry-heal',
+      memberId: 'mem-1',
+    });
+    // Retry: apply no-ops (already-applied suggestion → []).
+    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce([]);
+    // NOT superseded — a normally-applied upgrade whose F2 finaliser
+    // failed on the prior delivery.
+    hasSupersededSuggestionForCycleMock.mockResolvedValueOnce(false);
+    // The F2 row is still `pending` (the strand the retry must heal).
+    f2FindPendingForCycleMock.mockResolvedValueOnce({
+      tenantId: 'test-tenant',
+      scheduledChangeId: 'sched-strand',
+      memberId: '22222222-2222-2222-2222-222222222222',
+      effectiveAtCycleId: 'cyc-retry-heal',
+      fromPlanId: 'corporate-standard',
+      toPlanId: 'corporate-premium',
+      scheduledByUserId: 'admin',
+      reason: 'tier_upgrade_accepted:sug-strand',
+      status: 'pending',
+      scheduledAt: '2026-05-01T00:00:00Z',
+      appliedAt: null,
+      supersededAt: null,
+      cancelledAt: null,
+    });
+    f2TransitionStatusMock.mockResolvedValueOnce({
+      tenantId: 'test-tenant',
+      scheduledChangeId: 'sched-strand',
+      memberId: '22222222-2222-2222-2222-222222222222',
+      effectiveAtCycleId: 'cyc-retry-heal',
+      fromPlanId: 'corporate-standard',
+      toPlanId: 'corporate-premium',
+      scheduledByUserId: 'admin',
+      reason: 'tier_upgrade_accepted:sug-strand',
+      status: 'applied',
+      scheduledAt: '2026-05-01T00:00:00Z',
+      appliedAt: '2026-05-19T10:00:00Z',
+      supersededAt: null,
+      cancelledAt: null,
+    });
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    // The finaliser ran despite the empty apply result — the gate keyed
+    // on suggestion-not-superseded, not the run-local apply count.
+    expect(hasSupersededSuggestionForCycleMock).toHaveBeenCalledWith(
+      'test-tenant',
+      'cyc-retry-heal',
+    );
+    expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledTimes(1);
+    expect(f2FindPendingForCycleMock).toHaveBeenCalledTimes(1);
+    expect(f2TransitionStatusMock).toHaveBeenCalledTimes(1);
+    expect(f2AuditRecordMock).toHaveBeenCalledTimes(1);
+    const [, event] = f2AuditRecordMock.mock.calls[0]!;
+    expect((event as { event_type: string }).event_type).toBe(
+      'plan_change_applied',
+    );
+  });
+
+  it('065 Fix A (S0 standalone schedule): no F8 suggestion at all → finaliser runs (and no-ops cleanly when no pending F2 row)', async () => {
+    // A future standalone F2 schedule (no F8 suggestion) must still
+    // finalise. With no suggestion, `hasSupersededSuggestionForCycle`
+    // returns false → gate open. The common same-tier-renewal case (no
+    // pending F2 row) then no-ops inside the finaliser.
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
+      cycleId: 'cyc-standalone',
+      memberId: 'mem-1',
+    });
+    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce([]);
+    hasSupersededSuggestionForCycleMock.mockResolvedValueOnce(false);
+    // No pending F2 row (default mock returns null) → finaliser no-ops.
+    f2FindPendingForCycleMock.mockResolvedValueOnce(null);
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    // Gate OPEN (counter bumped + findPendingForCycle queried), but the
+    // finaliser is a clean no-op (no pending row → no transition/audit).
+    expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledTimes(1);
+    expect(f2FindPendingForCycleMock).toHaveBeenCalledTimes(1);
     expect(f2TransitionStatusMock).not.toHaveBeenCalled();
     expect(f2AuditRecordMock).not.toHaveBeenCalled();
   });
