@@ -48,6 +48,22 @@ export interface PdfRenderInput {
   readonly vatInclusive?: boolean;
   readonly voidReason?: string | null;
   /**
+   * 064 W1 S31 — what the document being VOID-stamped ORIGINALLY was.
+   * Only read when `kind === 'void_stamped_invoice'`; ignored otherwise.
+   * The void variant picks its TITLE from this kind (keeping the VOID
+   * watermark) so a §105 ใบเสร็จรับเงิน original is never re-rendered
+   * under a ใบกำกับภาษี title — the retained §87/3 evidence copy must
+   * keep the legal identity of the document it cancels.
+   *
+   * OPTIONAL + ADDITIVE on purpose (no template-version bump): when
+   * absent the render input is JSON-identical to every pre-change void
+   * render input (same deterministic seed) and the template falls
+   * through to the historical default title (ใบกำกับภาษี / Tax
+   * Invoice), so old renders are unaffected. `voidInvoice` passes the
+   * row's persisted `pdfDocKind ?? 'invoice'`.
+   */
+  readonly voidUnderlyingKind?: 'invoice' | 'receipt_combined' | 'receipt_separate';
+  /**
    * T078/T079 — credit-note-specific context. Required when
    * `kind === 'credit_note'`; ignored otherwise. Carries the reference
    * to the original invoice so the template can render the required

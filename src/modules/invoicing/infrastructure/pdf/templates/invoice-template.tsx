@@ -194,6 +194,20 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   } else if (input.kind === 'receipt_separate') {
     titleTh = 'ใบเสร็จรับเงิน';
     titleEn = 'Official Receipt';
+  } else if (isVoid && input.voidUnderlyingKind === 'receipt_combined') {
+    // 064 W1 S31 — kind-true VOID title: the void re-render keeps the
+    // TITLE of the document it cancels (the VOID watermark below carries
+    // the cancellation). Without this, voiding a legacy §105
+    // ใบเสร็จรับเงิน re-rendered the retained §87/3 evidence copy as a
+    // ใบกำกับภาษี — mutating its legal identity. ABSENT field (all
+    // pre-change renders) falls through to the historical default
+    // titles above, so old output is unchanged — no template-version
+    // bump needed.
+    titleTh = 'ใบกำกับภาษี / ใบเสร็จรับเงิน';
+    titleEn = 'Tax Invoice / Official Receipt';
+  } else if (isVoid && input.voidUnderlyingKind === 'receipt_separate') {
+    titleTh = 'ใบเสร็จรับเงิน';
+    titleEn = 'Official Receipt';
   }
   // Thai-RD §86/4 requires the document to mark whether it is the
   // original or a copy. Previews + voids have their own watermark;

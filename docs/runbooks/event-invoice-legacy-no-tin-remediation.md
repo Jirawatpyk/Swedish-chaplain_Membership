@@ -107,6 +107,14 @@ For each row from query (a):
    legal transition): admin invoice detail → Void, reason
    `legacy no-TIN event document — 064 remediation`. This emits
    `invoice_voided` and preserves the §87 number (voided, never reused).
+   Executable for **non-member** legacy rows too (W1 S32 — voidInvoice no
+   longer rejects `member_id IS NULL` event rows; the audit row correlates
+   via `event_registration_id` instead of `member_id`). The VOID-stamped
+   re-render **preserves the original document's title** (W1 S31): a
+   legacy §105 ใบเสร็จรับเงิน comes back as a VOID-stamped
+   ใบเสร็จรับเงิน — never re-titled as a ใบกำกับภาษี — so the retained
+   §87/3 evidence copy keeps the legal identity of the document it
+   cancels.
 2. **Retain the original AND all copies** of the erroneous document with a
    written cancellation note attached, for the full §87/3 10-year retention
    period. Do NOT delete the blob — the void row keeps pointing at it as the

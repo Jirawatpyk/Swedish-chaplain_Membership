@@ -28,8 +28,10 @@
  *        templateVersion (R3-E4 / FR-016 — layout integrity preserved)
  *     E. applyVoid UPDATE (status + void_reason + voided_by + voided_at
  *        — does NOT touch pdf_sha256)
- *     F. emit `invoice_voided` audit (carries member_id per FR-033,
- *        void_reason_sha256 per PDPA B-1 redaction)
+ *     F. emit `invoice_voided` audit (member rows carry member_id per
+ *        FR-033; non-member EVENT rows route through the typed
+ *        emitNonMemberInvoiceEvent helper with event_registration_id —
+ *        064 W1 S32; void_reason_sha256 per PDPA B-1 redaction)
  *     G. enqueue cancellation email outbox row (FR-036)
  *     H. COMMIT
  *
@@ -52,7 +54,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
-import type { AuditPort } from '../ports/audit-port';
+import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
@@ -191,12 +193,23 @@ export async function voidInvoice(
       ) {
         return err({ code: 'no_snapshot_on_invoice' });
       }
-      // 054-event-fee-invoices — void-invoice is MEMBERSHIP-only today.
-      // `invoices_subject_fields_ck` guarantees member_id for
-      // `invoice_subject='membership'`; treat null (an event invoice that
-      // should never reach this path) as a missing snapshot.
+      // 064 W1 S32 — subject-aware member binding (record-payment Task-8
+      // parity). A NON-member EVENT invoice legitimately has member_id NULL —
+      // its BUYER lives in `member_identity_snapshot` (pinned at draft), and
+      // the completeness guard above already enforced that snapshot. This is
+      // the row shape the legacy no-TIN remediation runbook MUST be able to
+      // void (Step 2.1); the previous blanket null-member reject made that
+      // step impossible to execute for non-member rows.
+      //
+      // A MEMBERSHIP invoice with a null member stays a data-corruption
+      // reject: `invoices_subject_fields_ck` guarantees member_id IS NOT NULL
+      // for `invoice_subject='membership'`, so reaching here with one implies
+      // a corrupted row (same `no_snapshot_on_invoice` class as a missing
+      // snapshot — record-payment LOW-9 rationale applies verbatim).
       const memberId = loaded.memberId;
-      if (memberId === null) return err({ code: 'no_snapshot_on_invoice' });
+      if (memberId === null && loaded.invoiceSubject !== 'event') {
+        return err({ code: 'no_snapshot_on_invoice' });
+      }
       if (!settings) return err({ code: 'settings_missing' });
 
       // D. Re-render with VOID overlay (pinned template version per FR-016).
@@ -212,6 +225,13 @@ export async function voidInvoice(
       try {
         rendered = await deps.pdfRender.render({
           kind: 'void_stamped_invoice',
+          // 064 W1 S31 — kind-true void title: the template titles the VOID
+          // document by what the ORIGINAL was (persisted at issue, migration
+          // 0211), keeping the VOID watermark. A legacy §105 ใบเสร็จรับเงิน
+          // original must not come back titled ใบกำกับภาษี. `?? 'invoice'`
+          // is defensive only — `invoices_non_draft_has_doc_kind` makes a
+          // null pdfDocKind unrepresentable on an issued row.
+          voidUnderlyingKind: loaded.pdfDocKind ?? 'invoice',
           templateVersion: loaded.pdf.templateVersion,
           documentNumber: loaded.documentNumber,
           issueDate: loaded.issueDate,
@@ -252,22 +272,59 @@ export async function voidInvoice(
       // F. Audit — B-1 redaction: hash the reason; keep original sha
       // reference so the forensic trail can verify the plaintext on the
       // invoices row (still present under legal-obligation basis).
-      await deps.audit.emit(tx, {
-        tenantId: input.tenantId,
-        requestId: input.requestId ?? null,
-        eventType: 'invoice_voided',
-        actorUserId: input.actorUserId,
-        summary: `Invoice ${loaded.documentNumber.raw} voided`,
-        payload: {
-          invoice_id: invoiceId,
-          member_id: memberId,
-          document_number: loaded.documentNumber.raw,
-          void_reason_sha256: voidReasonHash,
-          original_pdf_sha256: loaded.pdf.sha256,
-          new_pdf_sha256: rendered.sha256,
-          voided_by_user_id: input.actorUserId,
-        },
-      });
+      //
+      // 064 W1 S32 — branch on buyer kind, exactly as record-payment /
+      // issue-invoice / issue-credit-note do for their lifecycle events:
+      // MEMBERSHIP / matched-member → timeline branch (payload carries
+      // `member_id`); NON-member event → typed `emitNonMemberInvoiceEvent`
+      // (member_id FORBIDDEN at compile time; correlated via
+      // event_registration_id). Payload parity: both carry the same
+      // void facts.
+      const voidedSummary = `Invoice ${loaded.documentNumber.raw} voided`;
+      const voidedPayloadBase: Record<string, unknown> = {
+        invoice_id: invoiceId,
+        document_number: loaded.documentNumber.raw,
+        void_reason_sha256: voidReasonHash,
+        original_pdf_sha256: loaded.pdf.sha256,
+        new_pdf_sha256: rendered.sha256,
+        voided_by_user_id: input.actorUserId,
+      };
+      if (memberId !== null) {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'invoice_voided',
+          actorUserId: input.actorUserId,
+          summary: voidedSummary,
+          payload: {
+            member_id: memberId,
+            ...voidedPayloadBase,
+          },
+        });
+      } else {
+        // NON-member event invoice. The S32 guard above already returned
+        // for a null-member NON-event invoice, so a null memberId here
+        // implies `invoiceSubject === 'event'` → `invoices_subject_fields_ck`
+        // guarantees `event_registration_id IS NOT NULL`. TS can't re-derive
+        // that, so re-narrow on the column (record-payment idiom).
+        if (loaded.eventRegistrationId === null) {
+          throw new Error(
+            'voidInvoice: non-member event invoice has null event_registration_id (violates invoices_subject_fields_ck)',
+          );
+        }
+        await emitNonMemberInvoiceEvent(deps.audit, tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'invoice_voided',
+          eventRegistrationId: loaded.eventRegistrationId,
+          actorUserId: input.actorUserId,
+          summary: voidedSummary,
+          extraPayload: {
+            event_id: loaded.eventId,
+            ...voidedPayloadBase,
+          },
+        });
+      }
 
       // G. Outbox (cancellation email per FR-036).
       const shouldAutoEmail =
