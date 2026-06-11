@@ -448,14 +448,15 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         // follow-up read in the same tx (failure path only; the
         // success path stays single-RTT). A 0-row UPDATE is NOT a SQL
         // error, so the surrounding tx is not poisoned by this probe.
-        // 065 S9 — scope the probe to the tenant too: a foreign-tenant
-        // row (RLS bypassed) is treated as not-found, mirroring the
-        // `findById` `row.tenantId !== tenantId → null` guard.
+        // 065 S9 — the probe is tenant-scoped by the `eq(tenantId, …)`
+        // predicate in the WHERE below (alongside RLS). A foreign-tenant
+        // row (e.g. an RLS-policy regression / BYPASSRLS connection) is
+        // simply not matched → `existing` is undefined →
+        // TierUpgradeSuggestionNotFoundError, i.e. treated as not-found.
+        // No in-app `row.tenantId !== tenantId` compare is needed (and
+        // none is done) — so we don't select `tenant_id` (065 S10).
         const [existing] = await txDb
-          .select({
-            status: tierUpgradeSuggestions.status,
-            tenantId: tierUpgradeSuggestions.tenantId,
-          })
+          .select({ status: tierUpgradeSuggestions.status })
           .from(tierUpgradeSuggestions)
           .where(
             and(
