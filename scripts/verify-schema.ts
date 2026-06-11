@@ -80,6 +80,25 @@ async function main(): Promise<void> {
         name: 'audit_log_retention_default_for_f4_tax_docs trigger (mig 0055)',
         query: `SELECT 1 AS hit FROM information_schema.triggers WHERE event_object_table = 'audit_log' AND trigger_name = 'audit_log_retention_default_for_f4_tax_docs'`,
       },
+      // 064-event-invoice-paid-flow canaries (migs 0211-0214) — the
+      // §105 as-paid path depends on all four; a partially-applied
+      // journal here corrupts tax-document invariants silently.
+      {
+        name: 'invoices.pdf_doc_kind column + invoices_non_draft_has_doc_kind CHECK (mig 0211)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'invoices' AND column_name = 'pdf_doc_kind' AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_non_draft_has_doc_kind' AND conrelid = 'public.invoices'::regclass)`,
+      },
+      {
+        name: 'invoices_non_draft_has_snapshots CHECK has the 0212 relaxed event leg (mig 0212)',
+        query: `SELECT 1 AS hit FROM pg_constraint WHERE conname = 'invoices_non_draft_has_snapshots' AND conrelid = 'public.invoices'::regclass AND pg_get_constraintdef(oid) LIKE '%receipt_document_number_raw%'`,
+      },
+      {
+        name: 'invoices_tenant_receipt_raw_uniq partial unique index (mig 0213)',
+        query: `SELECT 1 AS hit FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'invoices_tenant_receipt_raw_uniq' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef LIKE '%WHERE%'`,
+      },
+      {
+        name: 'invoices_enforce_immutability locks pdf_doc_kind (mig 0214)',
+        query: `SELECT 1 AS hit FROM pg_proc WHERE proname = 'invoices_enforce_immutability' AND prosrc LIKE '%pdf_doc_kind%'`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {
