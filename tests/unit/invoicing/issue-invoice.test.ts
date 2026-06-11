@@ -255,7 +255,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(),
       downloadBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46])),
-      delete: vi.fn(),
+      delete: vi.fn(async () => {}),
       list: vi.fn(async () => []),
     },
     audit: {
@@ -522,6 +522,117 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
         expect(r.error.reason).toContain('font load failed');
       }
     }
+    // 065 L-3 — render fails BEFORE upload inside renderAndUploadPdf: this
+    // attempt wrote nothing at the key → cleanup must NOT fire (a delete
+    // could even remove a concurrent successor's fresh bytes).
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    // 065 M-4 — render failure is a 500-class server fault → ERROR severity.
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID, tenantId: 'test-swecham' }),
+      'issueInvoice: internal error, rolling back',
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'issueInvoice: internal error, rolling back',
+    );
+  });
+
+  // --- 065 L-3 — orphan-blob cleanup parity with issueEventInvoiceAsPaid ------
+
+  const EXPECTED_ISSUE_BLOB_KEY = `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`;
+
+  it('L-3: blob_upload_failed → best-effort blob.delete fires with the deterministic key', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.blob.uploadPdf = vi.fn(async () => {
+      throw new Error('blob 503');
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('blob_upload_failed');
+    expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
+    // A partial upload may exist at the content-addressed key — without the
+    // cleanup, a NEXT-DAY retry (different issueDate → different bytes) hits
+    // the conflict-as-success adapter arm and commits a row whose pdf_sha256
+    // doesn't match the stored bytes (silent tax-document drift).
+    expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_ISSUE_BLOB_KEY);
+  });
+
+  it('L-3: throw AFTER upload (outbox.enqueue) → promise REJECTS + orphan blob deleted', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice({ autoEmailOnIssue: true }),
+      makeSettings(),
+      makeMember(),
+      {
+        outbox: {
+          enqueue: vi.fn(async () => {
+            throw new Error('outbox insert failed');
+          }),
+        },
+      },
+    );
+    await expect(issueInvoice(deps, input)).rejects.toThrow('outbox insert failed');
+    expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_ISSUE_BLOB_KEY);
+  });
+
+  it('L-3: applyIssue conflict (race loser) → cleanup SKIPPED (the winner may own the key) + WARN severity stays', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.invoiceRepo.applyIssue = vi.fn(async () => {
+      throw new InvoiceApplyConflictError('applyIssue');
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    // 065 M-4 — business reject stays at warn, never error.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      'issueInvoice: internal error, rolling back',
+    );
+    expect(logger.error).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'issueInvoice: internal error, rolling back',
+    );
+  });
+
+  it('L-3: blob.delete failure during cleanup is swallowed — original error surfaces + ERROR log with the key + drift metric', async () => {
+    const driftMetric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.blob.uploadPdf = vi.fn(async () => {
+      throw new Error('blob 503');
+    });
+    deps.blob.delete = vi.fn(async () => {
+      throw new Error('delete also down');
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('blob_upload_failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blobKey: EXPECTED_ISSUE_BLOB_KEY,
+        invoiceId: INVOICE_ID,
+      }),
+      expect.stringContaining('orphan blob cleanup failed'),
+    );
+    expect(driftMetric).toHaveBeenCalledWith('issue');
+    driftMetric.mockRestore();
+  });
+
+  it('065 M-4: overflow logs at ERROR severity + fires the issuanceOverflow metric (tenant-wide issuance outage)', async () => {
+    const overflowMetric = vi.spyOn(invoicingMetrics, 'issuanceOverflow');
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember(), {
+      sequenceAllocator: { allocateNext: vi.fn(async () => 1_000_000) },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('overflow');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      'issueInvoice: internal error, rolling back',
+    );
+    expect(overflowMetric).toHaveBeenCalledWith('test-swecham', 2026);
+    // Overflow happens BEFORE the upload → no bytes at the key → no cleanup.
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    overflowMetric.mockRestore();
   });
 
   it('happy path — tenant auto_email=true, draft.autoEmailOnIssue=null → enqueues outbox', async () => {
@@ -822,7 +933,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
   });
 
-  it('064 S1 — event registration lookup err → registration_lookup_failed (pre-allocation)', async () => {
+  it('064 S1 — event registration lookup err → registration_lookup_failed (pre-allocation) + ERROR log discriminates reason=port_error (065 M-2)', async () => {
     const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null, {
       eventRegistrationLookup: {
         findById: vi.fn(async () => err({ kind: 'lookup_failed' as const })),
@@ -832,6 +943,41 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    // 065 M-2 — the single public code collapses two failure modes; the log
+    // keeps them apart (the F6 adapter already error-logs the port failure —
+    // this line adds invoice context + the discriminator).
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'port_error',
+        invoiceId: INVOICE_ID,
+        tenantId: 'test-swecham',
+        registrationId: 'reg-uuid-9',
+      }),
+      expect.stringContaining('registration lookup failed'),
+    );
+  });
+
+  it('065 M-2 — event registration lookup ok(null) → registration_lookup_failed + ERROR log discriminates reason=not_found (data-integrity anomaly)', async () => {
+    // A draft always points at a registration that existed at draft time; a
+    // null read is an RLS anomaly or out-of-band delete. The F6 adapter logs
+    // NOTHING on a clean null — without this line the anomaly is invisible.
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null, {
+      eventRegistrationLookup: {
+        findById: vi.fn(async () => ok(null)),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'not_found',
+        invoiceId: INVOICE_ID,
+        registrationId: 'reg-uuid-9',
+      }),
+      expect.stringContaining('registration lookup failed'),
+    );
   });
 
   it('064 S1 — MEMBERSHIP invoices never invoke the registration lookup (subject-scoped re-check)', async () => {

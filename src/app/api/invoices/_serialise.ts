@@ -60,6 +60,23 @@ export function issueErrorStatus(
   return overrides?.[code] ?? ISSUE_ERROR_STATUS_BASE[code] ?? 500;
 }
 
+/**
+ * 065 M-4 — issuance failures that are SERVER faults (infrastructure outage
+ * or §87 number-space exhaustion), never operator mistakes. The /issue and
+ * /issue-as-paid route handlers log these at ERROR severity so ops alerting
+ * catches them; every other code (validation, races, business rejects) stays
+ * at WARN. Mirrors the severity split inside the two use-cases' catches.
+ */
+const ISSUANCE_SERVER_FAULT_CODES: ReadonlySet<string> = new Set([
+  'overflow',
+  'pdf_render_failed',
+  'blob_upload_failed',
+]);
+
+export function isIssuanceServerFault(code: string): boolean {
+  return ISSUANCE_SERVER_FAULT_CODES.has(code);
+}
+
 export function serialiseInvoice(invoice: Invoice) {
   return {
     tenant_id: invoice.tenantId,

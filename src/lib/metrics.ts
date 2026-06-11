@@ -540,6 +540,44 @@ export const invoicingMetrics = {
   },
 
   /**
+   * 065 H-1b — post-rollback orphan-blob cleanup delete FAILED. Stale
+   * bytes remain at the deterministic key (`invoicing/{tenant}/{fy}/
+   * {invoiceId}_v{ver}.pdf`) after the issuance tx rolled back. On the
+   * as-paid path the retry now overwrites them (`allowOverwrite: true`,
+   * 065 H-1a), but on the plain-issue path a NEXT-DAY retry renders
+   * different bytes (issueDate moves) while the conflict-as-success
+   * adapter arm returns the OLD bytes — committing a row whose
+   * `pdf_sha256` does not match the stored document (silent
+   * tax-document drift). Alert: any non-zero rate — ops must sweep the
+   * logged key before the next issuance attempt of that invoice.
+   */
+  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid'): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_orphan_blob_cleanup_failed_total',
+        'Post-rollback orphan-blob delete failed — stale bytes at a deterministic key (tax-document drift risk on retry)',
+      ).add(1, { use_case: useCase });
+    });
+  },
+
+  /**
+   * 065 M-4 — §87 document-number space exhausted for a fiscal year
+   * (`DocumentNumber.of` rejected seq > 999 999). EVERY subsequent
+   * issuance in that (tenant, stream, fiscal-year) fails the same way —
+   * a tenant-wide issuance outage, not a per-request blip. Fired from
+   * the issue/issue-as-paid catch alongside the error-severity log.
+   * Alert: page on the FIRST occurrence.
+   */
+  issuanceOverflow(tenantId: string, fiscalYear: number): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_issuance_overflow_total',
+        '§87 sequence overflow — document-number space exhausted for the fiscal year (tenant-wide issuance outage)',
+      ).add(1, { tenant: tenantId, fiscal_year: String(fiscalYear) });
+    });
+  },
+
+  /**
    * Cross-tenant probe count — one per `{invoice,credit_note,
    * tenant_invoice_settings}_cross_tenant_probe` audit emit. Alert:
    * any non-zero rate over 5 min indicates enumeration attack.
@@ -3117,6 +3155,25 @@ export const eventcreateMetrics = {
       counter(
         'eventcreate_webhook_body_oversized_total',
         'F6 webhook body exceeded the 64 KiB size cap (DoS guard)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * 065 L-1 — the B5 `buyerHasTin` enrichment lookup degraded: the
+   * batched member-TIN-presence read (`runListMemberTinPresenceByIds`)
+   * threw and the F6 admin event-detail response fell back to the
+   * legacy "matched ⇒ has TIN" client guess. The picker still renders
+   * and the server-side issuance guards stay authoritative, but a
+   * TIN-less matched member gets the WRONG default issuance mode until
+   * the server rejects at issue. Alert: sustained non-zero rate per
+   * tenant (RLS drift / Neon outage scoped to the members read).
+   */
+  tinEnrichmentDegraded(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_member_tin_enrichment_degraded_total',
+        'F6 buyerHasTin enrichment lookup failed — registrations fell back to the legacy matched⇒has-TIN guess',
       ).add(1, { tenant: tenantId });
     });
   },

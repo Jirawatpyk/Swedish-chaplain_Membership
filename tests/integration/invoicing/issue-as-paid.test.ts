@@ -409,8 +409,21 @@ interface UseCaseDepsOptions {
   readonly nowIso: string;
   /** Records every PDF render input so tests can pin the doc-kind + dates. */
   readonly captured?: PdfRenderInput[];
-  /** Override the uploadPdf mock (section E blob-failure injection). */
-  readonly uploadPdf?: (input: { key: string }) => Promise<{ key: string; url: string }>;
+  /** Override the render mock (section E2 — distinct bytes per attempt). */
+  readonly render?: (
+    renderInput: PdfRenderInput,
+  ) => Promise<{ bytes: Uint8Array; sha256: ReturnType<typeof Sha256Hex.ofUnsafe> }>;
+  /**
+   * Override the uploadPdf mock (section E blob-failure injection; section
+   * E2 receives the full adapter input incl. body + allowOverwrite so the
+   * fake store can honour the real conflict semantics).
+   */
+  readonly uploadPdf?: (input: {
+    key: string;
+    body: Uint8Array;
+    contentType: 'application/pdf';
+    allowOverwrite?: boolean;
+  }) => Promise<{ key: string; url: string }>;
   /** Spy on the orphan-blob cleanup delete (section E). */
   readonly blobDelete?: (key: string) => Promise<void>;
 }
@@ -435,6 +448,7 @@ function makeUseCaseDeps(
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
         opts.captured?.push(renderInput);
+        if (opts.render) return opts.render(renderInput);
         return {
           bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
           sha256: Sha256Hex.ofUnsafe('d'.repeat(64)),
@@ -1148,6 +1162,129 @@ describe('issueEventInvoiceAsPaid — blob-upload failure rollback (live Neon)',
     const row2 = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
     expect(row2!.status).toBe('paid');
     expect(row2!.sequenceNumber).toBe(expectedSeq);
+  }, 90_000);
+});
+
+// -----------------------------------------------------------------------------
+// Section E2 — 065 H-1a: stale-bytes overwrite on retry (tax-document drift)
+// -----------------------------------------------------------------------------
+//
+// The drift mechanism: attempt 1 lands bytes at the deterministic key but the
+// upload call FAILS (timeout-after-write class), the best-effort catch-path
+// cleanup ALSO fails, and the tx rolls back (row stays draft). A retry renders
+// DIFFERENT bytes (e.g. a corrected paymentDate — the key has no paymentDate
+// component). Pre-H-1a the adapter's allowOverwrite=false arm treated
+// "already exists" as success returning the OLD bytes WITHOUT a sha compare —
+// the retry committed a row whose pdf_sha256 didn't match the stored
+// document. With `allowOverwrite: true` from the as-paid call site the retry
+// REPLACES the stale bytes. The fake store below mimics the real
+// vercel-blob-adapter conflict semantics exactly.
+
+describe('issueEventInvoiceAsPaid — 065 H-1a stale-bytes overwrite on retry (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let invoiceId: InvoiceId;
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await seedUcSettings(tenant, 'EVH');
+    const { registrationId } = await seedUcEventWithRegistration(tenant);
+    invoiceId = await createUcDraft(tenant, user, registrationId, {
+      amountOverrideSatang: 107000,
+      buyer: UC_BUYER_TIN,
+    });
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('fail-after-upload with FAILED cleanup, then retry with different bytes → blob holds the NEW render and the committed sha matches it', async () => {
+    const STALE_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x01]); // attempt-1 render
+    const FRESH_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x02]); // retry render
+    const STALE_SHA = '1'.repeat(64);
+    const FRESH_SHA = '2'.repeat(64);
+
+    // Fake blob store honouring the REAL vercel-blob-adapter semantics:
+    // conflict + allowOverwrite=false → success returning the OLD bytes
+    // WITHOUT writing (the drift arm); allowOverwrite=true → replace.
+    const store = new Map<string, Uint8Array>();
+    const adapterLikeUpload = async (input: {
+      key: string;
+      body: Uint8Array;
+      allowOverwrite?: boolean;
+    }): Promise<{ key: string; url: string }> => {
+      if (store.has(input.key) && !(input.allowOverwrite ?? false)) {
+        return { key: input.key, url: `https://blob.test/${input.key}` };
+      }
+      store.set(input.key, input.body);
+      return { key: input.key, url: `https://blob.test/${input.key}` };
+    };
+
+    // Attempt 1 — the bytes LAND in storage but the call fails afterwards
+    // (timeout-after-write), and the orphan-cleanup delete ALSO fails →
+    // stale bytes survive at the deterministic key.
+    const failingDeps = makeUseCaseDeps(tenant.ctx.slug, {
+      nowIso: UC_NOW_ISO,
+      render: async () => ({ bytes: STALE_BYTES, sha256: Sha256Hex.ofUnsafe(STALE_SHA) }),
+      uploadPdf: async (input) => {
+        await adapterLikeUpload(input);
+        throw new Error('simulated timeout after write');
+      },
+      blobDelete: async () => {
+        throw new Error('simulated cleanup outage');
+      },
+    });
+    const res1 = await issueEventInvoiceAsPaid(failingDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-h1a-1-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res1.ok).toBe(false);
+    if (res1.ok) throw new Error('expected blob_upload_failed');
+    expect(res1.error.code).toBe('blob_upload_failed');
+
+    const blobKey = `invoicing/${tenant.ctx.slug}/${UC_FISCAL_YEAR}/${invoiceId}_v1.pdf`;
+    expect(store.get(blobKey)).toEqual(STALE_BYTES); // the orphan survived
+    const rowAfterFail = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(rowAfterFail!.status).toBe('draft');
+
+    // Retry — different render bytes (e.g. corrected paymentDate); the
+    // upload now works. allowOverwrite must thread through so the stale
+    // bytes are REPLACED, never silently kept.
+    const retryDeps = makeUseCaseDeps(tenant.ctx.slug, {
+      nowIso: UC_NOW_ISO,
+      render: async () => ({ bytes: FRESH_BYTES, sha256: Sha256Hex.ofUnsafe(FRESH_SHA) }),
+      uploadPdf: adapterLikeUpload,
+    });
+    const res2 = await issueEventInvoiceAsPaid(retryDeps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-aspaid-uc-h1a-2-${invoiceId}`,
+      invoiceId: invoiceId as string,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+    });
+    expect(res2.ok, res2.ok ? 'ok' : `retry err: ${JSON.stringify(res2)}`).toBe(true);
+
+    // The live wire: the as-paid call site passes allowOverwrite: true.
+    const uploadInput = vi.mocked(retryDeps.blob.uploadPdf).mock.calls[0]![0] as {
+      allowOverwrite?: boolean;
+    };
+    expect(uploadInput.allowOverwrite).toBe(true);
+
+    // Drift closed: the stored bytes ARE the retry's render, and the
+    // committed row's sha256 matches THOSE bytes — never the stale ones.
+    expect(store.get(blobKey)).toEqual(FRESH_BYTES);
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
+    expect(row!.status).toBe('paid');
+    expect(row!.pdfSha256).toBe(FRESH_SHA);
+    expect(row!.pdfBlobKey).toBe(blobKey);
   }, 90_000);
 });
 

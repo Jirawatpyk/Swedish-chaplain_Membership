@@ -734,4 +734,27 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
       errorCode: 'not_event_subject',
     });
   });
+
+  it('065 M-4: server-fault codes (pdf_render_failed) log at ERROR severity in the route, not WARN', async () => {
+    issueEventInvoiceAsPaidMock.mockResolvedValueOnce(
+      err({ code: 'pdf_render_failed', reason: 'font load failed' }),
+    );
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest({ paymentDate: PAST_PAYMENT_DATE }), routeParams);
+    expect(res.status).toBe(500);
+
+    const loggerMock = await import('@/lib/logger');
+    const errorCalls = (loggerMock.logger.error as ReturnType<typeof vi.fn>).mock.calls;
+    const failureCall = errorCalls.find(
+      (c) => typeof c[1] === 'string' && (c[1] as string).includes('failed'),
+    );
+    expect(failureCall).toBeDefined();
+    expect(failureCall![0]).toMatchObject({ errorCode: 'pdf_render_failed' });
+    // The same failure must NOT double-log at warn.
+    const warnCalls = (loggerMock.logger.warn as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      warnCalls.find((c) => typeof c[1] === 'string' && (c[1] as string).includes('failed')),
+    ).toBeUndefined();
+  });
 });

@@ -12,7 +12,12 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { issueInvoice, issueInvoiceSchema, makeIssueInvoiceDeps } from '@/modules/invoicing';
-import { issueErrorStatus, serialiseInvoice, stripReason } from '../../_serialise';
+import {
+  isIssuanceServerFault,
+  issueErrorStatus,
+  serialiseInvoice,
+  stripReason,
+} from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -57,15 +62,20 @@ export async function POST(
 
   const result = await issueInvoice(makeIssueInvoiceDeps(tenantCtx.slug), parsed.data);
   if (!result.ok) {
-    logger.warn(
-      {
-        requestId,
-        tenantId: tenantCtx.slug,
-        invoiceId,
-        errorCode: result.error.code,
-      },
-      'POST /api/invoices/[id]/issue failed',
-    );
+    // 065 M-4 — severity split mirrors the use-case catch: overflow /
+    // pdf_render_failed / blob_upload_failed are 500-class server faults
+    // (ERROR, ops-alertable); business rejects stay WARN.
+    const failureLog = {
+      requestId,
+      tenantId: tenantCtx.slug,
+      invoiceId,
+      errorCode: result.error.code,
+    };
+    if (isIssuanceServerFault(result.error.code)) {
+      logger.error(failureLog, 'POST /api/invoices/[id]/issue failed');
+    } else {
+      logger.warn(failureLog, 'POST /api/invoices/[id]/issue failed');
+    }
     // Wave-4 S16 — shared issuance-route map; overrides carry ONLY the
     // codes this plain-issue route can see (§86/4 TIN gates).
     const status = issueErrorStatus(result.error.code, {
