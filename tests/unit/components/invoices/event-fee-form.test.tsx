@@ -674,7 +674,7 @@ describe('<EventFeeForm>', () => {
 
   // ── 064 remediation S4 — try/catch around the whole two-step submit ──────
 
-  it('S4: network rejection on the issue-as-paid POST → unknown-error toast WITH draft-remains + retry; lands on the draft; no unhandled rejection', async () => {
+  it('S4/M-3: network rejection on the issue-as-paid POST → CONNECTION copy (not unknown) WITH draft-remains + retry; lands on the draft; no unhandled rejection', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
@@ -693,13 +693,84 @@ describe('<EventFeeForm>', () => {
     );
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-23'));
+    // 065 M-3 — a network-level rejection (offline/DNS/abort) is actionable
+    // ("check your connection, then retry") and must not collapse into the
+    // generic unknown copy a server 500 also produces.
     expect(toastError).toHaveBeenCalledWith(
-      asPaidMessages.errors.unknown,
+      asPaidMessages.errors.network,
       expect.objectContaining({
         description: asPaidMessages.draftRemains,
         action: expect.objectContaining({ label: asPaidMessages.retry }),
       }),
     );
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('M-3: HTTP failure WITHOUT an error code → codeFallback interpolates the HTTP status (HTTP_500), draft-remains + retry', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-24' }), { status: 201 }),
+    );
+    // A 500 whose body carries no `error.code` (proxy error page, Next
+    // default handler) — previously indistinguishable from a network drop.
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({}), { status: 500 }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-24'));
+    expect(toastError).toHaveBeenCalledWith(
+      asPaidMessages.errors.codeFallback.replace('{code}', 'HTTP_500'),
+      expect.objectContaining({
+        description: asPaidMessages.draftRemains,
+        action: expect.objectContaining({ label: asPaidMessages.retry }),
+      }),
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('M-1: 201 with a BROKEN body → draft-remains toast WITHOUT retry (no id) + lands on the invoice LIST; issue-as-paid never fires', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    // 201 — the draft EXISTS server-side — but the body never parses, so the
+    // client has NO invoice id to navigate to or retry against.
+    fetchMock.mockImplementationOnce(
+      async () => new Response('not-json{', { status: 201 }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    // Honest copy: the draft remains (visible in the list) — never the bare
+    // unknown toast that pretends nothing was created.
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        asPaidMessages.errors.unknown,
+        expect.objectContaining({ description: asPaidMessages.draftRemains }),
+      ),
+    );
+    // No id → no retry action.
+    const options = toastError.mock.calls[0]![1] as Record<string, unknown>;
+    expect(options).not.toHaveProperty('action');
+    // Land on the LIST (the draft is visible there), not a detail page.
+    expect(pushMock).toHaveBeenCalledWith('/admin/invoices');
+    // Step 2 must never fire — there is no id to issue against.
+    expect(
+      fetchMock.mock.calls.find((c) => String(c[0]).includes('/issue-as-paid')),
+    ).toBeUndefined();
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 

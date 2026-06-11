@@ -1998,6 +1998,7 @@
           "member_not_found": "Medlemmen kunde inte hittas.",
           "pdf_render_failed": "PDF-filen kunde inte genereras — inget har utfärdats. Försök igen.",
           "blob_upload_failed": "PDF-filen kunde inte lagras — inget har utfärdats. Försök igen.",
+          "network": "Anslutningsfel — begäran nådde kanske inte servern. Kontrollera din anslutning och försök igen.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         }

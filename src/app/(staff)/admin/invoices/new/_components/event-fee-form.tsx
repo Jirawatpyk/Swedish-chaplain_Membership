@@ -782,12 +782,24 @@ export function EventFeeForm({
       }
       const issueKnown =
         issueCode !== undefined && AS_PAID_ERROR_CODES.includes(issueCode);
+      // 065 M-3 — three distinguishable failure shapes, three copies:
+      //   issueRes === null → NETWORK rejection (offline/DNS/abort): the
+      //     request may never have reached the server — "check your
+      //     connection, then retry" guidance, NOT the generic unknown.
+      //   typed code        → mapped copy (or codeFallback for codes
+      //     without copy).
+      //   HTTP without code → an HTTP response DID arrive (proxy error
+      //     page, Next default 500) — interpolate the status into
+      //     codeFallback (e.g. "Error code: HTTP_500") so support can
+      //     tell it apart from a connection drop.
       toast.error(
-        issueKnown
-          ? tAsPaid(`errors.${issueCode}`)
-          : issueCode
-            ? tAsPaid('errors.codeFallback', { code: issueCode })
-            : tAsPaid('errors.unknown'),
+        issueRes === null
+          ? tAsPaid('errors.network')
+          : issueKnown
+            ? tAsPaid(`errors.${issueCode}`)
+            : tAsPaid('errors.codeFallback', {
+                code: issueCode ?? `HTTP_${issueRes.status}`,
+              }),
         {
           description: tAsPaid('draftRemains'),
           // S6 — honest retry: the draft survived, so offer to re-run the
@@ -884,7 +896,24 @@ export function EventFeeForm({
           body: JSON.stringify(body),
         });
         if (res.status === 201) {
-          const data = (await res.json()) as { invoice_id: string };
+          // 065 M-1 — the 201 body parse gets its OWN guard: a 201 means
+          // the draft EXISTS server-side, but a broken/truncated body
+          // leaves the client with NO invoice id — the outer catch's
+          // draftRemains arm could never fire for this case because
+          // `createdInvoiceId` is only set AFTER the parse. Tell the
+          // truth (draft remains), land on the invoice LIST where it is
+          // visible, and offer no retry (there is no id to retry against).
+          let data: { invoice_id: string };
+          try {
+            data = (await res.json()) as { invoice_id: string };
+          } catch {
+            toast.error(tAsPaid('errors.unknown'), {
+              description: tAsPaid('draftRemains'),
+            });
+            router.push('/admin/invoices');
+            router.refresh();
+            return;
+          }
           createdInvoiceId = data.invoice_id;
           if (effectiveMode === 'already_paid') {
             // Step 2 — one-shot draft→paid issuance (shared helper; also
@@ -923,9 +952,10 @@ export function EventFeeForm({
         });
       } catch {
         if (createdInvoiceId !== null) {
-          // The draft exists but something after its creation threw (e.g.
-          // the 201 body failed to parse mid-flight). Tell the truth: the
-          // draft remains, and land on it.
+          // Defensive backstop (065 M-1 moved the 201-body-parse failure
+          // to its own guard above, so this arm is reachable only by a
+          // throw AFTER the id is known — e.g. toast/router internals).
+          // The draft exists: tell the truth and land on it.
           toast.error(tAsPaid('errors.unknown'), {
             description: tAsPaid('draftRemains'),
           });
