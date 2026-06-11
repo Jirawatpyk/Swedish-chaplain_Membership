@@ -514,12 +514,16 @@ export default async function PortalInvoiceDetailPage({
               <p className="text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
             </div>
           )}
-          <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('fields.planYear')}
-            </p>
-            <p className="text-body">{invoice.planYear}</p>
-          </div>
+          {/* Plan year is membership-only — event-fee invoices carry no plan
+              (plan_year NULL) and would render an empty value here. */}
+          {invoice.planYear !== null && (
+            <div>
+              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+                {t('fields.planYear')}
+              </p>
+              <p className="text-body">{invoice.planYear}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

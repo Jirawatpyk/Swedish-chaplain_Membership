@@ -155,11 +155,14 @@ export default async function InvoiceDetailPage({
   const invoice = result.value;
 
   // Look up plan display name so we don't show the raw planId slug.
-  const plansResult = await listPlans(
-    { filter: { year: invoice.planYear as never } },
-    buildPlansDeps(tenantCtx),
-  );
-  const foundPlan = plansResult.ok
+  // Event-fee invoices have NO plan (`invoices_subject_fields_ck` pins
+  // plan_id/plan_year NULL) — skip the lookup entirely instead of
+  // querying listPlans with a null year on every event detail view.
+  const plansResult =
+    invoice.invoiceSubject === 'membership'
+      ? await listPlans({ filter: { year: invoice.planYear as never } }, buildPlansDeps(tenantCtx))
+      : null;
+  const foundPlan = plansResult?.ok
     ? plansResult.value.data.find((p) => p.plan_id === invoice.planId)
     : undefined;
   // 054-event-fee-invoices — plan_id is non-null on membership invoices
@@ -176,11 +179,12 @@ export default async function InvoiceDetailPage({
   // snapshot yet). getMember emits `member_cross_tenant_probe` on 404
   // with the signed-in admin's user id as actor.
   const snapshotName = (invoice.memberIdentitySnapshot as { legal_name?: string } | null)?.legal_name;
-  // 054-event-fee-invoices — this detail page is the MEMBERSHIP invoice
-  // view; member_id is non-null for membership invoices
-  // (`invoices_subject_fields_ck`). Coalesce defensively so the type
-  // narrows (an event-fee invoice gets its own detail surface in a future
-  // task and never reaches this branch with a null member_id in practice).
+  // 064 main-agent recheck — this detail page serves BOTH subjects (the
+  // earlier "event invoices get their own surface later" assumption was
+  // stale). Non-member event invoices (member_id NULL) display the
+  // draft/issue-pinned buyer snapshot's legal_name and MUST NOT render a
+  // member link — `/admin/members/null` 404s; same rule the invoices LIST
+  // applies to its buyer column (054 spec).
   let memberDisplayName = snapshotName ?? invoice.memberId ?? '—';
   if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
@@ -546,20 +550,31 @@ export default async function InvoiceDetailPage({
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>
               <dd>
-                <Link
-                  href={`/admin/members/${invoice.memberId}`}
-                  className="underline-offset-2 hover:underline"
-                >
-                  {memberDisplayName}
-                </Link>
+                {/* Non-member event buyer: plain text — a member link would
+                    href /admin/members/null and 404 (LIST buyer-column rule). */}
+                {invoice.memberId !== null ? (
+                  <Link
+                    href={`/admin/members/${invoice.memberId}`}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {memberDisplayName}
+                  </Link>
+                ) : (
+                  memberDisplayName
+                )}
               </dd>
             </div>
-            <div>
-              <dt className="text-muted-foreground">{t('fields.plan')}</dt>
-              <dd>
-                {planDisplayName} <span className="text-muted-foreground">/ {invoice.planYear}</span>
-              </dd>
-            </div>
+            {/* Plan row is membership-only: event-fee invoices carry no plan
+                (plan_id/plan_year NULL) — rendering it would show "— / ". */}
+            {invoice.invoiceSubject === 'membership' && (
+              <div>
+                <dt className="text-muted-foreground">{t('fields.plan')}</dt>
+                <dd>
+                  {planDisplayName}{' '}
+                  <span className="text-muted-foreground">/ {invoice.planYear}</span>
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
               <dd>{formatLocalisedDate(invoice.issueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>
