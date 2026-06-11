@@ -88,6 +88,11 @@ import type { MemberId, PlanId } from '@/modules/members';
 // TypeScript Brand — the prior comment misnamed the construct).
 import type { SendRenewalEmailError } from '../ports/renewal-gateway';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
+// 065 Fix 1 — CAS-loser error from the repo's transitionStatus
+// (W-011 double-accept TOCTOU close). Value import of a port-owned
+// error class — Application importing its own ports is Principle-III
+// clean.
+import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 
 /**
  * Round 3 type SUG-3 + simplification — hoisted discriminated-union
@@ -278,6 +283,13 @@ export async function acceptTierUpgrade(
         typeof deps.tierUpgradeRepo.transitionStatus
       >[3] = {
         to: 'accepted_pending_apply' as const,
+        // 065 Fix 1 — CAS guard. The pre-tx findById `open` check is
+        // a stale read by the time this UPDATE runs (W-011 TOCTOU);
+        // the repo re-checks `status='open'` atomically and throws
+        // `TierUpgradeStatusConflictError` when a concurrent accept
+        // already won — mapped to `suggestion_not_open` in the outer
+        // catch below (the throw also rolls this tx back).
+        expectedFrom: 'open' as const,
         acceptedAt,
         acceptedByUserId: input.actorUserId,
         targetApplyAtCycleId: activeCycle.cycleId,
@@ -825,6 +837,16 @@ export async function acceptTierUpgrade(
     // `message` field carries the original throw's message verbatim
     // for diagnostic purposes; callers should log with errorId
     // matching their context (e.g., `F8.ACCEPT_TIER.CRON_INVOKED_THREW`).
+    //
+    // 065 Fix 1 — the transitionStatus CAS loser throws
+    // `TierUpgradeStatusConflictError` from inside the runInTenant
+    // block (MUST throw, not return err — returning would COMMIT the
+    // partial tx, e.g. the step-(b) verification task). Map it here
+    // to the same typed error the pre-tx `status !== 'open'` check
+    // yields, so the admin sees one consistent conflict shape.
+    if (e instanceof TierUpgradeStatusConflictError) {
+      return err({ kind: 'suggestion_not_open' });
+    }
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',

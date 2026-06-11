@@ -24,6 +24,10 @@ import { parseInput } from './_lib/parse-input';
 import { loadOpenSuggestion } from './_lib/load-open-suggestion';
 import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { MemberId } from '@/modules/members';
+// 065 Fix 1 — CAS-loser error from the repo's transitionStatus
+// (same W-011-class TOCTOU as accept: two concurrent Dismiss clicks,
+// or Dismiss racing Accept).
+import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 
 export const dismissTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -83,6 +87,12 @@ export async function dismissTierUpgrade(
         typeof deps.tierUpgradeRepo.transitionStatus
       >[3] = {
         to: 'dismissed' as const,
+        // 065 Fix 1 — CAS guard: `loadOpenSuggestion`'s `open` check
+        // is a stale read by UPDATE time; the repo re-checks
+        // atomically and throws `TierUpgradeStatusConflictError` when
+        // a concurrent Accept/Dismiss already transitioned the row —
+        // mapped to `suggestion_not_open` in the catch below.
+        expectedFrom: 'open' as const,
         suppressedUntil,
         closedAt,
         ...(input.reason !== undefined && input.reason.length > 0
@@ -122,6 +132,12 @@ export async function dismissTierUpgrade(
       return ok({ suggestionId, suppressedUntil });
     });
   } catch (e) {
+    // 065 Fix 1 — CAS loser maps to the same typed error the pre-tx
+    // `open` check yields (the throw already rolled the tx back, so
+    // no partial audit row committed).
+    if (e instanceof TierUpgradeStatusConflictError) {
+      return err({ kind: 'suggestion_not_open' });
+    }
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',

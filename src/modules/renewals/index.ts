@@ -189,6 +189,7 @@ export {
 
 export {
   TierUpgradeOpenConflictError,
+  TierUpgradeStatusConflictError,
   TierUpgradeSuggestionNotFoundError,
   type TierUpgradeSuggestionRepo,
   type NewTierUpgradeSuggestionInput,

@@ -28,6 +28,8 @@ import type { TenantTx } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
+// 065 Fix 1 — CAS-loser error from the repo's transitionStatus.
+import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 import type { MemberId, PlanId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 
@@ -96,15 +98,33 @@ export async function supersedePendingTierUpgradeInTx(
   const fromStatus = active.status;
   const now = deps.clock.now().toISOString();
 
-  await deps.tierUpgradeRepo.transitionStatus(
-    tx,
-    args.tenantId,
-    active.suggestionId,
-    {
-      to: 'superseded' as const,
-      closedAt: now,
-    },
-  );
+  try {
+    await deps.tierUpgradeRepo.transitionStatus(
+      tx,
+      args.tenantId,
+      active.suggestionId,
+      {
+        to: 'superseded' as const,
+        // 065 Fix 1 — CAS guard: pin the exact status this use-case
+        // read (the only caller-side transition with TWO valid FROM
+        // states, so the captured value is threaded rather than a
+        // hardcoded literal).
+        expectedFrom: fromStatus,
+        closedAt: now,
+      },
+    );
+  } catch (e) {
+    // 065 Fix 1 — CAS loser: a concurrent transition moved the
+    // suggestion off `fromStatus` after the findActiveForMember read.
+    // Documented contract above: idempotent silent no-op on
+    // already-transitioned suggestions. The first write in this tx is
+    // the UPDATE itself, so skipping the audit emit leaves no partial
+    // state behind.
+    if (e instanceof TierUpgradeStatusConflictError) {
+      return { supersededSuggestionId: null, fromStatus: null };
+    }
+    throw e;
+  }
 
   await deps.auditEmitter.emitInTx(
     tx,

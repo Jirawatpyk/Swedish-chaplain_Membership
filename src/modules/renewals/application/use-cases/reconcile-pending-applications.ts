@@ -104,6 +104,12 @@ export async function reconcilePendingApplications(
           orphan.suggestion.suggestionId,
           {
             to: 'dismissed' as const,
+            // 065 Fix 1 — CAS guard: `listOrphanedPending` only
+            // returns `accepted_pending_apply` rows; a concurrent
+            // transition between that read and this UPDATE throws
+            // `TierUpgradeStatusConflictError`, which the per-orphan
+            // catch below already treats as log-and-continue.
+            expectedFrom: 'accepted_pending_apply' as const,
             dismissedReason,
             closedAt,
           },

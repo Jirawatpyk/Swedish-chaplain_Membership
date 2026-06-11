@@ -750,6 +750,133 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
   }, 60_000);
 
   // ---------------------------------------------------------------------------
+  // 065 Fix 1 (W-011b) — deterministic double-accept TOCTOU probe
+  //
+  // W-011 above is timing-dependent (bare Promise.all race): on most
+  // runs the second accepter's `findById` lands AFTER the first's
+  // commit, so the loser exits early via `suggestion_not_open` and the
+  // stale-read window is never exercised. This probe FORCES the
+  // window: accepter #2 reads the suggestion while still `open`, then
+  // parks at `cyclesRepo.findActiveForMember` (the call right after
+  // `findById`) until accepter #1 has fully committed.
+  //
+  // Without a compare-and-swap on `transitionStatus`, #2 then
+  // re-transitions the already-accepted row → duplicate
+  // `tier_upgrade_accepted` audit + duplicate member email +
+  // `accepted_by_user_id` overwritten by the last writer. The CAS
+  // (`AND status = expectedFrom`) makes #2's UPDATE match 0 rows →
+  // `TierUpgradeStatusConflictError` → tx rollback → typed
+  // `suggestion_not_open` loser result.
+  //
+  // Known accepted residual (out of CAS scope): #2's step-(a)
+  // `supersedeAndInsertPendingAtomically` commits in its OWN tx before
+  // the CAS fires, so the surviving pending `scheduled_plan_changes`
+  // row is #2's (content-identical to #1's — same suggestion drives
+  // both). Not asserted here.
+  // ---------------------------------------------------------------------------
+  it('W-011b deterministic double-accept probe — CAS on transitionStatus rejects the stale-read second accepter', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    // Distinct second admin so the last-writer `accepted_by_user_id`
+    // overwrite is observable (both accepts sharing one user id would
+    // mask it).
+    const admin2 = await createActiveTestUser('admin');
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // Gate: #2 signals when it reaches findActiveForMember (its
+    // `open` findById read is now stale-able), then parks until
+    // released.
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let signalReached!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      signalReached = resolve;
+    });
+
+    const gatedDeps: typeof deps = {
+      ...deps,
+      cyclesRepo: {
+        ...deps.cyclesRepo,
+        findActiveForMember: async (tenantId: string, memberId: string) => {
+          signalReached();
+          await gate;
+          return deps.cyclesRepo.findActiveForMember(tenantId, memberId);
+        },
+      },
+    };
+
+    const baseArgs = {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorRole: 'admin' as const,
+    };
+
+    // #2 starts first: findById sees `open`, then parks at the gate.
+    const p2 = acceptTierUpgrade(gatedDeps, {
+      ...baseArgs,
+      actorUserId: admin2.userId,
+      correlationId: randomUUID(),
+    });
+    await reached;
+
+    // #1 runs to FULL completion (commit included) while #2 is parked.
+    const r1 = await acceptTierUpgrade(deps, {
+      ...baseArgs,
+      actorUserId: admin.userId,
+      correlationId: randomUUID(),
+    });
+    expect(r1.ok).toBe(true);
+
+    // Release #2 — it resumes carrying its stale `open` read.
+    releaseGate();
+    const r2 = await p2;
+
+    // Exactly one accept wins — #2 MUST lose.
+    const okCount = [r1, r2].filter((r) => r.ok).length;
+    expect(okCount).toBe(1);
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) {
+      // Same tolerated loser set as W-011.
+      expect([
+        'suggestion_not_open',
+        'open_conflict',
+        'plan_change_failed',
+        'server_error',
+      ]).toContain(r2.error.kind);
+    }
+
+    // `accepted_by_user_id` belongs to the winner (#1) — NOT
+    // overwritten by the parked second accepter.
+    const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(suggestion?.status).toBe('accepted_pending_apply');
+    expect(suggestion?.acceptedByUserId).toBe(admin.userId);
+
+    // Exactly one `tier_upgrade_accepted` audit row for this
+    // suggestion (the loser's tx rolled back before audit emit).
+    const accepted = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'tier_upgrade_accepted'),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
+          ),
+        ),
+    );
+    expect(accepted).toHaveLength(1);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
   // Round 6 W-013 — manual-supersede with the suggestion still in `open`
   //
   // Spec: F2 manual plan change BEFORE admin clicks Accept. The

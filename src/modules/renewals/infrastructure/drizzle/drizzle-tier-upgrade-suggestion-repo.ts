@@ -25,6 +25,7 @@ import { renewalCycles } from '../schema-renewal-cycles';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import {
   TierUpgradeOpenConflictError,
+  TierUpgradeStatusConflictError,
   TierUpgradeSuggestionNotFoundError,
   type NewTierUpgradeSuggestionInput,
   type TierUpgradeSuggestionRepo,
@@ -333,6 +334,7 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
       suggestionId: SuggestionId,
       args: {
         readonly to: TierUpgradeStatus;
+        readonly expectedFrom: TierUpgradeStatus;
         readonly acceptedAt?: string;
         readonly acceptedByUserId?: string;
         readonly targetApplyAtCycleId?: string;
@@ -368,13 +370,38 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
       if (args.closedAt !== undefined)
         updateValues.closedAt = new Date(args.closedAt);
 
+      // 065 Fix 1 (W-011 double-accept TOCTOU) — compare-and-swap:
+      // the UPDATE matches only while the row is still in
+      // `expectedFrom`. A concurrent transition that committed after
+      // the caller's read makes this match 0 rows instead of silently
+      // re-applying the transition over the winner's write.
       const [row] = await txDb
         .update(tierUpgradeSuggestions)
         .set(updateValues)
-        .where(eq(tierUpgradeSuggestions.suggestionId, suggestionId))
+        .where(
+          and(
+            eq(tierUpgradeSuggestions.suggestionId, suggestionId),
+            eq(tierUpgradeSuggestions.status, args.expectedFrom),
+          ),
+        )
         .returning();
       if (!row) {
-        throw new TierUpgradeSuggestionNotFoundError(suggestionId);
+        // 0 rows — distinguish "row missing" from "CAS lost" with a
+        // follow-up read in the same tx (failure path only; the
+        // success path stays single-RTT). A 0-row UPDATE is NOT a SQL
+        // error, so the surrounding tx is not poisoned by this probe.
+        const [existing] = await txDb
+          .select({ status: tierUpgradeSuggestions.status })
+          .from(tierUpgradeSuggestions)
+          .where(eq(tierUpgradeSuggestions.suggestionId, suggestionId));
+        if (!existing) {
+          throw new TierUpgradeSuggestionNotFoundError(suggestionId);
+        }
+        throw new TierUpgradeStatusConflictError(
+          suggestionId,
+          args.expectedFrom,
+          existing.status,
+        );
       }
       void tenantId;
       return rowToDomain(row);
