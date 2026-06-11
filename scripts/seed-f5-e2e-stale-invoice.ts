@@ -119,6 +119,7 @@ async function main(): Promise<void> {
         planYear: 2026,
         planId: 'regular',
         status: 'void',
+        pdfDocKind: 'invoice',
         draftByUserId: userId,
         fiscalYear: 2026,
         sequenceNumber: 900099,

@@ -29,6 +29,8 @@ import { err, ok, type Result } from '@/lib/result';
 import { asSatang, type Satang } from '@/lib/money';
 import { getInvoice, type GetInvoiceDeps } from './get-invoice';
 import type { InvoiceStatus } from '../../domain/invoice';
+// REMOVE-WITH-064-REMEDIATION — legacy no-TIN event payability guard below.
+import { buyerHasTin } from '../../domain/document-kind';
 
 /** Input for the F5 → F4 payability + ownership resolver. */
 export interface GetInvoiceForPaymentInput {
@@ -79,7 +81,18 @@ export interface InvoiceForPayment {
 export type GetInvoiceForPaymentError =
   | { code: 'not_found' }
   | { code: 'forbidden' }
-  | { code: 'not_payable'; status: InvoiceStatus };
+  | { code: 'not_payable'; status: InvoiceStatus }
+  /**
+   * REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+   * at the guard in record-payment.ts +
+   * docs/runbooks/event-invoice-legacy-no-tin-remediation.md) — the
+   * invoice is a LEGACY issued no-TIN EVENT row. Paying it online would
+   * capture money that the webhook-side `recordPayment` guard then
+   * refuses to apply (`legacy_no_tin_event_needs_remediation` →
+   * permanent `bridge_error` ack, NO auto-refund) — an S0 money trap.
+   * Distinct from `not_payable` so F5's logs keep the runbook pointer.
+   */
+  | { code: 'legacy_no_tin_event_not_payable' };
 
 /** Deps: same as the underlying F4 use-case. */
 export type GetInvoiceForPaymentDeps = GetInvoiceDeps;
@@ -121,6 +134,28 @@ export async function getInvoiceForPayment(
   // field type being the honest `string | null` (see the DTO doc above).
   if (invoice.memberId === null) {
     return err({ code: 'not_payable', status: invoice.status });
+  }
+
+  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
+  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
+  // row's issue-time PDF already IS the buyer's §105 ใบเสร็จรับเงิน. If F5
+  // creates a PI against it, Stripe captures the money but the webhook-side
+  // `recordPayment` guard rejects the invoice flip with
+  // `legacy_no_tin_event_needs_remediation` — classified PERMANENT (200-ack,
+  // no Stripe retry, no auto-refund) — stranding the funds (S0). Reject at
+  // the payability read so the PI is never created. Matched-member rows are
+  // the live trap (null-member rows are already stopped by the guard above);
+  // NEW no-TIN event fees can't reach 'issued' (issueInvoice rejects them
+  // with `event_no_tin_requires_paid_issue`), so only pre-064 rows hit this.
+  // Status-scoped to 'issued' so paid/credited legacy rows keep their
+  // existing read/refund behaviour. `buyerHasTin` trims — whitespace-only
+  // tax_id counts as no-TIN, mirroring the record-payment guard.
+  if (
+    invoice.invoiceSubject === 'event' &&
+    invoice.status === 'issued' &&
+    !buyerHasTin(invoice.memberIdentitySnapshot?.tax_id)
+  ) {
+    return err({ code: 'legacy_no_tin_event_not_payable' });
   }
 
   return ok({

@@ -43,6 +43,10 @@ import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
 import { markProcessedIfPresent, emitTerminalStateAck } from './_shared';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
+// REMOVE-WITH-064-REMEDIATION — used ONLY by the legacy no-TIN money-
+// captured ops log below (precedent: F4's record-payment.ts also imports
+// the structured logger at the Application layer).
+import { logger } from '@/lib/logger';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -434,12 +438,22 @@ async function confirmPaymentBody(
     // here is `not_payable` (carries `status`). The `=== 'not_payable'`
     // false branch and the trailing `: undefined` arm are unreachable
     // through normal webhook input → both are v8-ignored.
+    // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+    // at the guard in record-payment.ts) — `legacy_no_tin_event_not_payable`
+    // resolves to 'issued': the F4 guard ONLY fires on issued rows, and an
+    // in-flight PI (created before the initiate-side guard deployed) must
+    // keep the PRE-GUARD webhook semantics — continue to step 4 (NOT the
+    // stale-invoice auto-refund: the member genuinely owes the fee) and let
+    // the markPaid-side `legacy_no_tin_event_needs_remediation` guard fail
+    // the flip, where the dedicated ops log below makes it loud.
     const invoiceStatus = invoiceResult.ok
       ? invoiceResult.value.status
-      /* v8 ignore next 3 -- defensive ternary: forbidden/not_found returned at step 2; only not_payable carries `status` */
-      : invoiceResult.error.code === 'not_payable'
-        ? invoiceResult.error.status
-        : undefined;
+      : invoiceResult.error.code === 'legacy_no_tin_event_not_payable'
+        ? 'issued'
+        /* v8 ignore next 3 -- defensive ternary: forbidden/not_found returned at step 2; only not_payable carries `status` */
+        : invoiceResult.error.code === 'not_payable'
+          ? invoiceResult.error.status
+          : undefined;
     // F4 models "overdue" as a derived state (issue_date + due_date
     // computation, see src/modules/invoicing/application/use-cases/
     // derive-overdue.ts) — not a distinct InvoiceStatus enum value.
@@ -698,6 +712,30 @@ async function confirmPaymentBody(
       },
     );
     if (!bridgeResult.ok) {
+      // REMOVE-WITH-064-REMEDIATION (online-payment site — master
+      // checklist at the guard in record-payment.ts). LOUD ops signal:
+      // Stripe has CAPTURED the member's money (payment row committed
+      // `succeeded` — withTx commits on a returned err), but F4 refused
+      // the invoice flip because the row is a LEGACY issued no-TIN event
+      // invoice. The dispatcher classifies `bridge_error` as PERMANENT →
+      // 200-ack, no Stripe retry, NO auto-refund — so WITHOUT operator
+      // action the money stays stranded against a stuck-`issued` invoice.
+      // Operators: refund/reconcile per
+      // docs/runbooks/event-invoice-legacy-no-tin-remediation.md (the
+      // initiate-side guard blocks NEW PIs; only in-flight PIs created
+      // before that guard deployed can reach this branch).
+      if (bridgeResult.error.code === 'legacy_no_tin_event_needs_remediation') {
+        logger.error(
+          {
+            tenantId: input.tenantId,
+            invoiceId: payment.invoiceId,
+            paymentId: payment.id,
+            paymentIntentId: input.paymentIntentId,
+            amountSatang: payment.amountSatang.toString(),
+          },
+          'payments.confirm.legacy_no_tin_event_money_captured',
+        );
+      }
       return err<ConfirmPaymentError>({
         code: 'bridge_error',
         detail: bridgeResult.error.code,

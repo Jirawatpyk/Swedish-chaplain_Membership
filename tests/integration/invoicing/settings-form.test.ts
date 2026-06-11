@@ -278,6 +278,7 @@ describe('T091 — F4 tenant invoice settings lifecycle', () => {
         tx.execute(sql`
           UPDATE invoices SET
             status = 'issued',
+            pdf_doc_kind = 'invoice',
             fiscal_year = 2026,
             sequence_number = 800001,
             document_number = 'FR011-2026-800001',

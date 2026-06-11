@@ -22,16 +22,31 @@
  * real F6 `event_registrations` row first; cross-tenant FK/RLS isolation is
  * the subject of the dedicated cross-tenant probe test (Task 5).
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { events, eventRegistrations } from '@/modules/events/infrastructure/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
+import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 const SEED_FAR_FUTURE = new Date('2099-01-01T00:00:00Z');
 
@@ -274,6 +289,10 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
         pdfBlobKey: `event-invoices/${voidInvoiceId}.pdf`,
         pdfSha256: 'a'.repeat(64),
         pdfTemplateVersion: 1,
+        // 064 (Task 2) — non-draft rows must say what their main PDF is
+        // (`invoices_non_draft_has_doc_kind`). This buyer snapshot has no
+        // tax_id, so the issue path would have rendered a §105 receipt.
+        pdfDocKind: 'receipt_separate',
         voidedAt: new Date(),
         voidReason: 'voided to release registration slot (test)',
         voidedByUserId: user.userId,
@@ -311,4 +330,209 @@ describe('invoices event-subject schema — 054-event-fee-invoices (live Neon)',
     );
     expect(live[0]!.n).toBe(1);
   }, 90_000);
+});
+
+/**
+ * 064-event-invoice-paid-flow (Task 2) — `invoices.pdf_doc_kind` column.
+ *
+ * Persists WHAT the main PDF actually is (§86/4 'invoice', combined
+ * §86/4+§105ทวิ 'receipt_combined', §105 'receipt_separate') so downstream
+ * code (the J2 credit-note annotation re-render) never has to derive it. The
+ * migration backfills every pre-existing non-draft row; new non-draft rows
+ * MUST carry the kind (CHECK `invoices_non_draft_has_doc_kind`).
+ *
+ * Scenarios:
+ *   (1) Issuing a MEMBERSHIP invoice through the REAL `issueInvoice` use-case
+ *       (real repos + allocator + identity adapter on live Neon; mocked PDF
+ *       renderer + Blob, mirroring issue-vs-archive-race.test.ts) persists
+ *       `pdf_doc_kind='invoice'` and `rowsToInvoice` maps it onto
+ *       `Invoice.pdfDocKind`.
+ *   (2) Backfill completeness — across ALL tenants (owner connection), no
+ *       non-draft row has a NULL `pdf_doc_kind`.
+ */
+describe('invoices.pdf_doc_kind — 064-event-invoice-paid-flow Task 2 (live Neon)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  const planId = 'pdk-task2-plan';
+
+  const MATRIX: BenefitMatrix = {
+    eblast_per_year: 1,
+    website_page_type: 'member_news_update',
+    homepage_logo_category: 'regular',
+    directory_listing_size: 'half_page',
+    event_discount_scope: 'all_employees',
+    events_cobranded_access: false,
+    cultural_tickets_per_year: 0,
+    m2m_benefits_access: true,
+    business_referrals: true,
+    tailor_made_services: false,
+    partnership: null,
+  };
+
+  function makeDeps(tenantId: string): IssueInvoiceDeps {
+    return {
+      invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+      tenantSettingsRepo: drizzleTenantSettingsRepo,
+      memberIdentity: memberIdentityAdapter,
+      // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+      eventRegistrationLookup: eventRegistrationLookupAdapter,
+      sequenceAllocator: postgresSequenceAllocator,
+      pdfRender: {
+        render: vi.fn(async () => ({
+          bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+          sha256: Sha256Hex.ofUnsafe('a'.repeat(64)),
+        })),
+      },
+      blob: {
+        uploadPdf: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
+        uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
+        signDownloadUrl: vi.fn(async () => 'https://blob.test/signed'),
+        downloadBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46])),
+        delete: vi.fn(async () => {}),
+        list: vi.fn(async () => [] as string[]),
+      },
+      audit: f4AuditAdapter,
+      clock: { nowIso: () => '2026-06-10T10:00:00Z' },
+      outbox: { enqueue: vi.fn(async () => {}) },
+      currentTemplateVersion: 1,
+    };
+  }
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId,
+        planYear: 2026,
+        planName: { en: 'PDK Task2 Plan' },
+        description: { en: 'pdf_doc_kind integration plan' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'ทดสอบ',
+        legalNameEn: 'PDK Test Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'PDK',
+        creditNoteNumberPrefix: 'CN',
+      });
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('(1) issueInvoice persists pdf_doc_kind=invoice for a membership invoice + rowsToInvoice maps it', async () => {
+    const invoiceId = randomUUID();
+    const memberId = randomUUID();
+
+    // Seed an active TIN-carrying company member + primary contact + a draft
+    // membership invoice with exactly one membership_fee line (the §86/4
+    // gate requires the buyer TIN; the identity adapter reads the contact).
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'PDK Doc Kind Co',
+        country: 'TH',
+        taxId: '0105536000020',
+        planId,
+        planYear: 2026,
+        status: 'active',
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Pat',
+        lastName: 'Buyer',
+        email: `pdk-${memberId.slice(0, 8)}@dockind.example`,
+        isPrimary: true,
+      });
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        memberId,
+        planYear: 2026,
+        planId,
+        draftByUserId: user.userId,
+        status: 'draft',
+        creditedTotalSatang: 0n,
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026',
+        descriptionEn: 'Membership 2026',
+        unitPriceSatang: 100_000n,
+        totalSatang: 100_000n,
+        position: 1,
+      });
+    });
+
+    const r = await issueInvoice(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+    });
+    if (!r.ok) {
+      throw new Error(`issueInvoice failed: ${JSON.stringify(r.error)}`);
+    }
+
+    // Use-case return path (applyIssue RETURNING → rowsToInvoice).
+    expect(r.value.status).toBe('issued');
+    expect(r.value.pdfDocKind).toBe('invoice');
+
+    // Fresh load — proves the value PERSISTED and maps through
+    // rowsToInvoice on the plain read path, not just on RETURNING.
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    const reloaded = await repo.findById(asInvoiceId(invoiceId), tenant.ctx.slug);
+    expect(reloaded?.pdfDocKind).toBe('invoice');
+
+    // Raw column check — the persisted string is exactly 'invoice'.
+    const raw = await runInTenant(tenant.ctx, (tx) =>
+      tx.execute(
+        sql`SELECT pdf_doc_kind FROM invoices WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}`,
+      ),
+    );
+    const rawRows = raw as unknown as Array<{ pdf_doc_kind: string | null }>;
+    expect(rawRows[0]?.pdf_doc_kind).toBe('invoice');
+  }, 60_000);
+
+  it('(2) backfill complete — no non-draft row anywhere has NULL pdf_doc_kind', async () => {
+    // Owner connection (BYPASSRLS) — the backfill claim is GLOBAL across
+    // tenants, so this deliberately does NOT run under runInTenant. Test-only
+    // path; production code never queries cross-tenant this way.
+    const raw = await db.execute(
+      sql`SELECT count(*)::int AS n FROM invoices WHERE pdf_doc_kind IS NULL AND status <> 'draft'`,
+    );
+    const rows = Array.isArray(raw)
+      ? (raw as unknown as Array<{ n: number }>)
+      : (raw as unknown as { rows: Array<{ n: number }> }).rows;
+    expect(rows[0]!.n).toBe(0);
+  }, 60_000);
 });

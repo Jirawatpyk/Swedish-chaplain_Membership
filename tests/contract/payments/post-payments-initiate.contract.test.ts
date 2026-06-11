@@ -333,6 +333,27 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(error['code']).toBe('invoice_not_payable');
   });
 
+  // REMOVE-WITH-064-REMEDIATION — S0 money-trap guard. A LEGACY issued
+  // no-TIN event invoice surfaces from the use-case as the dedicated
+  // `legacy_no_tin_event_not_payable` code; the HTTP boundary reuses the
+  // EXISTING 409 `invoice_not_payable` envelope (client UX + i18n already
+  // handle it — the invoice genuinely is not payable). The discriminator
+  // is preserved server-side via the route's `useCaseErrorCode` warn log.
+  // Delete with the master checklist in record-payment.ts.
+  it('409 invoice_not_payable — legacy no-TIN event invoice (REMOVE-WITH-064-REMEDIATION)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    initiatePaymentMock.mockResolvedValueOnce(
+      err({ code: 'legacy_no_tin_event_not_payable' }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    const body = await res.json() as Record<string, unknown>;
+    const error = body['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('invoice_not_payable');
+  });
+
   it('409 online_payment_disabled — feature flag off', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
     initiatePaymentMock.mockResolvedValueOnce(err({ code: 'online_payment_disabled' }));

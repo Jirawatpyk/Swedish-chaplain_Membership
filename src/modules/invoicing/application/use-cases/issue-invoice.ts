@@ -62,6 +62,7 @@ import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
+import type { EventRegistrationLookupPort } from '../ports/event-registration-lookup-port';
 import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { PdfDocKind, PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
@@ -93,6 +94,8 @@ import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
+import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
+import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -117,6 +120,25 @@ export type IssueInvoiceError =
    * hand-written draft) rather than a normal flow.
    */
   | { code: 'no_buyer_snapshot' }
+  /**
+   * 064 §105 ROOT FIX — an EVENT draft whose buyer has no TIN cannot be
+   * billed first: their only legal document is a §105 receipt, which may
+   * exist only at the moment payment is recorded (`issueEventInvoiceAsPaid`).
+   */
+  | { code: 'event_no_tin_requires_paid_issue' }
+  /**
+   * 064 S1 — the F6 registration was refunded AFTER the draft was created
+   * (createEventInvoiceDraft only hard-blocks refunded at DRAFT time).
+   * Billing it would assert a fee the buyer already got back — re-checked
+   * in-tx at issuance, PRE-allocation (no §87 burn). Event subject only.
+   */
+  | { code: 'registration_refunded' }
+  /**
+   * 064 S1 — the issuance-time registration re-read failed (port err) or
+   * returned null (row vanished / RLS anomaly). Refuse to issue a tax
+   * document against a registration we can no longer verify.
+   */
+  | { code: 'registration_lookup_failed' }
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
@@ -139,6 +161,13 @@ export interface IssueInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
   readonly memberIdentity: MemberIdentityPort;
+  /**
+   * 064 S1 — issuance-time refunded re-check for EVENT drafts (TOCTOU vs
+   * the draft-time check in createEventInvoiceDraft). REQUIRED even though
+   * membership issuance never calls it: an optional safety dep could
+   * silently not run (the soft-deleted-plan-hole class).
+   */
+  readonly eventRegistrationLookup: EventRegistrationLookupPort;
   readonly sequenceAllocator: SequenceAllocatorPort;
   readonly pdfRender: PdfRenderPort;
   readonly blob: BlobStoragePort;
@@ -214,7 +243,9 @@ export async function issueInvoice(
     const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
 
-    // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7).
+    // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7;
+    // extracted VERBATIM to `lib/resolve-invoice-buyer.ts` in 064 Task 3 so
+    // issueEventInvoiceAsPaid composes the same arms instead of copy-pasting).
     //
     //   MEMBERSHIP invoice (memberId non-null) → re-read + LOCK the member
     //   (FR-037 archive-race), snapshot pinned HERE at issue. Also matched-
@@ -228,26 +259,20 @@ export async function issueInvoice(
     // The `invoices_subject_fields_ck` DB CHECK guarantees member_id IS NOT NULL
     // for `invoice_subject='membership'`, so a null memberId here implies an
     // event invoice with a non-member buyer.
+    //
+    // Err codes pass through 1:1 — member_not_found / member_archived /
+    // no_buyer_snapshot are all `IssueInvoiceError` variants. Still in the
+    // PRE-SEQUENCE zone (runs BEFORE allocateNext), so the plain
+    // `return err(...)` discipline is unchanged.
     const memberId = draft.memberId;
-    let memberSnap: MemberIdentitySnapshot;
-    if (memberId !== null) {
-      const member = await deps.memberIdentity.getForIssue(
-        tx,
-        input.tenantId,
-        memberId,
-        { forUpdate: true },
-      );
-      if (!member) return err({ code: 'member_not_found' });
-      if (member.isArchived) return err({ code: 'member_archived' });
-      memberSnap = member.snapshot;
-    } else {
-      // Non-member event buyer — the snapshot was pinned at draft. Validate it
-      // is present (data-integrity guard; the draft use-case always pins it).
-      if (draft.memberIdentitySnapshot === null) {
-        return err({ code: 'no_buyer_snapshot' });
-      }
-      memberSnap = draft.memberIdentitySnapshot;
-    }
+    const buyerResolution = await resolveInvoiceBuyerForIssue(
+      deps.memberIdentity,
+      tx,
+      input.tenantId,
+      draft,
+    );
+    if (!buyerResolution.ok) return err(buyerResolution.error);
+    const memberSnap: MemberIdentitySnapshot = buyerResolution.value;
 
     // §86/4 doc-type gate (054-event-fee-invoices Task 9) — subject-based, NOT
     // tier-based. The PDF document kind is chosen at ISSUE from
@@ -277,6 +302,37 @@ export async function issueInvoice(
     if (draft.invoiceSubject === 'membership' && !buyerHasTin(memberSnap.tax_id)) {
       return err({ code: 'tax_id_required' });
     }
+    // 064 §105 ROOT FIX — a no-TIN event buyer can never be billed first:
+    // the only legal document for them is a §105 receipt, which may exist
+    // only at the moment payment is recorded (issueEventInvoiceAsPaid).
+    if (draft.invoiceSubject === 'event' && !buyerHasTin(memberSnap.tax_id)) {
+      return err({ code: 'event_no_tin_requires_paid_issue' });
+    }
+    // 064 S1 — refunded re-check at ISSUANCE (TOCTOU close). The draft-time
+    // check in createEventInvoiceDraft only covers the moment of drafting; a
+    // registration refunded between draft and issue would otherwise still be
+    // billed (asserting a fee the buyer got back). Runs in-tx (same RLS
+    // context, after the row lock) and PRE-allocation, so a refunded reject
+    // burns no §87 number. `ok(null)`/port-err are a verification failure —
+    // never issue a tax document against an unverifiable registration.
+    // Subject-scoped: membership drafts have no registration to re-check.
+    if (draft.invoiceSubject === 'event') {
+      const regResult = await deps.eventRegistrationLookup.findById(
+        tx,
+        input.tenantId,
+        draft.eventRegistrationId,
+      );
+      if (!regResult.ok || regResult.value === null) {
+        return err({ code: 'registration_lookup_failed' });
+      }
+      if (regResult.value.paymentStatus === 'refunded') {
+        return err({ code: 'registration_refunded' });
+      }
+    }
+    // After the two gates above, an event subject always resolves to 'invoice'
+    // here — 'receipt_separate' at plain issue is unreachable (applyIssue's
+    // port type still allows it; the as-paid path is the live writer of
+    // receipt kinds).
     const pdfKind: PdfDocKind = inferEventDocumentKind(
       draft.invoiceSubject,
       memberSnap.tax_id,
@@ -364,6 +420,13 @@ export async function issueInvoice(
     // H+I. Render PDF + upload to Blob (T126 shared helper).
     // Throws via `IssueInvoiceInternalError` on either failure so
     // `withTx` rolls back — sequence allocation is NOT consumed.
+    //
+    // Wave-3 S27 note: issueEventInvoiceAsPaid hoists this logo fetch
+    // OUT of the §87 critical section (its settings read is pre-tx, so the
+    // logo key is known before withTx opens). HERE the settings read lives
+    // INSIDE withTx (step A above), so hoisting the logo would mean
+    // restructuring that read too — left in-tx deliberately; the in-process
+    // logo cache keeps the steady-state cost at ~0 anyway.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
     const tenantLogo = await loadTenantLogo(
       deps.blob,
@@ -429,6 +492,15 @@ export async function issueInvoice(
           sha256: rendered.sha256,
           templateVersion: deps.currentTemplateVersion,
         },
+        // 064 (Task 2, comment + dead arm fixed wave-4 S21) — persist WHAT
+        // the rendered main PDF is. After the two §86/4 gates above
+        // (membership no-TIN → tax_id_required; event no-TIN →
+        // event_no_tin_requires_paid_issue) every plain-issue path resolves
+        // `pdfKind === 'invoice'` — 'receipt_separate' is unreachable here
+        // (the as-paid use case is the only live writer of receipt kinds),
+        // so the constant is faithful and the former narrowing ternary's
+        // false arm was dead code.
+        pdfDocKind: 'invoice',
       });
     } catch (e) {
       if (e instanceof InvoiceApplyConflictError && e.kind === 'applyIssue') {
@@ -524,39 +596,25 @@ export async function issueInvoice(
     const shouldAutoEmail =
       draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
     if (shouldAutoEmail) {
-      const recipientEmail = (memberSnap.primary_contact_email ?? '').trim();
-      if (recipientEmail === '') {
-        // (A) — no deliverable address. Skip the enqueue; the invoice still
-        // issues successfully. Log ids only (no email / buyer PII) AND bump a
-        // metric so ops can alert (the warn alone is unobservable; this brings
-        // the issue path to parity with the credit-note `skipped_no_recipient`
-        // surface).
-        invoicingMetrics.autoEmailSkipped(draft.invoiceSubject, 'no_recipient');
-        logger.warn(
-          {
-            event: 'invoice_auto_email_skipped_no_recipient',
-            tenantId: input.tenantId,
-            invoiceId,
-            invoiceSubject: draft.invoiceSubject,
-          },
-          'issueInvoice: auto-email skipped — buyer has no contact email',
-        );
-      } else {
-        // (B) — non-member event buyer → PDPA privacy footer.
-        const privacyFooterKind =
+      // (A)+(B) live in the shared helper (wave-4 S15) — trim + skip-with-
+      // warn+metric on an empty buyer email; otherwise ONE outbox row with
+      // the non-member-event PDPA footer. An enqueue THROW still rolls the
+      // whole issue tx back (the helper only swallows the empty-recipient
+      // skip).
+      await enqueueInvoiceAutoEmail(deps.outbox, tx, {
+        tenantId: input.tenantId,
+        invoiceId,
+        invoiceSubject: draft.invoiceSubject,
+        eventType: 'invoice_issued',
+        recipientEmail: memberSnap.primary_contact_email ?? null,
+        pdfBlobKey: blobKey,
+        pdfTemplateVersion: deps.currentTemplateVersion,
+        privacyFooterKind:
           draft.invoiceSubject === 'event' && draft.memberId === null
             ? ('event_non_member' as const)
-            : undefined;
-        await deps.outbox.enqueue(tx, {
-          tenantId: input.tenantId,
-          eventType: 'invoice_issued',
-          recipientEmail,
-          invoiceId,
-          pdfBlobKey: blobKey,
-          pdfTemplateVersion: deps.currentTemplateVersion,
-          ...(privacyFooterKind ? { privacyFooterKind } : {}),
-        });
-      }
+            : undefined,
+        skipLogMessage: 'issueInvoice: auto-email skipped — buyer has no contact email',
+      });
     }
 
     // T113 — happy-path emit. Count + duration fire together so

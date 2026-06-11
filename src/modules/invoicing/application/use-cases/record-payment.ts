@@ -45,7 +45,10 @@ import type {
 } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
-import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
+import {
+  buyerHasTin,
+  inferEventDocumentKind,
+} from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
@@ -118,6 +121,17 @@ export type RecordPaymentError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  /**
+   * REMOVE-WITH-064-REMEDIATION (site 2/15 — full checklist at the guard
+   * below + docs/runbooks/event-invoice-legacy-no-tin-remediation.md) —
+   * 064 INTERIM: the invoice is a LEGACY issued no-TIN EVENT row that
+   * predates the as-paid redesign. Its issue-time PDF already IS the
+   * buyer's §105 ใบเสร็จรับเงิน; recording a payment here would mint
+   * receipt #2 (the §105 double-receipt the redesign kills). New no-TIN
+   * event fees take `issueEventInvoiceAsPaid` exclusively; legacy rows go
+   * through the remediation runbook.
+   */
+  | { code: 'legacy_no_tin_event_needs_remediation' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -165,8 +179,9 @@ export interface RecordPaymentDeps {
   readonly asyncReceiptPdf?: boolean;
   /**
    * F8 Phase 2 Wave A (T008) — cross-module on-paid hooks. Fired in
-   * registration order INSIDE the same `withTx` after applyPayment +
-   * audit emit + outbox enqueue + registration-fee flip have all
+   * registration order INSIDE the same `withTx` after the registration-
+   * fee flip (hoisted pre-allocation, wave-3 S12) + applyPayment +
+   * audit emit + outbox enqueue have all
    * succeeded, but BEFORE the tx commits. Any rejection rolls back the
    * entire transaction (invoice stays `issued`, audit + outbox + reg-
    * fee flip are unwound). Atomic by construction — no separate
@@ -292,6 +307,110 @@ export async function recordPayment(
     if (memberId === null && loaded.invoiceSubject !== 'event') {
       return err({ code: 'no_snapshot_on_invoice' });
     }
+    // REMOVE-WITH-064-REMEDIATION (site 1/15 — the guard itself).
+    // 064 INTERIM (remove after spec §6 item 1 remediation completes):
+    // a LEGACY issued no-TIN event row predates the as-paid redesign — paying
+    // it here would mint receipt #2 (the §105 double-receipt this redesign
+    // kills). Operators: see
+    // docs/runbooks/event-invoice-legacy-no-tin-remediation.md. NEW no-TIN
+    // event rows can no longer reach 'issued' (issueInvoice rejects them with
+    // `event_no_tin_requires_paid_issue`), so only pre-064 rows hit this.
+    // The branch above already returned for paid-replay / non-issued rows,
+    // so `lockedStatus === 'issued'` is guaranteed here — no status check.
+    //
+    // FULL REMOVAL CHECKLIST — when remediation completes, grep
+    // `REMOVE-WITH-064-REMEDIATION` and delete every site (i18n keys carry
+    // no marker — JSON has no comments — so they are enumerated here).
+    // Sites 1–7 are the ADMIN record-payment fence; sites 8–15 are the
+    // ONLINE-payment fence (S0 money trap: a member Stripe-pays a legacy
+    // row → webhook flip rejected permanently → captured money stranded):
+    //   1. THIS guard branch (record-payment.ts)
+    //   2. the `legacy_no_tin_event_needs_remediation` member of
+    //      `RecordPaymentError` above (record-payment.ts)
+    //   3. the `'legacy_no_tin_event_needs_remediation' ? 409` map line in
+    //      src/app/api/invoices/[invoiceId]/pay/route.ts
+    //   4. the `errors.legacy_no_tin_event_needs_remediation` i18n key in
+    //      src/i18n/messages/{en,th,sv}.json (×3 — grep the key name)
+    //   5. the toast branch in
+    //      src/app/(staff)/admin/invoices/_components/payment-form.tsx
+    //   6. the unit pin in tests/unit/invoicing/record-payment.test.ts
+    //   7. the integration pin (incl. its direct-insert legacy fixture) in
+    //      tests/integration/invoicing/record-payment-event-invoice.test.ts
+    //   8. the `legacy_no_tin_event_not_payable` guard + error-union member
+    //      in src/modules/invoicing/application/use-cases/get-invoice-for-payment.ts
+    //   9. the bridge-union member (invoicing-bridge-port.ts) + the
+    //      `mapF4GetError` case (invoicing-bridge.ts) in src/modules/payments
+    //  10. the `legacy_no_tin_event_not_payable` error-union member + the
+    //      short-circuit branch in
+    //      src/modules/payments/application/use-cases/initiate-payment.ts
+    //  11. the `legacy_no_tin_event_not_payable` → 409 map case in
+    //      src/app/api/payments/initiate/route.ts
+    //  12. the 'issued' resolver arm + the
+    //      `payments.confirm.legacy_no_tin_event_money_captured` ops log
+    //      (+ its logger import) in
+    //      src/modules/payments/application/use-cases/confirm-payment.ts
+    //  13. the portal pay-gate + notice in
+    //      src/app/(member)/portal/invoices/[invoiceId]/page.tsx AND the
+    //      `portal.invoices.detail.legacyNoTinNotPayable` i18n key in
+    //      src/i18n/messages/{en,th,sv}.json (×3 — grep the key name)
+    //  14. the unit/contract pins in
+    //      tests/unit/invoicing/get-invoice-for-payment.test.ts,
+    //      tests/unit/payments/invoicing-bridge.test.ts,
+    //      tests/unit/payments/application/initiate-payment.test.ts,
+    //      tests/unit/payments/application/confirm-payment.test.ts,
+    //      tests/contract/payments/post-payments-initiate.contract.test.ts
+    //  15. the matched-member integration pin (incl. its direct-insert
+    //      fixture) in
+    //      tests/integration/invoicing/record-payment-event-invoice.test.ts
+    if (
+      loaded.invoiceSubject === 'event' &&
+      !buyerHasTin(loaded.memberIdentitySnapshot.tax_id)
+    ) {
+      return err({ code: 'legacy_no_tin_event_needs_remediation' });
+    }
+
+    // Spec § 398 — "registration fee once per member lifecycle". If the
+    // invoice being paid contains a registration_fee line, flip
+    // members.registration_fee_paid = true so the NEXT invoice doesn't
+    // double-charge. Runs inside the same transaction as applyPayment below
+    // so a rollback unwinds both writes atomically. Idempotent — the
+    // adapter's WHERE registration_fee_paid=FALSE makes replay on an
+    // already-true row a no-op.
+    //
+    // LOCK-ORDER (wave-3 S12 — supersedes the former "benign AB-BA" note):
+    // this member-row UPDATE is deliberately HOISTED ABOVE the separate-mode
+    // `allocateNext` below so recordPayment acquires the member row BEFORE
+    // advisory('receipt') — the same member→advisory order the β as-paid
+    // path takes (member FOR UPDATE in resolveInvoiceBuyerForIssue, then
+    // its receipt-stream allocation). With both flows ordering
+    // member→advisory, the AB-BA deadlock window (40P01 under a concurrent
+    // β as-paid + recordPayment touching the same member) is structurally
+    // gone. The flip does not depend on the allocated number; its failure
+    // semantics are UNCHANGED (raw throw → withTx rollback, hard-fail) and
+    // now SAFER — a throw here is PRE-sequence, so no §87 receipt number is
+    // burned by a failed member flip. This block must stay BELOW the last
+    // `return err(...)` above (a normal return from the withTx callback
+    // COMMITS — an early-exit after the flip would commit the flip alone)
+    // and ABOVE `allocateNext`. Order is pinned by the S12 unit test.
+    //
+    // 054-event-fee-invoices — registration-fee is a MEMBERSHIP concept (the
+    // one-off joining fee on a member's first invoice). A non-member EVENT
+    // invoice (memberId null) carries only an `event_fee` line — never a
+    // `registration_fee` — and there is no F3 member row to flip, so the
+    // `memberId !== null` guard both skips the no-op flip AND satisfies the
+    // `markRegistrationFeePaid(tx, tenantId, memberId: string)` non-null
+    // contract for the membership path. (The `hasRegistrationFee` check stays
+    // first so a membership invoice without the line still short-circuits.)
+    const hasRegistrationFee = loaded.lines.some(
+      (l) => l.kind === 'registration_fee',
+    );
+    if (hasRegistrationFee && memberId !== null) {
+      await deps.memberIdentity.markRegistrationFeePaid(
+        tx,
+        input.tenantId,
+        memberId,
+      );
+    }
 
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a
@@ -322,6 +441,10 @@ export async function recordPayment(
     // byte-identical to the former inline `buyerHasTin(tax_id)` check, because a
     // MEMBERSHIP invoice always carries a TIN by pay-time (the issue-invoice gate
     // requires it), so `!forceSeparate` ≡ `buyerHasTin` on every reachable row.
+    // 064 — legacy-row defensive (remove with spec §6 item 1): after the interim
+    // no-TIN guard above, no TIN-less event row reaches this point, so the
+    // `receipt_separate` verdict below is unreachable in practice. Kept for
+    // lockstep with the issue-/credit-time gates (FIX 5 rationale unchanged).
     const forceSeparate =
       inferEventDocumentKind(
         loaded.invoiceSubject,
@@ -335,6 +458,11 @@ export async function recordPayment(
       // Separate mode — allocate receipt sequence. fiscalYear presence
       // was validated above (no_snapshot_on_invoice), so loaded.fiscalYear
       // is the frozen issue-time FY, never 0.
+      // Lock-order note (wave-3 S12): advisory('receipt') is acquired HERE,
+      // AFTER the member-row update (markRegistrationFeePaid, hoisted above)
+      // — member→advisory, the SAME order the β as-paid path takes. Do not
+      // move the flip back below this allocation; see the hoisted block's
+      // comment + the issue-event-invoice-as-paid.ts header.
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
         documentType: 'receipt',
@@ -618,6 +746,16 @@ export async function recordPayment(
     // manually from /admin/invoices once ops investigates.
     const recipientEmail =
       loaded.memberIdentitySnapshot.primary_contact_email ?? null;
+    // Wave-4 S15 — issueInvoice + issueEventInvoiceAsPaid share
+    // `lib/enqueue-invoice-email.ts` for this block's shape; THIS block is
+    // deliberately NOT folded into that helper because its semantics differ
+    // in four load-bearing ways: (1) the F5 `suppressReceiptEmail` THREE-arm
+    // branch incl. an info-log arm, (2) the `dependsOnReceiptPdf` async-PDF
+    // dispatcher gate, (3) the recipient is truthiness-checked, NOT trimmed
+    // (legacy-snapshot tolerance documented above), and (4) the skip warn
+    // carries memberId/documentNumber instead of the helper's fixed fields.
+    // Folding would mean a 4-mode helper — worse than the duplication.
+    //
     // T128a: F5 caller may suppress the receipt-email enqueue when the
     // tenant has disabled `auto_email_on_payment`. Status flip + audit +
     // outbox-skip log row still run — only the dispatcher enqueue is
@@ -627,6 +765,18 @@ export async function recordPayment(
       recipientEmail &&
       !input.suppressReceiptEmail
     ) {
+      // Wave-3 S13 — §87/3 PDPA privacy-footer parity with issueInvoice
+      // (Task-14 B) and issueEventInvoiceAsPaid: a NON-member EVENT buyer's
+      // receipt email must carry the same transparency footer the issue-time
+      // email carried. Reachable for legacy / bill-first non-member event
+      // rows (TIN buyers — the no-TIN interim guard returned above); without
+      // this the dispatcher persisted a NULL footer for them. The subject
+      // check is defensive narrowing — a null memberId on a non-event
+      // subject already returned `no_snapshot_on_invoice` above.
+      const privacyFooterKind =
+        memberId === null && loaded.invoiceSubject === 'event'
+          ? ('event_non_member' as const)
+          : undefined;
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
@@ -639,6 +789,7 @@ export async function recordPayment(
         // send on `invoices.receipt_pdf_status='rendered'` to avoid
         // shipping a dead Blob link.
         dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
+        ...(privacyFooterKind ? { privacyFooterKind } : {}),
       });
     } else if (
       settings.autoEmailEnabled &&
@@ -676,36 +827,10 @@ export async function recordPayment(
       );
     }
 
-    // Spec § 398 — "registration fee once per member lifecycle". If
-    // the paid invoice contained a registration_fee line, flip
-    // members.registration_fee_paid = true so the NEXT invoice
-    // doesn't double-charge. Runs inside the same transaction as
-    // applyPayment so a rollback unwinds both writes atomically.
-    // Idempotent — the adapter's WHERE registration_fee_paid=FALSE
-    // makes replay on an already-true row a no-op.
-    //
-    // 054-event-fee-invoices — registration-fee is a MEMBERSHIP concept (the
-    // one-off joining fee on a member's first invoice). A non-member EVENT
-    // invoice (memberId null) carries only an `event_fee` line — never a
-    // `registration_fee` — and there is no F3 member row to flip, so the
-    // `memberId !== null` guard both skips the no-op flip AND satisfies the
-    // `markRegistrationFeePaid(tx, tenantId, memberId: string)` non-null
-    // contract for the membership path. (The `hasRegistrationFee` check stays
-    // first so a membership invoice without the line still short-circuits.)
-    const hasRegistrationFee = loaded.lines.some(
-      (l) => l.kind === 'registration_fee',
-    );
-    if (hasRegistrationFee && memberId !== null) {
-      await deps.memberIdentity.markRegistrationFeePaid(
-        tx,
-        input.tenantId,
-        memberId,
-      );
-    }
-
     // F8 Phase 2 Wave A (T008) — fire registered on-paid callbacks
     // INSIDE the still-open withTx, after every other side-effect
-    // (applyPayment, audit, outbox enqueue, registration-fee flip)
+    // (registration-fee flip — hoisted pre-allocation, wave-3 S12 —
+    // then applyPayment, audit, outbox enqueue)
     // has succeeded. A callback rejection propagates out of `withTx`
     // and rolls back the entire transaction — F4 invoice goes back to
     // `issued`, audit + outbox + reg-fee flip are unwound. Atomic

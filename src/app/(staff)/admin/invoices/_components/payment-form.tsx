@@ -89,7 +89,17 @@ export function PaymentForm({
         const body = await res.json().catch(() => ({}));
         const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
-          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
+          description:
+            // REMOVE-WITH-064-REMEDIATION (site 5/15 — checklist at the guard
+            // in record-payment.ts; also drop the i18n key ×3 locales).
+            // 064 INTERIM — surface a human-readable message for the legacy
+            // no-TIN event-row guard (raw code is useless to an admin); same
+            // explicit-equality pattern as issue-invoice-dialog's error map.
+            code === 'legacy_no_tin_event_needs_remediation'
+              ? t('errors.legacy_no_tin_event_needs_remediation')
+              : code
+                ? t('errors.codeFallback', { code })
+                : t('errors.unknown'),
         });
         return;
       }

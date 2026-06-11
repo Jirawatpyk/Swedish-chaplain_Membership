@@ -19,13 +19,15 @@
  *      total === 10004 (NOT 10005), subtotal + vat === total, vat = total −
  *      subtotal per `splitVatInclusive`. 100.04 is a known mismatch case under a
  *      naive store-subtotal-then-recompute-VAT path.
- *   4. Doc-type drivers (054 Task 9): the PDF render `kind` is chosen at issue
- *      from invoiceSubject + buyer TIN — a non-member who supplied a 13-digit
- *      TIN renders `kind:'invoice'` (§86/4 full tax invoice) while a non-member
- *      without one renders `kind:'receipt_separate'` (§105 receipt, NO block).
- *      The persisted BUYER snapshot `tax_id` mirrors this (present vs NULL). The
- *      matched member carries their own tax_id. (The rendered title switch is
- *      Task 9's golden-render scope — see event-invoice-pdf-golden.test.ts.)
+ *   4. Doc-type drivers (054 Task 9, REVISED by 064 §105 ROOT FIX): the PDF
+ *      render `kind` is chosen at issue from invoiceSubject + buyer TIN — a
+ *      non-member who supplied a 13-digit TIN renders `kind:'invoice'` (§86/4
+ *      full tax invoice), while a non-member WITHOUT one is now REJECTED at
+ *      plain issue (`event_no_tin_requires_paid_issue`): a no-TIN buyer's only
+ *      legal document is a §105 ใบเสร็จรับเงิน, which may exist ONLY at the
+ *      moment payment is recorded (`issueEventInvoiceAsPaid` — see
+ *      issue-as-paid.test.ts). The blocked attempt burns no §87 number and
+ *      leaves the draft (with its no-TIN buyer snapshot pinned at draft) intact.
  *   5. Audit branch: the non-member issue (memberId NULL) emits `invoice_issued`
  *      via the NON-timeline branch — persisted payload has NO `member_id` key but
  *      carries `event_registration_id`; the matched member emits via the timeline
@@ -51,6 +53,7 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
 import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
@@ -71,6 +74,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -117,6 +121,8 @@ function makeIssueDepsWithMocks(
     // Real member-identity adapter — the matched-member branch re-reads the live
     // member at issue (snapshot pinned at issue). Non-member branch never calls it.
     memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
@@ -341,6 +347,21 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     return row;
   }
 
+  /** §87 counter for (tenant, 'invoice', fy) — null when never allocated. */
+  async function readInvoiceSeqCounter(fiscalYear: number): Promise<number | null> {
+    const [row] = await db
+      .select()
+      .from(tenantDocumentSequences)
+      .where(
+        and(
+          eq(tenantDocumentSequences.tenantId, tenant.ctx.slug),
+          eq(tenantDocumentSequences.documentType, 'invoice'),
+          eq(tenantDocumentSequences.fiscalYear, fiscalYear),
+        ),
+      );
+    return row?.nextSequenceNumber ?? null;
+  }
+
   it('non-member WITH tin: issues, Model-B EXACT VAT on 100.04 THB (10004 satang), tax-invoice snapshot, non-timeline audit, pre-pinned buyer snapshot', async () => {
     const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
     const draft = await createEventInvoiceDraft(draftDeps, {
@@ -438,7 +459,19 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     expect(payload.invoice_id).toBe(invoiceId);
   }, 60_000);
 
-  it('non-member WITHOUT tin: issues with receipt-type snapshot (tax_id NULL), non-timeline audit', async () => {
+  it('064 §105 ROOT FIX — non-member WITHOUT tin: plain issue is REJECTED, no §87 number burned, row stays draft with the no-TIN snapshot pinned', async () => {
+    // Migrated from the pre-064 "issues with receipt-type snapshot" test: a
+    // no-TIN event buyer can no longer be billed first — their only legal
+    // document is a §105 ใบเสร็จรับเงิน, which exists ONLY via the
+    // record-as-paid flow (`issueEventInvoiceAsPaid`). What moved where:
+    //   - the §105 receipt render + non-timeline audit coverage for non-member
+    //     event buyers lives in issue-as-paid.test.ts (section A1 covers the
+    //     TIN/receipt_combined shape; the no-TIN/receipt_separate β shape is
+    //     covered by its Task 10 receipt-stream section);
+    //   - the persisted no-TIN buyer-snapshot assertion (tax_id NULL, pinned
+    //     at DRAFT) is preserved HERE against the draft row;
+    //   - the 25000-satang Model-B VAT-exact split is already pinned by the
+    //     WITH-tin case above (10004 satang, the harder rounding case).
     const draftDeps = makeCreateEventInvoiceDraftDeps(tenant.ctx.slug);
     const draft = await createEventInvoiceDraft(draftDeps, {
       tenantId: tenant.ctx.slug,
@@ -451,6 +484,10 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
     if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
     const invoiceId = draft.value.invoiceId;
 
+    // §87 invoice-stream counter BEFORE the blocked attempt (issue clock is
+    // 2026-04-18 → FY2026 under the default Jan fiscal-year start).
+    const counterBefore = await readInvoiceSeqCounter(2026);
+
     const issueReqId = `int-evt-issue-notin-${invoiceId}`;
     const captured: PdfRenderInput[] = [];
     const result = await issueInvoice(makeIssueDepsWithMocks(tenant.ctx.slug, captured), {
@@ -459,33 +496,31 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
       requestId: issueReqId,
       invoiceId,
     });
-    expect(result.ok, result.ok ? 'ok' : `issue err: ${JSON.stringify(result)}`).toBe(true);
-    if (!result.ok) throw new Error('issue failed');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected event_no_tin_requires_paid_issue, got ok');
+    expect(result.error.code).toBe('event_no_tin_requires_paid_issue');
 
-    // §86/4 doc-type: event + NO buyer TIN → §105 receipt (ใบเสร็จรับเงิน), NOT
-    // blocked. The §87 invoice sequence is still consumed (single stream).
-    expect(captured).toHaveLength(1);
-    expect(captured[0]!.kind).toBe('receipt_separate');
-    expect(captured[0]!.vatInclusive).toBe(true);
+    // The gate runs BEFORE allocateNext — no §87 number consumed, no render.
+    const counterAfter = await readInvoiceSeqCounter(2026);
+    expect(counterAfter).toBe(counterBefore);
+    expect(captured).toHaveLength(0);
 
+    // Row stays a DRAFT: no numbering, no PDF, no doc kind.
     const row = await readInvoiceRow(invoiceId);
-    expect(row!.status).toBe('issued');
-    // 250 THB = 25000 satang inclusive @ 7% → subtotal 23364, vat 1636, total 25000.
-    const total = BigInt(row!.totalSatang!.toString());
-    const subtotal = BigInt(row!.subtotalSatang!.toString());
-    const vat = BigInt(row!.vatSatang!.toString());
-    expect(total).toBe(25000n);
-    expect(subtotal + vat).toBe(total);
-    const expected = splitVatInclusive(Money.fromSatangUnsafe(25000n), 700n);
-    expect(subtotal).toBe(expected.subtotal.satang);
-    expect(vat).toBe(expected.vat.satang);
+    expect(row!.status).toBe('draft');
+    expect(row!.sequenceNumber).toBeNull();
+    expect(row!.documentNumber).toBeNull();
+    expect(row!.pdfBlobKey).toBeNull();
+    expect(row!.pdfDocKind).toBeNull();
 
-    // Doc-type driver: buyer snapshot tax_id NULL → receipt downstream.
+    // The no-TIN buyer snapshot PRE-PINNED at draft is untouched (preserved
+    // assertion from the dead test — the rejection must not null it).
     const snap = row!.memberIdentitySnapshot as Record<string, unknown>;
     expect(snap.tax_id).toBeNull();
+    expect(snap.legal_name).toBe('Walk-in Guest');
 
-    // Audit: non-member → NON-timeline branch.
-    const [auditRow] = await db
+    // No invoice_issued audit was committed for the blocked attempt.
+    const auditRows = await db
       .select()
       .from(auditLog)
       .where(
@@ -495,9 +530,7 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
           eq(auditLog.requestId, issueReqId),
         ),
       );
-    const payload = auditRow!.payload as Record<string, unknown>;
-    expect('member_id' in payload).toBe(false);
-    expect(payload.event_registration_id).toBe(regNoTinId);
+    expect(auditRows).toHaveLength(0);
   }, 60_000);
 
   it('matched member: issues with snapshot from getForIssue (their tax_id), TIMELINE audit branch (payload has member_id)', async () => {

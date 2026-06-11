@@ -305,6 +305,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
           planYear: 2026,
           planId,
           status: 'issued',
+          pdfDocKind: 'invoice',
           draftByUserId: user.userId,
           fiscalYear: 2026,
           sequenceNumber:

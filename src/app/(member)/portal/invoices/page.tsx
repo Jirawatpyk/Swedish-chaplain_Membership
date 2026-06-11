@@ -47,6 +47,7 @@ import { InvoiceStatusBadge } from './_components/invoice-status-badge';
 import {
   toInvoiceRowViewModel,
   rowHasAnyAction,
+  downloadLabelKeys,
 } from './_utils/invoice-row-view-model';
 import {
   InvoiceFilters,
@@ -362,9 +363,13 @@ export default async function PortalInvoicesPage({
                           <Link
                             href={`/portal/invoices/${vm.invoiceId}`}
                             className="underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                            aria-label={`${t('actions.viewDetail')} ${vm.documentNumber ?? vm.invoiceId}`}
+                            // 064 remediation S3 — displayNumber resolves β
+                            // rows to their printed §105 receipt number so
+                            // the cell never shows an em-dash/UUID for a
+                            // paid, numbered document.
+                            aria-label={`${t('actions.viewDetail')} ${vm.displayNumber ?? vm.invoiceId}`}
                           >
-                            {vm.documentNumber ?? '—'}
+                            {vm.displayNumber ?? '—'}
                           </Link>
                         </TableCell>
                         <TableCell className="align-middle whitespace-nowrap">
@@ -452,7 +457,7 @@ export default async function PortalInvoicesPage({
                                 {vm.resendable ? (
                                   <ResendInvoiceButton
                                     invoiceId={vm.invoiceId}
-                                    documentNumber={vm.documentNumber ?? vm.invoiceId}
+                                    documentNumber={vm.displayNumber ?? vm.invoiceId}
                                     variant="ghost"
                                     layout="compact"
                                     className="min-h-11 min-w-11"
@@ -461,18 +466,23 @@ export default async function PortalInvoicesPage({
                                 {vm.showInvoice && (
                                   <PortalInvoiceDownloadButton
                                     invoiceId={vm.invoiceId}
-                                    documentNumber={vm.documentNumber ?? vm.invoiceId}
+                                    documentNumber={vm.displayNumber ?? vm.invoiceId}
+                                    // 064 — as-paid rows: the main pdf IS the
+                                    // final legal document; the shared
+                                    // downloadLabelKeys helper (wave-4 S17)
+                                    // maps mainPdfKind → label/aria keys so
+                                    // table + card + detail can never drift.
                                     label={
                                       vm.displayStatus === 'void'
                                         ? t('actions.downloadVoided')
-                                        : t('actions.download')
+                                        : t(downloadLabelKeys(vm.mainPdfKind).labelKey)
                                     }
                                     ariaLabel={t(
                                       vm.displayStatus === 'void'
                                         ? 'actions.downloadVoidedAria'
-                                        : 'actions.downloadInvoiceAria',
+                                        : downloadLabelKeys(vm.mainPdfKind).ariaKey,
                                       {
-                                        number: vm.documentNumber ?? vm.invoiceId,
+                                        number: vm.displayNumber ?? vm.invoiceId,
                                       },
                                     )}
                                     className={cn(
@@ -492,7 +502,7 @@ export default async function PortalInvoicesPage({
                                     // and the SR aria can never diverge. Mirrors
                                     // the card.
                                     const receiptRef =
-                                      vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId;
+                                      vm.receiptNumber ?? vm.displayNumber ?? vm.invoiceId;
                                     return (
                                       <PortalReceiptDownloadButton
                                         invoiceId={vm.invoiceId}

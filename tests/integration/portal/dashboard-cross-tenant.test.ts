@@ -116,6 +116,7 @@ describe('057 dashboard reads — cross-tenant isolation (Principle I)', () => {
         planId,
         invoiceSubject: 'membership',
         status: 'issued',
+        pdfDocKind: 'invoice',
         draftByUserId: seedUser.userId,
         fiscalYear: 2026,
         sequenceNumber: 1,

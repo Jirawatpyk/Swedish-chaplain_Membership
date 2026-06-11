@@ -151,6 +151,7 @@ async function seedInvoices(
         planId: 'perf-plan',
         draftByUserId: user.userId,
         status: 'issued' as const,
+        pdfDocKind: 'invoice',
         fiscalYear: 2026,
         sequenceNumber: seq,
         documentNumber: `PRF-2026-${String(seq).padStart(6, '0')}`,

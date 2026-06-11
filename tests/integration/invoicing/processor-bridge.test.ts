@@ -149,6 +149,7 @@ async function seedInvoice(
       planId,
       draftByUserId: user.userId,
       status,
+      pdfDocKind: 'invoice',
       fiscalYear: 2026,
       sequenceNumber: 1,
       documentNumber: 'BRDG-2026-000001',

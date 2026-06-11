@@ -34,6 +34,7 @@ import {
   Money,
   calculateVat,
   computeIsOverdue,
+  displayDocumentNumber,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
 } from '@/modules/invoicing';
@@ -154,11 +155,14 @@ export default async function InvoiceDetailPage({
   const invoice = result.value;
 
   // Look up plan display name so we don't show the raw planId slug.
-  const plansResult = await listPlans(
-    { filter: { year: invoice.planYear as never } },
-    buildPlansDeps(tenantCtx),
-  );
-  const foundPlan = plansResult.ok
+  // Event-fee invoices have NO plan (`invoices_subject_fields_ck` pins
+  // plan_id/plan_year NULL) — skip the lookup entirely instead of
+  // querying listPlans with a null year on every event detail view.
+  const plansResult =
+    invoice.invoiceSubject === 'membership'
+      ? await listPlans({ filter: { year: invoice.planYear as never } }, buildPlansDeps(tenantCtx))
+      : null;
+  const foundPlan = plansResult?.ok
     ? plansResult.value.data.find((p) => p.plan_id === invoice.planId)
     : undefined;
   // 054-event-fee-invoices — plan_id is non-null on membership invoices
@@ -175,11 +179,12 @@ export default async function InvoiceDetailPage({
   // snapshot yet). getMember emits `member_cross_tenant_probe` on 404
   // with the signed-in admin's user id as actor.
   const snapshotName = (invoice.memberIdentitySnapshot as { legal_name?: string } | null)?.legal_name;
-  // 054-event-fee-invoices — this detail page is the MEMBERSHIP invoice
-  // view; member_id is non-null for membership invoices
-  // (`invoices_subject_fields_ck`). Coalesce defensively so the type
-  // narrows (an event-fee invoice gets its own detail surface in a future
-  // task and never reaches this branch with a null member_id in practice).
+  // 064 main-agent recheck — this detail page serves BOTH subjects (the
+  // earlier "event invoices get their own surface later" assumption was
+  // stale). Non-member event invoices (member_id NULL) display the
+  // draft/issue-pinned buyer snapshot's legal_name and MUST NOT render a
+  // member link — `/admin/members/null` 404s; same rule the invoices LIST
+  // applies to its buyer column (054 spec).
   let memberDisplayName = snapshotName ?? invoice.memberId ?? '—';
   if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
@@ -223,8 +228,20 @@ export default async function InvoiceDetailPage({
   // Thai RD §86/4): paid+combined hides invoice-resend (the combined receipt
   // is the single legal document; the issue-time invoice PDF is a stale draft),
   // and receipt-resend requires a paid invoice with a rendered receipt PDF.
+  //
+  // 064 — `pdfDocKind === 'receipt_combined'` marks an as-paid TIN event
+  // invoice whose MAIN pdf already IS the final combined §86/4+§105ทวิ
+  // document (issued straight to paid; receipt_* blob columns stay NULL).
+  // The stale-draft-hiding rule therefore applies ONLY when the main pdf is
+  // an issue-time 'invoice' — without the `!mainPdfIsFinalCombined` guard an
+  // as-paid row matched BOTH heuristics (paid + raw NULL + no receiptPdf)
+  // and rendered with NO downloadable document at all. Download + resend of
+  // the main pdf on these rows ships the real final document.
+  const mainPdfIsFinalCombined = invoice.pdfDocKind === 'receipt_combined';
   const isPaidCombined =
-    invoice.status === 'paid' && invoice.receiptDocumentNumberRaw === null;
+    invoice.status === 'paid' &&
+    invoice.receiptDocumentNumberRaw === null &&
+    !mainPdfIsFinalCombined;
   const hasReceiptPdf =
     invoice.status === 'paid' && Boolean(invoice.receiptPdf);
 
@@ -308,7 +325,13 @@ export default async function InvoiceDetailPage({
     }
   }
 
-  const breadcrumbLabel = invoice.documentNumber?.raw ?? t('draftTitle');
+  // 064 remediation S2 — β as-paid no-TIN rows have a NULL invoice document
+  // number; their printed §105 number lives in receiptDocumentNumberRaw.
+  // `displayDocumentNumber` resolves whichever exists so a PAID β row never
+  // renders under the "Draft invoice" title/breadcrumb. Both-null = a true
+  // draft → the draft label.
+  const displayNumber = displayDocumentNumber(invoice);
+  const breadcrumbLabel = displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
   // can be rendered conditionally on succeeded-payment + remaining-
@@ -344,7 +367,7 @@ export default async function InvoiceDetailPage({
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            <span>{invoice.documentNumber?.raw ?? t('draftTitle')}</span>
+            <span>{displayNumber ?? t('draftTitle')}</span>
             <Badge variant={statusBadgeVariant(displayStatus)}>
               {tStatus(displayStatus)}
             </Badge>
@@ -467,15 +490,22 @@ export default async function InvoiceDetailPage({
                 standalone buttons. Menu returns null when nothing to
                 show. T107 visibility rules preserved inside the menu. */}
             {/* Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE legal document
-                with dual function. paid+combined → hide the pre-payment invoice
-                PDF + resend (stale drafts), show only the combined receipt;
-                paid+separate → all 4 items; issued/void → invoice PDF only.
-                isPaidCombined + hasReceiptPdf are hoisted above (shared with the
-                FR-026 failure banner so both surfaces gate identically). */}
+                with dual function. paid+combined (bill-first) → hide the
+                pre-payment invoice PDF + resend (stale drafts), show only the
+                combined receipt; paid+separate → all 4 items; issued/void →
+                invoice PDF only. 064 as-paid TIN → the MAIN pdf IS the final
+                combined doc (no receipt blob), so the main Download/Resend stay
+                visible and the Download item carries the combined label via
+                `mainDownloadKind`. isPaidCombined + hasReceiptPdf are
+                hoisted above (shared with the FR-026 failure banner so both
+                surfaces gate identically). */}
             {!isDraft && (
               <InvoiceMoreMenu
                 invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                // 064 remediation S2 — display number, never a raw UUID: β
+                // rows resolve to their printed §105 receipt number (drives
+                // the download filename + every aria inside the menu).
+                documentNumber={displayNumber ?? invoice.invoiceId}
                 showDownload={Boolean(invoice.pdf) && !isPaidCombined}
                 showResendInvoice={
                   isAdmin &&
@@ -485,6 +515,16 @@ export default async function InvoiceDetailPage({
                 }
                 showResendReceipt={isAdmin && hasReceiptPdf}
                 showDownloadReceipt={hasReceiptPdf}
+                // 064 remediation A4 — what the main pdf IS: combined for
+                // as-paid TIN rows, receipt for β/legacy §105 rows whose
+                // main pdf is itself the receipt; plain invoice otherwise.
+                mainDownloadKind={
+                  invoice.pdfDocKind === 'receipt_combined'
+                    ? 'combined'
+                    : invoice.pdfDocKind === 'receipt_separate'
+                      ? 'receipt'
+                      : undefined
+                }
                 // combinedModeReceipt is derived inside the menu component
                 // from (showDownloadReceipt && !showDownload).
               />
@@ -510,20 +550,31 @@ export default async function InvoiceDetailPage({
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>
               <dd>
-                <Link
-                  href={`/admin/members/${invoice.memberId}`}
-                  className="underline-offset-2 hover:underline"
-                >
-                  {memberDisplayName}
-                </Link>
+                {/* Non-member event buyer: plain text — a member link would
+                    href /admin/members/null and 404 (LIST buyer-column rule). */}
+                {invoice.memberId !== null ? (
+                  <Link
+                    href={`/admin/members/${invoice.memberId}`}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {memberDisplayName}
+                  </Link>
+                ) : (
+                  memberDisplayName
+                )}
               </dd>
             </div>
-            <div>
-              <dt className="text-muted-foreground">{t('fields.plan')}</dt>
-              <dd>
-                {planDisplayName} <span className="text-muted-foreground">/ {invoice.planYear}</span>
-              </dd>
-            </div>
+            {/* Plan row is membership-only: event-fee invoices carry no plan
+                (plan_id/plan_year NULL) — rendering it would show "— / ". */}
+            {invoice.invoiceSubject === 'membership' && (
+              <div>
+                <dt className="text-muted-foreground">{t('fields.plan')}</dt>
+                <dd>
+                  {planDisplayName}{' '}
+                  <span className="text-muted-foreground">/ {invoice.planYear}</span>
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
               <dd>{formatLocalisedDate(invoice.issueDate ?? '', userLocale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}</dd>

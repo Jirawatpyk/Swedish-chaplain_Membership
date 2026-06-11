@@ -32,7 +32,14 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps, computeIsOverdue } from '@/modules/invoicing';
+import {
+  getInvoice,
+  makeGetInvoiceDeps,
+  computeIsOverdue,
+  displayDocumentNumber,
+  // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate below.
+  buyerHasTin,
+} from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
 // page. An Application-layer use-case is a Phase-10 consolidation
@@ -79,6 +86,7 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from '../_components/portal-pdf-download-button';
+import { downloadLabelKeys } from '../_utils/invoice-row-view-model';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
@@ -169,7 +177,11 @@ export default async function PortalInvoiceDetailPage({
     <InvoiceStatusBadge status={status} label={tStatus(status)} />
   );
 
-  const documentNumber = invoice.documentNumber?.raw ?? '—';
+  // 064 remediation S3 — β as-paid no-TIN rows have a NULL invoice document
+  // number; their printed §105 number lives in receiptDocumentNumberRaw. The
+  // shared helper resolves whichever exists so the title never reads
+  // "Invoice —" on a paid, numbered receipt.
+  const documentNumber = displayDocumentNumber(invoice) ?? '—';
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
@@ -186,9 +198,25 @@ export default async function PortalInvoiceDetailPage({
         .catch(() => null)
     : null;
 
+  // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
+  // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
+  // invoice must not surface the Pay-now button: its issue-time PDF already
+  // IS the §105 receipt, and a Stripe payment against it gets captured but
+  // never applied (the webhook-side `recordPayment` guard rejects the flip
+  // with no auto-refund — S0 money trap). The F4 payability read
+  // (`getInvoiceForPayment`) + the initiate route reject it server-side;
+  // this is the matching member-facing surface, replaced by a localized
+  // "under document correction — contact staff" notice below. Mirrors the
+  // guard predicate exactly (subject + issued + trimmed-TIN check).
+  const isLegacyNoTinEventInvoice =
+    invoice.invoiceSubject === 'event' &&
+    invoice.status === 'issued' &&
+    !buyerHasTin(invoice.memberIdentitySnapshot?.tax_id);
+
   const canPayOnline =
     env.features.f5OnlinePayment &&
     invoice.status === 'issued' &&
+    !isLegacyNoTinEventInvoice &&
     paymentSettings !== null &&
     paymentSettings.onlinePaymentEnabled &&
     paymentSettings.enabledMethods.length > 0 &&
@@ -260,36 +288,70 @@ export default async function PortalInvoiceDetailPage({
                 // `receiptNumberingMode` column would violate
                 // Principle X — the proxy is correct, just
                 // documented here.
+                //
+                // 064 — as-paid TIN event invoices persist the MAIN pdf
+                // as the final combined document (`pdfDocKind ===
+                // 'receipt_combined'`; receipt blob columns stay NULL,
+                // receiptPdfStatus lands 'rendered'). Pre-fix these rows
+                // matched `isCombinedPaid` (main download hidden) while
+                // `showReceiptPdf` pointed at the NULL receipt blob —
+                // the member's only button 502'd (blob_missing). The
+                // stale-draft-hiding rule applies ONLY when the main pdf
+                // is an issue-time 'invoice', and the receipt button is
+                // gated on the blob it actually serves.
+                // 064 remediation S3 — generalised: 'combined' (as-paid TIN)
+                // keeps the dual-role wording; 'receipt' (β as-paid no-TIN /
+                // legacy §105 rows) flips the main download to the receipt
+                // wording; 'invoice' = plain label.
+                const mainPdfKind: 'invoice' | 'combined' | 'receipt' =
+                  invoice.pdfDocKind === 'receipt_combined'
+                    ? 'combined'
+                    : invoice.pdfDocKind === 'receipt_separate'
+                      ? 'receipt'
+                      : 'invoice';
                 const isCombinedPaid =
-                  invoice.status === 'paid' && invoice.receiptDocumentNumberRaw === null;
+                  invoice.status === 'paid' &&
+                  invoice.receiptDocumentNumberRaw === null &&
+                  mainPdfKind !== 'combined';
                 const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
                 const showReceiptPdf =
-                  invoice.status === 'paid' && invoice.receiptPdfStatus === 'rendered';
+                  invoice.status === 'paid' &&
+                  invoice.receiptPdfStatus === 'rendered' &&
+                  invoice.receiptPdf !== null;
                 // T166-10 — async receipt PDF gate. When the receipt
                 // is still being rendered by the cron worker, surface
                 // a polite "preparing…" affordance ALONGSIDE the
                 // invoice button (separate-mode the member still gets
                 // the invoice; combined-mode the receipt IS the only
                 // doc so we show the preparing state on its own).
+                // 'pending' ONLY (S1 parity with invoice-row-view-model.ts
+                // receiptPending): a terminal 'failed' render must NOT show
+                // the aria-busy "preparing" spinner forever.
                 const receiptPending =
                   invoice.status === 'paid' &&
-                  invoice.receiptPdfStatus !== null &&
-                  invoice.receiptPdfStatus !== 'rendered';
+                  invoice.receiptPdfStatus === 'pending';
                 return (
                   <>
                     {showInvoicePdf && (
                       <PortalInvoiceDownloadButton
                         invoiceId={invoice.invoiceId}
                         documentNumber={documentNumber}
+                        // 064 — as-paid rows: the main pdf IS the final legal
+                        // document; shared downloadLabelKeys helper (wave-4
+                        // S17) maps mainPdfKind → label/aria keys (list
+                        // namespace). The void overlay keeps THIS page's own
+                        // `void.downloadVoidedPdf` copy.
                         label={
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : tList('actions.download')
+                            : tList(downloadLabelKeys(mainPdfKind).labelKey)
                         }
                         ariaLabel={`${
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
-                            : tList('actions.downloadInvoiceAria', { number: documentNumber })
+                            : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
+                                number: documentNumber,
+                              })
                         }`}
                         className={cn(
                           buttonVariants({ variant: 'default', size: 'sm' }),
@@ -452,12 +514,16 @@ export default async function PortalInvoiceDetailPage({
               <p className="text-body font-mono tabular-nums">{invoice.receiptDocumentNumberRaw}</p>
             </div>
           )}
-          <div>
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('fields.planYear')}
-            </p>
-            <p className="text-body">{invoice.planYear}</p>
-          </div>
+          {/* Plan year is membership-only — event-fee invoices carry no plan
+              (plan_year NULL) and would render an empty value here. */}
+          {invoice.planYear !== null && (
+            <div>
+              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+                {t('fields.planYear')}
+              </p>
+              <p className="text-body">{invoice.planYear}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -598,7 +664,21 @@ export default async function PortalInvoiceDetailPage({
        * static <Badge>, no portal children.
        */}
       {invoice.status === 'issued' ? (
-        canPayOnline && paymentSettings ? (
+        isLegacyNoTinEventInvoice ? (
+          // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event row: no pay
+          // surface AND no "online payment disabled" card (which would
+          // misleadingly suggest the tenant config is the blocker). The
+          // member is told the document is being corrected and to contact
+          // staff; the remediation runbook voids + reissues the row.
+          <section
+            data-testid="portal-invoice-legacy-no-tin-notice"
+            className="rounded-md border border-border bg-muted/50 p-4"
+          >
+            <p className="text-sm text-muted-foreground">
+              {t('legacyNoTinNotPayable')}
+            </p>
+          </section>
+        ) : canPayOnline && paymentSettings ? (
           <PayNowButton
             invoice={{
               id: invoice.invoiceId,

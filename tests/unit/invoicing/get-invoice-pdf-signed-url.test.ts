@@ -118,12 +118,14 @@ function makeDeps(invoice: Invoice | null) {
         // R9-T9 — read-only use-case never calls `lockForUpdate`; stub
         // with bare `vi.fn()` to avoid the misleading "returns 'issued'"
         // appearance and match the receipt-sibling fixture shape.
+        findByIdInTxForUpdate: vi.fn(),
         lockForUpdate: vi.fn(),
         applyCreditNoteRollup: vi.fn(),
         applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
       },
       blob: { signDownloadUrl: blob.signDownloadUrl } as unknown as Parameters<
         typeof getInvoicePdfSignedUrl

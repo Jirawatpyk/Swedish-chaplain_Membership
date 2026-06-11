@@ -22,7 +22,10 @@ import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
-import { runLoadEventDetail } from '@/lib/events-admin-deps';
+import {
+  runLoadEventDetail,
+  runListMemberTinPresenceByIds,
+} from '@/lib/events-admin-deps';
 import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import {
   MATCH_TYPES,
@@ -310,8 +313,40 @@ export async function GET(
   // see /api/admin/events/route.ts.
   const responseHeaders: Record<string, string> = {};
   if (pageSizeClamped) responseHeaders['X-PageSize-Clamped'] = 'true';
-  return NextResponse.json(result.value, {
-    status: 200,
-    headers: responseHeaders,
-  });
+
+  // 064 remediation B5 — enrich each registration with `buyerHasTin`:
+  // server-truth tax-id PRESENCE for MATCHED members (one batched F3 read
+  // via the lib composition root), `null` for non-members (the manual
+  // buyer tax-id field rules there) and for matched ids the lookup could
+  // not resolve (callers fall back to the legacy matched⇒has-TIN guess).
+  // Presentation-layer enrichment by design: the F6 use-case DTO stays
+  // untouched (the admin events PAGE consumes it directly and has no use
+  // for the TIN signal), and only the boolean crosses the wire — never the
+  // raw tax-id (PII).
+  const matchedMemberIds = [
+    ...new Set(
+      result.value.registrations.flatMap((r) =>
+        r.matchedMemberId !== null ? [String(r.matchedMemberId)] : [],
+      ),
+    ),
+  ];
+  const tinPresenceById =
+    matchedMemberIds.length > 0
+      ? await runListMemberTinPresenceByIds(tenantCtx.slug, matchedMemberIds)
+      : new Map<string, boolean>();
+  const registrations = result.value.registrations.map((r) => ({
+    ...r,
+    buyerHasTin:
+      r.matchedMemberId !== null
+        ? (tinPresenceById.get(String(r.matchedMemberId)) ?? null)
+        : null,
+  }));
+
+  return NextResponse.json(
+    { ...result.value, registrations },
+    {
+      status: 200,
+      headers: responseHeaders,
+    },
+  );
 }

@@ -239,6 +239,7 @@ async function seedIssuedInvoice(
       planId: 'regular',
       draftByUserId: adminUserId,
       status: opts.kind === 'credit-target' ? 'paid' : 'issued',
+      pdfDocKind: 'invoice',
       fiscalYear: 2026,
       sequenceNumber: opts.sequenceNumber,
       documentNumber,

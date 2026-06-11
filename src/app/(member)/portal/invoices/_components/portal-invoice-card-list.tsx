@@ -53,6 +53,7 @@ import { formatDate, formatSatangThb } from '../_utils/format';
 import type { InvoiceRowDisplayStatus } from '../_utils/format';
 import {
   rowHasAnyAction,
+  downloadLabelKeys,
   type InvoiceRowViewModel,
 } from '../_utils/invoice-row-view-model';
 import { EmptyCell } from './empty-cell';
@@ -113,7 +114,10 @@ export function PortalInvoiceCardList({
         return (
           <li
             key={vm.invoiceId}
-            aria-label={`${t('detail.title')} ${vm.documentNumber ?? vm.invoiceId}, ${statusLabel}`}
+            // 064 remediation S3 — displayNumber resolves β as-paid rows to
+            // their printed §105 receipt number; the row UUID fallback is a
+            // last-resort that no numbered row reaches any more.
+            aria-label={`${t('detail.title')} ${vm.displayNumber ?? vm.invoiceId}, ${statusLabel}`}
           >
             <Card>
               <CardContent className="flex flex-col gap-3">
@@ -122,10 +126,10 @@ export function PortalInvoiceCardList({
                   <Link
                     href={`/portal/invoices/${vm.invoiceId}`}
                     className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                    aria-label={`${t('actions.viewDetail')} ${vm.documentNumber ?? vm.invoiceId}`}
+                    aria-label={`${t('actions.viewDetail')} ${vm.displayNumber ?? vm.invoiceId}`}
                   >
                     <h2 className="font-mono text-sm font-medium leading-snug">
-                      {vm.documentNumber ?? vm.invoiceId}
+                      {vm.displayNumber ?? vm.invoiceId}
                     </h2>
                   </Link>
                   <InvoiceStatusBadge
@@ -184,21 +188,30 @@ export function PortalInvoiceCardList({
                     {vm.showInvoice && (
                       <PortalInvoiceDownloadButton
                         invoiceId={vm.invoiceId}
-                        documentNumber={vm.documentNumber ?? vm.invoiceId}
+                        documentNumber={vm.displayNumber ?? vm.invoiceId}
+                        // 064 — as-paid rows: the main pdf IS the final legal
+                        // document; shared downloadLabelKeys helper (wave-4
+                        // S17) maps mainPdfKind → label/aria keys. Mirrors
+                        // the desktop table.
                         label={
                           vm.displayStatus === 'void'
                             ? t('actions.downloadVoided')
-                            : t('actions.download')
+                            : t(downloadLabelKeys(vm.mainPdfKind).labelKey)
                         }
                         ariaLabel={t(
                           vm.displayStatus === 'void'
                             ? 'actions.downloadVoidedAria'
-                            : 'actions.downloadInvoiceAria',
-                          { number: vm.documentNumber ?? vm.invoiceId },
+                            : downloadLabelKeys(vm.mainPdfKind).ariaKey,
+                          { number: vm.displayNumber ?? vm.invoiceId },
                         )}
                         className={cn(
                           buttonVariants({ variant: 'outline', size: 'sm' }),
                           'min-h-11 px-3',
+                          // Same wrap treatment the receipt button applies to
+                          // its combined label — let the longer dual-role text
+                          // wrap inside a 320px card instead of clipping.
+                          vm.mainPdfKind === 'combined' &&
+                            'h-auto min-h-11 whitespace-normal text-left',
                         )}
                       />
                     )}
@@ -211,7 +224,7 @@ export function PortalInvoiceCardList({
                         // `number`). Hoist it so the visible doc-ref and the SR
                         // aria can never diverge. Mirrors the desktop table.
                         const receiptRef =
-                          vm.receiptNumber ?? vm.documentNumber ?? vm.invoiceId;
+                          vm.receiptNumber ?? vm.displayNumber ?? vm.invoiceId;
                         return (
                           <PortalReceiptDownloadButton
                             invoiceId={vm.invoiceId}
@@ -283,7 +296,7 @@ export function PortalInvoiceCardList({
                     {vm.resendable ? (
                       <ResendInvoiceButton
                         invoiceId={vm.invoiceId}
-                        documentNumber={vm.documentNumber ?? vm.invoiceId}
+                        documentNumber={vm.displayNumber ?? vm.invoiceId}
                         variant="outline"
                         layout="compact"
                         className="min-h-11 min-w-11"

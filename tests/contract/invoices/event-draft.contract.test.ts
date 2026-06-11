@@ -481,6 +481,20 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
     expect(body.error.code).toBe('attendee_erased');
   });
 
+  it('422 registration_refunded — refunded registration is hard-blocked server-side (064 M-A)', async () => {
+    createEventInvoiceDraftMock.mockResolvedValueOnce(
+      err({ code: 'registration_refunded' }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makePostRequest({ eventRegistrationId: VALID_REG_ID, amountOverride: 50000 }),
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('registration_refunded');
+  });
+
   it('422 invalid_tax_id_format — buyer tax_id has wrong format (domain-level check)', async () => {
     createEventInvoiceDraftMock.mockResolvedValueOnce(
       err({ code: 'invalid_tax_id_format' }),

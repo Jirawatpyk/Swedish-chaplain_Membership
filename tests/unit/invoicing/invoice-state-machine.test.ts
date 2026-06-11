@@ -35,13 +35,13 @@ describe('Invoice state machine', () => {
     ];
 
     it.each(LEGAL)('%s → %s is allowed', (from, to) => {
-      expect(canTransition(from, to).ok).toBe(true);
+      expect(canTransition(from, to, 'membership').ok).toBe(true);
     });
   });
 
   describe('canTransition — illegal transitions', () => {
     const ILLEGAL: ReadonlyArray<readonly [InvoiceStatus, InvoiceStatus]> = [
-      ['draft', 'paid'],
+      ['draft', 'paid'], // membership only — event subject allows it (064 as-paid issuance)
       ['draft', 'void'],
       ['issued', 'draft'],
       ['paid', 'issued'],
@@ -54,7 +54,7 @@ describe('Invoice state machine', () => {
     ];
 
     it.each(ILLEGAL)('%s → %s is rejected', (from, to) => {
-      const r = canTransition(from, to);
+      const r = canTransition(from, to, 'membership');
       expect(r.ok).toBe(false);
       if (!r.ok) {
         expect(['invalid_transition', 'terminal_state']).toContain(r.error.code);
@@ -164,6 +164,7 @@ describe('Invoice state machine', () => {
         sha256: Sha256Hex.ofUnsafe('0'.repeat(64)),
         templateVersion: 1,
       },
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,

@@ -173,6 +173,7 @@ function makeDeps(
       // the row doesn't exist (null), otherwise surface whatever
       // status the fixture was built with so the state-machine
       // branches all exercise correctly.
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () =>
         rowExists ? ((draft?.status ?? 'issued') as InvoiceStatus) : null,
       ),
@@ -181,6 +182,7 @@ function makeDeps(
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -493,6 +495,43 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
+  it('wave-3 S12 lock-order — markRegistrationFeePaid runs BEFORE the separate-mode receipt allocation (member→advisory, as-paid parity)', async () => {
+    // The β as-paid path locks the member row (FOR UPDATE in
+    // resolveInvoiceBuyerForIssue) BEFORE taking advisory('receipt') in
+    // allocateNext. recordPayment used to take the pair in the OPPOSITE
+    // order (advisory first, member-row UPDATE at the tail) — the AB-BA
+    // 40P01 edge. The flip is hoisted above the allocation so both flows
+    // order member→advisory; this pin keeps it that way.
+    const regFeeLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-order-pin'),
+      kind: 'registration_fee',
+      descriptionTh: 'ค่าลงทะเบียนแรกเข้า',
+      descriptionEn: 'Registration fee (one-off)',
+      unitPrice: Money.fromTHB(5000),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromTHB(5000),
+      position: 2,
+    };
+    const invoiceWithRegFee = makeIssuedInvoice({
+      lines: [makeIssuedInvoice().lines[0]!, regFeeLine],
+    });
+    const deps = makeDeps(
+      true,
+      invoiceWithRegFee,
+      makeSettings({ receiptNumberingMode: 'separate' }),
+    );
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    const flipMock = deps.memberIdentity.markRegistrationFeePaid as ReturnType<typeof vi.fn>;
+    const allocMock = deps.sequenceAllocator.allocateNext as ReturnType<typeof vi.fn>;
+    expect(flipMock).toHaveBeenCalledTimes(1);
+    expect(allocMock).toHaveBeenCalledTimes(1);
+    expect(flipMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      allocMock.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it('does NOT flip registration_fee_paid when invoice has only membership_fee line', async () => {
     const invoiceOnlyMembership = makeIssuedInvoice(); // default fixture has 1 membership line
     const deps = makeDeps(true, invoiceOnlyMembership, makeSettings());
@@ -588,18 +627,77 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(payload.invoice_id).toBe(INVOICE_ID);
   });
 
-  it('FIX 5 — combined mode + TIN-less event buyer → shared inferEventDocumentKind FORCES receipt_separate allocation', async () => {
-    // The shared `inferEventDocumentKind` discriminator must override the
-    // tenant's `combined` setting for a TIN-less EVENT buyer (a §105
-    // ใบเสร็จรับเงิน can never carry the combined tax-invoice/receipt label).
-    // This is the one path where the refactor is semantically load-bearing —
-    // `combinedMode` resolves to FALSE despite `receiptNumberingMode==='combined'`,
-    // so a separate receipt sequence IS allocated (byte-identical to the prior
-    // inline `buyerHasTin` gate, now sourced from the shared Domain helper).
-    const noTinEventInvoice = makeNonMemberEventInvoice({
+  it('non-member EVENT invoice → receipt-email outbox row carries privacyFooterKind event_non_member (wave-3 S13, §87/3 footer parity)', async () => {
+    // issueInvoice (Task-14 B) + issueEventInvoiceAsPaid both thread the
+    // PDPA transparency footer for a non-member event buyer; the legacy /
+    // bill-first row paid through recordPayment must receive the SAME footer
+    // on its receipt email — previously it silently got NULL.
+    const invoice = makeNonMemberEventInvoice();
+    const deps = makeDeps(
+      true,
+      invoice,
+      makeSettings({ receiptNumberingMode: 'separate', autoEmailEnabled: true }),
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'invoice_paid',
+        recipientEmail: 'jane@buyer.example',
+        privacyFooterKind: 'event_non_member',
+      }),
+    );
+  });
+
+  it('matched-member EVENT invoice → receipt-email outbox row has NO privacyFooterKind key (footer is non-member-only)', async () => {
+    const matched = makeNonMemberEventInvoice({ memberId: 'member-matched-1' });
+    const deps = makeDeps(
+      true,
+      matched,
+      makeSettings({ receiptNumberingMode: 'separate', autoEmailEnabled: true }),
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? matched
+        : makeNonMemberEventInvoice({ memberId: 'member-matched-1', status: 'paid' });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    const enqueueCall = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect(enqueueCall, 'expected an invoice_paid outbox enqueue').toBeDefined();
+    // The key must be ABSENT (exactOptionalPropertyTypes discipline), not
+    // present-with-undefined — the adapter persists context_data verbatim.
+    expect('privacyFooterKind' in (enqueueCall![1] as object)).toBe(false);
+  });
+
+  it('064 INTERIM — LEGACY issued no-TIN event row → legacy_no_tin_event_needs_remediation, NO receipt #2 side-effects', async () => {
+    // REMOVE-WITH-064-REMEDIATION (site 6/15 — checklist at the guard in
+    // record-payment.ts). legacy-row defensive (remove with spec §6 item 1).
+    //
+    // Supersedes the former "FIX 5" pin that drove a no-TIN event invoice
+    // through recordPayment expecting SUCCESS (forceSeparate receipt) — that
+    // business meaning died with the 064 §105 ROOT FIX: a no-TIN event buyer
+    // can no longer reach 'issued' via plain issueInvoice
+    // (`event_no_tin_requires_paid_issue`), and a LEGACY issued no-TIN row
+    // that predates the as-paid redesign must NOT be payable here — its issue-
+    // time PDF already IS the §105 ใบเสร็จรับเงิน, so paying it would mint
+    // receipt #2 (the §105 double-receipt the redesign kills). The interim
+    // guard rejects with a typed code so operators route the row to the
+    // spec §6 item 1 remediation runbook instead.
+    const legacyNoTinRow = makeNonMemberEventInvoice({
       memberIdentitySnapshot: {
         legal_name: 'Walk-in Buyer Co',
-        tax_id: null, // TIN-less → §105 receipt_separate forced
+        tax_id: null, // TIN-less → legacy §105 receipt-shaped row
         address: '50 Sukhumvit Road',
         primary_contact_name: 'Jane',
         primary_contact_email: 'jane@buyer.example',
@@ -609,38 +707,19 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     });
     const deps = makeDeps(
       true,
-      noTinEventInvoice,
+      legacyNoTinRow,
       makeSettings({ receiptNumberingMode: 'combined' }),
     );
-    let call = 0;
-    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
-      call++;
-      return call === 1
-        ? noTinEventInvoice
-        : makeNonMemberEventInvoice({
-            status: 'paid',
-            memberIdentitySnapshot: {
-              legal_name: 'Walk-in Buyer Co',
-              tax_id: null,
-              address: '50 Sukhumvit Road',
-              primary_contact_name: 'Jane',
-              primary_contact_email: 'jane@buyer.example',
-              member_number: null,
-              member_number_display: null,
-            },
-          });
-    });
     const r = await recordPayment(deps, input);
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
-    // forceSeparate → a receipt sequence IS allocated despite combined mode.
-    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ documentType: 'receipt' }),
-    );
-    // The rendered receipt carries the plain receipt_separate kind, NOT combined.
-    expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
-    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('legacy_no_tin_event_needs_remediation');
+    // The guard fires BEFORE any side-effect: no §87 receipt sequence burned,
+    // no receipt render, no issued→paid UPDATE, no audit emit, no outbox row.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 
   it('non-member EVENT invoice → does NOT flip registration_fee_paid (no F3 member) even with a registration_fee line', async () => {

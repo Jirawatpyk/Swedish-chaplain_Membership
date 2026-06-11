@@ -226,6 +226,17 @@ export interface InvoiceCommon {
   } | null;
 
   /**
+   * 064 — WHAT the main {@link pdf} document actually is, persisted at issue
+   * time: §86/4 'invoice', combined §86/4+§105ทวิ 'receipt_combined', or §105
+   * 'receipt_separate'. NULL on draft ONLY (no main PDF yet) — the DB CHECK
+   * `invoices_non_draft_has_doc_kind` enforces presence on every non-draft
+   * row. Downstream re-renders (J2 credit-note annotation) MUST branch on
+   * this instead of re-deriving, so a receipt-titled original can never be
+   * overwritten by an invoice-titled document.
+   */
+  readonly pdfDocKind: 'invoice' | 'receipt_combined' | 'receipt_separate' | null;
+
+  /**
    * Receipt PDF metadata — written by record-payment at payment time for BOTH
    * numbering modes (separate from `pdf` so the invoice's issue-time hash stays
    * intact for audit). Null on draft/issued; **non-null on paid in either mode**
@@ -293,6 +304,30 @@ export type InvoiceTransitionError =
 
 export function isTerminal(status: InvoiceStatus): boolean {
   return status === 'void' || status === 'credited';
+}
+
+/**
+ * 064 remediation (A1) — the printed §87/§105 number an invoice row should
+ * be DISPLAYED under, shared by the admin detail/list, the portal list/card/
+ * detail, and the more-menu so every surface resolves the same number.
+ *
+ * - Normal rows (membership, bill-first event, as-paid TIN event): the
+ *   invoice-stream `documentNumber` — even when a separate-mode RC receipt
+ *   number also exists, the invoice number stays the row's identity.
+ * - β as-paid no-TIN event rows (and legacy issued no-TIN event rows): the
+ *   invoice-stream pair is legitimately NULL and the printed §105 number
+ *   lives in `receiptDocumentNumberRaw` — fall back to it so the row never
+ *   renders as a "Draft" / em-dash / raw UUID.
+ * - True drafts: both NULL → `null` (callers supply their own draft label).
+ *
+ * Pure + framework-free (Domain); accepts the narrow Pick so presentation
+ * view-models that only carry the two raw strings can call it too.
+ */
+export function displayDocumentNumber(inv: {
+  readonly documentNumber: DocumentNumber | null;
+  readonly receiptDocumentNumberRaw: string | null;
+}): string | null {
+  return inv.documentNumber?.raw ?? inv.receiptDocumentNumberRaw;
 }
 
 /**
@@ -370,10 +405,15 @@ export function assertSnapshotsSet(inv: Invoice): Result<void, InvoiceTransition
 export function canTransition(
   from: InvoiceStatus,
   to: InvoiceStatus,
+  /**
+   * 064 — `draft → paid` (as-paid issuance) is legal ONLY for the event
+   * subject; membership must always pass `issued` (the §86/4 two-step).
+   */
+  subject: 'membership' | 'event',
 ): Result<void, InvoiceTransitionError> {
   if (isTerminal(from)) return err({ code: 'terminal_state', status: from });
   const legal: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
-    draft: ['issued'],
+    draft: subject === 'event' ? ['issued', 'paid'] : ['issued'],
     issued: ['paid', 'void'],
     paid: ['partially_credited', 'credited'],
     partially_credited: ['partially_credited', 'credited'],

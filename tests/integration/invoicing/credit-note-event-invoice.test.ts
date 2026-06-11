@@ -76,6 +76,7 @@ import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audi
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // Non-member buyer WITH a Thai TIN + a contact email (so the credit-note
 // auto-email enqueues — proving the guard is on email, not memberId).
@@ -94,6 +95,8 @@ function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
       render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe('b'.repeat(64)) })),

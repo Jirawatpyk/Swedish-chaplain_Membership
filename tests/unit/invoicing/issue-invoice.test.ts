@@ -24,6 +24,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
+import { ok, err } from '@/lib/result';
 import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
@@ -117,6 +118,8 @@ function makeDraftInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
     voidedByUserId: null,
     autoEmailOnIssue: null,
     pdf: null,
+    // 064 — NULL on draft only; applyIssue persists the §86/4 gate's kind.
+    pdfDocKind: null,
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,
@@ -191,7 +194,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       list: vi.fn(),
         listPaged: vi.fn(),
       applyIssue: vi.fn(async (_tx, input) =>
-        ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf }) as Invoice,
+        ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf, pdfDocKind: input.pdfDocKind }) as Invoice,
       ),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
@@ -199,12 +202,14 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       // Default: returns the status of the provided draft fixture so
       // the lock check passes through to findByIdInTx. Individual
       // tests override this to test status-race branches.
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
+      applyIssueAsPaid: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -216,6 +221,25 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     memberIdentity: {
       getForIssue: vi.fn(async () => member),
       markRegistrationFeePaid: vi.fn(async () => {}),
+    },
+    // 064 S1 — default: the registration is still 'paid' at issuance so
+    // every pre-existing event test flows through the re-check untouched
+    // (membership drafts never invoke the port — subject-scoped).
+    eventRegistrationLookup: {
+      findById: vi.fn(async () =>
+        ok({
+          registrationId: 'reg-uuid-9',
+          eventId: 'event-uuid-9',
+          attendeeName: 'Jane Buyer',
+          attendeeEmail: 'buyer@example.com',
+          attendeeCompany: 'Beta Imports Ltd',
+          ticketPriceThb: 1070,
+          paymentStatus: 'paid',
+          matchType: 'non_member',
+          matchedMemberId: null,
+          pseudonymised: false,
+        }),
+      ),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),
@@ -656,6 +680,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
             sequenceNumber: 1,
             documentNumber: { raw: issueInput.documentNumber } as never,
             pdf: issueInput.pdf,
+            pdfDocKind: issueInput.pdfDocKind,
           } as Invoice;
         }),
       },
@@ -680,10 +705,13 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
   });
 
   // --- 054-event-fee-invoices (Task 9) — §86/4 doc-type kind selection --------
+  // --- amended by 064 Task 7 (§105 ROOT FIX) ----------------------------------
   //
   //   EVENT + buyer TIN     → kind 'invoice' (ใบกำกับภาษี — buyer can claim VAT)
-  //   EVENT + no buyer TIN  → kind 'receipt_separate' (ใบเสร็จรับเงิน — §105
-  //                           receipt, ticket already paid; NO block)
+  //   EVENT + no buyer TIN  → BLOCK `event_no_tin_requires_paid_issue` — a
+  //                           no-TIN event buyer can never be billed first;
+  //                           their only legal document is a §105 receipt at
+  //                           payment time via issueEventInvoiceAsPaid.
   // and the render input must carry vatInclusive:true for the Model-B annotation.
 
   /** Build a non-member event draft with a chosen buyer tax_id. */
@@ -727,27 +755,90 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
     );
+    // 064 — the persisted pdf_doc_kind stays in lockstep with the render kind.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'invoice' }),
+    );
     // Non-member event → never enters the member-lock branch.
     expect(deps.memberIdentity.getForIssue).not.toHaveBeenCalled();
   });
 
-  it("event + NO buyer TIN → renders kind:'receipt_separate' (§105 receipt), NOT blocked, vatInclusive:true", async () => {
+  it('event + NO buyer TIN → err event_no_tin_requires_paid_issue (§105 ROOT FIX)', async () => {
     const deps = makeDeps(makeEventDraft(null), makeSettings(), null);
     const r = await issueInvoice(deps, input);
-    // No block: a TIN-less event buyer is valid (ticket already paid).
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate', vatInclusive: true }),
-    );
+    // 064 §105 ROOT FIX — a no-TIN event buyer can never be billed first;
+    // their only legal document is a §105 receipt, which may exist only at
+    // the moment payment is recorded (issueEventInvoiceAsPaid). Plain issue
+    // is therefore rejected.
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('event_no_tin_requires_paid_issue');
+    // Pre-sequence guard → no §87 sequence number burned, nothing rendered.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
   });
 
-  it('event + whitespace-only buyer tax_id → treated as no-TIN → receipt_separate (trim branch)', async () => {
+  it('event + whitespace-only buyer tax_id → treated as no-TIN → err event_no_tin_requires_paid_issue (trim branch)', async () => {
     const deps = makeDeps(makeEventDraft('   '), makeSettings(), null);
     const r = await issueInvoice(deps, input);
-    expect(r.ok).toBe(true);
-    expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
-    );
+    // Whitespace must be treated as "no TIN" — buyerHasTin trims before the
+    // empty check, so this fires the §105 guard, not the full-tax-invoice path.
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('event_no_tin_requires_paid_issue');
+    // Pre-sequence guard → no §87 sequence number burned.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  // --- 064 S1 — refunded re-check at issuance (TOCTOU vs createEventInvoiceDraft) ----
+  // createEventInvoiceDraft hard-blocks refunded registrations at DRAFT time
+  // only; without an issuance-time re-check, a registration refunded AFTER
+  // drafting could still be billed (asserting a fee the buyer got back).
+
+  it('064 S1 — event registration flipped to refunded after drafting → err registration_refunded, allocator NEVER called', async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null, {
+      eventRegistrationLookup: {
+        findById: vi.fn(async () =>
+          ok({
+            registrationId: 'reg-uuid-9',
+            eventId: 'event-uuid-9',
+            attendeeName: 'Jane Buyer',
+            attendeeEmail: 'buyer@example.com',
+            attendeeCompany: 'Beta Imports Ltd',
+            ticketPriceThb: 1070,
+            paymentStatus: 'refunded',
+            matchType: 'non_member',
+            matchedMemberId: null,
+            pseudonymised: false,
+          }),
+        ),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('registration_refunded');
+    // PRE-sequence guard → no §87 number burned, nothing rendered/applied.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
+  });
+
+  it('064 S1 — event registration lookup err → registration_lookup_failed (pre-allocation)', async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null, {
+      eventRegistrationLookup: {
+        findById: vi.fn(async () => err({ kind: 'lookup_failed' as const })),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  it('064 S1 — MEMBERSHIP invoices never invoke the registration lookup (subject-scoped re-check)', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.eventRegistrationLookup.findById).not.toHaveBeenCalled();
   });
 
   it('matched-member event + member carries a TIN → kind:invoice (member branch, snapshot pinned at issue)', async () => {
@@ -780,9 +871,14 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'invoice', vatInclusive: true }),
     );
+    // 064 — matched-member TIN path persists 'invoice' in lockstep.
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'invoice' }),
+    );
   });
 
-  it('matched-member event + member has NO TIN → receipt_separate (events never block, even matched)', async () => {
+  it('matched-member event + member has NO TIN → err event_no_tin_requires_paid_issue (§105 ROOT FIX)', async () => {
     const eventLine: InvoiceLine = {
       lineId: asInvoiceLineId('line-1'),
       kind: 'event_fee',
@@ -822,12 +918,14 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    // A matched company member with no TIN is a rare data anomaly → receipt,
-    // NOT a block (per the §86/4 ruling). NEVER tax_id_required for an event.
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
-    );
+    // 064 §105 ROOT FIX — even a MATCHED member with no TIN cannot be billed
+    // first for an event; the fee must be recorded as paid (§105 receipt via
+    // issueEventInvoiceAsPaid). Still NOT tax_id_required — the error code is
+    // event-specific so the admin UI can point at the record-as-paid flow.
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('event_no_tin_requires_paid_issue');
+    // Pre-sequence guard → no §87 sequence number burned.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
   });
 
   it('membership → always renders kind:invoice (gate guarantees a TIN was present)', async () => {

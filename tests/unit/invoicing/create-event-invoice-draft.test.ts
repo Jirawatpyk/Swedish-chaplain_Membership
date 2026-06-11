@@ -364,6 +364,21 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
       if (!r.ok) expect(r.error.code).toBe('attendee_erased');
     });
 
+    it('registration_refunded — 064 M-A: refunded registration is HARD-blocked at draft (server-side twin of the form card); nothing persisted', async () => {
+      // spec §2.3: documenting a refunded fee would assert a payment that was
+      // returned — no override exists. The form's hard-block card is the UX
+      // layer; this guard closes the direct-API path.
+      const deps = makeDeps({
+        registration: { kind: 'ok', value: makeRegistration({ paymentStatus: 'refunded' }) },
+      });
+      const r = await createEventInvoiceDraft(deps, { ...baseInput, buyer: nonMemberBuyer });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('registration_refunded');
+      expect(deps.invoiceRepo.insertDraft).not.toHaveBeenCalled();
+      // No buyer was resolved + no draft exists — nothing to audit either.
+      expect(deps.audit.emit).not.toHaveBeenCalled();
+    });
+
     it('no_fee_free_event — ticketPriceThb null and no override', async () => {
       const deps = makeDeps({
         registration: { kind: 'ok', value: makeRegistration({ ticketPriceThb: null }) },

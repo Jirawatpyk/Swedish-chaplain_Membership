@@ -14,7 +14,12 @@
  */
 import { INSIGHT_CATALOGUE, type InsightKey } from './smart-insight';
 
-/** Local Y-M-D in the given IANA timezone, via the en-CA "YYYY-MM-DD" format. */
+/**
+ * Local Y-M-D in the given IANA timezone, via the en-CA "YYYY-MM-DD" format.
+ * (Same Intl idiom as the shared `src/lib/bangkok-today.ts` — kept local
+ * here because this Domain variant takes an arbitrary instant + timezone,
+ * not wall-clock Bangkok "now"; wave-4 S14.)
+ */
 function localYmd(at: Date, timeZone: string): { y: number; m: number; d: number } {
   const ymd = new Intl.DateTimeFormat('en-CA', {
     timeZone,

@@ -439,6 +439,7 @@ async function seedInvoicesIfMissing(
         planId: 'regular',
         draftByUserId: adminUserId,
         status: s.status,
+        pdfDocKind: 'invoice',
         fiscalYear: 2026,
         sequenceNumber: s.sequenceNumber,
         documentNumber: s.docNumber,

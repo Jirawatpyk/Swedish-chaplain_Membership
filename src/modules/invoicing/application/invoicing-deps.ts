@@ -36,6 +36,7 @@ import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registr
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
 import type { CreateEventInvoiceDraftDeps } from './use-cases/create-event-invoice-draft';
 import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
+import type { IssueEventInvoiceAsPaidDeps } from './use-cases/issue-event-invoice-as-paid';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
 import type { GetReceiptPdfSignedUrlDeps } from './use-cases/get-receipt-pdf-signed-url';
@@ -94,6 +95,8 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check for event drafts.
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: vercelBlobAdapter,
@@ -101,6 +104,39 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+  };
+}
+
+/**
+ * 064 — composition for the as-paid event issuance use-case. Same adapter
+ * wiring as `makeIssueInvoiceDeps`; the optional `onPaidCallbacks` parameter
+ * mirrors `makeRecordPaymentDeps` (F8 registers its cycle-completion listener
+ * at the route when `FEATURE_F8_RENEWALS` is on — the as-paid flow IS a
+ * payment record, so the same cross-module hook applies).
+ */
+export function makeIssueEventInvoiceAsPaidDeps(
+  tenantId: string,
+  onPaidCallbacks?: ReadonlyArray<
+    (
+      evt: import('@/modules/invoicing/domain/f4-invoice-paid-event').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
+  >,
+): IssueEventInvoiceAsPaidDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (TOCTOU vs draft-time check).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }
 

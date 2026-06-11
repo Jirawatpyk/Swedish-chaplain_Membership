@@ -24,6 +24,7 @@ import {
   makeListInvoicesDeps,
   isTenantInvoiceSetupComplete,
   computeIsOverdue,
+  displayDocumentNumber,
 } from '@/modules/invoicing';
 import {
   listSucceededPaymentMethods,
@@ -350,7 +351,12 @@ export default async function AdminInvoicesPage({
   const rows: InvoicesTableRow[] = invoicesResult.ok
     ? invoicesResult.value.rows.map((r) => ({
         invoiceId: r.invoiceId,
-        documentNumber: r.documentNumber?.raw ?? '—',
+        // 064 remediation S7 — display number, never '—' on a numbered row:
+        // β as-paid no-TIN rows have a NULL invoice document number and carry
+        // their printed §105 number in receipt_document_number_raw. The
+        // shared helper resolves whichever exists; only true drafts fall
+        // back to the em-dash.
+        documentNumber: displayDocumentNumber(r) ?? '—',
         status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
         // 054-event-fee-invoices — subject discriminator drives the Event
         // chip; the buyer column renders membership + event invoices alike.
@@ -398,6 +404,10 @@ export default async function AdminInvoicesPage({
         // a "preparing…" affordance for paid + pending/null/failed
         // (mirrors portal list page receipt-pending pattern).
         receiptPdfStatus: r.receiptPdfStatus,
+        // 064 remediation S7 — the main pdf IS a §105 receipt (β as-paid
+        // no-TIN / legacy issued no-TIN event rows): the table flips the
+        // main download to the Receipt label + aria.
+        mainDownloadIsReceipt: r.pdfDocKind === 'receipt_separate',
       }))
     : [];
 

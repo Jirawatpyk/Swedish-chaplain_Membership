@@ -48,6 +48,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
+import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 
 // ---- Fixtures ---------------------------------------------------------------
 
@@ -173,6 +174,11 @@ function makeIssuedEventInvoice(overrides: InvoiceFixtureOverrides = {}): Invoic
       sha256: Sha256Hex.ofUnsafe('c'.repeat(64)),
       templateVersion: 1,
     },
+    // 064 Task 12 — what the main PDF IS (migration 0211). The factory default
+    // models a bill-first TIN event invoice, whose issue-time render was a
+    // §86/4 ใบกำกับภาษี ('invoice'). As-paid fixtures override this to
+    // 'receipt_combined' / 'receipt_separate'.
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,
@@ -268,6 +274,7 @@ function makeDeps(
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
+      findByIdInTxForUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => (invoice?.status ?? null) as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(async () => {}),
       applyInvoicePdfRegeneration: vi.fn(async () => {}),
@@ -600,6 +607,38 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     expect(r.error.code).toBe('receipt_not_creditable');
   });
 
+  it('064 Task 10 — BLOCKS a β receipt-STREAM row (documentNumber NULL + receipt raw set) with receipt_not_creditable, NOT no_snapshot_on_invoice', async () => {
+    // An as-paid no-TIN event invoice (issueEventInvoiceAsPaid β path) is a
+    // LEGAL paid row whose invoice-stream pair is genuinely NULL — its number
+    // lives in receipt_document_number_raw (migration 0212). The §86/10 gate
+    // must fire BEFORE the snapshot-completeness guard, otherwise the legal β
+    // shape is misclassified as a corrupted row (`!loaded.documentNumber` →
+    // no_snapshot_on_invoice) and the operator gets the wrong error.
+    const invoice = makeIssuedEventInvoice({
+      memberIdentitySnapshot: BUYER_SNAP_NO_TIN,
+      sequenceNumber: null,
+      documentNumber: null,
+      receiptDocumentNumberRaw: 'RC-2026-000007',
+      pdfDocKind: 'receipt_separate',
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      tenantId: 'test-swecham',
+      actorUserId: 'actor-user',
+      invoiceId: INVOICE_ID,
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected receipt_not_creditable, got ok');
+    expect(r.error.code).toBe('receipt_not_creditable');
+    // No §87 CN number burned, no render — same pre-allocation discipline.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+  });
+
   it('does NOT block a MEMBERSHIP invoice with no TIN (subject gate — the guard is event-only)', async () => {
     // A membership invoice can never legitimately be no-TIN (issue-invoice
     // blocks it with tax_id_required), but if such a row existed the §86/10
@@ -629,5 +668,125 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     // proceeds (succeeds end-to-end through the mocked happy path).
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
     expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalled();
+  });
+});
+
+// ---- 064 Task 12 — J2 annotation re-render preserves pdf_doc_kind -----------
+//
+// The J2 step re-renders the ORIGINAL invoice PDF (CREDITED overlay + CN-ref
+// footer) and OVERWRITES the main blob. The re-render MUST reproduce what the
+// main blob actually held — `invoices.pdf_doc_kind` (migration 0211) is the
+// record of what was rendered. Reachable parents after the §86/10 gate:
+//
+//   - membership rows           → pdf_doc_kind='invoice'
+//   - bill-first TIN event rows → 'invoice' (record-payment writes its
+//     receipt_combined bytes to the SEPARATE receipt blob; the main blob is
+//     frozen at issue-time — F4 final-review C1)
+//   - as-paid TIN event rows    → 'receipt_combined' (the main blob IS the
+//     combined ใบกำกับภาษี/ใบเสร็จรับเงิน — the only §105ทวิ receipt evidence)
+//
+// A hardcoded kind:'invoice' would re-title an as-paid parent's combined
+// receipt as a plain ใบกำกับภาษี, destroying 10-year §87/3 evidence.
+describe('issueCreditNote — J2 annotation kind threading (064 Task 12)', () => {
+  const baseInput = {
+    tenantId: 'test-swecham',
+    actorUserId: 'actor-user',
+    invoiceId: INVOICE_ID,
+    creditTotalSatang: 12_500n, // partial → J2 annotation re-render runs
+    reason: 'partial refund',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** The J2 annotation render call — the one render that is NOT the CN PDF. */
+  function annotationRenderInput(deps: IssueCreditNoteDeps): PdfRenderInput {
+    const calls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[0] as PdfRenderInput,
+    );
+    const annotation = calls.find((c) => c.kind !== 'credit_note');
+    expect(annotation, 'expected a J2 annotation re-render call').toBeDefined();
+    return annotation!;
+  }
+
+  it('as-paid TIN event parent (pdf_doc_kind=receipt_combined) → annotation re-render keeps kind=receipt_combined', async () => {
+    const invoice = makeIssuedEventInvoice({ pdfDocKind: 'receipt_combined' });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-j2-aspaid' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    const annotation = annotationRenderInput(deps);
+    expect(annotation.kind).toBe('receipt_combined');
+    expect(annotation.creditedAnnotation).toBeTruthy();
+  });
+
+  it('bill-first TIN event parent (pdf_doc_kind=invoice) → annotation re-render keeps kind=invoice', async () => {
+    const invoice = makeIssuedEventInvoice(); // factory default pdfDocKind='invoice'
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-j2-billfirst' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    expect(annotationRenderInput(deps).kind).toBe('invoice');
+  });
+
+  it('membership parent (pdf_doc_kind=invoice) → annotation re-render keeps kind=invoice', async () => {
+    const invoice = makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-99',
+      planId: 'plan-x',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+      pdfDocKind: 'invoice',
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-j2-membership' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    expect(annotationRenderInput(deps).kind).toBe('invoice');
+  });
+
+  it('DRIFT: column disagrees with derivation → the COLUMN wins (it records what was rendered)', async () => {
+    // Fabricated corrupt shape: a MEMBERSHIP row whose pdf_doc_kind says
+    // 'receipt_combined'. `inferEventDocumentKind('membership', …)` can only
+    // ever derive 'invoice' — but the column is the record of what the main
+    // blob actually holds, so the re-render MUST follow the column. Following
+    // the derivation here would overwrite a receipt-titled blob with an
+    // invoice-titled one (the exact §105ทวิ evidence-destruction this task
+    // closes).
+    const invoice = makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-99',
+      planId: 'plan-x',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+      pdfDocKind: 'receipt_combined',
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-j2-drift' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    expect(annotationRenderInput(deps).kind).toBe('receipt_combined');
+  });
+
+  it('legacy NULL column (pre-0211 shape) → defensive fallback to kind=invoice', async () => {
+    // `invoices_non_draft_has_doc_kind` makes a NULL column unreachable on a
+    // live non-draft row, but the Domain type allows null — the fallback must
+    // be the pre-064 behaviour ('invoice'), never a crash.
+    const invoice = makeIssuedEventInvoice({ pdfDocKind: null });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-j2-null' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    expect(annotationRenderInput(deps).kind).toBe('invoice');
   });
 });

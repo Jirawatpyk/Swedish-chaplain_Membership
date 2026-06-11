@@ -258,6 +258,46 @@ export async function issueCreditNote(
       // totals, member id, and the current credited_total.
       const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) return err({ code: 'invoice_not_found' });
+
+      // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
+      // ใบเสร็จรับเงิน (`receipt_separate`). A credit note can only adjust a
+      // §86/4 tax invoice (ใบกำกับภาษี, kind='invoice'); a buyer who never
+      // received a TIN-bearing tax invoice has no input VAT to reverse, so a
+      // §86/10 ใบลดหนี้ against their §105 receipt is legally void.
+      //
+      // ORDER (064 Task 10) — this gate runs BEFORE the snapshot-completeness
+      // guard below: a β as-paid no-TIN row (issueEventInvoiceAsPaid,
+      // migration 0212) is a LEGAL paid row whose invoice-stream
+      // `documentNumber` is genuinely NULL (its number lives in
+      // `receipt_document_number_raw`), so the completeness guard's
+      // `!loaded.documentNumber` arm would misclassify it as a corrupted row
+      // (`no_snapshot_on_invoice`) when the §86/10 verdict is the truthful
+      // rejection. The gate needs only `invoiceSubject` + the buyer
+      // snapshot's TIN, so hoisting it is safe — and the `?.` is now
+      // load-bearing for a (corrupt) event row with a missing snapshot,
+      // which resolves to no-TIN → receipt_separate → blocked here.
+      //
+      // DETECTION — reconstructed from the persisted `invoiceSubject` + the
+      // BUYER snapshot's TIN via the shared `inferEventDocumentKind`,
+      // mirroring the issue-time gates EXACTLY so issue-time, pay-time, and
+      // credit-time stay in lockstep (FIX 5 shared Domain discriminator).
+      // `invoices.pdf_doc_kind` (migration 0211) persists the same verdict;
+      // the J2 annotation re-render reads the column (Task 12) while this
+      // gate keeps the derivation so the lockstep sites share one source.
+      //
+      // Runs BEFORE `allocateNext` (POST-SEQUENCE zone), so a blocked attempt
+      // never burns a §87 credit-note sequence number — the §87 CN stream
+      // stays gap-free. Mirrors the issue-invoice rule that the doc-type gate
+      // precedes sequence allocation.
+      const isReceiptSeparate =
+        inferEventDocumentKind(
+          loaded.invoiceSubject,
+          loaded.memberIdentitySnapshot?.tax_id,
+        ) === 'receipt_separate';
+      if (isReceiptSeparate) {
+        return err({ code: 'receipt_not_creditable' });
+      }
+
       if (
         !loaded.memberIdentitySnapshot ||
         !loaded.tenantIdentitySnapshot ||
@@ -322,43 +362,6 @@ export async function issueCreditNote(
           return err({ code: 'invalid_event_invoice' });
         }
         eventRegistrationId = rawEventRegistrationId;
-      }
-
-      // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
-      // ใบเสร็จรับเงิน (`receipt_separate`). A credit note can only adjust a
-      // §86/4 tax invoice (ใบกำกับภาษี, kind='invoice'); a buyer who never
-      // received a TIN-bearing tax invoice has no input VAT to reverse, so a
-      // §86/10 ใบลดหนี้ against their §105 receipt is legally void.
-      //
-      // DETECTION — there is NO persisted `pdf_kind`/`pdf_doc_kind` column on
-      // `invoices` (the resolved doc-type is computed at render time only). So
-      // we RECONSTRUCT `receipt_separate` from the persisted `invoiceSubject` +
-      // the BUYER snapshot's TIN via the shared `inferEventDocumentKind`,
-      // mirroring `issueInvoice`'s issue-time `pdfKind` resolution EXACTLY so the
-      // issue-time gate and this credit-time gate stay in lockstep. The
-      // snapshot-completeness guard above guarantees
-      // `memberIdentitySnapshot` is non-null here; the `?.` is defensive parity
-      // with the issue-invoice expression. (TIN check trims whitespace, matching
-      // the issue-invoice + record-payment gates.)
-      //
-      // Runs BEFORE `allocateNext` (POST-SEQUENCE zone), so a blocked attempt
-      // never burns a §87 credit-note sequence number — the §87 CN stream stays
-      // gap-free. Mirrors the issue-invoice rule that the doc-type gate precedes
-      // sequence allocation.
-      // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
-      // !== ''` + the event/no-TIN reconstruction, duplicated across
-      // issue-invoice + record-payment). `inferEventDocumentKind` resolves the
-      // SAME `receipt_separate` verdict the issue-time gate used, keeping the
-      // issue-time and credit-time gates in lockstep. The `?.` retains the
-      // defensive parity of the former expression (the snapshot-completeness
-      // guard above already guarantees non-null).
-      const isReceiptSeparate =
-        inferEventDocumentKind(
-          loaded.invoiceSubject,
-          loaded.memberIdentitySnapshot?.tax_id,
-        ) === 'receipt_separate';
-      if (isReceiptSeparate) {
-        return err({ code: 'receipt_not_creditable' });
       }
 
       if (!settings) return err({ code: 'settings_missing' });
@@ -626,13 +629,24 @@ export async function issueCreditNote(
           { pdfRender: deps.pdfRender, blob: deps.blob },
           {
             renderInput: {
-              // §86/10 doc-type gate (final-review HIGH 1): a §105 receipt_separate
-              // parent is rejected by the `receipt_not_creditable` guard above
-              // BEFORE this point is ever reached, so ONLY kind='invoice' (§86/4
-              // ใบกำกับภาษี) parents arrive here. Hardcoding 'invoice' is therefore
-              // tax-correct — the CREDITED overlay can only ever stamp a genuine
-              // tax invoice, never a §105 ใบเสร็จรับเงิน.
-              kind: 'invoice',
+              // 064 Task 12 — reproduce what the MAIN blob actually holds.
+              // `invoices.pdf_doc_kind` (migration 0211) is the persisted
+              // record of the issue-time render; it WINS over any derivation
+              // (the as-paid TIN parent derives 'invoice' from its TIN, but
+              // its main blob IS the combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+              // Reachable parents after the §86/10 gate above:
+              //   - membership rows           → 'invoice'
+              //   - bill-first TIN event rows → 'invoice' (record-payment's
+              //     receipt_combined bytes live in the SEPARATE receipt blob;
+              //     the main blob stays frozen at issue — final-review C1)
+              //   - as-paid TIN event rows    → 'receipt_combined' (the main
+              //     blob is the only §105ทวิ receipt evidence, 10y retention)
+              // 'receipt_separate' parents are rejected by the
+              // `receipt_not_creditable` guard before this point. The NULL
+              // fallback is defensive only — `invoices_non_draft_has_doc_kind`
+              // forbids NULL on any non-draft row, and falling back to
+              // 'invoice' matches the pre-064 behaviour.
+              kind: loaded.pdfDocKind ?? 'invoice',
               templateVersion: loaded.pdf.templateVersion,
               documentNumber: loaded.documentNumber,
               issueDate: loaded.issueDate,

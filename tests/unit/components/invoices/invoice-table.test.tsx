@@ -107,6 +107,7 @@ function baseRow(overrides: Partial<InvoicesTableRow>): InvoicesTableRow {
     hasReceiptPdf: false,
     receiptPdfStatus: null,
     buyerSubtitle: null,
+    mainDownloadIsReceipt: false,
     ...overrides,
   };
 }
@@ -319,6 +320,53 @@ describe('<InvoicesTable> receipt-number combined-hint gate', () => {
     // …and the combined-mode hint is NOT shown (separate mode owns a
     // distinct receipt document number, so there is nothing to disambiguate).
     expect(screen.queryByLabelText(COMBINED_HINT_LABEL)).toBeNull();
+  });
+});
+
+/**
+ * β as-paid main-download labeling (064 remediation S7).
+ *
+ * A β as-paid no-TIN event row persists its MAIN pdf as the final §105
+ * receipt (`pdfDocKind 'receipt_separate'`, NULL invoice document number,
+ * printed number in `receiptDocumentNumberRaw`, NO separate receipt blob).
+ * The list page maps `displayDocumentNumber(r)` into `documentNumber` and
+ * sets `mainDownloadIsReceipt`, so the table must:
+ *   - render the printed §105 number in the Number column (never '—'), and
+ *   - flip the main download button to the Receipt label + receipt aria
+ *     (the file the admin grabs is legally a receipt, not a tax invoice).
+ */
+describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => {
+  it('β row: Number column shows the §105 number; main download wears the Receipt label + receipt aria', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        documentNumber: 'RC-2026-000777',
+        receiptDocumentNumberRaw: 'RC-2026-000777',
+        hasReceiptPdf: false, // β — no separate receipt blob exists
+        receiptPdfStatus: 'rendered',
+        mainDownloadIsReceipt: true,
+      }),
+    ]);
+    // Number column link carries the printed §105 number (pre-fix: '—').
+    expect(
+      screen.getByRole('link', { name: 'RC-2026-000777' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
+
+    const btn = screen.getByTestId('row-download-invoice');
+    expect(btn).toHaveTextContent('Receipt');
+    expect(btn).toHaveAttribute('aria-label', 'Download receipt RC-2026-000777');
+
+    // No second receipt button (no receipt blob) and no preparing affordance
+    // (receiptPdfStatus is 'rendered').
+    expect(screen.queryByTestId('row-download-receipt')).toBeNull();
+    expect(screen.queryByTestId('row-receipt-pending')).toBeNull();
+  });
+
+  it('default rows keep the plain Invoice label + invoice aria (byte-identical pre-064 behaviour)', () => {
+    renderTable([baseRow({})]);
+    const btn = screen.getByTestId('row-download-invoice');
+    expect(btn).toHaveTextContent('Invoice');
+    expect(btn).toHaveAttribute('aria-label', 'Download invoice INV-2026-0001');
   });
 });
 

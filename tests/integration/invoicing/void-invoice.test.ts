@@ -29,6 +29,13 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+// 064 W1 S32 — direct-insert legacy event fixture (non-member void path).
+import {
+  events,
+  eventRegistrations,
+  type NewEventRow,
+  type NewEventRegistrationRow,
+} from '@/modules/events/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -97,6 +104,7 @@ async function seedInvoice(
       planId,
       draftByUserId: user.userId,
       status,
+      pdfDocKind: 'invoice',
       fiscalYear: 2026,
       sequenceNumber,
       documentNumber: `VDIT-2026-${String(sequenceNumber).padStart(6, '0')}`,
@@ -532,5 +540,149 @@ describe('F4 US5 — void-invoice (T098)', () => {
         ),
     );
     expect(probeRows.length).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
+  it('064 W1 S32 — LEGACY non-member issued no-TIN event row voids end-to-end (remediation Step 2.1) with non-timeline audit + kind-true re-render', async () => {
+    // Direct-insert fixture (record-payment-event-invoice.test.ts pattern):
+    // a PRE-064 legacy event row — issued, INVOICE-stream number, no-TIN
+    // buyer snapshot, pdf_doc_kind backfilled to 'receipt_separate'
+    // (migration 0211). The real flow can no longer produce this shape;
+    // these are exactly the rows the remediation runbook voids.
+    const eventId = randomUUID();
+    const regId = randomUUID();
+    const legacyInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: `evt-void-legacy-${regId.slice(0, 8)}`,
+        name: 'Void Legacy Gala',
+        startDate: new Date('2026-03-10T11:00:00Z'),
+      } satisfies NewEventRow);
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: `att-void-legacy-${regId.slice(0, 8)}`,
+        attendeeEmail: 'sim.walkin@void.test',
+        attendeeName: 'Sim Walk-in',
+        attendeeCompany: null,
+        matchType: 'non_member',
+        ticketType: 'Standard',
+        ticketPriceThb: 1070,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-03-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: legacyInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planYear: null,
+        planId: null,
+        draftByUserId: user.userId,
+        status: 'issued',
+        // Pre-064 shape: the issue-time main PDF already IS the §105 receipt.
+        pdfDocKind: 'receipt_separate',
+        fiscalYear: 2026,
+        sequenceNumber: 999_101,
+        documentNumber: 'VDIT-2026-999101',
+        issueDate: '2026-03-18',
+        dueDate: '2026-04-17',
+        subtotalSatang: 100_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7_000n,
+        totalSatang: 107_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: null,
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: {
+          legal_name: 'Sim Walk-in',
+          tax_id: null,
+          address: '50 Simulated Road, Bangkok',
+          primary_contact_name: 'Sim Walk-in',
+          primary_contact_email: 'sim.walkin@void.test',
+        },
+        autoEmailOnIssue: true,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${legacyInvoiceId}_v1.pdf`,
+        pdfSha256: ORIGINAL_SHA,
+        pdfTemplateVersion: 1,
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId: legacyInvoiceId,
+        kind: 'event_fee',
+        descriptionTh: 'ค่าเข้าร่วมงาน Void Legacy Gala (2026-03-10)',
+        descriptionEn: 'Event: Void Legacy Gala (2026-03-10)',
+        unitPriceSatang: 107_000n,
+        totalSatang: 107_000n,
+        position: 1,
+      });
+    });
+
+    const deps = makeDeps(tenant.ctx.slug);
+    const voidReqId = `int-void-legacy-${legacyInvoiceId}`;
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: voidReqId,
+      invoiceId: legacyInvoiceId,
+      voidReason: 'legacy no-TIN event document — 064 remediation',
+    });
+    expect(r.ok, r.ok ? 'ok' : `void err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+
+    // Row committed as void; §87 number retained (never reused).
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenant.ctx.slug),
+            eq(invoices.invoiceId, legacyInvoiceId),
+          ),
+        ),
+    );
+    expect(row!.status).toBe('void');
+    expect(row!.sequenceNumber).toBe(999_101);
+    expect(row!.voidReason).toBe('legacy no-TIN event document — 064 remediation');
+
+    // S31 — the VOID re-render is kind-true: the template gets the
+    // persisted pdf_doc_kind so a §105 receipt original keeps its title.
+    const renderInput = deps.renderCalls[0] as {
+      kind: string;
+      voidUnderlyingKind?: string;
+    };
+    expect(renderInput.kind).toBe('void_stamped_invoice');
+    expect(renderInput.voidUnderlyingKind).toBe('receipt_separate');
+
+    // Non-timeline audit branch: payload has event_registration_id, NO
+    // member_id (the F3 timeline filter keys on payload->>'member_id').
+    const voidedRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_voided'),
+            eq(auditLog.requestId, voidReqId),
+          ),
+        ),
+    );
+    expect(voidedRows).toHaveLength(1);
+    const payload = voidedRows[0]!.payload as Record<string, unknown>;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe(regId);
+    expect(payload.invoice_id).toBe(legacyInvoiceId);
+
+    // Cancellation outbox enqueued to the walk-in buyer.
+    expect(deps.outboxCalls).toHaveLength(1);
   }, 60_000);
 });

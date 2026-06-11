@@ -47,6 +47,11 @@ import { events, eventRegistrations } from '@/modules/events/infrastructure/sche
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { POST as redactCron } from '@/app/api/cron/invoicing/redact-expired-event-buyers/route';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
+import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { splitVatInclusive } from '@/modules/invoicing';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
@@ -126,6 +131,8 @@ const ISSUED_NUMBERS = {
 /** Issued tax-document PDF blob keys for the eligible (>10y) event invoice. */
 const OLD_INVOICE_PDF_KEY = 'test/redact-evt.pdf';
 const OLD_RECEIPT_PDF_KEY = 'test/redact-evt-receipt.pdf';
+/** Combined-PDF blob key for the eligible (>10y) AS-PAID event invoice (064 T15). */
+const OLD_ASPAID_PDF_KEY = 'test/redact-evt-aspaid.pdf';
 
 describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member event buyers', () => {
   let tenant: TestTenant;
@@ -135,6 +142,11 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
   // (a) eligible: non-member event invoice issued > 10y ago.
   let oldEventInvoiceId: string;
   let oldRegId: string;
+  // (a2 — 064 T15) eligible: non-member event invoice issued-AS-PAID > 10y ago
+  // (status='paid', NEVER 'issued' — pins that the eligibility predicate is
+  // `status <> 'draft'`, not `status = 'issued'`).
+  let oldAsPaidInvoiceId: string;
+  let oldAsPaidRegId: string;
   // (b) ineligible: non-member event invoice issued < 10y ago.
   let recentEventInvoiceId: string;
   let recentRegId: string;
@@ -161,6 +173,8 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     eventId = randomUUID();
     oldEventInvoiceId = randomUUID();
     oldRegId = randomUUID();
+    oldAsPaidInvoiceId = randomUUID();
+    oldAsPaidRegId = randomUUID();
     recentEventInvoiceId = randomUUID();
     recentRegId = randomUUID();
     oldMembershipInvoiceId = randomUUID();
@@ -238,6 +252,20 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       });
       await tx.insert(eventRegistrations).values({
         tenantId: tenant.ctx.slug,
+        registrationId: oldAsPaidRegId,
+        eventId,
+        externalId: 'att_old_aspaid',
+        attendeeEmail: 'jane@old-buyer.example',
+        attendeeName: 'Jane Doe',
+        attendeeCompany: 'Old Buyer Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2014-09-01T03:00:00Z'),
+      });
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
         registrationId: recentRegId,
         eventId,
         externalId: 'att_recent',
@@ -270,6 +298,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2014,
           sequence_number = 900001,
           document_number = 'EVT14-900001',
@@ -309,6 +338,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2024,
           sequence_number = 900002,
           document_number = 'EVT24-900002',
@@ -350,6 +380,7 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2014,
           sequence_number = 900003,
           document_number = 'EVT14-900003',
@@ -368,7 +399,83 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
           pdf_template_version = 1
         WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${oldMembershipInvoiceId}
       `);
+
+      // (a2 — 064 T15) draft for the AS-PAID row; promoted below via the REAL
+      // `applyIssueAsPaid` repo seam (the production single-UPDATE draft→paid)
+      // so the fixture satisfies every paid/non-draft CHECK exactly as prod.
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: oldAsPaidInvoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: oldAsPaidRegId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
     });
+
+    // (a2 — 064 T15) promote draft→paid via the production repo seam with a
+    // back-dated payment (issue = due = payment = 12y ago → >10y eligible).
+    // The row lands on status='paid' with NO intermediate 'issued' state —
+    // exactly the as-paid lifecycle whose redaction eligibility this file pins.
+    {
+      const split = splitVatInclusive(Money.fromSatangUnsafe(10004n), 700n);
+      const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+      await repo.withTx(async (tx) =>
+        repo.applyIssueAsPaid(tx, {
+          tenantId: tenant.ctx.slug,
+          invoiceId: asInvoiceId(oldAsPaidInvoiceId),
+          fiscalYear: 2014,
+          // Wave-4 S26 — the raw-inserted draft above carries NO lines, so
+          // the echoed lines are honestly empty (matches the DB truth; this
+          // redaction fixture never reads them).
+          lines: [],
+          numbering: {
+            kind: 'invoice_stream',
+            sequenceNumber: 900004,
+            // MUST parse as a DocumentNumber (`PREFIX-YYYY-NNNNNN`) — the
+            // repo reloads the row through the domain mapper after the
+            // UPDATE and rejects malformed numbers. (The raw-UPDATE fixtures
+            // above never round-trip through the mapper, so their shorter
+            // 'EVT14-*' shape is tolerated there.)
+            documentNumber: 'EVT-2014-900004',
+          },
+          issueDate: '2014-06-01',
+          subtotalSatang: split.subtotal.satang,
+          vatRate: '0.0700',
+          vatSatang: split.vat.satang,
+          totalSatang: Money.fromSatangUnsafe(10004n).satang,
+          tenantIdentitySnapshot: {
+            legal_name_th: 'หอการค้า',
+            legal_name_en: 'Chamber',
+            tax_id: '0000000000000',
+            address_th: 'Bangkok',
+            address_en: 'Bangkok',
+            logo_blob_key: null,
+          },
+          memberIdentitySnapshot: {
+            ...BUYER,
+            member_number: null,
+            member_number_display: null,
+          },
+          pdf: {
+            blobKey: OLD_ASPAID_PDF_KEY,
+            sha256: Sha256Hex.ofUnsafe('0'.repeat(64)),
+            templateVersion: 1,
+          },
+          pdfDocKind: 'receipt_combined',
+          paymentMethod: 'cash',
+          paymentReference: null,
+          paymentNotes: null,
+          paymentRecordedByUserId: user.userId,
+          paymentDate: '2014-06-01',
+        }),
+      );
+    }
   }, 90_000);
 
   afterAll(async () => {
@@ -485,6 +592,35 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     const allDeletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
     expect(allDeletedKeys).not.toContain('test/redact-evt-recent.pdf');
     expect(allDeletedKeys).not.toContain('test/redact-mem.pdf');
+
+    // (a2 — 064 T15) AS-PAID rows age out on the SAME schedule. The route's
+    // eligibility predicate is `status <> 'draft'` (NOT `status = 'issued'`):
+    // an event ticket issued-as-paid lands draft→paid with NO 'issued' stop,
+    // and its buyer PII must be tombstoned + its combined PDF purged exactly
+    // like a conventionally-issued row.
+    const asPaidTombstoned = await readSnapshot(oldAsPaidInvoiceId);
+    expect(asPaidTombstoned.legal_name).toBe('[REDACTED]');
+    expect(asPaidTombstoned.address).toBe('[REDACTED]');
+    expect(asPaidTombstoned.primary_contact_email).toBe('');
+    expect(asPaidTombstoned.tax_id).toBeNull();
+    const [asPaidRow] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, oldAsPaidInvoiceId)),
+      );
+    // Financial / lifecycle facts preserved — still a paid §86/4 record.
+    expect(asPaidRow!.status).toBe('paid');
+    expect(asPaidRow!.documentNumber).toBe('EVT-2014-900004');
+    expect(BigInt(asPaidRow!.totalSatang!.toString())).toBe(10004n);
+    expect(asPaidRow!.paymentDate).toBe('2014-06-01');
+    // Exactly one audit row for the as-paid invoice.
+    const forAsPaid = auditRows.filter(
+      (r) => (r.payload as Record<string, unknown>).invoice_id === oldAsPaidInvoiceId,
+    );
+    expect(forAsPaid).toHaveLength(1);
+    // Its combined-PDF bytes were erased.
+    expect(allDeletedKeys).toContain(OLD_ASPAID_PDF_KEY);
   }, 90_000);
 
   it('is idempotent — re-running does NOT re-redact or emit a second audit row', async () => {
@@ -504,6 +640,11 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     );
     // Still exactly one — the already-tombstoned row is skipped by the predicate.
     expect(forOldInvoice).toHaveLength(1);
+    // (064 T15) the as-paid row is idempotent on the same predicate.
+    const forAsPaid = auditRows.filter(
+      (r) => (r.payload as Record<string, unknown>).invoice_id === oldAsPaidInvoiceId,
+    );
+    expect(forAsPaid).toHaveLength(1);
   }, 90_000);
 
   it('does NOT weaken the trigger: a normal (GUC-unset) member_identity_snapshot UPDATE on an issued row STILL raises immutability', async () => {
@@ -680,6 +821,7 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2024,
           sequence_number = 910001,
           document_number = 'EVT24-910001',
@@ -758,6 +900,17 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
     expect(msg!).toMatch(/snapshot columns are immutable/i);
   }, 60_000);
 
+  it('NORMAL path locks pdf_doc_kind (raises — migration 0214, wave-3 S11)', async () => {
+    // No legitimate writer updates pdf_doc_kind post-draft: applyIssue /
+    // applyIssueAsPaid set it only in the draft→X transition (trigger
+    // early-return), and every re-render path (J2 receipt, void stamp,
+    // pdf-regeneration) updates sha256/receipt_* columns ONLY. Re-titling
+    // the persisted §86/4 document class on a live row is corruption.
+    const msg = await expectNormalRaise(sql`pdf_doc_kind = 'receipt_separate'`);
+    expect(msg, 'expected immutability raise on pdf_doc_kind change').not.toBeNull();
+    expect(msg!).toMatch(/snapshot columns are immutable/i);
+  }, 60_000);
+
   it('GUC path STILL locks the 4 event cols + financials (raises with the redaction-only message)', async () => {
     // Under the GUC, every event/financial column is still rejected — only
     // member_identity_snapshot + pii_blob_purged_at may change.
@@ -767,6 +920,9 @@ describe('invoices immutability — event discriminator cols + pii_blob_purged_a
       sql`event_registration_id = ${randomUUID()}`,
       sql`vat_inclusive = false`,
       sql`total_satang = 1`,
+      // 0214 (wave-3 S11) — the redaction sweeper tombstones snapshot PII
+      // only; the §86/4 document class stays locked even under the GUC.
+      sql`pdf_doc_kind = 'receipt_separate'`,
     ]) {
       let caught: unknown = null;
       try {
@@ -924,6 +1080,7 @@ describe('redact cron — retryable PDF-blob purge via pii_blob_purged_at (HIGH-
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2013,
           sequence_number = 920001,
           document_number = 'EVT13-920001',
@@ -1119,6 +1276,7 @@ describe('redact cron — audit-once under a concurrent pre-tombstone (FIX 1)', 
       await tx.execute(sql`
         UPDATE invoices SET
           status = 'issued',
+          pdf_doc_kind = 'invoice',
           fiscal_year = 2013,
           sequence_number = 930001,
           document_number = 'EVT13-930001',

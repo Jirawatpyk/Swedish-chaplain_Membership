@@ -147,6 +147,7 @@ function buildInvoice(
     voidedByUserId: null,
     autoEmailOnIssue: null,
     pdf: { blobKey: 'k', sha256: sha(), templateVersion: 1 },
+    pdfDocKind: 'invoice',
     receiptPdf: null,
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,
@@ -199,11 +200,16 @@ describe('toInvoiceRowViewModel — displayStatus / overdue derivation', () => {
 
 describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
   it('combined-mode: paid + null receiptNumber + rendered → isCombinedPaid true', () => {
+    // 064 — bill-first rows always persist the receipt BLOB together with
+    // `receiptPdfStatus 'rendered'` (record-payment inline + worker paths);
+    // 'rendered' with a NULL blob only occurs on as-paid rows. The fixture
+    // carries the blob so it describes the real bill-first shape.
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'paid',
         receiptDocumentNumberRaw: null,
         receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
       }),
       NOW_PAST_DUE,
     );
@@ -220,6 +226,7 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
         status: 'paid',
         receiptDocumentNumberRaw: 'RCP-2026-000009',
         receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
       }),
       NOW_PAST_DUE,
     );
@@ -308,7 +315,11 @@ describe('rowHasAnyAction (shared empty-actions sentinel gate)', () => {
   // to render the em-dash sentinel instead of an (empty) action group.
   it('true when there is something to download (paid + rendered receipt)', () => {
     const vm = toInvoiceRowViewModel(
-      buildInvoice({ status: 'paid', receiptPdfStatus: 'rendered' }),
+      buildInvoice({
+        status: 'paid',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+      }),
       NOW_PAST_DUE,
     );
     // showReceipt + resendable both fire → rowHasAnyAction true.
@@ -420,7 +431,11 @@ describe('toInvoiceRowViewModel — receipt PDF state machine', () => {
 
   it("receiptPdfStatus 'rendered' on a paid invoice → showReceipt true, not pending, not failed", () => {
     const vm = toInvoiceRowViewModel(
-      buildInvoice({ status: 'paid', receiptPdfStatus: 'rendered' }),
+      buildInvoice({
+        status: 'paid',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+      }),
       NOW_PAST_DUE,
     );
     expect(vm.showReceipt).toBe(true);
@@ -484,20 +499,110 @@ describe('toInvoiceRowViewModel — resendable', () => {
   });
 });
 
+describe('toInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)', () => {
+  // `applyIssueAsPaid` lands rows as: status 'paid', receiptPdfStatus
+  // 'rendered', receipt blob columns NULL — because the MAIN pdf already IS
+  // the final legal document (`pdfDocKind` 'receipt_combined' for TIN buyers,
+  // 'receipt_separate' for the no-TIN β stream). A matched member legitimately
+  // sees these admin-issued event receipts in the portal (list filters by
+  // memberId). The VM reads InvoiceCommon fields only, so the membership
+  // fixture is shape-sufficient here.
+  it('as-paid TIN (receipt_combined main pdf): main download stays, with the combined flag; no broken receipt action', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'rendered',
+        receiptPdf: null,
+        pdfDocKind: 'receipt_combined',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.mainPdfKind).toBe('combined');
+    // NOT combined-paid in the stale-draft-hiding sense: the main pdf is the
+    // final combined doc, not an issue-time pre-payment invoice.
+    expect(vm.isCombinedPaid).toBe(false);
+    // Pre-fix: showInvoice false + showReceipt true → the row's ONLY visible
+    // download pointed at receiptPdf (NULL) and 502'd (blob_missing).
+    expect(vm.showInvoice).toBe(true);
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.receiptPending).toBe(false);
+    expect(vm.receiptFailed).toBe(false);
+    expect(rowHasAnyAction(vm)).toBe(true);
+  });
+
+  it('as-paid no-TIN β (receipt_separate main pdf): no broken receipt action; main download stays, wearing the RECEIPT kind', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        documentNumber: null, // β — invoice-stream pair is legitimately NULL
+        receiptDocumentNumberRaw: 'RCP-2026-000777',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: null,
+        pdfDocKind: 'receipt_separate',
+      }),
+      NOW_PAST_DUE,
+    );
+    // 064 remediation S3 — the main pdf IS the §105 receipt: the download
+    // label/aria flip to the receipt wording (NOT the combined dual-role one,
+    // which stays TIN-combined only).
+    expect(vm.mainPdfKind).toBe('receipt');
+    expect(vm.isCombinedPaid).toBe(false);
+    expect(vm.showInvoice).toBe(true);
+    // Pre-fix: 'rendered' alone implied showReceipt → 502 (no receipt blob).
+    expect(vm.showReceipt).toBe(false);
+    // 064 remediation S3 — the display number resolves to the printed §105
+    // receipt number; surfaces must NEVER fall back to the row UUID.
+    expect(vm.displayNumber).toBe('RCP-2026-000777');
+  });
+
+  it('bill-first combined row (issue-time invoice main pdf + rendered receipt blob) is byte-identical', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+        pdfDocKind: 'invoice',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.mainPdfKind).toBe('invoice');
+    expect(vm.isCombinedPaid).toBe(true);
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(true);
+  });
+});
+
 describe('toInvoiceRowViewModel — raw field passthrough', () => {
   it('exposes invoiceId, raw documentNumber, dates and total unchanged', () => {
     const inv = buildInvoice({ status: 'issued' });
     const vm = toInvoiceRowViewModel(inv, NOW_BEFORE_DUE);
     expect(vm.invoiceId).toBe(inv.invoiceId);
     expect(vm.documentNumber).toBe('INV-2026-000001');
+    // displayNumber resolves to the invoice number on normal rows…
+    expect(vm.displayNumber).toBe('INV-2026-000001');
     expect(vm.issueDate).toBe('2026-04-01');
     expect(vm.dueDate).toBe('2026-04-30');
     expect(vm.total).toBe(inv.total);
   });
 
-  it('documentNumber is null when the invoice has no document number (draft shape)', () => {
+  it('displayNumber prefers the invoice number even when a separate receipt number also exists', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        receiptDocumentNumberRaw: 'RCP-2026-000009',
+        receiptPdfStatus: 'rendered',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.displayNumber).toBe('INV-2026-000001');
+  });
+
+  it('documentNumber AND displayNumber are null when the invoice has no number at all (draft shape)', () => {
     const vm = toInvoiceRowViewModel(buildInvoice({ documentNumber: null }), NOW_BEFORE_DUE);
     expect(vm.documentNumber).toBeNull();
+    expect(vm.displayNumber).toBeNull();
   });
 
   it('receiptNumber is null in combined-mode and the raw string in separate-mode', () => {

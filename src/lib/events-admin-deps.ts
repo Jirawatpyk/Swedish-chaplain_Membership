@@ -35,7 +35,12 @@
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { asTenantId, type TenantId } from '@/modules/members';
+import { logger } from '@/lib/logger';
+import {
+  asTenantId,
+  memberTinPresenceByIdsInTx,
+  type TenantId,
+} from '@/modules/members';
 // `asTenantContext` already
 // validates slug format (throws `InvalidTenantSlugError` on malformed
 // input — see `src/modules/tenants/domain/tenant-context.ts`). So the
@@ -221,6 +226,46 @@ export async function runListEventNamesByIds(
     }
     return out;
   });
+}
+
+/**
+ * 064 remediation B5 — resolve a batch of MATCHED member ids to "has a
+ * non-blank tax id" under the caller's tenant RLS. Used by the F6 admin
+ * event-detail route to enrich each registration with `buyerHasTin`
+ * (server-truth TIN presence for the /admin/invoices/new attendee picker,
+ * replacing the legacy "matched ⇒ has TIN" client guess).
+ *
+ * ONE query via the F3 barrel's `memberTinPresenceByIdsInTx` free function
+ * (same composition posture as `runListEventNamesByIds` above). Only the
+ * PRESENCE boolean crosses this seam — never the raw tax-id (PII).
+ * Cross-tenant ids are RLS-hidden (absent from the map, never leaked).
+ *
+ * A repo error (DB blip / malformed id) surfaces as an EMPTY map rather
+ * than a throw: the enrichment is non-critical — the picker falls back to
+ * the legacy guess and the server-side issuance guards stay authoritative.
+ */
+export async function runListMemberTinPresenceByIds(
+  tenantSlug: string,
+  memberIds: ReadonlyArray<string>,
+): Promise<ReadonlyMap<string, boolean>> {
+  if (memberIds.length === 0) return new Map();
+  const ctx = asTenantContext(tenantSlug);
+  try {
+    return await runInTenant(ctx, (tx) =>
+      memberTinPresenceByIdsInTx(tx, asTenantId(tenantSlug), memberIds),
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        event: 'f6_member_tin_presence_lookup_failed',
+        tenant_slug: tenantSlug,
+        member_id_count: memberIds.length,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6] buyerHasTin enrichment lookup failed — registrations fall back to the legacy matched⇒has-TIN guess',
+    );
+    return new Map();
+  }
 }
 
 /**

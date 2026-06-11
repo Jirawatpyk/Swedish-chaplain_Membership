@@ -110,6 +110,17 @@ export type InitiatePaymentError =
    * inside the bridge for SRE triage.
    */
   | { readonly code: 'invoice_data_corrupt'; readonly invoiceId: string }
+  /**
+   * REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+   * at the guard in record-payment.ts) — the F4 bridge rejected a LEGACY
+   * issued no-TIN EVENT invoice. Creating a PI for it would let Stripe
+   * capture money the webhook-side `recordPayment` guard then refuses to
+   * apply (permanent `bridge_error` ack, NO auto-refund) — S0 money trap.
+   * The route maps this to the EXISTING 409 `invoice_not_payable`
+   * envelope; the dedicated code keeps the runbook discriminator in the
+   * route's `useCaseErrorCode` warn log.
+   */
+  | { readonly code: 'legacy_no_tin_event_not_payable' }
   | { readonly code: 'online_payment_disabled' }
   | { readonly code: 'method_not_enabled'; readonly requestedMethod: PaymentMethod }
   | {
@@ -324,6 +335,12 @@ async function initiatePaymentBody(
     // without a Stripe round-trip.
     if (e.code === 'corrupted_total') {
       return err({ code: 'invoice_data_corrupt', invoiceId: e.invoiceId });
+    }
+    // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
+    // at the guard in record-payment.ts) — short-circuit BEFORE any DB
+    // write or Stripe round-trip; see the error-union member for rationale.
+    if (e.code === 'legacy_no_tin_event_not_payable') {
+      return err({ code: 'legacy_no_tin_event_not_payable' });
     }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });

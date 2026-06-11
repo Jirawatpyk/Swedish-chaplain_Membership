@@ -53,7 +53,7 @@ import {
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
-import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { createInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
 import { makeCreateInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
@@ -63,6 +63,8 @@ import {
   issueInvoice,
   type IssueInvoiceDeps,
 } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { issueEventInvoiceAsPaid } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
+import type { IssueEventInvoiceAsPaidDeps } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
@@ -74,6 +76,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -106,6 +109,20 @@ const EVENT_BUYER = {
 } as const;
 
 /**
+ * 064 Task 10 — SIMULATED no-TIN walk-in buyer. An as-paid no-TIN event
+ * invoice is a §105 receipt numbered from the RECEIPT stream (β): inserting
+ * one into the middle of the interleave must NOT advance the shared
+ * `documentType:'invoice'` counter.
+ */
+const BUYER_NO_TIN = {
+  legal_name: 'Simulated Interleave Walk-in',
+  tax_id: null,
+  address: '2 Simulated Lane, Bangkok 10500',
+  primary_contact_name: 'Sim Walkin',
+  primary_contact_email: 'walkin@interleave.example',
+} as const;
+
+/**
  * Build IssueInvoiceDeps with mocked PDF + Blob so the real allocator +
  * real DB path is exercised without a live PDF render or Blob upload.
  * The `captured` array records every render call so the test can confirm
@@ -119,6 +136,8 @@ function makeIssueDeps(
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
@@ -147,6 +166,16 @@ function makeIssueDeps(
   };
 }
 
+/**
+ * 064 Task 6 — deps for the AS-PAID leg of the interleave. Identical adapter
+ * wiring to `makeIssueDeps` (real allocator/repos/audit/outbox; mocked
+ * PDF/Blob); `IssueEventInvoiceAsPaidDeps` is structurally identical to
+ * `IssueInvoiceDeps` plus an optional `onPaidCallbacks` we don't register.
+ */
+function makeAsPaidDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps {
+  return makeIssueDeps(tenantSlug);
+}
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -168,23 +197,18 @@ describe('§87 interleaved membership+event sequence continuity (live Neon)', ()
     eventId = randomUUID();
     eventRegId = randomUUID();
 
-    await runInTenant(tenant.ctx, async (tx) => {
-      // Tenant invoice settings — same prefix for all document types so
-      // the interleaved document_number carries one shared prefix.
-      await tx.insert(tenantInvoiceSettings).values({
-        tenantId: tenant.ctx.slug,
-        currencyCode: 'THB',
-        vatRate: '0.0700',
-        registrationFeeSatang: 0n,
-        legalNameTh: 'หอการค้าทดสอบ',
-        legalNameEn: 'Test Chamber',
-        taxId: '0000000000000',
-        registeredAddressTh: 'Bangkok',
-        registeredAddressEn: 'Bangkok',
-        invoiceNumberPrefix: 'INV',
-        creditNoteNumberPrefix: 'CN',
-      });
+    // Tenant invoice settings — same prefix for all document types so the
+    // interleaved document_number carries one shared prefix. Wave-4 S18 —
+    // shared helper (row values identical to the former inline insert).
+    await seedTenantFiscal({
+      tenant,
+      legalNameTh: 'หอการค้าทดสอบ',
+      legalNameEn: 'Test Chamber',
+      registeredAddressTh: 'Bangkok',
+      registeredAddressEn: 'Bangkok',
+    });
 
+    await runInTenant(tenant.ctx, async (tx) => {
       // F2 membership plan — company scope.
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,
@@ -459,5 +483,264 @@ describe('§87 interleaved membership+event sequence continuity (live Neon)', ()
       );
     },
     90_000,
+  );
+
+  it(
+    '064 Task 6+10 — as-paid legs: membership → bill-first event → no-TIN as-paid (RECEIPT stream, no burn) → TIN as-paid are N, N+1, N+2 on the invoice stream',
+    async () => {
+      // Fresh fixtures — the first test consumed the original member +
+      // registration (duplicate-draft guard / partial unique index).
+      // All identities SIMULATED (fake names + fake 13-digit TINs).
+      const memberId3 = randomUUID();
+      const regBillFirst = randomUUID();
+      const regAsPaid = randomUUID();
+      const regNoTinAsPaid = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: memberId3,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Interleave Member Corp 3',
+          country: 'TH',
+          taxId: '7777777777777',
+          addressLine1: '77 Simulated Road',
+          city: 'Bang Rak',
+          province: 'Bangkok',
+          postalCode: '10500',
+          planId,
+          planYear,
+        });
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: memberId3,
+          firstName: 'Member3',
+          lastName: 'Contact3',
+          email: 'member3.contact@interleave.example',
+          isPrimary: true,
+        });
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: regBillFirst,
+          eventId,
+          externalId: 'att_interleave_billfirst',
+          attendeeEmail: 'buyer@interleave.example',
+          attendeeName: 'Test Buyer',
+          attendeeCompany: 'Interleave Test Corp',
+          matchType: 'non_member',
+          ticketType: 'Standard',
+          ticketPriceThb: 500,
+          paymentStatus: 'paid',
+          registeredAt: new Date('2026-07-01T03:00:00Z'),
+        } satisfies NewEventRegistrationRow);
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: regAsPaid,
+          eventId,
+          externalId: 'att_interleave_aspaid',
+          attendeeEmail: 'buyer@interleave.example',
+          attendeeName: 'Test Buyer',
+          attendeeCompany: 'Interleave Test Corp',
+          matchType: 'non_member',
+          ticketType: 'Standard',
+          ticketPriceThb: 1070,
+          paymentStatus: 'paid',
+          registeredAt: new Date('2026-07-01T03:00:00Z'),
+        } satisfies NewEventRegistrationRow);
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: regNoTinAsPaid,
+          eventId,
+          externalId: 'att_interleave_notin_aspaid',
+          attendeeEmail: 'walkin@interleave.example',
+          attendeeName: 'Sim Walkin',
+          attendeeCompany: null,
+          matchType: 'non_member',
+          ticketType: 'Standard',
+          ticketPriceThb: 250,
+          paymentStatus: 'paid',
+          registeredAt: new Date('2026-07-01T03:00:00Z'),
+        } satisfies NewEventRegistrationRow);
+      });
+
+      // ---------------------------------------------------------------------
+      // Step 1 — MEMBERSHIP draft + issue → seq N
+      // ---------------------------------------------------------------------
+      const memDraft = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-draft-mem-${memberId3}`,
+        memberId: memberId3,
+        planId,
+        planYear,
+      });
+      expect(memDraft.ok, memDraft.ok ? 'ok' : `mem draft err: ${memDraft.error.code}`).toBe(true);
+      if (!memDraft.ok) throw new Error(`mem draft failed: ${memDraft.error.code}`);
+      const memInvoiceId = memDraft.value.invoiceId;
+
+      const memIssue = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-mem-${memInvoiceId}`,
+        invoiceId: memInvoiceId,
+      });
+      expect(memIssue.ok, memIssue.ok ? 'ok' : `mem issue err: ${JSON.stringify(memIssue)}`).toBe(
+        true,
+      );
+      if (!memIssue.ok) throw new Error('mem issue failed');
+
+      // ---------------------------------------------------------------------
+      // Step 2 — EVENT bill-first draft + issue → seq N+1
+      // ---------------------------------------------------------------------
+      const evtDraft = await createEventInvoiceDraft(
+        makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId: `int-interleave-aspaid-draft-evt-${regBillFirst}`,
+          eventRegistrationId: regBillFirst,
+          amountOverride: 50_000, // 500 THB inclusive
+          buyer: EVENT_BUYER,
+        },
+      );
+      expect(evtDraft.ok, evtDraft.ok ? 'ok' : `evt draft err: ${evtDraft.error.code}`).toBe(true);
+      if (!evtDraft.ok) throw new Error(`evt draft failed: ${evtDraft.error.code}`);
+      const evtInvoiceId = evtDraft.value.invoiceId;
+
+      const evtIssue = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-evt-${evtInvoiceId}`,
+        invoiceId: evtInvoiceId,
+      });
+      expect(evtIssue.ok, evtIssue.ok ? 'ok' : `evt issue err: ${JSON.stringify(evtIssue)}`).toBe(
+        true,
+      );
+      if (!evtIssue.ok) throw new Error('evt issue failed');
+
+      // ---------------------------------------------------------------------
+      // Step 2.5 (064 Task 10) — no-TIN EVENT as-paid IN THE MIDDLE of the
+      // chain: §105 receipt on the RECEIPT stream — burns NOTHING on the
+      // shared invoice stream, so the next invoice-stream allocation (Step 3)
+      // must still land on N+2.
+      // ---------------------------------------------------------------------
+      const noTinDraft = await createEventInvoiceDraft(
+        makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId: `int-interleave-aspaid-draft-notin-${regNoTinAsPaid}`,
+          eventRegistrationId: regNoTinAsPaid,
+          amountOverride: 25_000, // 250 THB inclusive
+          buyer: BUYER_NO_TIN,
+        },
+      );
+      expect(
+        noTinDraft.ok,
+        noTinDraft.ok ? 'ok' : `no-TIN draft err: ${noTinDraft.error.code}`,
+      ).toBe(true);
+      if (!noTinDraft.ok) throw new Error(`no-TIN draft failed: ${noTinDraft.error.code}`);
+      const noTinInvoiceId = noTinDraft.value.invoiceId;
+
+      const noTinResult = await issueEventInvoiceAsPaid(makeAsPaidDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-notin-${noTinInvoiceId}`,
+        invoiceId: noTinInvoiceId,
+        paymentDate: '2026-07-01',
+        paymentMethod: 'cash',
+      });
+      expect(
+        noTinResult.ok,
+        noTinResult.ok ? 'ok' : `no-TIN as-paid err: ${JSON.stringify(noTinResult)}`,
+      ).toBe(true);
+      if (!noTinResult.ok) throw new Error('no-TIN as-paid failed');
+
+      // ---------------------------------------------------------------------
+      // Step 3 — EVENT as-paid (TIN buyer → receipt_combined) → seq N+2
+      // ---------------------------------------------------------------------
+      const asPaidDraft = await createEventInvoiceDraft(
+        makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId: `int-interleave-aspaid-draft-aspaid-${regAsPaid}`,
+          eventRegistrationId: regAsPaid,
+          amountOverride: 107_000, // 1,070 THB inclusive
+          buyer: EVENT_BUYER,
+        },
+      );
+      expect(
+        asPaidDraft.ok,
+        asPaidDraft.ok ? 'ok' : `as-paid draft err: ${asPaidDraft.error.code}`,
+      ).toBe(true);
+      if (!asPaidDraft.ok) throw new Error(`as-paid draft failed: ${asPaidDraft.error.code}`);
+      const asPaidInvoiceId = asPaidDraft.value.invoiceId;
+
+      // paymentDate == Bangkok "today" for the fixed 2026-07-01T09:00:00Z
+      // clock — same FY2026 bucket as the two issue legs above.
+      const asPaidResult = await issueEventInvoiceAsPaid(makeAsPaidDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-interleave-aspaid-issue-aspaid-${asPaidInvoiceId}`,
+        invoiceId: asPaidInvoiceId,
+        paymentDate: '2026-07-01',
+        paymentMethod: 'cash',
+      });
+      expect(
+        asPaidResult.ok,
+        asPaidResult.ok ? 'ok' : `as-paid err: ${JSON.stringify(asPaidResult)}`,
+      ).toBe(true);
+      if (!asPaidResult.ok) throw new Error('as-paid issue failed');
+
+      // ---------------------------------------------------------------------
+      // Assert: the three INVOICE-stream rows stay strictly consecutive —
+      // the interleaved no-TIN leg burned nothing on the shared stream.
+      // ---------------------------------------------------------------------
+      const rowMem = await readInvoiceRow(memInvoiceId);
+      const rowEvt = await readInvoiceRow(evtInvoiceId);
+      const rowNoTin = await readInvoiceRow(noTinInvoiceId);
+      const rowAsPaid = await readInvoiceRow(asPaidInvoiceId);
+
+      expect(rowMem!.status).toBe('issued');
+      expect(rowEvt!.status).toBe('issued');
+      expect(rowNoTin!.status).toBe('paid'); // one-shot draft→paid (β)
+      expect(rowAsPaid!.status).toBe('paid'); // one-shot draft→paid
+
+      expect(rowMem!.invoiceSubject).toBe('membership');
+      expect(rowEvt!.invoiceSubject).toBe('event');
+      expect(rowNoTin!.invoiceSubject).toBe('event');
+      expect(rowAsPaid!.invoiceSubject).toBe('event');
+      expect(rowNoTin!.pdfDocKind).toBe('receipt_separate');
+      expect(rowAsPaid!.pdfDocKind).toBe('receipt_combined');
+
+      // Same FY bucket — the as-paid legs' paymentDate-derived FY matches
+      // the clock-derived FY of the two issue legs.
+      expect(rowEvt!.fiscalYear).toBe(rowMem!.fiscalYear);
+      expect(rowNoTin!.fiscalYear).toBe(rowMem!.fiscalYear);
+      expect(rowAsPaid!.fiscalYear).toBe(rowMem!.fiscalYear);
+
+      // 064 Task 10 — the no-TIN leg lives on the RECEIPT stream, allocated
+      // INDEPENDENTLY: no invoice-stream pair on the row, and the receipt
+      // stream started at 1 ('RE' fallback — this tenant configures no
+      // receipt prefix) while the invoice stream was already at N+1.
+      expect(rowNoTin!.sequenceNumber).toBeNull();
+      expect(rowNoTin!.documentNumber).toBeNull();
+      expect(rowNoTin!.receiptDocumentNumberRaw).toBe('RE-2026-000001');
+
+      // Strictly consecutive, in execution order (sequential awaits) — the
+      // interleaved β leg left NO gap and burned NO number.
+      const seqMem = rowMem!.sequenceNumber!;
+      const seqEvt = rowEvt!.sequenceNumber!;
+      const seqAsPaid = rowAsPaid!.sequenceNumber!;
+      expect(seqEvt).toBe(seqMem + 1);
+      expect(seqAsPaid).toBe(seqMem + 2);
+
+      // One shared prefix — same document sequence.
+      expect(rowMem!.documentNumber).toMatch(/^INV/);
+      expect(rowEvt!.documentNumber).toMatch(/^INV/);
+      expect(rowAsPaid!.documentNumber).toMatch(/^INV/);
+    },
+    120_000,
   );
 });

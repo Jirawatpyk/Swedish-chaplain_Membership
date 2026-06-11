@@ -172,6 +172,7 @@ describe('CR-5 cross-tenant probe — payment_cross_tenant_probe audit emission 
         planYear: 2026,
         planId: 'cr5-plan-a',
         status: 'issued',
+        pdfDocKind: 'invoice',
         draftByUserId: userA.userId,
         fiscalYear: 2026,
         sequenceNumber: 1,

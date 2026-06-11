@@ -198,6 +198,7 @@ describe('T149 webhook-processing latency benchmark (canceled branch)', () => {
           planYear: 2026,
           planId: 't149-plan',
           status: 'issued',
+          pdfDocKind: 'invoice',
           draftByUserId: user.userId,
           fiscalYear: 2026,
           sequenceNumber: i + 1,

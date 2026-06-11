@@ -103,4 +103,31 @@ describe('<InvoiceCreateSwitcher>', () => {
       }),
     ).toBeInTheDocument();
   });
+
+  it('radio label wiring produces no duplicate "-label" ids (duplicate-id-aria)', () => {
+    // Base UI's labelable provider assigns `label.id = "{radioId}-label"` to
+    // an id-less associated <label> — colliding with the hardcoded ids on the
+    // inner name-spans. The explicit `aria-labelledby` prop on each
+    // RadioGroupItem suppresses that assignment. jsdom runs the same layout
+    // effect, so a regression reproduces here; the authoritative proof for
+    // real browsers is the axe (`duplicate-id-aria`) run in Task 14.
+    const { container } = renderSwitcher();
+    const labelIds = Array.from(container.querySelectorAll('[id$="-label"]')).map(
+      (el) => el.id,
+    );
+    const duplicates = labelIds.filter((id, i) => labelIds.indexOf(id) !== i);
+    expect(duplicates).toEqual([]);
+
+    // Each radio is named by its span (not the whole label incl. hint).
+    const [membership, event] = screen.getAllByRole('radio');
+    expect(membership).toHaveAttribute(
+      'aria-labelledby',
+      'invoice-type-membership-label',
+    );
+    expect(event).toHaveAttribute('aria-labelledby', 'invoice-type-event-label');
+    expect(document.getElementById('invoice-type-membership-label')?.tagName).toBe(
+      'SPAN',
+    );
+    expect(document.getElementById('invoice-type-event-label')?.tagName).toBe('SPAN');
+  });
 });

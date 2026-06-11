@@ -74,6 +74,7 @@ function invoiceRow(args: {
     planId: PLAN_ID,
     draftByUserId: args.draftByUserId,
     status: 'issued' as const,
+    pdfDocKind: 'invoice',
     fiscalYear: 2026,
     sequenceNumber: args.seq,
     documentNumber: `TL-2026-${String(args.seq).padStart(6, '0')}`,

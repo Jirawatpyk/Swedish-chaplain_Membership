@@ -12,11 +12,21 @@
  * stamp "ใบกำกับภาษี / Tax Invoice" onto a §105 receipt. The fix BLOCKS the
  * credit note entirely with `receipt_not_creditable`.
  *
- * End-to-end through the REAL use-cases:
- *   createEventInvoiceDraft (non-member, NO TIN → buyer snapshot pinned at DRAFT)
- *     → issueInvoice (resolves kind 'receipt_separate' — §105 receipt)
- *     → recordPayment (now works after HIGH 2; flips issued → paid)
- *     → issueCreditNote → MUST return err({ code: 'receipt_not_creditable' })
+ * Fixture (REBUILT by 064 Task 10): the paid no-TIN event row is built on the
+ * REAL use-case chain — `createEventInvoiceDraft` (buyer snapshot pinned at
+ * draft) → `issueEventInvoiceAsPaid` (β receipt-STREAM numbering, migration
+ * 0212): status 'paid', pdf_doc_kind 'receipt_separate',
+ * sequence_number/document_number NULL, receipt_document_number_raw set from
+ * the tenant's receipt prefix. This is the ONLY live writer of a §105
+ * receipt_separate row (plain issueInvoice rejects no-TIN event drafts with
+ * `event_no_tin_requires_paid_issue`; recordPayment rejects legacy issued
+ * no-TIN rows with `legacy_no_tin_event_needs_remediation`). The use-case
+ * under test is unchanged:
+ *   issueCreditNote → MUST return err({ code: 'receipt_not_creditable' })
+ *   (the §86/10 gate fires BEFORE the snapshot-completeness guard — a β row
+ *   carries a legal NULL document_number and must hit the doc-type verdict,
+ *   not no_snapshot_on_invoice; pinned by the Task 10 unit test in
+ *   issue-credit-note.test.ts)
  *
  * Asserts (per HIGH 1 spec):
  *   1. issueCreditNote returns err({ code: 'receipt_not_creditable' }).
@@ -43,29 +53,25 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
-import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
-import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
-import {
-  issueInvoice,
-  type IssueInvoiceDeps,
-} from '@/modules/invoicing/application/use-cases/issue-invoice';
-import {
-  recordPayment,
-  type RecordPaymentDeps,
-} from '@/modules/invoicing/application/use-cases/record-payment';
-import { makeRecordPaymentDeps } from '@/modules/invoicing/application/invoicing-deps';
 import {
   issueCreditNote,
   type IssueCreditNoteDeps,
 } from '@/modules/invoicing/application/use-cases/issue-credit-note';
+import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
+import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
+import { issueEventInvoiceAsPaid } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
+import type { IssueEventInvoiceAsPaidDeps } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
+import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 
 // Non-member buyer WITHOUT a Thai TIN → issued as `receipt_separate` (§105).
 const BUYER_NO_TIN = {
@@ -79,54 +85,41 @@ const BUYER_NO_TIN = {
 const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
 const ISSUE_SHA = 'b'.repeat(64);
 
-function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
+/**
+ * Deps for the FIXTURE-building `issueEventInvoiceAsPaid` call (064 Task 10):
+ * real repos + §87 allocator + identity + audit + outbox; mocked PDF render
+ * (returns ISSUE_SHA so the byte-identical assertion below pins the AS-PAID
+ * sha) + mocked Blob.
+ */
+function makeAsPaidFixtureDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
-    memberIdentity: makeCreateEventInvoiceDraftDeps(tenantSlug).memberIdentity,
+    memberIdentity: memberIdentityAdapter,
+    // 064 S1 — issuance-time refunded re-check (real adapter; only invoked for event subjects).
+    eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {
-      render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe(ISSUE_SHA) })),
+      render: vi.fn(async () => ({
+        bytes: PDF_BYTES,
+        sha256: Sha256Hex.ofUnsafe(ISSUE_SHA),
+      })),
     },
     blob: {
-      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({ key, url: `https://blob.test/${key}` })),
+      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({
+        key,
+        url: `https://blob.test/${key}`,
+      })),
       uploadLogo: vi.fn(),
       signDownloadUrl: vi.fn(),
       downloadBytes: vi.fn(async () => PDF_BYTES),
       delete: vi.fn(),
       list: vi.fn(async () => []),
-    } as unknown as IssueInvoiceDeps['blob'],
+    },
     audit: f4AuditAdapter,
-    clock: { nowIso: () => '2026-04-18T10:00:00Z' },
-    outbox: { enqueue: vi.fn(async () => {}) },
+    clock: { nowIso: () => '2026-04-20T10:00:00Z' },
+    outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-  };
-}
-
-/**
- * Real recordPayment composition root with PDF/Blob mocked + the async-receipt
- * flag forced OFF (the shared integration setup forces it ON, which skips the
- * inline receipt render). We don't assert on the receipt here — we only need the
- * invoice to reach `paid` so issueCreditNote's status guard passes.
- */
-function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
-  const real = makeRecordPaymentDeps(tenantSlug);
-  const { receiptPdfRenderEnqueue: _omitEnqueue, ...rest } = real;
-  void _omitEnqueue;
-  return {
-    ...rest,
-    asyncReceiptPdf: false,
-    pdfRender: {
-      render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe('c'.repeat(64)) })),
-    },
-    blob: {
-      uploadPdf: vi.fn(async ({ key }: { key: string }) => ({ key, url: `https://blob.test/${key}` })),
-      uploadLogo: vi.fn(),
-      signDownloadUrl: vi.fn(),
-      downloadBytes: vi.fn(async () => PDF_BYTES),
-      delete: vi.fn(),
-      list: vi.fn(async () => []),
-    } as unknown as RecordPaymentDeps['blob'],
   };
 }
 
@@ -220,38 +213,38 @@ describe('issueCreditNote — BLOCKS §105 receipt_separate (HIGH 1, live Neon)'
       } satisfies NewEventRegistrationRow);
     });
 
-    // 1) Draft (non-member, NO TIN → 250 THB inclusive → 25000 satang).
-    const draft = await createEventInvoiceDraft(makeCreateEventInvoiceDraftDeps(tenant.ctx.slug), {
-      tenantId: tenant.ctx.slug,
-      actorUserId: user.userId,
-      requestId: `int-cnblock-draft-${regId}`,
-      eventRegistrationId: regId,
-      buyer: BUYER_NO_TIN,
-    });
-    if (!draft.ok) throw new Error(`draft failed: ${draft.error.code}`);
-    invoiceId = draft.value.invoiceId;
-
-    // 2) Issue — resolves kind 'receipt_separate' (§105 receipt; no-TIN event buyer).
-    const issued = await issueInvoice(makeIssueDeps(tenant.ctx.slug), {
-      tenantId: tenant.ctx.slug,
-      actorUserId: user.userId,
-      requestId: `int-cnblock-issue-${invoiceId}`,
-      invoiceId,
-    });
-    if (!issued.ok) throw new Error(`issue failed: ${JSON.stringify(issued)}`);
-
-    // 3) Pay via the REAL recordPayment use-case (works after HIGH 2) → paid.
-    const paid = await runInTenant(tenant.ctx, async () =>
-      recordPayment(makeRecordPaymentDepsForPay(tenant.ctx.slug), {
+    // PAID §105 no-TIN event row — built on the REAL use-case chain (064
+    // Task 10): draft via createEventInvoiceDraft (no-TIN buyer snapshot
+    // pinned at DRAFT) → issueEventInvoiceAsPaid (β receipt-stream
+    // numbering). The committed row carries pdf_doc_kind 'receipt_separate',
+    // sequence_number/document_number NULL, and
+    // receipt_document_number_raw 'RCPR-2026-000001' (fresh tenant, receipt
+    // prefix 'RCPR') — exactly what production writes for a walk-in buyer.
+    const draft = await createEventInvoiceDraft(
+      makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+      {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
-        requestId: `int-cnblock-pay-${invoiceId}`,
-        invoiceId,
-        paymentMethod: 'cash',
-        paymentDate: '2026-04-19',
-      }),
+        requestId: `int-cnblock-draft-${regId}`,
+        eventRegistrationId: regId,
+        amountOverride: 25_000, // 250 THB inclusive @ 7% → 23364 + 1636
+        buyer: BUYER_NO_TIN,
+      },
     );
-    if (!paid.ok) throw new Error(`pay failed: ${JSON.stringify(paid)}`);
+    if (!draft.ok) throw new Error(`fixture draft failed: ${draft.error.code}`);
+    invoiceId = draft.value.invoiceId;
+
+    const asPaid = await issueEventInvoiceAsPaid(makeAsPaidFixtureDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-cnblock-aspaid-${invoiceId}`,
+      invoiceId,
+      paymentDate: '2026-04-19',
+      paymentMethod: 'cash',
+    });
+    if (!asPaid.ok) {
+      throw new Error(`fixture as-paid failed: ${asPaid.error.code}`);
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -290,6 +283,12 @@ describe('issueCreditNote — BLOCKS §105 receipt_separate (HIGH 1, live Neon)'
     expect((snapBefore.tax_id ?? '').trim()).toBe('');
     const issueSha = before!.pdfSha256;
     expect(issueSha).toBe(ISSUE_SHA);
+    // β fixture shape (064 Task 10) — the REAL as-paid no-TIN path committed
+    // a receipt-STREAM row: no invoice-stream pair, RCPR receipt number.
+    expect(before!.sequenceNumber).toBeNull();
+    expect(before!.documentNumber).toBeNull();
+    expect(before!.receiptDocumentNumberRaw).toBe('RCPR-2026-000001');
+    expect(before!.pdfDocKind).toBe('receipt_separate');
 
     // §87 credit-note sequence counter BEFORE the blocked attempt. The guard
     // fires before allocateNext, so this must be untouched after.

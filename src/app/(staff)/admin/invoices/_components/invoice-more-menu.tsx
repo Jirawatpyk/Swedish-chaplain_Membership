@@ -51,6 +51,25 @@ export interface InvoiceMoreMenuProps {
    * roles (Thai RD §86/4 allows one combined document).
    */
   readonly showDownloadReceipt?: boolean;
+  /**
+   * 064 — what the MAIN pdf (served by `showDownload`) actually is when it
+   * is not a plain §86/4 invoice (064-remediation A4 generalised the former
+   * `mainDownloadIsCombined` boolean):
+   *
+   *   - `'combined'` — `pdfDocKind === 'receipt_combined'` (as-paid TIN
+   *     event invoice issued straight to paid; receipt_* blob columns stay
+   *     NULL). Download item reuses the combined dual-role label
+   *     (`actions.downloadCombined`) — the file the admin grabs is the one
+   *     legal Tax Invoice / Receipt, not a pre-payment invoice.
+   *   - `'receipt'` — `pdfDocKind === 'receipt_separate'` (β as-paid no-TIN
+   *     event row / legacy issued no-TIN row whose main pdf IS the §105
+   *     receipt). Download item flips to `actions.downloadReceipt` + the
+   *     receipt aria so the admin never sees a "tax invoice" label on a
+   *     document that is legally a receipt.
+   *   - omitted — plain invoice label (bill-first/membership rows,
+   *     byte-identical to the pre-064 behaviour).
+   */
+  readonly mainDownloadKind?: 'combined' | 'receipt' | undefined;
 }
 
 export function InvoiceMoreMenu({
@@ -60,12 +79,16 @@ export function InvoiceMoreMenu({
   showResendInvoice,
   showResendReceipt,
   showDownloadReceipt = false,
+  mainDownloadKind,
 }: InvoiceMoreMenuProps) {
   // Derive combined-mode receipt label state from the existing prop
   // matrix instead of exposing a separate `combinedModeReceipt` prop —
   // they were perfectly correlated (combined-mode hides the pre-payment
   // invoice PDF, so `showDownload === false && showDownloadReceipt`
-  // uniquely identifies the combined-paid state).
+  // uniquely identifies the combined-paid state). 064 — as-paid rows are
+  // a THIRD state (main pdf IS the final doc, no receipt blob at all);
+  // they arrive via the explicit `mainDownloadKind` prop and never set
+  // `showDownloadReceipt`, so this derivation is undisturbed.
   const combinedModeReceipt = showDownloadReceipt && !showDownload;
   const t = useTranslations('admin.invoices.detail');
 
@@ -256,7 +279,12 @@ export function InvoiceMoreMenu({
             disabled={downloadingInvoice}
             onClick={handleDownloadInvoice}
             data-testid="download-invoice-trigger"
-            aria-label={t('actions.downloadInvoiceAria', { number: documentNumber })}
+            aria-label={t(
+              mainDownloadKind === 'receipt'
+                ? 'actions.downloadReceiptAria'
+                : 'actions.downloadInvoiceAria',
+              { number: documentNumber },
+            )}
           >
             {downloadingInvoice ? (
               <Loader2
@@ -266,7 +294,15 @@ export function InvoiceMoreMenu({
             ) : (
               <Download aria-hidden="true" />
             )}
-            {t('actions.download')}
+            {/* 064 — as-paid rows: the main pdf IS the final legal document.
+                'combined' (TIN) reuses the dual-role label; 'receipt' (β
+                no-TIN / legacy §105 rows) flips to the receipt label so the
+                admin never grabs a receipt under an invoice label. */}
+            {mainDownloadKind === 'combined'
+              ? t('actions.downloadCombined')
+              : mainDownloadKind === 'receipt'
+                ? t('actions.downloadReceipt')
+                : t('actions.download')}
           </DropdownMenuItem>
         )}
         {showDownloadReceipt && (

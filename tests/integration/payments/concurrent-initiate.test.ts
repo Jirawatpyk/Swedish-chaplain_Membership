@@ -229,6 +229,7 @@ describe('T136 concurrent initiatePayment for same invoice (R2-E2)', () => {
         planYear: 2026,
         planId: 't136-plan',
         status: 'issued',
+        pdfDocKind: 'invoice',
         draftByUserId: user.userId,
         fiscalYear: 2026,
         sequenceNumber: 1,

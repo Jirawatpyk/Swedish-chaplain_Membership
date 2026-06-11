@@ -442,6 +442,62 @@ describe('confirmPayment (T057)', () => {
     expect(result.error.code).toBe('bridge_error');
   });
 
+  // REMOVE-WITH-064-REMEDIATION — S0 money-trap defence-in-depth. An
+  // IN-FLIGHT PI (created before the initiate-side guard deployed) can
+  // still confirm against a LEGACY issued no-TIN event invoice. The F4
+  // payability read now rejects those rows with
+  // `legacy_no_tin_event_not_payable`; the webhook must treat that
+  // EXACTLY like the pre-guard `issued` read (NO auto-refund — the
+  // member genuinely owes the fee) and let the markPaid-side
+  // `legacy_no_tin_event_needs_remediation` guard fail the flip — but
+  // LOUDLY: ops must see a dedicated error log telling them money was
+  // captured against a row the runbook has to reconcile. Delete with
+  // the master checklist in record-payment.ts.
+  it('legacy no-TIN event invoice in-flight webhook — no auto-refund, bridge_error, LOUD ops log (REMOVE-WITH-064-REMEDIATION)', async () => {
+    const { logger } = await import('@/lib/logger');
+    const loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    try {
+      const deps = makeDeps();
+      (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        err({ code: 'legacy_no_tin_event_not_payable' }),
+      );
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        err({
+          code: 'legacy_no_tin_event_needs_remediation',
+          detail: 'unknown_f4_error_shape (code=legacy_no_tin_event_needs_remediation)',
+        }),
+      );
+
+      const result = await confirmPayment(deps, INPUT);
+
+      // The webhook flow CONTINUED past the payability read (treated as
+      // status='issued') — it must NOT enter the stale-invoice
+      // auto-refund branch.
+      expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+      // The payment row was flipped to succeeded (money IS captured) —
+      // this is the state the ops log + runbook reconcile.
+      expect(deps.paymentsRepo.updateStatus).toHaveBeenCalledTimes(1);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      if (result.error.code !== 'bridge_error') return;
+      expect(result.error.detail).toBe('legacy_no_tin_event_needs_remediation');
+
+      // LOUD ops signal: dedicated logger.error naming the runbook class.
+      const legacyLogCall = loggerErrorSpy.mock.calls.find(
+        (c) => c[1] === 'payments.confirm.legacy_no_tin_event_money_captured',
+      );
+      expect(legacyLogCall).toBeDefined();
+      const ctx = legacyLogCall![0] as Record<string, unknown>;
+      expect(ctx['tenantId']).toBe(TENANT_ID);
+      expect(ctx['invoiceId']).toBe(PENDING_PAYMENT.invoiceId);
+      expect(ctx['paymentIntentId']).toBe(PAYMENT_INTENT_ID);
+    } finally {
+      loggerErrorSpy.mockRestore();
+    }
+  });
+
   it('overdue invoice — still processes (payable status)', async () => {
     // F4 models "overdue" as a derived state — the InvoiceStatus enum
     // has no `'overdue'` value; an overdue invoice carries

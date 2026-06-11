@@ -14,6 +14,10 @@
 export type InvoiceApplyConflictKind =
   | 'applyIssue'
   | 'applyPayment'
+  // 064 — as-paid issuance (single UPDATE draft→paid, event subject).
+  // Distinct kind so a draft→paid race loser is distinguishable from a
+  // plain issue or payment-flip conflict in logs/alerts.
+  | 'applyIssueAsPaid'
   | 'applyDraftUpdate'
   | 'applyCreditNoteRollup'
   | 'applyVoid'

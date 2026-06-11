@@ -201,6 +201,27 @@ export function rowToSubjectFields(row: InvoiceRow): InvoiceSubjectFields {
   };
 }
 
+/**
+ * 064 (Task 2) — map the `pdf_doc_kind` text column onto the Domain literal
+ * union. The DB CHECK `invoices_pdf_doc_kind_valid` pins the value set, so an
+ * unknown NON-NULL string can only mean a corrupt row (manual DB patch,
+ * dropped CHECK) — THROW loudly (mirrors the corrupt-document_number /
+ * partial-pdf throw pattern in this file) rather than constructing an Invoice
+ * whose doc kind lies to the J2 credit-note re-render path.
+ */
+function pdfDocKindOrNull(
+  raw: string | null,
+  invoiceId: string,
+): Invoice['pdfDocKind'] {
+  if (raw === null) return null;
+  if (raw === 'invoice' || raw === 'receipt_combined' || raw === 'receipt_separate') {
+    return raw;
+  }
+  throw new Error(
+    `drizzle-invoice-repo: corrupt pdf_doc_kind on row ${invoiceId}: '${raw}'`,
+  );
+}
+
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
   if (row.documentNumber !== null) {
@@ -281,6 +302,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     autoEmailOnIssue: row.autoEmailOnIssue ?? null,
 
     pdf: buildPdfOrNull(row.pdfBlobKey, row.pdfSha256, row.pdfTemplateVersion, row.invoiceId, 'pdf'),
+    pdfDocKind: pdfDocKindOrNull(row.pdfDocKind, row.invoiceId),
     receiptPdf: buildPdfOrNull(
       row.receiptPdfBlobKey,
       row.receiptPdfSha256,
@@ -444,6 +466,34 @@ export function makeDrizzleInvoiceRepo(
       return rowsToInvoice(row as InvoiceRow, lines);
     },
 
+    /**
+     * Wave-4 S28 — `findByIdInTx` + row lock in one round-trip. The
+     * `.for('update')` modifier takes the SAME row lock `lockForUpdate`'s
+     * raw `FOR UPDATE` takes (drizzle-tenant-settings-repo precedent), so
+     * the caller-contract lock ordering is unchanged — one SELECT instead
+     * of the former lock-then-reload pair.
+     */
+    async findByIdInTxForUpdate(
+      txUnknown,
+      invoiceId: InvoiceId,
+      tenantIdArg: string,
+    ): Promise<Invoice | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select()
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)))
+        .limit(1)
+        .for('update');
+      if (!row) return null;
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(and(eq(invoiceLines.tenantId, tenantIdArg), eq(invoiceLines.invoiceId, invoiceId)))
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine));
+    },
+
     async findById(invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
       return runInTenant(ctx, async (tx) => {
         const [row] = await tx
@@ -495,7 +545,17 @@ export function makeDrizzleInvoiceRepo(
         }
         if (opts.memberId) filters.push(eq(invoices.memberId, opts.memberId));
         if (opts.search && opts.search.length > 0) {
-          filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+          // W1 (064 remediation) — β as-paid no-TIN rows carry their printed
+          // §105 number in receipt_document_number_raw with document_number
+          // NULL, and paid separate-mode rows ALSO have an RC number admins
+          // search by. Match EITHER column so every printed §87/§105 number
+          // is findable. Kept in lockstep with `listPaged` below.
+          filters.push(
+            or(
+              ilike(invoices.documentNumber, `%${opts.search}%`),
+              ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+            )!,
+          );
         }
         if (opts.cursor) {
           // S1-P1-9b: composite (issueDate, invoiceId) keyset matching the
@@ -627,7 +687,14 @@ export function makeDrizzleInvoiceRepo(
           filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
         }
         if (opts.search && opts.search.length > 0) {
-          filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+          // W1 (064 remediation) — match invoice doc number OR the §105
+          // receipt number; see the `list` variant above for the rationale.
+          filters.push(
+            or(
+              ilike(invoices.documentNumber, `%${opts.search}%`),
+              ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+            )!,
+          );
         }
         if (opts.paidOnlineOnly) {
           // F5 US3 reconciliation filter — invoice has at least one
@@ -716,6 +783,9 @@ export function makeDrizzleInvoiceRepo(
           pdfBlobKey: input.pdf.blobKey,
           pdfSha256: input.pdf.sha256,
           pdfTemplateVersion: input.pdf.templateVersion,
+          // 064 (Task 2) — what the rendered main PDF IS; required on every
+          // non-draft row (`invoices_non_draft_has_doc_kind`).
+          pdfDocKind: input.pdfDocKind,
           updatedAt: sql`now()`,
         })
         .where(
@@ -827,6 +897,103 @@ export function makeDrizzleInvoiceRepo(
         )
         .orderBy(asc(invoiceLines.position));
       return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    /**
+     * 064 — as-paid issuance: SINGLE UPDATE draft→paid with every
+     * snapshot / numbering / payment / pdf field set in one statement,
+     * so there is no partial-failure window and the immutability
+     * trigger (early-return on OLD.status='draft') never blocks it.
+     * The non-draft + paid CHECKs (snapshots 0203, paid_has_payment
+     * 0019, paid_has_receipt_status 0056, doc_kind 0211) all validate
+     * against the post-UPDATE row in this one commit.
+     *
+     * Numbering per the input discriminated union:
+     *   - 'invoice_stream' (TIN buyer) → sequence_number +
+     *     document_number set, receipt_document_number_raw NULL.
+     *   - 'receipt_stream' (no-TIN β) → both NULL +
+     *     receipt_document_number_raw set. NOTE: this shape only passes
+     *     `invoices_non_draft_has_snapshots` after the Task 9 CHECK
+     *     relax migration lands — until then Postgres rejects it (by
+     *     design; the use-case gates the β path).
+     *
+     * receipt_pdf_status lands as 'rendered' (NEVER 'pending'): for
+     * as-paid the rendered main PDF IS the receipt (combined) or the
+     * §105 receipt (separate β) — no async receipt worker is involved.
+     * receipt_pdf_blob_key stays NULL for the same reason (defensive
+     * explicit write; a draft row already carries NULL).
+     */
+    async applyIssueAsPaid(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      const numberingColumns =
+        input.numbering.kind === 'invoice_stream'
+          ? {
+              sequenceNumber: input.numbering.sequenceNumber,
+              documentNumber: input.numbering.documentNumber,
+              receiptDocumentNumberRaw: null,
+            }
+          : {
+              sequenceNumber: null,
+              documentNumber: null,
+              receiptDocumentNumberRaw: input.numbering.receiptDocumentNumberRaw,
+            };
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          status: 'paid',
+          fiscalYear: input.fiscalYear,
+          ...numberingColumns,
+          issueDate: input.issueDate,
+          // As-paid: the document is settled the moment it exists.
+          dueDate: input.issueDate,
+          netDaysSnapshot: 0,
+          subtotalSatang: input.subtotalSatang,
+          vatRateSnapshot: input.vatRate,
+          vatSatang: input.vatSatang,
+          totalSatang: input.totalSatang,
+          // Event subject only — pro-rating is a membership concept
+          // (relaxed CHECK 0203 exempts the event subject).
+          proRatePolicySnapshot: null,
+          tenantIdentitySnapshot: input.tenantIdentitySnapshot,
+          memberIdentitySnapshot: input.memberIdentitySnapshot,
+          pdfBlobKey: input.pdf.blobKey,
+          pdfSha256: input.pdf.sha256,
+          pdfTemplateVersion: input.pdf.templateVersion,
+          pdfDocKind: input.pdfDocKind,
+          paidAt: sql`now()`,
+          paymentMethod: input.paymentMethod,
+          paymentReference: input.paymentReference,
+          paymentNotes: input.paymentNotes,
+          paymentRecordedByUserId: input.paymentRecordedByUserId,
+          paymentDate: input.paymentDate,
+          receiptPdfStatus: 'rendered',
+          receiptPdfBlobKey: null,
+          // M-1 — complete the defensive receipt-triplet null. The combined
+          // (or β separate) receipt IS the main PDF: its bytes metadata lives
+          // in pdf_sha256/pdf_template_version above, so no receipt_* bytes
+          // metadata may exist. A draft row already carries NULLs; writing
+          // them explicitly keeps the as-paid UPDATE self-describing.
+          receiptPdfSha256: null,
+          receiptPdfTemplateVersion: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            // Concurrent issue / as-paid race: the loser's UPDATE
+            // matches 0 rows and throws below (mirrors applyIssue).
+            eq(invoices.status, 'draft'),
+          ),
+        )
+        .returning();
+      if (!updated) throw new InvoiceApplyConflictError('applyIssueAsPaid');
+
+      // Wave-4 S26 — no line re-select: the CALLER CONTRACT requires
+      // `input.lines` to be the post-lock draft read from this same tx,
+      // and the held invoice row lock makes the lines immutable until
+      // commit, so echoing them is byte-identical to re-reading.
+      return rowsToInvoice(updated as InvoiceRow, input.lines);
     },
 
     /**

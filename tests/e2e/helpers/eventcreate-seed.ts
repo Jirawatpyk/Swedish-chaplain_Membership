@@ -23,8 +23,8 @@
  *
  * No-op when `DATABASE_URL` is missing (returns early with warning).
  */
-import postgres from 'postgres';
 import { z } from 'zod';
+import { openSeedClient, type SeedClient } from './open-seed-client';
 
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? process.env.TENANT_SLUG ?? 'swecham';
 
@@ -36,19 +36,9 @@ const TENANT_ID = process.env.E2E_TENANT_SLUG ?? process.env.TENANT_SLUG ?? 'swe
 export const F6_E2E_FIXTURE_SECRET =
   'whsec_F6E2EFixtureSecretForLocalAndCIRuns2026';
 
-interface SeedClient {
-  sql: ReturnType<typeof postgres>;
-  end: () => Promise<void>;
-}
-
+/** Shared owner-role client (wave-4 S20) with this helper's warn label. */
 function openClient(): SeedClient | null {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) {
-    console.warn('[e2e seed F6] skipped — DATABASE_URL missing');
-    return null;
-  }
-  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
-  return { sql, end: () => sql.end() };
+  return openSeedClient('e2e seed F6');
 }
 
 /**

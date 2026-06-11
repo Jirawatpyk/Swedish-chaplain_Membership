@@ -15,6 +15,7 @@ export {
   isTerminal,
   canTransition,
   enforceOneSubjectLine,
+  displayDocumentNumber,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
@@ -149,6 +150,21 @@ export {
   type IssueInvoiceInput,
   type IssueInvoiceError,
 } from './application/use-cases/issue-invoice';
+
+// 064 — one-shot draft→paid issuance for EVENT invoices (combined
+// tax-invoice/receipt; no intermediate issued state). TIN path live;
+// no-TIN numbering gated until the β migration (Task 9/10).
+export {
+  issueEventInvoiceAsPaid,
+  issueEventInvoiceAsPaidSchema,
+  type IssueEventInvoiceAsPaidInput,
+  type IssueEventInvoiceAsPaidError,
+  type IssueEventInvoiceAsPaidDeps,
+} from './application/use-cases/issue-event-invoice-as-paid';
+// Wave-4 S19 — canonical error-code list (leaf module; client components
+// needing the runtime array import the leaf path directly to keep the
+// use-case's server-only graph out of the client bundle).
+export { ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES } from './application/use-cases/issue-event-invoice-as-paid-codes';
 
 export {
   listInvoices,
@@ -351,6 +367,7 @@ export {
   makeCreateInvoiceDraftDeps,
   makeCreateEventInvoiceDraftDeps,
   makeIssueInvoiceDeps,
+  makeIssueEventInvoiceAsPaidDeps,
   makeListInvoicesDeps,
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
