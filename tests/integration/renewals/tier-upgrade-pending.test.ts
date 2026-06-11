@@ -924,6 +924,208 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
   }, 60_000);
 
   // ---------------------------------------------------------------------------
+  // 065 Fix B (S3 + S5) — genuine concurrent-at-step-(a) race
+  //
+  // W-011b parks accepter #2 BEFORE its tx (at the pre-tx
+  // findActiveForMember), runs #1 to FULL COMMIT, THEN releases #2 — so
+  // #2's step-(a) supersede cleanly supersedes #1's already-committed
+  // pending row and #2 loses at the step-(c) CAS. It NEVER exercises the
+  // genuine race where BOTH accepters are INSIDE their tx at step-(a)
+  // before either commits — the race that raises a 23505 on the partial
+  // unique `scheduled_plan_changes_pending_uniq` (S8 moved step-(a) onto
+  // the outer tx, so the loser now hits the INSERT collision instead of
+  // the CAS).
+  //
+  // This probe FORCES that race deterministically: accepter #1 is gated
+  // to park INSIDE its tx, immediately AFTER its step-(a) supersede+insert
+  // (holding the partial-unique lock on the fresh pending row) but BEFORE
+  // its step-(c) CAS + commit. While #1 is parked, #2 runs — its step-(a)
+  // INSERT BLOCKS on the unique-index lock #1 holds. Releasing #1 lets it
+  // commit (CAS open→accepted_pending_apply wins, no concurrent commit yet
+  // because #2 is blocked) → the lock releases → #2's blocked INSERT now
+  // sees #1's committed pending row → 23505.
+  //
+  //   - Pre-Fix-B (step-(a) catch `return err plan_change_failed`): the
+  //     23505 already POISONED the outer tx, so the `return err` is a lie
+  //     — `runInTenant`'s COMMIT downgrades to ROLLBACK and the
+  //     commit-of-aborted-tx THROWS, surfacing as `server_error` (500)
+  //     from the OUTER catch (verified: observed
+  //     `server_error: duplicate key ... "scheduled_plan_changes_pending_uniq"`).
+  //     This is the S14 poisoned-tx trap directly. RED.
+  //   - Post-Fix-B (23505 on the pending uniq → THROW
+  //     TierUpgradeStatusConflictError → tx rolls back cleanly → outer
+  //     catch maps to suggestion_not_open): #2 → suggestion_not_open
+  //     (409). GREEN.
+  //
+  // Money-safety: exactly ONE pending row survives, attributed to the
+  // WINNER (#1) — the loser's whole tx (its blocked-then-failed step-(a)
+  // INSERT) rolls back.
+  // ---------------------------------------------------------------------------
+  it('W-011c genuine concurrent-at-step-a — INSERT collision maps loser to suggestion_not_open (409) + one winner pending row', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const admin2 = await createActiveTestUser('admin');
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // Gate: accepter #1's step-(a) does the REAL supersede+insert on its
+    // outer tx (holding the partial-unique lock on the new pending row),
+    // signals it reached the seam, then PARKS — keeping its tx open so
+    // #2's step-(a) INSERT blocks on the lock.
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let signalReached!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      signalReached = resolve;
+    });
+
+    const gatedDeps1: typeof deps = {
+      ...deps,
+      scheduledPlanChangeRepo: {
+        ...deps.scheduledPlanChangeRepo,
+        supersedeAndInsertPendingAtomically: async (t, input, tx) => {
+          // Run the real INSERT on accepter #1's OUTER tx (065 S8 threads
+          // it as the 3rd arg), then park with the tx still open.
+          const result =
+            await deps.scheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
+              t,
+              input,
+              tx,
+            );
+          signalReached();
+          await gate;
+          return result;
+        },
+      },
+    };
+
+    // #2 is gated at its pre-tx `findActiveForMember` (runs right after
+    // its `findById` `open` read) so we can PROVE #2 read `open` while #1
+    // was still uncommitted — then we let #2 continue into its tx where
+    // its step-(a) INSERT blocks on #1's lock. This pins the ordering
+    // (#2 committed to the race BEFORE #1 commits), eliminating the
+    // false-GREEN where #2's findById races AFTER #1's commit and exits
+    // early via the pre-tx `suggestion_not_open` (which would pass on the
+    // OLD code too, never exercising the 23505 INSERT collision).
+    let release2!: () => void;
+    const gate2 = new Promise<void>((resolve) => {
+      release2 = resolve;
+    });
+    let signalReached2!: () => void;
+    const reached2 = new Promise<void>((resolve) => {
+      signalReached2 = resolve;
+    });
+    const gatedDeps2: typeof deps = {
+      ...deps,
+      cyclesRepo: {
+        ...deps.cyclesRepo,
+        findActiveForMember: async (tenantId: string, memberId: string) => {
+          const snapshot = await deps.cyclesRepo.findActiveForMember(
+            tenantId,
+            memberId,
+          );
+          signalReached2();
+          await gate2;
+          return snapshot;
+        },
+      },
+    };
+
+    const baseArgs = {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorRole: 'admin' as const,
+    };
+
+    // #1 starts first: enters its tx, runs step-(a) INSERT, then parks
+    // holding the unique-index lock.
+    const p1 = acceptTierUpgrade(gatedDeps1, {
+      ...baseArgs,
+      actorUserId: admin.userId,
+      correlationId: randomUUID(),
+    });
+    await reached;
+
+    // #2 starts while #1 is parked: its pre-tx findById reads `open`
+    // (#1 has NOT committed), then it parks at findActiveForMember.
+    const p2 = acceptTierUpgrade(gatedDeps2, {
+      ...baseArgs,
+      actorUserId: admin2.userId,
+      correlationId: randomUUID(),
+    });
+    // Wait until #2 has provably read `open` (its findById + the
+    // findActiveForMember read both completed before #1 committed).
+    await reached2;
+    // Release #2 — it now enters its tx; its step-(a) INSERT blocks on the
+    // partial-unique lock #1 holds.
+    release2();
+    // Give #2 a beat to reach + block on its blocked INSERT, then release
+    // #1 so it commits → lock releases → #2's INSERT raises 23505.
+    await new Promise((r) => setTimeout(r, 300));
+    releaseGate();
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    // #1 (the parked winner) commits; #2 (blocked then 23505) loses.
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) {
+      // 065 Fix B — the INSERT-collision loser sees the SAME clean
+      // conflict shape as a CAS loser: suggestion_not_open (409), NOT a
+      // server-class plan_change_failed.
+      expect(r2.error.kind).toBe('suggestion_not_open');
+    }
+
+    // Suggestion ends `accepted_pending_apply` attributed to #1.
+    const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(suggestion?.status).toBe('accepted_pending_apply');
+    expect(suggestion?.acceptedByUserId).toBe(admin.userId);
+
+    // Exactly ONE pending plan-change row survives, the WINNER's (#1) —
+    // the loser's blocked-then-failed step-(a) INSERT rolled back.
+    const pendingChanges = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select({
+          id: scheduledPlanChanges.scheduledChangeId,
+          scheduledByUserId: scheduledPlanChanges.scheduledByUserId,
+        })
+        .from(scheduledPlanChanges)
+        .where(
+          and(
+            eq(scheduledPlanChanges.memberId, seeded.memberId),
+            eq(scheduledPlanChanges.effectiveAtCycleId, seeded.cycleId),
+            eq(scheduledPlanChanges.status, 'pending'),
+          ),
+        ),
+    );
+    expect(pendingChanges).toHaveLength(1);
+    expect(pendingChanges[0]?.scheduledByUserId).toBe(admin.userId);
+
+    // Exactly one `tier_upgrade_accepted` audit row for this suggestion
+    // (the loser's tx rolled back before audit emit).
+    const accepted = await runInTenant(tenant.ctx, (tx) =>
+      (tx as unknown as typeof db)
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'tier_upgrade_accepted'),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
+          ),
+        ),
+    );
+    expect(accepted).toHaveLength(1);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
   // Round 6 W-013 — manual-supersede with the suggestion still in `open`
   //
   // Spec: F2 manual plan change BEFORE admin clicks Accept. The

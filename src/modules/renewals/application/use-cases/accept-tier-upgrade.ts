@@ -93,6 +93,20 @@ import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 // error class — Application importing its own ports is Principle-III
 // clean.
 import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
+// 065 Fix B (S3) — Postgres 23505 detection helpers. `@/lib/db-errors`
+// is Infrastructure-free (only the stable Postgres SQLSTATE contract),
+// so importing it in the Application layer is Principle-III clean — it's
+// the same helper F4/F5 conflict paths use.
+import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
+
+// 065 Fix B (S3) — the partial-unique index enforcing "at most one
+// pending scheduled_plan_changes row per (tenant, member, cycle)"
+// (migration 0086). A 23505 on THIS index at step (a) means a concurrent
+// accepter already inserted the pending row — the same race the step-(c)
+// CAS loses — so it maps to `suggestion_not_open` (409), NOT a
+// server-class `plan_change_failed`. Naming it explicitly keeps a future
+// unrelated unique constraint's 23505 surfacing as a genuine error.
+const SCHEDULED_PLAN_CHANGES_PENDING_UNIQ = 'scheduled_plan_changes_pending_uniq';
 
 /**
  * Round 3 type SUG-3 + simplification — hoisted discriminated-union
@@ -217,7 +231,21 @@ export async function acceptTierUpgrade(
   ).toISOString();
 
   try {
-    const txResult = await runInTenant(deps.tenant, async (tx) => {
+    // 065 Fix B — explicit Result return type on the tx callback. Step
+    // (a) now THROWS on failure (never `return err`), so the callback's
+    // only `return` is the ok arm; the explicit annotation keeps the
+    // defensive `if (!txResult.ok)` guard below well-typed (and lets a
+    // future in-tx `return err(...)` be added without re-plumbing).
+    type AcceptTxOk = {
+      readonly suggestionId: SuggestionId;
+      readonly targetApplyAtCycleId: CycleId;
+      readonly verificationTaskId: TaskId | null;
+      readonly scheduledChangeId: string;
+      readonly supersededScheduledChangeId: string | null;
+    };
+    const txResult = await runInTenant<
+      Result<AcceptTxOk, AcceptTierUpgradeError>
+    >(deps.tenant, async (tx) => {
       // ----- (a) F2 schedule plan change — mechanism for FR-039 step 1.
       let scheduledChangeId: string;
       let supersededScheduledChangeId: string | null = null;
@@ -248,10 +276,33 @@ export async function acceptTierUpgrade(
         supersededScheduledChangeId =
           scheduled.superseded?.scheduledChangeId ?? null;
       } catch (e) {
-        return err({
-          kind: 'plan_change_failed' as const,
-          message: (e as Error)?.message ?? 'unknown',
-        });
+        // 065 Fix B (S3 + S14) — step (a) now runs on the OUTER tx (S8).
+        // A failure here MUST THROW, never `return err`: `runInTenant`
+        // COMMITS on return (only rolls back on throw), so a `return`
+        // would commit a partial tx (the SAME trap the step-(c) comment
+        // warns about). Two throw shapes, both mapped by the outer catch:
+        //
+        //   - 23505 on `scheduled_plan_changes_pending_uniq`: a concurrent
+        //     accepter already inserted the pending row for (member,
+        //     cycle). This is the SAME concurrent-conflict as a step-(c)
+        //     CAS loss — throw `TierUpgradeStatusConflictError` so the
+        //     outer catch maps it to `suggestion_not_open` (409), not the
+        //     server-class `plan_change_failed` (502). Pre-S8 the loser
+        //     reached step (c) and got exactly this clean 409.
+        //   - anything else (genuine infra error, OR a 23505 on a
+        //     different constraint): re-throw so the outer tx rolls back
+        //     and the outer catch maps it to `server_error`.
+        if (
+          isUniqueViolation(e) &&
+          errorChainMessage(e).includes(SCHEDULED_PLAN_CHANGES_PENDING_UNIQ)
+        ) {
+          throw new TierUpgradeStatusConflictError(
+            suggestionId,
+            'open',
+            'accepted_pending_apply',
+          );
+        }
+        throw e;
       }
 
       // ----- (b) Optional T-180 verification task — FR-039 step 3.
