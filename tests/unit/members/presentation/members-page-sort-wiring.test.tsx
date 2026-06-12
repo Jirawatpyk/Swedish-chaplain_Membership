@@ -35,10 +35,24 @@ vi.mock('@/modules/members', () => ({
   formatMemberNumber: (prefix: string, n: number) => `${prefix}-${String(n).padStart(4, '0')}`,
   resolveMemberNumberPrefix: (...args: unknown[]) =>
     resolveMemberNumberPrefixMock(...args),
+  // `page.tsx` builds `VALID_STATUSES = new Set(MEMBER_STATUSES)` at module
+  // load (since the 8bb1c476 server-const dedupe moved it into this barrel),
+  // so the mock MUST provide it or the whole page module fails to evaluate.
+  MEMBER_STATUSES: ['active', 'inactive', 'archived'] as const,
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({ memberRepo: {}, memberSettings: {} }),
+}));
+
+vi.mock('@/modules/renewals', () => ({
+  // Task 8 (#4) wired the member-directory page to a best-effort lapsed-
+  // membership read. Stub it so this unit test never makes a real
+  // makeRenewalsDeps/runInTenant DB call (which would hang the page render →
+  // 30s timeout). Empty set → membership_lapsed:false on every row, leaving the
+  // sort-wiring + member-number assertions unaffected.
+  loadMembersMembershipStatus: vi.fn().mockResolvedValue({ ok: true, value: new Set() }),
+  makeRenewalsDeps: () => ({}),
 }));
 
 vi.mock('@/modules/plans', () => ({
