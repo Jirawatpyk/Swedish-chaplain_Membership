@@ -38,7 +38,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { db, runInTenant } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { exportJobs } from '@/modules/insights/infrastructure/db/schema-insights';

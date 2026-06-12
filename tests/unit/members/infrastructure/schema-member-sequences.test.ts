@@ -3,12 +3,10 @@ import { getTableName } from 'drizzle-orm';
 import {
   tenantMemberSequences,
   type TenantMemberSequenceRow,
-  type TenantMemberSequenceInsert,
 } from '@/modules/members/infrastructure/db/schema-member-sequences';
 import {
   tenantMemberSettings,
   type TenantMemberSettingsRow,
-  type TenantMemberSettingsInsert,
 } from '@/modules/members/infrastructure/db/schema-member-settings';
 
 describe('schema-member-sequences', () => {

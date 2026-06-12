@@ -1013,6 +1013,13 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "drizzle/migrations/**",
     "next-env.d.ts",
+    // Plugin scratch dirs — both are gitignored (.gitignore § superpowers
+    // + .remember). They hold brainstorm/plan artefacts + history buffers,
+    // not project source. ESLint flat config does not read .gitignore, so
+    // they must be ignored explicitly or `require()`-style scratch scripts
+    // (e.g. .superpowers/assemble-plan.js) surface as lint errors.
+    ".superpowers/**",
+    ".remember/**",
   ]),
 ]);
 

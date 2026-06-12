@@ -113,21 +113,6 @@ beforeEach(() => {
   resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
 });
 
-/** Walk the element tree collecting every node's `type` + flattened text. */
-function collectByType(node: unknown, type: string, acc: ReactElement[]) {
-  if (!node || typeof node !== 'object') return acc;
-  if (Array.isArray(node)) {
-    for (const c of node) collectByType(c, type, acc);
-    return acc;
-  }
-  const el = node as ReactElement & { props?: { children?: unknown } };
-  if (el.type === type) acc.push(el);
-  if (el.props && 'children' in el.props) {
-    collectByType(el.props.children, type, acc);
-  }
-  return acc;
-}
-
 describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', () => {
   it('renders section titles as real <h2>, never CardTitle (a11y-6)', async () => {
     const tree = await PortalProfileBody({ user: { id: 'user-a' } });
