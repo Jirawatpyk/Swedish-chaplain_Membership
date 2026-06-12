@@ -174,7 +174,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 name="preferredLanguage"
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger id="preferredLanguage">
+                    <SelectTrigger id="preferredLanguage" className="w-full">
                       <TranslatedSelectValue
                         translate={(value: string) =>
                           t(`languageOptions.${value as 'en' | 'th' | 'sv'}`)

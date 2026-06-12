@@ -145,7 +145,7 @@ export function OutreachDialog({
               value={channel}
               onValueChange={(v) => setChannel(v as Channel)}
             >
-              <SelectTrigger id="outreach-channel">
+              <SelectTrigger id="outreach-channel" className="w-full">
                 <TranslatedSelectValue
                   translate={(v) => t(`channel.option.${v}`)}
                 />
@@ -168,7 +168,7 @@ export function OutreachDialog({
                 value={templateId}
                 onValueChange={(v) => setTemplateId(v ?? EMAIL_TEMPLATES[0])}
               >
-                <SelectTrigger id="outreach-template">
+                <SelectTrigger id="outreach-template" className="w-full">
                   <TranslatedSelectValue
                     translate={(v) =>
                       t(`template.option.${v.replace(/\./g, '_')}`)

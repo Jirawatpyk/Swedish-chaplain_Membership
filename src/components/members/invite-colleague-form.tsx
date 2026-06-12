@@ -181,7 +181,7 @@ export function InviteColleagueForm() {
               name="preferred_language"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="preferred_language">
+                  <SelectTrigger id="preferred_language" className="w-full">
                     <TranslatedSelectValue
                       translate={(value: string) =>
                         t(`languageOptions.${value}`)
