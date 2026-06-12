@@ -140,6 +140,13 @@ export async function PortalProfileBody({
     resolveMemberNumberPrefix(tenant, deps.memberSettings),
   ]);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
+  // 067 — natural-person members (individual / student plans) have no company
+  // identity, so company-only profile fields (legal entity type, founded year)
+  // are HIDDEN for them. This is a member-TYPE hide (the field never applies),
+  // distinct from an empty company field, which still shows "—" as a
+  // completeness prompt. memberTypeScope comes from the plan lookup.
+  const isIndividual =
+    planLookup.ok && planLookup.value.memberTypeScope === 'individual';
 
   // `m.memberNumber` is already a branded MemberNumber (validated by
   // rowToMember) — no re-wrap needed.
@@ -195,10 +202,12 @@ export async function PortalProfileBody({
                 label={t('fields.companyName')}
                 value={m.companyName}
               />
-              <DetailField
-                label={t('fields.legalEntityType')}
-                value={m.legalEntityType}
-              />
+              {!isIndividual && (
+                <DetailField
+                  label={t('fields.legalEntityType')}
+                  value={m.legalEntityType}
+                />
+              )}
               {/* 067 — members get their tax_id on every issued tax invoice;
                   surface it here so they can verify the value the chamber has
                   on file (and notice when it is missing — the §86/4 buyer TIN).
@@ -234,10 +243,12 @@ export async function PortalProfileBody({
                   value={null}
                 />
               )}
-              <DetailField
-                label={t('fields.foundedYear')}
-                value={m.foundedYear}
-              />
+              {!isIndividual && (
+                <DetailField
+                  label={t('fields.foundedYear')}
+                  value={m.foundedYear}
+                />
+              )}
               {m.description ? (
                 <div className="sm:col-span-2 lg:col-span-3">
                   <DetailField
