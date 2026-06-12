@@ -80,6 +80,59 @@ function connectOptions(stripeAccount: string): { stripeAccount?: string } {
   return shouldActOnBehalfOf(stripeAccount) ? { stripeAccount } : {};
 }
 
+// ---------------------------------------------------------------------------
+// Webhook-read-lag retry on `retrievePaymentIntent` (fix/068, 2026-06-12).
+//
+// When the `payment_intent.succeeded` webhook fires, `confirmPayment`
+// step 6 re-fetches the PI for card metadata (brand/last4). Stripe's
+// webhook read-consistency means the object is INTERMITTENTLY not yet
+// retrievable right when the event fires — the retrieve throws a
+// `StripeInvalidRequestError` with `code: 'resource_missing'` / HTTP 404.
+// `mapStripeError` classifies that via its default arm as `permanent`,
+// so it was NOT retried → the payment row landed `method='other'` with
+// no card brand/last4 (UI shows "Other"). Impact is COSMETIC (method
+// label + brand/last4); the payment outcome / mark-paid / receipt are
+// all correct either way.
+//
+// The retrieve is IDEMPOTENT, so a TIGHT bounded retry on exactly the
+// webhook-read-lag shape (resource_missing / 404) self-heals the
+// metadata loss within the same handler. We deliberately do NOT retry
+// other `permanent` errors (card_declined, invalid params, auth) — that
+// would add ~1s of pointless latency to every genuine failure. Network /
+// rate-limit errors are already retried by the SDK
+// (`maxNetworkRetries: 3` in stripe-client.ts) and map to `retryable`,
+// so this layer must not double-handle them either.
+//
+// Bounds: up to 3 total attempts (1 initial + 2 retries) with ~250ms
+// then ~600ms backoff → worst-case ~850ms of added handler latency
+// before falling back to the unchanged exhaustion path. confirmPayment
+// runs step 6 inside a tx that holds the payment row's `FOR UPDATE`
+// lock, so this cap keeps lock-hold time sub-second.
+const MAX_RETRIEVE_ATTEMPTS = 3;
+// Backoff before attempt N (index = attempt number after the first). Two
+// entries cover the two retries; the array length is the source of truth
+// for "how many retries", paired with MAX_RETRIEVE_ATTEMPTS above.
+const RETRIEVE_RETRY_BACKOFF_MS: readonly number[] = [250, 600];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Detect the webhook-read-lag shape: the PI referenced by a just-
+ * delivered event isn't readable yet. Stripe surfaces this as a
+ * `StripeInvalidRequestError` with `code === 'resource_missing'`
+ * (API-level) and/or HTTP 404 (`statusCode`). We retry ONLY this shape
+ * because the retrieve is idempotent and this is the documented
+ * eventual-consistency window — never a genuine permanent error.
+ */
+function isWebhookReadLagError(e: unknown): boolean {
+  const err_ = e as { code?: string; statusCode?: number };
+  return err_.code === 'resource_missing' || err_.statusCode === 404;
+}
+
 /**
  * Map a Stripe SDK error to the port's `ProcessorGatewayError` union.
  *
@@ -360,44 +413,83 @@ export const stripeGateway: ProcessorGatewayPort = {
     stripeAccount,
   ): Promise<Result<RetrievedPaymentIntent, ProcessorGatewayError>> {
     const client = getStripeClient();
-    try {
-      const pi = await client.paymentIntents.retrieve(
-        paymentIntentId,
-        { expand: ['latest_charge.payment_method_details.card'] },
-        connectOptions(stripeAccount),
-      );
+    // Bounded webhook-read-lag retry (fix/068 — see MAX_RETRIEVE_ATTEMPTS
+    // block above). The retrieve is idempotent; we retry ONLY the
+    // resource_missing / 404 shape. Any other failure (genuine permanent,
+    // idempotency, network/rate-limit) returns immediately on attempt 1.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_RETRIEVE_ATTEMPTS; attempt++) {
+      try {
+        const pi = await client.paymentIntents.retrieve(
+          paymentIntentId,
+          { expand: ['latest_charge.payment_method_details.card'] },
+          connectOptions(stripeAccount),
+        );
 
+        logger.info(
+          {
+            stripeAccount,
+            paymentIntentId: pi.id,
+            status: pi.status,
+            ...(attempt > 1 ? { retrieveAttempt: attempt } : {}),
+          },
+          'stripe-gateway: retrievePaymentIntent ok',
+        );
+
+        const latestChargeId =
+          typeof pi.latest_charge === 'string'
+            ? pi.latest_charge
+            : pi.latest_charge?.id ?? null;
+
+        return ok({
+          id: pi.id,
+          status: pi.status,
+          clientSecret: pi.client_secret,
+          latestChargeId,
+          livemode: pi.livemode,
+          lastPaymentErrorCode: pi.last_payment_error?.code ?? null,
+          card: extractCardMetadata(pi),
+          // Surface PromptPay QR URL on retrieve so the resume path
+          // of initiatePayment can re-render the QR for a member who
+          // closed/reopened the drawer mid-scan. `next_action` is
+          // already in the response — no extra Stripe call.
+          promptpayQrSvgUrl: extractPromptPayQrUrl(pi),
+        });
+      } catch (e) {
+        lastError = e;
+        const backoffMs = RETRIEVE_RETRY_BACKOFF_MS[attempt - 1];
+        // Retry ONLY the webhook-read-lag shape, and only while attempts
+        // + a configured backoff remain. Everything else falls through
+        // to the unchanged `mapStripeError` exhaustion path below.
+        if (
+          attempt < MAX_RETRIEVE_ATTEMPTS &&
+          backoffMs !== undefined &&
+          isWebhookReadLagError(e)
+        ) {
+          await sleep(backoffMs);
+          continue;
+        }
+        break;
+      }
+    }
+    // Exhaustion / non-retryable: return the SAME mapped error as before
+    // this retry existed, so confirmPayment's existing audit
+    // (`payment_processor_retrieve_failed`) + `processor_unavailable`
+    // path — and Stripe's own webhook redelivery — are unchanged. Emit a
+    // single summary line when retries were actually attempted (the
+    // per-attempt SDK warn already fires inside `mapStripeError`; we
+    // avoid log spam by summarising once here rather than per attempt).
+    if (isWebhookReadLagError(lastError)) {
       logger.info(
         {
           stripeAccount,
-          paymentIntentId: pi.id,
-          status: pi.status,
+          paymentIntentId,
+          retrieveAttempts: MAX_RETRIEVE_ATTEMPTS,
         },
-        'stripe-gateway: retrievePaymentIntent ok',
+        'stripe-gateway: retrievePaymentIntent webhook-read-lag retries exhausted',
       );
-
-      const latestChargeId =
-        typeof pi.latest_charge === 'string'
-          ? pi.latest_charge
-          : pi.latest_charge?.id ?? null;
-
-      return ok({
-        id: pi.id,
-        status: pi.status,
-        clientSecret: pi.client_secret,
-        latestChargeId,
-        livemode: pi.livemode,
-        lastPaymentErrorCode: pi.last_payment_error?.code ?? null,
-        card: extractCardMetadata(pi),
-        // Surface PromptPay QR URL on retrieve so the resume path
-        // of initiatePayment can re-render the QR for a member who
-        // closed/reopened the drawer mid-scan. `next_action` is
-        // already in the response — no extra Stripe call.
-        promptpayQrSvgUrl: extractPromptPayQrUrl(pi),
-      });
-    } catch (e) {
-      return err(mapStripeError(e, { stripeAccount, paymentIntentId }));
     }
+    return err(mapStripeError(lastError, { stripeAccount, paymentIntentId }));
   },
 
   async cancelPaymentIntent(
