@@ -199,6 +199,15 @@ export async function PortalProfileBody({
                 label={t('fields.legalEntityType')}
                 value={m.legalEntityType}
               />
+              {/* 067 — members get their tax_id on every issued tax invoice;
+                  surface it here so they can verify the value the chamber has
+                  on file (and notice when it is missing — the §86/4 buyer TIN).
+                  Own-profile PII, member-visible by design. DetailField shows
+                  the "—" placeholder when null (no-TIN members). */}
+              <DetailField
+                label={t('fields.taxId')}
+                value={m.taxId}
+              />
               <DetailField
                 label={t('fields.country')}
                 value={null}
