@@ -67,7 +67,7 @@ vi.mock('@/modules/members/members-deps', () => ({
   }),
 }));
 
-import MemberPortalHomePage from '@/app/(member)/portal/page';
+import MemberPortalHomePage from '@/app/(member)/portal/(home)/page';
 
 describe('MemberPortalHomePage — first-run / not-linked branch (finding A2)', () => {
   it('renders the localised first-run hub with no MISSING_KEY refs', async () => {

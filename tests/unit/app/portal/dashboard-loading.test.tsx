@@ -77,7 +77,7 @@ vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
 }));
 
-import PortalDashboardLoading from '@/app/(member)/portal/loading';
+import PortalDashboardLoading from '@/app/(member)/portal/(home)/loading';
 
 describe('portal/loading.tsx — CLS-stable skeleton (057 redesign)', () => {
   it('renders without any MISSING_KEY or MISSING_NS references', async () => {
