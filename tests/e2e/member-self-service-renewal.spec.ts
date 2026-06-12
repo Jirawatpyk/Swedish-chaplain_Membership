@@ -66,12 +66,15 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
       page.getByRole('region', { name: /welcome.*first renewal/i }),
     ).toBeVisible();
 
-    // AS2 — frozen plan summary card visible. The seed uses
-    // 50000.00 THB / 12 months / regular tier.
+    // AS2 — frozen plan summary card visible. The seed uses 50000.00 THB /
+    // 12 months / regular tier. The page formats the locked-in price as a
+    // currency (UX R5/C1: `formatter.number(..., {style:'currency',
+    // currency:'THB'})` → "THB 50,000.00" for the EN member), NOT the raw
+    // "50000.00" — assert the rendered, comma-grouped value.
     await expect(
       page.getByRole('heading', { name: /membership plan/i }),
     ).toBeVisible();
-    await expect(page.getByText('50000.00')).toBeVisible();
+    await expect(page.getByText('THB 50,000.00')).toBeVisible();
     await expect(page.getByText('12 months')).toBeVisible();
 
     // Benefit summary fallback (benefitsAvailable=false in MVP).
