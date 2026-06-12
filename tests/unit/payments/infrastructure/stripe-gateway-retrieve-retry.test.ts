@@ -91,7 +91,9 @@ function piWithCard(): Stripe.PaymentIntent {
  * `StripeInvalidRequestError` + `code: 'resource_missing'` + HTTP 404.
  * `mapStripeError`'s default arm classifies this `permanent`.
  */
-function resourceMissingError(): Stripe.errors.StripeInvalidRequestError {
+function resourceMissingError(): InstanceType<
+  typeof Stripe.errors.StripeInvalidRequestError
+> {
   return new Stripe.errors.StripeInvalidRequestError({
     message: 'No such payment_intent: pi_test_retry_068',
     type: 'StripeInvalidRequestError' as never,
