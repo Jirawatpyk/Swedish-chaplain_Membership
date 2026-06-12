@@ -32,6 +32,14 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
 // tested) and passed to the client table as a ready value (no client-side
 // projection / no insights-barrel import in the client component).
 import { projectEngagementScore } from '@/modules/insights';
+// #4 — lapsed-membership badge enrichment. Renewals is a secondary read on the
+// directory hot path; the wrapper below degrades to "no badges" on any failure.
+import {
+  loadMembersMembershipStatus,
+  makeRenewalsDeps,
+} from '@/modules/renewals';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
@@ -95,6 +103,49 @@ export function parseDirectorySort(
   raw: string | undefined,
 ): 'engagement' | 'memberNumber' | undefined {
   return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
+}
+
+/**
+ * Best-effort lapsed-membership enrichment. Renewals is a secondary read on the
+ * member-directory hot path — a failure must NEVER take down the directory.
+ * Handles BOTH a Result `!ok` AND a thrown repo call (a runInTenant query can
+ * throw, not just return !ok). On either path: log one warn (errKind +
+ * memberIdsCount only, no ids/PII) and return an empty set → no badges.
+ */
+async function loadMembersMembershipStatusSafe(
+  tenant: ReturnType<typeof resolveTenantFromRequest>,
+  memberIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  try {
+    const res = await loadMembersMembershipStatus(makeRenewalsDeps(tenant.slug), {
+      tenantId: tenant.slug,
+      memberIds,
+    });
+    if (res.ok) return res.value;
+    // `loadMembersMembershipStatus` is typed `Result<…, never>`, so this branch
+    // is unreachable at the type level. Kept as defence-in-depth in case the
+    // use-case grows a domain error in future — a non-ok result still degrades
+    // to "no badges" rather than throwing on the directory hot path.
+    logger.warn(
+      {
+        tenantId: tenant.slug,
+        errKind: 'result_not_ok',
+        memberIdsCount: memberIds.length,
+      },
+      '[members-lapsed] loadMembersMembershipStatus !ok — badges suppressed',
+    );
+    return new Set<string>();
+  } catch (e) {
+    logger.warn(
+      {
+        tenantId: tenant.slug,
+        errKind: errKind(e),
+        memberIdsCount: memberIds.length,
+      },
+      '[members-lapsed] loadMembersMembershipStatus threw — badges suppressed',
+    );
+    return new Set<string>();
+  }
 }
 
 export default async function MembersListPage({
@@ -256,10 +307,14 @@ export async function MembersDirectoryBody({
   // helper) and format every row's display number (`SCCM-0042`) server-side,
   // mirroring the admin detail page. Falls back to the column DEFAULT 'M'
   // when no settings row exists (no visible error).
-  const memberPrefix = await resolveMemberNumberPrefix(
-    tenant,
-    deps.memberSettings,
-  );
+  // #4 — overlap the renewals "lapsed" batch read with the prefix fetch: both
+  // depend only on the already-resolved search result, so run them together.
+  // The lapsed read is best-effort (degrades to an empty set → no badges).
+  const memberIds = result.value.items.map((row) => row.member.memberId);
+  const [memberPrefix, lapsedIds] = await Promise.all([
+    resolveMemberNumberPrefix(tenant, deps.memberSettings),
+    loadMembersMembershipStatusSafe(tenant, memberIds),
+  ]);
 
   const rows: MembersTableRow[] = result.value.items.map((row) => {
     // F9 (G1) — server-side engagement projection (inverse of F8 risk).
@@ -279,6 +334,7 @@ export async function MembersDirectoryBody({
     plan_year: row.member.planYear,
     plan_display_name: row.planDisplayName,
     status: row.member.status,
+    membership_lapsed: lapsedIds.has(row.member.memberId),
     // 056-members-table-compact — engagement (the positive-framed inverse of
     // the F8 risk score) is now the sole at-risk surface in the table; the raw
     // risk score is no longer wired into the row (the Risk column was dropped).

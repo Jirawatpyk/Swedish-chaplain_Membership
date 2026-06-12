@@ -98,6 +98,13 @@ export type MembersTableRow = {
   readonly plan_display_name: string | null;
   readonly status: 'active' | 'inactive' | 'archived';
   /**
+   * #4 — true when the member's most-recent renewal cycle has lapsed
+   * (terminal lapsed/cancelled, past expiry). Derived server-side in the page
+   * via loadMembersMembershipStatus; the cell renders a badge when true.
+   * Always set (never optional) to match the row-builder's exhaustive map.
+   */
+  readonly membership_lapsed: boolean;
+  /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
    * canonical `projectEngagementScore`; null when unscored. The cell only
