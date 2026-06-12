@@ -58,6 +58,7 @@ import {
   ArrowUpDownIcon,
   ArrowUpIcon,
   PencilIcon,
+  TriangleAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
@@ -530,16 +531,32 @@ export function MembersTable({
     }),
     columnHelper.accessor('status', {
       header: () => t('columns.status'),
-      cell: (info) =>
-        enableSelection ? (
-          <InlineStatusCell
-            memberId={info.row.original.member_id}
-            status={info.getValue()}
-            onSave={onInlineEdit}
-          />
-        ) : (
-          <StatusBadge status={info.getValue()} />
-        ),
+      // #4 — the Lapsed badge is a SIBLING of the status control, OUTSIDE the
+      // InlineStatusCell <button>. Inside the button it would fire the status
+      // toggle on click and pollute the button's accessible name.
+      cell: (info) => (
+        <span className="inline-flex items-center gap-1.5">
+          {enableSelection ? (
+            <InlineStatusCell
+              memberId={info.row.original.member_id}
+              status={info.getValue()}
+              onSave={onInlineEdit}
+            />
+          ) : (
+            <StatusBadge status={info.getValue()} />
+          )}
+          {info.row.original.membership_lapsed ? (
+            <Badge
+              variant="outline"
+              className="gap-1 border-destructive/40 text-destructive"
+            >
+              <TriangleAlert aria-hidden="true" className="size-3" />
+              <span>{t('membershipLapsed')}</span>
+              <span className="sr-only">{t('membershipLapsedSr')}</span>
+            </Badge>
+          ) : null}
+        </span>
+      ),
     }),
     // 056-members-table-compact — the standalone Risk column was removed.
     // Engagement (below) is the positive-framed inverse of the same F8 risk
