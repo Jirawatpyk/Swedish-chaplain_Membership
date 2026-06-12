@@ -18,7 +18,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 /**
@@ -175,7 +175,11 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger id="preferredLanguage">
-                      <SelectValue />
+                      <TranslatedSelectValue
+                        translate={(value: string) =>
+                          t(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {/* W-7: i18n language option labels */}

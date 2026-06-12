@@ -34,7 +34,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 
@@ -413,7 +413,9 @@ export function InvoiceSettingsForm({
               disabled={disabled}
             >
               <SelectTrigger id="receipt_mode" className="w-full">
-                <SelectValue />
+                <TranslatedSelectValue
+                  translate={(value) => t(`receiptMode.${value as 'combined' | 'separate'}`)}
+                />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="combined">{t('receiptMode.combined')}</SelectItem>
@@ -482,7 +484,9 @@ export function InvoiceSettingsForm({
               disabled={disabled}
             >
               <SelectTrigger id="pro_rate" className="w-full">
-                <SelectValue />
+                <TranslatedSelectValue
+                  translate={(value) => t(`proRate.${value as 'none' | 'monthly' | 'daily'}`)}
+                />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">{t('proRate.none')}</SelectItem>

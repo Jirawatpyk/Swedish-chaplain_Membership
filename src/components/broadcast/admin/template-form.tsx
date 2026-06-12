@@ -26,7 +26,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { toast } from 'sonner';
@@ -312,7 +312,9 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
               aria-label={t('fields.localeLabel')}
               className="w-full"
             >
-              <SelectValue />
+              <TranslatedSelectValue
+                translate={(value) => t(`locale.${value}` as never)}
+              />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="en">{t('locale.en')}</SelectItem>

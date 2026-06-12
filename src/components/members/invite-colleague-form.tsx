@@ -22,7 +22,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 /**
@@ -182,7 +182,11 @@ export function InviteColleagueForm() {
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger id="preferred_language">
-                    <SelectValue />
+                    <TranslatedSelectValue
+                      translate={(value: string) =>
+                        t(`languageOptions.${value}`)
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {/* W-7: i18n language option labels */}

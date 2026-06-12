@@ -33,7 +33,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -146,7 +146,9 @@ export function OutreachDialog({
               onValueChange={(v) => setChannel(v as Channel)}
             >
               <SelectTrigger id="outreach-channel">
-                <SelectValue />
+                <TranslatedSelectValue
+                  translate={(v) => t(`channel.option.${v}`)}
+                />
               </SelectTrigger>
               <SelectContent>
                 {CHANNELS.map((c) => (
@@ -167,7 +169,11 @@ export function OutreachDialog({
                 onValueChange={(v) => setTemplateId(v ?? EMAIL_TEMPLATES[0])}
               >
                 <SelectTrigger id="outreach-template">
-                  <SelectValue />
+                  <TranslatedSelectValue
+                    translate={(v) =>
+                      t(`template.option.${v.replace(/\./g, '_')}`)
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {EMAIL_TEMPLATES.map((tpl) => (
