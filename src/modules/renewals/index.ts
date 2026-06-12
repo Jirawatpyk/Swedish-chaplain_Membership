@@ -79,6 +79,7 @@ export {
   cycleFrozenPriceSatang,
   isOverdue,
   daysUntilExpiry,
+  isMembershipLapsed,
   type CycleId,
   type CycleIdError,
   type ClosedReason,
