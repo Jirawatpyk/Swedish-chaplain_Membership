@@ -93,7 +93,7 @@ export function deriveMembershipStat(
   // date must NOT read "in good standing" (which would silence a possibly-
   // lapsed membership). Surface it honestly as the `error` "Status unavailable"
   // state rather than falling through to `active`. (A terminal cycle with a
-  // malformed date is already handled by the `isEndedTerminal` branch → lapsed.)
+  // malformed date is already handled by the `isMembershipLapsed` branch → lapsed.)
   if (days === null && !isTerminalCycleStatus(status)) {
     return { kind: 'error', variant: 'warning', daysRemaining: null, status, expiryIso: cycle.expiresAt };
   }
