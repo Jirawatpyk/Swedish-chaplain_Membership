@@ -6,11 +6,17 @@ import {
   PageSkeletonShell,
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
-import { StatSkeleton } from './_components/membership-stat-section';
-import { RecentActivitySkeleton } from './_components/recent-activity-section';
+import { StatSkeleton } from '../_components/membership-stat-section';
+import { RecentActivitySkeleton } from '../_components/recent-activity-section';
 
 /**
- * Portal dashboard loading skeleton (057 redesign).
+ * Portal home loading skeleton (057 redesign).
+ *
+ * Scoped inside the `(home)` route group ON PURPOSE — this home-shaped
+ * skeleton must be the loading fallback for `/portal` ONLY, not the whole
+ * portal children slot (otherwise navigating to /portal/* features on a cold
+ * cache flashes this skeleton before the target page's own loading.tsx). Do
+ * NOT move this back up to `portal/loading.tsx`.
  *
  * Shape mirrors the real page.tsx exactly so there is no CLS when
  * React replaces this with the streamed content:

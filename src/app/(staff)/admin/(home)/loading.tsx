@@ -18,6 +18,13 @@ import { env } from '@/lib/env';
  * Staff dashboard loading state. The skeleton MUST mirror the real page's
  * F9-flag fork (see `page.tsx`) — rendering the F1 roadmap skeleton while the
  * live F9 dashboard resolves would cause a layout shift / CLS spike (D6).
+ *
+ * Scoped inside the `(home)` route group ON PURPOSE: this dashboard-shaped
+ * skeleton must be the loading fallback for `/admin` ONLY. If it lived at the
+ * `admin/` segment level it would also be the Suspense fallback for the whole
+ * admin children slot, so navigating to any /admin/* feature (cache cold) would
+ * flash this dashboard skeleton before the target page's own loading.tsx
+ * mounts. Do NOT move this back up to `admin/loading.tsx`.
  */
 export default async function Loading() {
   const tLayout = await getTranslations('layout');
