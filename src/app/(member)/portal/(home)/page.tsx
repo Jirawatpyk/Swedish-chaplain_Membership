@@ -18,14 +18,14 @@ import { InvoicesSummaryCard } from '@/components/portal/invoices-summary-card';
 import {
   StatSkeleton,
   MembershipStatSection,
-} from './_components/membership-stat-section';
-import { OutstandingStatSection } from './_components/outstanding-stat-section';
-import { BenefitsStatSection } from './_components/benefits-stat-section';
-import { BenefitsPanelSection } from './_components/benefits-panel-section';
+} from '../_components/membership-stat-section';
+import { OutstandingStatSection } from '../_components/outstanding-stat-section';
+import { BenefitsStatSection } from '../_components/benefits-stat-section';
+import { BenefitsPanelSection } from '../_components/benefits-panel-section';
 import {
   RecentActivitySection,
   RecentActivitySkeleton,
-} from './_components/recent-activity-section';
+} from '../_components/recent-activity-section';
 
 const PORTAL_BENEFITS_HREF = '/portal/benefits';
 
