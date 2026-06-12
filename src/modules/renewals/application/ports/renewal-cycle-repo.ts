@@ -156,6 +156,19 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * The MOST-RECENT cycle (by created_at DESC, cycle_id DESC tiebreak) for each
+   * member id, in ONE query (DISTINCT ON). Used by the lapsed-badge enrichment
+   * to avoid N+1 across the ≤50 rows of the member-directory page. Returns at
+   * most one cycle per member that HAS a cycle; members with none are absent.
+   * Tenant-isolated via runInTenant (RLS+FORCE) — a foreign member id matches
+   * nothing. An empty `memberIds` MUST short-circuit at the use-case (no DB hit).
+   */
+  findLatestCyclesForMembers(
+    tenantId: string,
+    memberIds: readonly string[],
+  ): Promise<ReadonlyArray<RenewalCycle>>;
+
+  /**
    * Pipeline list for `/admin/renewals` dashboard (FR-046). Supports
    * server-side pagination + filter combinations. Default sort by
    * `expires_at_asc` (most urgent first).

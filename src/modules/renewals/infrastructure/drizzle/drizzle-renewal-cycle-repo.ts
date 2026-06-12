@@ -17,7 +17,7 @@
  * `listEligibleForDispatch`) are implemented for port completeness but
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
-import { and, eq, ne, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
+import { and, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
@@ -466,6 +466,28 @@ export function makeDrizzleRenewalCycleRepo(
           )
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;
+      });
+    },
+
+    async findLatestCyclesForMembers(
+      _tenantId: string,
+      memberIds: readonly string[],
+    ): Promise<ReadonlyArray<RenewalCycle>> {
+      if (memberIds.length === 0) return [];
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .selectDistinctOn([renewalCycles.memberId])
+          .from(renewalCycles)
+          .where(inArray(renewalCycles.memberId, [...memberIds]))
+          // DISTINCT ON requires the leading ORDER BY key to match the distinct
+          // column; created_at DESC + cycle_id DESC picks the latest, deterministic
+          // tiebreak — mirrors loadMemberRenewalStatus's 'created_at_desc'.
+          .orderBy(
+            renewalCycles.memberId,
+            desc(renewalCycles.createdAt),
+            desc(renewalCycles.cycleId),
+          );
+        return rows.map(rowToDomain);
       });
     },
 
