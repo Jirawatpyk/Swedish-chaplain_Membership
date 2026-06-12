@@ -86,6 +86,16 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     const confirmBtn = page.getByRole('button', { name: /confirm renewal/i });
     await expect(confirmBtn).toBeVisible();
     await expect(confirmBtn).toBeEnabled();
+
+    // 067 regression — the plan-change trigger shows the localised plan NAME,
+    // not the raw plan id. Base UI's <Select.Value> renders the raw value
+    // ("regular") by default; the page maps it back to the name via
+    // TranslatedSelectValue. The seed's current plan ('regular') → "Regular
+    // Corporate". (Asserting `toContainText('Regular Corporate')` on the
+    // collapsed trigger fails if it regresses to showing "regular".)
+    const planSelect = page.getByRole('combobox', { name: /choose a plan/i });
+    await expect(planSelect).toBeVisible();
+    await expect(planSelect).toContainText('Regular Corporate');
   });
 
   test('I12 review-fix: clicking confirm posts to API + redirects to /portal/billing/<invoiceId>/pay', async ({
