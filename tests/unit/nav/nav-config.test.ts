@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  filterNavConfig,
   isNavGroup,
   isNavItemActive,
   memberNavConfig,
   memberBottomTabItems,
   staffNavConfig,
+  type NavConfig,
   type NavGroup,
   type NavItem,
 } from '@/config/nav';
@@ -130,6 +132,39 @@ describe('staffNavConfig', () => {
         }
       }
     }
+  });
+});
+
+describe('filterNavConfig (role + visibility-flag filtering)', () => {
+  const hrefs = (cfg: NavConfig) =>
+    cfg.sections.flatMap((s) => s.items.map((i) => (i as NavItem).href));
+
+  it('admin sees every staff entry incl. both admin-only Settings pages', () => {
+    const filtered = filterNavConfig(staffNavConfig, {}, 'admin');
+    expect(filtered.sections).toHaveLength(6);
+    const all = hrefs(filtered);
+    expect(all).toContain('/admin/settings/broadcasts');
+    expect(all).toContain('/admin/settings/integrations/eventcreate');
+  });
+
+  it('manager drops the 2 admin-only Settings pages, keeps everything else', () => {
+    const filtered = filterNavConfig(staffNavConfig, {}, 'manager');
+    // Settings section survives — Invoice Settings + Renewal Schedules stay
+    // manager-readable (rendered read-only), so no section is emptied.
+    expect(filtered.sections).toHaveLength(6);
+    expect(filtered.sections[5]!.items.map((i) => (i as NavItem).href)).toEqual([
+      '/admin/settings/invoicing',
+      '/admin/settings/renewals/schedules',
+    ]);
+    const all = hrefs(filtered);
+    expect(all).not.toContain('/admin/settings/broadcasts');
+    expect(all).not.toContain('/admin/settings/integrations/eventcreate');
+    // Read-only-but-visible surfaces stay (manager reads them; the page
+    // disables writes, the nav entry is NOT hidden).
+    expect(all).toContain('/admin/users');
+    expect(all).toContain('/admin/invoices');
+    expect(all).toContain('/admin/credit-notes');
+    expect(all).toContain('/admin/audit');
   });
 });
 

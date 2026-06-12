@@ -105,6 +105,39 @@ export function isNavGroup(item: NavItem | NavGroup): item is NavGroup {
   return 'children' in item;
 }
 
+/**
+ * Filter a nav config for the current request. Pure — lives here (not in
+ * the client sidebar) so it is unit-testable without rendering React.
+ *
+ *  - `roles`: an item with a `roles` allow-list is dropped unless the
+ *    current `role` is in it (e.g. admin-only Settings entries that the
+ *    server gates with `notFound()` for manager — hides the dead link).
+ *  - `visibilityFlag`: an item with a flag is dropped unless that flag is
+ *    `true` in `flags`.
+ *  - NavGroups always pass (their children are filtered elsewhere).
+ *  - Sections left empty after filtering are dropped (no orphan header).
+ */
+export function filterNavConfig(
+  config: NavConfig,
+  flags: NavVisibilityFlags,
+  role: Role,
+): NavConfig {
+  function keepItem(item: NavItem | NavGroup): boolean {
+    if (isNavGroup(item)) return true;
+    if (item.roles && !item.roles.includes(role)) return false;
+    if (!item.visibilityFlag) return true;
+    return flags[item.visibilityFlag] === true;
+  }
+  return {
+    sections: config.sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter(keepItem),
+      }))
+      .filter((section) => section.items.length > 0),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Staff navigation (T007)
 // ---------------------------------------------------------------------------
@@ -256,6 +289,11 @@ export const staffNavConfig: NavConfig = {
           icon: Settings2Icon,
           href: '/admin/settings/broadcasts',
           activePattern: '/admin/settings/broadcasts',
+          // Admin-only ACCESS — the page returns notFound() for manager
+          // (role !== 'admin'), unlike Invoice Settings / Renewal Schedules
+          // which managers may view read-only. Hide the entry so manager
+          // isn't shown a link that 404s.
+          roles: ['admin'],
         },
         // F6 EventCreate integration. Spec round-2 R1 noted that the
         // entry "is a navigation-affordance decision" — initially we
@@ -275,6 +313,9 @@ export const staffNavConfig: NavConfig = {
           icon: PlugZapIcon,
           href: '/admin/settings/integrations/eventcreate',
           activePattern: '/admin/settings/integrations/eventcreate',
+          // Admin-only ACCESS (FR-035) — route returns notFound() for
+          // manager. Hidden from the manager sidebar via the roles filter.
+          roles: ['admin'],
         },
       ],
     },

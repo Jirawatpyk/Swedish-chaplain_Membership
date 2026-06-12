@@ -4,12 +4,10 @@ import { useTranslations } from 'next-intl';
 
 import {
   staffNavConfig,
-  isNavGroup,
-  type NavConfig,
-  type NavGroup,
-  type NavItem,
+  filterNavConfig,
   type NavVisibilityFlags,
 } from '@/config/nav';
+import type { Role } from '@/modules/auth';
 import { NavEntry } from '@/components/layout/nav-item';
 import {
   Sidebar,
@@ -26,6 +24,12 @@ import { SidebarToggle } from '@/components/shell/sidebar-toggle';
 interface StaffSidebarProps {
   readonly tenantName: string;
   /**
+   * Current actor role. Items with a `roles` allow-list are hidden unless
+   * the role is in it — manager never sees admin-only Settings entries
+   * (Broadcast Settings, EventCreate integration) that 404 server-side.
+   */
+  readonly role: Role;
+  /**
    * Optional visibility flags from the server layout. Items with a
    * `visibilityFlag` are filtered OUT unless their flag is `true`.
    * Defaults to the empty map — items without a flag are always shown.
@@ -33,36 +37,13 @@ interface StaffSidebarProps {
   readonly navVisibilityFlags?: NavVisibilityFlags;
 }
 
-/**
- * Filter a nav config by visibility flags. Items with no flag pass
- * through. Items with a flag are kept only when the flag is `true`.
- * Empty groups (all children filtered out) are dropped.
- */
-function filterNavConfig(
-  config: NavConfig,
-  flags: NavVisibilityFlags,
-): NavConfig {
-  function keepItem(item: NavItem | NavGroup): boolean {
-    if (isNavGroup(item)) return true;
-    if (!item.visibilityFlag) return true;
-    return flags[item.visibilityFlag] === true;
-  }
-  return {
-    sections: config.sections
-      .map((section) => ({
-        ...section,
-        items: section.items.filter(keepItem),
-      }))
-      .filter((section) => section.items.length > 0),
-  };
-}
-
 export function StaffSidebar({
   tenantName,
+  role,
   navVisibilityFlags = {},
 }: StaffSidebarProps) {
   const t = useTranslations();
-  const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags);
+  const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags, role);
 
   return (
     <Sidebar collapsible="icon" role="navigation" aria-label={t('nav.staff.ariaLabel')}>
