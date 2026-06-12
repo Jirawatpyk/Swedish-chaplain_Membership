@@ -3872,6 +3872,10 @@
       "events": "กิจกรรม",
       "sections": {
         "main": "หลัก",
+        "membership": "การเป็นสมาชิก",
+        "finance": "การเงิน",
+        "engagement": "การมีส่วนร่วม",
+        "system": "ระบบ",
         "settings": "การตั้งค่า"
       },
       "collapse": "ย่อแถบด้านข้าง",
@@ -3879,6 +3883,7 @@
       "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่",
       "members": "สมาชิก",
       "invoices": "ใบแจ้งหนี้",
+      "creditNotes": "ใบลดหนี้",
       "broadcasts": "E-Blast",
       "renewals": "การต่ออายุ",
       "audit": "บันทึกการตรวจสอบ",

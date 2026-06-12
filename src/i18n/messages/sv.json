@@ -3872,6 +3872,10 @@
       "events": "Evenemang",
       "sections": {
         "main": "Allmänt",
+        "membership": "Medlemskap",
+        "finance": "Ekonomi",
+        "engagement": "Engagemang",
+        "system": "System",
         "settings": "Inställningar"
       },
       "collapse": "Fäll ihop sidofältet",
@@ -3879,6 +3883,7 @@
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
       "invoices": "Fakturor",
+      "creditNotes": "Kreditnotor",
       "broadcasts": "Utskick",
       "renewals": "Förnyelser",
       "audit": "Granskningslogg",

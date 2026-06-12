@@ -11,43 +11,66 @@ import {
 } from '@/config/nav';
 
 describe('staffNavConfig', () => {
-  it('has exactly 2 sections', () => {
-    expect(staffNavConfig.sections).toHaveLength(2);
+  it('has exactly 6 sections: Overview, Membership, Finance, Engagement, System, Settings', () => {
+    expect(staffNavConfig.sections).toHaveLength(6);
   });
 
-  it('first section has 10 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users, Audit, Directory (F9 US2 Audit + US5 Directory entries added)', () => {
-    const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(10);
-    expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
-    expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
-    expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
-    expect(mainSection.items[3]!.titleKey).toBe('nav.staff.invoices');
-    expect(mainSection.items[4]!.titleKey).toBe('nav.staff.broadcasts');
-    // F6 Phase 4/5 — Events entry inserted between Broadcasts and
-    // Renewals to keep ops-facing surfaces (Broadcasts → Events) above
-    // member-lifecycle surfaces (Renewals → Users).
-    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.events');
-    const eventsItem = mainSection.items[5]! as NavItem;
-    expect(eventsItem.href).toBe('/admin/events');
-    expect(mainSection.items[6]!.titleKey).toBe('nav.staff.renewals');
-    expect(mainSection.items[7]!.titleKey).toBe('nav.staff.users');
-    // F9 US2 — audit log viewer entry appended after Users.
-    expect(mainSection.items[8]!.titleKey).toBe('nav.staff.audit');
-    // F9 US5 — member directory entry appended after Audit.
-    expect(mainSection.items[9]!.titleKey).toBe('nav.staff.directory');
+  it('section 0 (Overview) has no header and only Dashboard', () => {
+    const overview = staffNavConfig.sections[0]!;
+    expect(overview.titleKey).toBeUndefined();
+    expect(overview.items).toHaveLength(1);
+    expect(overview.items[0]!.titleKey).toBe('nav.staff.dashboard');
+    expect((overview.items[0]! as NavItem).href).toBe('/admin');
   });
 
-  it('second section is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate (F7.1a US2 entry added)', () => {
-    // R7 consolidation removed the Fee Configuration page. VAT +
-    // currency + registration fee all live in Invoice Settings now
-    // (tenant_invoice_settings is the authoritative source). F8 added
-    // Reminder schedules at /admin/settings/renewals/schedules. F6
-    // Phase 5 added EventCreate integration setup wizard. F7.1a US2
-    // added Broadcast settings (image-source allowlist) at
-    // /admin/settings/broadcasts (relocated from /admin/broadcasts/
-    // settings to align with centralised-settings IA + auto-derived
-    // breadcrumb).
-    const settingsSection = staffNavConfig.sections[1]!;
+  it('section 1 (Membership) groups Members, Plans, Renewals, Directory', () => {
+    const membership = staffNavConfig.sections[1]!;
+    expect(membership.titleKey).toBe('nav.staff.sections.membership');
+    expect(membership.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.members',
+      'nav.staff.plans',
+      'nav.staff.renewals',
+      'nav.staff.directory',
+    ]);
+  });
+
+  it('section 2 (Finance) holds Invoices, Credit Notes', () => {
+    const finance = staffNavConfig.sections[2]!;
+    expect(finance.titleKey).toBe('nav.staff.sections.finance');
+    expect(finance.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.invoices',
+      'nav.staff.creditNotes',
+    ]);
+    expect((finance.items[0]! as NavItem).href).toBe('/admin/invoices');
+    expect((finance.items[1]! as NavItem).href).toBe('/admin/credit-notes');
+  });
+
+  it('section 3 (Engagement) groups Broadcasts, Events', () => {
+    const engagement = staffNavConfig.sections[3]!;
+    expect(engagement.titleKey).toBe('nav.staff.sections.engagement');
+    expect(engagement.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.broadcasts',
+      'nav.staff.events',
+    ]);
+    expect((engagement.items[1]! as NavItem).href).toBe('/admin/events');
+  });
+
+  it('section 4 (System) groups Users, Audit', () => {
+    const system = staffNavConfig.sections[4]!;
+    expect(system.titleKey).toBe('nav.staff.sections.system');
+    expect(system.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.users',
+      'nav.staff.audit',
+    ]);
+  });
+
+  it('section 5 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
+    // R7 consolidation removed the Fee Configuration page (VAT + currency
+    // + registration fee live in Invoice Settings). F8 added Reminder
+    // schedules; F6 added the EventCreate setup wizard; F7.1a US2 added
+    // Broadcast settings (image-source allowlist) at /admin/settings/
+    // broadcasts. The Settings header is unchanged by the 5-group regroup.
+    const settingsSection = staffNavConfig.sections[5]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
     expect(settingsSection.items).toHaveLength(4);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');

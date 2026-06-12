@@ -7,6 +7,7 @@ import {
   UserCircleIcon,
   BuildingIcon,
   ReceiptIcon,
+  FileMinusIcon,
   FileCog2Icon,
   MegaphoneIcon,
   RefreshCwIcon,
@@ -110,6 +111,7 @@ export function isNavGroup(item: NavItem | NavGroup): item is NavGroup {
 
 export const staffNavConfig: NavConfig = {
   sections: [
+    // Overview — single landing entry, no section header.
     {
       items: [
         {
@@ -118,12 +120,12 @@ export const staffNavConfig: NavConfig = {
           href: '/admin',
           activePattern: 'exact:/admin',
         },
-        {
-          titleKey: 'nav.staff.plans',
-          icon: FileTextIcon,
-          href: '/admin/plans',
-          activePattern: '/admin/plans',
-        },
+      ],
+    },
+    // Membership — who the members are + their plan / renewal lifecycle.
+    {
+      titleKey: 'nav.staff.sections.membership',
+      items: [
         {
           titleKey: 'nav.staff.members',
           icon: BuildingIcon,
@@ -131,40 +133,77 @@ export const staffNavConfig: NavConfig = {
           activePattern: '/admin/members',
         },
         {
-          titleKey: 'nav.staff.invoices',
-          icon: ReceiptIcon,
-          href: '/admin/invoices',
-          activePattern: '/admin/invoices',
+          titleKey: 'nav.staff.plans',
+          icon: FileTextIcon,
+          href: '/admin/plans',
+          activePattern: '/admin/plans',
         },
-        {
-          titleKey: 'nav.staff.broadcasts',
-          icon: MegaphoneIcon,
-          href: '/admin/broadcasts',
-          activePattern: '/admin/broadcasts',
-        },
-        // F6 Events — surfaces the EventCreate-imported event list +
-        // attendee detail. The Phase 4 page shipped without a nav
-        // entry; this entry closes that gap so admins can reach the
-        // module without typing a direct URL. Manager has read-only
-        // access via the same route (FR-035).
-        {
-          titleKey: 'nav.staff.events',
-          icon: CalendarDaysIcon,
-          href: '/admin/events',
-          activePattern: '/admin/events',
-        },
-        // F8 Renewals — top-level entry surfacing the renewal pipeline.
-        // Sub-routes (tier-upgrades, tasks) live under /admin/renewals/*
-        // and use the activePattern prefix-match to keep the parent
-        // highlighted; settings/schedules has been relocated to
-        // /admin/settings/renewals/schedules and lives in the Settings
-        // group below per the centralized-settings IA convention.
+        // F8 Renewals — renewal pipeline. Sub-routes (tier-upgrades, tasks)
+        // live under /admin/renewals/* and keep the parent highlighted via
+        // the prefix activePattern; renewal-schedule CONFIG lives in Settings.
         {
           titleKey: 'nav.staff.renewals',
           icon: RefreshCwIcon,
           href: '/admin/renewals',
           activePattern: '/admin/renewals',
         },
+        // F9 US5 — member directory + E-Book/JSON export. Gated server-side by
+        // FEATURE_F9_DASHBOARD (notFound when dark); nav entry stays visible.
+        {
+          titleKey: 'nav.staff.directory',
+          icon: BookUserIcon,
+          href: '/admin/directory',
+          activePattern: '/admin/directory',
+        },
+      ],
+    },
+    // Finance — billing surfaces (invoices + credit notes). Payments live
+    // inside the invoice flow; promote here if they ever become top-level.
+    {
+      titleKey: 'nav.staff.sections.finance',
+      items: [
+        {
+          titleKey: 'nav.staff.invoices',
+          icon: ReceiptIcon,
+          href: '/admin/invoices',
+          activePattern: '/admin/invoices',
+        },
+        // Credit notes — the standalone list (/admin/credit-notes). Notes
+        // raised against a specific invoice live under /admin/invoices/**
+        // and keep Invoices highlighted; this entry surfaces the directory
+        // that was previously only reachable contextually from an invoice.
+        {
+          titleKey: 'nav.staff.creditNotes',
+          icon: FileMinusIcon,
+          href: '/admin/credit-notes',
+          activePattern: '/admin/credit-notes',
+        },
+      ],
+    },
+    // Engagement — member-facing communications + events.
+    {
+      titleKey: 'nav.staff.sections.engagement',
+      items: [
+        {
+          titleKey: 'nav.staff.broadcasts',
+          icon: MegaphoneIcon,
+          href: '/admin/broadcasts',
+          activePattern: '/admin/broadcasts',
+        },
+        // F6 Events — EventCreate-imported event list + attendee detail.
+        // Manager has read-only access via the same route (FR-035).
+        {
+          titleKey: 'nav.staff.events',
+          icon: CalendarDaysIcon,
+          href: '/admin/events',
+          activePattern: '/admin/events',
+        },
+      ],
+    },
+    // System — account administration + the audit trail.
+    {
+      titleKey: 'nav.staff.sections.system',
+      items: [
         {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
@@ -172,24 +211,13 @@ export const staffNavConfig: NavConfig = {
           activePattern: '/admin/users',
         },
         // F9 US2 — staff audit-log viewer. Admin + manager (member never
-        // reaches /admin/*). Surface gated server-side by FEATURE_F9_DASHBOARD
-        // (notFound when dark); the nav entry stays visible (mirrors the F6
-        // EventCreate pattern below).
+        // reaches /admin/*). Gated server-side by FEATURE_F9_DASHBOARD
+        // (notFound when dark); the nav entry stays visible.
         {
           titleKey: 'nav.staff.audit',
           icon: ScrollTextIcon,
           href: '/admin/audit',
           activePattern: '/admin/audit',
-        },
-        // F9 US5 — member directory + E-Book/JSON export. Admin + manager
-        // (member never reaches /admin/*). Gated server-side by
-        // FEATURE_F9_DASHBOARD (notFound when dark); nav entry stays visible
-        // (mirrors the F9 audit + F6 EventCreate pattern).
-        {
-          titleKey: 'nav.staff.directory',
-          icon: BookUserIcon,
-          href: '/admin/directory',
-          activePattern: '/admin/directory',
         },
       ],
     },

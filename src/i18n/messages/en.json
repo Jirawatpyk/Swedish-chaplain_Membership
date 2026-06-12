@@ -3872,6 +3872,10 @@
       "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
+        "membership": "Membership",
+        "finance": "Finance",
+        "engagement": "Engagement",
+        "system": "System",
         "settings": "Settings"
       },
       "collapse": "Collapse sidebar",
@@ -3879,6 +3883,7 @@
       "ariaLabel": "Staff navigation",
       "members": "Members",
       "invoices": "Invoices",
+      "creditNotes": "Credit Notes",
       "broadcasts": "Broadcasts",
       "renewals": "Renewals",
       "audit": "Audit log",
