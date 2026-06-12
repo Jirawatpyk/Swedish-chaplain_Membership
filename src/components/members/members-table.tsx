@@ -551,7 +551,9 @@ export function MembersTable({
               className="gap-1 border-destructive/40 text-destructive"
             >
               <TriangleAlert aria-hidden="true" className="size-3" />
-              <span>{t('membershipLapsed')}</span>
+              {/* visible label is aria-hidden so a SR user hears ONLY the full
+                  sr-only phrase below, not "Lapsed Membership lapsed …" twice. */}
+              <span aria-hidden="true">{t('membershipLapsed')}</span>
               <span className="sr-only">{t('membershipLapsedSr')}</span>
             </Badge>
           ) : null}

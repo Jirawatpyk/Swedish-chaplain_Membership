@@ -135,4 +135,21 @@ describe('MembersTable lapsed badge', () => {
     renderTable([baseRow({ membership_lapsed: false })]);
     expect(screen.queryByText('Lapsed')).not.toBeInTheDocument();
   });
+
+  it('keeps the Lapsed badge OUTSIDE the status-toggle button (admin inline-edit)', () => {
+    // With enableSelection + onInlineEdit, InlineStatusCell renders a <button>.
+    // The Lapsed badge must be a SIBLING of it — never nested inside — so
+    // clicking the warning can't fire the status toggle (a11y/interaction guard).
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={[baseRow({ membership_lapsed: true })]}
+          nextCursor={null}
+          enableSelection
+          onInlineEdit={vi.fn().mockResolvedValue({ ok: true })}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('Lapsed').closest('button')).toBeNull();
+  });
 });
