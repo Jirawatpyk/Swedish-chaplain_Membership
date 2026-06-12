@@ -167,13 +167,32 @@ test.describe('@i18n T268 — TH locale length-expansion at 320px + 1280px', () 
       await page.waitForLoadState('domcontentloaded');
       const overflow = await page.evaluate(() => {
         // Look for any element whose scrollWidth exceeds the viewport.
-        // Skip elements that are explicitly horizontally-scrollable
-        // (overflow-x: scroll/auto) — those are intentional (data tables).
+        // Skip elements that are horizontally-scrollable OR live inside a
+        // horizontally-scrollable ancestor (overflow-x: scroll/auto). That
+        // content — the pipeline data table and the urgency tab rail — is
+        // INTENTIONALLY sideways-scrollable, and WCAG 1.4.10 exempts such 2D
+        // content (data tables / toolbars) from the no-horizontal-scroll rule.
+        // The original check inspected only the element itself, so a wide
+        // <table>/<Tabs> nested in an overflow-x:auto wrapper was wrongly
+        // flagged even though the wrapper scrolls it and the page never
+        // overflows. A genuine bug — an over-wide element with NO scrollable
+        // ancestor that forces the whole PAGE to scroll sideways — is still
+        // caught (its ancestor chain up to <body> has no overflow-x scroller).
+        const scrollableSelfOrAncestor = (start: HTMLElement): boolean => {
+          for (
+            let node: HTMLElement | null = start;
+            node;
+            node = node.parentElement
+          ) {
+            const ox = window.getComputedStyle(node).overflowX;
+            if (ox === 'scroll' || ox === 'auto') return true;
+          }
+          return false;
+        };
         const all = document.querySelectorAll<HTMLElement>('*');
         const violations: string[] = [];
         for (const el of all) {
-          const cs = window.getComputedStyle(el);
-          if (cs.overflowX === 'scroll' || cs.overflowX === 'auto') continue;
+          if (scrollableSelfOrAncestor(el)) continue;
           if (el.scrollWidth > window.innerWidth + 2) {
             violations.push(`${el.tagName}.${el.className}: scrollWidth=${el.scrollWidth}`);
             if (violations.length >= 3) break;
