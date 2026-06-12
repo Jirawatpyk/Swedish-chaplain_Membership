@@ -86,6 +86,7 @@ interface Props {
 
 export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement {
   const t = useTranslations('admin.broadcasts.templates');
+  const tLang = useTranslations('common');
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -313,13 +314,13 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
               className="w-full"
             >
               <TranslatedSelectValue
-                translate={(value) => t(`locale.${value}` as never)}
+                translate={(value) => tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)}
               />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="en">{t('locale.en')}</SelectItem>
-              <SelectItem value="th">{t('locale.th')}</SelectItem>
-              <SelectItem value="sv">{t('locale.sv')}</SelectItem>
+              <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
+              <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
+              <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
             </SelectContent>
           </Select>
         </div>

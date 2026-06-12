@@ -43,6 +43,7 @@ export function PreferredLocaleForm({
   initialValue,
 }: PreferredLocaleFormProps = {}): ReactElement {
   const t = useTranslations('portal.preferredLocale');
+  const tLang = useTranslations('common');
   const seeded = initialValue !== undefined;
   const [state, setState] = useState<LoadState>(seeded ? 'ready' : 'loading');
   const [value, setValue] = useState<PreferredLocale>(seeded ? initialValue : null);
@@ -139,7 +140,7 @@ export function PreferredLocaleForm({
           {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
             const id = `preferred-locale-${opt}`;
             const label =
-              opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
+              opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`);
             return (
               <div key={opt} className="flex items-center gap-2">
                 <RadioGroupItem id={id} value={opt} aria-label={label} />
