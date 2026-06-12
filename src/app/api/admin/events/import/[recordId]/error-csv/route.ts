@@ -47,8 +47,6 @@ import { adminOnlyGuard } from '../../../../integrations/eventcreate/_lib/role-v
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const NOT_FOUND_PROBLEM_TYPE =
-  'https://chamber-os.app/errors/error-csv-not-available';
 const NOT_FOUND_TITLE = 'Error CSV not available';
 const NOT_FOUND_DETAIL =
   'The error CSV for this import has either been removed or never existed. Re-run the import to generate fresh error rows.';
@@ -102,7 +100,7 @@ export async function GET(
       'error-csv-not-available',
       NOT_FOUND_TITLE,
       NOT_FOUND_DETAIL,
-      { extras: { requestId, type: NOT_FOUND_PROBLEM_TYPE } },
+      { extras: { requestId } },
     );
   }
 
@@ -163,7 +161,7 @@ export async function GET(
         'error-csv-not-available',
         NOT_FOUND_TITLE,
         NOT_FOUND_DETAIL,
-        { extras: { requestId, type: NOT_FOUND_PROBLEM_TYPE } },
+        { extras: { requestId } },
       );
     case 'signing_failure':
       logger.error(

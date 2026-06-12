@@ -39,14 +39,14 @@ export function problemResponse(
   status: number,
   kind: string,
   title: string,
-  detail: string,
+  detail?: string,
   options?: ProblemResponseOptions,
 ): NextResponse {
   const body: ProblemDetail & Record<string, unknown> = {
     type: `${PROBLEM_TYPE_BASE}${kind}`,
     title,
     status,
-    detail,
+    ...(detail !== undefined ? { detail } : {}),
     ...(options?.extras ?? {}),
   };
   return NextResponse.json(body, {
