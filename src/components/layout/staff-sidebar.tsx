@@ -69,7 +69,11 @@ export function StaffSidebar({
       <SidebarHeader className="border-b border-sidebar-border py-3 px-2">
         <div className="flex items-center gap-2">
           <div
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground text-sm font-bold"
+            // Brand mark: navy badge + white initial + a gold accent bar
+            // (gold-on-navy 3.9:1, non-text). Light mode only — in dark mode the
+            // badge is steel-blue (gold would be faint), so the gold appears on
+            // the dark sidebar's active-nav stripe instead.
+            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground text-sm font-bold shadow-[inset_0_-3px_0_0_var(--brand-accent)] dark:shadow-none"
             aria-hidden
           >
             {tenantName.charAt(0).toUpperCase()}

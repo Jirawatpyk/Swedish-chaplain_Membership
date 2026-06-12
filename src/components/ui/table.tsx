@@ -23,7 +23,7 @@ function Table({ className, 'aria-label': ariaLabel, ...props }: React.Component
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
       tabIndex={0}
       role="region"
       // strict-aria-ignore-next-line — the literal is only the fallback for

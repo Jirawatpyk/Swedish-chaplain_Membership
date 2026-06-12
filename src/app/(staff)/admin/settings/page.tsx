@@ -59,7 +59,7 @@ export default async function SettingsIndexPage() {
           <Link
             key={href}
             href={href}
-            className="group rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="group rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring"
           >
             <Card className="h-full transition-colors hover:border-primary/40">
               <CardHeader className="flex flex-row items-start gap-3 space-y-0">
