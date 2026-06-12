@@ -42,7 +42,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 // --- Form shape --------------------------------------------------------------
@@ -421,14 +421,12 @@ export function MemberForm({
                         raw value unless we pass a render function that
                         maps value → display. Lookup against the plans
                         array; fall back to placeholder when unset. */}
-                    <SelectValue placeholder={tf('planPlaceholder')}>
-                      {(value: string | null) => {
-                        const match = value
-                          ? plans.find((p) => p.plan_id === value)
-                          : null;
-                        return match ? match.display_name : tf('planPlaceholder');
-                      }}
-                    </SelectValue>
+                    <TranslatedSelectValue
+                      placeholder={tf('planPlaceholder')}
+                      translate={(value) =>
+                        plans.find((p) => p.plan_id === value)?.display_name ?? null
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {plans.map((p) => (
@@ -661,12 +659,11 @@ export function MemberForm({
                     aria-required="true"
                     className="w-full"
                   >
-                    <SelectValue>
-                      {(value: string | null) =>
-                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
-                        LANG_LABELS.en
+                    <TranslatedSelectValue
+                      translate={(value) =>
+                        LANG_LABELS[value as 'en' | 'th' | 'sv'] ?? LANG_LABELS.en
                       }
-                    </SelectValue>
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="en">{LANG_LABELS.en}</SelectItem>

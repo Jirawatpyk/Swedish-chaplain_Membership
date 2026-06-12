@@ -44,7 +44,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 
@@ -365,12 +365,12 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger id="cf-language" className="w-full">
-                    <SelectValue>
-                      {(value: string | null) =>
-                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
-                        LANG_LABELS.en
+                    <TranslatedSelectValue
+                      placeholder={LANG_LABELS.en}
+                      translate={(value) =>
+                        LANG_LABELS[value as 'en' | 'th' | 'sv'] ?? LANG_LABELS.en
                       }
-                    </SelectValue>
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
