@@ -1,4 +1,5 @@
 import * as React from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   Info,
@@ -6,6 +7,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -56,6 +58,14 @@ export interface StatCardProps {
    * text (not colour) is the accessible signal.
    */
   readonly variantLabel?: string;
+  /**
+   * Optional CTA rendered as a small button at the bottom of the card — e.g.
+   * the membership card's "Renew now" link to the renewal flow when a cycle is
+   * due/overdue/lapsed (067). Already-localised `label`; `href` is an internal
+   * route. Omitted → no CTA (the card stays a pure stat). Keeping it IN the card
+   * (vs a separate banner) avoids duplicating the status the card already shows.
+   */
+  readonly action?: { readonly href: string; readonly label: string };
   readonly className?: string;
 }
 
@@ -65,6 +75,7 @@ export function StatCard({
   sub,
   variant = 'neutral',
   variantLabel,
+  action,
   className,
 }: StatCardProps) {
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
@@ -103,6 +114,14 @@ export function StatCard({
             <Icon className="size-3.5" aria-hidden="true" />
             {variantLabel}
           </p>
+        ) : null}
+        {action ? (
+          <Link
+            href={action.href}
+            className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit')}
+          >
+            {action.label}
+          </Link>
         ) : null}
       </CardContent>
     </Card>
