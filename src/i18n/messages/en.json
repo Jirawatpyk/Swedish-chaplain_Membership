@@ -1969,7 +1969,6 @@
         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "errors": {
           "failed": "Issue failed",
-          "tax_id_required": "This member is a company tier but has no tax ID on record. A Thai tax invoice requires the buyer's tax ID — update the member before issuing.",
           "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
           "codeFallback": "Error code: {code}",

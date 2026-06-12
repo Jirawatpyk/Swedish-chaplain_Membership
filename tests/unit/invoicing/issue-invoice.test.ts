@@ -365,15 +365,21 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('member_archived');
   });
 
-  // --- 054-event-fee-invoices (Task 9) — §86/4 SUBJECT-BASED require-TIN gate.
+  // --- 066-membership-no-tin — §86/4 buyer-TIN is CONDITIONAL, not required.
   //
-  // The gate is now subject-based, NOT tier-based: EVERY membership invoice
-  // whose buyer snapshot lacks a 13-digit TIN is blocked, regardless of plan
-  // memberTypeScope (company/individual/both/null). This closes the
-  // ship-blocker where a TIN-less buyer received an illegal full ใบกำกับภาษี.
-  // Thai individuals have a national-ID-as-TIN, so a TIN is always obtainable.
+  // Per ประกาศอธิบดีฯ ฉบับที่ 199 (eff. 1 Jan 2015) the buyer TIN is mandatory
+  // on a full ใบกำกับภาษี ONLY when the buyer is a VAT-registered ผู้ประกอบการ
+  // (so they may claim input VAT). A non-registrant membership buyer (individual
+  // OR an unregistered company) gets a VALID §86/4 with name+address and the
+  // TIN line absent — exactly how an individual buys a SaaS subscription and
+  // still receives a tax invoice. The former subject-based require-TIN gate
+  // (commit 39a44edd) was an over-tightening on a legally-wrong premise and is
+  // REMOVED: a membership invoice issues regardless of buyer TIN/scope. Buyer
+  // name+address completeness is guaranteed upstream (member legal_name required
+  // at creation; composeBuyerAddress carries a non-empty country fallback).
+  // Auditor ruling 2026-06-12.
 
-  it('tax_id_required — COMPANY-scope membership member with no tax_id → err (§86/4)', async () => {
+  it('COMPANY-scope membership member with no tax_id → issues §86/4 (name+address, no TIN line)', async () => {
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -391,13 +397,16 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
-    // Gate runs BEFORE allocateNext → no §87 sequence number burned.
-    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    // §86/4 to a non-registrant: full tax invoice, kind:'invoice', TIN line absent.
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
+    // Issuance proceeds → §87 sequence number IS allocated (no longer blocked).
+    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalled();
   });
 
-  it('tax_id_required — membership member with whitespace-only tax_id → err (trim branch)', async () => {
+  it('membership member with whitespace-only tax_id → issues (treated as no-TIN, name+address)', async () => {
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -405,8 +414,8 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
         memberTypeScope: 'company',
         snapshot: {
           legal_name: 'Blank-Tax Co',
-          // Whitespace must be treated as "no tax_id" — the gate trims
-          // before the empty check, so this is rejected, not admitted.
+          // Whitespace is treated as "no tax_id" (buyerHasTin trims). It no
+          // longer blocks — the invoice issues as a §86/4 with no TIN line.
           tax_id: '   ',
           address: '123 Road, Bangkok',
           primary_contact_name: 'John Doe',
@@ -417,14 +426,17 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
   });
 
-  it('tax_id_required — INDIVIDUAL-tier membership member without tax_id → err (now subject-based, Task 9)', async () => {
-    // BEHAVIOUR CHANGE: under the old tier-based S1-P1-16 gate an individual
-    // member was exempt. Now the gate is subject-based — a membership invoice
-    // ALWAYS requires a buyer TIN (Thai individuals use their national ID).
+  it('INDIVIDUAL-tier membership member without tax_id → issues §86/4 (name+address)', async () => {
+    // A natural-person member (non-registrant) gets a valid full tax invoice
+    // with name+address — no national-ID TIN required. Restores the original
+    // F4 S1-P1-16 individual-exempt intent (and goes further: even no-TIN
+    // companies issue, per the auditor ruling).
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -442,14 +454,15 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
   });
 
-  it('tax_id_required — membership member with null memberTypeScope and no tax_id → err (subject-based, no longer fail-open, Task 9)', async () => {
-    // BEHAVIOUR CHANGE: a null scope used to fail open. The subject-based gate
-    // keys on `invoiceSubject==='membership'` + missing buyer TIN, so a null
-    // scope no longer exempts a TIN-less membership buyer.
+  it('membership member with null memberTypeScope and no tax_id → issues §86/4', async () => {
+    // Scope is irrelevant after the relax — issuance keys on neither tier nor
+    // TIN. A null-scope no-TIN membership buyer issues like any other.
     const deps = makeDeps(
       makeDraftInvoice(),
       makeSettings(),
@@ -467,8 +480,10 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }),
     );
     const r = await issueInvoice(deps, input);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('tax_id_required');
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
   });
 
   it('membership member WITH a valid tax_id (any tier) → NOT blocked, renders kind:invoice', async () => {
@@ -1065,16 +1080,17 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     );
     const r = await issueInvoice(deps, input);
     // 064 §105 ROOT FIX — even a MATCHED member with no TIN cannot be billed
-    // first for an event; the fee must be recorded as paid (§105 receipt via
-    // issueEventInvoiceAsPaid). Still NOT tax_id_required — the error code is
-    // event-specific so the admin UI can point at the record-as-paid flow.
+    // first for an EVENT; the fee must be recorded as paid (§105 receipt via
+    // issueEventInvoiceAsPaid). The error code is event-specific
+    // (event_no_tin_requires_paid_issue) so the admin UI can point at the
+    // record-as-paid flow. (Membership has no such block — 066 relax.)
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('event_no_tin_requires_paid_issue');
     // Pre-sequence guard → no §87 sequence number burned.
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
   });
 
-  it('membership → always renders kind:invoice (gate guarantees a TIN was present)', async () => {
+  it('membership → always renders kind:invoice (never a §105 receipt, with or without a buyer TIN)', async () => {
     const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(true);

@@ -91,22 +91,21 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
         const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
           description:
-            // S1-P1-16 — surface a human-readable message for the company
-            // tax_id gate instead of the raw error code (FR-009a).
-            // 064 §105 ROOT FIX — same for the no-TIN event guard, pointing
-            // the admin at the record-as-paid flow instead of plain issue.
-            code === 'tax_id_required'
-              ? t('errors.tax_id_required')
-              : code === 'event_no_tin_requires_paid_issue'
-                ? t('errors.event_no_tin_requires_paid_issue')
-                // 064 S1 — registration refunded between draft and issue
-                // (issuance-time TOCTOU re-check); human-readable copy so
-                // the admin knows the draft is now a dead end, not retryable.
-                : code === 'registration_refunded'
-                  ? t('errors.registration_refunded')
-                  : code
-                    ? t('errors.codeFallback', { code })
-                    : t('errors.unknown'),
+            // 064 §105 ROOT FIX — human-readable copy for the no-TIN EVENT
+            // guard, pointing the admin at the record-as-paid flow instead of
+            // plain issue. (066 removed the membership tax_id_required gate — a
+            // no-TIN membership now issues a valid §86/4 with name+address, so
+            // there is no membership error code to surface here.)
+            code === 'event_no_tin_requires_paid_issue'
+              ? t('errors.event_no_tin_requires_paid_issue')
+              // 064 S1 — registration refunded between draft and issue
+              // (issuance-time TOCTOU re-check); human-readable copy so
+              // the admin knows the draft is now a dead end, not retryable.
+              : code === 'registration_refunded'
+                ? t('errors.registration_refunded')
+                : code
+                  ? t('errors.codeFallback', { code })
+                  : t('errors.unknown'),
         });
         return;
       }

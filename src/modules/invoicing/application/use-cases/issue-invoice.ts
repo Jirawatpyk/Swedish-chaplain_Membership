@@ -117,7 +117,6 @@ export type IssueInvoiceError =
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
-  | { code: 'tax_id_required' }
   /**
    * 054-event-fee-invoices — a NON-member event invoice reached issue without a
    * buyer snapshot pinned at draft. `createEventInvoiceDraft` always pins the
@@ -287,34 +286,40 @@ export async function issueInvoice(
     if (!buyerResolution.ok) return err(buyerResolution.error);
     const memberSnap: MemberIdentitySnapshot = buyerResolution.value;
 
-    // §86/4 doc-type gate (054-event-fee-invoices Task 9) — subject-based, NOT
-    // tier-based. The PDF document kind is chosen at ISSUE from
-    // `invoiceSubject` + whether the resolved BUYER snapshot carries a 13-digit
-    // TIN:
+    // §86/4 doc-type gate (066-membership-no-tin) — subject-based. The PDF
+    // document kind is chosen at ISSUE from `invoiceSubject` + whether the
+    // resolved BUYER snapshot carries a 13-digit TIN:
     //
-    //   MEMBERSHIP + TIN     → kind 'invoice' (ใบกำกับภาษี / full tax invoice)
-    //   MEMBERSHIP + no TIN  → BLOCK `tax_id_required` (a chamber cannot issue a
-    //                          §105 receipt pre-payment, nor a §86/6 abbreviated
-    //                          tax invoice without RD approval). Every membership
-    //                          buyer must have a TIN — Thai individuals have a
-    //                          national-ID-as-TIN, so it is always obtainable.
+    //   MEMBERSHIP + TIN     → kind 'invoice' (ใบกำกับภาษี, buyer TIN shown)
+    //   MEMBERSHIP + no TIN  → kind 'invoice' (ใบกำกับภาษี, TIN line ABSENT) — a
+    //                          VALID full tax invoice. Per ประกาศอธิบดีฯ ฉบับที่
+    //                          199 (eff. 1 Jan 2015) the buyer TIN is mandatory
+    //                          ONLY for a VAT-REGISTRANT buyer (so they may claim
+    //                          input VAT); a non-registrant — an individual OR an
+    //                          unregistered company — gets a §86/4 with
+    //                          name+address only. NOT blocked. (Auditor ruling
+    //                          2026-06-12: the former `tax_id_required` block,
+    //                          commit 39a44edd, rested on the legally-wrong
+    //                          premise that a TIN-less full ใบกำกับภาษี is
+    //                          illegal — it is not. Even a VAT-registrant buyer
+    //                          who withholds their TIN may be issued the invoice;
+    //                          only THEIR input-VAT claim is forfeit — the seller
+    //                          chamber is never the party at fault.)
     //   EVENT + TIN          → kind 'invoice' (buyer can claim input VAT)
     //   EVENT + no TIN       → kind 'receipt_separate' (ใบเสร็จรับเงิน / §105
-    //                          receipt — VALID, the ticket was already paid; NO
-    //                          block).
+    //                          receipt) — billed via the as-paid path, never
+    //                          bill-first; the EVENT bill-first block stays below.
     //
-    // Supersedes the prior tier-based S1-P1-16 company-only gate: the rule is now
-    // "every MEMBERSHIP invoice requires a buyer TIN" regardless of plan
-    // memberTypeScope (individual buyers have a national-ID TIN). This closes the
-    // ship-blocker where a TIN-less buyer could receive an illegal full
-    // ใบกำกับภาษี. Runs BEFORE allocateNext so a blocked membership invoice never
-    // burns a §87 sequence number.
-    // FIX 5 — shared Domain discriminator (was inline `(tax_id ?? '').trim()
-    // !== ''` + the event/no-TIN → receipt_separate ternary, duplicated across
-    // record-payment + issue-credit-note). Behaviour byte-identical.
-    if (draft.invoiceSubject === 'membership' && !buyerHasTin(memberSnap.tax_id)) {
-      return err({ code: 'tax_id_required' });
-    }
+    // Buyer name+address completeness (a §86/4 requirement, auditor trap #1) is
+    // guaranteed UPSTREAM, so no membership buyer reaches issuance without a
+    // renderable buyer block: member `legal_name` is required at creation, and
+    // `composeBuyerAddress` carries a non-empty country fallback (so the
+    // template's `member.address.split('\n')` can never deref null). The buyer
+    // TIN is the ONLY optional particular — the PDF template already renders the
+    // TIN line conditionally (`{member.tax_id && …}`), so an absent TIN simply
+    // omits the line (no placeholder). `buyerHasTin` is the shared Domain
+    // discriminator (see document-kind.ts), still used by the EVENT gate below.
+    //
     // 064 §105 ROOT FIX — a no-TIN event buyer can never be billed first:
     // the only legal document for them is a §105 receipt, which may exist
     // only at the moment payment is recorded (issueEventInvoiceAsPaid).
@@ -520,14 +525,14 @@ export async function issueInvoice(
           sha256: rendered.sha256,
           templateVersion: deps.currentTemplateVersion,
         },
-        // 064 (Task 2, comment + dead arm fixed wave-4 S21) — persist WHAT
-        // the rendered main PDF is. After the two §86/4 gates above
-        // (membership no-TIN → tax_id_required; event no-TIN →
-        // event_no_tin_requires_paid_issue) every plain-issue path resolves
-        // `pdfKind === 'invoice'` — 'receipt_separate' is unreachable here
-        // (the as-paid use case is the only live writer of receipt kinds),
-        // so the constant is faithful and the former narrowing ternary's
-        // false arm was dead code.
+        // 064 (Task 2, dead arm fixed wave-4 S21; 066 membership-no-tin relax) —
+        // persist WHAT the rendered main PDF is. Every plain-issue path resolves
+        // `pdfKind === 'invoice'`: membership ALWAYS (with or without a buyer TIN
+        // — 066 removed the membership TIN gate), event-with-TIN, and event-no-TIN
+        // is blocked above (event_no_tin_requires_paid_issue → §105 as-paid path).
+        // 'receipt_separate' is unreachable here (the as-paid use case is the only
+        // live writer of receipt kinds), so the constant is faithful and the
+        // former narrowing ternary's false arm was dead code.
         pdfDocKind: 'invoice',
       });
     } catch (e) {

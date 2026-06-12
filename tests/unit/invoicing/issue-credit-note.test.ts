@@ -640,11 +640,12 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
   });
 
   it('does NOT block a MEMBERSHIP invoice with no TIN (subject gate — the guard is event-only)', async () => {
-    // A membership invoice can never legitimately be no-TIN (issue-invoice
-    // blocks it with tax_id_required), but if such a row existed the §86/10
-    // guard MUST NOT fire on it — the block is scoped to invoiceSubject==='event'
-    // so membership behaviour is unchanged. We assert the guard is bypassed by
-    // observing that the flow proceeds past it to allocateNext.
+    // 066 relax — a no-TIN membership invoice is now a legitimate, reachable
+    // row (a valid §86/4 with name+address). A §86/10 ใบลดหนี้ against it is
+    // LEGAL (it credits a real tax invoice), so the credit-note guard — scoped
+    // to invoiceSubject==='event' (where no-TIN → §105 receipt, which cannot be
+    // credited) — MUST NOT fire on membership. We assert the guard is bypassed
+    // by observing the flow proceeds past it to allocateNext.
     const invoice = makeIssuedEventInvoice({
       invoiceSubject: 'membership',
       memberId: 'member-99',

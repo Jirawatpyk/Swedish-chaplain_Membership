@@ -77,9 +77,9 @@ export async function POST(
       logger.warn(failureLog, 'POST /api/invoices/[id]/issue failed');
     }
     // Wave-4 S16 — shared issuance-route map; overrides carry ONLY the
-    // codes this plain-issue route can see (§86/4 TIN gates).
+    // codes this plain-issue route can see. 066 removed the membership
+    // tax_id_required gate, leaving the event no-TIN bill-first guard.
     const status = issueErrorStatus(result.error.code, {
-      tax_id_required: 422,
       event_no_tin_requires_paid_issue: 422,
     });
     return NextResponse.json({ error: stripReason(result.error) }, { status });
