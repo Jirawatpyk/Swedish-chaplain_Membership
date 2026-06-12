@@ -92,6 +92,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenant_id: tenantId,
       orphans_detected: result.value.orphansDetected,
       orphans_dismissed: result.value.orphansDismissed,
+      // 065 S1/S2 — orphans already resolved concurrently (benign
+      // CAS-loser). Surfaced so dashboards can read
+      // `detected = dismissed + skipped_benign + failures` instead of
+      // mis-reading any `detected > dismissed` gap as a failure.
+      orphans_skipped_benign: result.value.orphansSkippedBenign,
       duration_ms: Date.now() - startedAt,
     };
     logger.info(

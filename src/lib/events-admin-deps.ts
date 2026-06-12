@@ -249,21 +249,32 @@ export async function runListMemberTinPresenceByIds(
   memberIds: ReadonlyArray<string>,
 ): Promise<ReadonlyMap<string, boolean>> {
   if (memberIds.length === 0) return new Map();
+  // Deliberately OUTSIDE the try: `asTenantContext` throws
+  // InvalidTenantSlugError on a malformed slug — a CALLER BUG that must
+  // propagate, never degrade into the silent empty-map fallback (065 L-2).
   const ctx = asTenantContext(tenantSlug);
   try {
     return await runInTenant(ctx, (tx) =>
       memberTinPresenceByIdsInTx(tx, asTenantId(tenantSlug), memberIds),
     );
   } catch (e) {
+    // What remains catchable here is infrastructure (runInTenant connection /
+    // RLS GUC / the members SELECT) — `asTenantId` is a rubber-stamp brander
+    // (validated by asTenantContext above) and cannot throw. 065 L-2: carry
+    // `errName` so a future programming-error class (TypeError etc.) is
+    // distinguishable from a Neon blip in the logs; 065 L-1: alertable
+    // degradation counter (the warn alone is not ops-pageable).
     logger.warn(
       {
         event: 'f6_member_tin_presence_lookup_failed',
         tenant_slug: tenantSlug,
         member_id_count: memberIds.length,
+        errName: e instanceof Error ? e.name : 'unknown',
         err: e instanceof Error ? e.message : String(e),
       },
       '[F6] buyerHasTin enrichment lookup failed — registrations fall back to the legacy matched⇒has-TIN guess',
     );
+    eventcreateMetrics.tinEnrichmentDegraded(tenantSlug);
     return new Map();
   }
 }
@@ -392,8 +403,9 @@ export async function runToggleEventCategory(
  *
  * **Staff-review-4 SUGG-2 update**: archive NOW needs
  * `quotaAccountingPort` to compute actual `allotmentAfter` per
- * `quota_credit_back_archive` audit row (matching the refund credit-
- * back pattern at `ingest-webhook-attendee.ts:786`). The previous
+ * `quota_credit_back_archive` audit row (matching the
+ * `quota_credit_back_refund` flow in the ingest-webhook-attendee
+ * pipeline — emitted via `_helpers/process-attendee-in-tx.ts`). The previous
  * design hardcoded `allotmentAfter: 0` as a sentinel, which forensic
  * dashboards filtering on `allotmentAfter > 0` would silently skip.
  * The macro `event_archived` audit still carries the aggregate

@@ -19,6 +19,7 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { scheduledPlanChanges } from './schema-scheduled-plan-changes';
 import type { ScheduledPlanChangeRow } from './schema-scheduled-plan-changes';
@@ -71,66 +72,84 @@ function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
 
 // --- Adapter ----------------------------------------------------------------
 
+// Core supersede UPDATE + pending INSERT, parameterised on the tx so it
+// can run either on a caller-supplied OUTER tx (065 S8 — atomic with the
+// F8 CAS) or on a tx the adapter opens itself.
+async function supersedeAndInsertOnTx(
+  tx: TenantTx,
+  tenantSlug: string,
+  input: ScheduleNextRenewalPlanChangeInput,
+): Promise<SupersedeAndInsertResult> {
+  // Step 1: supersede the existing pending row (if any) — atomic via
+  // partial-unique guarantee + RETURNING. UPDATE matches at most ONE
+  // row because the partial unique enforces "at most one pending per
+  // (member, cycle)".
+  const supersededRows = await tx
+    .update(scheduledPlanChanges)
+    .set({
+      status: 'superseded',
+      supersededAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(scheduledPlanChanges.memberId, input.memberId),
+        eq(scheduledPlanChanges.effectiveAtCycleId, input.effectiveAtCycleId),
+        eq(scheduledPlanChanges.status, 'pending'),
+      ),
+    )
+    .returning();
+
+  // Step 2: insert the fresh pending row in the SAME tx.
+  const insertedRows = await tx
+    .insert(scheduledPlanChanges)
+    .values({
+      // tenant_id is set by RLS USING/WITH CHECK; explicit set ensures
+      // the INSERT passes WITH CHECK. RLS ensures it cannot be set to
+      // any other tenant.
+      tenantId: tenantSlug,
+      memberId: input.memberId,
+      effectiveAtCycleId: input.effectiveAtCycleId,
+      fromPlanId: input.fromPlanId,
+      toPlanId: input.toPlanId,
+      scheduledByUserId: input.scheduledByUserId,
+      reason: input.reason ?? null,
+      // status defaults to 'pending'; explicit for clarity.
+      status: 'pending',
+    })
+    .returning();
+
+  const inserted = insertedRows[0];
+  if (!inserted) {
+    throw new Error(
+      'supersedeAndInsertPendingAtomically: INSERT returned no row',
+    );
+  }
+
+  const superseded = supersededRows[0] ?? null;
+  return {
+    inserted: rowToDomain(inserted),
+    superseded: superseded ? rowToDomain(superseded) : null,
+  };
+}
+
 export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
   async supersedeAndInsertPendingAtomically(
     tenant: TenantContext,
     input: ScheduleNextRenewalPlanChangeInput,
+    tx?: TenantTx,
   ): Promise<SupersedeAndInsertResult> {
-    return runInTenant(tenant, async (tx) => {
-      // Step 1: supersede the existing pending row (if any) — atomic via
-      // partial-unique guarantee + RETURNING. UPDATE matches at most ONE
-      // row because the partial unique enforces "at most one pending per
-      // (member, cycle)".
-      const supersededRows = await tx
-        .update(scheduledPlanChanges)
-        .set({
-          status: 'superseded',
-          supersededAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(scheduledPlanChanges.memberId, input.memberId),
-            eq(
-              scheduledPlanChanges.effectiveAtCycleId,
-              input.effectiveAtCycleId,
-            ),
-            eq(scheduledPlanChanges.status, 'pending'),
-          ),
-        )
-        .returning();
-
-      // Step 2: insert the fresh pending row in the SAME tx.
-      const insertedRows = await tx
-        .insert(scheduledPlanChanges)
-        .values({
-          // tenant_id is set by RLS USING/WITH CHECK; explicit set ensures
-          // the INSERT passes WITH CHECK. RLS ensures it cannot be set to
-          // any other tenant.
-          tenantId: tenant.slug,
-          memberId: input.memberId,
-          effectiveAtCycleId: input.effectiveAtCycleId,
-          fromPlanId: input.fromPlanId,
-          toPlanId: input.toPlanId,
-          scheduledByUserId: input.scheduledByUserId,
-          reason: input.reason ?? null,
-          // status defaults to 'pending'; explicit for clarity.
-          status: 'pending',
-        })
-        .returning();
-
-      const inserted = insertedRows[0];
-      if (!inserted) {
-        throw new Error(
-          'supersedeAndInsertPendingAtomically: INSERT returned no row',
-        );
-      }
-
-      const superseded = supersededRows[0] ?? null;
-      return {
-        inserted: rowToDomain(inserted),
-        superseded: superseded ? rowToDomain(superseded) : null,
-      };
-    });
+    // 065 S8 — when the caller threads an OUTER tx, run on it directly so
+    // the supersede+insert is atomic with the caller's subsequent writes
+    // (the F8 accept CAS). A CAS loss rolls this insert back together
+    // with the F8 transition — no orphaned pending row. When no tx is
+    // supplied (F2 `scheduleNextRenewalPlanChange`, which runs outside a
+    // tx), open our own `runInTenant`.
+    if (tx !== undefined) {
+      return supersedeAndInsertOnTx(tx, tenant.slug, input);
+    }
+    return runInTenant(tenant, (ownTx) =>
+      supersedeAndInsertOnTx(ownTx, tenant.slug, input),
+    );
   },
 
   async findPendingForCycle(

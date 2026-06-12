@@ -25,6 +25,7 @@ import { renewalCycles } from '../schema-renewal-cycles';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import {
   TierUpgradeOpenConflictError,
+  TierUpgradeStatusConflictError,
   TierUpgradeSuggestionNotFoundError,
   type NewTierUpgradeSuggestionInput,
   type TierUpgradeSuggestionRepo,
@@ -333,6 +334,8 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
       suggestionId: SuggestionId,
       args: {
         readonly to: TierUpgradeStatus;
+        readonly expectedFrom?: TierUpgradeStatus;
+        readonly expectedFromIn?: readonly TierUpgradeStatus[];
         readonly acceptedAt?: string;
         readonly acceptedByUserId?: string;
         readonly targetApplyAtCycleId?: string;
@@ -368,15 +371,80 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
       if (args.closedAt !== undefined)
         updateValues.closedAt = new Date(args.closedAt);
 
+      // 065 Fix 1 (W-011 double-accept TOCTOU) + 065 S7 (supersede
+      // set-membership CAS) — compare-and-swap: the UPDATE matches only
+      // while the row is still in the expected FROM state. A concurrent
+      // transition that committed after the caller's read makes this
+      // match 0 rows instead of silently re-applying the transition over
+      // the winner's write. The FROM predicate is either a value-pin
+      // (`status = expectedFrom`) or a set-membership guard
+      // (`status IN (...expectedFromIn)`) — see the port contract for
+      // which callers use which (exactly one MUST be supplied).
+      if (
+        (args.expectedFrom === undefined) ===
+        (args.expectedFromIn === undefined)
+      ) {
+        throw new Error(
+          'transitionStatus: supply EXACTLY ONE of expectedFrom / expectedFromIn',
+        );
+      }
+      const fromPredicate =
+        args.expectedFromIn !== undefined
+          ? inArray(tierUpgradeSuggestions.status, [...args.expectedFromIn])
+          : eq(tierUpgradeSuggestions.status, args.expectedFrom!);
+      // Human-readable FROM descriptor for the conflict-error message.
+      const expectedFromLabel =
+        args.expectedFromIn !== undefined
+          ? args.expectedFromIn.join('|')
+          : args.expectedFrom!;
+      // 065 S9 — explicit `tenant_id` scoping on BOTH the CAS UPDATE and
+      // the disambiguation SELECT below. RLS already filters cross-tenant
+      // rows (every method runs under `SET LOCAL app.current_tenant`),
+      // but the house style on this aggregate (`findById` /
+      // `findActiveForMember`) is belt-and-suspenders: an explicit
+      // `eq(tenantId, …)` predicate so a future RLS-policy regression or
+      // a BYPASSRLS connection can't silently CAS a foreign-tenant row.
       const [row] = await txDb
         .update(tierUpgradeSuggestions)
         .set(updateValues)
-        .where(eq(tierUpgradeSuggestions.suggestionId, suggestionId))
+        .where(
+          and(
+            eq(tierUpgradeSuggestions.suggestionId, suggestionId),
+            eq(tierUpgradeSuggestions.tenantId, tenantId),
+            fromPredicate,
+          ),
+        )
         .returning();
       if (!row) {
-        throw new TierUpgradeSuggestionNotFoundError(suggestionId);
+        // 0 rows — distinguish "row missing" from "CAS lost" with a
+        // follow-up read in the same tx (failure path only; the
+        // success path stays single-RTT). A 0-row UPDATE is NOT a SQL
+        // error, so the surrounding tx is not poisoned by this probe.
+        // 065 S9 — the probe is tenant-scoped by the `eq(tenantId, …)`
+        // predicate in the WHERE below (alongside RLS). A foreign-tenant
+        // row (e.g. an RLS-policy regression / BYPASSRLS connection) is
+        // simply not matched → `existing` is undefined →
+        // TierUpgradeSuggestionNotFoundError, i.e. treated as not-found.
+        // No in-app `row.tenantId !== tenantId` compare is needed (and
+        // none is done) — so we don't select `tenant_id` (065 S10).
+        const [existing] = await txDb
+          .select({ status: tierUpgradeSuggestions.status })
+          .from(tierUpgradeSuggestions)
+          .where(
+            and(
+              eq(tierUpgradeSuggestions.suggestionId, suggestionId),
+              eq(tierUpgradeSuggestions.tenantId, tenantId),
+            ),
+          );
+        if (!existing) {
+          throw new TierUpgradeSuggestionNotFoundError(suggestionId);
+        }
+        throw new TierUpgradeStatusConflictError(
+          suggestionId,
+          expectedFromLabel,
+          existing.status,
+        );
       }
-      void tenantId;
       return rowToDomain(row);
     },
 

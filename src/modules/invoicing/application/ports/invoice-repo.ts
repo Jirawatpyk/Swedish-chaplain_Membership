@@ -243,11 +243,12 @@ export interface InvoiceRepo {
    * 064 — single UPDATE draft→paid (as-paid issuance, event subject only).
    * Numbering: TIN path carries invoice-stream sequence/document numbers;
    * no-TIN β path carries NULLs + receiptDocumentNumberRaw (CHECK relax
-   * lands in a later migration). WHERE status='draft' — 0 rows ⇒ throw
+   * shipped in migration 0212). WHERE status='draft' — 0 rows ⇒ throw
    * InvoiceApplyConflictError (concurrent issue/as-paid race loser).
    *
    * CALLER CONTRACT (mirrors issueInvoice ordering — see issue-invoice.ts:7):
-   *   1. MUST hold lockForUpdate(invoiceId) BEFORE sequenceAllocator.allocateNext
+   *   1. MUST hold the invoice row lock (lockForUpdate or
+   *      findByIdInTxForUpdate) BEFORE sequenceAllocator.allocateNext
    *      (lock order: invoice row → §87 advisory lock; reversing deadlocks
    *      against concurrent issueInvoice).
    *   2. MUST compute money/snapshots AND pass `lines` from a draft read taken

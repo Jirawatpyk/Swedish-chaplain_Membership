@@ -37,8 +37,6 @@ import {
   makeGetInvoiceDeps,
   computeIsOverdue,
   displayDocumentNumber,
-  // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate below.
-  buyerHasTin,
 } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
@@ -87,6 +85,10 @@ import {
   PortalReceiptDownloadButton,
 } from '../_components/portal-pdf-download-button';
 import { downloadLabelKeys } from '../_utils/invoice-row-view-model';
+// REMOVE-WITH-064-REMEDIATION — legacy no-TIN event pay-gate predicate
+// (extracted pure helper, unit-pinned; master checklist at the guard in
+// record-payment.ts).
+import { isLegacyNoTinEventInvoice } from '../_utils/legacy-no-tin';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
@@ -200,23 +202,17 @@ export default async function PortalInvoiceDetailPage({
 
   // REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist at
   // the guard in record-payment.ts). A LEGACY pre-064 issued no-TIN EVENT
-  // invoice must not surface the Pay-now button: its issue-time PDF already
-  // IS the §105 receipt, and a Stripe payment against it gets captured but
-  // never applied (the webhook-side `recordPayment` guard rejects the flip
-  // with no auto-refund — S0 money trap). The F4 payability read
-  // (`getInvoiceForPayment`) + the initiate route reject it server-side;
-  // this is the matching member-facing surface, replaced by a localized
-  // "under document correction — contact staff" notice below. Mirrors the
-  // guard predicate exactly (subject + issued + trimmed-TIN check).
-  const isLegacyNoTinEventInvoice =
-    invoice.invoiceSubject === 'event' &&
-    invoice.status === 'issued' &&
-    !buyerHasTin(invoice.memberIdentitySnapshot?.tax_id);
+  // invoice must not surface the Pay-now button (S0 money trap) — full
+  // rationale + the predicate itself live in `../_utils/legacy-no-tin.ts`,
+  // unit-pinned so the OVER-match arm can't silently widen (drift would
+  // strip Pay-now from every TIN event invoice). Replaced by the localized
+  // "under document correction — contact staff" notice below.
+  const legacyNoTinEventInvoice = isLegacyNoTinEventInvoice(invoice);
 
   const canPayOnline =
     env.features.f5OnlinePayment &&
     invoice.status === 'issued' &&
-    !isLegacyNoTinEventInvoice &&
+    !legacyNoTinEventInvoice &&
     paymentSettings !== null &&
     paymentSettings.onlinePaymentEnabled &&
     paymentSettings.enabledMethods.length > 0 &&
@@ -664,7 +660,7 @@ export default async function PortalInvoiceDetailPage({
        * static <Badge>, no portal children.
        */}
       {invoice.status === 'issued' ? (
-        isLegacyNoTinEventInvoice ? (
+        legacyNoTinEventInvoice ? (
           // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event row: no pay
           // surface AND no "online payment disabled" card (which would
           // misleadingly suggest the tenant config is the blocker). The

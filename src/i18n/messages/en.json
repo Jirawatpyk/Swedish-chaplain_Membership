@@ -1998,6 +1998,7 @@
           "member_not_found": "The member could not be found.",
           "pdf_render_failed": "The PDF could not be generated — nothing was issued. Try again.",
           "blob_upload_failed": "The PDF could not be stored — nothing was issued. Try again.",
+          "network": "Connection error — the request may not have reached the server. Check your connection, then retry.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         }

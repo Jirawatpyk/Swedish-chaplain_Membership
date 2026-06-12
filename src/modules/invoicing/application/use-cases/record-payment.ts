@@ -349,7 +349,10 @@ export async function recordPayment(
     //      `payments.confirm.legacy_no_tin_event_money_captured` ops log
     //      (+ its logger import) in
     //      src/modules/payments/application/use-cases/confirm-payment.ts
-    //  13. the portal pay-gate + notice in
+    //  13. the portal pay-gate: the extracted predicate helper
+    //      src/app/(member)/portal/invoices/_utils/legacy-no-tin.ts (whole
+    //      file) + its unit pin tests/unit/portal/legacy-no-tin.test.ts,
+    //      the gate + notice in
     //      src/app/(member)/portal/invoices/[invoiceId]/page.tsx AND the
     //      `portal.invoices.detail.legacyNoTinNotPayable` i18n key in
     //      src/i18n/messages/{en,th,sv}.json (×3 — grep the key name)
@@ -358,7 +361,8 @@ export async function recordPayment(
     //      tests/unit/payments/invoicing-bridge.test.ts,
     //      tests/unit/payments/application/initiate-payment.test.ts,
     //      tests/unit/payments/application/confirm-payment.test.ts,
-    //      tests/contract/payments/post-payments-initiate.contract.test.ts
+    //      tests/contract/payments/post-payments-initiate.contract.test.ts,
+    //      tests/contract/invoices/pay-route-guard.contract.test.ts
     //  15. the matched-member integration pin (incl. its direct-insert
     //      fixture) in
     //      tests/integration/invoicing/record-payment-event-invoice.test.ts

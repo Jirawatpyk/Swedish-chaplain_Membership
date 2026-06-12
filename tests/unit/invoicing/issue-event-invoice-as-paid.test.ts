@@ -1107,7 +1107,11 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
-  it('blob.delete failure during orphan cleanup is swallowed (best-effort) — original error surfaces + WARN logged with the key', async () => {
+  it('blob.delete failure during orphan cleanup is swallowed (best-effort) — original error surfaces + ERROR logged with the key + drift metric', async () => {
+    // 065 H-1b — a failed cleanup leaves stale bytes at the deterministic
+    // key (tax-document drift risk class), so it logs at ERROR severity and
+    // fires the alertable counter — a warn is not ops-pageable.
+    const driftMetric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
     const deps = makeDeps(makeEventDraft(), makeSettings(), null);
     deps.blob.uploadPdf = vi.fn(async () => {
       throw new Error('blob 503');
@@ -1120,13 +1124,87 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('blob_upload_failed');
     // Review Minor #4 — the failed cleanup is no longer silent: ops needs the
     // key to sweep the orphan manually.
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
         blobKey: `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`,
         invoiceId: INVOICE_ID,
       }),
       expect.stringContaining('orphan blob cleanup failed'),
     );
+    expect(driftMetric).toHaveBeenCalledWith('issue_as_paid');
+    driftMetric.mockRestore();
+  });
+
+  // --- 065 H-1a — retry must OVERWRITE stale bytes at the deterministic key ---
+
+  it('H-1a: uploadPdf is called with allowOverwrite:true — a retry after a failed-then-uncleaned attempt replaces stale bytes instead of silently keeping them', async () => {
+    // The adapter's allowOverwrite=false arm treats "already exists" as
+    // success returning the OLD bytes WITHOUT a sha compare — a retried
+    // as-paid (key has no paymentDate component) could commit a row whose
+    // pdf_sha256 doesn't match the stored bytes. Safe under the invoice
+    // row lock (only one issuance attempt per invoice id at a time).
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.blob.uploadPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ allowOverwrite: true }),
+    );
+  });
+
+  // --- 065 M-4 — severity split: server faults log ERROR, business rejects WARN ---
+
+  it('M-4: blob_upload_failed logs at ERROR severity (infra outage class)', async () => {
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    deps.blob.uploadPdf = vi.fn(async () => {
+      throw new Error('blob 503');
+    });
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID, tenantId: 'test-swecham' }),
+      'issueEventInvoiceAsPaid: internal error, rolling back',
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'issueEventInvoiceAsPaid: internal error, rolling back',
+    );
+  });
+
+  it('M-4: overflow logs at ERROR severity + fires the issuanceOverflow metric (tenant-wide issuance outage)', async () => {
+    const overflowMetric = vi.spyOn(invoicingMetrics, 'issuanceOverflow');
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+      sequenceAllocator: { allocateNext: vi.fn(async () => 1_000_000) },
+    });
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('overflow');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      'issueEventInvoiceAsPaid: internal error, rolling back',
+    );
+    expect(overflowMetric).toHaveBeenCalledWith('test-swecham', 2026);
+    overflowMetric.mockRestore();
+  });
+
+  it('M-4: invoice_already_issued race loser stays at WARN severity (business reject, not a server fault)', async () => {
+    const overflowMetric = vi.spyOn(invoicingMetrics, 'issuanceOverflow');
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    deps.invoiceRepo.applyIssueAsPaid = vi.fn(async () => {
+      throw new InvoiceApplyConflictError('applyIssueAsPaid');
+    });
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      'issueEventInvoiceAsPaid: internal error, rolling back',
+    );
+    expect(logger.error).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'issueEventInvoiceAsPaid: internal error, rolling back',
+    );
+    expect(overflowMetric).not.toHaveBeenCalled();
+    overflowMetric.mockRestore();
   });
 
   it('applyIssueAsPaid race loser (kind=applyIssueAsPaid) → typed invoice_already_issued via throw-carrier (seq rolls back)', async () => {
@@ -1372,7 +1450,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       );
     });
 
-    it('lookup err → registration_lookup_failed (pre-allocation)', async () => {
+    it('lookup err → registration_lookup_failed (pre-allocation) + ERROR log discriminates reason=port_error (065 M-2)', async () => {
       const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
         eventRegistrationLookup: {
           findById: vi.fn(async () => err({ kind: 'lookup_failed' as const })),
@@ -1382,12 +1460,26 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
       expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+      // The single public code collapses two failure modes; the log keeps
+      // them apart (the F6 adapter already error-logs the underlying port
+      // failure — this line adds the invoice context + discriminator).
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'port_error',
+          invoiceId: INVOICE_ID,
+          tenantId: 'test-swecham',
+          registrationId: 'reg-uuid-1',
+        }),
+        expect.stringContaining('registration lookup failed'),
+      );
     });
 
-    it('lookup ok(null) — registration row vanished → registration_lookup_failed (pre-allocation)', async () => {
+    it('lookup ok(null) — registration row vanished → registration_lookup_failed + ERROR log discriminates reason=not_found (065 M-2 data-integrity anomaly)', async () => {
       // A draft always points at a registration that existed at draft time;
       // a null read here is an RLS anomaly or out-of-band delete — refuse to
-      // issue a tax document against a row we can no longer verify.
+      // issue a tax document against a row we can no longer verify. The F6
+      // adapter logs NOTHING on a clean null, so without this line the
+      // anomaly arm would be invisible in logs.
       const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
         eventRegistrationLookup: {
           findById: vi.fn(async () => ok(null)),
@@ -1397,6 +1489,14 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('registration_lookup_failed');
       expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'not_found',
+          invoiceId: INVOICE_ID,
+          registrationId: 'reg-uuid-1',
+        }),
+        expect.stringContaining('registration lookup failed'),
+      );
     });
 
     it('still-paid registration → flows through to the happy path (re-check is non-intrusive)', async () => {

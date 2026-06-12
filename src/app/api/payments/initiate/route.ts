@@ -184,9 +184,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // to F5 typed `f5AuditAdapter.emit` so the typed payload contract
     // (`F5AuditPayloadByType['payment_initiate_rate_limited']`) +
     // explicit retentionYears become load-bearing. `tx: null` matches
-    // the existing F5 best-effort emit pattern (e.g. cross-tenant
-    // probe at initiate-payment.ts:283) for forensic events that must
-    // survive caller's tx rollback.
+    // the existing F5 best-effort emit pattern (e.g. the
+    // payment_cross_tenant_probe emit in initiate-payment.ts) for
+    // forensic events that must survive caller's tx rollback.
     try {
       await f5AuditAdapter.emit(null, {
         tenantId: tenantCtx.slug,

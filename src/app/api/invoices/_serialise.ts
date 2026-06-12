@@ -37,8 +37,15 @@ export function stripReason<E extends { code: string }>(error: E): Omit<E, 'reas
  *     ABSENT (internal verification error → the 500 default).
  *   - pdf_render_failed / blob_upload_failed → 500: infrastructure
  *     failures after rollback.
+ *
+ * Exported (065 review follow-up) ONLY for the unit pin in
+ * tests/unit/invoicing/issue-error-status.test.ts, which asserts the full
+ * map INCLUDING the deliberate `registration_lookup_failed` absence — a
+ * semantic `issueErrorStatus` alone cannot distinguish (absent and
+ * mapped-to-500 are behaviourally identical). Routes must keep calling
+ * `issueErrorStatus`, never index this map directly.
  */
-const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
+export const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
   invoice_not_found: 404,
   member_not_found: 404,
   invoice_already_issued: 409,
@@ -58,6 +65,23 @@ export function issueErrorStatus(
   overrides?: Readonly<Record<string, number>>,
 ): number {
   return overrides?.[code] ?? ISSUE_ERROR_STATUS_BASE[code] ?? 500;
+}
+
+/**
+ * 065 M-4 — issuance failures that are SERVER faults (infrastructure outage
+ * or §87 number-space exhaustion), never operator mistakes. The /issue and
+ * /issue-as-paid route handlers log these at ERROR severity so ops alerting
+ * catches them; every other code (validation, races, business rejects) stays
+ * at WARN. Mirrors the severity split inside the two use-cases' catches.
+ */
+const ISSUANCE_SERVER_FAULT_CODES: ReadonlySet<string> = new Set([
+  'overflow',
+  'pdf_render_failed',
+  'blob_upload_failed',
+]);
+
+export function isIssuanceServerFault(code: string): boolean {
+  return ISSUANCE_SERVER_FAULT_CODES.has(code);
 }
 
 export function serialiseInvoice(invoice: Invoice) {

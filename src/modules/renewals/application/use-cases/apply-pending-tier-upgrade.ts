@@ -37,6 +37,8 @@ import type { TenantTx } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
+// 065 Fix 1 — CAS-loser error from the repo's transitionStatus.
+import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import type { MemberId, PlanId } from '@/modules/members';
 import { parseInvoiceId, type InvoiceId } from '@/modules/invoicing';
@@ -90,17 +92,32 @@ export async function applyPendingTierUpgradeInTx(
   for (const suggestion of pending) {
     if (suggestion.status !== 'accepted_pending_apply') continue;
 
-    await deps.tierUpgradeRepo.transitionStatus(
-      tx,
-      args.tenantId,
-      suggestion.suggestionId,
-      {
-        to: 'applied' as const,
-        appliedAt,
-        appliedAtInvoiceId: args.invoiceId,
-        closedAt: appliedAt,
-      },
-    );
+    try {
+      await deps.tierUpgradeRepo.transitionStatus(
+        tx,
+        args.tenantId,
+        suggestion.suggestionId,
+        {
+          to: 'applied' as const,
+          // 065 Fix 1 — CAS guard against the stale
+          // `findPendingForCycle` read above.
+          expectedFrom: 'accepted_pending_apply' as const,
+          appliedAt,
+          appliedAtInvoiceId: args.invoiceId,
+          closedAt: appliedAt,
+        },
+      );
+    } catch (e) {
+      // 065 Fix 1 — CAS loser: a concurrent transition (supersede /
+      // reconcile-dismiss / racing duplicate apply) moved the row off
+      // `accepted_pending_apply` between the read and this UPDATE.
+      // Skipping preserves the documented idempotency contract AND —
+      // critically — does NOT abort the caller's F4 invoice-paid tx.
+      // Safe to continue inside the tx: the 0-row CAS miss is a
+      // JS-thrown error, not a SQL error, so the tx is not poisoned.
+      if (e instanceof TierUpgradeStatusConflictError) continue;
+      throw e;
+    }
 
     await deps.auditEmitter.emitInTx(
       tx,

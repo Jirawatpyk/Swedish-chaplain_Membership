@@ -25,6 +25,12 @@ import { renewalsMetrics } from '@/lib/metrics';
 import type { TenantTx } from '@/lib/db';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId as MemberIdBrand } from '@/modules/members';
+// 065 Fix A precision — parse the F2 pending row's `reason` back to its
+// originating tier-upgrade suggestion id so the finaliser can gate on THAT
+// row's own suggestion status (re-accept precision), not a coarse
+// cycle-wide superseded-existence probe. Domain helper — Infrastructure
+// importing renewals Domain is Principle-III clean.
+import { parseSuggestionIdFromReason } from '../../domain/tier-upgrade-suggestion';
 import type { RenewalsDeps } from '../renewals-deps';
 
 // F2 scheduled-plan-change finalisation + audit emit. Runs POST-tx;
@@ -66,6 +72,66 @@ async function finaliseF2ScheduledPlanChangeForCycle(
   // `findPendingForCycle` (terminal-state semantics, partial-unique
   // guarantee).
   if (pending === null) return;
+
+  // 065 Fix A precision — gate on the PENDING row's OWN linked suggestion
+  // status, NOT a coarse cycle-wide superseded-existence probe. The prior
+  // cycle-wide gate (`hasSupersededSuggestionForCycle`) was too coarse: a
+  // member can have TWO suggestions targeting the same active cycle (an
+  // upgrade accepted → manually overridden [superseded, retains the cycle
+  // target] → re-suggested + re-accepted). The cycle-wide gate matched the
+  // SUPERSEDED suggestion1 and wrongly skipped the finaliser, stranding
+  // suggestion2's VALID pending plan-change forever.
+  //
+  // The pending F2 row carries a `reason` of `tier_upgrade_accepted:<id>`
+  // (written by `acceptTierUpgrade`); we resolve THAT suggestion and skip
+  // ONLY when it is `superseded` (the cancelled-upgrade orphan that must
+  // NOT be re-billed — the original S6 money bug). Standalone schedules
+  // (reason not matching the prefix → null id) and applied / pending
+  // suggestions proceed.
+  const linkedSuggestionId = parseSuggestionIdFromReason(pending.reason);
+  if (linkedSuggestionId !== null) {
+    let linkedSuggestion;
+    try {
+      linkedSuggestion = await deps.tierUpgradeRepo.findById(
+        evt.tenantId,
+        linkedSuggestionId,
+      );
+    } catch (e) {
+      // Money-safe default — when we cannot determine the linked
+      // suggestion status (transient read failure), SKIP rather than risk
+      // flipping a row whose upgrade may have been cancelled. The next
+      // Stripe at-least-once webhook retry re-attempts once the read
+      // recovers (the F2 row stays `pending` — strand, never over-bill).
+      logger.error(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId: evt.tenantId,
+          memberId,
+          cycleId,
+          scheduledChangeId: pending.scheduledChangeId,
+          suggestionId: linkedSuggestionId,
+          invoiceId: evt.invoiceId,
+          errorId: 'F2.PLAN_CHANGE.SUGGESTION_STATUS_LOOKUP_FAILED',
+        },
+        '[f8-onPaid] F2 finaliser suggestion-status lookup failed — skipping finalise (money-safe); webhook retry will heal',
+      );
+      return;
+    }
+    if (linkedSuggestion?.status === 'superseded') {
+      // The upgrade this F2 row belongs to was cancelled by a manual
+      // override. Flipping it pending → applied would re-bill the
+      // cancelled upgrade — the S6 money bug. Skip (no transition, no
+      // counter, no audit). The F2 row stays `pending` (terminal-orphan;
+      // a future reconcile may cancel it).
+      return;
+    }
+  }
+
+  // The finaliser is about to flip the pending row → applied. Bump the SRE
+  // signal HERE (it previously lived in the caller before the cycle-wide
+  // gate; co-located with the actual transition now that the skip decision
+  // is per-row + needs the pending row in hand).
+  renewalsMetrics.f2FinaliseBeforeF4Commit(evt.tenantId);
 
   let transitioned;
   try {
@@ -319,8 +385,31 @@ export function makeApplyTierUpgradeOnPaidCallback(
     // counter. If repeated firing surfaces in prod, the architectural
     // fix is `RecordPaymentDeps.onAfterCommitCallbacks` — tracked as
     // Round-4+ feature.
+    //
+    // 065 Fix A precision — invoke the F2 finaliser whenever a renewal
+    // cycle was resolved; the finaliser itself now gates per-pending-row on
+    // the F2 row's OWN linked suggestion status (parsed from `reason`),
+    // closing BOTH the original S6 re-bill hole AND the retry-heal /
+    // re-accept precision holes:
+    //
+    //   - S6 re-bill: when a manual override SUPERSEDED the suggestion but
+    //     missed its orphan F2 pending row, the finaliser resolves that
+    //     row's `superseded` suggestion → skips (no re-bill).
+    //   - S1 retry-heal: a webhook re-delivery whose suggestion is already
+    //     `applied` (NOT superseded) → finalises + heals the stranded row.
+    //   - S0 standalone schedule: no suggestion link in `reason` → the
+    //     finaliser proceeds (and no-ops cleanly when no pending row).
+    //   - Re-accept precision: TWO suggestions target one cycle (a
+    //     superseded suggestion1 + a fresh accepted suggestion2's pending
+    //     row). The prior cycle-wide `hasSupersededSuggestionForCycle`
+    //     matched suggestion1 → wrongly skipped, stranding suggestion2's
+    //     valid upgrade. The per-row gate resolves suggestion2 (NOT
+    //     superseded) → finalises.
+    //
+    // The `f2FinaliseBeforeF4Commit` SRE counter moved INTO the finaliser
+    // (it now bumps only when the finaliser actually proceeds to the
+    // pending→applied transition, after the per-row skip decision).
     if (resolvedCycleId !== null) {
-      renewalsMetrics.f2FinaliseBeforeF4Commit(evt.tenantId);
       await finaliseF2ScheduledPlanChangeForCycle(
         deps,
         evt,

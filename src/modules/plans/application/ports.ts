@@ -20,6 +20,14 @@
  */
 
 import type { Result } from '@/lib/result';
+// 065 S8 — `TenantTx` is a TYPE-ONLY import (erased at compile time);
+// it lets `supersedeAndInsertPendingAtomically` accept an OUTER tx so
+// the F8 accept caller can make its F2 insert atomic with the F8 CAS.
+// Type-only imports of `@/lib/db` are permitted in Application (the
+// ESLint application-layer ban targets value imports of `drizzle-orm`
+// / `postgres`, not `@/lib/db` types) and the sibling renewals port
+// `tier-upgrade-suggestion-repo.ts` already threads `TenantTx`.
+import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   Plan,
@@ -320,10 +328,21 @@ export interface ScheduledPlanChangeRepo {
    * (`transitionStatus` then `insertPending`) had a window where a
    * crash between calls could lose the prior pending row WITHOUT a
    * replacement landing.
+   *
+   * 065 S8 — when an OUTER `tx` is supplied, the supersede UPDATE + the
+   * pending INSERT run on THAT transaction (no nested `runInTenant`), so
+   * the caller can make this write atomic with subsequent writes in the
+   * same tx. The F8 `acceptTierUpgrade` caller threads its `runInTenant`
+   * tx so a CAS-losing second accepter rolls BOTH this F2 insert AND its
+   * F8 suggestion transition back together — no orphaned pending row.
+   * When omitted (the F2 `scheduleNextRenewalPlanChange` caller, which
+   * runs outside any tx), the adapter opens its own `runInTenant` as
+   * before.
    */
   supersedeAndInsertPendingAtomically(
     tenant: TenantContext,
     input: ScheduleNextRenewalPlanChangeInput,
+    tx?: TenantTx,
   ): Promise<SupersedeAndInsertResult>;
 
   /** Find the single pending row for (member, cycle), if any. */

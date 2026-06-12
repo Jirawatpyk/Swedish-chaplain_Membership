@@ -72,12 +72,47 @@ export interface TierUpgradeSuggestionRepo {
     cycleId: string,
   ): Promise<ReadonlyArray<TierUpgradeSuggestion>>;
 
+  /**
+   * 065 Fix 1 (W-011 double-accept TOCTOU) — compare-and-swap
+   * transition. The UPDATE matches only while the row is still in the
+   * expected FROM state; a concurrent transition that committed after
+   * the caller's read makes the UPDATE match 0 rows and the adapter
+   * throws `TierUpgradeStatusConflictError` instead of silently
+   * re-applying the transition (which produced duplicate
+   * `tier_upgrade_accepted` audit + duplicate member email +
+   * last-writer `accepted_by_user_id`). Throws
+   * `TierUpgradeSuggestionNotFoundError` when the row does not exist
+   * at all.
+   *
+   * 065 S7 — the FROM guard accepts two mutually-exclusive shapes
+   * (caller MUST supply EXACTLY ONE):
+   *
+   *   - `expectedFrom` — value-pinned guard (`AND status = expectedFrom`).
+   *     Used by the four single-FROM callers (accept: `open`,
+   *     apply-pending / reconcile-dismiss: `accepted_pending_apply`,
+   *     dismiss: `open`). The captured read-status IS the only valid
+   *     FROM, so pinning it is correct.
+   *
+   *   - `expectedFromIn` — set-membership guard
+   *     (`AND status IN (...expectedFromIn)`). Used ONLY by
+   *     `supersedePendingTierUpgrade`, whose manual-override semantics
+   *     are valid from EITHER `open` OR `accepted_pending_apply`
+   *     (FR-039 step 5). Its `findActiveForMember` read runs in a
+   *     SEPARATE tx and is stale by CAS time; a value-pinned guard
+   *     therefore silently no-ops when a concurrent accept moved the
+   *     row across the set's boundary, orphaning the suggestion. The
+   *     set guard supersedes regardless of which in-set state the row
+   *     committed to. (Mirrors the pre-065 id-only WHERE for supersede,
+   *     restored under a tenant-/state-scoped CAS.)
+   */
   transitionStatus(
     tx: TenantTx,
     tenantId: string,
     suggestionId: SuggestionId,
     args: {
       readonly to: TierUpgradeStatus;
+      readonly expectedFrom?: TierUpgradeStatus;
+      readonly expectedFromIn?: readonly TierUpgradeStatus[];
       readonly acceptedAt?: string;
       readonly acceptedByUserId?: string;
       readonly targetApplyAtCycleId?: string;
@@ -201,5 +236,25 @@ export class TierUpgradeSuggestionNotFoundError extends Error {
   override readonly name = 'TierUpgradeSuggestionNotFoundError';
   constructor(public readonly suggestionId: string) {
     super(`tier_upgrade_suggestions row ${suggestionId} not found`);
+  }
+}
+
+/**
+ * 065 Fix 1 — thrown by `transitionStatus` when the CAS
+ * (`AND status = expectedFrom`) matched 0 rows but the row exists:
+ * a concurrent transition won the race. Callers treat this as the
+ * loser arm of their respective race (accept/dismiss → typed
+ * `suggestion_not_open`; apply/supersede → idempotent no-op skip).
+ */
+export class TierUpgradeStatusConflictError extends Error {
+  override readonly name = 'TierUpgradeStatusConflictError';
+  constructor(
+    public readonly suggestionId: string,
+    public readonly expectedFrom: string,
+    public readonly actualStatus: string,
+  ) {
+    super(
+      `tier_upgrade_suggestions row ${suggestionId} status CAS failed — expected '${expectedFrom}', found '${actualStatus}'`,
+    );
   }
 }

@@ -59,6 +59,11 @@ const MEMBER_ID = '11111111-1111-1111-1111-111111111111';
 const CYCLE_ID = '22222222-2222-2222-2222-222222222222';
 const INVOICE_ID = '33333333-3333-3333-3333-333333333333';
 const SCHEDULED_CHANGE_ID = 'sched-uuid-2d-001';
+// 065 Fix A precision — the pending row's `reason` links to its originating
+// suggestion (`tier_upgrade_accepted:<UUID>`); the finaliser parses it and
+// resolves THAT suggestion's status via `tierUpgradeRepo.findById`. The
+// suffix MUST be a valid UUID for the Domain parser to extract an id.
+const LINKED_SUGGESTION_ID = '44444444-4444-4444-4444-444444444444';
 
 const baseEvent: F4InvoicePaidEvent = {
   tenantId: TENANT_SLUG,
@@ -84,7 +89,7 @@ function makePending(
     fromPlanId: 'corporate-standard',
     toPlanId: 'corporate-premium',
     scheduledByUserId: 'admin-user-uuid',
-    reason: 'tier_upgrade_accepted:s-001',
+    reason: `tier_upgrade_accepted:${LINKED_SUGGESTION_ID}`,
     status: 'pending',
     scheduledAt: '2026-05-01T00:00:00Z',
     appliedAt: null,
@@ -100,6 +105,12 @@ function makeDeps(opts: {
   findPendingForCycle?: ScheduledPlanChange | null | Error;
   transitionStatus?: ScheduledPlanChange | Error;
   auditRecord?: 'ok' | 'persist_failed' | 'throws';
+  // 065 Fix A precision — the status the pending row's linked suggestion
+  // resolves to via `tierUpgradeRepo.findById`. Default 'applied' (gate
+  // open). 'superseded' → the finaliser skips the transition. null →
+  // suggestion not found (gate open). Error → findById throws (money-safe
+  // skip).
+  linkedSuggestion?: 'applied' | 'accepted_pending_apply' | 'superseded' | null | Error;
 }): RenewalsDeps {
   const repo: ScheduledPlanChangeRepo = {
     findPendingForCycle: vi.fn(async () => {
@@ -143,11 +154,23 @@ function makeDeps(opts: {
     }),
   };
 
+  // 065 Fix A precision — the finaliser resolves the pending row's linked
+  // suggestion status via `tierUpgradeRepo.findById`. Stub only that method
+  // (the helper consults nothing else on this repo).
+  const tierUpgradeFindById = vi.fn(async () => {
+    const s = opts.linkedSuggestion;
+    if (s instanceof Error) throw s;
+    if (s === null) return null;
+    return { status: s ?? 'applied' };
+  });
+
   // The helper only consults `tenant`, `scheduledPlanChangeRepo`,
-  // and `f2AuditEmitter` — leave the rest as `undefined` casts.
+  // `tierUpgradeRepo`, and `f2AuditEmitter` — leave the rest as `undefined`
+  // casts.
   return {
     tenant,
     scheduledPlanChangeRepo: repo,
+    tierUpgradeRepo: { findById: tierUpgradeFindById },
     f2AuditEmitter: audit,
   } as unknown as RenewalsDeps;
 }
@@ -219,6 +242,122 @@ describe('finaliseF2ScheduledPlanChangeForCycle — no-op paths', () => {
     expect(deps.scheduledPlanChangeRepo.transitionStatus).not.toHaveBeenCalled();
     expect(deps.f2AuditEmitter.record).not.toHaveBeenCalled();
     expect(loggerErrorMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 065 Fix A precision — per-pending-row suggestion-status gate.
+//
+// The finaliser parses the pending row's `reason`
+// (`tier_upgrade_accepted:<id>`) and resolves THAT suggestion via
+// `tierUpgradeRepo.findById`, skipping the transition ONLY when the linked
+// suggestion is `superseded` (the cancelled-upgrade orphan). This is the
+// precision behind the integration re-accept test: two suggestions can
+// target one cycle, so the gate MUST key on the pending row's OWN
+// suggestion, not a coarse cycle-wide existence probe.
+// ---------------------------------------------------------------------------
+describe('finaliseF2ScheduledPlanChangeForCycle — per-row suggestion gate (065 Fix A precision)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('SKIPS the transition when the linked suggestion is superseded (no re-bill)', async () => {
+    const deps = makeDeps({ linkedSuggestion: 'superseded' });
+    await _internal.finaliseF2ScheduledPlanChangeForCycle(
+      deps,
+      baseEvent,
+      CYCLE_ID,
+    );
+
+    // The pending row WAS fetched + its suggestion resolved superseded →
+    // skip: no transition, no audit, no error log (this is an expected
+    // money-safety skip, not a failure).
+    expect(deps.scheduledPlanChangeRepo.findPendingForCycle).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(deps.tierUpgradeRepo.findById).toHaveBeenCalledWith(
+      TENANT_SLUG,
+      LINKED_SUGGESTION_ID,
+    );
+    expect(deps.scheduledPlanChangeRepo.transitionStatus).not.toHaveBeenCalled();
+    expect(deps.f2AuditEmitter.record).not.toHaveBeenCalled();
+    expect(loggerErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('PROCEEDS when the linked suggestion is applied (retry-heal — gate open)', async () => {
+    const deps = makeDeps({ linkedSuggestion: 'applied' });
+    await _internal.finaliseF2ScheduledPlanChangeForCycle(
+      deps,
+      baseEvent,
+      CYCLE_ID,
+    );
+
+    expect(deps.tierUpgradeRepo.findById).toHaveBeenCalledWith(
+      TENANT_SLUG,
+      LINKED_SUGGESTION_ID,
+    );
+    expect(deps.scheduledPlanChangeRepo.transitionStatus).toHaveBeenCalledWith(
+      tenant,
+      SCHEDULED_CHANGE_ID,
+      'applied',
+    );
+    expect(deps.f2AuditEmitter.record).toHaveBeenCalledTimes(1);
+  });
+
+  it('PROCEEDS when the linked suggestion is not found (gate open)', async () => {
+    const deps = makeDeps({ linkedSuggestion: null });
+    await _internal.finaliseF2ScheduledPlanChangeForCycle(
+      deps,
+      baseEvent,
+      CYCLE_ID,
+    );
+
+    expect(deps.scheduledPlanChangeRepo.transitionStatus).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(deps.f2AuditEmitter.record).toHaveBeenCalledTimes(1);
+  });
+
+  it('PROCEEDS without a findById lookup when the reason has no suggestion link (standalone schedule)', async () => {
+    const deps = makeDeps({
+      findPendingForCycle: makePending({ reason: 'admin_manual_schedule' }),
+    });
+    await _internal.finaliseF2ScheduledPlanChangeForCycle(
+      deps,
+      baseEvent,
+      CYCLE_ID,
+    );
+
+    // No `tier_upgrade_accepted:` prefix → no suggestion lookup, but the
+    // finaliser proceeds.
+    expect(deps.tierUpgradeRepo.findById).not.toHaveBeenCalled();
+    expect(deps.scheduledPlanChangeRepo.transitionStatus).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(deps.f2AuditEmitter.record).toHaveBeenCalledTimes(1);
+  });
+
+  it('SKIPS (money-safe) + logs when the suggestion-status lookup throws', async () => {
+    const deps = makeDeps({
+      linkedSuggestion: new Error('connection refused'),
+    });
+    await _internal.finaliseF2ScheduledPlanChangeForCycle(
+      deps,
+      baseEvent,
+      CYCLE_ID,
+    );
+
+    // Lookup failed → money-safe skip (no transition/audit) + structured
+    // error log so the retry path is observable.
+    expect(deps.scheduledPlanChangeRepo.transitionStatus).not.toHaveBeenCalled();
+    expect(deps.f2AuditEmitter.record).not.toHaveBeenCalled();
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    const [logFields] = loggerErrorMock.mock.calls[0]!;
+    expect(logFields).toMatchObject({
+      errorId: 'F2.PLAN_CHANGE.SUGGESTION_STATUS_LOOKUP_FAILED',
+      scheduledChangeId: SCHEDULED_CHANGE_ID,
+      suggestionId: LINKED_SUGGESTION_ID,
+    });
   });
 });
 

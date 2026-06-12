@@ -75,6 +75,7 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
   parseSuggestionId,
+  TIER_UPGRADE_ACCEPTED_REASON_PREFIX,
   type SuggestionId,
 } from '../../domain/tier-upgrade-suggestion';
 import { asTaskId, type TaskId } from '../../domain/renewal-escalation-task';
@@ -88,6 +89,25 @@ import type { MemberId, PlanId } from '@/modules/members';
 // TypeScript Brand — the prior comment misnamed the construct).
 import type { SendRenewalEmailError } from '../ports/renewal-gateway';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
+// 065 Fix 1 — CAS-loser error from the repo's transitionStatus
+// (W-011 double-accept TOCTOU close). Value import of a port-owned
+// error class — Application importing its own ports is Principle-III
+// clean.
+import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
+// 065 Fix B (S3) — Postgres 23505 detection helpers. `@/lib/db-errors`
+// is Infrastructure-free (only the stable Postgres SQLSTATE contract),
+// so importing it in the Application layer is Principle-III clean — it's
+// the same helper F4/F5 conflict paths use.
+import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
+
+// 065 Fix B (S3) — the partial-unique index enforcing "at most one
+// pending scheduled_plan_changes row per (tenant, member, cycle)"
+// (migration 0086). A 23505 on THIS index at step (a) means a concurrent
+// accepter already inserted the pending row — the same race the step-(c)
+// CAS loses — so it maps to `suggestion_not_open` (409), NOT a
+// server-class `plan_change_failed`. Naming it explicitly keeps a future
+// unrelated unique constraint's 23505 surfacing as a genuine error.
+const SCHEDULED_PLAN_CHANGES_PENDING_UNIQ = 'scheduled_plan_changes_pending_uniq';
 
 /**
  * Round 3 type SUG-3 + simplification — hoisted discriminated-union
@@ -212,7 +232,21 @@ export async function acceptTierUpgrade(
   ).toISOString();
 
   try {
-    const txResult = await runInTenant(deps.tenant, async (tx) => {
+    // 065 Fix B — explicit Result return type on the tx callback. Step
+    // (a) now THROWS on failure (never `return err`), so the callback's
+    // only `return` is the ok arm; the explicit annotation keeps the
+    // defensive `if (!txResult.ok)` guard below well-typed (and lets a
+    // future in-tx `return err(...)` be added without re-plumbing).
+    type AcceptTxOk = {
+      readonly suggestionId: SuggestionId;
+      readonly targetApplyAtCycleId: CycleId;
+      readonly verificationTaskId: TaskId | null;
+      readonly scheduledChangeId: string;
+      readonly supersededScheduledChangeId: string | null;
+    };
+    const txResult = await runInTenant<
+      Result<AcceptTxOk, AcceptTierUpgradeError>
+    >(deps.tenant, async (tx) => {
       // ----- (a) F2 schedule plan change — mechanism for FR-039 step 1.
       let scheduledChangeId: string;
       let supersededScheduledChangeId: string | null = null;
@@ -226,8 +260,19 @@ export async function acceptTierUpgrade(
               fromPlanId: suggestion.fromPlanId,
               toPlanId: suggestion.toPlanId,
               scheduledByUserId: input.actorUserId,
-              reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
+              // 065 Fix A precision — shared prefix const (single source of
+              // truth with the F2 finaliser's reason-parsing gate). This is
+              // the LOAD-BEARING column write: the F4→F8 on-paid finaliser
+              // parses this `reason` to gate on the pending row's OWN
+              // suggestion status.
+              reason: `${TIER_UPGRADE_ACCEPTED_REASON_PREFIX}${suggestion.suggestionId}`,
             },
+            // 065 S8 — thread the OUTER tx so this F2 supersede+insert is
+            // atomic with the step-(c) F8 CAS below. A CAS-losing second
+            // accepter rolls BOTH back together — pre-fix the repo opened
+            // its own tx and committed step (a) before the CAS fired,
+            // leaving an orphaned loser-attributed pending row.
+            tx,
           );
         scheduledChangeId = scheduled.inserted.scheduledChangeId;
         // Capture the superseded prior-pending row id (if any) so the
@@ -237,10 +282,33 @@ export async function acceptTierUpgrade(
         supersededScheduledChangeId =
           scheduled.superseded?.scheduledChangeId ?? null;
       } catch (e) {
-        return err({
-          kind: 'plan_change_failed' as const,
-          message: (e as Error)?.message ?? 'unknown',
-        });
+        // 065 Fix B (S3 + S14) — step (a) now runs on the OUTER tx (S8).
+        // A failure here MUST THROW, never `return err`: `runInTenant`
+        // COMMITS on return (only rolls back on throw), so a `return`
+        // would commit a partial tx (the SAME trap the step-(c) comment
+        // warns about). Two throw shapes, both mapped by the outer catch:
+        //
+        //   - 23505 on `scheduled_plan_changes_pending_uniq`: a concurrent
+        //     accepter already inserted the pending row for (member,
+        //     cycle). This is the SAME concurrent-conflict as a step-(c)
+        //     CAS loss — throw `TierUpgradeStatusConflictError` so the
+        //     outer catch maps it to `suggestion_not_open` (409), not the
+        //     server-class `plan_change_failed` (502). Pre-S8 the loser
+        //     reached step (c) and got exactly this clean 409.
+        //   - anything else (genuine infra error, OR a 23505 on a
+        //     different constraint): re-throw so the outer tx rolls back
+        //     and the outer catch maps it to `server_error`.
+        if (
+          isUniqueViolation(e) &&
+          errorChainMessage(e).includes(SCHEDULED_PLAN_CHANGES_PENDING_UNIQ)
+        ) {
+          throw new TierUpgradeStatusConflictError(
+            suggestionId,
+            'open',
+            'accepted_pending_apply',
+          );
+        }
+        throw e;
       }
 
       // ----- (b) Optional T-180 verification task — FR-039 step 3.
@@ -278,6 +346,13 @@ export async function acceptTierUpgrade(
         typeof deps.tierUpgradeRepo.transitionStatus
       >[3] = {
         to: 'accepted_pending_apply' as const,
+        // 065 Fix 1 — CAS guard. The pre-tx findById `open` check is
+        // a stale read by the time this UPDATE runs (W-011 TOCTOU);
+        // the repo re-checks `status='open'` atomically and throws
+        // `TierUpgradeStatusConflictError` when a concurrent accept
+        // already won — mapped to `suggestion_not_open` in the outer
+        // catch below (the throw also rolls this tx back).
+        expectedFrom: 'open' as const,
         acceptedAt,
         acceptedByUserId: input.actorUserId,
         targetApplyAtCycleId: activeCycle.cycleId,
@@ -387,7 +462,9 @@ export async function acceptTierUpgrade(
             effective_at_cycle_id: activeCycle.cycleId,
             from_plan_id: suggestion.fromPlanId,
             to_plan_id: suggestion.toPlanId,
-            reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
+            // F2-domain audit-payload echo of the column-write above —
+            // same shared prefix const so the two never drift.
+            reason: `${TIER_UPGRADE_ACCEPTED_REASON_PREFIX}${suggestion.suggestionId}`,
           },
         },
       );
@@ -825,6 +902,16 @@ export async function acceptTierUpgrade(
     // `message` field carries the original throw's message verbatim
     // for diagnostic purposes; callers should log with errorId
     // matching their context (e.g., `F8.ACCEPT_TIER.CRON_INVOKED_THREW`).
+    //
+    // 065 Fix 1 — the transitionStatus CAS loser throws
+    // `TierUpgradeStatusConflictError` from inside the runInTenant
+    // block (MUST throw, not return err — returning would COMMIT the
+    // partial tx, e.g. the step-(b) verification task). Map it here
+    // to the same typed error the pre-tx `status !== 'open'` check
+    // yields, so the admin sees one consistent conflict shape.
+    if (e instanceof TierUpgradeStatusConflictError) {
+      return err({ kind: 'suggestion_not_open' });
+    }
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',

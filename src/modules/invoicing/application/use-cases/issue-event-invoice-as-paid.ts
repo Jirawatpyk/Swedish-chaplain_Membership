@@ -17,8 +17,10 @@
  * receipt document exists; as-paid has exactly one document).
  *
  * No-TIN buyers receive the §105 ใบเสร็จรับเงิน (`receipt_separate`) numbered
- * from the RECEIPT stream (accountant ruling β, live since Task 10 +
- * migration 0212): `documentType:'receipt'` allocation with the tenant's
+ * from the RECEIPT stream (Path β — operator decision 2026-06-10 per the
+ * tax auditor's safe reading; accountant verification still OPEN, design
+ * §6 item 2; live since Task 10 + migration 0212): `documentType:'receipt'`
+ * allocation with the tenant's
  * receipt prefix (`'RE'` fallback — recordPayment separate-mode parity), the
  * number lands in `receipt_document_number_raw` and the invoice-stream pair
  * stays NULL, so the shared §87 invoice stream is never burned for a receipt
@@ -321,6 +323,20 @@ export async function issueEventInvoiceAsPaid(
         draft.eventRegistrationId,
       );
       if (!regResult.ok || regResult.value === null) {
+        // 065 M-2 — the single public code collapses TWO failure modes that
+        // ops must tell apart: `not_found` (row vanished under RLS — a
+        // data-integrity anomaly the F6 adapter logs NOTHING for) vs
+        // `port_error` (the adapter already error-logged the underlying
+        // failure; this line adds the invoice context it lacks).
+        logger.error(
+          {
+            reason: regResult.ok ? 'not_found' : 'port_error',
+            invoiceId: input.invoiceId,
+            tenantId: input.tenantId,
+            registrationId: draft.eventRegistrationId,
+          },
+          'issueEventInvoiceAsPaid: registration lookup failed at issuance re-check',
+        );
         return err({ code: 'registration_lookup_failed' });
       }
       if (regResult.value.paymentStatus === 'refunded') {
@@ -442,9 +458,29 @@ export async function issueEventInvoiceAsPaid(
       const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
       blobKeyForCleanup = blobKey;
       // `tenantLogo` was fetched pre-tx (wave-3 S27) — see step 3 above.
+      //
+      // 065 H-1a — `allowOverwrite: true` on THIS call site only (root fix
+      // for the silent tax-document-drift class): the adapter's default
+      // (allowOverwrite=false) treats "already exists" as success and
+      // returns the OLD bytes WITHOUT a sha compare — @vercel/blob `head()`
+      // exposes no content hash, so the adapter cannot verify the conflict
+      // is byte-identical. A failed-then-retried as-paid (the catch-path
+      // orphan delete below is best-effort and can itself fail; the key has
+      // no paymentDate component, so a retry with a DIFFERENT paymentDate
+      // renders different bytes at the SAME key) would then commit a row
+      // whose pdf_sha256 doesn't match the stored document. Overwriting is
+      // safe here because the invoice row FOR UPDATE lock (step C) is held
+      // for the whole render+upload: only one issuance attempt per invoice
+      // id can be in this section, and any pre-existing bytes at the key
+      // are stale orphans of a rolled-back attempt (no committed row can
+      // reference them — a committed row exits at the `status !== 'draft'`
+      // guard before any upload). issueInvoice deliberately keeps the
+      // default (its retries are same-day deterministic re-renders; its 065
+      // L-3 cleanup parity + drift metric cover the residual).
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
+          allowOverwrite: true,
           renderInput: {
             kind: pdfKind,
             templateVersion: deps.currentTemplateVersion,
@@ -700,21 +736,39 @@ export async function issueEventInvoiceAsPaid(
       (e.error.code === 'invoice_already_issued' || e.error.code === 'pdf_render_failed');
     if (orphanBlobKey !== null && !skipOrphanCleanup) {
       await deps.blob.delete(orphanBlobKey).catch((delErr: unknown) => {
-        logger.warn(
+        // 065 H-1b — ERROR (not warn) + alertable counter: a failed cleanup
+        // leaves stale bytes at the deterministic key. The H-1a
+        // allowOverwrite retry defuses the drift on THIS path, but ops still
+        // needs the key to sweep the orphan (the row may never be retried).
+        logger.error(
           { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
           'issue-as-paid: orphan blob cleanup failed',
         );
+        invoicingMetrics.orphanBlobCleanupFailed('issue_as_paid');
       });
     }
     if (e instanceof IssueAsPaidInternalError) {
-      logger.warn(
-        {
-          err: e.error,
-          invoiceId: input.invoiceId,
-          tenantId: input.tenantId,
-        },
-        'issueEventInvoiceAsPaid: internal error, rolling back',
-      );
+      // 065 M-4 — severity split: overflow (tenant-wide §87 number-space
+      // outage) and pdf/blob infrastructure failures are 500-class server
+      // faults → ERROR; business rejects carried by the throw-only zone
+      // (the invoice_already_issued race loser) stay WARN.
+      const isServerFault =
+        e.error.code === 'overflow' ||
+        e.error.code === 'pdf_render_failed' ||
+        e.error.code === 'blob_upload_failed';
+      const logPayload = {
+        err: e.error,
+        invoiceId: input.invoiceId,
+        tenantId: input.tenantId,
+      };
+      if (isServerFault) {
+        logger.error(logPayload, 'issueEventInvoiceAsPaid: internal error, rolling back');
+      } else {
+        logger.warn(logPayload, 'issueEventInvoiceAsPaid: internal error, rolling back');
+      }
+      if (e.error.code === 'overflow') {
+        invoicingMetrics.issuanceOverflow(input.tenantId, e.error.fiscalYear);
+      }
       // T122 parity — post-rollback forensic audit for render failures (the
       // in-tx audit would have rolled back with the mutation). Fire-and-
       // forget: never mask the original error with an audit-write failure.

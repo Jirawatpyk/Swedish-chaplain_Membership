@@ -31,9 +31,9 @@
  *
  * Operations (all inside a single DB transaction):
  *   A. load tenant settings (no lock; read-only snapshot)
- *   B. load + lock member (archive-race guard — SKIPPED for non-member
+ *   B. load + lock invoice draft
+ *   C. load + lock member (archive-race guard — SKIPPED for non-member
  *      event invoices; buyer snapshot was pinned at draft)
- *   C. load + lock invoice draft
  *   D. compute fiscal year (Bangkok TZ)
  *   E. allocate sequence number
  *   F. compute subtotal + VAT + total from DRAFT lines
@@ -45,10 +45,15 @@
  *   L. enqueue auto-email outbox row if auto_email_on_issue resolves true
  *   M. COMMIT
  *
- * Any throw in A-L rolls back the whole tx — seq is NOT consumed, Blob
- * upload leaves an orphan that the transactional sweeper cleans up
- * (orphans are deterministic and safe to delete because the Blob key is
- * content-addressed on tenant+id+template).
+ * Any throw in A-L rolls back the whole tx — seq is NOT consumed; the
+ * Blob upload may leave an orphan at the deterministic content-addressed
+ * key (tenant+id+template). No sweeper exists (accepted residual, 064
+ * design §3.2 L-1), but this use-case carries its OWN best-effort
+ * catch-path delete of that key (065 L-3, ported from
+ * issueEventInvoiceAsPaid — see the outer catch below); the as-paid path
+ * does the same. The delete is best-effort: a failure is logged + counted
+ * and never masks the original error, so a swept-later orphan remains the
+ * accepted worst case.
  *
  * RBAC: admin only (route handler guard).
  * Rate limit: 20 / 5min per (tenant, actor) — applied at route level.
@@ -198,6 +203,14 @@ export async function issueInvoice(
   // sequence number).
   const issueStartedAt = performance.now();
 
+  // 065 L-3 — hoisted for the outer catch (as-paid cleanup parity): once
+  // set, ANY tx-rejecting failure — typed render/upload errors AND raw
+  // rethrows (audit.emit, outbox.enqueue) — may have left bytes at the
+  // deterministic key that outlive the rollback. The key is computed in-tx
+  // (fy depends on the in-tx settings read) but is deterministic, so the
+  // hoisted copy is exact.
+  let blobKeyForCleanup: string | null = null;
+
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
     // --- PRE-SEQUENCE early exits (safe to `return err(...)` — the tx
@@ -323,6 +336,20 @@ export async function issueInvoice(
         draft.eventRegistrationId,
       );
       if (!regResult.ok || regResult.value === null) {
+        // 065 M-2 — the single public code collapses TWO failure modes that
+        // ops must tell apart: `not_found` (row vanished under RLS — a
+        // data-integrity anomaly the F6 adapter logs NOTHING for) vs
+        // `port_error` (the adapter already error-logged the underlying
+        // failure; this line adds the invoice context it lacks).
+        logger.error(
+          {
+            reason: regResult.ok ? 'not_found' : 'port_error',
+            invoiceId: input.invoiceId,
+            tenantId: input.tenantId,
+            registrationId: draft.eventRegistrationId,
+          },
+          'issueInvoice: registration lookup failed at issuance re-check',
+        );
         return err({ code: 'registration_lookup_failed' });
       }
       if (regResult.value.paymentStatus === 'refunded') {
@@ -428,6 +455,7 @@ export async function issueInvoice(
     // restructuring that read too — left in-tx deliberately; the in-process
     // logo cache keeps the steady-state cost at ~0 anyway.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
+    blobKeyForCleanup = blobKey;
     const tenantLogo = await loadTenantLogo(
       deps.blob,
       tenantSnap.logo_blob_key,
@@ -625,15 +653,59 @@ export async function issueInvoice(
     return ok(issued);
   });
   } catch (e) {
+    // 065 L-3 — orphan-blob mitigation, ported from issueEventInvoiceAsPaid's
+    // catch (review Important #1 rationale applies verbatim): any failure
+    // after the upload rejected the tx, so bytes at the deterministic key
+    // outlive the rollback while the row stays draft. Worse, on a NEXT-DAY
+    // retry the re-render produces DIFFERENT bytes (issueDate moves with the
+    // clock) while the adapter's conflict-as-success arm returns the OLD
+    // bytes — the row would commit a pdf_sha256 that doesn't match the
+    // stored document. Clean up on every caught error EXCEPT:
+    //   - `invoice_already_issued` (applyIssue conflict translation): the
+    //     race WINNER may legitimately own bytes at that key; and
+    //   - `pdf_render_failed`: the render runs BEFORE the upload inside
+    //     renderAndUploadPdf — THIS attempt wrote nothing at the key.
+    // Best-effort (awaited, failure logged + counted, never masks the
+    // original error). The wave-3 S33 successor-race residual accepted on
+    // the as-paid path applies here identically.
+    const orphanBlobKey = blobKeyForCleanup;
+    const skipOrphanCleanup =
+      e instanceof IssueInvoiceInternalError &&
+      (e.error.code === 'invoice_already_issued' || e.error.code === 'pdf_render_failed');
+    if (orphanBlobKey !== null && !skipOrphanCleanup) {
+      await deps.blob.delete(orphanBlobKey).catch((delErr: unknown) => {
+        // 065 H-1b parity — ERROR + alertable counter: stale bytes remain at
+        // the key and (unlike as-paid) THIS path has no allowOverwrite
+        // retry, so the drift risk stands until the orphan is swept.
+        logger.error(
+          { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+          'issueInvoice: orphan blob cleanup failed',
+        );
+        invoicingMetrics.orphanBlobCleanupFailed('issue');
+      });
+    }
     if (e instanceof IssueInvoiceInternalError) {
-      logger.warn(
-        {
-          err: e.error,
-          invoiceId: input.invoiceId,
-          tenantId: input.tenantId,
-        },
-        'issueInvoice: internal error, rolling back',
-      );
+      // 065 M-4 — severity split: overflow (tenant-wide §87 number-space
+      // outage) and pdf/blob infrastructure failures are 500-class server
+      // faults → ERROR; business rejects carried by the throw-only zone
+      // (the invoice_already_issued race loser) stay WARN.
+      const isServerFault =
+        e.error.code === 'overflow' ||
+        e.error.code === 'pdf_render_failed' ||
+        e.error.code === 'blob_upload_failed';
+      const logPayload = {
+        err: e.error,
+        invoiceId: input.invoiceId,
+        tenantId: input.tenantId,
+      };
+      if (isServerFault) {
+        logger.error(logPayload, 'issueInvoice: internal error, rolling back');
+      } else {
+        logger.warn(logPayload, 'issueInvoice: internal error, rolling back');
+      }
+      if (e.error.code === 'overflow') {
+        invoicingMetrics.issuanceOverflow(input.tenantId, e.error.fiscalYear);
+      }
       // T122 — emit `pdf_render_failed` audit AFTER the tx rolled
       // back so forensic evidence survives (the original in-tx audit
       // would have rolled back with the mutation). Fire-and-forget:

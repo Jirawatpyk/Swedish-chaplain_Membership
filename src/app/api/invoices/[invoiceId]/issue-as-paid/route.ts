@@ -29,7 +29,12 @@ import { env } from '@/lib/env';
 // `FEATURE_F8_RENEWALS=true` — pay-route Round-6 parity: a top-level static
 // import would load the entire renewals barrel (~50-150ms cold-start +
 // bundle pollution) on every request even when F8 is dark.
-import { issueErrorStatus, serialiseInvoice, stripReason } from '../../_serialise';
+import {
+  isIssuanceServerFault,
+  issueErrorStatus,
+  serialiseInvoice,
+  stripReason,
+} from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -98,15 +103,20 @@ export async function POST(
     parsed.data,
   );
   if (!result.ok) {
-    logger.warn(
-      {
-        requestId,
-        tenantId: tenantCtx.slug,
-        invoiceId,
-        errorCode: result.error.code,
-      },
-      'POST /api/invoices/[id]/issue-as-paid failed',
-    );
+    // 065 M-4 — severity split mirrors the use-case catch: overflow /
+    // pdf_render_failed / blob_upload_failed are 500-class server faults
+    // (ERROR, ops-alertable); business rejects stay WARN.
+    const failureLog = {
+      requestId,
+      tenantId: tenantCtx.slug,
+      invoiceId,
+      errorCode: result.error.code,
+    };
+    if (isIssuanceServerFault(result.error.code)) {
+      logger.error(failureLog, 'POST /api/invoices/[id]/issue-as-paid failed');
+    } else {
+      logger.warn(failureLog, 'POST /api/invoices/[id]/issue-as-paid failed');
+    }
     // Wave-4 S16 — shared issuance-route map; overrides carry ONLY the
     // codes this as-paid route can see: the event-subject guard and the
     // payment-date bounds (future + the wave-3 S10 >365-day typo-year

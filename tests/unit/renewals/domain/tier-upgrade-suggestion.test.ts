@@ -8,8 +8,10 @@ import {
   TIER_UPGRADE_STATUSES,
   TERMINAL_TIER_UPGRADE_STATUSES,
   TIER_UPGRADE_REASON_CODES,
+  TIER_UPGRADE_ACCEPTED_REASON_PREFIX,
   asSuggestionId,
   parseSuggestionId,
+  parseSuggestionIdFromReason,
   assertSuggestionInvariants,
   isTerminalTierUpgradeStatus,
   type TierUpgradeStatus,
@@ -69,6 +71,44 @@ describe('SuggestionId brand', () => {
   });
   it('parseSuggestionId — rejects non-string', () => {
     expect(parseSuggestionId(undefined as unknown as string).ok).toBe(false);
+  });
+});
+
+// 065 Fix A precision — the F2 finaliser gate parses the pending
+// `scheduled_plan_changes.reason` (written by `acceptTierUpgrade` as
+// `${PREFIX}${suggestionId}`) back to the originating suggestion id to
+// gate per-pending-row on that suggestion's status.
+describe('parseSuggestionIdFromReason', () => {
+  it('extracts the suggestion id from a well-formed accepted reason', () => {
+    const reason = `${TIER_UPGRADE_ACCEPTED_REASON_PREFIX}${VALID_UUID}`;
+    expect(parseSuggestionIdFromReason(reason)).toBe(VALID_UUID);
+  });
+  it('returns null when the reason lacks the prefix (standalone schedule)', () => {
+    expect(parseSuggestionIdFromReason('admin_manual_schedule')).toBeNull();
+  });
+  it('returns null for a null reason', () => {
+    expect(parseSuggestionIdFromReason(null)).toBeNull();
+  });
+  it('returns null for an empty reason', () => {
+    expect(parseSuggestionIdFromReason('')).toBeNull();
+  });
+  it('returns null when the prefix is present but the suffix is not a UUID', () => {
+    expect(
+      parseSuggestionIdFromReason(`${TIER_UPGRADE_ACCEPTED_REASON_PREFIX}not-a-uuid`),
+    ).toBeNull();
+  });
+  it('returns null when the prefix is present but the suffix is empty', () => {
+    expect(
+      parseSuggestionIdFromReason(TIER_UPGRADE_ACCEPTED_REASON_PREFIX),
+    ).toBeNull();
+  });
+  it('returns null for a non-string reason (defensive)', () => {
+    expect(
+      parseSuggestionIdFromReason(undefined as unknown as string | null),
+    ).toBeNull();
+  });
+  it('prefix const is the canonical accept-reason prefix', () => {
+    expect(TIER_UPGRADE_ACCEPTED_REASON_PREFIX).toBe('tier_upgrade_accepted:');
   });
 });
 

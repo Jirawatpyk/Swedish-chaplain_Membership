@@ -101,8 +101,12 @@ import {
   type NonMemberBuyer,
   type NonMemberBuyerErrors,
 } from './non-member-buyer-fields';
-// Wave-4 S19 — leaf module on purpose (see AS_PAID_ERROR_CODES below).
-import { ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid-codes';
+// 065 QC S10 — the as-paid error display-set lives in its own leaf module
+// (extracted from this file) so the i18n-coverage test can pin against the
+// REAL set, not a hand-copied duplicate. The leaf carries the wave-4 S19
+// deep import of the pure-constants codes module (client-safe; the barrel's
+// runtime graph is server-only).
+import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 
@@ -245,28 +249,9 @@ export function isPastVatFilingDeadline(paymentDateYmd: string, todayYmd: string
 const PAYMENT_METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-/**
- * Typed error codes of POST /api/invoices/[id]/issue-as-paid we have copy
- * for (`admin.invoices.issueAsPaid.errors.*`); anything else falls back to
- * codeFallback/unknown — mirrors the event-draft errors map below.
- *
- * Wave-4 S19 — derived from the use-case's canonical exported list (a new
- * error variant lands here automatically; add its `errors.*` copy in all
- * three locales when one is introduced) with two deliberate deltas:
- *   - MINUS `registration_lookup_failed`: internal verification error, not
- *     operator-fixable — stays on the codeFallback toast (no copy key).
- *   - PLUS `'invalid'`: the route-level 400 zod reject, which is not a
- *     use-case code.
- * Deep leaf-module import (not the barrel): the barrel's runtime graph is
- * server-only (pino/crypto via the use-cases) and must not enter this
- * client bundle; the codes leaf has a type-only dependency.
- */
-const AS_PAID_ERROR_CODES: readonly string[] = [
-  'invalid',
-  ...ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODES.filter(
-    (code) => code !== 'registration_lookup_failed',
-  ),
-];
+// `AS_PAID_ERROR_CODES` (the issue-as-paid error display-set: the canonical
+// leaf codes + 'invalid', − registration_lookup_failed) is imported from the
+// './as-paid-error-codes' leaf above (065 QC S10 — pinned by the i18n test).
 
 /* ------------------------------------------------------------------------- *
  * Wave-4 S25 — section-3b subcomponents.
@@ -782,12 +767,24 @@ export function EventFeeForm({
       }
       const issueKnown =
         issueCode !== undefined && AS_PAID_ERROR_CODES.includes(issueCode);
+      // 065 M-3 — three distinguishable failure shapes, three copies:
+      //   issueRes === null → NETWORK rejection (offline/DNS/abort): the
+      //     request may never have reached the server — "check your
+      //     connection, then retry" guidance, NOT the generic unknown.
+      //   typed code        → mapped copy (or codeFallback for codes
+      //     without copy).
+      //   HTTP without code → an HTTP response DID arrive (proxy error
+      //     page, Next default 500) — interpolate the status into
+      //     codeFallback (e.g. "Error code: HTTP_500") so support can
+      //     tell it apart from a connection drop.
       toast.error(
-        issueKnown
-          ? tAsPaid(`errors.${issueCode}`)
-          : issueCode
-            ? tAsPaid('errors.codeFallback', { code: issueCode })
-            : tAsPaid('errors.unknown'),
+        issueRes === null
+          ? tAsPaid('errors.network')
+          : issueKnown
+            ? tAsPaid(`errors.${issueCode}`)
+            : tAsPaid('errors.codeFallback', {
+                code: issueCode ?? `HTTP_${issueRes.status}`,
+              }),
         {
           description: tAsPaid('draftRemains'),
           // S6 — honest retry: the draft survived, so offer to re-run the
@@ -884,7 +881,24 @@ export function EventFeeForm({
           body: JSON.stringify(body),
         });
         if (res.status === 201) {
-          const data = (await res.json()) as { invoice_id: string };
+          // 065 M-1 — the 201 body parse gets its OWN guard: a 201 means
+          // the draft EXISTS server-side, but a broken/truncated body
+          // leaves the client with NO invoice id — the outer catch's
+          // draftRemains arm could never fire for this case because
+          // `createdInvoiceId` is only set AFTER the parse. Tell the
+          // truth (draft remains), land on the invoice LIST where it is
+          // visible, and offer no retry (there is no id to retry against).
+          let data: { invoice_id: string };
+          try {
+            data = (await res.json()) as { invoice_id: string };
+          } catch {
+            toast.error(tAsPaid('errors.unknown'), {
+              description: tAsPaid('draftRemains'),
+            });
+            router.push('/admin/invoices');
+            router.refresh();
+            return;
+          }
           createdInvoiceId = data.invoice_id;
           if (effectiveMode === 'already_paid') {
             // Step 2 — one-shot draft→paid issuance (shared helper; also
@@ -923,9 +937,10 @@ export function EventFeeForm({
         });
       } catch {
         if (createdInvoiceId !== null) {
-          // The draft exists but something after its creation threw (e.g.
-          // the 201 body failed to parse mid-flight). Tell the truth: the
-          // draft remains, and land on it.
+          // Defensive backstop (065 M-1 moved the 201-body-parse failure
+          // to its own guard above, so this arm is reachable only by a
+          // throw AFTER the id is known — e.g. toast/router internals).
+          // The draft exists: tell the truth and land on it.
           toast.error(tAsPaid('errors.unknown'), {
             description: tAsPaid('draftRemains'),
           });

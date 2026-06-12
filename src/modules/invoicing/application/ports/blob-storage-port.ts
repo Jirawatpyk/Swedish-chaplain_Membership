@@ -65,7 +65,11 @@ export interface BlobStoragePort {
    */
   downloadBytes(key: string): Promise<Uint8Array>;
 
-  /** Delete a key (used by transactional sweeper). */
+  /**
+   * Delete a key. No background sweeper exists (accepted residual, 064
+   * design §3.2 L-1) — the only production caller today is
+   * issueEventInvoiceAsPaid's best-effort catch-path orphan delete.
+   */
   delete(key: string): Promise<void>;
 
   /**
