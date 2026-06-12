@@ -319,11 +319,17 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           .from(tierUpgradeSuggestions)
           .where(
             and(
+              // 065 S12 — explicit tenant filter, belt-and-suspenders over
+              // RLS, matching the house style on this aggregate (findById /
+              // findActiveForMember / transitionStatus). RLS via the threaded
+              // `tx` is the real guard; this redundant predicate protects
+              // against the gotcha class (a future refactor passing the
+              // pool-global `db` instead of the SET-LOCAL'd tx).
+              eq(tierUpgradeSuggestions.tenantId, tenantId),
               eq(tierUpgradeSuggestions.targetApplyAtCycleId, cycleId),
               eq(tierUpgradeSuggestions.status, 'accepted_pending_apply'),
             ),
           );
-        void tenantId;
         return rows.map(rowToDomain);
       });
     },
