@@ -30,9 +30,32 @@ async function resetF5IssuedInvoice(): Promise<void> {
   try {
     // processor_events has no invoice_id column — stale rows for old
     // PaymentIntent ids are inert (each test creates a new PI). Skip.
+    //
+    // admin-refund-full.spec leaves a paid→refunded→credited chain on this
+    // fixture invoice. Unwinding it has to respect a web of F5 constraints, in
+    // this exact order:
+    //
+    //  1. credit_notes.source_refund_id → refunds.id (credit_notes_source_refund_fk)
+    //     and refunds.credit_note_id → credit_notes (refunds_credit_note_tenant_fk)
+    //     form a CIRCULAR FK. Break it on the credit_notes side by nulling
+    //     source_refund_id — a plain nullable FK NOT covered by the
+    //     credit_notes immutability trigger (migration 0027 guards only
+    //     snapshot/money/pdf cols, BEFORE UPDATE). The other side
+    //     (refunds.credit_note_id) is tied to refund status by the CHECK
+    //     refunds_succeeded_iff_complete and cannot be nulled on a succeeded
+    //     refund.
+    //  2. DELETE the refunds (now unreferenced by credit_notes).
+    //  3. DELETE the credit_notes for this invoice (the immutability trigger is
+    //     BEFORE UPDATE only, so DELETE is allowed; their refund refs are gone).
+    //  4. DELETE the payments.
+    //  5. Reset the invoice — status='issued' REQUIRES credited_total_satang=0
+    //     (CHECK invoices_credited_status_matches), so zero it alongside the
+    //     payment fields, else the UPDATE violates that CHECK.
+    await sql`UPDATE credit_notes SET source_refund_id = NULL WHERE source_refund_id IN (SELECT id FROM refunds WHERE payment_id IN (SELECT payment_id FROM payments WHERE invoice_id = ${id}))`;
     await sql`DELETE FROM refunds WHERE payment_id IN (SELECT payment_id FROM payments WHERE invoice_id = ${id})`;
+    await sql`DELETE FROM credit_notes WHERE original_invoice_id = ${id}`;
     await sql`DELETE FROM payments WHERE invoice_id = ${id}`;
-    await sql`UPDATE invoices SET status='issued', paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id}`;
+    await sql`UPDATE invoices SET status='issued', credited_total_satang=0, paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id}`;
     console.log(`[e2e global setup] reset F5 issued-invoice fixture ${id}`);
   } finally {
     await sql.end({ timeout: 5 });
