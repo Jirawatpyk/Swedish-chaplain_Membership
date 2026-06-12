@@ -93,12 +93,7 @@
       "portalMismatch": "บัญชีนี้ไม่สามารถเข้าสู่ระบบที่นี่ได้"
     },
     "memberPortal": {
-      "title": "พอร์ทัลสมาชิก",
-      "welcome": "ยินดีต้อนรับ {name}",
-      "versionBadge": "v1.0",
-      "intro": "คุณเข้าสู่ระบบพอร์ทัลสมาชิก SweCham แล้ว ประสบการณ์เต็มรูปแบบจะทยอยเปิดใช้งานทีละเฟส",
-      "contactHeading": "ต้องการความช่วยเหลือ?",
-      "contactDescription": "จนกว่าระบบบริการตนเองจะพร้อม กรุณาส่งอีเมลถึงเรา เราจะช่วยคุณโดยตรง"
+      "title": "พอร์ทัลสมาชิก"
     },
     "emailChangeRevert": {
       "title": "ย้อนกลับการเปลี่ยนอีเมล",
@@ -3642,13 +3637,6 @@
     "integrations": {
       "eventcreate": {
         "_bootstrap": "การเชื่อมต่อ EventCreate",
-        "placeholder": {
-          "title": "การเชื่อมต่อ EventCreate",
-          "subtitle": "ตั้งค่าระบบนำเข้าผู้เข้าร่วมผ่าน Zapier",
-          "heading": "เร็วๆ นี้",
-          "body": "ตัวช่วยตั้งค่าการเชื่อมต่อ EventCreate กำลังจะเปิดให้ใช้งานเร็วๆ นี้ ระหว่างนี้กรุณาติดต่อผู้ดูแลระบบเพื่อขอความช่วยเหลือในการตั้งค่า Zap",
-          "backToEvents": "กลับไปยังกิจกรรม"
-        },
         "page": {
           "title": "การเชื่อมต่อ EventCreate",
           "subtitle": "เชื่อมต่อ Zapier เพื่อให้การลงทะเบียนผู้เข้าร่วมจาก EventCreate เข้าระบบโดยอัตโนมัติ",
@@ -4532,7 +4520,7 @@
         "cardAriaLabel": "บัตรเครดิต — เปลี่ยนวิธีการชำระเงิน",
         "promptpayAriaLabel": "PromptPay — เปลี่ยนวิธีการชำระเงิน",
         "cardPlaceholder": "กำลังเตรียมแบบฟอร์มชำระเงิน…",
-        "promptpayPlaceholder": "PromptPay กำลังจะมาเร็ว ๆ นี้"
+        "promptpayPlaceholder": "กำลังเตรียม PromptPay QR…"
       },
       "success": {
         "title": "ชำระเงินสำเร็จ",

@@ -93,12 +93,7 @@
       "portalMismatch": "Det här kontot kan inte logga in här."
     },
     "memberPortal": {
-      "title": "Medlemsportal",
-      "welcome": "Välkommen, {name}",
-      "versionBadge": "v1.0",
-      "intro": "Du är inloggad i SweCham medlemsportal. Den fullständiga upplevelsen rullas ut fas för fas.",
-      "contactHeading": "Behöver du hjälp?",
-      "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
+      "title": "Medlemsportal"
     },
     "emailChangeRevert": {
       "title": "Återställ e-postbyte",
@@ -3642,13 +3637,6 @@
     "integrations": {
       "eventcreate": {
         "_bootstrap": "EventCreate-integration",
-        "placeholder": {
-          "title": "EventCreate-integration",
-          "subtitle": "Konfigurera den Zapier-drivna importpipelinen för deltagare.",
-          "heading": "Kommer snart",
-          "body": "Konfigurationsguiden för EventCreate-integrationen lanseras inom kort. Kontakta tills vidare administratören för hjälp med att konfigurera din Zap.",
-          "backToEvents": "Tillbaka till evenemang"
-        },
         "page": {
           "title": "EventCreate-integration",
           "subtitle": "Anslut Zapier så att deltagarregistreringar från EventCreate importeras automatiskt.",
@@ -4532,7 +4520,7 @@
         "cardAriaLabel": "Kort — byt betalningsmetod",
         "promptpayAriaLabel": "PromptPay — byt betalningsmetod",
         "cardPlaceholder": "Förbereder säkert betalningsformulär…",
-        "promptpayPlaceholder": "PromptPay kommer snart."
+        "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…"
       },
       "success": {
         "title": "Betalningen mottagen",

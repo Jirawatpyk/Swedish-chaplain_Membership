@@ -93,12 +93,7 @@
       "portalMismatch": "This account can't sign in here."
     },
     "memberPortal": {
-      "title": "Member portal",
-      "welcome": "Welcome, {name}",
-      "versionBadge": "v1.0",
-      "intro": "You're signed in to the SweCham member portal. The full experience is being rolled out phase by phase.",
-      "contactHeading": "Need help?",
-      "contactDescription": "Until self-service lands, email us and we'll help directly."
+      "title": "Member portal"
     },
     "emailChangeRevert": {
       "title": "Revert email change",
@@ -3642,13 +3637,6 @@
     "integrations": {
       "eventcreate": {
         "_bootstrap": "EventCreate Integration",
-        "placeholder": {
-          "title": "EventCreate Integration",
-          "subtitle": "Set up the Zapier-powered attendee import pipeline.",
-          "heading": "Coming soon",
-          "body": "The EventCreate integration setup wizard is rolling out shortly. Until then, please contact your administrator for help configuring the Zap.",
-          "backToEvents": "Back to events"
-        },
         "page": {
           "title": "EventCreate integration",
           "subtitle": "Connect Zapier so EventCreate attendee registrations import automatically.",
@@ -4532,7 +4520,7 @@
         "cardAriaLabel": "Card — switch payment method",
         "promptpayAriaLabel": "PromptPay — switch payment method",
         "cardPlaceholder": "Preparing secure payment form…",
-        "promptpayPlaceholder": "PromptPay is coming soon."
+        "promptpayPlaceholder": "Preparing the PromptPay QR code…"
       },
       "success": {
         "title": "Payment received",
