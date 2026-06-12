@@ -13,7 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -60,8 +60,7 @@ export default async function NewInvoiceDraftPage({
     eventRegParam && UUID_RE.test(eventRegParam) ? eventRegParam : undefined;
 
   const hdrs = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   const currentYear = new Date().getFullYear();
 

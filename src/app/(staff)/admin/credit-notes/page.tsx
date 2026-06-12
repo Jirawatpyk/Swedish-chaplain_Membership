@@ -25,7 +25,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowUpRightIcon, DownloadIcon, EyeIcon } from 'lucide-react';
 
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listCreditNotes, makeListCreditNotesDeps } from '@/modules/invoicing';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -77,8 +77,7 @@ export default async function AdminCreditNotesDirectoryPage({
   const sp = await searchParams;
 
   const hdrs = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   const qRaw = typeof sp.q === 'string' ? sp.q.trim() : '';
   const fyRaw = typeof sp.fy === 'string' ? Number.parseInt(sp.fy, 10) : NaN;

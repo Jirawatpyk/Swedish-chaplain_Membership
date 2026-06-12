@@ -15,7 +15,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
 import {
   Card,
@@ -65,8 +65,7 @@ export default async function InvoiceSettingsPage() {
   const t = await getTranslations('admin.invoiceSettings');
 
   const hdrs = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   const existing = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
 

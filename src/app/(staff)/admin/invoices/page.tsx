@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import {
   listInvoicesPaged,
   makeListInvoicesDeps,
@@ -125,8 +125,7 @@ export default async function AdminInvoicesPage({
   const isAdmin = currentUser.role === 'admin';
 
   const hdrs = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   // R7-B5 — bootstrap guard. When `tenant_invoice_settings` is
   // missing the API refuses to issue (FR-010), so showing a hidden-

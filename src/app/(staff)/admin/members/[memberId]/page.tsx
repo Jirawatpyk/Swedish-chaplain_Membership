@@ -24,7 +24,7 @@ import {
   UserPlusIcon,
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
@@ -121,8 +121,7 @@ interface PageProps {
 const cachedCompanyNameForTitle = cache(
   async (memberId: string): Promise<string | null> => {
     const h = await headers();
-    const pseudoReq = new Request('http://localhost:3100', { headers: h });
-    const tenant = resolveTenantFromRequest(pseudoReq as never);
+    const tenant = resolveTenantFromHeaders(h);
     const deps = buildMembersDeps(tenant);
     const result = await deps.memberRepo.findById(
       tenant,
@@ -479,10 +478,9 @@ export default async function MemberDetailPage({
   // dead-end at the API (route RBAC rejects). Only `admin` may mutate members.
   const canWrite = session.user.role === 'admin';
   const h = await headers();
-  // Pseudo-Request lets resolveTenantFromRequest honour the T115t
-  // `x-tenant` header override used by throwaway-tenant E2E.
-  const pseudoReq = new Request('http://localhost:3100', { headers: h });
-  const tenant = resolveTenantFromRequest(pseudoReq as never);
+  // resolveTenantFromHeaders honours the T115t `x-tenant` header
+  // override used by throwaway-tenant E2E.
+  const tenant = resolveTenantFromHeaders(h);
   const requestId = requestIdFromHeaders(h);
   const deps = buildMembersDeps(tenant);
 
