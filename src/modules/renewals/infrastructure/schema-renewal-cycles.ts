@@ -113,6 +113,13 @@ export const renewalCycles = pgTable(
       table.tenantId,
       table.memberId,
     ),
+    // Serves the lapsed-badge batch query: DISTINCT ON (member_id)
+    // ORDER BY member_id, created_at DESC — an index skip-scan per member.
+    memberRecencyIdx: index('renewal_cycles_member_recency_idx').on(
+      table.tenantId,
+      table.memberId,
+      table.createdAt.desc(),
+    ),
     eligibilityIdx: index('renewal_cycles_eligibility_idx')
       .on(table.tenantId, table.status, table.expiresAt)
       .where(sql`status IN ('upcoming','reminded','awaiting_payment')`),
