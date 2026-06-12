@@ -186,13 +186,21 @@ export default async function InvoiceDetailPage({
   // member link — `/admin/members/null` 404s; same rule the invoices LIST
   // applies to its buyer column (054 spec).
   let memberDisplayName = snapshotName ?? invoice.memberId ?? '—';
+  // 066-membership-no-tin — default true so the pre-issue "no Tax ID" hint never
+  // shows on a false assumption; only flipped false when we positively load a
+  // draft buyer with no TIN. Drafts have no pinned snapshot, so this live member
+  // lookup (already done for the display name) is the source of truth.
+  let buyerHasTaxId = true;
   if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
       { actorUserId: currentUser.id, requestId },
       buildMembersDeps(tenantCtx),
     );
-    if (memberResult.ok) memberDisplayName = memberResult.value.member.companyName;
+    if (memberResult.ok) {
+      memberDisplayName = memberResult.value.member.companyName;
+      buyerHasTaxId = memberResult.value.member.taxId !== null;
+    }
   }
 
   // Resolve staff-user display names for the audit fields on the
@@ -392,6 +400,12 @@ export default async function InvoiceDetailPage({
                 <DeleteDraftDialog invoiceId={invoice.invoiceId} />
                 <IssueInvoiceDialog
                   invoiceId={invoice.invoiceId}
+                  // 066 — only MEMBERSHIP no-TIN buyers get the input-VAT note;
+                  // events are issue-blocked (event_no_tin_requires_paid_issue),
+                  // so the hint would never apply to them.
+                  showNoTaxIdHint={
+                    invoice.invoiceSubject === 'membership' && !buyerHasTaxId
+                  }
                   summary={{
                     memberName: memberDisplayName,
                     planDisplayName,

@@ -29,7 +29,7 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Loader2Icon } from 'lucide-react';
+import { InfoIcon, Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +44,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 type Props = {
   readonly invoiceId: string;
@@ -57,9 +58,22 @@ type Props = {
     readonly vatPercent: string;
     readonly totalText: string;
   };
+  /**
+   * 066-membership-no-tin — show an informational note that this buyer has no
+   * Tax ID. The invoice still issues as a valid §86/4 (name+address), but a
+   * VAT-registered buyer cannot claim its input VAT without their TIN on the
+   * document (ภาษีซื้อต้องห้าม). Non-blocking — the page computes this only for
+   * a MEMBERSHIP draft whose buyer has no tax_id (events route to §105 as-paid
+   * and are blocked separately, so the hint never shows for them).
+   */
+  readonly showNoTaxIdHint?: boolean;
 };
 
-export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
+export function IssueInvoiceDialog({
+  invoiceId,
+  summary,
+  showNoTaxIdHint = false,
+}: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
   const locale = useLocale();
@@ -166,6 +180,15 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
             </dd>
           </div>
         </dl>
+
+        {showNoTaxIdHint && (
+          <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <InfoIcon className="size-4" aria-hidden="true" />
+            <AlertDescription className="text-amber-900 dark:text-amber-200">
+              {t('noTaxIdHint')}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid gap-2">
           <Label htmlFor="issue-confirm">

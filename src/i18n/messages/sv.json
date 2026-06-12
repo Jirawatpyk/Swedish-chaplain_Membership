@@ -1967,6 +1967,7 @@
         "success": "Fakturan utfärdad",
         "cancel": "Avbryt",
         "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
+        "noTaxIdHint": "Den här köparen saknar skattenummer. Fakturan utfärdas ändå som en giltig skattefaktura med namn och adress, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
         "errors": {
           "failed": "Kunde inte utfärda",
           "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
