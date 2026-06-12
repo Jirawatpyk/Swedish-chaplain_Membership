@@ -71,11 +71,11 @@ describe('inferEventDocumentKind — event PDF doc-kind discriminator (FIX 5)', 
     expect(inferEventDocumentKind('membership', '1234567890123')).toBe('invoice');
   });
 
-  it('membership + no TIN → invoice (the membership pre-issue gate blocks this case elsewhere; the discriminator itself never yields receipt_separate for membership)', () => {
+  it('membership + no TIN → invoice (a non-registrant buyer gets a valid §86/4 name+address; never a §105 receipt)', () => {
     // The discriminator is subject-gated: ONLY `event` can resolve to
-    // `receipt_separate`. A TIN-less membership invoice is rejected by the
-    // issue-invoice `tax_id_required` gate BEFORE this helper would matter,
-    // but the helper must still never label a membership doc as a §105 receipt.
+    // `receipt_separate`. 066 relax — a TIN-less membership invoice ISSUES (as a
+    // §86/4 with name+address, TIN line absent), and the discriminator correctly
+    // keeps it labelled 'invoice' (a membership doc is never a §105 receipt).
     expect(inferEventDocumentKind('membership', null)).toBe('invoice');
     expect(inferEventDocumentKind('membership', '')).toBe('invoice');
     expect(inferEventDocumentKind('membership', '   ')).toBe('invoice');

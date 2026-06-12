@@ -298,7 +298,15 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
     });
   }
 
-  it('issue on ACTIVE company member with NO tax_id → tax_id_required, NO sequence consumed (real adapter join)', async () => {
+  it('066 — issue on ACTIVE company member with NO tax_id → issues a valid §86/4 (name+address), §87 sequence consumed (real adapter join)', async () => {
+    // 066-membership-no-tin: the former `tax_id_required` block is REMOVED. A
+    // non-registrant membership buyer — here a company that withheld its TIN —
+    // receives a VALID full ใบกำกับภาษี with name+address and no TIN line
+    // (ประกาศอธิบดีฯ ฉบับที่ 199; buyer TIN is mandatory only for VAT-registrant
+    // buyers). Issuance proceeds end-to-end against live Neon and a §87 sequence
+    // number IS allocated — proving the real adapter plan join resolves the
+    // buyer snapshot AND the relax works in production (where the OLD gate
+    // blocked here). PDF render + blob are mocked; sequence/member/repo are real.
     const invoiceId = randomUUID();
     const memberId = randomUUID();
     await runInTenant(tenant.ctx, (tx) =>
@@ -311,13 +319,11 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
       invoiceId,
     });
 
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    // The real adapter's plan join must have resolved memberTypeScope='company'
-    // for the gate to fire — proving the join works against live data.
-    expect(r.error.code).toBe('tax_id_required');
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    if (!r.ok) return;
 
-    // Gate runs BEFORE allocateNext, so no §87 sequence number is burned.
+    // Issuance allocated a §87 number → the per-(tenant, type, FY) sequence row
+    // now exists (the OLD no-TIN block ran BEFORE allocation, leaving zero rows).
     const seqRows = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select()
@@ -330,7 +336,7 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
           ),
         ),
     );
-    expect(seqRows).toHaveLength(0);
+    expect(seqRows).toHaveLength(1);
   }, 60_000);
 
   it('issue on ACTIVE company member WITH valid tax_id → succeeds (gate allows; real adapter join)', async () => {

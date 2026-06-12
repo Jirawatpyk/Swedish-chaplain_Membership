@@ -53,11 +53,13 @@ export function buyerHasTin(taxId: string | null | undefined): boolean {
  *
  *   event + no TIN  → 'receipt_separate'  (ใบเสร็จรับเงิน / §105 receipt)
  *   event + TIN     → 'invoice'           (ใบกำกับภาษี / §86/4 tax invoice)
- *   membership      → 'invoice'           (never a §105 receipt; the membership
- *                                          pre-issue gate independently requires
- *                                          a TIN, but the discriminator itself
- *                                          must never label a membership doc as
- *                                          a receipt)
+ *   membership      → 'invoice'           (ALWAYS a §86/4 ใบกำกับภาษี, with or
+ *                                          without a buyer TIN — a non-registrant
+ *                                          membership buyer gets a valid §86/4
+ *                                          with name+address, TIN line absent
+ *                                          [066 relax]. The discriminator never
+ *                                          labels a membership doc as a §105
+ *                                          receipt.)
  */
 export function inferEventDocumentKind(
   subject: InvoiceSubject,

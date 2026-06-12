@@ -236,8 +236,10 @@ export async function createEventInvoiceDraft(
       // ใบเสร็จรับเงิน (receipt) at ISSUE rather than a full ใบกำกับภาษี — the
       // event ticket was already paid, so a receipt is legally valid. The old
       // matched-company-null-tax_id `tax_id_required` gate is therefore REMOVED
-      // here (it only applied to MEMBERSHIP invoices, where issue-invoice still
-      // enforces it). A matched company member with no TIN is a rare data
+      // here (it only ever applied to MEMBERSHIP invoices — and even there the
+      // issue-invoice gate was itself removed in 066: a non-registrant
+      // membership buyer now issues a valid §86/4 name+address). A matched
+      // company member with no TIN is a rare data
       // anomaly that now yields a receipt rather than blocking — acceptable per
       // the ruling. (`invalid_tax_id_format` below is a DIFFERENT guard — it
       // rejects a malformed non-null manual tax_id, not an absent one.)

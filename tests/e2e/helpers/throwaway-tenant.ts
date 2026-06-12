@@ -169,12 +169,11 @@ export async function createThrowawayTenant(
         memberNumber: nextSeedMemberNumber(),
         companyName: 'E2E Throwaway Co',
         country: 'TH',
-        // 054-event-fee-invoices (Task 9) — every MEMBERSHIP buyer must carry a
-        // 13-digit TIN: issue-invoice's §86/4 gate now blocks any TIN-less
-        // membership invoice (subject-based, not tier-based). Seed a valid Thai
-        // TIN so the issue flows in invoice-draft-issue / invoice-pay /
-        // payment-card-happy-path specs reach `issued` instead of 422
-        // tax_id_required.
+        // Seed a valid Thai TIN so this throwaway member is a TIN-bearing
+        // (input-VAT-claimable) §86/4 case in the invoice-draft-issue /
+        // invoice-pay / payment-card-happy-path specs. (066 removed the
+        // membership no-TIN block — a TIN is no longer required to reach
+        // `issued` — but keeping one exercises the TIN-present render path.)
         taxId: '0105536000020',
         planId: 'regular',
         planYear: 2026,

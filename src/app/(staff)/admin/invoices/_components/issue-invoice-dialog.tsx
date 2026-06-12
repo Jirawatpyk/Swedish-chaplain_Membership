@@ -29,7 +29,7 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Loader2Icon } from 'lucide-react';
+import { InfoIcon, Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +44,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 type Props = {
   readonly invoiceId: string;
@@ -57,9 +58,22 @@ type Props = {
     readonly vatPercent: string;
     readonly totalText: string;
   };
+  /**
+   * 066-membership-no-tin — show an informational note that this buyer has no
+   * Tax ID. The invoice still issues as a valid §86/4 (name+address), but a
+   * VAT-registered buyer cannot claim its input VAT without their TIN on the
+   * document (ภาษีซื้อต้องห้าม). Non-blocking — the page computes this only for
+   * a MEMBERSHIP draft whose buyer has no tax_id (events route to §105 as-paid
+   * and are blocked separately, so the hint never shows for them).
+   */
+  readonly showNoTaxIdHint?: boolean;
 };
 
-export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
+export function IssueInvoiceDialog({
+  invoiceId,
+  summary,
+  showNoTaxIdHint = false,
+}: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
   const locale = useLocale();
@@ -91,22 +105,21 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
         const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
           description:
-            // S1-P1-16 — surface a human-readable message for the company
-            // tax_id gate instead of the raw error code (FR-009a).
-            // 064 §105 ROOT FIX — same for the no-TIN event guard, pointing
-            // the admin at the record-as-paid flow instead of plain issue.
-            code === 'tax_id_required'
-              ? t('errors.tax_id_required')
-              : code === 'event_no_tin_requires_paid_issue'
-                ? t('errors.event_no_tin_requires_paid_issue')
-                // 064 S1 — registration refunded between draft and issue
-                // (issuance-time TOCTOU re-check); human-readable copy so
-                // the admin knows the draft is now a dead end, not retryable.
-                : code === 'registration_refunded'
-                  ? t('errors.registration_refunded')
-                  : code
-                    ? t('errors.codeFallback', { code })
-                    : t('errors.unknown'),
+            // 064 §105 ROOT FIX — human-readable copy for the no-TIN EVENT
+            // guard, pointing the admin at the record-as-paid flow instead of
+            // plain issue. (066 removed the membership tax_id_required gate — a
+            // no-TIN membership now issues a valid §86/4 with name+address, so
+            // there is no membership error code to surface here.)
+            code === 'event_no_tin_requires_paid_issue'
+              ? t('errors.event_no_tin_requires_paid_issue')
+              // 064 S1 — registration refunded between draft and issue
+              // (issuance-time TOCTOU re-check); human-readable copy so
+              // the admin knows the draft is now a dead end, not retryable.
+              : code === 'registration_refunded'
+                ? t('errors.registration_refunded')
+                : code
+                  ? t('errors.codeFallback', { code })
+                  : t('errors.unknown'),
         });
         return;
       }
@@ -167,6 +180,15 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
             </dd>
           </div>
         </dl>
+
+        {showNoTaxIdHint && (
+          <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <InfoIcon className="size-4" aria-hidden="true" />
+            <AlertDescription className="text-amber-900 dark:text-amber-200">
+              {t('noTaxIdHint')}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid gap-2">
           <Label htmlFor="issue-confirm">

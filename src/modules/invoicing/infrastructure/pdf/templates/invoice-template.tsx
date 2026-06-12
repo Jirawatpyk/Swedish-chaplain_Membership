@@ -24,6 +24,7 @@ import {
   LEGACY_FOOTER_CITATION,
   revenueCodeCitation,
 } from './revenue-code-citation';
+import { buyerHasTin } from '../../../domain/document-kind';
 
 const styles = StyleSheet.create({
   page: { fontFamily: 'Sarabun', fontSize: 10, padding: 36, color: '#111' },
@@ -311,7 +312,18 @@ export function InvoiceTemplate(input: PdfRenderInput) {
         <View style={styles.section}>
           <Text style={styles.label}>{shapeThai('ลูกค้า')} / Customer</Text>
           <Text style={styles.value}>{shapeThai(input.member.legal_name)}</Text>
-          {input.member.tax_id && (
+          {/*
+            066-membership-no-tin — render the buyer Tax ID line ONLY when a
+            non-blank TIN is present, via the SHARED `buyerHasTin` discriminator
+            (the same one the issue/pay/credit gates use — directly unit-tested
+            for null/empty/whitespace/padded, so the rendered buyer block and the
+            document-kind decision can never diverge). It treats whitespace as
+            "no TIN". Before the 066 relax a whitespace-only tax_id was blocked at
+            issue, so it never reached here; now that a no-TIN membership issues,
+            this prevents a stray "Tax ID:   " line on the §86/4. Byte-identical
+            for a real TIN (renders) and null (omitted) — only whitespace changes.
+          */}
+          {buyerHasTin(input.member.tax_id) && (
             <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
           )}
           {/*

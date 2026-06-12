@@ -421,34 +421,31 @@ export async function recordPayment(
     // single "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; separate mode
     // allocates its own receipt sequence number.
     //
-    // 054-event-fee-invoices (Task 9, Action E + final-review HIGH 2) — §86/4
-    // doc-type consistency: a `receipt_combined` carries the "ใบกำกับภาษี"
-    // (tax-invoice) label, which a buyer with NO 13-digit TIN must NEVER receive
-    // (the ship-blocker this gate closes). When the issue-time BUYER snapshot
-    // lacks a TIN we FORCE the plain `receipt_separate` (ใบเสร็จรับเงิน) + a
-    // separate receipt number, overriding the tenant's
-    // `receiptNumberingMode='combined'` setting.
+    // 054/064/066 — §86/4 doc-type consistency. The receipt kind mirrors the
+    // issue-time document kind via the shared `inferEventDocumentKind`
+    // discriminator, so issue-, pay-, and credit-time gates stay in lockstep
+    // (FIX 5 — no inline `buyerHasTin` reconstruction):
     //
-    // For MEMBERSHIP invoices the issue-invoice gate guarantees every buyer has
-    // a TIN, so this override is a no-op there. For NON-member (and matched-
-    // member) EVENT invoices — now reachable on this path (HIGH 2) — a TIN-less
-    // buyer was issued as `receipt_separate` and the payment-time receipt MUST
-    // stay `receipt_separate` too. The `member` rendered below is the BUYER
-    // snapshot (`loaded.memberIdentitySnapshot`, non-null per the guard above) —
-    // it is NEVER a deref of `member_id`, so a null-member event invoice renders
-    // correctly. (TIN check trims whitespace, matching the issue-invoice gate.)
-    // FIX 5 — shared Domain discriminator. `inferEventDocumentKind` resolves the
-    // SAME `receipt_separate` verdict the issue-time `pdfKind` gate used (and the
-    // credit-time gate in `issueCreditNote` uses), so all three stay in lockstep
-    // — no inline `buyerHasTin` reconstruction. The `combined` receipt label is
-    // forced to `receipt_separate` for a TIN-less event buyer; behaviour is
-    // byte-identical to the former inline `buyerHasTin(tax_id)` check, because a
-    // MEMBERSHIP invoice always carries a TIN by pay-time (the issue-invoice gate
-    // requires it), so `!forceSeparate` ≡ `buyerHasTin` on every reachable row.
-    // 064 — legacy-row defensive (remove with spec §6 item 1): after the interim
-    // no-TIN guard above, no TIN-less event row reaches this point, so the
-    // `receipt_separate` verdict below is unreachable in practice. Kept for
-    // lockstep with the issue-/credit-time gates (FIX 5 rationale unchanged).
+    //   • EVENT + no TIN  → `receipt_separate` (ใบเสร็จรับเงิน / §105). An event
+    //     ticket buyer with no TIN is routed to a §105 receipt (the 064 design),
+    //     so the payment-time receipt FORCES `receipt_separate`, overriding the
+    //     tenant's `receiptNumberingMode='combined'`. (In practice no TIN-less
+    //     event row reaches here — the 064 interim guard above rejects it — but
+    //     the verdict is kept for lockstep with the issue-/credit-time gates.)
+    //   • MEMBERSHIP (any TIN state) → `inferEventDocumentKind` returns 'invoice',
+    //     so `forceSeparate` is ALWAYS false and a membership receipt follows the
+    //     tenant setting (`receipt_combined` when combined-mode). 066 relax: a
+    //     no-TIN membership buyer is now REACHABLE here, and `receipt_combined`
+    //     (the "ใบกำกับภาษี/ใบเสร็จรับเงิน" label) is CORRECT for them — a §86/4
+    //     to a non-registrant with name+address is a valid tax invoice, so the
+    //     combined tax-invoice/receipt is equally valid. (The old "a TIN-less
+    //     buyer must never receive the ใบกำกับภาษี label" rule was the legally-
+    //     wrong premise 066 corrected; it never applied to membership.)
+    //
+    // The `member` rendered below is the BUYER snapshot
+    // (`loaded.memberIdentitySnapshot`, non-null per the guard above) — NEVER a
+    // deref of `member_id`, so a null-member event invoice renders correctly.
+    // (TIN check trims whitespace, matching the issue-time discriminator.)
     const forceSeparate =
       inferEventDocumentKind(
         loaded.invoiceSubject,
