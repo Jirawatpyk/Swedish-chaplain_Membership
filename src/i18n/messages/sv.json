@@ -913,6 +913,8 @@
         "selectRow": "Markera {company}",
         "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
         "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen.",
+        "membershipLapsed": "Förfallen",
+        "membershipLapsedSr": "Medlemskap förfallet — kräver förnyelse",
         "tableCaption": "Medlemsregister"
       },
       "emptyStates": {

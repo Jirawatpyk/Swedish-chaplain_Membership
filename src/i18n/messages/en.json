@@ -913,6 +913,8 @@
         "selectRow": "Select {company}",
         "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}",
         "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection.",
+        "membershipLapsed": "Lapsed",
+        "membershipLapsedSr": "Membership lapsed — needs renewal",
         "tableCaption": "Members directory"
       },
       "emptyStates": {
