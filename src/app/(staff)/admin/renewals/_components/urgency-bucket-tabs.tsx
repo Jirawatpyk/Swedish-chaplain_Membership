@@ -82,7 +82,17 @@ export function UrgencyBucketTabs({
     // `py-0.5` adds 2px breathing room above + below so a focus ring
     // on edge-row tabs isn't clipped by the Y-hidden boundary
     // (WCAG 2.4.11 Focus Not Obscured).
-    <div className="w-full overflow-x-auto overflow-y-hidden py-0.5">
+    // 067 a11y (WCAG 2.1.1 scrollable-region-focusable, deterministic on
+    // WebKit) — an overflow-x-auto container that scrolls must be keyboard-
+    // pan-scrollable. Mirror src/components/ui/table.tsx: tabIndex makes the
+    // region focusable (arrow keys scroll it), role=region + aria-label name
+    // the landmark, focus ring meets WCAG 2.4.7.
+    <div
+      role="region"
+      aria-label={t('aria_label')}
+      tabIndex={0}
+      className="w-full overflow-x-auto overflow-y-hidden py-0.5 focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
+    >
       <Tabs value={current} onValueChange={handleChange}>
         {/* `gap-1` separates adjacent triggers — without it the count
             badge of one tab visually butts against the next tab's

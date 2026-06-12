@@ -128,7 +128,11 @@ test.describe('@i18n T268 — Buddhist Era display rule (TH only)', () => {
     // 180s on the email field before timing out.
     await signInAsAdmin(page);
     await setLocaleCookie(page, 'th');
-    await page.goto('/admin/renewals');
+    // 067 — page.goto defaults to waitUntil:'load', which blocks on EVERY
+    // subresource; on a cold-compile dev server the heavy /admin/renewals route
+    // can exceed the 180s test timeout waiting for 'load'. domcontentloaded is
+    // all the next line + the body-text BE-year assertion actually need.
+    await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('domcontentloaded');
     // Pull the page text and check for a BE year in the visible range.
     // R4 review M1 fix: drop the bare-number `/256[5-9]/` fallback —
