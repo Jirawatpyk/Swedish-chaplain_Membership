@@ -186,8 +186,14 @@ failing the CHECK (23514). The v1 "§3.6 no new migrations" claim is withdrawn.
   one payment, one document, one invoice number; `receipt_document_number_raw` stays NULL per
   the combined-mode precedent). Issued **regardless of tenant `receiptNumberingMode`** — that
   setting governs the 2-step flow's payment-time receipt. (Complexity Tracking entry.)
-- **no-TIN as-paid → DECIDED 2026-06-10: Path β** (operator decision — proceed without
-  waiting for the accountant; confirmation downgraded to ship-time verification, §6 item 2):
+- **no-TIN as-paid → Path β (RESOLVED 2026-06-12 — thai-tax-compliance-auditor confirmed
+  β is correct; KEEP, no code change; accountant RD sign-off downgraded to OPTIONAL,
+  NOT a ship blocker — §6 item 2).** Original: DECIDED 2026-06-10 by operator go-ahead.
+  Ruling basis: §87(3)'s gap-free sequential requirement is **per document series**, not one
+  global series across §86/4 tax invoices + §105 receipts; separate เล่ม/ชุด with distinct
+  prefixes is standard Thai practice; α would inject non-§86/4 phantom entries into the
+  tax-invoice ledger (β keeps it pure). Output VAT (ภ.พ.30) is identical either way — it keys
+  on the payment-date tax point (§78/1), not the document number series:
   - **Path β (CHOSEN — the auditor's "safe reading"):** the §105 receipt number comes from the
     existing **receipt stream** and is stored in `receipt_document_number_raw`;
     `sequence_number`/`document_number` stay NULL for these rows → requires ONE migration
@@ -366,12 +372,12 @@ tenant's configured rate; acceptable for v1, noted).
 
 ## 6. Out-of-code follow-ups (operator actions — tracked here so they are not lost)
 
-> **Engineering complete (T1–T15, 2026-06-11)** — the §3.4 interim guard is live (every code site greppable via `REMOVE-WITH-064-REMEDIATION`) and the operator runbook for items 1+5+6 now exists at `docs/runbooks/event-invoice-legacy-no-tin-remediation.md`. All table rows below remain operator-side OPEN.
+> **Engineering complete (T1–T15, 2026-06-11)** — the §3.4 interim guard is live (every code site greppable via `REMOVE-WITH-064-REMEDIATION`) and the operator runbook for items 1+5+6 now exists at `docs/runbooks/event-invoice-legacy-no-tin-remediation.md`. Item 2 (β numbering) was RESOLVED 2026-06-12 by tax-auditor ruling (β confirmed, no code change); the remaining table rows are operator-side OPEN (and moot until the system goes live — no real documents exist yet).
 
 | # | Item | Owner | When | Status |
 |---|---|---|---|---|
 | 1 | **Remediate already-issued no-TIN event documents** (e.g. `SC-2026-000022`): with the accountant, void the issue-time pseudo-receipt and keep exactly one valid §105 receipt per payment; retain originals+copies with cancellation notes for the full §87/3 period; regenerate affected E2E/demo seeds. **Must complete BEFORE flag-flip** (until then the §3.4 interim guard blocks legacy double-receipts) | Operator + accountant | Before flag-flip / ship | OPEN |
-| 2 | **Verify the §105 numbering-stream choice with an RD accountant** — engineering proceeded with **β (separate receipt stream)** per the operator's 2026-06-10 go-ahead (§3.3 rationale). If the accountant mandates the shared stream instead, switch the no-TIN arm to α (small code change; β migration harmless to keep) | Operator + accountant | Before ship sign-off | OPEN (β chosen, verify at ship) |
+| 2 | ~~**Verify the §105 numbering-stream choice with an RD accountant**~~ — **RESOLVED 2026-06-12: thai-tax-compliance-auditor ruled β correct under §87(3) (gap-free is per-series; separate เล่ม/ชุด is standard Thai practice; α would pollute the tax-invoice ledger with non-§86/4 entries). KEEP β, no code change.** RD accountant sign-off downgraded to OPTIONAL (peace-of-mind, not a ship blocker). α remains a strict subset switch if ever mandated. Surviving caveat: a mid-fiscal-year receipt-prefix change needs a written audit trail (see item 5 / row note) | Operator (+ optional accountant) | — | **RESOLVED (β confirmed)** |
 | 3 | **Tax-point question for EventCreate-collected fees**: attendee-payment date (assumed; drives the paymentDate pre-fill) vs remittance date | Operator + tax advisor | Before heavy production use | OPEN |
 | 4 | **Advance-billing question**: may a TIN sponsor be billed before the event takes place? Current design allows it (§78/1 pre-payment tax invoice) | Operator + tax advisor | Before first pre-event sponsor bill | OPEN |
 | 5 | **ภ.พ.30 period correction for mis-issued documents** (tax HIGH #4): for each legacy no-TIN event document, if the issue-date month (when output VAT was declared) ≠ the real payment month, file additional ภ.พ.30 returns (surcharge 1.5%/month on underpaid months) | Operator + accountant | With item 1 | OPEN |
