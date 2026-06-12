@@ -50,6 +50,7 @@ import {
   f8OnPaidCallbacks,
 } from '@/modules/renewals';
 import { asSatang } from '@/lib/money';
+import { ok } from '@/lib/result';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import {
   parseSuggestionId,
@@ -333,14 +334,32 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
 
   it('AS2 — accept dispatches member email + emits notify audit', async () => {
     // Phase 7 review-fix C-TEST-1: explicit AS2 / FR-039 step 2
-    // assertion. The accept-tier-upgrade post-tx path calls the stub
-    // gateway (NODE_ENV=test) which logs synthetic delivery id; we
-    // assert the audit row was emitted with the brand fields.
+    // assertion — the post-tx path must emit the `_member_notified`
+    // success audit when the gateway returns ok.
     const seeded = await seedSuggestionState(tenant, admin, {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    // 065 follow-up — inject a SUCCESS gateway mock so this test is
+    // decoupled from the live Resend test key's rate-limit. The audit/
+    // dispatch logic (which audit row fires on gateway ok) is what's
+    // under test here, NOT the live Resend SDK; repeated same-session
+    // runs exhaust the shared Resend quota and the real gateway 4xx's,
+    // driving the `failed` branch (no `_member_notified` row) and a
+    // false RED. `SendRenewalEmailResult` = { deliveryId, dispatchedAt }
+    // (see renewal-gateway.ts); the use-case reads `.value.deliveryId`.
+    const baseDeps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = {
+      ...baseDeps,
+      renewalGateway: {
+        ...baseDeps.renewalGateway,
+        sendTierUpgradeApprovalEmail: async () =>
+          ok({
+            deliveryId: `mock-delivery-${randomUUID()}`,
+            dispatchedAt: new Date().toISOString(),
+          }),
+      },
+    } as typeof baseDeps;
 
     const result = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
@@ -352,19 +371,22 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // The Resend gateway in test mode dispatches a real (or
-    // sandbox) message. Assert the audit row landed regardless of
-    // delivery-id presence — `_member_notified` fires only on
-    // gateway success; `_member_notify_skipped` fires when the
-    // member has no primary contact email; `_member_notify_failed`
-    // fires when the gateway returns err. This test seeds a primary
-    // contact + has a healthy gateway so the success audit MUST fire.
+    // `_member_notified` fires only on gateway success;
+    // `_member_notify_skipped` fires when the member has no primary
+    // contact email; `_member_notify_failed` fires when the gateway
+    // returns err. This test seeds a primary contact + mocks a healthy
+    // gateway so the success audit MUST fire. Scope the query to THIS
+    // accept's suggestion_id — the tenant is shared across the describe
+    // block and other tests can emit notify audits for their own rows.
     const notifyAudits = await runInTenant(tenant.ctx, (tx) =>
-      tx
+      (tx as unknown as typeof db)
         .select()
         .from(auditLog)
         .where(
-          eq(auditLog.eventType, 'tier_upgrade_pending_member_notified'),
+          and(
+            eq(auditLog.eventType, 'tier_upgrade_pending_member_notified'),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
+          ),
         ),
     );
     expect(notifyAudits.length).toBeGreaterThanOrEqual(1);
@@ -644,14 +666,26 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     expect(result.value.memberNotifiedDeliveryId).toBeNull();
 
     // Threw-branch audit row presence + payload-shape probe.
+    // 065 follow-up — scope to THIS accept's suggestion_id. The tenant
+    // is shared across the describe block, and OTHER accept-calling
+    // tests still hit the live Resend test key — under its rate-limit
+    // they emit their OWN `_member_notify_failed` rows with
+    // `failure_kind: 'gateway_4xx'`. An unscoped query taking [0] could
+    // read one of those instead of R4's own `failure_kind: 'unknown'`
+    // threw-row, flaking on `expected 'gateway_4xx' to be 'unknown'`.
+    // The threw-branch payload carries `suggestion_id` (accept-tier-
+    // upgrade.ts threw arm), so filtering by it isolates R4's own row.
     const threwAudit = await runInTenant(tenant.ctx, (tx) =>
-      tx
+      (tx as unknown as typeof db)
         .select()
         .from(auditLog)
         .where(
-          eq(
-            auditLog.eventType,
-            'tier_upgrade_pending_member_notify_failed',
+          and(
+            eq(
+              auditLog.eventType,
+              'tier_upgrade_pending_member_notify_failed',
+            ),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
           ),
         ),
     );
