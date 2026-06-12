@@ -92,7 +92,7 @@ export function buildInvitationEmail(input: InvitationEmailInput): BuiltEmail {
     <p style="line-height: 1.6;">${escape(copy.intro)}</p>
     <p style="line-height: 1.6;"><strong>${escape(roleLine)}</strong></p>
     <p style="margin: 24px 0;">
-      <a href="${url}" style="display: inline-block; background: #0b6bcb; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escape(copy.cta)}</a>
+      <a href="${url}" style="display: inline-block; background: #10487a; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escape(copy.cta)}</a>
     </p>
     <p style="color: #555; font-size: 13px;">${escape(copy.expiryNotice)}</p>
     <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0 16px;" />

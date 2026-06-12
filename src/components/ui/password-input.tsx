@@ -46,7 +46,7 @@ export const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputPro
           aria-pressed={visible}
           // 44×44 target via inline padding to satisfy WCAG 2.2 SC 2.5.8.
           // `inset-y-0` centres vertically; `right-0` keeps it flush.
-          className="absolute inset-y-0 right-0 flex h-full w-11 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="absolute inset-y-0 right-0 flex h-full w-11 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
           // Toggle button does not submit the parent form.
           tabIndex={0}
         >

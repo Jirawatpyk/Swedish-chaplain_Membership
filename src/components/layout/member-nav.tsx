@@ -39,7 +39,10 @@ export function MemberNav() {
               'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
               'hover:bg-accent hover:text-accent-foreground',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground',
+              // Active = navy-tinted pill + navy text/icon (navy-on-tint ~8:1,
+              // WCAG AA). The bg-primary/10 tint + aria-current keep it
+              // non-colour-only (1.4.1), not the colour change alone.
+              active ? 'bg-primary/10 text-primary' : 'text-muted-foreground',
             )}
           >
             <item.icon className="size-4 shrink-0" aria-hidden />

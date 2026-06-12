@@ -94,7 +94,7 @@ export function buildResetPasswordEmail(input: ResetPasswordEmailInput): BuiltEm
     <h1 style="font-size: 20px; margin-bottom: 16px;">${escape(copy.heading)}</h1>
     <p style="line-height: 1.6;">${escape(copy.intro)}</p>
     <p style="margin: 24px 0;">
-      <a href="${url}" style="display: inline-block; background: #0b6bcb; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escape(copy.cta)}</a>
+      <a href="${url}" style="display: inline-block; background: #10487a; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escape(copy.cta)}</a>
     </p>
     <p style="color: #555; font-size: 13px;">${escape(copy.expiryNotice)}</p>
     <p style="color: #555; font-size: 13px;">${escape(copy.ignoreNotice)}</p>

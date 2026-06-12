@@ -200,7 +200,7 @@ export function ConfirmationPanel({
         // keeps it subtler than the primary CTA but still WCAG 2.1 AA
         // contrast (4.5:1 on card background).
         // T164: hide on print — close button has no meaning on paper.
-        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:rounded print:hidden"
+        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded print:hidden"
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}
@@ -233,7 +233,7 @@ export function ConfirmationPanel({
           // but a `::before` overlay extends the tap target to ~44px tall to
           // match the codebase 44px convention (WCAG 2.5.5) without adding
           // vertical space; primary keyboard targets remain Download / Close.
-          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="relative inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
         >
           {paused ? (

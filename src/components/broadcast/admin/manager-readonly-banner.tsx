@@ -18,10 +18,10 @@ export async function ManagerReadonlyBanner(): Promise<React.ReactElement> {
     <div
       role="region"
       aria-label={t('title')}
-      className="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/40"
+      className="flex items-start gap-3 rounded-md border border-info/30 bg-info-surface p-4"
     >
       <Eye
-        className="mt-0.5 h-5 w-5 shrink-0 text-blue-700 dark:text-blue-300"
+        className="mt-0.5 h-5 w-5 shrink-0 text-info"
         aria-hidden="true"
       />
       <div className="space-y-1">

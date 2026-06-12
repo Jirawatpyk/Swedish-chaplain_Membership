@@ -57,7 +57,7 @@ export function MemberBottomTabs() {
                   'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 border-t-2 px-1 py-1.5 text-xs transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                   active
-                    ? 'border-current font-semibold text-accent-foreground'
+                    ? 'border-[var(--nav-indicator)] font-semibold text-accent-foreground'
                     : 'border-transparent font-medium text-muted-foreground',
                 )}
               >

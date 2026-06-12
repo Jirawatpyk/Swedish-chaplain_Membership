@@ -95,6 +95,9 @@
 
   --color-accent: var(--accent);
 
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-foreground: var(--brand-accent-foreground);
+
   --color-secondary-foreground: var(--secondary-foreground);
 
   --color-secondary: var(--secondary);
@@ -137,7 +140,8 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  /* Deep Swedish navy (#10487A) — premium/enterprise tone. White-on-navy = 9.4:1 (WCAG AA). */
+  --primary: oklch(0.3947 0.1012 250.40);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -174,32 +178,46 @@
   --warning-foreground: oklch(0.985 0 0);
   --warning-surface: oklch(0.97 0.04 75);
 
-  --info: oklch(0.5 0.17 230);
+  /* Hue shifted 230->205 (cyan-teal) so the info blue stays clearly distinct
+     from the new Sweden-blue --primary (hue ~244) in adjacent contexts
+     (e.g. an info banner next to a primary CTA). Still WCAG AA: text-info on
+     info-surface 5.1:1, white on info 5.6:1. */
+  --info: oklch(0.5 0.17 205);
   --info-foreground: oklch(0.985 0 0);
-  --info-surface: oklch(0.965 0.03 230);
+  --info-surface: oklch(0.965 0.03 205);
 
   --input: oklch(0.922 0 0);
-  /* Focus-ring contrast (WCAG 2.4.11): the previous `oklch(0.708)`
-   * (~#b3b3b3) gave only ~1.4:1 contrast against white at the
-   * `ring-ring/50` alpha used in primitives — well below the 3:1
-   * minimum. `oklch(0.45)` (~#5e5e5e) measures ~3.4:1 with the same
-   * 50% alpha and stays monochrome (chroma 0) so it matches the
-   * SweCham gray brand. Dark-theme ring already passes — kept as-is. */
-  --ring: oklch(0.45 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Focus-ring colour — deep Swedish navy (#10487A), navy-on-white 9.4:1.
+   * Standard form/interactive primitives (input, button, select, checkbox,
+   * tabs, badge, …) render a FULL-OPACITY `focus-visible:border-ring` as the
+   * WCAG 2.4.11 indicator, so their accompanying `ring-ring/50` glow is just
+   * decorative. Surfaces that have NO border-ring (password-input reveal
+   * toggle, scrollable table + scroll-area regions, settings cards, pay-sheet
+   * links) instead use full-opacity `focus-visible:ring-ring` (9.4:1) — a /50
+   * ring there is only 2.23:1 and fails. Do NOT reintroduce `ring-ring/50` as
+   * a SOLE focus indicator. */
+  --ring: oklch(0.3947 0.1012 250.40);
+  /* Navy+gold data-viz ramp (was grayscale). Series are always paired
+     with labels/legends so hue is never the sole differentiator. */
+  --chart-1: oklch(0.3947 0.1012 250.40); /* navy */
+  --chart-2: oklch(0.7635 0.0616 240.33); /* steel blue */
+  --chart-3: oklch(0.7280 0.1380 89.73);  /* gold */
+  --chart-4: oklch(0.3414 0.0937 248.81); /* navy */
+  --chart-5: oklch(0.70 0.15 70);         /* amber */
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.3947 0.1012 250.40); /* navy header badge */
+  --sidebar-primary-foreground: oklch(0.985 0 0); /* white on navy 9.4:1 */
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: oklch(0.3947 0.1012 250.40);
+
+  /* --- Brand accent tokens (premium navy + gold) --- */
+  --nav-indicator: oklch(0.3947 0.1012 250.40); /* member bottom-tabs / sidebar active stripe — navy, 9.4:1 on white */
+  --brand-accent: oklch(0.7280 0.1380 89.73);   /* muted gold #C9A227 — pair ONLY with dark text or place on a navy/dark surface (gold-on-white = 2.4:1) */
+  --brand-accent-foreground: oklch(0.205 0 0);  /* near-black on gold — 6.3:1 */
 
   /* --- Page layout tokens --- */
   --layout-max-width-form: 42rem;     /* 672px — FormContainer (F5) */
@@ -274,7 +292,9 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
+  /* Dark mode: light steel-blue so dark text reads on it (near-black on
+     #8FB8D6 = 7.3:1). Mirrors the light/dark inversion of the neutral theme. */
+  --primary: oklch(0.7635 0.0616 240.33);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
@@ -294,25 +314,30 @@
   --warning-foreground: oklch(0.145 0 0);
   --warning-surface: oklch(0.28 0.08 75);
 
-  --info: oklch(0.7 0.17 230);
+  --info: oklch(0.7 0.17 205);
   --info-foreground: oklch(0.145 0 0);
-  --info-surface: oklch(0.26 0.08 230);
+  --info-surface: oklch(0.26 0.08 205);
 
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --ring: oklch(0.7635 0.0616 240.33); /* steel blue */
+  --chart-1: oklch(0.7635 0.0616 240.33); /* steel blue */
+  --chart-2: oklch(0.684 0.111 237.8);    /* blue */
+  --chart-3: oklch(0.7280 0.1380 89.73);  /* gold */
+  --chart-4: oklch(0.55 0.13 248);        /* deep blue */
+  --chart-5: oklch(0.78 0.15 70);         /* amber */
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.7635 0.0616 240.33); /* steel-blue badge */
+  --sidebar-primary-foreground: oklch(0.205 0 0); /* near-black on steel blue 7.3:1 */
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.7635 0.0616 240.33);
+
+  /* --- Brand accent tokens (dark) --- */
+  --nav-indicator: oklch(0.7280 0.1380 89.73); /* member bottom-tabs / sidebar active stripe — gold on dark, 5.2:1 */
+  --brand-accent: oklch(0.7280 0.1380 89.73);
+  --brand-accent-foreground: oklch(0.205 0 0);
 
   /* Heavier card shadow so elevation stays visible on dark surfaces. */
   --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
