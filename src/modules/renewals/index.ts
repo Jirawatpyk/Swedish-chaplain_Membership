@@ -495,6 +495,12 @@ export {
   type LoadMemberRenewalStatusError,
 } from './application/use-cases/load-member-renewal-status';
 
+// Pass A · Section 5 — Members-directory batch "lapsed" badge read.
+export {
+  loadMembersMembershipStatus,
+  type LoadMembersMembershipStatusInput,
+} from './application/use-cases/load-members-membership-status';
+
 export {
   confirmRenewal,
   confirmRenewalInputSchema,
