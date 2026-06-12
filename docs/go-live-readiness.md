@@ -1,12 +1,14 @@
 # Go-Live Readiness — SweCham / TSCC (First Tenant)
 
-**Status**: **ON HOLD — preparation phase** (2026-05-30). Discovery complete; plan
-locked. Execution (Stage 0 →) starts **only after F9 is complete**. Until then,
-prep work that does not depend on F9 proceeds (see § 0). · **Owner**: Jirawatpyk · **Created**: 2026-05-30
+**Status**: **F9 GATE CLEARED — execution unblocked** (updated 2026-06-12). F9 Admin
+Dashboard merged to `main` (PR #29, `1056d5a2`); the `015-admin-dashboard` launch-gating
+condition is now MET. Subsequent F4 event-invoice (§105 redesign, PRs #80/#81) + F8 renewal
+hardening landed on top. Execution (Stage 0 →) may now proceed. · **Owner**: Jirawatpyk ·
+**Created**: 2026-05-30
 **Target**: First production hand-off of Chamber-OS to the SweCham / TSCC tenant
 (`swecham.zyncdata.app`).
-**Launch scope (locked)**: **F1–F9 all features.** Branch `015-admin-dashboard`
-must be finished + merged to `main` before launch.
+**Launch scope (locked)**: **F1–F9 all features — all merged to `main`.** ✅ `015-admin-dashboard`
+(F9) merged. Remaining to launch = operational/data readiness (§ 0+) + flag-flips, NOT feature work.
 
 > This document is the **master launch plan**. It does not replace the
 > per-feature specs, the constitution, or the operational runbooks under
