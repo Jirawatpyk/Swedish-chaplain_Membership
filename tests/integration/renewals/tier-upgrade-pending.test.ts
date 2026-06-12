@@ -49,6 +49,7 @@ import {
   makeRenewalsDeps,
   f8OnPaidCallbacks,
 } from '@/modules/renewals';
+import type { RenewalGateway, RenewalsDeps } from '@/modules/renewals';
 import { asSatang } from '@/lib/money';
 import { ok } from '@/lib/result';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
@@ -61,6 +62,37 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// 066 follow-up — default-mock the live Resend gateway across the WHOLE
+// file. Every `acceptTierUpgrade` runs a post-tx notify path
+// (`renewalGateway.sendTierUpgradeApprovalEmail`, accept-tier-upgrade.ts:595)
+// that fires a REAL Resend SANDBOX email per accept — burning the shared
+// test-key quota (the source of the AS2 / R4-IMP-5 flakes already patched
+// in 450f9d3e) and adding live HTTP latency. Only AS2 + R4-IMP-5 were
+// individually decoupled; this sweeps the rest.
+//
+// `SUCCESS_GATEWAY` returns ok({ deliveryId, dispatchedAt }) — the exact
+// `SendRenewalEmailResult` shape (renewal-gateway.ts:58-63) the use-case
+// reads via `sendResult.value.deliveryId`. Returning SUCCESS keeps every
+// success/notified-audit assertion valid; the ONLY behavioural change is
+// "no live HTTP". `makeAcceptDeps(slug)` builds base deps ONCE per call,
+// then overlays the success gateway. Tests that don't call accept (W-013)
+// stay on raw `makeRenewalsDeps`.
+const SUCCESS_GATEWAY: Pick<RenewalGateway, 'sendTierUpgradeApprovalEmail'> = {
+  sendTierUpgradeApprovalEmail: async () =>
+    ok({
+      deliveryId: 'test-mock-delivery',
+      dispatchedAt: '2026-01-01T00:00:00.000Z',
+    }),
+};
+
+function makeAcceptDeps(slug: string): RenewalsDeps {
+  const baseDeps = makeRenewalsDeps(slug);
+  return {
+    ...baseDeps,
+    renewalGateway: { ...baseDeps.renewalGateway, ...SUCCESS_GATEWAY },
+  };
+}
 
 // 055-member-number — raw member seeds (bypassing the createMember allocator)
 // must supply a distinct positive `member_number` per the NOT NULL + per-tenant
@@ -306,7 +338,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     if (!idResult.ok) throw new Error('seeded id failed parse');
     const suggestionId = idResult.value;
 
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
     const result = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
       suggestionId,
@@ -340,26 +372,13 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    // 065 follow-up — inject a SUCCESS gateway mock so this test is
-    // decoupled from the live Resend test key's rate-limit. The audit/
-    // dispatch logic (which audit row fires on gateway ok) is what's
-    // under test here, NOT the live Resend SDK; repeated same-session
-    // runs exhaust the shared Resend quota and the real gateway 4xx's,
-    // driving the `failed` branch (no `_member_notified` row) and a
-    // false RED. `SendRenewalEmailResult` = { deliveryId, dispatchedAt }
-    // (see renewal-gateway.ts); the use-case reads `.value.deliveryId`.
-    const baseDeps = makeRenewalsDeps(tenant.ctx.slug);
-    const deps = {
-      ...baseDeps,
-      renewalGateway: {
-        ...baseDeps.renewalGateway,
-        sendTierUpgradeApprovalEmail: async () =>
-          ok({
-            deliveryId: `mock-delivery-${randomUUID()}`,
-            dispatchedAt: new Date().toISOString(),
-          }),
-      },
-    } as typeof baseDeps;
+    // 066 follow-up — this test asserts the `_member_notified` SUCCESS
+    // audit fires when the gateway returns ok. `makeAcceptDeps` overlays
+    // the shared `SUCCESS_GATEWAY` (returns ok) so the success audit MUST
+    // land — decoupled from the live Resend test-key rate-limit that
+    // (065) previously drove the `failed` branch and a false RED. The
+    // bespoke per-test mock 450f9d3e added is now redundant.
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     const result = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
@@ -397,7 +416,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     const result = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
@@ -451,7 +470,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 240,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     const result = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
@@ -494,7 +513,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 90,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     const result = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
@@ -523,7 +542,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // Accept first.
     const accept = await acceptTierUpgrade(deps, {
@@ -572,7 +591,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // Accept first to get into accepted_pending_apply.
     const accept = await acceptTierUpgrade(deps, {
@@ -632,7 +651,10 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    // 066 — build on the success-gateway deps for consistency (harmless:
+    // findOne throws BEFORE the gateway is reached, so this test's
+    // threw-branch behaviour is unchanged; the success gateway is never hit).
+    const deps = makeAcceptDeps(tenant.ctx.slug);
     // Override findOne to throw — simulates a transient DB read crash
     // that lands BEFORE the gateway call. Other paths inside the try
     // block would also drive 'threw' but findOne is the earliest +
@@ -720,7 +742,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     const acceptArgs = {
       tenantId: tenant.ctx.slug,
@@ -826,7 +848,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     // overwrite is observable (both accepts sharing one user id would
     // mask it).
     const admin2 = await createActiveTestUser('admin');
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // Gate: #2 signals when it reaches findActiveForMember (its
     // `open` findById read is now stale-able), then parks until
@@ -1001,7 +1023,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       turnoverThb: 120_000_000,
     });
     const admin2 = await createActiveTestUser('admin');
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // Gate: accepter #1's step-(a) does the REAL supersede+insert on its
     // outer tx (holding the partial-unique lock on the new pending row),
@@ -1264,7 +1286,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // Gate: supersede's tier-upgrade `findActiveForMember` does the real
     // read (sees `open`), signals it reached the seam, then parks until
@@ -1394,7 +1416,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // 1) Accept → F8 accepted_pending_apply + F2 pending row.
     const accept = await acceptTierUpgrade(deps, {
@@ -1502,7 +1524,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     const accept = await acceptTierUpgrade(deps, {
       tenantId: tenant.ctx.slug,
@@ -1608,7 +1630,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // 1) Accept → F8 accepted_pending_apply + F2 pending row.
     const accept = await acceptTierUpgrade(deps, {
@@ -1750,7 +1772,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       daysUntilExpiry: 60,
       turnoverThb: 120_000_000,
     });
-    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps = makeAcceptDeps(tenant.ctx.slug);
 
     // 1) Accept suggestion1 → F8 accepted_pending_apply + F2 pending row.
     const accept1 = await acceptTierUpgrade(deps, {
