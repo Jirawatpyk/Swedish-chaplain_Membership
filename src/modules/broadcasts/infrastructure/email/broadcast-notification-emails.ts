@@ -46,6 +46,7 @@ import enMessages from '@/i18n/messages/en.json' with { type: 'json' };
 import thMessages from '@/i18n/messages/th.json' with { type: 'json' };
 import svMessages from '@/i18n/messages/sv.json' with { type: 'json' };
 import { env } from '@/lib/env';
+import { escapeHtml } from '@/lib/html-escape';
 import { logger } from '@/lib/logger';
 
 // Verify-fix R4 (Types-#1, 2026-05-02): canonical `Locale` from
@@ -101,19 +102,10 @@ const FAILED_COPY: Record<BroadcastNotificationLocale, BroadcastFailedCopy> = {
     .email.broadcastFailedToDispatch,
 };
 
-function escape(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
 function fillTemplate(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     Object.prototype.hasOwnProperty.call(vars, key)
-      ? escape(String(vars[key]))
+      ? escapeHtml(String(vars[key]))
       : match,
   );
 }
@@ -206,11 +198,11 @@ export function buildBroadcastDeliveredEmail(
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
-  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
-    <h1 style="font-size:20px;margin:0 0 16px 0;">${escape(input.broadcastSubject)}</h1>
-    <p style="line-height:1.6;">${escape(greeting)}</p>
-    <p style="line-height:1.6;">${escape(intro)}</p>
+    <h1 style="font-size:20px;margin:0 0 16px 0;">${escapeHtml(input.broadcastSubject)}</h1>
+    <p style="line-height:1.6;">${escapeHtml(greeting)}</p>
+    <p style="line-height:1.6;">${escapeHtml(intro)}</p>
     <ul style="line-height:1.8;padding-left:20px;">
       <li>${delivered}</li>
       <li>${bounced}</li>
@@ -218,10 +210,10 @@ export function buildBroadcastDeliveredEmail(
       <li><strong>${rate}</strong></li>
     </ul>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.viewBenefitsCta)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.viewBenefitsCta)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
   </body>
 </html>`;
 
@@ -263,19 +255,19 @@ export function buildBroadcastFailedToDispatchEmail(
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
-  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
-    <h1 style="font-size:20px;margin:0 0 16px 0;color:#b3261e;">${escape(input.broadcastSubject)}</h1>
-    <p style="line-height:1.6;">${escape(copy.greeting)}</p>
-    <p style="line-height:1.6;">${escape(body1)}</p>
-    <p style="line-height:1.6;color:#555;font-size:14px;">${escape(scheduledLine)}<br>${escape(reasonLine)}</p>
-    <p style="line-height:1.6;">${escape(copy.body2)}</p>
-    <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escape(copy.reassurance)}</p>
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#b3261e;">${escapeHtml(input.broadcastSubject)}</h1>
+    <p style="line-height:1.6;">${escapeHtml(copy.greeting)}</p>
+    <p style="line-height:1.6;">${escapeHtml(body1)}</p>
+    <p style="line-height:1.6;color:#555;font-size:14px;">${escapeHtml(scheduledLine)}<br>${escapeHtml(reasonLine)}</p>
+    <p style="line-height:1.6;">${escapeHtml(copy.body2)}</p>
+    <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escapeHtml(copy.reassurance)}</p>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.ctaRescheduleLabel)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaRescheduleLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#595959;font-size:12px;">${escape(copy.footerSignOff)}</p>
+    <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footerSignOff)}</p>
   </body>
 </html>`;
 
@@ -348,16 +340,16 @@ export function buildBroadcastApprovedEmail(
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
-  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
-    <h1 style="font-size:20px;margin:0 0 16px 0;color:#10487a;">${escape(subject)}</h1>
-    <p style="line-height:1.6;">${escape(greeting)}</p>
-    <p style="line-height:1.6;">${escape(body)}</p>
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#10487a;">${escapeHtml(subject)}</h1>
+    <p style="line-height:1.6;">${escapeHtml(greeting)}</p>
+    <p style="line-height:1.6;">${escapeHtml(body)}</p>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.ctaViewDetailLabel)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaViewDetailLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
   </body>
 </html>`;
 
@@ -409,23 +401,23 @@ export function buildBroadcastRejectedEmail(
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
   // UX-GAP3 closure (2026-05-02) — preserve `\n` in user-authored
   // rejection reason so multi-line reasons render readably in HTML.
-  // `escape()` handles HTML safety; we then replace newlines with <br>.
-  const safeReasonHtml = escape(input.rejectionReason).replaceAll('\n', '<br>');
+  // `escapeHtml()` handles HTML safety; we then replace newlines with <br>.
+  const safeReasonHtml = escapeHtml(input.rejectionReason).replaceAll('\n', '<br>');
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
-  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
-    <h1 style="font-size:20px;margin:0 0 16px 0;color:#b3261e;">${escape(subject)}</h1>
-    <p style="line-height:1.6;">${escape(greeting)}</p>
-    <p style="line-height:1.6;">${escape(body)}</p>
-    <p style="line-height:1.6;font-weight:600;">${escape(copy.reasonHeading)}</p>
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#b3261e;">${escapeHtml(subject)}</h1>
+    <p style="line-height:1.6;">${escapeHtml(greeting)}</p>
+    <p style="line-height:1.6;">${escapeHtml(body)}</p>
+    <p style="line-height:1.6;font-weight:600;">${escapeHtml(copy.reasonHeading)}</p>
     <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #b3261e;background:#fef3f2;color:#5a1d1d;">${safeReasonHtml}</blockquote>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.ctaReviseLabel)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaReviseLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
   </body>
 </html>`;
 
@@ -474,8 +466,8 @@ export function buildBroadcastCancelledEmail(
   const body = fillTemplate(copy.body, { subject: input.broadcastSubject });
 
   const reasonBlock = input.cancellationReason
-    ? `<p style="line-height:1.6;font-weight:600;">${escape(copy.reasonHeading)}</p>
-       <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #888;background:#f5f5f5;color:#333;">${escape(input.cancellationReason)}</blockquote>`
+    ? `<p style="line-height:1.6;font-weight:600;">${escapeHtml(copy.reasonHeading)}</p>
+       <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #888;background:#f5f5f5;color:#333;">${escapeHtml(input.cancellationReason)}</blockquote>`
     : '';
   const reasonText = input.cancellationReason
     ? `${copy.reasonHeading}\n${input.cancellationReason}\n\n`
@@ -483,14 +475,14 @@ export function buildBroadcastCancelledEmail(
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
-  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
-    <h1 style="font-size:20px;margin:0 0 16px 0;color:#555;">${escape(subject)}</h1>
-    <p style="line-height:1.6;">${escape(greeting)}</p>
-    <p style="line-height:1.6;">${escape(body)}</p>
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#555;">${escapeHtml(subject)}</h1>
+    <p style="line-height:1.6;">${escapeHtml(greeting)}</p>
+    <p style="line-height:1.6;">${escapeHtml(body)}</p>
     ${reasonBlock}
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
   </body>
 </html>`;
 

@@ -36,13 +36,14 @@ import {
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
 import {
+  ESCALATION_TASK_STATUSES,
   ESCALATION_UNASSIGNED_FILTER,
   InvalidCursorError,
   makeRenewalsDeps,
   type AssigneeFilter,
 } from '@/modules/renewals';
 
-const VALID_STATUSES = new Set(['open', 'done', 'skipped'] as const);
+const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
 type StatusFilter = 'open' | 'done' | 'skipped';
 
 export async function GET(request: NextRequest) {

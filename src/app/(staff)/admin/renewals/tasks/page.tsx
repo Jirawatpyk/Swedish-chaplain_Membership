@@ -35,6 +35,7 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
+  ESCALATION_TASK_STATUSES,
   ESCALATION_UNASSIGNED_FILTER,
   makeRenewalsDeps,
   type AssigneeFilter,
@@ -43,7 +44,7 @@ import {
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
 
-const VALID_STATUSES = new Set(['open', 'done', 'skipped'] as const);
+const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
 const VALID_ASSIGNMENTS = new Set(['all', 'mine', 'unassigned'] as const);
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

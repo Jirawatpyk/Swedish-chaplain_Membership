@@ -22,6 +22,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   directorySearchWithCount,
   formatMemberNumber,
+  MEMBER_STATUSES,
   resolveMemberNumberPrefix,
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -67,7 +68,7 @@ interface SearchParams {
   readonly order?: string;
 }
 
-const VALID_STATUSES = new Set(['active', 'inactive', 'archived']);
+const VALID_STATUSES = new Set<string>(MEMBER_STATUSES);
 const VALID_RISK_BANDS = new Set([
   'healthy',
   'warning',

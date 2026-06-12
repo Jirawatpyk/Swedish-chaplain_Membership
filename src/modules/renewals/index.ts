@@ -117,6 +117,14 @@ export {
   type EscalationTaskInvariantError,
 } from './domain/renewal-escalation-task';
 
+// Outreach-channel canonical list (mirrors `at_risk_outreach.channel`
+// CHECK at migration 0090) — consumed by the at-risk OutreachDialog
+// channel <Select> in Presentation.
+export {
+  OUTREACH_CHANNELS,
+  type OutreachChannel,
+} from './domain/at-risk-outreach';
+
 export {
   RENEWAL_LINK_TOKEN_VERSION,
   RENEWAL_LINK_TOKEN_TTL_DAYS,
