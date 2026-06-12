@@ -9,6 +9,7 @@
  */
 import { env } from '@/lib/env';
 import { escapeHtml } from '@/lib/html-escape';
+import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
 import type { Role } from '@/modules/auth/domain/role';
 import type { EmailLocale } from './reset-password-email';
 
@@ -93,7 +94,7 @@ export function buildInvitationEmail(input: InvitationEmailInput): BuiltEmail {
     <p style="line-height: 1.6;">${escapeHtml(copy.intro)}</p>
     <p style="line-height: 1.6;"><strong>${escapeHtml(roleLine)}</strong></p>
     <p style="margin: 24px 0;">
-      <a href="${url}" style="display: inline-block; background: #10487a; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escapeHtml(copy.cta)}</a>
+      <a href="${url}" style="display: inline-block; background: ${EMAIL_BRAND_PRIMARY}; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escapeHtml(copy.cta)}</a>
     </p>
     <p style="color: #555; font-size: 13px;">${escapeHtml(copy.expiryNotice)}</p>
     <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0 16px;" />

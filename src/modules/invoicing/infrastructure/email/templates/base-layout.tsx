@@ -28,6 +28,7 @@ import {
   Text,
 } from '@react-email/components';
 import * as React from 'react';
+import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
 import type { InvoiceAutoEmailLocale } from './copy';
 
 export interface BaseEmailLayoutProps {
@@ -103,14 +104,14 @@ const BUTTON_STYLE: React.CSSProperties = {
 /**
  * F5 FR-027 — "Pay online" primary button style. Deliberately visually
  * distinct from the download CTA: coloured primary (deep Swedish navy
- * `#10487A` = the app's `--primary` token value; keep inline-literal —
- * email clients don't resolve CSS variables). Meets WCAG 2.1 AA contrast
- * ≥ 4.5:1 on `#ffffff` body (white-on-navy ≈ 9.4:1).
+ * `EMAIL_BRAND_PRIMARY` = the app's `--primary` token value, inlined at
+ * render — email clients don't resolve CSS variables). Meets WCAG 2.1 AA
+ * contrast ≥ 4.5:1 on `#ffffff` body (white-on-navy ≈ 9.4:1).
  */
 const PRIMARY_BUTTON_STYLE: React.CSSProperties = {
   display: 'inline-block',
   padding: '12px 24px',
-  backgroundColor: '#10487a',
+  backgroundColor: EMAIL_BRAND_PRIMARY,
   color: '#ffffff',
   textDecoration: 'none',
   borderRadius: '6px',

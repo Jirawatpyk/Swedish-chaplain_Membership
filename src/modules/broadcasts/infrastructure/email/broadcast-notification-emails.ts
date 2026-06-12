@@ -47,6 +47,7 @@ import thMessages from '@/i18n/messages/th.json' with { type: 'json' };
 import svMessages from '@/i18n/messages/sv.json' with { type: 'json' };
 import { env } from '@/lib/env';
 import { escapeHtml } from '@/lib/html-escape';
+import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
 import { logger } from '@/lib/logger';
 
 // Verify-fix R4 (Types-#1, 2026-05-02): canonical `Locale` from
@@ -210,7 +211,7 @@ export function buildBroadcastDeliveredEmail(
       <li><strong>${rate}</strong></li>
     </ul>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.viewBenefitsCta)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.viewBenefitsCta)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
     <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
@@ -264,7 +265,7 @@ export function buildBroadcastFailedToDispatchEmail(
     <p style="line-height:1.6;">${escapeHtml(copy.body2)}</p>
     <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escapeHtml(copy.reassurance)}</p>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaRescheduleLabel)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaRescheduleLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
     <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footerSignOff)}</p>
@@ -342,11 +343,11 @@ export function buildBroadcastApprovedEmail(
 <html lang="${input.locale}">
   <head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
-    <h1 style="font-size:20px;margin:0 0 16px 0;color:#10487a;">${escapeHtml(subject)}</h1>
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:${EMAIL_BRAND_PRIMARY};">${escapeHtml(subject)}</h1>
     <p style="line-height:1.6;">${escapeHtml(greeting)}</p>
     <p style="line-height:1.6;">${escapeHtml(body)}</p>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaViewDetailLabel)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaViewDetailLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
     <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
@@ -414,7 +415,7 @@ export function buildBroadcastRejectedEmail(
     <p style="line-height:1.6;font-weight:600;">${escapeHtml(copy.reasonHeading)}</p>
     <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #b3261e;background:#fef3f2;color:#5a1d1d;">${safeReasonHtml}</blockquote>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#10487a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaReviseLabel)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaReviseLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
     <p style="color:#595959;font-size:12px;">${escapeHtml(copy.footer)}</p>
