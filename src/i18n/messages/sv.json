@@ -811,11 +811,6 @@
       "title": "Språk för aviseringar",
       "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Spara",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
@@ -2379,11 +2374,6 @@
           "startedFromAria": "Antal utkast som startats från denna mall",
           "updatedAt": "Senast ändrad",
           "actions": "Åtgärder"
-        },
-        "locale": {
-          "en": "English",
-          "th": "ไทย",
-          "sv": "Svenska"
         },
         "rowAction": {
           "edit": "Redigera",
@@ -4031,11 +4021,6 @@
       "title": "Språk för aviseringar",
       "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Spara inställning",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",

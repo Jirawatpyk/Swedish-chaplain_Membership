@@ -811,11 +811,6 @@
       "title": "Notification language",
       "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
       "useTenantDefault": "Use chamber default",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
@@ -2379,11 +2374,6 @@
           "startedFromAria": "Number of drafts started from this template",
           "updatedAt": "Last modified",
           "actions": "Actions"
-        },
-        "locale": {
-          "en": "English",
-          "th": "ไทย",
-          "sv": "Svenska"
         },
         "rowAction": {
           "edit": "Edit",
@@ -4031,11 +4021,6 @@
       "title": "Notification language",
       "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
       "useTenantDefault": "Use chamber default",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
