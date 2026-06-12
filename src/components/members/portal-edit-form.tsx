@@ -45,6 +45,7 @@ type PortalEditFormProps = {
 
 export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const t = useTranslations('portal.edit');
+  const tLang = useTranslations('common');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -177,15 +178,15 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                     <SelectTrigger id="preferredLanguage" className="w-full">
                       <TranslatedSelectValue
                         translate={(value: string) =>
-                          t(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
+                          tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
                         }
                       />
                     </SelectTrigger>
                     <SelectContent>
                       {/* W-7: i18n language option labels */}
-                      <SelectItem value="en">{t('languageOptions.en')}</SelectItem>
-                      <SelectItem value="th">{t('languageOptions.th')}</SelectItem>
-                      <SelectItem value="sv">{t('languageOptions.sv')}</SelectItem>
+                      <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
+                      <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
+                      <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
                     </SelectContent>
                   </Select>
                 )}

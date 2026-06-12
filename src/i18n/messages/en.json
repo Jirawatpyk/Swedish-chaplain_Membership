@@ -192,7 +192,12 @@
   },
   "common": {
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "languageOptions": {
+      "en": "English",
+      "th": "ไทย (Thai)",
+      "sv": "Svenska (Swedish)"
+    }
   },
   "directorySettings": {
     "title": "Directory listing",
@@ -3961,6 +3966,7 @@
         "overdueSub": "Overdue by {days} days",
         "lapsedValue": "Membership lapsed",
         "lapsedSub": "Your membership has ended. Renew to restore your benefits.",
+        "renewNow": "Renew now",
         "errorValue": "Status unavailable",
         "errorSub": "We couldn't load your membership status. Please try again.",
         "emptyValue": "Welcome aboard",
@@ -4483,12 +4489,7 @@
       "saving": "Saving…",
       "saveSuccess": "Profile updated successfully.",
       "saveError": "Could not save changes. Please try again.",
-      "noChanges": "No changes to save.",
-      "languageOptions": {
-        "en": "English",
-        "th": "ไทย (Thai)",
-        "sv": "Svenska (Swedish)"
-      }
+      "noChanges": "No changes to save."
     },
     "invite": {
       "pageTitle": "Invite Colleague",
@@ -4509,12 +4510,7 @@
       "sendSuccess": "Invitation sent successfully.",
       "sendError": "Could not send invitation. Please try again.",
       "emailTaken": "This email is already registered.",
-      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again.",
-      "languageOptions": {
-        "en": "English",
-        "th": "ไทย (Thai)",
-        "sv": "Svenska (Swedish)"
-      }
+      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again."
     },
     "payment": {
       "payNow": "Pay now",

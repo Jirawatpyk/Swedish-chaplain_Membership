@@ -126,14 +126,6 @@ export type MemberFormValues = z.infer<
   ReturnType<typeof buildMemberFormSchema>
 >;
 
-// Language endonyms (shown in their own language) — full names so screen
-// readers announce "English" / "ภาษาไทย" / "Svenska" rather than spelling
-// out the "EN" / "TH" / "SV" abbreviations letter by letter (a11y).
-const LANG_LABELS: Record<'en' | 'th' | 'sv', string> = {
-  en: 'English',
-  th: 'ภาษาไทย',
-  sv: 'Svenska',
-};
 
 // --- Props -------------------------------------------------------------------
 
@@ -198,6 +190,7 @@ export function MemberForm({
   const t = useTranslations('admin.members.create');
   const tEdit = useTranslations('admin.members.edit');
   const tf = useTranslations('admin.members.create.fields');
+  const tLang = useTranslations('common');
   const submitLabel = mode === 'edit' ? tEdit('submit') : t('submit');
   const submittingLabel =
     mode === 'edit' ? tEdit('submitting') : t('submitting');
@@ -661,14 +654,14 @@ export function MemberForm({
                   >
                     <TranslatedSelectValue
                       translate={(value) =>
-                        LANG_LABELS[value as 'en' | 'th' | 'sv'] ?? LANG_LABELS.en
+                        tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
-                    <SelectItem value="th">{LANG_LABELS.th}</SelectItem>
-                    <SelectItem value="sv">{LANG_LABELS.sv}</SelectItem>
+                    <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
+                    <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
+                    <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

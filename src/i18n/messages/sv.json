@@ -192,7 +192,12 @@
   },
   "common": {
     "yes": "Ja",
-    "no": "Nej"
+    "no": "Nej",
+    "languageOptions": {
+      "en": "English (engelska)",
+      "th": "ไทย (thailändska)",
+      "sv": "Svenska"
+    }
   },
   "directorySettings": {
     "title": "Katalogpost",
@@ -3961,6 +3966,7 @@
         "overdueSub": "Försenad med {days} dagar",
         "lapsedValue": "Medlemskap upphört",
         "lapsedSub": "Ditt medlemskap har upphört. Förnya för att återställa dina förmåner.",
+        "renewNow": "Förnya nu",
         "errorValue": "Status ej tillgänglig",
         "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
         "emptyValue": "Välkommen",
@@ -4483,12 +4489,7 @@
       "saving": "Sparar…",
       "saveSuccess": "Profilen har uppdaterats.",
       "saveError": "Kunde inte spara ändringar. Försök igen.",
-      "noChanges": "Inga ändringar att spara.",
-      "languageOptions": {
-        "en": "English (engelska)",
-        "th": "ไทย (thailändska)",
-        "sv": "Svenska"
-      }
+      "noChanges": "Inga ändringar att spara."
     },
     "invite": {
       "pageTitle": "Bjud in kollega",
@@ -4509,12 +4510,7 @@
       "sendSuccess": "Inbjudan har skickats.",
       "sendError": "Kunde inte skicka inbjudan. Försök igen.",
       "emailTaken": "Denna e-postadress är redan registrerad.",
-      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen.",
-      "languageOptions": {
-        "en": "English (engelska)",
-        "th": "ไทย (thailändska)",
-        "sv": "Svenska"
-      }
+      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen."
     },
     "payment": {
       "payNow": "Betala nu",
