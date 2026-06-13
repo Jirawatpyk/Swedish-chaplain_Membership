@@ -59,14 +59,19 @@ export async function MembershipStatSection({
   const variantProps =
     stat.variant !== 'neutral' ? { variantLabel: value } : {};
 
-  // 067 — in-portal renewal CTA. When a cycle is due/overdue/lapsed the card
-  // (which already shows that status) grows a "Renew now" button to the renewal
-  // flow — the in-portal entry point that previously existed only in the
-  // reminder email. Kept IN the card (not a separate banner) so the status the
-  // card already shows isn't duplicated. Conditionally spread for
+  // 067 — in-portal renewal CTA. When a NON-TERMINAL cycle is due/overdue the
+  // card (which already shows that status) grows a "Renew now" button to the
+  // renewal flow — the in-portal entry point that previously existed only in
+  // the reminder email. Kept IN the card (not a separate banner) so the status
+  // the card already shows isn't duplicated. Conditionally spread for
   // exactOptionalPropertyTypes.
-  const renewable =
-    stat.kind === 'lapsed' || stat.kind === 'overdue' || stat.kind === 'due';
+  //
+  // `lapsed` is intentionally EXCLUDED: /portal/renewal/[memberId] resolves the
+  // member's cycle via findActiveForMember, which rejects terminal cycles
+  // (lapsed/cancelled/completed) → the page redirect('/portal'), a dead-end for
+  // exactly the lapsed cohort. A lapsed member needs admin reactivation; there
+  // is no self-serve path yet, so we don't offer a button that no-ops.
+  const renewable = stat.kind === 'overdue' || stat.kind === 'due';
   const actionProps = renewable
     ? {
         action: {

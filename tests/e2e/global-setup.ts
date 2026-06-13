@@ -51,8 +51,8 @@ async function resetF5IssuedInvoice(): Promise<void> {
     //  5. Reset the invoice — status='issued' REQUIRES credited_total_satang=0
     //     (CHECK invoices_credited_status_matches), so zero it alongside the
     //     payment fields, else the UPDATE violates that CHECK.
-    await sql`UPDATE credit_notes SET source_refund_id = NULL WHERE source_refund_id IN (SELECT id FROM refunds WHERE payment_id IN (SELECT payment_id FROM payments WHERE invoice_id = ${id}))`;
-    await sql`DELETE FROM refunds WHERE payment_id IN (SELECT payment_id FROM payments WHERE invoice_id = ${id})`;
+    await sql`UPDATE credit_notes SET source_refund_id = NULL WHERE source_refund_id IN (SELECT id FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${id}))`;
+    await sql`DELETE FROM refunds WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${id})`;
     await sql`DELETE FROM credit_notes WHERE original_invoice_id = ${id}`;
     await sql`DELETE FROM payments WHERE invoice_id = ${id}`;
     await sql`UPDATE invoices SET status='issued', credited_total_satang=0, paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id}`;
