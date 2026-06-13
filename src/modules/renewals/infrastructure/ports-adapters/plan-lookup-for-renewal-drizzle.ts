@@ -26,7 +26,7 @@
  * Pure Infrastructure — uses only `@/lib/db` + F2 schema deep import +
  * the port interface (no framework / Application-layer imports).
  */
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
@@ -55,35 +55,58 @@ export function makeDrizzlePlanLookupForRenewal(
       readonly planId: string;
     }): Promise<PlanLookupForRenewalResult> {
       return runInTenant(tenant, async (tx) => {
-        // Lookup against the most recent active row for this planId.
-        // RLS scopes tenant; deleted_at IS NULL filters soft-deletes.
+        // Two-step active-first lookup. A `plan_id` is shared across
+        // `plan_year`s — the table's composite PK is
+        // `(tenant_id, plan_id, plan_year)` and a planId carries
+        // multiple rows (e.g. 2025 + 2026 catalogue carry-over). The
+        // real swecham catalogue also carries stray INACTIVE
+        // future-year rows (plan_year 2068 + 2028). So a naive
+        // "most-recent plan_year row, then check is_active" picks the
+        // stray inactive future row and returns `plan_inactive` even
+        // when an active current-year row exists. RLS scopes tenant;
+        // `deleted_at IS NULL` filters soft-deletes throughout.
+        //
+        // Step 1 — most-recent ACTIVE row. This is the correct
+        // most-recent-active price and is what the FR-021b frozen-price
+        // contract needs. Filtering `is_active = true` in the WHERE
+        // (not after LIMIT) is what fixes the stray-row bug.
         const rows = await tx
           .select({
             renewalTierBucket: membershipPlans.renewalTierBucket,
             annualFeeMinorUnits: membershipPlans.annualFeeMinorUnits,
-            isActive: membershipPlans.isActive,
           })
           .from(membershipPlans)
           .where(
             and(
               eq(membershipPlans.planId, input.planId),
               isNull(membershipPlans.deletedAt),
+              eq(membershipPlans.isActive, true),
             ),
           )
-          // C2 review-fix (2026-05-07): explicit DESC so the lookup
-          // returns the MOST RECENT plan_year row when a planId has
-          // multiple rows (e.g. 2025 + 2026 catalogue carry-over).
-          // Default ASC was returning obsolete prices and breaking
-          // the FR-021b frozen-price contract.
           .orderBy(desc(membershipPlans.planYear))
           .limit(1);
 
         const row = rows[0];
         if (!row) {
-          return { status: 'not_found' };
-        }
-        if (!row.isActive) {
-          return { status: 'plan_inactive' };
+          // Step 2 — no active row. Distinguish a planId that exists
+          // (but has only inactive rows) from one that does not exist
+          // at all. `confirm-renewal` maps `not_found` →
+          // `plan_not_found` and `plan_inactive` → `plan_inactive` as
+          // two different member-facing errors on a plan-change, so the
+          // distinction MUST be preserved.
+          const inactiveProbe = await tx
+            .select({ one: sql<number>`1` })
+            .from(membershipPlans)
+            .where(
+              and(
+                eq(membershipPlans.planId, input.planId),
+                isNull(membershipPlans.deletedAt),
+              ),
+            )
+            .limit(1);
+          return inactiveProbe[0]
+            ? { status: 'plan_inactive' }
+            : { status: 'not_found' };
         }
         if (!VALID_TIER_BUCKETS.has(row.renewalTierBucket as TierBucket)) {
           // Defensive — the migration's CHECK constraint should make
