@@ -369,6 +369,10 @@ export function makeDrizzleRenewalCycleRepo(
           tenantId: tenant.slug,
           cycleId: input.cycleId,
           memberId: input.memberId,
+          // F8-completion Slice 1 — default 'upcoming' (the column
+          // default + steady-state entry points); Slice 3 passes
+          // 'awaiting_payment' for the admin lapsed-comeback fresh cycle.
+          status: input.startStatus ?? 'upcoming',
           periodFrom: new Date(input.periodFrom),
           periodTo: new Date(input.periodTo),
           // expires_at trigger denormalises from period_to.

@@ -33,6 +33,15 @@ export interface NewRenewalCycleInput {
   /** Decimal string from DB (`decimal(12,2)`). */
   readonly frozenPlanPriceThb: string;
   readonly frozenPlanTermMonths: number;
+  /**
+   * F8-completion Slice 1 — the cycle's initial status. Defaults to
+   * `'upcoming'` (the DB column default + the steady-state on-paid /
+   * import / onboarding entry points). Slice 3's admin lapsed-comeback
+   * path creates a cycle that starts in `'awaiting_payment'` (already
+   * payable). Constrained to the two valid START states — a new cycle
+   * never begins life in a reminded/pending/terminal status.
+   */
+  readonly startStatus?: 'upcoming' | 'awaiting_payment';
 }
 
 export interface ListRenewalCyclesOpts {
