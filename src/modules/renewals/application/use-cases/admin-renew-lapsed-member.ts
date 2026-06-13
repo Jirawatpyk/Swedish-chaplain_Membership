@@ -29,8 +29,12 @@
  *
  *   2. **issue (OUTSIDE tx1)**: `f4InvoicingBridge.issueInvoiceForRenewal`
  *      with `frozenPlanPriceThb` = the new cycle's frozen price (server-
- *      sourced; NEVER a request body — a §86/4 is a tax document). F4 owns
- *      its own tx for §87 numbering + PDF render. Map failures to
+ *      sourced; NEVER a request body — a §86/4 is a tax document) and
+ *      `planYear` server-DERIVED from the fresh cycle's `period_from` via
+ *      `deriveFiscalYear` (L1/L2 068 security review — neither the price
+ *      nor the fiscal year on a §86/4 is client-influenceable; the same
+ *      F4 fiscal-year convention the §87 allocator uses). F4 owns its own
+ *      tx for §87 numbering + PDF render. Map failures to
  *      `invoice_issue_failed`. If the issue fails, the fresh cycle is left
  *      `awaiting_payment` with no linked invoice — the SAME recoverable
  *      state as a member who abandons their pay page (admin retries).
@@ -55,6 +59,12 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
+// L1 (068 security review) — Postgres 23505 detection. `@/lib/db-errors`
+// is Infrastructure-free (only the stable Postgres SQLSTATE contract), so
+// importing it in the Application layer is Principle-III clean — the same
+// helper accept-tier-upgrade + F4/F5 conflict paths use.
+import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
   F4InvoicingForRenewalBridge,
@@ -72,11 +82,22 @@ import {
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 
+/**
+ * L1 (068 security review) — the partial UNIQUE index enforcing invariant
+ * L135 ("at most one active cycle per member"):
+ * `(tenant_id, member_id) WHERE status NOT IN ('lapsed','cancelled','completed')`
+ * (migration 0087). A concurrent double-submit where the loser's in-tx
+ * idempotency guard misses (the winner has not yet committed) lets the
+ * loser's `createCycleInTx` insert reach this index → Postgres raises a
+ * 23505. We map THAT 23505 to `member_has_active_cycle` (409-class), NOT
+ * an opaque `server_error` (500). Named explicitly so a future unrelated
+ * unique constraint's 23505 still surfaces as a genuine server error.
+ */
+const RENEWAL_CYCLES_ACTIVE_MEMBER_UNIQ = 'renewal_cycles_active_member_uniq';
+
 export const adminRenewLapsedMemberInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
-  /** Calendar year (e.g. 2026) the renewal invoice covers. */
-  planYear: z.number().int().min(2000).max(2100),
   actorUserId: z.string().min(1),
   actorRole: z.literal('admin'),
   correlationId: z.string().min(1),
@@ -173,6 +194,28 @@ export async function adminRenewLapsedMember(
       return ok({ cycle: outcome.cycle });
     });
   } catch (e) {
+    // L1 (068 security review) — concurrent double-submit. The loser's
+    // `createCycleInTx` insert raced past its in-tx idempotency guard and
+    // hit the `renewal_cycles_active_member_uniq` partial index → 23505.
+    // This is a clean "the member already has an active cycle" outcome,
+    // NOT a server fault: tx1 rolled back, no §86/4 was issued (issuance
+    // is AFTER tx1), so the loser issues nothing. Map to the member-facing
+    // member_has_active_cycle (409), not an opaque server_error (500).
+    if (
+      isUniqueViolation(e) &&
+      errorChainMessage(e).includes(RENEWAL_CYCLES_ACTIVE_MEMBER_UNIQ)
+    ) {
+      logger.info(
+        {
+          tenantId: input.tenantId,
+          memberId: input.memberId,
+          correlationId: input.correlationId,
+        },
+        '[admin-renew-lapsed-member] concurrent double-submit lost the active-cycle uniq race → member_has_active_cycle',
+      );
+      return err({ kind: 'member_has_active_cycle' });
+    }
+
     // createCycleInTx throws ONLY when the plan is unresolvable (it
     // refuses to create a cycle without a frozen price). Any other throw
     // is a genuine infrastructure error.
@@ -195,6 +238,16 @@ export async function adminRenewLapsedMember(
   const cycle = stateResult.value.cycle;
   const cycleId: CycleId = cycle.cycleId;
 
+  // L2 (068 security review) — derive plan_year SERVER-SIDE. The renewal
+  // §86/4's "Membership {year}" label + the §87 fiscal-numbering bucket
+  // must NOT be client-influenceable on a tax document. We derive the
+  // fiscal year from the fresh cycle's `period_from` (server-set to
+  // `clock.now()`) using the SAME `deriveFiscalYear` the F4 sequential-
+  // number allocator uses — so this renewal invoice buckets into the
+  // identical fiscal year a normal renewal invoice issued in the same
+  // period would (no divergence vs the confirm-renewal / invoices path).
+  const planYear = deriveFiscalYear(cycle.periodFrom);
+
   // ---- Step 2: F4 invoice issuance OUTSIDE the F8 tx (F4 owns its own
   // tx for §87 numbering + PDF render). FR-022 — bill the cycle's FROZEN
   // VAT-exclusive price (server-sourced from the just-created cycle row),
@@ -204,7 +257,7 @@ export async function adminRenewLapsedMember(
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycle.planIdAtCycleStart,
-    planYear: input.planYear,
+    planYear,
     frozenPlanPriceThb: cycle.frozenPlanPriceThb,
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,

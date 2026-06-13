@@ -156,12 +156,17 @@ function makeDeps(opts?: {
 const VALID_INPUT = {
   tenantId: TENANT_ID,
   memberId: MEMBER_ID,
-  planYear: 2026,
   actorUserId: 'user-admin-1',
   actorRole: 'admin' as const,
   correlationId: 'corr-1',
   requestId: 'req-1',
 };
+
+// The use-case derives plan_year server-side from the fresh cycle's
+// period_from (= clock.now()) via the F4 Bangkok-fiscal-year convention.
+// The clock mock is fixed at 2026-06-13 → Asia/Bangkok 2026-06-13 →
+// fiscal year 2026.
+const EXPECTED_DERIVED_PLAN_YEAR = 2026;
 
 describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -186,7 +191,9 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     const bridgeArg = t.bridgeMock.mock.calls[0]![0] as IssueInvoiceForRenewalInput;
     expect(bridgeArg.frozenPlanPriceThb).toBe(FROZEN_THB);
     expect(bridgeArg.planId).toBe(PLAN_ID);
-    expect(bridgeArg.planYear).toBe(2026);
+    // L2: plan_year is server-derived from the fresh cycle's period_from
+    // via the F4 Bangkok-fiscal-year convention — NOT a request body.
+    expect(bridgeArg.planYear).toBe(EXPECTED_DERIVED_PLAN_YEAR);
     expect(bridgeArg.autoEmailOnIssue).toBe(true);
 
     // Link ran under the per-cycle advisory lock (orphan-window guard).
@@ -349,7 +356,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     const t = makeDeps();
     const result = await adminRenewLapsedMember(t.deps, {
       ...VALID_INPUT,
-      planYear: 1850, // below the zod min
+      memberId: 'not-a-uuid', // fails the zod uuid()
     });
 
     expect(result.ok).toBe(false);
@@ -357,6 +364,65 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     expect(result.error.kind).toBe('invalid_input');
     expect(t.loadMemberPlanMock).not.toHaveBeenCalled();
     expect(t.bridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('L1: a 23505 on renewal_cycles_active_member_uniq in tx1 (concurrent double-submit) maps to member_has_active_cycle, NOT server_error', async () => {
+    const t = makeDeps();
+    // Simulate the loser of a concurrent double-submit: the in-tx
+    // idempotency guard misses (the winner has not yet committed), so the
+    // insert reaches the partial unique index and Postgres raises a 23505.
+    // The `cause`-chain shape mirrors Drizzle 0.45+ wrapping (db-errors
+    // walks `.cause`).
+    const pgUniqueViolation = Object.assign(new Error('Failed query: insert'), {
+      cause: Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "renewal_cycles_active_member_uniq"',
+        ),
+        { code: '23505' },
+      ),
+    });
+    t.insertMock.mockRejectedValueOnce(pgUniqueViolation);
+
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_has_active_cycle');
+    // The loser never reaches the F4 issue step (tx1 rolled back).
+    expect(t.bridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('L1 narrowing: a 23505 on a DIFFERENT unique constraint surfaces as server_error (not silently swallowed as member_has_active_cycle)', async () => {
+    const t = makeDeps();
+    const otherViolation = Object.assign(new Error('Failed query: insert'), {
+      cause: Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "some_other_uniq"',
+        ),
+        { code: '23505' },
+      ),
+    });
+    t.insertMock.mockRejectedValueOnce(otherViolation);
+
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('server_error');
+  });
+
+  it('L2: plan_year is derived from the fresh cycle period_from at a fiscal boundary (2026-12-31T17:00Z = 2027-01-01 Bangkok → FY 2027)', async () => {
+    const t = makeDeps();
+    // The created cycle returned by `insert` anchors at 2026-12-31T17:00Z,
+    // which is 2027-01-01 00:00 in Asia/Bangkok → fiscal year 2027. The
+    // derivation must follow the cycle's period_from (Bangkok-local), not
+    // the raw UTC year (2026).
+    t.insertMock.mockResolvedValueOnce(
+      buildCycle({ periodFrom: '2026-12-31T17:00:00Z' }),
+    );
+
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+    expect(result.ok).toBe(true);
+    const bridgeArg = t.bridgeMock.mock.calls[0]![0] as IssueInvoiceForRenewalInput;
+    expect(bridgeArg.planYear).toBe(2027);
   });
 
   it('happy path with requestId omitted: threads null into the bridge + audit (no crash on the optional field)', async () => {
@@ -378,5 +444,22 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('server_error');
+  });
+
+  it('audit emit failure in tx2 with a NON-Error throw still rethrows (covers the String(e) arm in the tx2 logger)', async () => {
+    const t = makeDeps();
+    // Reject the tx2 link audit with a NON-Error value so the logger's
+    // `e instanceof Error ? e.message : String(e)` takes the String(e) arm.
+    t.emitInTxMock.mockImplementation(
+      async (_tx: unknown, event: { type?: string }) => {
+        if (event?.type === 'renewal_invoice_created') {
+          throw 'audit string failure';
+        }
+      },
+    );
+    await expect(adminRenewLapsedMember(t.deps, VALID_INPUT)).rejects.toBe(
+      'audit string failure',
+    );
+    expect(t.linkInvoiceMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -59,8 +59,6 @@ export interface RenewalHealthCardProps {
   readonly canRenew?: boolean;
   /** Member id for the renew POST (required when `canRenew` is true). */
   readonly memberId?: string;
-  /** Calendar year the renewal invoice covers (server-derived). */
-  readonly renewPlanYear?: number;
 }
 
 /**
@@ -107,7 +105,6 @@ export function RenewalHealthCard({
   viewHref,
   canRenew = false,
   memberId,
-  renewPlanYear,
 }: RenewalHealthCardProps): React.ReactElement {
   const t = useTranslations('admin.members.detail.renewalHealth');
   const tBand = useTranslations('admin.members.directory.engagementBand');
@@ -130,15 +127,9 @@ export function RenewalHealthCard({
           {t('title')}
         </h2>
         <div className="flex items-center gap-2">
-          {canRenew &&
-            memberId !== undefined &&
-            renewPlanYear !== undefined &&
-            isLapsed(status) && (
-              <RenewLapsedMemberDialog
-                memberId={memberId}
-                planYear={renewPlanYear}
-              />
-            )}
+          {canRenew && memberId !== undefined && isLapsed(status) && (
+            <RenewLapsedMemberDialog memberId={memberId} />
+          )}
           <Link
             href={viewHref}
             className={buttonVariants({ variant: 'outline', size: 'sm' })}

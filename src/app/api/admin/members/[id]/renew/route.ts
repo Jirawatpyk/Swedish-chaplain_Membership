@@ -18,17 +18,23 @@
  * manager-exception surface — issuing a §86/4 tax document is a
  * write-class admin action.
  *
- * Body: `{ plan_year }`. The frozen §86/4 price is server-derived from
- * the member's current plan inside the use-case — there is NO price
- * field on the request body (a renewal §86/4 is a price-tampering
- * surface on a tax document).
+ * Body: empty `{}` (confirmation-only). BOTH the frozen §86/4 price AND
+ * the plan_year are server-derived inside the use-case — there is NO price
+ * NOR plan_year field on the request body (L2, 068 security review: a
+ * renewal §86/4 is a tax document; neither its amount nor its fiscal year
+ * may be client-influenceable). A client-supplied `plan_year` is ignored.
+ *
+ * Rate-limit (L3, 068 security review): 30/5min per (tenant, admin) —
+ * defence-in-depth on a money endpoint (each call issues a §86/4 +
+ * triggers a member email). Mirrors `send-reminder-now`.
  */
 import { type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import {
   errorResponse,
   successResponse,
@@ -36,9 +42,15 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { adminRenewLapsedMember, makeRenewalsDeps } from '@/modules/renewals';
 
-const BodySchema = z.object({
-  plan_year: z.number().int().min(2000).max(2100),
-});
+/**
+ * L3 — 30 requests per 5 minutes per (tenant, admin). Generous headroom
+ * for legitimate "reactivate a batch of lapsed members at the desk" work
+ * while bounding accidental click-storms / scripted abuse on a money path
+ * that issues a §86/4 + sends a member email per call. Mirrors the
+ * send-reminder-now cap.
+ */
+const RL_LIMIT = 30;
+const RL_WINDOW_SECONDS = 300;
 
 export async function POST(
   request: NextRequest,
@@ -55,11 +67,33 @@ export async function POST(
   const ctx = await requireRenewalAdminContext(request, 'write');
   if ('response' in ctx) return ctx.response;
 
+  const tenantCtx = resolveTenantFromRequest(request);
+
+  // L3 — rate-limit AFTER the RBAC gate (a rejected manager must not
+  // consume a token), BEFORE any §86/4 work. Per (tenant, admin) money
+  // endpoint defence-in-depth.
+  const rl = await rateLimiter.check(
+    `f8:renew-lapsed:${tenantCtx.slug}:${ctx.current.user.id}`,
+    RL_LIMIT,
+    RL_WINDOW_SECONDS,
+  );
+  if (!rl.success) {
+    return errorResponse({
+      status: 429,
+      code: 'rate_limited',
+      correlationId: ctx.correlationId,
+      headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+    });
+  }
+
   const { id: memberId } = await context.params;
 
-  let raw: unknown;
+  // The request body is confirmation-only. We still parse it to reject
+  // malformed JSON (a 400 oracle for a broken client), but there is NO
+  // schema field to validate — both price + plan_year are server-derived
+  // (L2). A client-supplied `plan_year` is silently ignored, not honoured.
   try {
-    raw = await request.json();
+    await request.json();
   } catch {
     return errorResponse({
       status: 400,
@@ -67,24 +101,13 @@ export async function POST(
       correlationId: ctx.correlationId,
     });
   }
-  const parsed = BodySchema.safeParse(raw);
-  if (!parsed.success) {
-    return errorResponse({
-      status: 400,
-      code: 'invalid_body',
-      correlationId: ctx.correlationId,
-      details: { fieldErrors: parsed.error.flatten().fieldErrors },
-    });
-  }
 
-  const tenantCtx = resolveTenantFromRequest(request);
   const deps = makeRenewalsDeps(tenantCtx.slug);
 
   try {
     const result = await adminRenewLapsedMember(deps, {
       tenantId: tenantCtx.slug,
       memberId,
-      planYear: parsed.data.plan_year,
       actorUserId: ctx.current.user.id,
       actorRole: 'admin',
       requestId: ctx.requestId,

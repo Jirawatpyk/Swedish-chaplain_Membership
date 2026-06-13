@@ -287,7 +287,6 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       memberId,
-      planYear: 2026,
       actorUserId: user.userId,
       actorRole: 'admin',
       correlationId: `admin-renew-${memberId}`,
@@ -388,7 +387,6 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     const first = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       memberId,
-      planYear: 2026,
       actorUserId: user.userId,
       actorRole: 'admin',
       correlationId: `admin-renew-1-${memberId}`,
@@ -401,7 +399,6 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     const second = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       memberId,
-      planYear: 2026,
       actorUserId: user.userId,
       actorRole: 'admin',
       correlationId: `admin-renew-2-${memberId}`,
@@ -418,6 +415,68 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
         .where(eq(renewalCycles.memberId, memberId)),
     );
     expect(rows).toHaveLength(1);
+  }, 180_000);
+
+  it('L1 concurrent double-submit: two parallel renews on the SAME lapsed member → exactly ONE awaiting_payment cycle + ONE §86/4; the loser returns member_has_active_cycle (NOT server_error)', async () => {
+    const memberId = await seedLapsedMember();
+
+    // Fire two admin renews concurrently. One wins the
+    // `renewal_cycles_active_member_uniq` partial index; the loser's
+    // createCycleInTx insert raises a 23505 that propagates out of tx1.
+    // The L1 fix maps that 23505 → member_has_active_cycle (409-class),
+    // NOT server_error (500). NOTE: the win can land via TWO paths —
+    // either the loser's in-tx `findActiveForMemberInTx` guard sees the
+    // winner's committed cycle (→ skipped_active_exists), or it races
+    // past the guard and the unique index fires the 23505. Both surface
+    // the SAME member_has_active_cycle error; the L1 fix closes the
+    // 23505 path that previously fell through to server_error.
+    const [a, b] = await Promise.all([
+      adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        memberId,
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: `race-a-${memberId}`,
+      }),
+      adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        memberId,
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: `race-b-${memberId}`,
+      }),
+    ]);
+
+    const winners = [a, b].filter((r) => r.ok);
+    const losers = [a, b].filter((r) => !r.ok);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    const loser = losers[0]!;
+    if (loser.ok) throw new Error('unreachable');
+    // The crux of L1: the loser is a clean 409-class member_has_active_cycle,
+    // NEVER an opaque server_error from an unhandled 23505.
+    expect(loser.error.kind).toBe('member_has_active_cycle');
+
+    // Exactly ONE non-terminal (active) cycle exists for the member.
+    const activeCycles = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ cycleId: renewalCycles.cycleId, status: renewalCycles.status })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.memberId, memberId)),
+    );
+    expect(activeCycles).toHaveLength(1);
+    expect(activeCycles[0]?.status).toBe('awaiting_payment');
+
+    // Exactly ONE §86/4 was issued (the loser never reaches the F4 issue
+    // step — its tx1 rolled back before invoice issuance).
+    const memberInvoices = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId, status: invoices.status })
+        .from(invoices)
+        .where(eq(invoices.memberId, memberId)),
+    );
+    expect(memberInvoices).toHaveLength(1);
+    expect(memberInvoices[0]?.status).toBe('issued');
   }, 180_000);
 
   it('cross-tenant probe: tenant A admin cannot renew tenant B member → member_not_found (no cross-tenant cycle/invoice)', async () => {
@@ -466,7 +525,6 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
       const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         memberId: memberB,
-        planYear: 2026,
         actorUserId: user.userId,
         actorRole: 'admin',
         correlationId: `cross-tenant-${memberB}`,

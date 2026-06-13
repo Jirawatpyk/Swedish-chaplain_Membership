@@ -37,13 +37,10 @@ import { Button } from '@/components/ui/button';
 
 export interface RenewLapsedMemberDialogProps {
   readonly memberId: string;
-  /** Calendar year the renewal invoice covers (server-derived, never client clock). */
-  readonly planYear: number;
 }
 
 export function RenewLapsedMemberDialog({
   memberId,
-  planYear,
 }: RenewLapsedMemberDialogProps): React.ReactElement {
   const t = useTranslations('admin.members.detail.renewLapsed');
   const router = useRouter();
@@ -59,7 +56,11 @@ export function RenewLapsedMemberDialog({
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ plan_year: planYear }),
+            // Confirmation-only body. The §86/4's price AND plan_year are
+            // BOTH server-derived (L2, 068 security review) — the client
+            // does not (and must not) influence a tax document's amount or
+            // fiscal year.
+            body: JSON.stringify({}),
           },
         );
         if (!res.ok) {

@@ -111,11 +111,11 @@ export async function MemberRenewalHealthSection({
       // Pass B refinement once the cycle-detail route is surfaced here.
       viewHref="/admin/renewals"
       // F8-completion Slice 3 — admin lapsed-comeback action. The renewal
-      // invoice covers the current calendar year (the comeback cycle
-      // anchors at `now`); derived server-side here, never the client clock.
+      // §86/4's plan_year is derived server-side INSIDE the use-case from
+      // the comeback cycle's `period_from` (L2, 068 security review) — the
+      // dialog body is confirmation-only, so no plan_year is plumbed here.
       canRenew={canRenew}
       memberId={memberId}
-      renewPlanYear={new Date().getUTCFullYear()}
     />
   );
 }

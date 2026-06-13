@@ -569,13 +569,18 @@ export default defineConfig({
           functions: 85,
         },
         'src/modules/renewals/application/use-cases/admin-renew-lapsed-member.ts': {
-          // admin-renew-lapsed-member.test.ts — 14 unit tests covering the
+          // admin-renew-lapsed-member.test.ts unit suite covering the
           // create→issue→link orchestration + every error arm (member /
-          // plan / invoice / link-race / audit-emit). 100% line / ~95%
-          // branch from unit alone; the residual branches are logger-only
-          // `e instanceof Error` defensive arms + the real tx2 link/audit
-          // paths exercised by admin-renew-lapsed-member.test.ts (IT, live
-          // Neon). Security + tax-sensitive path (admin issues a §86/4).
+          // plan / invoice / link-race / audit-emit) + the 068 security-
+          // review hardening: L1 23505→member_has_active_cycle (+narrowing
+          // to a different constraint) and L2 server-derived plan_year
+          // (incl. a Bangkok fiscal-boundary case). 100% line / ~95% branch
+          // from unit alone; the sole residual branch is the unreachable
+          // `?? 'invalid input'` zod-message defensive fallback (zod always
+          // sets a message). The real tx2 link/audit + concurrent-double-
+          // submit race are exercised by admin-renew-lapsed-member.test.ts
+          // (IT, live Neon). Security + tax-sensitive path (admin issues a
+          // §86/4).
           lines: 100,
           branches: 90,
           functions: 100,

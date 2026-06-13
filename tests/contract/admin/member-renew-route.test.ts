@@ -14,6 +14,10 @@ import { ok, err } from '@/lib/result';
 const requireRenewalAdminContextMock = vi.fn();
 const adminRenewLapsedMemberMock = vi.fn();
 const f8FeatureFlag = { value: true };
+const rateLimitCheckMock = vi.fn(async (..._args: unknown[]) => ({
+  success: true,
+  reset: Date.now() + 60_000,
+}));
 
 vi.mock('@/lib/env', async () => {
   const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
@@ -42,6 +46,9 @@ vi.mock('@/lib/renewals-route-helpers', async () => {
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test', __brand: true }),
 }));
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: { check: (...args: unknown[]) => rateLimitCheckMock(...args) },
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -69,9 +76,7 @@ const ADMIN_CTX = {
 
 const MEMBER_UUID = '00000000-0000-0000-0000-0000000000a9';
 
-function makeReq(
-  body: string | null = JSON.stringify({ plan_year: 2026 }),
-): NextRequest {
+function makeReq(body: string | null = JSON.stringify({})): NextRequest {
   return new NextRequest(
     `http://localhost/api/admin/members/${MEMBER_UUID}/renew`,
     {
@@ -94,6 +99,10 @@ async function loadHandler() {
 describe('POST /api/admin/members/[id]/renew — contract', () => {
   beforeEach(() => {
     f8FeatureFlag.value = true;
+    rateLimitCheckMock.mockResolvedValue({
+      success: true,
+      reset: Date.now() + 60_000,
+    });
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -117,6 +126,9 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     expect(res.status).toBe(403);
     // The use-case must NOT run when the helper rejects.
     expect(adminRenewLapsedMemberMock).not.toHaveBeenCalled();
+    // RBAC gate is BEFORE the rate-limit guard — a rejected manager must
+    // not even consume a rate-limit token.
+    expect(rateLimitCheckMock).not.toHaveBeenCalled();
   });
 
   it('requires the helper to be called with action="write"', async () => {
@@ -136,7 +148,7 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     );
   });
 
-  it('200 happy path with snake_case body — NO price field in the request', async () => {
+  it('200 happy path with EMPTY body — NO price and NO plan_year in the request (both server-derived)', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRenewLapsedMemberMock.mockResolvedValueOnce(
       ok({
@@ -153,15 +165,40 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     expect(body.invoice_id).toBe('inv-1');
     expect(body.cycle_status).toBe('awaiting_payment');
 
-    // The use-case input carries NO price field — only plan_year + actor.
+    // L2: the use-case input carries NEITHER a price NOR a plan_year field —
+    // both are server-derived (frozen price from the member's plan; plan_year
+    // from the F4 fiscal-year of the fresh cycle's period_from). A §86/4 is a
+    // tax document — the client cannot influence its year or amount.
     const useCaseInput = adminRenewLapsedMemberMock.mock.calls[0]![1] as Record<
       string,
       unknown
     >;
-    expect(useCaseInput.planYear).toBe(2026);
     expect(useCaseInput.actorRole).toBe('admin');
+    expect('planYear' in useCaseInput).toBe(false);
+    expect('plan_year' in useCaseInput).toBe(false);
     expect('price' in useCaseInput).toBe(false);
     expect('frozenPlanPriceThb' in useCaseInput).toBe(false);
+  });
+
+  it('L2: a client-supplied plan_year in the body is IGNORED (server derives it) — still 200, no plan_year threaded to the use-case', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRenewLapsedMemberMock.mockResolvedValueOnce(
+      ok({
+        cycleId: 'cyc-1',
+        invoiceId: 'inv-1',
+        cycleStatus: 'awaiting_payment',
+      }),
+    );
+    const POST = await loadHandler();
+    // Attacker tries to pin a different fiscal year on the tax document.
+    const res = await POST(makeReq(JSON.stringify({ plan_year: 1999 })), makeCtx());
+    expect(res.status).toBe(200);
+    const useCaseInput = adminRenewLapsedMemberMock.mock.calls[0]![1] as Record<
+      string,
+      unknown
+    >;
+    expect('planYear' in useCaseInput).toBe(false);
+    expect('plan_year' in useCaseInput).toBe(false);
   });
 
   it('400 invalid_body on malformed JSON', async () => {
@@ -172,11 +209,32 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     expect((await res.json()).error.code).toBe('invalid_body');
   });
 
-  it('400 invalid_body when plan_year missing', async () => {
+  it('L3: 429 rate_limited when the per-(tenant,admin) cap is exceeded — use-case NOT called', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    rateLimitCheckMock.mockResolvedValueOnce({
+      success: false,
+      reset: Date.now() + 120_000,
+    });
     const POST = await loadHandler();
-    const res = await POST(makeReq(JSON.stringify({})), makeCtx());
-    expect(res.status).toBe(400);
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe('rate_limited');
+    expect(res.headers.get('Retry-After')).toBeTruthy();
+    // The money path must NOT run when rate-limited.
+    expect(adminRenewLapsedMemberMock).not.toHaveBeenCalled();
+  });
+
+  it('L3: rate-limit is keyed per (tenant, admin) and runs AFTER the RBAC gate', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRenewLapsedMemberMock.mockResolvedValueOnce(
+      ok({ cycleId: 'cyc-1', invoiceId: 'inv-1', cycleStatus: 'awaiting_payment' }),
+    );
+    const POST = await loadHandler();
+    await POST(makeReq(), makeCtx());
+    expect(rateLimitCheckMock).toHaveBeenCalledTimes(1);
+    const key = rateLimitCheckMock.mock.calls[0]![0] as string;
+    expect(key).toContain('test'); // tenant slug
+    expect(key).toContain('admin-1'); // admin user id
   });
 
   it('404 member_not_found', async () => {
