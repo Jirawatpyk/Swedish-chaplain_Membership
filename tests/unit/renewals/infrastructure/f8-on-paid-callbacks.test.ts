@@ -307,10 +307,11 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     });
 
     const callbacks = f8OnPaidCallbacks('test-tenant');
-    // Phase 7 T183 — callback array now has 2 entries: cycle-complete +
-    // apply-pending-tier-upgrade. Index 0 is the cycle-complete
-    // dispatcher this test exercises.
-    expect(callbacks).toHaveLength(2);
+    // Phase 7 T183 + F8-completion slice 1 (Task 1.4) — callback array
+    // now has 3 entries: [0] cycle-complete, [1] apply-pending-tier-
+    // upgrade, [2] create-next-cycle-on-paid. Index 0 is the cycle-
+    // complete dispatcher this test exercises.
+    expect(callbacks).toHaveLength(3);
 
     await callbacks[0]!(buildEvent(), fakeValidTenantTx);
 
@@ -401,7 +402,7 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
   it('R4-IMP-6 happy path: callback[1] valid tx + non-renewal cycle (null) — no-op', async () => {
     cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValueOnce(null);
     const callbacks = f8OnPaidCallbacks('test-tenant');
-    expect(callbacks).toHaveLength(2);
+    expect(callbacks).toHaveLength(3);
 
     await callbacks[1]!(buildEvent(), fakeValidTenantTx);
 

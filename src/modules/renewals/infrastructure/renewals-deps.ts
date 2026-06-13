@@ -105,6 +105,7 @@ import { makeDrizzlePlanCatalog } from './drizzle/drizzle-plan-catalog';
 import { makeApplyTierUpgradeOnPaidCallback } from './_lib/apply-tier-upgrade-on-paid-callback';
 import { randomUUID } from 'node:crypto';
 import { asSuggestionId } from '../domain/tier-upgrade-suggestion';
+import { asCycleId } from '../domain/renewal-cycle';
 
 // PR #24 review-fix — barrel-only import (Constitution Principle III).
 // `ScheduledPlanChangeRepo` is type-only and re-exported from the public
@@ -625,5 +626,70 @@ export function f8OnPaidCallbacks(
     // its `vi.mock` paths target the use-case + lib modules, not the
     // wrapper closure shape.
     makeApplyTierUpgradeOnPaidCallback(deps, tenantId),
+    // F8-completion Slice 1 (Task 1.4) — create-next-cycle-on-paid.
+    // Fires LAST, AFTER callback[0] flipped the just-paid prior cycle
+    // →completed in THIS tx. Threads the F4 tx so `createCycleInTx`'s
+    // in-tx idempotency guard sees that uncommitted completion → the
+    // next cycle IS created on the FIRST (non-retry) delivery.
+    async (evt, txUnknown) => {
+      // Brand-check the threaded tx. UNLIKE callback[0] (which falls back
+      // to a connection-fresh runInTenant on a non-TenantTx), this
+      // callback MUST THROW — a fallback runInTenant opens its OWN
+      // connection and CANNOT see callback[0]'s uncommitted completion
+      // (READ COMMITTED), so the idempotency guard would still see the
+      // prior cycle as active → no-op → the next cycle would NEVER be
+      // created on first delivery (the happy-path-DEAD bug). Throwing
+      // rolls the F4 tx back so the Stripe at-least-once retry re-runs
+      // the chain (which heals idempotently once consistency allows).
+      const { isTenantTx } = await import('@/lib/db');
+      if (txUnknown === undefined || !isTenantTx(txUnknown)) {
+        const { logger } = await import('@/lib/logger');
+        const { renewalsMetrics } = await import('@/lib/metrics');
+        renewalsMetrics.onPaidInvalidTx.add(1, { tenant_id: tenantId });
+        logger.error(
+          {
+            errorId: 'F8.ONPAID.CREATE_NEXT.INVALID_TX',
+            tenantId,
+            invoiceId: evt.invoiceId,
+            memberId: evt.memberId,
+            txType: typeof txUnknown,
+          },
+          '[f8-onPaid] create-next-cycle got non-TenantTx — F4 tx must roll back (a fallback runInTenant cannot see callback[0]\'s uncommitted completion)',
+        );
+        throw new Error(
+          'createNextCycleOnPaid: F4 threaded a non-TenantTx — refusing to run (would no-op the first-delivery creation)',
+        );
+      }
+      let createNextCycleOnPaidInTx: typeof import('../application/use-cases/create-next-cycle-on-paid').createNextCycleOnPaidInTx;
+      try {
+        ({ createNextCycleOnPaidInTx } = await import(
+          '../application/use-cases/create-next-cycle-on-paid'
+        ));
+      } catch (e) {
+        // Mirror callback[0]: a cold-start module-resolution failure is
+        // F8-tagged + re-thrown so F4's tx rolls back.
+        const { logger } = await import('@/lib/logger');
+        logger.error(
+          {
+            err: e instanceof Error ? e : new Error(String(e)),
+            tenantId,
+            invoiceId: evt.invoiceId,
+            memberId: evt.memberId,
+          },
+          '[f8-onPaid] dynamic import of create-next-cycle-on-paid failed — F4 tx rolling back',
+        );
+        throw e;
+      }
+      await createNextCycleOnPaidInTx(
+        {
+          cyclesRepo: deps.cyclesRepo,
+          planLookup: deps.planLookupForRenewal,
+          auditEmitter: deps.auditEmitter,
+          idFactory: { cycleId: () => asCycleId(randomUUID()) },
+        },
+        evt,
+        txUnknown,
+      );
+    },
   ];
 }
