@@ -27,15 +27,18 @@
  *     loud-fails in production. Their pgEnum migration ships in
  *     Phase 4 alongside the dispatcher cron emit sites.
  */
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
+  asCycleId,
   parseCycleId,
   type CycleId,
 } from '../../domain/renewal-cycle';
+import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 // Type-only imports keep Application layer free of cross-module runtime
 // coupling (Constitution Principle III). Brands are compile-time no-op
 // casts; the upstream `memberId` (bare string in domain) and `invoiceId`
@@ -277,6 +280,42 @@ export async function markPaidOffline(
             requestId: input.requestId ?? null,
             summary: `Admin marked cycle ${cycleId} paid offline (${input.paymentMethod} ref=${input.paymentReference})`,
           },
+        );
+
+        // 068-f8-completion (slice 1) — renewal-loop closer on the OFFLINE
+        // path. The online/record-payment paths run the full
+        // `f8OnPaidCallbacks` array whose callback[2] creates the next
+        // cycle; the offline path builds this single `onPaid` instead (the
+        // bridge wraps it as `[onPaid]`), so callback[2] never fires here.
+        // Without this call the cycle completes but the member silently
+        // drops out of the renewal pipeline — broken renewal loop for the
+        // bank-transfer-dominant SweCham/TSCC tenant.
+        //
+        // SAME-TX ordering: this runs AFTER the completion flip above
+        // marked the prior cycle →completed in THIS tx. `createCycleInTx`'s
+        // in-tx idempotency guard (`findActiveForMemberInTx`) therefore
+        // sees the uncommitted completion and EXCLUDES the prior cycle, so
+        // the next cycle IS created on the first mark (identical correctness
+        // contract to the online callback[2]). `tx` is the outer
+        // `runInTenant` tx the F4 bridge reuses via `externalTx` — the same
+        // tx the completion flip rode.
+        //
+        // THROWS on failure (consistent with the online path + this path's
+        // in-tx discipline): a throw rolls the whole offline-mark tx back,
+        // the admin's "mark paid" returns an error, and they retry — the
+        // `findActiveForMemberInTx` guard + `renewal_cycles_active_member_uniq`
+        // partial index make retry safe (no duplicate next cycle). NEVER
+        // swallowed: a swallow would complete the payment while the member
+        // drops out of the pipeline with no retry trigger.
+        await createNextCycleOnPaidInTx(
+          {
+            cyclesRepo: deps.cyclesRepo,
+            planLookup: deps.planLookupForRenewal,
+            auditEmitter: deps.auditEmitter,
+            idFactory: { cycleId: () => asCycleId(randomUUID()) },
+          },
+          evt,
+          tx,
         );
       };
 

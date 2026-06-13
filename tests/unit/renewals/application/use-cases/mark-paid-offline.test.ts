@@ -39,6 +39,17 @@ interface FakeDepsResult {
   emitInTxMock: ReturnType<typeof vi.fn>;
   bridgeMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
+  // 068-f8-completion (slice 1) — renewal-loop closer wiring. The offline
+  // `onPaid` now also calls `createNextCycleOnPaidInTx`, which resolves the
+  // prior cycle by linked invoice (`findByInvoiceIdInTx`), checks the
+  // in-tx active guard (`findActiveForMemberInTx`), looks up the frozen
+  // plan price (`planLookupForRenewal.loadPlanFrozenFields`) and inserts
+  // the next cycle (`insert`). These mocks expose those calls so the
+  // happy-path tests can assert the renewal loop is closed.
+  insertMock: ReturnType<typeof vi.fn>;
+  findByInvoiceIdInTxMock: ReturnType<typeof vi.fn>;
+  findActiveForMemberInTxMock: ReturnType<typeof vi.fn>;
+  loadPlanFrozenFieldsMock: ReturnType<typeof vi.fn>;
 }
 
 function fakeDeps(
@@ -88,6 +99,27 @@ function fakeDeps(
     return { ok: true, value: { invoiceId: 'inv-1', paidAt: evt.paidAt } };
   };
   const bridgeMock = vi.fn(bridgeImpl ?? defaultBridge);
+  // 068-f8-completion — next-cycle wiring. `findByInvoiceIdInTx` resolves
+  // the prior (now-completed) cycle so the on-paid creator anchors the
+  // next cycle at its periodTo; `findActiveForMemberInTx` returns null so
+  // the idempotency guard proceeds; `loadPlanFrozenFields` returns a found
+  // plan so the frozen price resolves; `insert` records the next cycle.
+  const findByInvoiceIdInTxMock = vi.fn(async () =>
+    cycle ? { ...cycle, status: 'completed' as const } : null,
+  );
+  const findActiveForMemberInTxMock = vi.fn(async () => null);
+  const insertMock = vi.fn(async () =>
+    buildCycle({ status: 'upcoming', cycleId: asCycleId(VALID_UUID) }),
+  );
+  const loadPlanFrozenFieldsMock = vi.fn(async () => ({
+    status: 'found' as const,
+    plan: {
+      tierBucket: 'regular' as const,
+      priceTHB: '50000.00',
+      termMonths: 12,
+      currency: 'THB' as const,
+    },
+  }));
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     cyclesRepo: {
@@ -95,13 +127,29 @@ function fakeDeps(
       findByIdInTx: vi.fn(async () => cycle),
       transitionStatus: transitionMock,
       acquireCycleLockInTx: vi.fn(async () => {}),
+      findByInvoiceIdInTx: findByInvoiceIdInTxMock,
+      findActiveForMemberInTx: findActiveForMemberInTxMock,
+      insert: insertMock,
     } as unknown as RenewalsDeps['cyclesRepo'],
     f4InvoiceBridge: {
       issueAndMarkPaid: bridgeMock,
     } as unknown as RenewalsDeps['f4InvoiceBridge'],
     auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+    planLookupForRenewal: {
+      loadPlanFrozenFields: loadPlanFrozenFieldsMock,
+    } as unknown as RenewalsDeps['planLookupForRenewal'],
   } as unknown as RenewalsDeps;
-  return { deps, emitMock, emitInTxMock, bridgeMock, transitionMock };
+  return {
+    deps,
+    emitMock,
+    emitInTxMock,
+    bridgeMock,
+    transitionMock,
+    insertMock,
+    findByInvoiceIdInTxMock,
+    findActiveForMemberInTxMock,
+    loadPlanFrozenFieldsMock,
+  };
 }
 
 const baseInput = {
@@ -152,6 +200,40 @@ describe('markPaidOffline (T059) — happy path', () => {
       const r = await markPaidOffline(deps, baseInput);
       expect(r.ok).toBe(true);
     }
+  });
+
+  // 068-f8-completion (slice 1) — renewal-loop closer on the OFFLINE path.
+  // The offline `onPaid` now ALSO creates the next cycle (reusing
+  // `createNextCycleOnPaidInTx`), so a bank-transfer renewal stays in the
+  // pipeline instead of silently dropping out. Assert the next-cycle
+  // insert fires AFTER the completion flip, inside the same tx.
+  it('creates the next renewal cycle on the offline path (insert fires after the completion flip)', async () => {
+    const cycle = buildCycle();
+    const { deps, insertMock, transitionMock, findByInvoiceIdInTxMock } =
+      fakeDeps(cycle);
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // Next cycle was inserted exactly once.
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    // It anchored on the prior cycle resolved by the paid invoice.
+    expect(findByInvoiceIdInTxMock).toHaveBeenCalledTimes(1);
+    // Completion flip happened before the next-cycle insert (same tx).
+    const transitionOrder = transitionMock.mock.invocationCallOrder[0]!;
+    const insertOrder = insertMock.mock.invocationCallOrder[0]!;
+    expect(transitionOrder).toBeLessThan(insertOrder);
+  });
+
+  // THROW-on-failure: if next-cycle creation fails (e.g. plan no longer
+  // resolvable), the offline-mark tx rolls back and the admin gets an
+  // error to retry — the renewal loop must never silently half-complete.
+  it('rolls back to server_error if next-cycle creation fails (no silent half-complete)', async () => {
+    const cycle = buildCycle();
+    const { deps, loadPlanFrozenFieldsMock } = fakeDeps(cycle);
+    // createCycleInTx throws when the plan is not resolvable.
+    loadPlanFrozenFieldsMock.mockResolvedValueOnce({ status: 'not_found' });
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('server_error');
   });
 });
 

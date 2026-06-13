@@ -65,6 +65,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       | 'completed'
       | 'cancelled'
       | 'lapsed',
+    // 068-f8-completion — payable cycles must anchor to a REAL plan id so
+    // the next-cycle plan-lookup (now fired on the offline-mark path)
+    // resolves a frozen price. Terminal cycles never reach that lookup, so
+    // they default to a throwaway uuid.
+    planIdAtCycleStart: string = randomUUID(),
   ) {
     await runInTenant(t.ctx, (tx) =>
       tx.insert(renewalCycles).values({
@@ -77,7 +82,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         expiresAt: new Date('2027-06-01T00:00:00Z'),
         cycleLengthMonths: 12,
         tierAtCycleStart: 'regular',
-        planIdAtCycleStart: randomUUID(),
+        planIdAtCycleStart,
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
@@ -138,6 +143,9 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       cycleAwaitingPaymentId,
       memberIdA,
       'awaiting_payment',
+      // Real plan id — the offline-mark happy path now creates the next
+      // cycle (renewal-loop closer), which needs a resolvable frozen price.
+      planIdA,
     );
   }, 120_000);
 
@@ -346,5 +354,286 @@ describe('F8 markPaidOffline — integration (T077)', () => {
     expect(audits.length).toBeGreaterThanOrEqual(1);
 
     bridgeSpy.mockRestore();
+  });
+
+  // ---------------------------------------------------------------------
+  // 068-f8-completion (slice 1) — renewal-loop closer on the OFFLINE path.
+  //
+  // The online / record-payment paths run the full `f8OnPaidCallbacks`
+  // array (callback[2] = createNextCycleOnPaidInTx). The admin offline-
+  // mark path builds its OWN single onPaid callback (the bridge wraps it
+  // as `[onPaid]`) so callback[2] NEVER fires there. Without the fix, an
+  // offline-paid (bank-transfer) renewal completes but the next cycle is
+  // never created → the member silently drops out of the renewal pipeline.
+  //
+  // These tests seed a renewal cycle whose `planIdAtCycleStart = planIdA`
+  // (so the plan-lookup inside createCycleInTx resolves a frozen price)
+  // and a dedicated member (the existing memberIdA already holds a
+  // terminal-then-completed history). They assert the SAME-TX renewal-loop
+  // contract: prior →completed AND a gapless `upcoming` next cycle on the
+  // FIRST mark, with idempotent retry.
+  // ---------------------------------------------------------------------
+  describe('renewal-loop closer — next cycle on offline mark', () => {
+    let memberIdLoop: string;
+    let cycleLoopId: string;
+    let seededInvoiceLoopId: string;
+
+    beforeAll(async () => {
+      memberIdLoop = randomUUID();
+      cycleLoopId = randomUUID();
+      seededInvoiceLoopId = randomUUID();
+
+      // Member for the renewal-loop scenario.
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(members).values({
+          tenantId: tenantA.ctx.slug,
+          memberId: memberIdLoop,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Loop Co',
+          country: 'TH',
+          planId: planIdA,
+          planYear: 2026,
+        }),
+      );
+
+      // Prior renewal cycle in `awaiting_payment`, anchored to the REAL
+      // plan so the next-cycle plan-lookup resolves a frozen price.
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(renewalCycles).values({
+          tenantId: tenantA.ctx.slug,
+          cycleId: cycleLoopId,
+          memberId: memberIdLoop,
+          status: 'awaiting_payment',
+          periodFrom: new Date('2026-06-01T00:00:00Z'),
+          periodTo: new Date('2027-06-01T00:00:00Z'),
+          expiresAt: new Date('2027-06-01T00:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planIdA,
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        }),
+      );
+
+      // F4 invoice row (issued) — FK target for the cycle completion flip
+      // (`renewal_cycles_linked_invoice_fk`) + the linked-invoice lookup
+      // that createNextCycleOnPaidInTx uses to resolve the prior cycle.
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(invoices).values({
+          tenantId: tenantA.ctx.slug,
+          invoiceId: seededInvoiceLoopId,
+          memberId: memberIdLoop,
+          planYear: 2026,
+          planId: planIdA,
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          draftByUserId: user.userId,
+          fiscalYear: 2026,
+          sequenceNumber: 2,
+          documentNumber: 'INV-2026-000002',
+          issueDate: '2026-05-15',
+          dueDate: '2026-06-14',
+          currency: 'THB',
+          subtotalSatang: asSatang(5_000_000n),
+          vatRateSnapshot: '0.0700',
+          vatSatang: asSatang(350_000n),
+          totalSatang: asSatang(5_350_000n),
+          proRatePolicySnapshot: 'whole_year',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+          memberIdentitySnapshot: {
+            companyName: 'Loop Co',
+            country: 'TH',
+            legal_name: 'Loop Co Ltd',
+            address: '1 Loop Road, Bangkok 10110',
+            primary_contact_name: 'Loop Contact',
+            primary_contact_email: 'loop@example.com',
+          } as unknown,
+          pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2026/${seededInvoiceLoopId}.pdf`,
+          pdfSha256: 'b'.repeat(64),
+          pdfTemplateVersion: 1,
+        }),
+      );
+    }, 120_000);
+
+    function mockBridgeFireOnPaid(deps: ReturnType<typeof makeRenewalsDeps>) {
+      const paidAt = new Date().toISOString();
+      return vi
+        .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
+        .mockImplementation(async (input) => {
+          // Fire onPaid against the seeded invoice id so the offline
+          // completion flips `cycleLoopId` →completed (linkedInvoiceId =
+          // seededInvoiceLoopId) and the next-cycle creation resolves the
+          // prior via findByInvoiceIdInTx — all inside the runInTenant tx.
+          if (input.onPaid) {
+            await input.onPaid({
+              tenantId: input.tenantId,
+              invoiceId: seededInvoiceLoopId,
+              memberId: input.memberId,
+              paidAt,
+              amountSatang: asSatang(5_000_000n),
+              vatSatang: asSatang(350_000n),
+              currency: 'THB',
+              paymentMethod: input.paymentMethod,
+              triggeredBy: 'admin_offline_mark',
+            });
+          }
+          return {
+            ok: true,
+            value: { invoiceId: seededInvoiceLoopId, paidAt },
+          };
+        });
+    }
+
+    it('prior →completed AND a gapless upcoming next cycle is created on first mark', async () => {
+      const deps = makeRenewalsDeps(tenantA.ctx.slug);
+      const bridgeSpy = mockBridgeFireOnPaid(deps);
+
+      const r = await markPaidOffline(deps, {
+        tenantId: tenantA.ctx.slug,
+        cycleId: cycleLoopId,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'BT-LOOP-0001',
+        paymentDate: '2026-05-15',
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+      expect(r.ok).toBe(true);
+      bridgeSpy.mockRestore();
+
+      const cycles = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalCycles)
+          .where(eq(renewalCycles.memberId, memberIdLoop)),
+      );
+
+      // Prior cycle flipped to completed.
+      const prior = cycles.find((c) => c.cycleId === cycleLoopId);
+      expect(prior?.status).toBe('completed');
+      expect(prior?.closedReason).toBe('completed_offline');
+
+      // A NEW upcoming cycle exists for the member (the renewal loop closed).
+      const next = cycles.find(
+        (c) => c.cycleId !== cycleLoopId && c.status === 'upcoming',
+      );
+      expect(next).toBeDefined();
+      // Gapless: next.periodFrom == prior.periodTo.
+      expect(next?.periodFrom.toISOString()).toBe(
+        prior?.periodTo.toISOString(),
+      );
+      // Frozen price carried from the plan lookup (50,000.00 THB).
+      expect(next?.frozenPlanPriceThb).toBe('50000.00');
+      expect(next?.planIdAtCycleStart).toBe(planIdA);
+
+      // renewal_cycle_created audit emitted for the next cycle.
+      const created = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+            eq(auditLog.eventType, 'renewal_cycle_created' as never),
+          ),
+        );
+      expect(created.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('idempotent: a literal retry of the offline-mark creates no duplicate next cycle', async () => {
+      // After pass 1, cycleLoopId is `completed` (terminal, not payable).
+      // A literal admin retry of the SAME mark-paid-offline therefore
+      // returns cycle_not_payable and — critically — does NOT create a
+      // second next cycle. This models the real operator retry: the admin
+      // double-clicks "mark paid", or re-submits after a transient UI
+      // error, and the renewal loop stays closed exactly once.
+      const upcomingBefore = (
+        await runInTenant(tenantA.ctx, (tx) =>
+          tx
+            .select()
+            .from(renewalCycles)
+            .where(eq(renewalCycles.memberId, memberIdLoop)),
+        )
+      ).filter((c) => c.status === 'upcoming');
+      expect(upcomingBefore.length).toBe(1);
+
+      const deps = makeRenewalsDeps(tenantA.ctx.slug);
+      const r = await markPaidOffline(deps, {
+        tenantId: tenantA.ctx.slug,
+        cycleId: cycleLoopId,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'BT-LOOP-0001',
+        paymentDate: '2026-05-15',
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('cycle_not_payable');
+
+      const upcomingAfter = (
+        await runInTenant(tenantA.ctx, (tx) =>
+          tx
+            .select()
+            .from(renewalCycles)
+            .where(eq(renewalCycles.memberId, memberIdLoop)),
+        )
+      ).filter((c) => c.status === 'upcoming');
+      // Still exactly ONE upcoming next cycle — the retry was a no-op.
+      expect(upcomingAfter.length).toBe(1);
+      expect(upcomingAfter[0]?.cycleId).toBe(upcomingBefore[0]?.cycleId);
+    });
+
+    it('in-tx idempotency guard: createNextCycleOnPaidInTx no-ops when an active cycle already exists (retry-safe)', async () => {
+      // Directly exercises the createCycleInTx idempotency contract that
+      // makes a rolled-back-then-retried offline-mark safe: with the prior
+      // cycle already flipped →completed AND the next `upcoming` cycle
+      // present (from pass 1), a re-invocation of createNextCycleOnPaidInTx
+      // against the same paid event finds the active `upcoming` cycle via
+      // findActiveForMemberInTx and SKIPS — no duplicate, no throw.
+      const { createNextCycleOnPaidInTx } = await import(
+        '@/modules/renewals/application/use-cases/create-next-cycle-on-paid'
+      );
+      const { asCycleId } = await import(
+        '@/modules/renewals/domain/renewal-cycle'
+      );
+      const deps = makeRenewalsDeps(tenantA.ctx.slug);
+
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await createNextCycleOnPaidInTx(
+          {
+            cyclesRepo: deps.cyclesRepo,
+            planLookup: deps.planLookupForRenewal,
+            auditEmitter: deps.auditEmitter,
+            // The active-cycle guard short-circuits before this is called.
+            idFactory: { cycleId: () => asCycleId(randomUUID()) },
+          },
+          {
+            tenantId: tenantA.ctx.slug,
+            invoiceId: seededInvoiceLoopId,
+            memberId: memberIdLoop,
+            paidAt: new Date().toISOString(),
+            amountSatang: asSatang(5_000_000n),
+            vatSatang: asSatang(350_000n),
+            currency: 'THB',
+            paymentMethod: 'bank_transfer',
+            triggeredBy: 'admin_offline_mark',
+          },
+          tx,
+        );
+      });
+
+      const upcoming = (
+        await runInTenant(tenantA.ctx, (tx) =>
+          tx
+            .select()
+            .from(renewalCycles)
+            .where(eq(renewalCycles.memberId, memberIdLoop)),
+        )
+      ).filter((c) => c.status === 'upcoming');
+      // No duplicate created — the active-cycle guard short-circuited.
+      expect(upcoming.length).toBe(1);
+    });
   });
 });
