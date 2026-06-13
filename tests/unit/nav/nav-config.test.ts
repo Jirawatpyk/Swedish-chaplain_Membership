@@ -168,6 +168,124 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// S16 (067 speckit-review) — the live staffNavConfig today has NO flagged item
+// and NO NavGroup, so `filterNavConfig`'s `visibilityFlag` branch and the new
+// NavGroup-children recursion (S17) are unexercised by the config-shape tests
+// above. These synthetic-config tests pin both code paths directly so a
+// regression (flag ignored, or an admin-only child leaking to a manager
+// through a group) fails loudly. Synthetic items follow the same `{} as never`
+// icon shape used by the isNavGroup type-guard tests below — filterNavConfig is
+// pure and never renders the icon.
+// ---------------------------------------------------------------------------
+describe('filterNavConfig — synthetic visibilityFlag + NavGroup recursion (S16)', () => {
+  const ICON = {} as never;
+
+  function item(href: string, extra?: Partial<NavItem>): NavItem {
+    return {
+      titleKey: `key.${href}`,
+      icon: ICON,
+      href,
+      activePattern: href as NavItem['activePattern'],
+      ...extra,
+    };
+  }
+
+  it('drops a flagged item when its visibilityFlag is OFF, keeps an always-on sibling', () => {
+    const config: NavConfig = {
+      sections: [
+        {
+          titleKey: 'sec',
+          items: [
+            item('/always'),
+            item('/flagged', { visibilityFlag: 'eventcreateConfigured' }),
+          ],
+        },
+      ],
+    };
+    // Flag absent (→ false): the flagged item is dropped, the sibling stays.
+    const off = filterNavConfig(config, {}, 'admin');
+    const offHrefs = off.sections[0]!.items.map((i) => (i as NavItem).href);
+    expect(offHrefs).toEqual(['/always']);
+  });
+
+  it('keeps a flagged item when its visibilityFlag is ON', () => {
+    const config: NavConfig = {
+      sections: [
+        {
+          titleKey: 'sec',
+          items: [item('/flagged', { visibilityFlag: 'eventcreateConfigured' })],
+        },
+      ],
+    };
+    const on = filterNavConfig(config, { eventcreateConfigured: true }, 'admin');
+    expect(on.sections).toHaveLength(1);
+    expect((on.sections[0]!.items[0]! as NavItem).href).toBe('/flagged');
+  });
+
+  it('drops a section that is emptied by filtering (no orphan header)', () => {
+    const config: NavConfig = {
+      sections: [
+        {
+          titleKey: 'flagged-only',
+          items: [item('/flagged', { visibilityFlag: 'eventcreateConfigured' })],
+        },
+        { titleKey: 'survivor', items: [item('/keep')] },
+      ],
+    };
+    // Flag off → the first section empties → it is removed; only 'survivor' left.
+    const filtered = filterNavConfig(config, {}, 'admin');
+    expect(filtered.sections).toHaveLength(1);
+    expect(filtered.sections[0]!.titleKey).toBe('survivor');
+  });
+
+  it('recurses into a NavGroup: an admin-only child is hidden from the manager role', () => {
+    const group: NavGroup = {
+      titleKey: 'group',
+      icon: ICON,
+      activePattern: '/group',
+      children: [
+        item('/group/shared'),
+        item('/group/admin-only', { roles: ['admin'] }),
+      ],
+    };
+    const config: NavConfig = {
+      sections: [{ titleKey: 'sec', items: [group] }],
+    };
+
+    // Manager: the admin-only child is dropped, the shared child survives, and
+    // the group itself stays (it still has ≥1 visible child).
+    const forManager = filterNavConfig(config, {}, 'manager');
+    const mgrGroup = forManager.sections[0]!.items[0]! as NavGroup;
+    expect(isNavGroup(mgrGroup)).toBe(true);
+    expect(mgrGroup.children.map((c) => c.href)).toEqual(['/group/shared']);
+
+    // Admin: sees both children (proves the manager drop was role-driven).
+    const forAdmin = filterNavConfig(config, {}, 'admin');
+    const adminGroup = forAdmin.sections[0]!.items[0]! as NavGroup;
+    expect(adminGroup.children.map((c) => c.href)).toEqual([
+      '/group/shared',
+      '/group/admin-only',
+    ]);
+  });
+
+  it('drops a NavGroup (and its now-empty section) when filtering leaves it with no children', () => {
+    const group: NavGroup = {
+      titleKey: 'group',
+      icon: ICON,
+      activePattern: '/group',
+      children: [item('/group/admin-only', { roles: ['admin'] })],
+    };
+    const config: NavConfig = {
+      sections: [{ titleKey: 'sec', items: [group] }],
+    };
+    // Manager: the only child is admin-only → group has 0 visible children →
+    // group dropped → section emptied → section dropped → zero sections.
+    const forManager = filterNavConfig(config, {}, 'manager');
+    expect(forManager.sections).toHaveLength(0);
+  });
+});
+
 describe('memberNavConfig (057 — 4 desktop top-nav destinations)', () => {
   it('has exactly 1 section with 4 items: Dashboard, Profile, Invoices, Benefits', () => {
     expect(memberNavConfig.sections).toHaveLength(1);

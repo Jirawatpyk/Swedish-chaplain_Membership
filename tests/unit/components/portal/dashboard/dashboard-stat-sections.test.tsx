@@ -189,6 +189,71 @@ describe('MembershipStatSection — every stat.kind resolves real en keys', () =
   });
 });
 
+/**
+ * 067 I5(a) — the in-portal "Renew now" CTA gating per `stat.kind`.
+ *
+ * The CTA links to /portal/renewal/[memberId] (the in-portal renewal flow). It
+ * MUST appear ONLY for the renewable cohort (`due`/`overdue` — a non-terminal
+ * cycle that route can actually resolve) and MUST be ABSENT for everything
+ * else. `lapsed` is the load-bearing case: that route's `findActiveForMember`
+ * rejects terminal cycles → redirect('/portal'), a dead-end, so offering the
+ * button there would no-op. These assertions FAIL if `lapsed` (or any terminal
+ * kind) were re-added to the `renewable` predicate, locking the just-fixed
+ * dead-end. `renderMembership()` uses memberId 'm1' → href /portal/renewal/m1.
+ */
+describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
+  beforeEach(() => renewalRead.mockReset());
+
+  const RENEW_HREF = '/portal/renewal/m1';
+  const RENEW_LABEL = en.portal.dashboard.membership.renewNow; // "Renew now"
+
+  function expectCta(html: string, present: boolean): void {
+    noMissing(html);
+    if (present) {
+      expect(html).toContain(`href="${RENEW_HREF}"`);
+      expect(html).toContain(RENEW_LABEL);
+    } else {
+      expect(html).not.toContain(`href="${RENEW_HREF}"`);
+      expect(html).not.toContain(RENEW_LABEL);
+    }
+  }
+
+  it('due → renders the renew-now link to /portal/renewal/[memberId]', async () => {
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: soon }));
+    expectCta(await renderMembership(), true);
+  });
+
+  it('overdue → renders the renew-now link', async () => {
+    const past = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: past }));
+    expectCta(await renderMembership(), true);
+  });
+
+  it('lapsed → NO renew-now CTA (terminal cycle → route redirect dead-end)', async () => {
+    const past = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    renewalRead.mockResolvedValue(cycle({ status: 'lapsed', expiresAt: past }));
+    expectCta(await renderMembership(), false);
+  });
+
+  it('active → NO renew-now CTA (not due yet)', async () => {
+    renewalRead.mockResolvedValue(
+      cycle({ status: 'completed', expiresAt: '2030-12-31T00:00:00.000Z' }),
+    );
+    expectCta(await renderMembership(), false);
+  });
+
+  it('empty (no cycle) → NO renew-now CTA', async () => {
+    renewalRead.mockResolvedValue(null);
+    expectCta(await renderMembership(), false);
+  });
+
+  it('error (read failed) → NO renew-now CTA', async () => {
+    renewalRead.mockResolvedValue('error');
+    expectCta(await renderMembership(), false);
+  });
+});
+
 describe('OutstandingStatSection — every stat.kind resolves real en keys', () => {
   beforeEach(() => outstandingRead.mockReset());
 

@@ -59,8 +59,11 @@ test.describe('@i18n T268 — F8 <html lang> attribute correctness', () => {
     }) => {
       await signInAsAdmin(page);
       await setLocaleCookie(page, locale);
-      await page.goto('/admin/renewals');
-      await page.waitForLoadState('domcontentloaded');
+      // S10 — match the BE-display goto: waitUntil:'domcontentloaded' so a
+      // cold-compile dev server doesn't block on every subresource (the bare
+      // default 'load' can exceed the test timeout). The redundant follow-on
+      // waitForLoadState('domcontentloaded') is dropped (goto already waited).
+      await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
       const htmlLang = await page.locator('html').first().getAttribute('lang');
       expect(htmlLang).toBe(locale);
     });
@@ -163,8 +166,9 @@ test.describe('@i18n T268 — TH locale length-expansion at 320px + 1280px', () 
       // R4 H3 fix: sign in BEFORE locale flip; sign-in form is EN.
       await signInAsAdmin(page);
       await setLocaleCookie(page, 'th');
-      await page.goto('/admin/renewals');
-      await page.waitForLoadState('domcontentloaded');
+      // S10 — waitUntil:'domcontentloaded' (parity with the BE-display goto);
+      // the redundant follow-on waitForLoadState is dropped.
+      await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
       const overflow = await page.evaluate(() => {
         // Look for any element whose scrollWidth exceeds the viewport.
         // Skip elements that are horizontally-scrollable OR live inside a
@@ -178,6 +182,13 @@ test.describe('@i18n T268 — TH locale length-expansion at 320px + 1280px', () 
         // overflows. A genuine bug — an over-wide element with NO scrollable
         // ancestor that forces the whole PAGE to scroll sideways — is still
         // caught (its ancestor chain up to <body> has no overflow-x scroller).
+        // S11 — an `overflow-y:auto` container computes `overflow-x:auto` too,
+        // so a vertical-only scroller would wrongly exempt a real horizontal
+        // overflow nested inside it. Require the scrollable ancestor to ALSO
+        // actually overflow horizontally (`scrollWidth > clientWidth`) before
+        // treating it as the intentional sideways-scroll container that earns
+        // the WCAG 1.4.10 exemption. A y-only container (no x-overflow) no
+        // longer masks a genuine page-level x-overflow beneath it.
         const scrollableSelfOrAncestor = (start: HTMLElement): boolean => {
           for (
             let node: HTMLElement | null = start;
@@ -185,7 +196,12 @@ test.describe('@i18n T268 — TH locale length-expansion at 320px + 1280px', () 
             node = node.parentElement
           ) {
             const ox = window.getComputedStyle(node).overflowX;
-            if (ox === 'scroll' || ox === 'auto') return true;
+            if (
+              (ox === 'scroll' || ox === 'auto') &&
+              node.scrollWidth > node.clientWidth
+            ) {
+              return true;
+            }
           }
           return false;
         };

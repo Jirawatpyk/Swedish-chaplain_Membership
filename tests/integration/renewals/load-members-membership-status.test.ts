@@ -61,6 +61,26 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const INDEX_NAME = 'renewal_cycles_member_recency_idx';
 
+/**
+ * A single node in a Postgres `EXPLAIN (FORMAT JSON)` plan tree. Child nodes
+ * live under `Plans` (absent on leaves). `Index Name` is present only on
+ * index-driven scan nodes. Used by the EXPLAIN test (S6) to assert on the
+ * EXACT index name driving the scan rather than a substring of the whole
+ * stringified plan.
+ */
+interface PlanNode {
+  readonly 'Node Type': string;
+  readonly 'Index Name'?: string;
+  readonly Plans?: ReadonlyArray<PlanNode>;
+}
+
+/** Depth-first flatten of a plan tree into a flat node list (root included). */
+function flattenPlan(root: PlanNode): PlanNode[] {
+  const out: PlanNode[] = [root];
+  for (const child of root.Plans ?? []) out.push(...flattenPlan(child));
+  return out;
+}
+
 // Fixed instants. All "past" expiries sit before the wall clock the
 // production `makeRenewalsDeps` binds (`clock: wallClock`), so a lapsed
 // terminal cycle reads lapsed regardless of the run date. The lapse
@@ -293,6 +313,12 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
     expect(def).toMatch(/tenant_id/i);
     expect(def).toMatch(/member_id/i);
     expect(def).toMatch(/created_at/i);
+    // S4 — the recency SORT DIRECTION is load-bearing: `loadMemberRenewalStatus`
+    // and the batch DISTINCT-ON both pick "latest" by created_at DESC, so an
+    // index re-emitted ASC (or with the direction dropped) would no longer serve
+    // the production ORDER BY and silently degrade to a Sort. Assert DESC is
+    // pinned on created_at (Postgres prints `created_at DESC` in indexdef).
+    expect(def).toMatch(/created_at\s+DESC/i);
   });
 
   it('EXPLAIN: the batch DISTINCT-ON query is served by the recency index — no full Seq Scan', async () => {
@@ -323,12 +349,10 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
     );
     const slug = tenantA.ctx.slug;
 
-    const planText = await db.transaction(async (tx) => {
+    const planRoot = await db.transaction(async (tx) => {
       await tx.execute(drizzleSql`SET LOCAL enable_seqscan = off`);
       const planRows = await tx.execute<{
-        'QUERY PLAN': Array<{
-          Plan: { 'Node Type': string; 'Index Name'?: string };
-        }>;
+        'QUERY PLAN': Array<{ Plan: PlanNode }>;
       }>(drizzleSql`
         EXPLAIN (FORMAT JSON)
         SELECT DISTINCT ON (member_id) *
@@ -337,15 +361,26 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
            AND member_id = ANY(${idsArray})
          ORDER BY member_id, created_at DESC, cycle_id DESC
       `);
-      return JSON.stringify(planRows[0]!['QUERY PLAN']);
+      return planRows[0]!['QUERY PLAN'][0]!.Plan;
     });
 
-    // The recency index serves the query (Index Scan node cites it).
-    expect(planText).toMatch(/renewal_cycles_member_recency_idx/);
-    // No full sequential scan of renewal_cycles when the index is
-    // available (forced-index plan above is an Index Scan, not Seq Scan).
-    expect(planText).not.toMatch(/"Node Type":"Seq Scan"/);
-    // Sanity: EXPLAIN itself produced a valid plan.
-    expect(planText).not.toMatch(/error|invalid/i);
+    // S6 — walk the plan tree (the DISTINCT-ON / forced-index plan nests the
+    // scan under a Unique node) and collect every node so we can assert on the
+    // EXACT Index Name, not a substring of the whole stringified plan. The
+    // old substring check would also pass if the index name merely appeared in
+    // a Filter expression or some other field — the parsed-node check pins that
+    // the recency index is the one DRIVING an Index Scan.
+    const nodes = flattenPlan(planRoot);
+
+    // The recency index is named by an Index-Scan node — i.e. it SERVES the
+    // query (exact-equality match on the node's `Index Name`, not a substring).
+    const indexScanNames = nodes
+      .filter((n) => /Index Scan/i.test(n['Node Type']))
+      .map((n) => n['Index Name']);
+    expect(indexScanNames).toContain(INDEX_NAME);
+
+    // No full sequential scan of renewal_cycles when the index is available
+    // (forced-index plan above is an Index Scan, not Seq Scan).
+    expect(nodes.some((n) => n['Node Type'] === 'Seq Scan')).toBe(false);
   });
 });

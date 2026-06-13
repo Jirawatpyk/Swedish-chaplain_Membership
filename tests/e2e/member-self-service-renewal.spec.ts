@@ -74,7 +74,15 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     await expect(
       page.getByRole('heading', { name: /membership plan/i }),
     ).toBeVisible();
-    await expect(page.getByText('THB 50,000.00')).toBeVisible();
+    // S8 — ICU currency formatting uses a NARROW NO-BREAK SPACE (U+202F) or
+    // NO-BREAK SPACE (U+00A0) as the group/spacing separator depending on the
+    // Node ICU build, NOT an ASCII space. A literal `'THB 50,000.00'` (ASCII
+    // space) is brittle across runtimes — match the digits with a separator
+    // class tolerant of ASCII space / U+00A0 / U+202F between "THB" and the
+    // amount.
+    await expect(
+      page.getByText(/THB[\s  ]?50,000\.00/),
+    ).toBeVisible();
     await expect(page.getByText('12 months')).toBeVisible();
 
     // Benefit summary fallback (benefitsAvailable=false in MVP).
@@ -96,6 +104,13 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     const planSelect = page.getByRole('combobox', { name: /choose a plan/i });
     await expect(planSelect).toBeVisible();
     await expect(planSelect).toContainText('Regular Corporate');
+    // S9 — the displayed label is the localised plan NAME, decoupled from the
+    // seed's raw `plan_id_at_cycle_start='regular'`. The 'Regular Corporate'
+    // string above is the DB plan record's display name (not something the seed
+    // controls), so pin the actual regression too: the collapsed trigger must
+    // NOT leak the raw plan id. This fails if TranslatedSelectValue regresses to
+    // rendering the raw value, independent of whatever the plan is named.
+    await expect(planSelect).not.toContainText(/^\s*regular\s*$/i);
   });
 
   test('I12 review-fix: clicking confirm posts to API + redirects to /portal/billing/<invoiceId>/pay', async ({

@@ -109,6 +109,16 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
         // The whole point — this member has NO tax_id. Pre-066 the renewal
         // confirm 502'd here; post-066 it issues a §86/4 name+address.
         taxId: null,
+        // S7 — seed the FULL structured §86/4 buyer address (not the weakest
+        // country-only block). `composeBuyerAddress` folds these into the
+        // snapshot's multi-line `address`; the assertion below proves the full
+        // street/locality survives onto the issued tax document (the §86/4
+        // full-address requirement, not just a bare country code).
+        addressLine1: '88 Wireless Road',
+        addressLine2: 'Lumpini Tower 9F',
+        city: 'Pathum Wan',
+        province: 'Bangkok',
+        postalCode: '10330',
         planId,
         planYear: 2026,
         status: 'active',
@@ -171,6 +181,12 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
           status: invoices.status,
           memberId: invoices.memberId,
           documentNumber: invoices.documentNumber,
+          // The document-kind discriminator + the frozen buyer block are what
+          // make this a §86/4 full tax invoice (not a §105 receipt or an empty
+          // buyer block) — without these the regression net would still PASS if
+          // the no-TIN path silently degraded.
+          pdfDocKind: invoices.pdfDocKind,
+          memberIdentitySnapshot: invoices.memberIdentitySnapshot,
         })
         .from(invoices)
         .where(eq(invoices.invoiceId, r.value.invoiceId)),
@@ -178,5 +194,26 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
     expect(inv?.status).toBe('issued');
     expect(inv?.memberId).toBe(memberId);
     expect(inv?.documentNumber).not.toBeNull();
+
+    // §86/4 — a membership tax invoice (ใบกำกับภาษี), NOT a §105 receipt. If
+    // the no-TIN path regressed to 'receipt_separate'/'receipt_combined' this
+    // pins the failure.
+    expect(inv?.pdfDocKind).toBe('invoice');
+
+    // The frozen BUYER snapshot is a genuine §86/4 block: real legal name +
+    // full street address, with the TIN line ABSENT (tax_id null). An empty
+    // buyer block or a re-introduced TIN requirement would fail here.
+    const snap = inv?.memberIdentitySnapshot as Record<string, unknown>;
+    expect(snap).not.toBeNull();
+    // No buyer TIN — the whole point of the 066 relax (§86/4 name+address only).
+    expect(snap.tax_id).toBeNull();
+    // The seeded legal name survives onto the snapshot (not blanked).
+    expect(snap.legal_name).toBe('No-TIN Renewal Co');
+    // S7 — the FULL structured address (not a bare country code) survives:
+    // `composeBuyerAddress` folds the seeded street + locality into the
+    // multi-line block and suppresses the redundant domestic "TH" line.
+    expect(snap.address).toBe(
+      '88 Wireless Road\nLumpini Tower 9F\nPathum Wan Bangkok 10330',
+    );
   }, 60_000);
 });
