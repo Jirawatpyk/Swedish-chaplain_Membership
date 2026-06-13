@@ -4643,6 +4643,10 @@
         "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",
         "membershipPlanHeading": "Medlemskapsplan"
       },
+      "notYetOpenTitle": "Förnyelsefönstret är inte öppet ännu",
+      "notYetOpenBody": "Din förnyelse förfaller inte ännu. Vi mejlar dig när det är dags att förnya — det finns inget att göra här just nu.",
+      "pendingReviewTitle": "Inväntar administratörsgranskning",
+      "pendingReviewBody": "Vi har tagit emot din förnyelse och vårt team verifierar den. Du meddelas när den är bekräftad — ingen ytterligare åtgärd krävs just nu.",
       "fields": {
         "plan": "Plan",
         "tier": "Nivå",

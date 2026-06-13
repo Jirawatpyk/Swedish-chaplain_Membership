@@ -4640,6 +4640,10 @@
         "subtitle": "Review your membership and confirm to receive an invoice.",
         "membershipPlanHeading": "Membership plan"
       },
+      "notYetOpenTitle": "Renewal window not yet open",
+      "notYetOpenBody": "Your renewal isn't due yet. We'll email you when it's time to renew — there's nothing to do here for now.",
+      "pendingReviewTitle": "Awaiting admin verification",
+      "pendingReviewBody": "We've received your renewal and our team is verifying it. You'll be notified once it's confirmed — no further action is needed right now.",
       "loading": {
         "announce": "Loading your renewal details…"
       },
