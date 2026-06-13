@@ -28,7 +28,11 @@ import {
 import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
-  it('contains 64 unique event types (Phase 7 review-fix Round 2: +2 — silent-failure closure)', () => {
+  it('contains 65 unique event types (F8-completion slice 2: +1 — renewal_entered_awaiting_payment)', () => {
+    // F8-completion slice 2: 64 → 65 (added the T-0 payability-flip audit
+    // `renewal_entered_awaiting_payment` with a `source: 'cron' | 'confirm'`
+    // discriminator — migration 0215. Emitted by the enter-awaiting-payment
+    // cron and the lazy confirm-renewal self-transition).
     // Phase 7 review-fix Round 2: 62 → 64 (added 2 silent-failure audits
     // surfaced by Round 2 IMP-6 + SUG-6:
     // tier_upgrade_catalogue_row_dropped (TierBucket parse failure),
@@ -43,7 +47,7 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     // 3 lapsed-pending reminder-ladder events `_t-7` / `_t-3` / `_t-1`).
     // K6 (prior): 54 → 55 (added cron_bearer_auth_rejected per spec.md
     // line 365 taxonomy + verifyCronBearer 401 path now emits this audit).
-    expect(F8_AUDIT_EVENT_TYPES.length).toBe(64);
+    expect(F8_AUDIT_EVENT_TYPES.length).toBe(65);
     const set = new Set(F8_AUDIT_EVENT_TYPES);
     expect(set.size).toBe(F8_AUDIT_EVENT_TYPES.length);
   });

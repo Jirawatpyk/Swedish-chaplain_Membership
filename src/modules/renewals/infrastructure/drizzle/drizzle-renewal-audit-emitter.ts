@@ -66,6 +66,12 @@ import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
  * existed from migration 0109.
  */
 const F8_ENUM_SHIPPED_TUPLE = [
+  // --- F8-completion slice 2 — T-0 payability flip emit site -----------
+  // Migration 0215 adds the pgEnum value. Emit sites:
+  //   - enter-awaiting-payment-on-expiry.ts (T-0 cron, source:'cron')
+  //   - confirm-renewal.ts (lazy self-transition, slice 2.5, source:'confirm')
+  // Shipped (not deferred) because the slice-2 cron emits it today.
+  'renewal_entered_awaiting_payment',
   // --- F8-completion slice 1 — shared createCycleInTx emit site --------
   'renewal_cycle_created',
   'renewal_cycle_cancelled',

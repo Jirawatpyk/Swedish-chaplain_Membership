@@ -177,6 +177,15 @@ export const F8_AUDIT_EVENT_TYPES = [
   'lapsed_member_admin_reactivation_reminder_t-7',
   'lapsed_member_admin_reactivation_reminder_t-3',
   'lapsed_member_admin_reactivation_reminder_t-1',
+  // --- F8-completion slice 2 — T-0 payability flip (1) --------------------
+  // Migration 0215 adds the pgEnum value. Emitted when a cycle flips
+  // `upcoming|reminded` → `awaiting_payment` (becomes payable). Two
+  // writers carry the `source` discriminator (Resolved #3): the T-0
+  // expiry cron (`enter-awaiting-payment-on-expiry.ts`, `source:'cron'`)
+  // and the lazy confirm-renewal self-transition (slice 2.5,
+  // `source:'confirm'`). The timeline surfaces which writer made the
+  // cycle payable.
+  'renewal_entered_awaiting_payment',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -185,9 +194,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 64
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 65
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 64';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 65';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -295,6 +304,32 @@ export interface F8AuditPayloadShapes {
     readonly expires_at: string;
     readonly grace_period_days: number;
     readonly failed_payment_attempts: number;
+  };
+  /**
+   * F8-completion slice 2 — typed payload for the `upcoming|reminded`
+   * → `awaiting_payment` flip that makes a cycle payable. Migration
+   * 0215 adds the pgEnum value.
+   *
+   * `source` discriminator (Resolved #3) records which writer flipped
+   * the cycle so the member timeline can distinguish:
+   *   - `'cron'`    — the T-0 expiry cron (`enter-awaiting-payment-on-
+   *     expiry.ts`) flipped the cycle when `expires_at <= now`.
+   *   - `'confirm'` — the member's own early-renewal click lazily
+   *     self-transitioned the cycle (confirm-renewal Step-1, slice 2.5)
+   *     before `expires_at`.
+   *
+   * Both writers go through the same CAS guard (`transitionStatus`
+   * `WHERE status = from`), so concurrent cron + confirm flips converge
+   * to exactly ONE `awaiting_payment` row — the loser sees a
+   * `CycleTransitionConflictError` and re-reads cleanly. `entered_at`
+   * is the writer's injected clock (cron) or `clock.nowIso()` (confirm),
+   * never wall-clock, for deterministic forensic correlation.
+   */
+  readonly renewal_entered_awaiting_payment: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly source: 'cron' | 'confirm';
+    readonly entered_at: string;
   };
   readonly renewal_cycle_completed_offline: {
     readonly cycle_id: CycleId;

@@ -1,7 +1,7 @@
 /**
  * F8 Phase 9 / T258 — F8 audit-port contract test.
  *
- * Pins the 64-event audit catalogue at runtime + asserts representative
+ * Pins the 65-event audit catalogue at runtime + asserts representative
  * canonical payloads against the typed shape map (`F8AuditPayloadShapes`).
  *
  * Companion to:
@@ -17,7 +17,7 @@
  *
  * What this contract pins:
  *
- *   1. **Catalogue size invariant** — `F8_AUDIT_EVENT_TYPES.length === 64`.
+ *   1. **Catalogue size invariant** — `F8_AUDIT_EVENT_TYPES.length === 65`.
  *      Mirrors the compile-time assertion as a runtime smoke check so
  *      a future refactor that bypasses the compile-time pin (e.g. via
  *      `as readonly string[]`) still trips the test.
@@ -62,8 +62,8 @@ import {
 describe('F8 audit-port contract (T258)', () => {
   // ── Catalogue invariants ─────────────────────────────────────────────
 
-  it('catalogue contains exactly 64 event types (matches compile-time _AssertF8AuditEventCount)', () => {
-    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(64);
+  it('catalogue contains exactly 65 event types (matches compile-time _AssertF8AuditEventCount)', () => {
+    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(65);
   });
 
   it('catalogue contains no duplicate event types', () => {
