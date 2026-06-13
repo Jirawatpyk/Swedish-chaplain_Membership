@@ -1211,6 +1211,22 @@ Added in branch `063-renewal-audit-fixes` to close the money-observability gap i
 
 **Paging distinction**: ONLY `renewals_reconcile_timeout_transition_failed_post_refund_total` pages on-call (F8-A13 below). The other three are 📉 Report / informational — a non-zero rate is expected under normal admin–cron contention. Do NOT add paging alerts to the informational counters; see § 1 alert philosophy.
 
+#### 23.1.6 Cycle cold-start failures (F8-completion Slice 1)
+
+The two cold-start entry points that create a member's INITIAL renewal cycle each have a failure counter. They differ in error discipline and therefore in severity (see § 23.3 F8-A18 / F8-A19).
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `renewals_bootstrap_cycle_create_failed_total` | counter | `tenant` | `create-member.ts` post-commit `onboardingListeners` swallow loop (`renewalsMetrics.bootstrapCycleCreateFailed`) — the POST-LAUNCH new-member onboarding arm | FR-046 (pipeline coverage) |
+| `renewals_import_cycle_create_failed_total` | counter | `tenant` | `scripts/import-members.ts` `commitMembers` per-row catch (`renewalsMetrics.importCycleCreateFailed`), bumped BEFORE the re-throw — the COLD-START import arm | — |
+
+**Error-discipline distinction (load-bearing for the alert severity):**
+
+- `bootstrap_cycle_create_failed` fires from the **only swallow site** in F8-completion. The onboarding listener runs POST-COMMIT in its own tx after the member is already durably created; there is no tx to roll back and no webhook retry to heal it, so a failure is logged + counted + the member create still returns ok. A non-zero rate therefore means **NEW MEMBERS ARE SILENTLY DROPPING OUT OF THE RENEWAL PIPELINE** (no cycle → never reminded → never renewed) with no other surface — **page-worthy** (F8-A18). Replay is safe: createCycleInTx is idempotent (`findActiveForMemberInTx`), so an admin re-trigger heals the member.
+- `import_cycle_create_failed` fires from inside the import's batch tx, which does **NOT** swallow — the throw rolls the whole import back atomically. The counter exists so the operator sees WHICH run/row aborted (correlate with the paired error log's row-index). The import is idempotent on re-run after the data is fixed, so this is **operator-facing, not page-worthy on its own** (F8-A19 — informational/alarm).
+
+**Cardinality note**: both counters carry a single `tenant` label (bounded — single-tenant deployed; MTA+STD grows linearly with onboarded organisations, not members). NEVER a member-id / email / company label (PII forbidden in metrics; the uuid/row-index lives in the paired error log only).
+
 ### 23.2 SLOs — F8
 
 | SLO | Target | Window | Metric | Action on breach |
@@ -1250,6 +1266,8 @@ Added in branch `063-renewal-audit-fixes` to close the money-observability gap i
 | F8-A15 | `renewals_reconcile_timeout_refund_orphaned_total` — informational only; no alert fires | 📉 report | No page, no Slack — review weekly; a sustained rate spike warrants checking whether the daily cron cadence + 30-day timeout window are aligned with admin reactivation workflows (accepted residual #6; member already received the refund, admin action was canonical). |
 | F8-A16 | `renewals_reconcile_timeout_admin_race_skipped_total` — informational only; no alert fires | 📉 report | No page, no Slack — review weekly; a sustained rate > 5 / cron-pass suggests the nightly cron is overlapping with a peak admin reactivation window; consider adjusting cron schedule to off-peak hours (no money moved on this path). |
 | F8-A17 | `rate(renewals_reminders_sent_total{caught_up="true"}) / rate(renewals_reminders_sent_total)` rising above baseline over a 1-h rolling window (healthy cron should have ~0 catch-up sends) | ⚠ warn | `#oncall-platform` — spike in `caught_up=true` dimension signals cron-health degradation: the bounded catch-up recovery path in 063 is compensating for missed dispatch cron passes. Runbook: (1) check cron-job.org dispatch-coordinator recent runs for failures or skips; (2) verify `CRON_SECRET` is still valid on the dispatch route; (3) if catch-up volume exceeds one full day of normal reminder volume, escalate to paging. |
+| F8-A18 | `renewals_bootstrap_cycle_create_failed_total{tenant}` non-zero rate sustained ≥ 5 min | 🚨 page | PagerDuty primary (Renewals/Billing on-call) — the POST-COMMIT `createMember` onboarding listener (F8-completion Slice 1) failed to create a new member's initial renewal cycle and the use-case swallowed it (the only swallow site in F8-completion — the member is already durably committed). A non-zero rate means **new members are silently dropping out of the renewal pipeline** (no cycle → never reminded → never renewed) with no other surface. Runbook: (1) read the paired `[create-member] post-commit onboardingListener threw` error log for the affected `tenant` + `memberId` (uuid only — no PII in the metric); (2) diagnose why createCycleInTx threw (plan not resolvable for the member's plan_id, RLS regression, Neon pool exhaustion, pgEnum drift on `renewal_cycle_created`); (3) once fixed, replay is safe — createCycleInTx is idempotent (`findActiveForMemberInTx`), so an admin re-trigger of cycle creation for the affected member heals it without a duplicate. |
+| F8-A19 | `renewals_import_cycle_create_failed_total{tenant}` non-zero rate (operator-facing) | 📉 report / alarm on a CI/import run | `#oncall-platform` (informational) — a per-row cycle-insert failure in the one-time member import (`commitMembers`, F8-completion Slice 1) aborted the batch. UNLIKE F8-A18 this does NOT page on its own: the import is in-tx and does NOT swallow, so the whole batch rolled back atomically (no partial state) and the operator re-runs after fixing the data (idempotent). Runbook: (1) read the paired `[import-members] cycle creation failed for row <N>` stderr line for the row-index + member uuid; (2) fix the offending row's `plan_id` / data; (3) re-run `--commit` (idempotent — already-cycled members are a `findActiveForMemberInTx` no-op). Escalate to a page only if the import is on the critical launch path and blocking go-live. |
 
 ### 23.4 Forbidden log fields (F8-specific extension to § 3 universal list)
 
