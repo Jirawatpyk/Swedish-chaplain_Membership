@@ -2310,6 +2310,35 @@ export const renewalsMetrics = {
   },
 
   /**
+   * F8-completion Slice 1 · Task 1.7/1.8 —
+   * `renewals_import_cycle_create_failed_total{tenant}`.
+   *
+   * Fires from the one-time member-import cold-start (`scripts/import-members.ts`
+   * `commitMembers`) when a per-member `createCycleInTx` call inside the batch
+   * tx throws. UNLIKE the bootstrap counter, the import does NOT swallow — the
+   * throw propagates and the WHOLE batch rolls back (atomic). The counter is
+   * incremented BEFORE the re-throw purely so the operator sees WHICH import
+   * failed (and can correlate with the row-index in the paired error log). The
+   * import is idempotent (re-run after fixing the data is a safe no-op via
+   * `findActiveForMemberInTx`), so this is operator-facing, not page-worthy on
+   * its own — but a non-zero rate means an import run aborted.
+   *
+   * Cardinality discipline: the ONLY label is the bounded `tenant` slug —
+   * NEVER the member entity / name / email / company (PII forbidden in
+   * metrics; the row-index/uuid lives in the paired error log).
+   */
+  importCycleCreateFailed: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_import_cycle_create_failed_total',
+          'member-import cold-start failed to create a per-member renewal cycle inside the batch tx — the whole import rolled back (operator re-runs after fixing the data)',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_lapse_cycles_errors_total{tenant}` — T115a Phase 5
    * wave K24: per-cycle errors during the daily
    * `lapseCyclesOnGraceExpiry` cron (F5 bridge query failure / DB
