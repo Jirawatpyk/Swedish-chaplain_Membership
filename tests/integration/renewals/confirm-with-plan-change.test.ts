@@ -250,6 +250,7 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
       tenant: realDeps.tenant,
       cyclesRepo: realDeps.cyclesRepo,
       auditEmitter: realDeps.auditEmitter,
+      clock: realDeps.clock,
       planLookupForRenewal: realDeps.planLookupForRenewal,
       f4InvoicingBridge: makeTestRenewalBridge(),
     };

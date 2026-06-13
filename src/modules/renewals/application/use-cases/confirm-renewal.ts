@@ -112,7 +112,7 @@ export type ConfirmRenewalError =
 export interface ConfirmRenewalDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter'
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock'
   > {
   readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
@@ -138,7 +138,19 @@ export async function confirmRenewal(
 
   // ---- Step 1 + 2: state validation + (optional) plan-change in own tx
   const stateResult = await runInTenant(deps.tenant, async (tx) => {
-    const cycle = await deps.cyclesRepo.findByIdInTx(
+    // B4 fix (F8-completion slice 2.5) — acquire the per-cycle advisory
+    // lock as the FIRST statement, BEFORE the read + the lazy
+    // `upcoming|reminded → awaiting_payment` self-transition below. This
+    // serialises the Step-1 flip against the T-0 enter-awaiting cron
+    // (`enterAwaitingPaymentOnExpiry`), which holds the same lock around
+    // its own flip. Without it the Step-1 lazy flip would race the cron
+    // (the old code only locked at Step-4, the link step). Auto-released
+    // at tx end; namespace `renewals:` is disjoint from F4/F5 locks.
+    await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
+
+    // `let` (was `const`) — the lazy self-transition below reflects the
+    // post-flip status onto the local cycle for the rest of Step-1.
+    let cycle = await deps.cyclesRepo.findByIdInTx(
       tx,
       input.tenantId,
       cycleId,
@@ -179,12 +191,90 @@ export async function confirmRenewal(
         attemptedMemberId: cycle.memberId,
       });
     }
-    if (cycle.status !== 'awaiting_payment') {
+    // B-lazy (F8-completion slice 2.5) — let a member renew EARLY by
+    // self-transitioning their cycle `upcoming|reminded → awaiting_payment`
+    // here in Step-1 (under the advisory lock acquired above), then
+    // proceeding to issue the §86/4. Until the T-0 enter-awaiting cron
+    // runs, most cycles are still `upcoming|reminded` when the member
+    // lands on the portal, so without this branch early renewal would be
+    // impossible (the old code rejected any non-`awaiting_payment` cycle
+    // with `cycle_not_payable`).
+    if (cycle.status === 'upcoming' || cycle.status === 'reminded') {
+      const fromStatus = cycle.status;
+      try {
+        await deps.cyclesRepo.transitionStatus(tx, input.tenantId, cycleId, {
+          from: fromStatus,
+          to: 'awaiting_payment',
+        });
+        // State+audit atomicity (Principle VIII): emit the
+        // `renewal_entered_awaiting_payment` audit INSIDE this tx, with
+        // the `source:'confirm'` discriminator distinguishing this lazy
+        // writer from the cron (`source:'cron'`). A concurrent cron flip
+        // that already won emits its OWN audit — the CAS-loss branch
+        // below skips the emit so we never double-count.
+        await deps.auditEmitter.emitInTx(
+          tx,
+          {
+            type: 'renewal_entered_awaiting_payment' as const,
+            payload: {
+              cycle_id: cycleId,
+              member_id: asMemberId(cycle.memberId),
+              source: 'confirm' as const,
+              entered_at: deps.clock.now().toISOString(),
+            },
+          },
+          {
+            tenantId: input.tenantId,
+            actorUserId: input.actorUserId,
+            actorRole: input.actorRole,
+            correlationId: input.correlationId,
+            requestId: input.requestId ?? null,
+          },
+        );
+        // Reflect the flip for the rest of Step-1 (plan-change branch +
+        // the state result the link step consumes).
+        cycle = { ...cycle, status: 'awaiting_payment' };
+      } catch (e) {
+        if (e instanceof CycleTransitionConflictError) {
+          // Idempotent convergence: a concurrent writer (the T-0 cron,
+          // or another confirm) won the `→awaiting_payment` CAS between
+          // our read and this transition. Re-read under the lock: if the
+          // cycle IS now `awaiting_payment`, treat the flip as already
+          // done (the winner emitted its own audit — we do NOT emit a
+          // duplicate, do NOT surface `cycle_not_payable`) and proceed.
+          const reread = await deps.cyclesRepo.findByIdInTx(
+            tx,
+            input.tenantId,
+            cycleId,
+          );
+          if (!reread) {
+            return err({ kind: 'cycle_not_found' as const });
+          }
+          if (reread.status !== 'awaiting_payment') {
+            // The winner moved it somewhere non-payable (cancel/lapse) —
+            // honour the real terminal state rather than force a flip.
+            return err({
+              kind: 'cycle_not_payable' as const,
+              currentStatus: reread.status,
+            });
+          }
+          cycle = reread;
+        } else {
+          throw e;
+        }
+      }
+    } else if (cycle.status !== 'awaiting_payment') {
+      // Terminal (completed/lapsed/cancelled) or pending_admin_reactivation
+      // — not self-renewable here. The pending_admin_reactivation
+      // money-hold path is deferred post-launch (spec §C); it stays a
+      // server-side reject until that path is built.
       return err({
         kind: 'cycle_not_payable' as const,
         currentStatus: cycle.status,
       });
     }
+    // (cycle.status === 'awaiting_payment' falls through unchanged —
+    // already payable, proceed.)
 
     // Plan-change branch (FR-021b atomic)
     let planChanged = false;

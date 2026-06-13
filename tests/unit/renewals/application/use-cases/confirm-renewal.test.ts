@@ -60,10 +60,19 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
 
 function fakeDeps(args: {
   cycle?: RenewalCycle | null;
+  /**
+   * B-lazy (slice 2.5) — when the use-case re-reads the cycle after a
+   * `transitionStatus` CAS-loss, return THIS instead of `args.cycle`.
+   * Defaults to `args.cycle` (the same row). Set to model a concurrent
+   * writer that won the flip (re-read sees `awaiting_payment`) or moved
+   * the cycle elsewhere (re-read sees a terminal status).
+   */
+  rereadCycle?: RenewalCycle | null;
   planLookup?: PlanLookupForRenewalResult;
   invoiceResult?: IssueInvoiceForRenewalResult;
   updateFrozenPlanImpl?: () => Promise<RenewalCycle>;
   linkInvoiceImpl?: () => Promise<RenewalCycle>;
+  transitionStatusImpl?: () => Promise<RenewalCycle>;
   emitInTxImpl?: () => Promise<void>;
 }): {
   deps: ConfirmRenewalDeps;
@@ -71,9 +80,27 @@ function fakeDeps(args: {
   invoiceBridgeMock: ReturnType<typeof vi.fn>;
   updateFrozenPlanMock: ReturnType<typeof vi.fn>;
   linkInvoiceMock: ReturnType<typeof vi.fn>;
+  transitionStatusMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
 } {
-  const findByIdInTxMock = vi.fn(async () => args.cycle ?? null);
+  // First findByIdInTx call returns the seed cycle; any subsequent call
+  // (the CAS-loss re-read) returns `rereadCycle` (defaults to the seed).
+  let findByIdCallCount = 0;
+  const findByIdInTxMock = vi.fn(async () => {
+    findByIdCallCount += 1;
+    if (findByIdCallCount === 1) return args.cycle ?? null;
+    return args.rereadCycle !== undefined
+      ? args.rereadCycle
+      : (args.cycle ?? null);
+  });
+  const transitionStatusMock = vi.fn(
+    args.transitionStatusImpl ??
+      (async () =>
+        ({
+          ...args.cycle!,
+          status: 'awaiting_payment' as const,
+        }) as unknown as RenewalCycle),
+  );
   const updateFrozenPlanMock = vi.fn(
     args.updateFrozenPlanImpl ??
       (async () => ({
@@ -120,16 +147,24 @@ function fakeDeps(args: {
       findByIdInTx: findByIdInTxMock,
       updateFrozenPlan: updateFrozenPlanMock,
       linkInvoice: linkInvoiceMock,
+      // B-lazy (slice 2.5) — the Step-1 lazy self-transition flips an
+      // `upcoming|reminded` cycle to `awaiting_payment`. Stubbed here;
+      // real CAS semantics are exercised by integration tests.
+      transitionStatus: transitionStatusMock,
       // I1 review-fix: link-step now acquires the per-cycle advisory
-      // lock before the WHERE-IS-NULL guarded UPDATE. Stub it as a
-      // no-op for these unit tests — real serialise-via-pg-advisory-
-      // lock semantics are exercised by integration tests.
+      // lock before the WHERE-IS-NULL guarded UPDATE. B4 fix (slice 2.5)
+      // also acquires it as the FIRST Step-1 statement. Stub as a no-op
+      // for these unit tests — real serialise-via-pg-advisory-lock
+      // semantics are exercised by integration tests.
       acquireCycleLockInTx: vi.fn(async () => {}),
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),
       emitInTx: emitInTxMock,
     } as unknown as ConfirmRenewalDeps['auditEmitter'],
+    // Round-5 M6 ClockPort — deterministic instant for the
+    // `renewal_entered_awaiting_payment.entered_at` payload (B-lazy).
+    clock: { now: () => new Date('2026-06-13T00:00:00.000Z') },
     f4InvoicingBridge: invoiceBridge,
     planLookupForRenewal: planLookup,
   };
@@ -139,6 +174,7 @@ function fakeDeps(args: {
     invoiceBridgeMock,
     updateFrozenPlanMock,
     linkInvoiceMock,
+    transitionStatusMock,
     emitInTxMock,
   };
 }
@@ -276,7 +312,7 @@ describe('confirmRenewal (T122) — state validation', () => {
     if (!r.ok) expect(r.error.kind).toBe('cross_member_probe');
   });
 
-  it('cycle_not_payable — status mismatch', async () => {
+  it('cycle_not_payable — status mismatch (terminal)', async () => {
     const cycle = buildCycle({ status: 'completed' });
     const { deps, invoiceBridgeMock } = fakeDeps({ cycle });
     const r = await confirmRenewal(deps, baseInput);
@@ -285,6 +321,141 @@ describe('confirmRenewal (T122) — state validation', () => {
       expect(r.error.currentStatus).toBe('completed');
     }
     expect(invoiceBridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('cycle_not_payable — pending_admin_reactivation is NOT self-renewable (money-hold deferred)', async () => {
+    const cycle = buildCycle({
+      status: 'pending_admin_reactivation',
+      enteredPendingAt: '2026-06-01T00:00:00.000Z',
+    } as Partial<RenewalCycle>);
+    const { deps, invoiceBridgeMock, transitionStatusMock } = fakeDeps({
+      cycle,
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'cycle_not_payable') {
+      expect(r.error.currentStatus).toBe('pending_admin_reactivation');
+    }
+    expect(transitionStatusMock).not.toHaveBeenCalled();
+    expect(invoiceBridgeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirmRenewal (slice 2.5 B-lazy) — early-renewal self-transition', () => {
+  it.each(['upcoming', 'reminded'] as const)(
+    'flips a %s cycle to awaiting_payment + emits renewal_entered_awaiting_payment(source:confirm) + proceeds',
+    async (startStatus) => {
+      const cycle = buildCycle({ status: startStatus });
+      const { deps, transitionStatusMock, invoiceBridgeMock, emitInTxMock } =
+        fakeDeps({ cycle });
+      const r = await confirmRenewal(deps, baseInput);
+      expect(r.ok).toBe(true);
+      // The flip went through transitionStatus with the right edge.
+      expect(transitionStatusMock).toHaveBeenCalledOnce();
+      expect(transitionStatusMock.mock.calls[0]?.[3]).toMatchObject({
+        from: startStatus,
+        to: 'awaiting_payment',
+      });
+      // The renewal_entered_awaiting_payment audit fired with source:confirm.
+      const enterEmit = emitInTxMock.mock.calls.find(
+        (c) =>
+          (c?.[1] as { type?: string })?.type ===
+          'renewal_entered_awaiting_payment',
+      );
+      expect(enterEmit).toBeDefined();
+      expect(enterEmit?.[1]).toMatchObject({
+        type: 'renewal_entered_awaiting_payment',
+        payload: { source: 'confirm', entered_at: expect.any(String) },
+      });
+      // Proceeded to issue the §86/4.
+      expect(invoiceBridgeMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('idempotent CAS-loss: a concurrent writer won the flip → re-read sees awaiting_payment → proceeds WITHOUT a duplicate renewal_entered_awaiting_payment emit', async () => {
+    const cycle = buildCycle({ status: 'upcoming' });
+    const reread = buildCycle({ status: 'awaiting_payment' });
+    const { deps, invoiceBridgeMock, emitInTxMock } = fakeDeps({
+      cycle,
+      rereadCycle: reread,
+      transitionStatusImpl: async () => {
+        throw new CycleTransitionConflictError(
+          CYCLE_UUID,
+          'upcoming',
+          'awaiting_payment',
+        );
+      },
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // We did NOT emit a second renewal_entered_awaiting_payment — the
+    // winner already emitted its own (single-emit guarantee).
+    const enterEmits = emitInTxMock.mock.calls.filter(
+      (c) =>
+        (c?.[1] as { type?: string })?.type ===
+        'renewal_entered_awaiting_payment',
+    );
+    expect(enterEmits.length).toBe(0);
+    // Still proceeds to issue the §86/4 — the member sees no failure.
+    expect(invoiceBridgeMock).toHaveBeenCalledOnce();
+  });
+
+  it('CAS-loss then re-read finds a non-payable status (winner cancelled/lapsed it) → cycle_not_payable', async () => {
+    const cycle = buildCycle({ status: 'upcoming' });
+    const reread = buildCycle({
+      status: 'cancelled',
+      closedAt: '2026-06-13T00:00:00.000Z',
+      closedReason: 'cancelled',
+    } as Partial<RenewalCycle>);
+    const { deps, invoiceBridgeMock } = fakeDeps({
+      cycle,
+      rereadCycle: reread,
+      transitionStatusImpl: async () => {
+        throw new CycleTransitionConflictError(
+          CYCLE_UUID,
+          'upcoming',
+          'cancelled',
+        );
+      },
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'cycle_not_payable') {
+      expect(r.error.currentStatus).toBe('cancelled');
+    }
+    expect(invoiceBridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('CAS-loss then the cycle vanished on re-read → cycle_not_found', async () => {
+    const cycle = buildCycle({ status: 'upcoming' });
+    const { deps, invoiceBridgeMock } = fakeDeps({
+      cycle,
+      rereadCycle: null,
+      transitionStatusImpl: async () => {
+        throw new CycleTransitionConflictError(
+          CYCLE_UUID,
+          'upcoming',
+          'cancelled',
+        );
+      },
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('cycle_not_found');
+    expect(invoiceBridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('non-conflict transitionStatus throw propagates (not swallowed as cycle_not_payable)', async () => {
+    const cycle = buildCycle({ status: 'upcoming' });
+    const { deps } = fakeDeps({
+      cycle,
+      transitionStatusImpl: async () => {
+        throw new Error('connection reset');
+      },
+    });
+    await expect(confirmRenewal(deps, baseInput)).rejects.toThrow(
+      /connection reset/,
+    );
   });
 });
 
