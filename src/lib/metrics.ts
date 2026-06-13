@@ -2281,6 +2281,35 @@ export const renewalsMetrics = {
   },
 
   /**
+   * F8-completion Slice 1 · Task 1.6/1.8 —
+   * `renewals_bootstrap_cycle_create_failed_total{tenant}`.
+   *
+   * Fires when the POST-COMMIT `createMember` onboarding listener (which
+   * creates the new member's initial renewal cycle in its OWN tenant tx)
+   * throws and the use-case swallows it. This is the ONLY swallow site in
+   * the F8-completion effort: the member is already committed, there's no
+   * tx to roll back and no webhook retry to heal it, so the failure is
+   * best-effort. A non-zero rate means NEW MEMBERS ARE SILENTLY DROPPING
+   * OUT OF THE RENEWAL PIPELINE (no cycle → never reminded → never
+   * renewed) — page-worthy. Mirrors `onPaidInvalidTx` shape so dashboard
+   * joins against the other renewals counters work (bare `tenant` label).
+   *
+   * Cardinality discipline: the ONLY label is the bounded `tenant` slug —
+   * NEVER the member entity / name / email / company (PII forbidden in
+   * metrics; the uuid lives in the paired error log).
+   */
+  bootstrapCycleCreateFailed: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_bootstrap_cycle_create_failed_total',
+          'createMember post-commit onboarding listener failed to create the initial renewal cycle — new member silently dropped out of the renewal pipeline (page on any non-zero rate)',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_lapse_cycles_errors_total{tenant}` — T115a Phase 5
    * wave K24: per-cycle errors during the daily
    * `lapseCyclesOnGraceExpiry` cron (F5 bridge query failure / DB

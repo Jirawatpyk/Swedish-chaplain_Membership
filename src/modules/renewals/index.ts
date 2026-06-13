@@ -679,6 +679,13 @@ export {
   f8OnManualPlanChangeCallbacks,
 } from './infrastructure/ports-adapters/f2-plan-change-bridge';
 
+// F8-completion Slice 1 · Task 1.6 — F3 → F8 create-member onboarding
+// bridge (factory for the listener array consumed by F3's `createMember`
+// use-case; creates the new member's initial renewal cycle post-commit).
+export {
+  f8OnCreateMemberCallbacks,
+} from './infrastructure/ports-adapters/f8-on-create-member-callbacks';
+
 // F8 Phase 7 review-fix C-TYPE-1 — canonical event shape (was duplicated
 // across F3 + F8 bridge before consolidation).
 export type {
