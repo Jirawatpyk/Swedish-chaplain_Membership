@@ -252,10 +252,14 @@ export function makeDrizzleDispatchCandidateRepo(
       return runInTenant(tenant, async (tx) => {
         const cursor = decodeCursor(args.cursor);
         // Cycles in active states only — terminal cycles are filtered.
-        // The grace period is included (members are reminded post-expiry
-        // for the schedule's positive-offset steps).
+        // The grace period is included NOT by any `'grace'` status (no DB
+        // row can ever hold it — `CYCLE_STATUSES` + the migration 0087
+        // `renewal_cycles_status_check` CHECK both reject it) but by the
+        // DATE window below: a post-expiry cycle whose `expires_at` is no
+        // older than `NOW() - maxOffsetDays days` is still returned so the
+        // schedule's positive-offset (post-expiry) reminder steps fire.
         const filters: SQL[] = [
-          sql`${renewalCycles.status} IN ('upcoming','reminded','awaiting_payment','grace')`,
+          sql`${renewalCycles.status} IN ('upcoming','reminded','awaiting_payment')`,
           sql`${renewalCycles.expiresAt} <= ${args.cutoffExpiresAt}`,
           sql`${renewalCycles.expiresAt} >= NOW() - (${args.maxOffsetDays}::int * INTERVAL '1 day')`,
         ];
