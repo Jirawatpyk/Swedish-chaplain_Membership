@@ -701,6 +701,41 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async listCyclesEligibleForAwaitingPayment(
+      _tenantId: string,
+      args: {
+        readonly nowIso: string;
+        readonly pageSize: number;
+      },
+    ): Promise<RenewalCyclePage> {
+      return runInTenant(tenant, async (tx) => {
+        // F8-completion slice 2 — eligible = cycles still in
+        // `upcoming`/`reminded` whose `expires_at <= nowIso` (reached
+        // T-0). RLS scopes to the tenant context. `<= now` (vs the lapse
+        // cron's `< now - grace`) keeps the two crons disjoint in a
+        // single pass: a cycle becomes `awaiting_payment` here at T-0,
+        // and only later (after grace) does the lapse cron see it. Order
+        // by `expires_at ASC` so oldest expiries are flipped first
+        // (smallest blast radius on a partial cron run).
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              sql`${renewalCycles.status} IN ('upcoming','reminded')`,
+              sql`${renewalCycles.expiresAt} <= ${args.nowIso}`,
+            ),
+          )
+          .orderBy(sql`${renewalCycles.expiresAt} ASC`)
+          .limit(args.pageSize);
+
+        return {
+          items: rows.map(rowToDomain),
+          nextCursor: null,
+        };
+      });
+    },
+
     async transitionStatus(
       tx: unknown,
       _tenantId: string,

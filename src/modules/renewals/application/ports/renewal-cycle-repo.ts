@@ -261,6 +261,29 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCyclePage>;
 
   /**
+   * F8-completion slice 2 — eligibility cursor for the T-0 expiry cron
+   * (`enterAwaitingPaymentOnExpiry`). Returns cycles still in
+   * `upcoming` or `reminded` whose `expires_at <= nowIso` — i.e. they
+   * have reached T-0 and must become payable. Ordered by `expires_at
+   * ASC` for deterministic batching (oldest expiries first).
+   *
+   * The `<= nowIso` boundary (vs the lapse cron's `< now -
+   * grace_period_days`) is load-bearing: a cycle is never
+   * simultaneously eligible for BOTH the enter-awaiting flip and the
+   * lapse transition in one cron pass — the enter-awaiting cron flips
+   * `upcoming|reminded → awaiting_payment` at T-0; only AFTER it is
+   * `awaiting_payment` does the (later) lapse cron consider it once the
+   * grace window elapses.
+   */
+  listCyclesEligibleForAwaitingPayment(
+    tenantId: string,
+    args: {
+      readonly nowIso: string;
+      readonly pageSize: number;
+    },
+  ): Promise<RenewalCyclePage>;
+
+  /**
    * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).
    * Returns rows enriched with `members.company_name` + last reminder
    * + DB-side derived `urgency` bucket + summary aggregates. Cursor is
