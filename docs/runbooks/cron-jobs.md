@@ -42,6 +42,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F8 at-risk recompute (coordinator)** | **`POST /api/cron/renewals/at-risk-recompute-coordinator`** | **`0 2 * * 0`** (Sun 02:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 at-risk) |
 | **F8 tier-upgrade evaluate (coordinator)** | **`POST /api/cron/renewals/tier-upgrade-evaluate-coordinator`** | **`0 3 * * 0`** (Sun 03:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 tier-upgrade) |
 | **F8 reconcile-pending-reactivations (coordinator)** | **`POST /api/cron/renewals/reconcile-pending-reactivations-coordinator`** | **`0 7 * * *`** (daily 07:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-reactivations) |
+| **F8 enter-awaiting-payment (coordinator)** | **`POST /api/cron/renewals/enter-awaiting-payment-coordinator`** | **`15 6 * * *`** (daily 06:15 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 enter-awaiting-payment) |
 | **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
@@ -557,6 +558,61 @@ Daily T-7/T-3/T-1 reminder ladder + 30d auto-timeout for cycles in
 - **URL**: `.../api/cron/renewals/reconcile-pending-reactivations-coordinator`
 - **Schedule**: `0 7 * * *` (daily 07:00 Asia/Bangkok — 1h after dispatch)
 - **Timeout**: 30 seconds (small dataset; partial-index scan)
+
+## F8 — renewals/enter-awaiting-payment-coordinator (NEW — F8-completion slice 2)
+
+Daily transitions cycles from `upcoming`/`reminded` → `awaiting_payment`
+once `now() >= expires_at` (T-0). This is the writer that makes a cycle
+**payable**: until this cron runs, no cycle is `awaiting_payment` for
+most members, so the self-service confirm + paid-completion paths are
+unreachable. Emits a typed `renewal_entered_awaiting_payment` audit per
+cycle with `source: 'cron'` (the lazy confirm-renewal self-transition
+emits the same event with `source: 'confirm'`).
+
+**Sequencing rationale**: scheduled at 06:15 — 15 minutes AFTER the F8
+dispatch coordinator (06:00) and 15 minutes BEFORE the lapse coordinator
+(06:30). The ordering is load-bearing: a cycle must become
+`awaiting_payment` HERE at T-0 before the lapse cron can (later, after
+the grace window) consider it. The two crons therefore COMPOSE: enter →
+`awaiting_payment` at 06:15, later (once `now > expires_at + grace`)
+lapse → `lapsed`. The eligibility boundary is `expires_at <= now` with
+NO grace offset, disjoint from the lapse cron's `< now - grace`, so a
+cycle is never eligible for both in one pass.
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 enter-awaiting-payment coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/enter-awaiting-payment-coordinator`
+- **Schedule**: `15 6 * * *` (daily 06:15 Asia/Bangkok)
+- **Timeout**: 30 seconds (small dataset; partial-index scan via
+  `listCyclesEligibleForAwaitingPayment`)
+- **Headers**: `Authorization: Bearer ${CRON_SECRET}` (constant-time
+  check; `verifyCronBearer`)
+- **Retry policy**: OFF (per F8/F4/F5/F7 convention — cron-job.org retry
+  would re-issue the list query; the use-case's per-cycle fault isolation
+  + CAS-guarded idempotent flip + tomorrow's-pass already handle
+  transient DB blips. A re-flip of an already-`awaiting_payment` cycle is
+  skipped as `race_skipped`, never double-flipped.)
+
+### Pre-flight gates (operator checklist before flag-flip)
+
+1. `FEATURE_F8_RENEWALS=true` in Vercel production env
+2. Confirm migration `0215_f8_renewal_entered_awaiting_payment.sql`
+   applied to live Neon (`renewal_entered_awaiting_payment` value present
+   in `audit_event_type` pgEnum) — verify via:
+   `SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'renewal_entered_awaiting_payment';`
+3. Confirm this coordinator is scheduled BEFORE the lapse coordinator
+   (06:15 < 06:30) so the enter → awaiting → lapsed composition holds.
+
+### Alert rules
+
+- `renewals_enter_awaiting_cycles_errors_total{tenant}` — non-zero rate
+  sustained for 15 min pages on-call (per-cycle failures masked behind
+  200 OK; symptomatic of DB connectivity or audit-emit issue)
+- Per-tenant route 5xx rate (Vercel logs) >0% over 15 min — operational
+  failure (use-case threw at outer level, fault-isolation contract broken)
+- `tenants_with_errors > 0` in coordinator response — surfaces the
+  "200-OK-but-everything-failed" pattern
 
 ## F8 — renewals/lapse-cycles-on-grace-expiry-coordinator (NEW — F8 Phase 5 Wave K24)
 

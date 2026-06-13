@@ -1040,6 +1040,7 @@ export interface F8AuditPayloadShapes {
       | 'dispatch'
       | 'at_risk_recompute'
       | 'lapse'
+      | 'enter_awaiting'
       | 'reconcile'
       | 'tier_upgrade_evaluate';
     readonly tenants_enqueued: number;
@@ -1092,6 +1093,7 @@ export interface F8AuditPayloadShapes {
           readonly kind_specific?:
             | { readonly kind: 'dispatch'; readonly tasks_created: number }
             | { readonly kind: 'lapse'; readonly errors: number; readonly grace_expired?: number; readonly payment_failed?: number }
+            | { readonly kind: 'enter_awaiting'; readonly errors: number; readonly flipped?: number; readonly race_skipped?: number }
             | { readonly kind: 'reconcile'; readonly refund_failures: number; readonly timed_out?: number }
             | { readonly kind: 'at_risk_recompute'; readonly members_failed: number; readonly members_skipped_below_tenure?: number };
         }
