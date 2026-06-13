@@ -71,6 +71,7 @@ const eventAttendeesPort = env.features.f6EventCreate
 import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
+import { memberPlanLookupDrizzle } from './ports-adapters/member-plan-lookup-drizzle';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
 import { makeDrizzleConsumedLinkTokensRepo } from './drizzle/drizzle-consumed-link-tokens-repo';
@@ -126,6 +127,8 @@ import type { ConsumedLinkTokensRepo } from '../application/ports/consumed-link-
 import type { F4InvoicingForRenewalBridge } from '../application/ports/f4-invoicing-bridge';
 import type { F5RefundBridge } from '../application/ports/f5-refund-bridge';
 import type { PlanLookupForRenewalPort } from '../application/ports/plan-lookup-for-renewal';
+import type { MemberPlanLookupPort } from '../application/ports/member-plan-lookup-port';
+import type { CreateCycleInTxDeps } from '../application/use-cases/create-cycle-in-tx';
 import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
 import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-token-signer';
 import type { RenewalLinkTokenVerifier } from '../application/ports/renewal-link-token-verifier';
@@ -209,6 +212,23 @@ export interface RenewalsDeps {
    * frozen-price fields (price + term + currency + tier-bucket).
    */
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
+  /**
+   * F8-completion Slice 3 (Task 3.1) — F8 → F3 member-plan lookup for the
+   * admin lapsed-comeback path. Resolves the member's CURRENT `plan_id`
+   * (server-sourced) so the fresh §86/4 is billed at the member's live
+   * plan price — never a request body. Default factory wires the Drizzle
+   * adapter delegating to F3's `findByIdInTx`.
+   */
+  readonly memberPlanLookup: MemberPlanLookupPort;
+  /**
+   * F8-completion Slice 3 (Task 3.1) — cycle-id generator threaded into
+   * `createCycleInTx` by the admin lapsed-comeback use-case. Default
+   * factory binds `() => asCycleId(randomUUID())`; tests override with a
+   * deterministic counter. (The on-paid / onboarding callers compose
+   * `idFactory` inline at their call sites; the admin use-case reads it
+   * from deps so the route stays a trivial pass-through.)
+   */
+  readonly cycleIdFactory: CreateCycleInTxDeps['idFactory'];
   readonly eventAttendees: EventAttendeesPort;
   /**
    * Phase 4 Wave I1a (T083) — Drizzle adapter for `tenant_renewal_schedule_policies`
@@ -374,6 +394,8 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     f5RefundBridge,
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
+    memberPlanLookup: memberPlanLookupDrizzle,
+    cycleIdFactory: { cycleId: () => asCycleId(randomUUID()) },
     eventAttendees: eventAttendeesPort,
     schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),
     atRiskOutreachReadRepo: makeDrizzleAtRiskOutreachReadRepo(tenant),

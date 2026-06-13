@@ -497,6 +497,20 @@ export {
 } from './application/use-cases/confirm-renewal';
 
 export {
+  adminRenewLapsedMember,
+  adminRenewLapsedMemberInputSchema,
+  type AdminRenewLapsedMemberInput,
+  type AdminRenewLapsedMemberOutput,
+  type AdminRenewLapsedMemberError,
+  type AdminRenewLapsedMemberDeps,
+} from './application/use-cases/admin-renew-lapsed-member';
+
+export type {
+  MemberPlanLookupPort,
+  MemberPlanLookupResult,
+} from './application/ports/member-plan-lookup-port';
+
+export {
   // Round 2 (S-11): split into InTx + wrapper variants. F4 onPaidCallback
   // path uses `markCycleCompleteInTx` to participate in F4's tx;
   // standalone callers use the wrapper.

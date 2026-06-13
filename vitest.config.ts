@@ -568,6 +568,18 @@ export default defineConfig({
           branches: 75,
           functions: 85,
         },
+        'src/modules/renewals/application/use-cases/admin-renew-lapsed-member.ts': {
+          // admin-renew-lapsed-member.test.ts — 14 unit tests covering the
+          // create→issue→link orchestration + every error arm (member /
+          // plan / invoice / link-race / audit-emit). 100% line / ~95%
+          // branch from unit alone; the residual branches are logger-only
+          // `e instanceof Error` defensive arms + the real tx2 link/audit
+          // paths exercised by admin-renew-lapsed-member.test.ts (IT, live
+          // Neon). Security + tax-sensitive path (admin issues a §86/4).
+          lines: 100,
+          branches: 90,
+          functions: 100,
+        },
         'src/modules/renewals/application/use-cases/detect-bounce-threshold.ts': {
           // detect-bounce-threshold.test.ts — 20 cases (hard/soft
           // thresholds, rolling window). Strong coverage.
