@@ -2359,6 +2359,26 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals_enter_awaiting_cycles_errors_total{tenant}` —
+   * F8-completion slice 2: per-cycle errors during the daily
+   * `enterAwaitingPaymentOnExpiry` (T-0) cron (DB transition throw /
+   * audit emit failure). Per-cycle fault isolation means one bad cycle
+   * doesn't abort the run; this counter tracks the aggregate so SREs
+   * can alert on a cron-wide degradation. Sibling of `lapseCyclesErrors`.
+   * Alert rule: any non-zero rate sustained for 15 min pages on-call.
+   */
+  enterAwaitingCyclesErrors: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_enter_awaiting_cycles_errors_total',
+          'F8 enterAwaitingPaymentOnExpiry per-cycle error count (DB transition throws + audit emit failures); cron continues per-member fault-isolated',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_onpaid_unknown_outcome_kind_total{tenant}` — Round 4
    * review-fix (R4-S1): F8 dispatch site received a
    * `MarkCycleCompleteOutcome` whose `kind` is not one of the 4 known

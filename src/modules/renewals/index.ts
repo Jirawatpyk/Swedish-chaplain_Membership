@@ -571,6 +571,15 @@ export {
   type LapseCyclesOnGraceExpiryError,
 } from './application/use-cases/lapse-cycles-on-grace-expiry';
 
+// --- F8-completion slice 2 — enterAwaitingPaymentOnExpiry (T-0 cron) ------
+export {
+  enterAwaitingPaymentOnExpiry,
+  enterAwaitingPaymentOnExpiryInputSchema,
+  type EnterAwaitingPaymentOnExpiryInput,
+  type EnterAwaitingPaymentOnExpiryOutput,
+  type EnterAwaitingPaymentOnExpiryError,
+} from './application/use-cases/enter-awaiting-payment-on-expiry';
+
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
   evaluateTierUpgrade,
