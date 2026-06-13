@@ -473,6 +473,38 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    /**
+     * F8-completion Slice 1 — tx-bound variant of `findActiveForMember`.
+     * Uses the caller's tx handle so the read participates in the
+     * surrounding transaction: it sees an uncommitted prior-cycle
+     * `→completed` flip made earlier in the SAME tx (F4
+     * `f8OnPaidCallbacks[0]` before `withTx` commits). Threads the F4
+     * tx — NO `runInTenant` (the caller already established the tenant
+     * GUC). MUST only be called from inside a `runInTenant` block where
+     * `SET LOCAL app.current_tenant` is already set. Tenant scope comes
+     * from the inherited GUC, NOT a `WHERE tenant_id` predicate — same
+     * RLS precedent as `findByIdInTx`; `_tenantId` is intentionally
+     * unused.
+     */
+    async findActiveForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.memberId, memberId),
+            sql`${renewalCycles.status} NOT IN ('lapsed','cancelled','completed')`,
+          ),
+        )
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    },
+
     async list(
       _tenantId: string,
       opts: ListRenewalCyclesOpts,

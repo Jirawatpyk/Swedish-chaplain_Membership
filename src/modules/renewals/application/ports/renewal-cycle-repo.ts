@@ -156,6 +156,30 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * F8-completion Slice 1 — same as `findActiveForMember` but accepts
+   * the caller's tx handle so the read participates in the surrounding
+   * transaction. It can therefore see an uncommitted prior-cycle
+   * `→completed` flip made EARLIER in the SAME tx (e.g. F4
+   * `f8OnPaidCallbacks[0]` flips the just-paid cycle to `completed`
+   * before `withTx` commits). The connection-fresh `findActiveForMember`
+   * opens its OWN `runInTenant` connection and CANNOT see that
+   * uncommitted flip under READ COMMITTED — which would make the
+   * on-paid next-cycle creation idempotency-guard see the prior cycle
+   * as still active → no-op → the next cycle never created on first
+   * delivery. Threading the F4 tx closes that window.
+   *
+   * Tenant context comes from the inherited GUC (set by the caller's
+   * `runInTenant`); `tenantId` is intentionally unused (RLS, not a
+   * WHERE clause) — same precedent as `findByIdInTx`. Constitution
+   * Principle VIII (state↔audit atomicity).
+   */
+  findActiveForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Pipeline list for `/admin/renewals` dashboard (FR-046). Supports
    * server-side pagination + filter combinations. Default sort by
    * `expires_at_asc` (most urgent first).
