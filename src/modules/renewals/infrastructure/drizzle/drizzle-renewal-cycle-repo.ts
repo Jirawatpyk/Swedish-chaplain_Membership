@@ -289,6 +289,17 @@ export function decodeCursor(
  * Build the next-cursor token for a paginated cycle query.
  * `pageRows` is the page-sized slice; `hasNextPage` is true when the
  * adapter fetched limit+1 rows and at least one was excluded.
+ *
+ * SCOPE the returned token encodes `(expiresAt, cycleId)` and is therefore
+ * only meaningful for `expires_at`-ORDERED queries (`listEligibleForDispatch`,
+ * `loadPipelinePage`), whose keyset WHERE/ORDER BY is `(expires_at, cycle_id)`.
+ * It is NOT a valid cursor for the `created_at_desc` arm of `list()` — that
+ * query orders by `(created_at DESC, cycle_id DESC)`, so paginating it with
+ * this cursor would compare the wrong key and skip/repeat rows. This is benign
+ * today: `ListRenewalCyclesOpts` has no `cursor` field, and the only
+ * `created_at_desc` caller (`loadMemberRenewalStatus`) reads `items[0]` with
+ * `pageSize: 1` and discards `nextCursor`. Do NOT start paginating a
+ * `created_at_desc` query with the returned `nextCursor`.
  */
 function buildNextCursor(
   pageRows: ReadonlyArray<{ expiresAt: Date; cycleId: string }>,
@@ -527,6 +538,13 @@ export function makeDrizzleRenewalCycleRepo(
             // batch `findLatestCyclesForMembers` DISTINCT-ON when two cycles
             // share an identical `created_at` — otherwise the portal chip
             // and admin badge could disagree (S1 speckit-review).
+            //
+            // NOTE: the `nextCursor` returned below encodes `(expires_at,
+            // cycle_id)` — valid ONLY for the expires_at-ordered sorts. It
+            // is meaningless for THIS `created_at_desc` ordering and MUST NOT
+            // be used to paginate it (see `buildNextCursor`). Harmless today:
+            // `ListRenewalCyclesOpts` has no cursor field and the lone
+            // created_at_desc caller reads `items[0]` with `pageSize: 1`.
             opts.sort === 'created_at_desc'
               ? sql`${renewalCycles.createdAt} DESC, ${renewalCycles.cycleId} DESC`
               : opts.sort === 'expires_at_desc'

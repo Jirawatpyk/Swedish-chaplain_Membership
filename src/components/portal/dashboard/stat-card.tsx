@@ -61,9 +61,15 @@ export interface StatCardProps {
   /**
    * Optional CTA rendered as a small button at the bottom of the card — e.g.
    * the membership card's "Renew now" link to the renewal flow when a cycle is
-   * due/overdue/lapsed (067). Already-localised `label`; `href` is an internal
-   * route. Omitted → no CTA (the card stays a pure stat). Keeping it IN the card
-   * (vs a separate banner) avoids duplicating the status the card already shows.
+   * due/overdue (067). Already-localised `label`; `href` is an internal route.
+   * Omitted → no CTA (the card stays a pure stat). Keeping it IN the card (vs a
+   * separate banner) avoids duplicating the status the card already shows.
+   *
+   * NOTE: `lapsed` is deliberately NOT a CTA case — the caller
+   * (membership-stat-section.tsx) gates on `renewable = overdue || due` only,
+   * because /portal/renewal rejects terminal cycles (lapsed needs admin
+   * reactivation, no self-serve path). This primitive just renders whatever
+   * `action` it is given; the exclusion lives in the caller.
    */
   readonly action?: { readonly href: string; readonly label: string };
   readonly className?: string;

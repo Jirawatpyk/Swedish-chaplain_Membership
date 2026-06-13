@@ -34,6 +34,15 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 
 export interface LoadMembersMembershipStatusInput {
   readonly tenantId: string;
+  /**
+   * The current directory page's member ids. CONTRACT: callers MUST pass a
+   * PAGE-BOUNDED list (≤ a few hundred ids) — this read is designed for
+   * per-page badge enrichment, NOT bulk lookup. The repo adapter
+   * (`findLatestCyclesForMembers`) binds one parameter per element rather than
+   * `= ANY($1::uuid[])`, so a list exceeding Postgres's ~65535 bind-parameter
+   * limit would fail at the driver. No live risk today: the only caller bounds
+   * to the directory PAGE_SIZE (50). Do not feed an unbounded id set here.
+   */
   readonly memberIds: readonly string[];
 }
 

@@ -157,7 +157,18 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
   const mActive = randomUUID(); // awaiting_payment, future expiry → not lapsed
   const mNone = randomUUID(); // member with NO cycle → absent from result
   const mMulti = randomUUID(); // 2 cycles; latest (created_at) = lapsed
+  const mTie = randomUUID(); // 2 cycles, EQUAL created_at → cycle_id DESC decides
   const bMember = randomUUID(); // tenant B lapsed member — A must NOT see it
+
+  // mTie's two cycle ids, ordered so `cycleHi > cycleLo` lexicographically.
+  // The cycle_id DESC tiebreak (S1 fix) must pick `cycleHi`; we assign the
+  // LAPSED (terminal) cycle to `cycleHi` and the NON-terminal awaiting_payment
+  // cycle to `cycleLo`, so the tiebreak choice flips the lapsed verdict. See
+  // the `equal-created_at tiebreak` test below for the regression rationale.
+  const [tieCycleLo, tieCycleHi] = [randomUUID(), randomUUID()].sort() as [
+    string,
+    string,
+  ];
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -224,6 +235,67 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
       { status: 'awaiting_payment', expiresAt: NOW_FUTURE, createdAt: '2025-01-01T00:00:00.000Z' },
       { status: 'lapsed', expiresAt: NOW_PAST, createdAt: '2026-02-01T00:00:00.000Z', closedReason: 'lapsed' },
     ]);
+    // Equal-created_at tie: BOTH cycles share the IDENTICAL created_at, so
+    // `created_at DESC` alone cannot resolve the order — only the
+    // `cycle_id DESC` tiebreak (the S1 fix) decides which cycle is "latest".
+    // The LAPSED (terminal, past expiry) cycle is pinned to the LARGER
+    // cycle_id (`tieCycleHi`); the NON-terminal awaiting_payment (future
+    // expiry → never lapsed) cycle is pinned to the SMALLER (`tieCycleLo`).
+    // With the tiebreak, both reads pick tieCycleHi → mTie reads lapsed.
+    // Pinned cycle_ids (not random) so the assertion can name the EXACT
+    // expected row, making the test fail deterministically if the tiebreak
+    // were removed (see the dedicated test below). Inlined (not via
+    // seedMemberWithCycles) because that helper mints random cycle_ids.
+    const TIE_CREATED_AT = '2026-03-01T00:00:00.000Z';
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenantA.ctx.slug,
+        memberId: mTie,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Lapsed Badge Tie Co',
+        country: 'TH',
+        planId: planIdA,
+        planYear: 2026,
+      });
+      // Non-terminal cycle → smaller cycle_id, future expiry (never lapsed).
+      await tx.insert(renewalCycles).values({
+        tenantId: tenantA.ctx.slug,
+        cycleId: tieCycleLo,
+        memberId: mTie,
+        status: 'awaiting_payment',
+        periodFrom: new Date(PERIOD_FROM),
+        periodTo: new Date(NOW_FUTURE),
+        expiresAt: new Date(NOW_FUTURE),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planIdA,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        createdAt: new Date(TIE_CREATED_AT),
+      });
+      // Terminal lapsed cycle → larger cycle_id, past expiry (IS lapsed).
+      await tx.insert(renewalCycles).values({
+        tenantId: tenantA.ctx.slug,
+        cycleId: tieCycleHi,
+        memberId: mTie,
+        status: 'lapsed',
+        periodFrom: new Date(PERIOD_FROM),
+        periodTo: new Date(NOW_PAST),
+        expiresAt: new Date(NOW_PAST),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planIdA,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        createdAt: new Date(TIE_CREATED_AT),
+        // Terminal cycles REQUIRE closed_at (DB CHECK). Anchor to created_at.
+        closedAt: new Date(TIE_CREATED_AT),
+        closedReason: 'lapsed',
+      });
+    });
+
     // Tenant B: a lapsed member that tenant A MUST NOT see.
     await seedMemberWithCycles(tenantB, planIdB, bMember, [
       { status: 'lapsed', expiresAt: NOW_PAST, createdAt: NOW_PAST, closedReason: 'lapsed' },
@@ -293,6 +365,46 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
     // lapsed. Both agreeing proves they share the created_at DESC basis.
     if (single.ok) expect(single.value.cycle?.status).toBe('lapsed');
     if (batch.ok) expect(batch.value.has(mMulti)).toBe(true);
+  });
+
+  it('equal-created_at tiebreak: both reads pick the SAME cycle via cycle_id DESC (S1 regression guard)', async () => {
+    // REGRESSION GUARD the `multi-cycle parity` test above LACKS: that test
+    // gives its two cycles DISTINCT created_at (2025-01 vs 2026-02), so
+    // `created_at DESC` alone resolves the order and removing the
+    // `, cycle_id DESC` tiebreak from list() / findLatestCyclesForMembers
+    // would NOT fail it. THIS test pins BOTH of mTie's cycles to an IDENTICAL
+    // created_at, so `created_at DESC` is a tie and ONLY the `cycle_id DESC`
+    // tiebreak decides the winner. The lapsed (terminal) cycle is the LARGER
+    // cycle_id (tieCycleHi); the non-terminal awaiting_payment cycle is the
+    // smaller. With the tiebreak both paths deterministically pick tieCycleHi
+    // (lapsed). If the `, cycle_id DESC` tiebreak were removed from EITHER
+    // path, Postgres would return the equal-created_at rows in an arbitrary,
+    // index-/heap-order-dependent order — the single read could surface the
+    // awaiting_payment cycle (status !== 'lapsed', cycleId !== tieCycleHi) and
+    // the batch could omit mTie — so the strict assertions below fail. This is
+    // the load-bearing, non-vacuous proof that both paths share the
+    // `created_at DESC, cycle_id DESC` ordering.
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const single = await loadMemberRenewalStatus(deps, {
+      tenantId: tenantA.ctx.slug,
+      memberId: mTie,
+    });
+    const batch = await loadMembersMembershipStatus(deps, {
+      tenantId: tenantA.ctx.slug,
+      memberIds: [mTie],
+    });
+    expect(single.ok).toBe(true);
+    expect(batch.ok).toBe(true);
+    // Single-read path (list → ORDER BY created_at DESC, cycle_id DESC LIMIT 1)
+    // MUST resolve the EXACT larger-cycle_id lapsed row — naming the cycleId
+    // makes the assertion fail (not silently pass) if the tiebreak is dropped.
+    if (single.ok) {
+      expect(single.value.cycle?.cycleId).toBe(tieCycleHi);
+      expect(single.value.cycle?.status).toBe('lapsed');
+    }
+    // Batch DISTINCT-ON path MUST agree → mTie flagged lapsed. (If it picked
+    // the awaiting_payment cycle instead, mTie would be absent from the Set.)
+    if (batch.ok) expect(batch.value.has(mTie)).toBe(true);
   });
 
   it('index drop-guard: renewal_cycles_member_recency_idx exists with the expected predicate', async () => {
