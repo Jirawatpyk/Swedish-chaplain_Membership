@@ -59,6 +59,7 @@ import {
   InvalidCycleTransitionError,
   canTransition,
 } from '@/modules/renewals/domain/value-objects/cycle-status';
+import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -343,7 +344,7 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
     const { cycleId } = await seedMemberCycle({ status: 'upcoming' });
     const deps = makeRenewalsDeps(tenant.ctx.slug);
     const updated = await runInTenant(tenant.ctx, (tx) =>
-      deps.cyclesRepo.transitionStatus(tx, tenant.ctx.slug, cycleId, {
+      deps.cyclesRepo.transitionStatus(tx, tenant.ctx.slug, asCycleId(cycleId), {
         from: 'upcoming',
         to: 'awaiting_payment',
       }),
@@ -395,7 +396,7 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
     const deps = makeRenewalsDeps(tenant.ctx.slug);
     await expect(
       runInTenant(tenant.ctx, (tx) =>
-        deps.cyclesRepo.transitionStatus(tx, tenant.ctx.slug, cycleId, {
+        deps.cyclesRepo.transitionStatus(tx, tenant.ctx.slug, asCycleId(cycleId), {
           from: 'completed',
           to: 'upcoming',
         }),
