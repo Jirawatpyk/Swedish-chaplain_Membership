@@ -134,10 +134,16 @@ CREATE INDEX renewal_cycles_lapsed_tier_idx ON renewal_cycles
    (admin) cancel from any non-terminal state ─→ cancelled (terminal)
 ```
 
+> **Diagram note (F8-completion slice 0):** the `pending_admin_reactivation`
+> 30-day timeout branch above is drawn flowing toward `cancelled` for brevity;
+> the **implemented** terminal state is **`lapsed`** (see the terminal-state
+> divergence note below). Admin *reject* is the branch that lands in `cancelled`.
+
 **State exit guarantees** (M3 — added at /speckit.critique round 2):
 - `pending_admin_reactivation` MUST exit within 30 days via FR-005c auto-timeout cron OR earlier admin action.
 - Reminder ladder T-7 / T-3 / T-1 day admin email reminders before timeout (escalation_task `manual_admin_reactivation_review` overdue highlights kick in earlier per FR-045).
-- Auto-timeout transitions cycle to `cancelled` with `closed_reason='pending_reactivation_timed_out'` + audit `lapsed_member_admin_reactivation_timed_out` + F5 refund + F4 credit-note creation atomically.
+- Auto-timeout transitions cycle to **`lapsed`** (NOT `cancelled` — see the terminal-state divergence note below) with `closed_reason='pending_reactivation_timed_out'` + audit `lapsed_member_admin_reactivation_timed_out` + F5 refund + F4 credit-note creation atomically. *(Corrected 2026-06-13 / F8-completion slice 0: the implemented `reconcilePendingReactivations` lands the timed-out cycle in `lapsed` — matching the `lapsed_member_…` audit name and the `pending_admin_reactivation → lapsed` edge now declared in `cycle-status.ts`; the earlier `cancelled` wording was stale and verified wrong by the slice-0 HARD-GATE integration test.)*
+- **Terminal-state divergence (INTENTIONAL — do NOT converge):** admin **reject** → `cancelled` (explicit refusal; the member LEAVES the re-engagement funnel); reconcile **timeout** → `lapsed` (passive 30-day expiry; the member STAYS in the at-risk / lapsed funnel). Converging them silently shifts members between the at-risk and lapsed reporting buckets — `drizzle-renewal-cycle-repo.ts:347` short-circuits urgency on `status='lapsed'`, and the admin lapsed-tab + at-risk funnel bucket members by these terminal states. The split is a reporting invariant; it is mirrored in `cycle-status.ts` `TRANSITIONS` + its terminal-state divergence comment.
 
 ### Invariants
 

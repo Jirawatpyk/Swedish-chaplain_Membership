@@ -108,6 +108,27 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
   cancelled: [],
 };
 
+/**
+ * Terminal-state divergence (INTENTIONAL — do NOT converge).
+ *
+ * Two paths leave `pending_admin_reactivation`, and they MUST land in
+ * different terminal states:
+ *   - admin REJECT (explicit refusal, admin-reject-reactivation.ts)
+ *     → `cancelled`. The member was actively declined; they LEAVE the
+ *     re-engagement funnel.
+ *   - reconcile TIMEOUT (30-day passive expiry with no admin action,
+ *     reconcile-pending-reactivations.ts) → `lapsed`. The member simply
+ *     never got reviewed; they STAY in the at-risk / lapsed re-engagement
+ *     funnel for follow-up.
+ *
+ * Converging these (routing both to `lapsed`, or both to `cancelled`) would
+ * silently shift members between the at-risk and lapsed reporting buckets:
+ * `drizzle-renewal-cycle-repo.ts:347` short-circuits the urgency computation
+ * on `status = 'lapsed'`, and the admin lapsed-tab + at-risk funnel bucket
+ * members by these terminal states. The split is a reporting invariant, not
+ * an accident — keep `reject → cancelled` and `timeout → lapsed` distinct.
+ */
+
 export function canTransition(from: CycleStatus, to: CycleStatus): boolean {
   return (TRANSITIONS[from] as readonly string[]).includes(to);
 }
