@@ -85,7 +85,10 @@ export function isTerminalCycleStatus(
  * the same patch as the constant tuple update.
  */
 const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
-  upcoming: ['reminded', 'awaiting_payment', 'cancelled'],
+  // +completed: offline-mark of an `upcoming` cycle via mark-paid-offline.ts
+  // (its PAYABLE_STATUSES = {awaiting_payment, upcoming}) flips straight to
+  // `completed` without first passing through `awaiting_payment`.
+  upcoming: ['reminded', 'awaiting_payment', 'completed', 'cancelled'],
   reminded: ['awaiting_payment', 'cancelled'],
   awaiting_payment: [
     'completed',
@@ -93,7 +96,10 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
     'pending_admin_reactivation',
     'cancelled',
   ],
-  pending_admin_reactivation: ['completed', 'cancelled'],
+  // +lapsed: a money-hold that times out (reconcile-pending-reactivations.ts)
+  // passively expires to `lapsed` — distinct from an explicit admin reject
+  // (→ `cancelled`). See the terminal-state divergence note below.
+  pending_admin_reactivation: ['completed', 'cancelled', 'lapsed'],
   // Lapsed members can re-enter the cycle when they pay — branches per
   // member.blocked_from_auto_reactivation flag (FR-005b).
   lapsed: ['awaiting_payment', 'pending_admin_reactivation'],
