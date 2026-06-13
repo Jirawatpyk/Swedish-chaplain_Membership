@@ -748,5 +748,12 @@ export {
 } from './application/use-cases/prune-consumed-tokens';
 
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
-export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
+export {
+  makeRenewalsDeps,
+  // Lean factory for the members-directory lapsed-badge read — builds only
+  // `cyclesRepo` + `clock` (067 #4: avoids the ~20-adapter makeRenewalsDeps
+  // on the directory hot path).
+  makeMembersMembershipStatusDeps,
+  f8OnPaidCallbacks,
+} from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

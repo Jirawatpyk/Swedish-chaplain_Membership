@@ -2483,6 +2483,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filter by renewal urgency",
+        "aria_label_scroll": "Renewal urgency tabs, scrollable",
         "countSr": "{count, plural, one {# member} other {# members}}",
         "t_90": "T-90",
         "t_60": "T-60",

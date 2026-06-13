@@ -2483,6 +2483,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "กรองตามความเร่งด่วนของการต่ออายุ",
+        "aria_label_scroll": "แท็บความเร่งด่วนของการต่ออายุ เลื่อนได้",
         "countSr": "{count, plural, other {{count} สมาชิก}}",
         "t_90": "T-90",
         "t_60": "T-60",

@@ -545,7 +545,12 @@ export function MembersTable({
           ) : (
             <StatusBadge status={info.getValue()} />
           )}
-          {info.row.original.membership_lapsed ? (
+          {/* 067 #4 review-fix — suppress the lapsed badge for archived
+              members. The badge surfaces "active-looking but lapsed"
+              awareness; on an archived row (only visible via ?show_archived=1)
+              it is redundant next to the Archived status badge — archived
+              already means out. */}
+          {info.row.original.membership_lapsed && info.getValue() !== 'archived' ? (
             <Badge
               variant="outline"
               className="gap-1 border-destructive/40 text-destructive"

@@ -136,6 +136,18 @@ describe('MembersTable lapsed badge', () => {
     expect(screen.queryByText('Lapsed')).not.toBeInTheDocument();
   });
 
+  it('suppresses the Lapsed badge on an archived row even when lapsed (067 #4)', () => {
+    // An archived member already shows the "Archived" status badge — the
+    // lapsed warning (for active-looking-but-lapsed awareness) is redundant
+    // and must not render next to it.
+    renderTable([baseRow({ status: 'archived', membership_lapsed: true })]);
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+    expect(screen.queryByText('Lapsed')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Membership lapsed — needs renewal'),
+    ).not.toBeInTheDocument();
+  });
+
   it('keeps the Lapsed badge OUTSIDE the status-toggle button (admin inline-edit)', () => {
     // With enableSelection + onInlineEdit, InlineStatusCell renders a <button>.
     // The Lapsed badge must be a SIBLING of it — never nested inside — so

@@ -87,9 +87,12 @@ export function UrgencyBucketTabs({
     // pan-scrollable. Mirror src/components/ui/table.tsx: tabIndex makes the
     // region focusable (arrow keys scroll it), role=region + aria-label name
     // the landmark, focus ring meets WCAG 2.4.7.
+    // 067 #4 review-fix — the scroll region uses a DISTINCT label from the
+    // inner TabsList (`aria_label`); two nested named landmarks announcing the
+    // same phrase ("Filter by renewal urgency") was a double-announce nit.
     <div
       role="region"
-      aria-label={t('aria_label')}
+      aria-label={t('aria_label_scroll')}
       tabIndex={0}
       className="w-full overflow-x-auto overflow-y-hidden py-0.5 focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
     >

@@ -36,9 +36,17 @@ import {
   TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-
-const CHANNELS = ['email', 'phone', 'meeting'] as const;
-type Channel = (typeof CHANNELS)[number];
+// 067 #4 review-fix — single-source the channel list (mirrors the
+// `at_risk_outreach.channel` CHECK at migration 0090) instead of a hand-
+// maintained local copy that silently drifts if a 4th channel is added.
+// Imported via the client-safe sub-barrel (`@/modules/renewals/client`),
+// NOT the full barrel: this is a `'use client'` component and the full
+// barrel pulls the server-side graph (postgres/fs/net) into the browser
+// bundle — see client.ts for the Turbopack-eager-walk rationale.
+import {
+  OUTREACH_CHANNELS as CHANNELS,
+  type OutreachChannel as Channel,
+} from '@/modules/renewals/client';
 
 // Template IDs are taken from FR-013 / FR-014 + smart-chamber-features.md
 // outreach catalogue. Compact list for MVP — extensible.

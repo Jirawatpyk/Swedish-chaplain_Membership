@@ -49,13 +49,15 @@ vi.mock('@/modules/members/members-deps', () => ({
 vi.mock('@/modules/renewals', () => ({
   // Task 8 (#4) wired the member-directory page to a best-effort lapsed-
   // membership read. Stub it so this unit test never makes a real
-  // makeRenewalsDeps/runInTenant DB call (which would hang the page render →
-  // 30s timeout). Empty set → membership_lapsed:false on every row, leaving the
-  // sort-wiring + member-number assertions unaffected. A module-level handle so
-  // the degradation tests (S3) can make it reject / return !ok per-test.
+  // deps/runInTenant DB call (which would hang the page render → 30s timeout).
+  // Empty set → membership_lapsed:false on every row, leaving the sort-wiring +
+  // member-number assertions unaffected. A module-level handle so the
+  // degradation tests (S3) can make it reject / return !ok per-test.
   loadMembersMembershipStatus: (...args: unknown[]) =>
     loadMembersMembershipStatusMock(...args),
-  makeRenewalsDeps: () => ({}),
+  // 067 #4 — page switched from makeRenewalsDeps to the lean
+  // makeMembersMembershipStatusDeps factory (cyclesRepo + clock only).
+  makeMembersMembershipStatusDeps: () => ({}),
 }));
 
 vi.mock('@/modules/plans', () => ({

@@ -652,6 +652,13 @@ export function MemberForm({
                     aria-required="true"
                     className="w-full"
                   >
+                    {/* 067 #4 review-fix — no `?? LANG_LABELS.en` fallback is
+                        needed here (unlike a free-text Select): the only values
+                        that reach `translate` come from this field, which the
+                        zod schema pins to `z.enum(['en','th','sv'])`, and
+                        `common.languageOptions.{en,th,sv}` exist in all three
+                        locale files (verified). So every reachable value
+                        resolves — there is no MISSING_MESSAGE path to guard. */}
                     <TranslatedSelectValue
                       translate={(value) =>
                         tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)

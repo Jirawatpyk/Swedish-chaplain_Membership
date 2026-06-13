@@ -34,9 +34,12 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { projectEngagementScore } from '@/modules/insights';
 // #4 — lapsed-membership badge enrichment. Renewals is a secondary read on the
 // directory hot path; the wrapper below degrades to "no badges" on any failure.
+// 067 #4 review-fix — `makeMembersMembershipStatusDeps` builds only the two
+// deps this read needs (`cyclesRepo` + `clock`) instead of the full ~20-adapter
+// `makeRenewalsDeps` on every directory render.
 import {
   loadMembersMembershipStatus,
-  makeRenewalsDeps,
+  makeMembersMembershipStatusDeps,
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -108,33 +111,23 @@ export function parseDirectorySort(
 /**
  * Best-effort lapsed-membership enrichment. Renewals is a secondary read on the
  * member-directory hot path — a failure must NEVER take down the directory.
- * Handles BOTH a Result `!ok` AND a thrown repo call (a runInTenant query can
- * throw, not just return !ok). On either path: log one warn (errKind +
- * memberIdsCount only, no ids/PII) and return an empty set → no badges.
+ *
+ * The use-case is typed `Result<…, never>`: it has no domain-error branch, so
+ * the ONLY live failure mode is a thrown repo call (a `runInTenant` query can
+ * throw). `res.ok` is therefore always `true`; the lone live path is the catch,
+ * which logs one PII-safe warn (errKind + memberIdsCount, no ids) and degrades
+ * to "no badges" (empty set).
  */
 async function loadMembersMembershipStatusSafe(
   tenant: ReturnType<typeof resolveTenantFromRequest>,
   memberIds: readonly string[],
 ): Promise<ReadonlySet<string>> {
   try {
-    const res = await loadMembersMembershipStatus(makeRenewalsDeps(tenant.slug), {
-      tenantId: tenant.slug,
-      memberIds,
-    });
-    if (res.ok) return res.value;
-    // `loadMembersMembershipStatus` is typed `Result<…, never>`, so this branch
-    // is unreachable at the type level. Kept as defence-in-depth in case the
-    // use-case grows a domain error in future — a non-ok result still degrades
-    // to "no badges" rather than throwing on the directory hot path.
-    logger.warn(
-      {
-        tenantId: tenant.slug,
-        errKind: 'result_not_ok',
-        memberIdsCount: memberIds.length,
-      },
-      '[members-lapsed] loadMembersMembershipStatus !ok — badges suppressed',
+    const res = await loadMembersMembershipStatus(
+      makeMembersMembershipStatusDeps(tenant.slug),
+      { tenantId: tenant.slug, memberIds },
     );
-    return new Set<string>();
+    return res.ok ? res.value : new Set<string>();
   } catch (e) {
     logger.warn(
       {
