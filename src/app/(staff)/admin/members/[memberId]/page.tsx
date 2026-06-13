@@ -999,7 +999,7 @@ export default async function MemberDetailPage({
                 in). Own Suspense boundary so the F8/F9 reads never block
                 the company/contacts paint. */}
             <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canWrite} />
             </Suspense>
 
             {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /

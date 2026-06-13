@@ -959,6 +959,27 @@
             "cancelled": "Avbruten"
           }
         },
+        "renewLapsed": {
+          "trigger": "Förnya medlem",
+          "title": "Förnya denna medlem?",
+          "description": "Detta startar ett nytt medlemsår för medlemmen och skapar en förnyelsefaktura som medlemmen ska betala. Priset låses till medlemmens nuvarande plan. Medlemmen blir aktiv igen när fakturan har betalats.",
+          "cancel": "Avbryt",
+          "confirm": "Skapa förnyelsefaktura",
+          "submitting": "Skapar…",
+          "toast": {
+            "success": "Förnyelsefaktura skapad och skickad till medlemmen.",
+            "failure": "Det gick inte att förnya denna medlem.",
+            "error": {
+              "member_not_found": "Medlemmen hittades inte.",
+              "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
+              "plan_not_found": "Medlemmens plan kunde inte hittas.",
+              "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",
+              "feature_disabled": "Förnyelser är för närvarande inaktiverade.",
+              "forbidden": "Du har inte behörighet att förnya medlemmar.",
+              "server_error": "Något gick fel. Försök igen."
+            }
+          }
+        },
         "subscription": {
           "subscribed": "Prenumererar",
           "unsubscribed": "Avregistrerad",
