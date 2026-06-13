@@ -125,3 +125,27 @@ export function assertCanTransition(
   if (canTransition(from, to)) return ok(undefined);
   return err({ kind: 'invalid_transition', from, to });
 }
+
+/**
+ * Thrown by the Infrastructure `transitionStatus` adapter when an
+ * undeclared `(from → to)` edge is attempted — a defence-in-depth domain
+ * guard that runs BEFORE the optimistic CAS (`WHERE status = from`). A
+ * legal-but-stale edge still surfaces a `CycleTransitionConflictError`
+ * from the CAS; an ILLEGAL edge (not in `TRANSITIONS`) fails fast here so
+ * the map stays the single source of truth for what a writer may do.
+ *
+ * Co-located with `assertCanTransition` (the Result-returning policy) so
+ * the throwing wrapper and the policy it enforces live together. The
+ * sibling `CycleNotFoundError` / `CycleTransitionConflictError` live in
+ * the `renewal-cycle-repo` port (CAS/probe outcomes); this is a pure
+ * domain-edge violation and belongs with the transition policy.
+ */
+export class InvalidCycleTransitionError extends Error {
+  constructor(
+    readonly from: CycleStatus,
+    readonly to: CycleStatus,
+  ) {
+    super(`Invalid cycle transition: ${from} → ${to} is not a declared edge`);
+    this.name = 'InvalidCycleTransitionError';
+  }
+}

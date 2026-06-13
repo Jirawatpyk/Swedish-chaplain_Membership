@@ -44,7 +44,11 @@ import {
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
-import type { CycleStatus } from '../../domain/value-objects/cycle-status';
+import {
+  assertCanTransition,
+  InvalidCycleTransitionError,
+  type CycleStatus,
+} from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 
 // ---------------------------------------------------------------------------
@@ -675,6 +679,18 @@ export function makeDrizzleRenewalCycleRepo(
         readonly linkedCreditNoteId?: string;
       },
     ): Promise<RenewalCycle> {
+      // G5b (F8-completion slice 0) — defence-in-depth: assert the
+      // (from → to) edge is DECLARED in the domain TRANSITIONS map BEFORE
+      // the optimistic CAS below. An illegal edge fails fast here
+      // (InvalidCycleTransitionError) so the map stays the single source
+      // of truth for what a writer may do; a legal-but-STALE `from`
+      // (concurrent flip) still surfaces a CycleTransitionConflictError
+      // from the CAS `WHERE status = from` probe. Both guards run — the
+      // domain edge check first, optimistic concurrency second.
+      const guard = assertCanTransition(args.from, args.to);
+      if (!guard.ok) {
+        throw new InvalidCycleTransitionError(args.from, args.to);
+      }
       const txDb = tx as typeof db;
       const setClause: Record<string, unknown> = {
         status: args.to,
