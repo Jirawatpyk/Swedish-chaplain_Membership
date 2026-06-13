@@ -603,6 +603,22 @@ cycle is never eligible for both in one pass.
    `SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'renewal_entered_awaiting_payment';`
 3. Confirm this coordinator is scheduled BEFORE the lapse coordinator
    (06:15 < 06:30) so the enter → awaiting → lapsed composition holds.
+4. **First-run / post-outage backlog triage.** The compose guarantee
+   (a cycle gets a payable window before it can lapse) holds only when
+   the enter-cron runs at least once per `grace_period_days`. Before the
+   FIRST enter-cron run, or after any enter-cron outage longer than
+   `grace_period_days`, a cycle may be `upcoming|reminded` AND already
+   `expires_at < now - grace` — it would flip to `awaiting_payment` at
+   06:15 and lapse at 06:30 the same day (member gets no self-service
+   window). Triage manually first:
+   `SELECT cycle_id FROM renewal_cycles WHERE status IN ('upcoming','reminded') AND expires_at < now() - (SELECT grace_period_days FROM tenant_renewal_settings WHERE tenant_id = :tenant) * INTERVAL '1 day';`
+   (At the 2026-06-13 SweCham launch this backlog was empirically 0.)
+5. **`grace_period_days = 0` caution.** With grace=0 the lapse window
+   collapses to `expires_at < now`, so EVERY cycle flipped at 06:15
+   lapses the same day at 06:30 — there is no self-service payable
+   window. This is pre-existing to the lapse cron (any `awaiting_payment`
+   cycle already had this exposure). SweCham uses the default 14; do NOT
+   set grace=0 unless "instant-lapse, no self-service window" is intended.
 
 ### Alert rules
 
