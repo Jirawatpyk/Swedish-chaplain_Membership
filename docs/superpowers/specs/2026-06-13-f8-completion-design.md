@@ -147,17 +147,19 @@ Both use-cases take production `deps` directly — **the stale docstrings claimi
 
 **Migration discipline:** for each new audit event (`renewal_cycle_created`, `renewal_entered_awaiting_payment`), apply the `ADD VALUE` migration + run `test:integration` **before** committing the emit site.
 
-## Open questions for the maintainer
+## Resolved decisions (maintainer-approved 2026-06-13)
 
-1. **First-cycle period anchor (launch-blocking data question).** `members` has no `expires_at`. For the 131 existing members and first-time members, derive `period_to` from registration anniversary, fiscal-year end, or an explicit one-off backfill? This decides the bootstrap (D) + backfill script.
-2. **FR-022 — fix code or amend spec?** The shipped live-catalogue pricing contradicts FR-022's "NOT live F2 plan prices." Recommend **fix the code** (portal already shows frozen → code is the bug). Confirm.
-3. **`awaiting_payment` audit ownership.** Emit `renewal_entered_awaiting_payment` from both the cron and lazy-confirm writers, or cron-only (cleaner timeline)?
-4. **Multi-year / non-THB renewals** — scope out for launch (recommended) or define the §86/4 total now? For a 36-month frozen cycle, bill 1× or 3× the annual fee?
-5. **`reminded` status** — make the dispatcher flip `upcoming → reminded` on first send, or collapse `reminded` out of the active lifecycle? (Affects the new writers' `from`-set, but they accept `reminded` either way.)
-6. **`blockAutoReactivation` UI** — in scope for this slice, or deferred? Without it the `pending_admin_reactivation` branch never fires and C is unreachable.
-7. **Pending-review discovery surface** — ship the status-filtered pipeline tab, or accept deep-link-from-audit for launch?
-8. **Reject reason confirmation** — plain `AlertDialog` vs typed-confirmation (type "REFUND") given the irreversible Stripe + credit-note money impact?
-9. **Terminal-state split** — confirm reject→`cancelled` / timeout→`lapsed` is intentional (document, don't converge). A rejected member leaves the lapsed/at-risk re-engagement funnel a timed-out member stays in — is that desired?
+All open questions resolved; the spec is decision-complete for writing-plans.
+
+1. **First-cycle period anchor** — DEFAULT: per-member `period_to` = last-paid-invoice date (or join date) + 12 months when that date exists in the member data; otherwise a **uniform anchor**: `period_from` = go-live date, `period_to` = go-live + 12 months (admin adjusts individual outliers post-backfill). The exact go-live/membership-year date is the single operator input to the backfill script.
+2. **FR-022 tax** — **FIX THE CODE**: thread the cycle's `frozenPlanPriceThb` into the F4 membership-invoice path (`unitPriceSatang` override) so the §86/4 invoice bills the frozen price the portal shows. Lands in Slice 1.
+3. **`awaiting_payment` audit ownership** — emit `renewal_entered_awaiting_payment` from **BOTH** writers (T-0 cron + lazy-confirm) with a `source` discriminator field (`cron` | `confirm`) for an accurate timeline.
+4. **Multi-year / non-THB renewals** — **SCOPE OUT** for launch; renewals are 12-month THB only. Multi-year/non-THB is a separate future spec.
+5. **`reminded` status** — **do NOT write `reminded`** on the cycle (reminders are tracked in `renewal_reminder_events`); the new writers accept `upcoming | reminded` as a valid `from` either way (tolerant), so this is non-breaking.
+6. **Admin reactivation scope** — Slice 3 ships **admin "reactivate lapsed member" = create a fresh `awaiting_payment` cycle + issue a §86/4 renewal invoice** (the common lapsed-comeback path, reusing Slice 1 creation + Slice 2 awaiting + F4). **DEFER** the `blockAutoReactivation` UI + the `pending_admin_reactivation` money-hold reactivate/reject routes to post-launch (a specialized safety branch for suspicious members; the race-safe use-cases already exist and can be wired later).
+7. **Pending-review discovery tab** — **DEFER** (follows #6 — no `pending_admin_reactivation` flow at launch).
+8. **Reject reason confirmation** — when the pending-reject flow is later built, use **typed confirmation (type "REFUND")** given the irreversible Stripe refund + credit-note money impact.
+9. **Terminal-state split** — **DOCUMENT as intentional** (reject→`cancelled` leaves the re-engagement funnel; timeout→`lapsed` stays in it); do NOT converge.
 
 ## Phasing (ship in slices)
 
@@ -166,7 +168,7 @@ This **can** ship in slices, but the core renew loop has a hard ordering depende
 - **Slice 0 — safe cleanups (independent, ship first):** G6 (dead `'grace'` removal) + G5 map-completion-then-enforce + terminal-state documentation. Zero behavioural risk, makes the state machine authoritative before new writers land on it.
 - **Slice 1 — make cycles exist (B2 creation + tax fix + cold-start backfill):** A (create-on-paid callback) + D (createMember bootstrap) + the one-off backfill + the frozen-price F4 override + reg-fee/pro-rate suppression + `renewal_cycle_created` audit. Without this, everything downstream is empty. The tax fix rides here because it touches the same confirm/F4 seam and is a §86/4 correctness blocker.
 - **Slice 2 — make cycles payable (B1):** the T-0 `enterAwaitingPaymentOnExpiry` cron + the lazy confirm-transition + `renewal_entered_awaiting_payment` audit + **G4 portal gate** (G4 becomes observably correct here). This unblocks self-service renew end-to-end.
-- **Slice 3 — admin reactivation (B3 + block-UI):** the `/reactivate` + `/reject` routes, the cycle-detail actions component, the "Pending review" tab, and the `blockAutoReactivation` UI **as one slice** (C is dead code without B from slice 2 + the block-UI). Security-sensitive (refund) → ≥2 reviewers, one signs the security checklist.
+- **Slice 3 — admin lapsed-comeback (reactivate via a fresh cycle):** an admin "Renew / reactivate this lapsed member" action that creates a fresh `awaiting_payment` cycle + issues a §86/4 renewal invoice (reuses Slice 1 creation + Slice 2 awaiting + the F4 bridge) → member pays → active. **DEFERRED to post-launch** (resolved Q6/Q7): the `blockAutoReactivation` UI + the `pending_admin_reactivation` reactivate/reject money-hold routes + the "Pending review" tab — the race-safe `adminReactivateLapsedCycle` / `adminRejectReactivation` use-cases already exist and can be wired then. Security-sensitive (renewal invoice + member payment) → ≥2 reviewers, one signs the security checklist.
 
 Recommended order: **0 → 1 → 2 → 3.** Slices 0 and 1 can proceed in parallel branches (disjoint files); 2 depends on 1; 3 depends on 2.
 
