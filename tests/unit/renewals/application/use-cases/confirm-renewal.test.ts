@@ -172,6 +172,13 @@ describe('confirmRenewal (T122) — happy paths', () => {
     }
     expect(planLookupMock).not.toHaveBeenCalled();
     expect(invoiceBridgeMock).toHaveBeenCalledOnce();
+    // FR-022 — the bridge is handed the cycle's FROZEN price (server-
+    // sourced from the Step-1 cycle row), not a live catalogue lookup.
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      frozenPlanPriceThb: '50000.00',
+      planId: 'plan-regular-2026',
+      planYear: 2026,
+    });
     expect(linkInvoiceMock).toHaveBeenCalledOnce();
     // Two emits: cross_member_probe is skipped (matches), so only the
     // invoice_created emit fires from the link tx (the planChange emits
@@ -183,7 +190,7 @@ describe('confirmRenewal (T122) — happy paths', () => {
 
   it('happy path plan-change — updates frozen plan + emits 3 audits', async () => {
     const cycle = buildCycle();
-    const { deps, planLookupMock, updateFrozenPlanMock, emitInTxMock } =
+    const { deps, planLookupMock, updateFrozenPlanMock, invoiceBridgeMock, emitInTxMock } =
       fakeDeps({ cycle });
     const r = await confirmRenewal(deps, {
       ...baseInput,
@@ -196,6 +203,13 @@ describe('confirmRenewal (T122) — happy paths', () => {
     expect(updateFrozenPlanMock.mock.calls[0]?.[3]).toMatchObject({
       planIdAtCycleStart: NEW_PLAN_ID,
       frozenPlanPriceThb: '180000.00',
+    });
+    // FR-022 — after a plan-change the §86/4 bills the NEW plan's frozen
+    // price (the re-snapshotted cycle row), never the old frozen value
+    // nor either live catalogue price.
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      frozenPlanPriceThb: '180000.00',
+      planId: NEW_PLAN_ID,
     });
     // Three emits: with_plan_change + cycle_price_frozen + invoice_created
     const emittedTypes = emitInTxMock.mock.calls.map(

@@ -22,6 +22,7 @@ import {
   asSatangUnchecked,
   formatSatangAsBaht,
   parseSatang,
+  parseThbDecimalToSatang,
   satangToProcessorAmount,
   subSatang,
   type UntrustedSatang,
@@ -209,5 +210,51 @@ describe('formatSatangAsBaht', () => {
     // would lose precision; bigint arithmetic doesn't.
     const huge = asSatang(BigInt('10000000000000000'));
     expect(formatSatangAsBaht(huge)).toBe('100000000000000.00');
+  });
+});
+
+describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
+  it('parses a NON-ZERO satang remainder exactly (no float drift)', () => {
+    // The §86/4 frozen-price case: 50000.50 THB → 5_000_050 satang. A
+    // `parseFloat("50000.50") * 100` would round-trip 5000049.999… and
+    // BigInt-truncate to 5_000_049 — the integer parser must NOT drift.
+    expect(parseThbDecimalToSatang('50000.50')).toBe(5_000_050n);
+  });
+
+  it('parses whole baht (no decimal point)', () => {
+    expect(parseThbDecimalToSatang('50000')).toBe(5_000_000n);
+  });
+
+  it('parses two-decimal whole-satang', () => {
+    expect(parseThbDecimalToSatang('180000.00')).toBe(18_000_000n);
+  });
+
+  it('left-pads a single fractional digit (".5" → 50 satang)', () => {
+    expect(parseThbDecimalToSatang('1.5')).toBe(150n);
+  });
+
+  it('parses zero', () => {
+    expect(parseThbDecimalToSatang('0')).toBe(0n);
+    expect(parseThbDecimalToSatang('0.00')).toBe(0n);
+  });
+
+  it('returns a branded Satang assignable to addSatang', () => {
+    // Compile-time + runtime proof the brand survives.
+    const a = parseThbDecimalToSatang('100.00');
+    const b = parseThbDecimalToSatang('0.07');
+    expect(addSatang(a, b)).toBe(10007n);
+  });
+
+  it('THROWS on a malformed input (3 fractional digits)', () => {
+    expect(() => parseThbDecimalToSatang('1.234')).toThrow(RangeError);
+  });
+
+  it('THROWS on a negative input', () => {
+    expect(() => parseThbDecimalToSatang('-1.00')).toThrow(RangeError);
+  });
+
+  it('THROWS on a non-numeric input', () => {
+    expect(() => parseThbDecimalToSatang('abc')).toThrow(RangeError);
+    expect(() => parseThbDecimalToSatang('')).toThrow(RangeError);
   });
 });

@@ -206,3 +206,36 @@ export function formatSatangAsBaht(s: Satang): string {
   const remainder = s % 100n;
   return `${baht.toString()}.${remainder.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Format permitted by Postgres `decimal(12,2)` — non-negative, ≤2
+ * fractional digits. Shared by every THB-decimal→satang parse so the
+ * accepted shape is defined once.
+ */
+export const VALID_THB_DECIMAL_RE = /^\d+(\.\d{1,2})?$/;
+
+/**
+ * Parse a non-negative `decimal(12,2)` THB string (e.g. "50000.50")
+ * into branded `Satang` using INTEGER-ONLY arithmetic — split on `.`,
+ * left-pad the fractional part to two digits, concatenate, `BigInt`.
+ *
+ * Why integer-only (NOT `parseFloat(thb) * 100`): a float multiply
+ * drifts on borderline values (IEEE-754) and silently charges the
+ * wrong amount on a tax document. The F8 frozen-price billing path
+ * (§86/4, FR-022) and `cycleFrozenPriceSatang` are the single
+ * conversion sites for cross-module bigint money — both route through
+ * here so there is exactly one parser to audit.
+ *
+ * THROWS on a malformed/negative input (the DB CHECK + Application
+ * invariants reject these upstream; this is the last-line defence).
+ */
+export function parseThbDecimalToSatang(thb: string): Satang {
+  if (!VALID_THB_DECIMAL_RE.test(thb)) {
+    throw new RangeError(
+      `parseThbDecimalToSatang: malformed THB decimal "${thb}" — expected decimal(12,2) format`,
+    );
+  }
+  const [intPart, fracRaw = ''] = thb.split('.');
+  const frac = (fracRaw + '00').slice(0, 2);
+  return asSatang(BigInt(`${intPart}${frac}`));
+}

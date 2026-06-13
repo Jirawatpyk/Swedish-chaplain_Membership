@@ -29,6 +29,17 @@ export interface IssueInvoiceForRenewalInput {
   readonly planId: string;
   /** Calendar year (e.g. 2026) of the membership the invoice covers. */
   readonly planYear: number;
+  /**
+   * FR-022 — the cycle's FROZEN membership price as a `decimal(12,2)`
+   * THB string (e.g. "50000.50"), **VAT-EXCLUSIVE**. The §86/4 renewal
+   * invoice bills THIS, not the live F2 catalogue price (a tenant may
+   * edit the plan price mid-cycle). Server-sourced from the cycle row
+   * (`cycle.frozenPlanPriceThb`) inside the confirm-renewal Step-1 tx —
+   * NEVER a request body, because a renewal §86/4 is a price-tampering
+   * surface on a tax document. The bridge adapter parses this to satang
+   * via the shared integer-only `parseThbDecimalToSatang`.
+   */
+  readonly frozenPlanPriceThb: string;
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;

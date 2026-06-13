@@ -19,7 +19,7 @@ import {
   makeCreateInvoiceDraftDeps,
   makeIssueInvoiceDeps,
 } from '@/modules/invoicing';
-import { asSatang } from '@/lib/money';
+import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
 import type {
   F4InvoicingForRenewalBridge,
   IssueInvoiceForRenewalInput,
@@ -31,6 +31,12 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     input: IssueInvoiceForRenewalInput,
   ): Promise<IssueInvoiceForRenewalResult> {
     // ---- Step 1: createInvoiceDraft (own internal tx, commits standalone)
+    // FR-022 — convert the cycle's frozen `decimal(12,2)` THB string to
+    // VAT-EXCLUSIVE satang via the shared integer-only parser (NO
+    // `parseFloat` — float drift charges the wrong amount on a tax
+    // document), and pass it as the renewal signal so the membership
+    // line bills the frozen price, not the live F2 catalogue price.
+    const frozenUnitPriceSatang = parseThbDecimalToSatang(input.frozenPlanPriceThb);
     const createResult = await createInvoiceDraft(
       makeCreateInvoiceDraftDeps(input.tenantId),
       {
@@ -41,6 +47,7 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
         planId: input.planId,
         planYear: input.planYear,
         autoEmailOnIssue: input.autoEmailOnIssue,
+        renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
       },
     );
     if (!createResult.ok) {

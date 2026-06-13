@@ -47,6 +47,24 @@ export const createInvoiceDraftSchema = z.object({
   planId: z.string().min(1),
   planYear: z.number().int().min(2000).max(2100),
   autoEmailOnIssue: z.boolean().nullable().optional(),
+  /**
+   * F8-completion Slice 1 (FR-022) — RENEWAL signal. When present, the
+   * draft is a §86/4 renewal invoice and the membership line is billed
+   * at the cycle's FROZEN price instead of the live F2 catalogue price
+   * (`getAnnualFeeSatang`). `unitPriceSatang` is the **VAT-EXCLUSIVE**
+   * membership unit price in satang (VAT 7% is added on top at issue via
+   * `calculateVat` — this is the OPPOSITE of the event-path
+   * `amountOverride` which is VAT-INCLUSIVE). The value is server-sourced
+   * from the cycle row's `frozen_plan_price_thb` (parsed integer-only via
+   * `parseThbDecimalToSatang` in the F4↔F8 bridge adapter) — NEVER a
+   * request body, because a renewal §86/4 is a price-tampering surface on
+   * a tax document. When set, the use-case also forces `proRateFactor =
+   * '1.0000'` (a renewal of an existing member is the full cycle) and
+   * suppresses the one-off `registration_fee` re-bill line.
+   */
+  renewalSignal: z
+    .object({ unitPriceSatang: z.bigint() })
+    .optional(),
 });
 
 export type CreateInvoiceDraftInput = z.infer<typeof createInvoiceDraftSchema>;
@@ -142,12 +160,26 @@ export async function createInvoiceDraft(
     // accepts any plan and the UI prevents mismatch. TODO: extend
     // MemberIdentityView with planId + planYear and enforce here.
 
+    // F8-completion Slice 1 (FR-022) — RENEWAL path. When a renewal
+    // signal is present, the membership line is billed at the cycle's
+    // FROZEN price (VAT-exclusive satang) carried on the signal, NOT the
+    // live F2 catalogue price. We still validate the plan resolves (the
+    // §86/4 references the plan + the F3 read above already loaded the
+    // member) but the resolved live fee is ignored for the line amount.
+    const isRenewal = input.renewalSignal !== undefined;
+
     const planFee = await deps.planLookup.getAnnualFeeSatang(
       input.tenantId,
       input.planId,
       input.planYear,
     );
     if (planFee === null) return err({ code: 'plan_not_found' });
+
+    // The membership unit price is the FROZEN signal price on a renewal,
+    // else the live catalogue fee. Both are VAT-EXCLUSIVE satang.
+    const membershipUnitPriceSatang = isRenewal
+      ? input.renewalSignal!.unitPriceSatang
+      : planFee;
 
     // --- Pro-rate factor (US1 AS2 / FR-019) ---------------------------------
     const { fyStartDate, fyEndDate, issueDate } = fiscalYearBoundary(
@@ -158,16 +190,23 @@ export async function createInvoiceDraft(
     // registrationDate (so the member pays for remaining period only).
     // When they are renewing (registered in a prior FY), the anchor is
     // the FY start — they owe the full cycle regardless of today's date.
+    //
+    // FR-022 — a renewal is ALWAYS a full cycle: skip the pro-rate
+    // derivation entirely and force 1.0000. The frozen price the member
+    // agreed to is the full-cycle amount; pro-rating it would bill less
+    // than the frozen price and create a §86/10 reconciliation problem.
     const memberJoinedThisFy =
       member.registrationDate >= fyStartDate && member.registrationDate <= fyEndDate;
     const proRateAnchor = memberJoinedThisFy ? member.registrationDate : fyStartDate;
 
-    const proRateFactor = calculateProRateFactor({
-      policy: settings.proRatePolicy,
-      issueDate: proRateAnchor,
-      fyStartDate,
-      fyEndDate,
-    });
+    const proRateFactor = isRenewal
+      ? '1.0000'
+      : calculateProRateFactor({
+          policy: settings.proRatePolicy,
+          issueDate: proRateAnchor,
+          fyStartDate,
+          fyEndDate,
+        });
 
     // --- Build line items ---------------------------------------------------
     const lines: InvoiceLine[] = [];
@@ -185,7 +224,7 @@ export async function createInvoiceDraft(
         proRateFactor === '1.0000'
           ? `Membership ${input.planYear}`
           : `Membership ${input.planYear} (pro-rated ${proRateFactor}, from ${issueDate})`,
-      unitPrice: Money.fromSatangUnsafe(planFee),
+      unitPrice: Money.fromSatangUnsafe(membershipUnitPriceSatang),
       quantity: '1.0000',
       proRateFactor,
       position: position++,
@@ -201,8 +240,14 @@ export async function createInvoiceDraft(
     // backfilled this column from `tenant_fee_config.registration_fee_
     // minor_units` so existing tenants keep their value. `settings` is
     // already loaded above — no extra round-trip.
+    // FR-022 — suppress the one-off registration_fee re-bill on the
+    // renewal path. A renewal §86/4 bills ONLY the frozen membership
+    // price; the one-time entry fee belongs to onboarding, never a
+    // renewal cycle. (`isRenewal` short-circuits before the member /
+    // settings predicates so a renewal with an unpaid reg fee still
+    // never adds the line.)
     const registrationFeeSatang = settings.registrationFeeSatang;
-    if (!member.registrationFeePaid && registrationFeeSatang > 0n) {
+    if (!isRenewal && !member.registrationFeePaid && registrationFeeSatang > 0n) {
       const regFeeLine = makeInvoiceLine({
         lineId: asInvoiceLineId(deps.newUuid()),
         kind: 'registration_fee',
@@ -249,7 +294,11 @@ export async function createInvoiceDraft(
         plan_id: input.planId,
         plan_year: input.planYear,
         pro_rate_factor: proRateFactor,
-        registration_fee_included: !member.registrationFeePaid && registrationFeeSatang > 0n,
+        registration_fee_included:
+          !isRenewal && !member.registrationFeePaid && registrationFeeSatang > 0n,
+        // FR-022 — flags a frozen-price renewal §86/4 (membership line
+        // billed at the cycle's frozen price, reg-fee suppressed).
+        is_renewal: isRenewal,
       },
     });
 

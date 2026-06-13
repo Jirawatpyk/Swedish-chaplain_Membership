@@ -270,11 +270,17 @@ export async function confirmRenewal(
   const { cycle: cycleAfterPlanChange, planChanged } = stateResult.value;
 
   // ---- Step 3: F4 invoice creation OUTSIDE F8 tx
+  // FR-022 — bill the cycle's FROZEN price on the §86/4, not the live
+  // F2 catalogue price. `cycleAfterPlanChange` is the Step-1 tx's
+  // server-side cycle row (already re-snapshotted by `updateFrozenPlan`
+  // when the member changed plan), so its `frozenPlanPriceThb` is the
+  // authoritative VAT-exclusive amount — never derived from request body.
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycleAfterPlanChange.planIdAtCycleStart,
     planYear: input.planYear,
+    frozenPlanPriceThb: cycleAfterPlanChange.frozenPlanPriceThb,
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,
