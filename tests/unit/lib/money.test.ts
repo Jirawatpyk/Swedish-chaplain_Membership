@@ -214,11 +214,26 @@ describe('formatSatangAsBaht', () => {
 });
 
 describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
-  it('parses a NON-ZERO satang remainder exactly (no float drift)', () => {
-    // The §86/4 frozen-price case: 50000.50 THB → 5_000_050 satang. A
-    // `parseFloat("50000.50") * 100` would round-trip 5000049.999… and
-    // BigInt-truncate to 5_000_049 — the integer parser must NOT drift.
+  it('parses a NON-ZERO satang remainder exactly', () => {
+    // The §86/4 frozen-price case: 50000.50 THB → 5_000_050 satang.
+    // (50000.50 is exactly representable as a double, so it is NOT a
+    //  float-drift demonstrator — that is the next test; this one just
+    //  pins the non-zero-satang remainder path.)
     expect(parseThbDecimalToSatang('50000.50')).toBe(5_000_050n);
+  });
+
+  it('does NOT drift on a value that float-multiply gets wrong', () => {
+    // The reason the parser is integer-only: 8.20 and 0.29 are NOT
+    // exactly representable as doubles, so the naive
+    // `Math.floor(parseFloat(x) * 100)` UNDER-bills by 1 satang on a
+    // §86/4 tax document:
+    //   parseFloat("8.20") * 100 === 819.9999999999999  → floor 819 (WRONG)
+    //   parseFloat("0.29") * 100 === 28.999999999999996 → floor  28 (WRONG)
+    // The integer parser splits on '.' and never touches a float.
+    expect(Math.floor(parseFloat('8.20') * 100)).toBe(819); // proves the drift exists
+    expect(parseThbDecimalToSatang('8.20')).toBe(820n); // the correct value
+    expect(Math.floor(parseFloat('0.29') * 100)).toBe(28);
+    expect(parseThbDecimalToSatang('0.29')).toBe(29n);
   });
 
   it('parses whole baht (no decimal point)', () => {
