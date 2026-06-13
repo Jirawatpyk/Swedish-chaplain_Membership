@@ -298,8 +298,15 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
   it('EXPLAIN: the batch DISTINCT-ON query is served by the recency index — no full Seq Scan', async () => {
     // The production query (`findLatestCyclesForMembers`) is:
     //   SELECT DISTINCT ON (member_id) * FROM renewal_cycles
-    //    WHERE tenant_id = $1 AND member_id = ANY($2::uuid[])
+    //    WHERE member_id = ANY($1::uuid[])
     //    ORDER BY member_id, created_at DESC, cycle_id DESC
+    // NOTE: the real adapter omits an explicit `tenant_id = $1` predicate —
+    // tenant scope is enforced by the RLS+FORCE policy (SET LOCAL
+    // app.current_tenant) inside runInTenant, not a WHERE clause. The raw
+    // EXPLAIN probe below adds tenant_id to its own predicate only so it can
+    // run OUTSIDE a runInTenant scope against the live table; the planner
+    // shape it exercises (recency index, no full Seq Scan) is the one the
+    // RLS-scoped production query gets.
     // At seed scale the table is tiny, so the COST-based planner may
     // legitimately prefer a Seq Scan + Sort (cheaper for a handful of
     // rows) — asserting planner *preference* would flake. Instead we

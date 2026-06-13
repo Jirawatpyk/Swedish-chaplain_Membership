@@ -71,7 +71,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     // tablist (3 role=tab band buttons), so a bare getByRole('tab') matches
     // 11, not 8 (the original assertion was over-broad — it caught both
     // tablists). EN canonical label — the E2E session signs in in English,
-    // mirroring the tier-filter assertion below (line ~74).
+    // mirroring the tier-filter assertion below (line ~81).
     const tabs = page
       .getByRole('tablist', { name: /filter by renewal urgency/i })
       .getByRole('tab');

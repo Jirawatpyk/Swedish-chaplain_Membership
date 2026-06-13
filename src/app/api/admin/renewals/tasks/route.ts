@@ -41,10 +41,13 @@ import {
   InvalidCursorError,
   makeRenewalsDeps,
   type AssigneeFilter,
+  type EscalationTaskStatus,
 } from '@/modules/renewals';
 
 const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
-type StatusFilter = 'open' | 'done' | 'skipped';
+// S18 speckit-review — use the domain-exported status type instead of a
+// hardcoded local union so the route can't drift from `renewal-escalation-task`.
+type StatusFilter = EscalationTaskStatus;
 
 export async function GET(request: NextRequest) {
   if (!env.features.f8Renewals) {

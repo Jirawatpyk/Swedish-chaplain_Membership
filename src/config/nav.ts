@@ -114,7 +114,11 @@ export function isNavGroup(item: NavItem | NavGroup): item is NavGroup {
  *    server gates with `notFound()` for manager — hides the dead link).
  *  - `visibilityFlag`: an item with a flag is dropped unless that flag is
  *    `true` in `flags`.
- *  - NavGroups always pass (their children are filtered elsewhere).
+ *  - NavGroups: a group's own `roles` allow-list is honoured, then its
+ *    CHILDREN are recursively filtered with the same item rules. A group
+ *    left with no visible children after filtering is dropped (so a future
+ *    admin-only child inside a group can't leak to a manager — S17
+ *    speckit-review; no live leak today since staff config has no NavGroup).
  *  - Sections left empty after filtering are dropped (no orphan header).
  */
 export function filterNavConfig(
@@ -122,17 +126,28 @@ export function filterNavConfig(
   flags: NavVisibilityFlags,
   role: Role,
 ): NavConfig {
-  function keepItem(item: NavItem | NavGroup): boolean {
-    if (isNavGroup(item)) return true;
+  function keepNavItem(item: NavItem): boolean {
     if (item.roles && !item.roles.includes(role)) return false;
     if (!item.visibilityFlag) return true;
     return flags[item.visibilityFlag] === true;
+  }
+  function filterEntry(item: NavItem | NavGroup): NavItem | NavGroup | null {
+    if (isNavGroup(item)) {
+      // Group-level role gate first, then recurse into children.
+      if (item.roles && !item.roles.includes(role)) return null;
+      const children = item.children.filter(keepNavItem);
+      if (children.length === 0) return null;
+      return { ...item, children };
+    }
+    return keepNavItem(item) ? item : null;
   }
   return {
     sections: config.sections
       .map((section) => ({
         ...section,
-        items: section.items.filter(keepItem),
+        items: section.items
+          .map(filterEntry)
+          .filter((entry): entry is NavItem | NavGroup => entry !== null),
       }))
       .filter((section) => section.items.length > 0),
   };

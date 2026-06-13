@@ -481,7 +481,10 @@ export function makeDrizzleRenewalCycleRepo(
           .where(inArray(renewalCycles.memberId, [...memberIds]))
           // DISTINCT ON requires the leading ORDER BY key to match the distinct
           // column; created_at DESC + cycle_id DESC picks the latest, deterministic
-          // tiebreak — mirrors loadMemberRenewalStatus's 'created_at_desc'.
+          // tiebreak. The single-read path (loadMemberRenewalStatus → list()
+          // with sort:'created_at_desc') applies the SAME created_at DESC,
+          // cycle_id DESC ordering, so both paths resolve the identical latest
+          // cycle on an equal created_at (S1 speckit-review).
           .orderBy(
             renewalCycles.memberId,
             desc(renewalCycles.createdAt),
@@ -518,8 +521,14 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(whereClause)
           .orderBy(
+            // `created_at_desc` adds `cycle_id DESC` as a deterministic
+            // tiebreak so this single-read path (used by
+            // loadMemberRenewalStatus) picks the SAME latest cycle as the
+            // batch `findLatestCyclesForMembers` DISTINCT-ON when two cycles
+            // share an identical `created_at` — otherwise the portal chip
+            // and admin badge could disagree (S1 speckit-review).
             opts.sort === 'created_at_desc'
-              ? sql`${renewalCycles.createdAt} DESC`
+              ? sql`${renewalCycles.createdAt} DESC, ${renewalCycles.cycleId} DESC`
               : opts.sort === 'expires_at_desc'
                 ? sql`${renewalCycles.expiresAt} DESC`
                 : sql`${renewalCycles.expiresAt} ASC`,
