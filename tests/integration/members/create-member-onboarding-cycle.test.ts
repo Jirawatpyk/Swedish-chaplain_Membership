@@ -245,4 +245,83 @@ describe('Integration — createMember onboarding listener creates the initial c
     );
     expect(cycles).toHaveLength(1);
   }, 60_000);
+
+  // Principle-I (068 speckit-review tests I-2) — tenant-isolation probe on
+  // the onboarding-listener path. The `f8OnCreateMemberCallbacks` factory is
+  // scoped to tenant A's slug (`makeRenewalsDeps(A)` → its listener opens its
+  // OWN `runInTenant(A)` tx), so RLS structurally prevents the onboarding
+  // cycle from landing in tenant B. This makes that guarantee an explicit
+  // regression net: a repo method that reached for the pool-global `db`
+  // instead of the threaded `tx` would write across tenants and this probe
+  // would catch it.
+  it('cross-tenant: onboarding a member in tenant A does not create a cycle visible in tenant B (Principle I)', async () => {
+    const tenantB = await createTestTenant();
+    try {
+      // Tenant B starts with ZERO renewal cycles. It must still have zero
+      // after tenant A onboards a member through its own listener.
+      const beforeB = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select({ id: renewalCycles.cycleId })
+          .from(renewalCycles)
+          .where(eq(renewalCycles.tenantId, tenantB.ctx.slug)),
+      );
+      expect(beforeB).toHaveLength(0);
+
+      const deps = buildMembersDeps(tenant.ctx);
+      const seedSlug = randomUUID().slice(0, 8);
+      const created = await createMember(
+        {
+          company_name: `Isolation Co ${seedSlug}`,
+          country: 'SE',
+          plan_id: planId,
+          plan_year: 2026,
+          registration_date: '2026-05-01',
+          primary_contact: {
+            first_name: 'Ingrid',
+            last_name: 'Isolation',
+            email: `${seedSlug}@isolation.test`,
+            preferred_language: 'en' as const,
+          },
+        },
+        { actorUserId: user.userId, requestId: `isolation-${seedSlug}` },
+        { ...deps, onboardingListeners: f8OnCreateMemberCallbacks(tenant.ctx.slug) },
+      );
+      if (!created.ok)
+        throw new Error(`create failed: ${JSON.stringify(created.error)}`);
+      const memberId = created.value.memberId;
+
+      // Tenant A got its onboarding cycle...
+      const cyclesA = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select({ id: renewalCycles.cycleId })
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenant.ctx.slug),
+              eq(renewalCycles.memberId, memberId),
+            ),
+          ),
+      );
+      expect(cyclesA).toHaveLength(1);
+
+      // ...but tenant B still has ZERO cycles (nothing crossed the boundary).
+      const afterB = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select({ id: renewalCycles.cycleId })
+          .from(renewalCycles)
+          .where(eq(renewalCycles.tenantId, tenantB.ctx.slug)),
+      );
+      expect(afterB).toHaveLength(0);
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(eq(renewalCycles.tenantId, tenantB.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(members)
+        .where(eq(members.tenantId, tenantB.ctx.slug))
+        .catch(() => {});
+      await tenantB.cleanup().catch(() => {});
+    }
+  }, 180_000);
 });

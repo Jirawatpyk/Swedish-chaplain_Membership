@@ -333,4 +333,98 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
     expect(active.length).toBeLessThanOrEqual(1);
     expect(rows.filter((r) => r.cycleId === cycleA)[0]?.status).toBe('completed');
   });
+
+  // Principle-I (068 speckit-review tests I-2) — tenant-isolation probe on
+  // the on-paid create-next-cycle path. Mirrors the cross-tenant probe in
+  // `admin-renew-lapsed-member.test.ts`. The `f8OnPaidCallbacks` factory is
+  // scoped to tenant A's slug (`makeRenewalsDeps(A)` → `runInTenant(A)`), so
+  // RLS structurally prevents the chain from reading, completing, or
+  // creating any cycle in tenant B. This assertion makes that structural
+  // guarantee an explicit regression net (a future repo method that reached
+  // for the pool-global `db` instead of the threaded `tx` would silently
+  // bypass RLS — this probe would then catch the cross-tenant write).
+  it('cross-tenant: tenant A on-paid flow never creates or touches a cycle in tenant B (Principle I)', async () => {
+    const tenantB = await createTestTenant();
+    try {
+      const planB = `f8-onpaid-b-${randomUUID().slice(0, 8)}`;
+      await runInTenant(tenantB.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: tenantB.ctx.slug,
+          planId: planB,
+          planName: { en: 'Tenant B OnPaid Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+
+      // Tenant B has its own member with an untouched `awaiting_payment`
+      // cycle. It must remain EXACTLY as seeded after tenant A's flow runs.
+      const memberB = randomUUID();
+      await runInTenant(tenantB.ctx, (tx) =>
+        tx.insert(members).values({
+          tenantId: tenantB.ctx.slug,
+          memberId: memberB,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Tenant B OnPaid Co',
+          country: 'TH',
+          planId: planB,
+          planYear: 2026,
+        }),
+      );
+      const cycleB = randomUUID();
+      await runInTenant(tenantB.ctx, (tx) =>
+        tx.insert(renewalCycles).values({
+          tenantId: tenantB.ctx.slug,
+          cycleId: cycleB,
+          memberId: memberB,
+          status: 'awaiting_payment',
+          periodFrom: new Date('2025-07-01T00:00:00.000Z'),
+          periodTo: new Date('2026-07-01T00:00:00.000Z'),
+          expiresAt: new Date('2026-07-01T00:00:00.000Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planB,
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        }),
+      );
+
+      // Drive tenant A's full on-paid chain for a tenant-A member.
+      const memberA = await seedMember();
+      const invoiceA = await seedIssuedInvoice(memberA);
+      await seedAwaitingCycleLinkedToInvoice({
+        memberId: memberA,
+        invoiceId: invoiceA,
+        periodTo: new Date('2026-02-01T00:00:00.000Z'),
+      });
+      await fireOnPaidChainInTx(invoiceA, memberA);
+
+      // Tenant B's cycle set is UNCHANGED: still exactly the one seeded
+      // cycle, still `awaiting_payment` (not completed, no new `upcoming`).
+      const cyclesB = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select({ cycleId: renewalCycles.cycleId, status: renewalCycles.status })
+          .from(renewalCycles)
+          .where(eq(renewalCycles.tenantId, tenantB.ctx.slug)),
+      );
+      expect(cyclesB).toHaveLength(1);
+      expect(cyclesB[0]?.cycleId).toBe(cycleB);
+      expect(cyclesB[0]?.status).toBe('awaiting_payment');
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(eq(renewalCycles.tenantId, tenantB.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(members)
+        .where(eq(members.tenantId, tenantB.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(auditLog)
+        .where(eq(auditLog.tenantId, tenantB.ctx.slug))
+        .catch(() => {});
+      await tenantB.cleanup().catch(() => {});
+    }
+  }, 180_000);
 });
