@@ -136,6 +136,44 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // 2. Test-tenant data: members, contacts, plans, invoice_settings,
   //    tokens, outbox. Scoped by tenant_id LIKE 'test-%'. Order matters:
   //    child tables first, then parents.
+  // F8 renewals cascade — renewal_reminder_events / renewal_escalation_tasks
+  // → renewal_cycles → invoices (`renewal_cycles_linked_invoice_fk`). Without
+  // this, the `DELETE FROM invoices` below blocks on any test tenant that
+  // created a renewal cycle linking a §86/4 (the F8 confirm-renewal /
+  // admin-renew flows wired in F8-completion). Children-of-cycle first, then
+  // the cycles, then the tenant-config leaves. `at_risk_outreach`,
+  // `consumed_link_tokens`, and `tier_upgrade_suggestions` reference
+  // members/cycles and are purged here too so no F8 orphan survives.
+  await db.execute(
+    sql`DELETE FROM renewal_reminder_events WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM renewal_escalation_tasks WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tier_upgrade_suggestions WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM at_risk_outreach WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM consumed_link_tokens WHERE tenant_id LIKE 'test-%'`,
+  );
+  // F2 scheduled-plan-changes also reference renewal_cycles via
+  // `scheduled_plan_changes_effective_at_cycle_fk` (the upgrade applies at a
+  // future cycle) — purge before the cycles they point at.
+  await db.execute(
+    sql`DELETE FROM scheduled_plan_changes WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM renewal_cycles WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tenant_renewal_schedule_policies WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tenant_renewal_settings WHERE tenant_id LIKE 'test-%'`,
+  );
   // F5 payments cascade — refunds → payments → invoices. Without this,
   // `payments_invoice_tenant_fk` blocks invoice DELETE on any tenant
   // that ran an F5 integration test. Must precede the invoicing cascade.
@@ -351,6 +389,16 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
         )`,
   );
 
+  // F6 EventCreate — `csv_import_records.actor_user_id` references users(id)
+  // ON DELETE restrict; a leftover import record from an F6 integration test
+  // blocks the test-user DELETE below. Tenant-scoped too. Purge both paths.
+  await db.execute(
+    sql`DELETE FROM csv_import_records
+        WHERE tenant_id LIKE 'test-%'
+          OR actor_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )`,
+  );
   await db.execute(
     sql`DELETE FROM invitations
         WHERE user_id IN (
