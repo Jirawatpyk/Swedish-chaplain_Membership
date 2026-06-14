@@ -29,6 +29,7 @@
  * ORM / HTTP / framework / React imports (Constitution Principle III).
  */
 import type { TenantTx } from '@/lib/db';
+import { addMonthsUtc } from '@/lib/dates';
 import type { MemberId } from '@/modules/members';
 import type {
   NewRenewalCycleInput,
@@ -95,19 +96,6 @@ export interface CreateCycleInTxInput {
 export type CreateCycleOutcome =
   | { readonly kind: 'created'; readonly cycle: RenewalCycle }
   | { readonly kind: 'skipped_active_exists' };
-
-/**
- * Add `months` calendar months to an ISO-8601 UTC instant via direct
- * UTC arithmetic. Mirrors `mark-paid-offline.ts:deriveNewExpiresAt` —
- * Asia/Bangkok is UTC+7 with no DST, so `setUTCMonth(+N)` lands at the
- * same Bangkok calendar date for every supported plan term. NO js-joda
- * (would introduce drift vs the existing repo arithmetic).
- */
-function addMonthsUtc(iso: string, months: number): string {
-  const d = new Date(iso);
-  d.setUTCMonth(d.getUTCMonth() + months);
-  return d.toISOString();
-}
 
 /**
  * 068 cluster F — advance `periodFromIso` by whole `termMonths` multiples

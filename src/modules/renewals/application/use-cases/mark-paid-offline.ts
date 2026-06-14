@@ -31,6 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { addMonthsUtc } from '@/lib/dates';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
@@ -100,20 +101,6 @@ export type MarkPaidOfflineError =
 // the tenant's grace_period_days. Admins marking those paid use the
 // same `awaiting_payment` codepath; the urgency derivation is read-only.
 const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
-
-/**
- * Compute the next cycle's expires_at by adding `frozenPlanTermMonths`
- * to the current `period_to`. Direct UTC arithmetic is correct here
- * because Asia/Bangkok is UTC+7 with no DST transitions: a
- * `setUTCMonth(+N)` produces a UTC instant that lands at the same
- * Bangkok calendar date for every supported plan term (1–60 months).
- * No js-joda needed.
- */
-function deriveNewExpiresAt(currentPeriodToIso: string, termMonths: number): string {
-  const d = new Date(currentPeriodToIso);
-  d.setUTCMonth(d.getUTCMonth() + termMonths);
-  return d.toISOString();
-}
 
 /**
  * Round 5 S-04 — Bangkok fiscal year extraction. Asia/Bangkok is UTC+7
@@ -233,7 +220,10 @@ export async function markPaidOffline(
       // periodTo, not the pre-lock snapshot. If a concurrent path
       // mutated period anchors between preLoad and lock acquisition,
       // the response + audit would otherwise carry a stale value.
-      const newExpiresAt = deriveNewExpiresAt(
+      // 068 cluster G — shared `addMonthsUtc` (was the byte-identical local
+      // `deriveNewExpiresAt`). Same UTC arithmetic; Asia/Bangkok is UTC+7 with
+      // no DST so the next expires_at lands on the same Bangkok calendar date.
+      const newExpiresAt = addMonthsUtc(
         lockedCycle.periodTo,
         lockedCycle.frozenPlanTermMonths,
       );
