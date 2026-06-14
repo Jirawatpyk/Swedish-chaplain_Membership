@@ -266,6 +266,16 @@ describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
     expect(addSatang(a, b)).toBe(10007n);
   });
 
+  it('the parseThbDecimal CONSTRUCTOR rejects malformed input (RangeError)', () => {
+    // The brand constructor is the FIRST validation gate — distinct from the
+    // inline last-line guard in parseThbDecimalToSatang exercised below. A
+    // raw/display string can never become a ThbDecimal without passing here.
+    expect(() => parseThbDecimal('abc')).toThrow(RangeError);
+    expect(() => parseThbDecimal('')).toThrow(RangeError);
+    expect(() => parseThbDecimal('-1.00')).toThrow(RangeError);
+    expect(() => parseThbDecimal('1.999')).toThrow(RangeError);
+  });
+
   // The THROWS-on-malformed tests bypass the `parseThbDecimal`
   // constructor (which would itself throw at construction, before
   // `parseThbDecimalToSatang` ever runs) by casting a known-bad string

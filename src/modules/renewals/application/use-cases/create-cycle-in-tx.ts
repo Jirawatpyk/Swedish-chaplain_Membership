@@ -18,10 +18,11 @@
  *      cycle freezes the resolved plan's price/term/tier at creation
  *      time; never overwritten afterwards).
  *   3. Gapless period derivation: `periodTo = periodFrom + termMonths`
- *      using the same direct-UTC month arithmetic as `mark-paid-offline`
- *      (`setUTCMonth(+N)`; Asia/Bangkok is UTC+7 with no DST so the UTC
- *      instant lands at the same Bangkok calendar date — NO js-joda
- *      drift, matching the existing repo arithmetic).
+ *      via the shared `addMonthsUtc` helper (`@/lib/dates`) — direct UTC
+ *      month arithmetic with month-end clamping (Jan 31 + 1mo → Feb 28, not
+ *      Mar 3), same as `mark-paid-offline`. Asia/Bangkok is UTC+7 with no DST
+ *      so the UTC instant lands on the same Bangkok calendar date — no
+ *      js-joda needed.
  *   4. `renewal_cycle_created` audit emit IN THE SAME tx after insert
  *      (Constitution Principle VIII — state↔audit atomicity).
  *

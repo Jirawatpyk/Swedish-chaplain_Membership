@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { parseThbDecimal } from '@/lib/money';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -174,7 +175,7 @@ describe('F8 frozen-price invariant — integration (T149)', () => {
         {
           planIdAtCycleStart: newPlanUuid,
           tierAtCycleStart: 'premium',
-          frozenPlanPriceThb: '180000.00',
+          frozenPlanPriceThb: parseThbDecimal('180000.00'),
           frozenPlanTermMonths: 12,
           frozenPlanCurrency: 'THB',
         },

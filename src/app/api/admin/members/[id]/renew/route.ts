@@ -40,10 +40,7 @@ import {
   successResponse,
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
-import {
-  RENEW_LAPSED_ERROR_CODES,
-  type RenewLapsedErrorCode,
-} from '@/components/members/renew-lapsed-error-codes';
+import { type RenewLapsedErrorCode } from '@/components/members/renew-lapsed-error-codes';
 import { adminRenewLapsedMember, makeRenewalsDeps } from '@/modules/renewals';
 
 /**
@@ -53,10 +50,8 @@ import { adminRenewLapsedMember, makeRenewalsDeps } from '@/modules/renewals';
  * COMPILE error here, so the route's error surface and the
  * `RenewLapsedMemberDialog` toast set / EN keys stay provably in sync. The
  * shared `errorResponse` keeps its generic `code: string` for the other
- * renewals routes. `void RENEW_LAPSED_ERROR_CODES` references the runtime
- * tuple so the i18n test's single source remains coupled to this route.
+ * renewals routes.
  */
-void RENEW_LAPSED_ERROR_CODES;
 function renewLapsedError(opts: {
   readonly status: number;
   readonly code: RenewLapsedErrorCode;

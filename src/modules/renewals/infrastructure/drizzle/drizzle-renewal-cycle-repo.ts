@@ -20,7 +20,7 @@
 import { and, eq, ne, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
-import { parseThbDecimal } from '@/lib/money';
+import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
@@ -566,7 +566,7 @@ export function makeDrizzleRenewalCycleRepo(
       args: {
         readonly planIdAtCycleStart: string;
         readonly tierAtCycleStart: TierBucket;
-        readonly frozenPlanPriceThb: string;
+        readonly frozenPlanPriceThb: ThbDecimal;
         readonly frozenPlanTermMonths: number;
         readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
       },

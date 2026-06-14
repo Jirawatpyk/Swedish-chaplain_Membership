@@ -135,7 +135,10 @@ export interface RenewalCycleRepo {
     args: {
       readonly planIdAtCycleStart: string;
       readonly tierAtCycleStart: TierBucket;
-      readonly frozenPlanPriceThb: string;
+      // ThbDecimal (not bare string) so the §86/4 frozen-price write path is
+      // brand-guarded like the other hops — a raw/display string can't reach
+      // the tax-document price column without going through parseThbDecimal.
+      readonly frozenPlanPriceThb: ThbDecimal;
       readonly frozenPlanTermMonths: number;
       readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
     },
