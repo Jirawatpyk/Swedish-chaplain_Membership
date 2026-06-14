@@ -24,6 +24,7 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { confirmRenewal, makeRenewalsDeps } from '@/modules/renewals';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
@@ -50,6 +51,19 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
   let user: TestUser;
   const planId = 'no-tin-renewal-plan';
 
+  // 070 G — the cycle's `period_from` is wall-clock-relative (now − 30d) and
+  // `confirmRenewal` derives `plan_year = deriveFiscalYear(period_from)`
+  // server-side. Seed the catalogue `membership_plans.plan_year` (+ the
+  // member's plan binding) from the SAME clock + SAME derivation so the seed
+  // and the server-derived year always agree — otherwise, once the calendar
+  // crosses into the next fiscal year, the hard-coded 2026 would no longer
+  // match the derived year and `getAnnualFeeSatang` would miss the row
+  // (cross-year-boundary flake). Computed ONCE here so `beforeAll` (plan seed)
+  // and the `it` body (member + cycle seed) share one fiscal year.
+  const seedNow = Date.now();
+  const periodFrom = new Date(seedNow - 30 * MS_PER_DAY);
+  const seededPlanYear = deriveFiscalYear(periodFrom.toISOString());
+
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-chamber');
@@ -57,7 +71,9 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,
         planId,
-        planYear: 2026,
+        // 070 G — derived from period_from (see describe-scope note), NOT a
+        // hard-coded 2026, so this stays valid across a year boundary.
+        planYear: seededPlanYear,
         planName: { en: 'No-TIN Renewal Plan' },
         description: { en: 'Test description' },
         sortOrder: 10,
@@ -97,7 +113,9 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
   it('no-TIN company member confirms renewal → §86/4 issued + payUrl (was invoice_creation_failed pre-066)', async () => {
     const memberId = randomUUID();
     const cycleId = randomUUID();
-    const now = Date.now();
+    // Reuse the describe-scope clock so the cycle's period_from matches the
+    // value `seededPlanYear` was derived from (see describe-scope note).
+    const now = seedNow;
 
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(members).values({
@@ -120,7 +138,9 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
         province: 'Bangkok',
         postalCode: '10330',
         planId,
-        planYear: 2026,
+        // 070 G — member plan binding uses the same derived year as the
+        // catalogue row (members_plan_tenant_year_fk → membership_plans).
+        planYear: seededPlanYear,
         status: 'active',
       });
       // Primary contact — the real memberIdentityAdapter reads it to build the
@@ -139,7 +159,9 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
         cycleId,
         memberId,
         status: 'awaiting_payment',
-        periodFrom: new Date(now - 30 * MS_PER_DAY),
+        // Same instance `seededPlanYear` was derived from — guarantees the
+        // server-derived plan_year equals the seeded catalogue plan_year.
+        periodFrom,
         periodTo: new Date(now + 30 * MS_PER_DAY),
         expiresAt: new Date(now + 30 * MS_PER_DAY),
         cycleLengthMonths: 12,
@@ -157,8 +179,9 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
       cycleId,
       memberId,
       // 070 — `planYear` is server-derived from the cycle (period_from →
-      // deriveFiscalYear). The cycle's period_from (now-30d) is in 2026,
-      // matching the seeded membership_plans row (plan_year 2026).
+      // deriveFiscalYear). The seeded membership_plans row uses the SAME
+      // derivation (seededPlanYear) so they always agree, regardless of the
+      // wall-clock date the suite runs on.
       actorUserId: user.userId,
       actorRole: 'member',
       correlationId: randomUUID(),
