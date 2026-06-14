@@ -173,6 +173,18 @@ export async function createInvoiceDraft(
       input.planId,
       input.planYear,
     );
+    // NOTE (068 cluster B — investigated, gate INTENTIONALLY retained on
+    // both paths): a code-review finding proposed gating `plan_not_found`
+    // only on the non-renewal path so a renewal with a missing catalogue-
+    // fee-year could still issue at the frozen `renewalSignal` price. That
+    // is INFEASIBLE: the `invoices_plan_fk` constraint (migration 0019)
+    // requires `(tenant_id, plan_id, plan_year)` to exist in
+    // `membership_plans`, and `getAnnualFeeSatang` returns null EXACTLY when
+    // that row is absent (the fee column is NOT NULL; the adapter applies no
+    // active/status filter). So `planFee === null` ⟺ the FK would fail —
+    // removing the gate would only convert a clean early `plan_not_found`
+    // into a raw FK 23503 deeper in the insert, with no improvement to the
+    // orphan-cycle outcome. The gate stays on both paths.
     if (planFee === null) return err({ code: 'plan_not_found' });
 
     // The membership unit price is the FROZEN signal price on a renewal,
