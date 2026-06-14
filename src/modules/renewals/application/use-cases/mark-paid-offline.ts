@@ -171,13 +171,15 @@ export async function markPaidOffline(
     });
   }
 
-  // FR-021a frozen-price invariant: F4 `createInvoiceDraft` fetches
-  // the plan-year fee from F2 (NOT from `cycle.frozen_plan_price_thb`).
-  // This relies on F2's plan-year immutability rule — once any issued
-  // invoice references a plan-year, F2's `editable_until` guard freezes
-  // the fee. The cycle-vs-invoice price drift assertion lives in the
-  // integration test for offline mark-paid; a runtime mismatch would
-  // surface there before reaching production.
+  // FR-022 frozen-price invariant (068 cluster A): the offline §86/4 bills
+  // the cycle's FROZEN price (`lockedCycle.frozen_plan_price_thb`), NOT the
+  // live F2 catalogue fee. The frozen price is threaded into the F4 chain as
+  // the `renewalSignal` ~145 lines below (see the `frozenPlanPriceThb` arg on
+  // `issueAndMarkPaid`), which overrides the membership-line price + suppresses
+  // the reg-fee re-bill — mirroring the online confirm-renewal path. This
+  // protects a member from a mid-cycle catalogue price bump and keeps the tax
+  // document off the price-tampering surface. The cycle-vs-invoice price
+  // assertion lives in the offline mark-paid integration test.
   //
   // Round 5 S-04 — Bangkok-local fiscal year. UTC `getUTCFullYear()` is
   // wrong at BKK boundaries: a period_from of 2026-12-31T17:00:00Z =
