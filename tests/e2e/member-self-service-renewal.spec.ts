@@ -30,6 +30,7 @@
 import { expect } from './fixtures';
 import { memberTest as test } from './helpers/member-session';
 import { seedF8Renewals } from './helpers/renewals-seed';
+import { setCycleStatusForSuccessE2E } from './helpers/renewal-success-state';
 
 test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T150)', () => {
   test('renders cycle summary + onboarding banner + confirm CTA', async ({
@@ -46,10 +47,16 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
         'F8 renewals seed returned null — verify DATABASE_URL + E2E_MEMBER_EMAIL are set in .env.local',
       );
     }
+    // G4 (slice 2.6) — the renewal page now gates the Confirm flow on a
+    // PAYABLE cycle. seedF8Renewals mints an `upcoming` cycle, which the
+    // gate correctly renders as the read-only "not yet open" state. This
+    // spec asserts the Confirm flow, so flip the seeded cycle to
+    // `awaiting_payment` first (the post-T-0 / post-confirm payable state).
+    await setCycleStatusForSuccessE2E(seed.cycleId, 'awaiting_payment');
 
     // Navigate to the public renewal page for the seeded member. The
-    // page calls findActiveForMember which returns the upcoming cycle
-    // seeded by seedF8Renewals.
+    // page calls findActiveForMember which returns the awaiting_payment
+    // cycle seeded above.
     await page.goto(`/portal/renewal/${seed.memberId}`);
     await page.waitForLoadState('networkidle');
 
@@ -128,6 +135,9 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
         'F8 renewals seed returned null — verify DATABASE_URL + E2E_MEMBER_EMAIL are set in .env.local',
       );
     }
+    // G4 (slice 2.6) — flip the seeded `upcoming` cycle to a payable
+    // `awaiting_payment` state so the Confirm flow renders past the gate.
+    await setCycleStatusForSuccessE2E(seed.cycleId, 'awaiting_payment');
 
     const fakeInvoiceId = 'inv-e2e-i12-fixture';
     const fakePayUrl = `/portal/billing/${fakeInvoiceId}/pay`;

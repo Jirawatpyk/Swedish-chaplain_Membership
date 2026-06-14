@@ -67,16 +67,13 @@ const SHIPPED_EVENT: F8AuditEvent<'renewal_cycle_cancelled'> = {
   },
 };
 
-const NOT_IN_PGENUM_EVENT: F8AuditEvent<'renewal_cycle_created'> = {
-  // Valid F8 event type but deliberately NOT in F8_ENUM_SHIPPED — Phase 4 reservation.
-  type: 'renewal_cycle_created',
-  payload: {
-    cycle_id: asCycleId('00000000-0000-0000-0000-000000000bbb'),
-    member_id: asMemberId('member-1'),
-    tier_bucket: 'regular',
-    period_from: '2026-01-01T00:00:00Z',
-    period_to: '2027-01-01T00:00:00Z',
-  },
+const NOT_IN_PGENUM_EVENT: F8AuditEvent<'renewal_payment_failed'> = {
+  // Valid F8 event type but deliberately NOT in F8_ENUM_SHIPPED — the
+  // only remaining `_F8_ENUM_DEFERRED` reservation after F8-completion
+  // slice 1 shipped `renewal_cycle_created` (F5→F8 payment_failed
+  // listener bridge is still post-MVP / OOS-18).
+  type: 'renewal_payment_failed',
+  payload: {},
 };
 
 const UNKNOWN_EVENT = {
@@ -110,7 +107,7 @@ describe('makeDrizzleRenewalAuditEmitter — emit() (fire-and-forget)', () => {
     );
   });
 
-  it('not-yet-in-pgenum event (renewal_cycle_created) — pinoFallback with reason=not_in_pgenum', async () => {
+  it('not-yet-in-pgenum event (renewal_payment_failed) — pinoFallback with reason=not_in_pgenum', async () => {
     const emitter = makeDrizzleRenewalAuditEmitter(tenant);
     await expect(
       emitter.emit(NOT_IN_PGENUM_EVENT, ctx),
@@ -119,7 +116,7 @@ describe('makeDrizzleRenewalAuditEmitter — emit() (fire-and-forget)', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         reason: 'not_in_pgenum',
-        eventType: 'renewal_cycle_created',
+        eventType: 'renewal_payment_failed',
       }),
       expect.any(String),
     );
@@ -178,6 +175,9 @@ describe('makeDrizzleRenewalAuditEmitter — emit() (fire-and-forget)', () => {
     'renewal_kill_switch_blocked',
     'lapsed_member_action_blocked',
     'renewal_cross_member_probe',
+    // F8-completion slice 1 — moved deferred→shipped (whitelist MOVE, no
+    // migration; the pgEnum value already exists from migration 0109).
+    'renewal_cycle_created',
   ] as const)(
     'round-3+4 shipped event %s — runs DB-insert path under NODE_ENV=production',
     async (eventType) => {

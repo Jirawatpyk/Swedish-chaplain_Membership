@@ -136,6 +136,44 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // 2. Test-tenant data: members, contacts, plans, invoice_settings,
   //    tokens, outbox. Scoped by tenant_id LIKE 'test-%'. Order matters:
   //    child tables first, then parents.
+  // F8 renewals cascade — renewal_reminder_events / renewal_escalation_tasks
+  // → renewal_cycles → invoices (`renewal_cycles_linked_invoice_fk`). Without
+  // this, the `DELETE FROM invoices` below blocks on any test tenant that
+  // created a renewal cycle linking a §86/4 (the F8 confirm-renewal /
+  // admin-renew flows wired in F8-completion). Children-of-cycle first, then
+  // the cycles, then the tenant-config leaves. `at_risk_outreach`,
+  // `consumed_link_tokens`, and `tier_upgrade_suggestions` reference
+  // members/cycles and are purged here too so no F8 orphan survives.
+  await db.execute(
+    sql`DELETE FROM renewal_reminder_events WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM renewal_escalation_tasks WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tier_upgrade_suggestions WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM at_risk_outreach WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM consumed_link_tokens WHERE tenant_id LIKE 'test-%'`,
+  );
+  // F2 scheduled-plan-changes also reference renewal_cycles via
+  // `scheduled_plan_changes_effective_at_cycle_fk` (the upgrade applies at a
+  // future cycle) — purge before the cycles they point at.
+  await db.execute(
+    sql`DELETE FROM scheduled_plan_changes WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM renewal_cycles WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tenant_renewal_schedule_policies WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tenant_renewal_settings WHERE tenant_id LIKE 'test-%'`,
+  );
   // F5 payments cascade — refunds → payments → invoices. Without this,
   // `payments_invoice_tenant_fk` blocks invoice DELETE on any tenant
   // that ran an F5 integration test. Must precede the invoicing cascade.
@@ -251,6 +289,116 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
           )
         )`,
   );
+  // 068 cluster E — F8 renewal_cycles orphan purge in the TEST-USER pass.
+  // The tenant-scoped pass (above, `tenant_id LIKE 'test-%'`) deletes
+  // renewal_cycles, but this test-USER pass deletes orphan invoices + members
+  // + credit_notes REGARDLESS of tenant_id — so a renewal_cycle in a
+  // NON-`test-%` tenant that links a test-user-orphaned invoice
+  // (`renewal_cycles_linked_invoice_fk` NO ACTION), member
+  // (`renewal_cycles_member_fk` RESTRICT), or credit_note
+  // (`renewal_cycles_linked_credit_note_fk` NO ACTION — migration 0087) would
+  // block the `DELETE FROM invoices` / `DELETE FROM members` /
+  // `DELETE FROM credit_notes` below with an FK violation and abort the whole
+  // script. Purge those cycles (children first, in FK order) BEFORE the orphan
+  // invoice/member/credit-note deletes. Scoped to exactly the test-user-orphan
+  // set — NOT broadened to all tenants.
+  //
+  // The orphan set (068 R2-5): cycles whose
+  //   - `linked_invoice_id` ∈ {invoices referencing a test user via
+  //     draft/recorded/voided}, OR
+  //   - `(tenant_id, member_id)` ∈ {members on a test-user-created/updated
+  //     plan}, OR
+  //   - `linked_credit_note_id` ∈ {credit_notes issued by a test user, or
+  //     against a test-user invoice}
+  // — the SAME three predicates the orphan invoice + member + credit_note
+  // deletes below use. Children of renewal_cycles:
+  //   renewal_reminder_events (CASCADE) · renewal_escalation_tasks (NO ACTION)
+  //   · scheduled_plan_changes.effective_at_cycle_id (RESTRICT).
+  //
+  // 068 R2-6 — compute the orphan `(tenant_id, cycle_id)` set ONCE (this scan
+  // joins members↔plans + scans invoices↔credit_notes; re-interpolating it into
+  // each child DELETE made Postgres re-plan + re-run it per statement). Select
+  // the pairs, then delete children + the cycles themselves by the resolved
+  // list. When the set is empty every dependent DELETE is skipped.
+  const orphanCyclePredicate = sql`(
+    linked_invoice_id IN (
+      SELECT invoice_id FROM invoices
+      WHERE draft_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR payment_recorded_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR voided_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+    )
+    OR (tenant_id, member_id) IN (
+      SELECT m.tenant_id, m.member_id FROM members m
+      JOIN membership_plans p
+        ON m.tenant_id = p.tenant_id
+       AND m.plan_id = p.plan_id
+       AND m.plan_year = p.plan_year
+      WHERE p.created_by IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR p.updated_by IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+    )
+    OR linked_credit_note_id IN (
+      SELECT credit_note_id FROM credit_notes
+      WHERE issued_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR original_invoice_id IN (
+        SELECT invoice_id FROM invoices
+        WHERE draft_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR payment_recorded_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR voided_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+      )
+    )
+  )`;
+  const orphanCycleRows = await db.execute(
+    sql`SELECT tenant_id, cycle_id FROM renewal_cycles WHERE ${orphanCyclePredicate}`,
+  );
+  const orphanCycles = unwrap<{ tenant_id: string; cycle_id: string }>(
+    orphanCycleRows,
+  );
+  if (orphanCycles.length > 0) {
+    // Reusable `(tenant_id, cycle_id) IN (VALUES …)` fragment built from the
+    // ONCE-resolved set (no re-scan of the nested orphan predicate).
+    const cyclePairs = sql.join(
+      orphanCycles.map(
+        (c) => sql`(${c.tenant_id}, ${c.cycle_id}::uuid)`,
+      ),
+      sql`, `,
+    );
+    // Children of the orphan cycles first (renewal_reminder_events CASCADE is
+    // covered automatically but deleted explicitly for symmetry + determinism).
+    await db.execute(
+      sql`DELETE FROM renewal_reminder_events
+          WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+    );
+    await db.execute(
+      sql`DELETE FROM renewal_escalation_tasks
+          WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+    );
+    await db.execute(
+      sql`DELETE FROM scheduled_plan_changes
+          WHERE (tenant_id, effective_at_cycle_id) IN (${cyclePairs})`,
+    );
+    await db.execute(
+      sql`DELETE FROM renewal_cycles
+          WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+    );
+  }
   // R2-fix C2 (2026-04-26): also purge credit_notes whose
   // `issued_by_user_id` directly references a test user. The previous
   // pattern only chased `original_invoice_id → invoices.*_user_id`
@@ -351,6 +499,16 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
         )`,
   );
 
+  // F6 EventCreate — `csv_import_records.actor_user_id` references users(id)
+  // ON DELETE restrict; a leftover import record from an F6 integration test
+  // blocks the test-user DELETE below. Tenant-scoped too. Purge both paths.
+  await db.execute(
+    sql`DELETE FROM csv_import_records
+        WHERE tenant_id LIKE 'test-%'
+          OR actor_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )`,
+  );
   await db.execute(
     sql`DELETE FROM invitations
         WHERE user_id IN (

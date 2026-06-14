@@ -31,6 +31,15 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { drizzleMemberNumberAllocator } from '@/modules/members/infrastructure/repos/drizzle-member-number-allocator';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { asPlanYear } from '@/modules/plans/domain/plan';
+// F8-completion Slice 1 · Task 1.7 — create the imported member's INITIAL
+// renewal cycle inside the same batch tx via the shared createCycleInTx
+// helper (the single source of cycle-creation truth). `makeRenewalsDeps`
+// is the F8 composition root; we extract the three deps createCycleInTx
+// needs (mirrors the online on-paid path in renewals-deps.ts).
+import { makeRenewalsDeps } from '@/modules/renewals';
+import { createCycleInTx } from '@/modules/renewals/application/use-cases/create-cycle-in-tx';
+import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
+import { renewalsMetrics } from '@/lib/metrics';
 import { requireSwechamTenant, findActorUserId } from './seed-demo-members';
 import { buildColumnMap, mapDataRows } from './import-members/columns';
 import { buildTierResolver, type PlanLite } from './import-members/tier-resolution';
@@ -122,9 +131,31 @@ export async function commitMembers(
   validMembers: readonly ValidatedMember[],
   planYear: number,
 ): Promise<CommitOutcome> {
+  // F8-completion Slice 1 · Task 1.7 — deps for the shared createCycleInTx
+  // helper, built once from the F8 composition root (tenant-bound). Mirrors
+  // the online on-paid path (renewals-deps.ts): cyclesRepo + planLookup +
+  // auditEmitter + a randomUUID cycle-id factory.
+  const renewalsDeps = makeRenewalsDeps(ctx.slug);
+  const cycleDeps = {
+    cyclesRepo: renewalsDeps.cyclesRepo,
+    planLookup: renewalsDeps.planLookupForRenewal,
+    auditEmitter: renewalsDeps.auditEmitter,
+    idFactory: { cycleId: () => asCycleId(randomUUID()) },
+  };
+
+  // 068 cluster F — one server clock for the whole batch. The import cold-start
+  // anchors each member's initial cycle at their CURRENT membership period
+  // (advancing the historical registration_date by whole term multiples until
+  // the window covers `now`), so a long-standing member (e.g. registered 2015)
+  // is NOT created with a years-past expires_at that the enter-awaiting + lapse
+  // crons would immediately flip to `lapsed` at launch. Captured once so every
+  // row in the batch anchors against the same instant (deterministic).
+  const commitNowIso = new Date().toISOString();
+
   return runInTenant(ctx, async (tx): Promise<CommitOutcome> => {
     let membersCreated = 0;
     let contactsCreated = 0;
+    let cyclesCreated = 0;
     let skippedExistingMembers = 0;
     let skippedPartialOverlapMembers = 0;
     let skippedSoftDeletedContacts = 0;
@@ -271,11 +302,45 @@ export async function commitMembers(
         if (softEmails.has(c.email.toLowerCase())) { skippedSoftDeletedContacts += 1; continue; }
         await insertContact(memberId, c, c.isPrimary);
       }
+
+      // F8-completion Slice 1 · Task 1.7 — the member's INITIAL renewal cycle,
+      // created INSIDE this batch tx via the shared createCycleInTx helper.
+      // Anchored at registration_date, +12 months, frozen at the resolved plan
+      // price; idempotent (findActiveForMemberInTx no-op on a re-run). UNLIKE
+      // the createMember onboarding listener, this does NOT swallow: a failure
+      // throws → the whole batch rolls back (atomic) → the operator fixes the
+      // data + re-runs. The counter is bumped (PII-free: tenant + row-index
+      // only) BEFORE the re-throw so the operator sees which row aborted.
+      try {
+        await createCycleInTx(cycleDeps, tx, {
+          tenantId: ctx.slug,
+          memberId,
+          periodFrom: m.registrationDate.toISOString(),
+          planId: m.planId,
+          actorUserId,
+          actorRole: 'system',
+          correlationId: `import-members-${randomUUID()}`,
+          // 068 cluster F — anchor at the CURRENT membership period (preserving
+          // the registration anniversary), not the raw historical registration
+          // date, so a long-standing member is not marked lapsed at launch.
+          anchorToCurrentPeriod: { nowIso: commitNowIso },
+        });
+        cyclesCreated += 1;
+      } catch (e) {
+        renewalsMetrics.importCycleCreateFailed.add(1, { tenant_id: ctx.slug });
+        console.error(
+          `[import-members] cycle creation failed for row ${headRow} ` +
+            `(member ${memberId}) — rolling back the whole batch: ` +
+            (e instanceof Error ? e.message : String(e)),
+        );
+        throw e;
+      }
     }
 
     return {
       membersCreated,
       contactsCreated,
+      cyclesCreated,
       skippedExistingMembers,
       skippedPartialOverlapMembers,
       skippedSoftDeletedContacts,

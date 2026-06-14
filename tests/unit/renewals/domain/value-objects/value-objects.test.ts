@@ -167,11 +167,21 @@ describe('CycleStatus (T031)', () => {
     }
   });
 
-  it('canTransition — rejects illegal jumps (e.g. upcoming → completed direct)', () => {
-    expect(canTransition('upcoming', 'completed')).toBe(false);
+  it('canTransition — rejects illegal jumps (e.g. reminded → completed direct)', () => {
+    // NOTE: `upcoming → completed` IS legal (F8-completion slice 0 / G5a —
+    // offline-mark of an `upcoming` cycle); it is asserted as a happy path
+    // below, not here.
     expect(canTransition('reminded', 'completed')).toBe(false);
     expect(canTransition('reminded', 'lapsed')).toBe(false);
     expect(canTransition('upcoming', 'lapsed')).toBe(false);
+    expect(canTransition('upcoming', 'pending_admin_reactivation')).toBe(false);
+  });
+
+  it('canTransition — slice-0 (G5a) edges: upcoming→completed + pending→lapsed', () => {
+    // upcoming → completed: offline-mark of an upcoming cycle (mark-paid-offline).
+    expect(canTransition('upcoming', 'completed')).toBe(true);
+    // pending_admin_reactivation → lapsed: reconcile-timeout (passive expiry).
+    expect(canTransition('pending_admin_reactivation', 'lapsed')).toBe(true);
   });
 
   it('assertCanTransition — Result wrapper around canTransition', () => {

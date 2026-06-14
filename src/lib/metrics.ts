@@ -2047,6 +2047,7 @@ export const renewalsMetrics = {
       | 'dispatch'
       | 'at_risk_recompute'
       | 'lapse'
+      | 'enter_awaiting'
       | 'reconcile'
       | 'tier_upgrade_evaluate'
       | 'tier_upgrade_reconcile'
@@ -2281,6 +2282,64 @@ export const renewalsMetrics = {
   },
 
   /**
+   * F8-completion Slice 1 · Task 1.6/1.8 —
+   * `renewals_bootstrap_cycle_create_failed_total{tenant}`.
+   *
+   * Fires when the POST-COMMIT `createMember` onboarding listener (which
+   * creates the new member's initial renewal cycle in its OWN tenant tx)
+   * throws and the use-case swallows it. This is the ONLY swallow site in
+   * the F8-completion effort: the member is already committed, there's no
+   * tx to roll back and no webhook retry to heal it, so the failure is
+   * best-effort. A non-zero rate means NEW MEMBERS ARE SILENTLY DROPPING
+   * OUT OF THE RENEWAL PIPELINE (no cycle → never reminded → never
+   * renewed) — page-worthy. Mirrors `onPaidInvalidTx` shape so dashboard
+   * joins against the other renewals counters work (bare `tenant` label).
+   *
+   * Cardinality discipline: the ONLY label is the bounded `tenant` slug —
+   * NEVER the member entity / name / email / company (PII forbidden in
+   * metrics; the uuid lives in the paired error log).
+   */
+  bootstrapCycleCreateFailed: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_bootstrap_cycle_create_failed_total',
+          'createMember post-commit onboarding listener failed to create the initial renewal cycle — new member silently dropped out of the renewal pipeline (page on any non-zero rate)',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * F8-completion Slice 1 · Task 1.7/1.8 —
+   * `renewals_import_cycle_create_failed_total{tenant}`.
+   *
+   * Fires from the one-time member-import cold-start (`scripts/import-members.ts`
+   * `commitMembers`) when a per-member `createCycleInTx` call inside the batch
+   * tx throws. UNLIKE the bootstrap counter, the import does NOT swallow — the
+   * throw propagates and the WHOLE batch rolls back (atomic). The counter is
+   * incremented BEFORE the re-throw purely so the operator sees WHICH import
+   * failed (and can correlate with the row-index in the paired error log). The
+   * import is idempotent (re-run after fixing the data is a safe no-op via
+   * `findActiveForMemberInTx`), so this is operator-facing, not page-worthy on
+   * its own — but a non-zero rate means an import run aborted.
+   *
+   * Cardinality discipline: the ONLY label is the bounded `tenant` slug —
+   * NEVER the member entity / name / email / company (PII forbidden in
+   * metrics; the row-index/uuid lives in the paired error log).
+   */
+  importCycleCreateFailed: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_import_cycle_create_failed_total',
+          'member-import cold-start failed to create a per-member renewal cycle inside the batch tx — the whole import rolled back (operator re-runs after fixing the data)',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_lapse_cycles_errors_total{tenant}` — T115a Phase 5
    * wave K24: per-cycle errors during the daily
    * `lapseCyclesOnGraceExpiry` cron (F5 bridge query failure / DB
@@ -2295,6 +2354,26 @@ export const renewalsMetrics = {
         counter(
           'renewals_lapse_cycles_errors_total',
           'F8 lapseCyclesOnGraceExpiry per-cycle error count (decision-branch query failures + DB transition throws + audit emit failures); cron continues per-member fault-isolated',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * `renewals_enter_awaiting_cycles_errors_total{tenant}` —
+   * F8-completion slice 2: per-cycle errors during the daily
+   * `enterAwaitingPaymentOnExpiry` (T-0) cron (DB transition throw /
+   * audit emit failure). Per-cycle fault isolation means one bad cycle
+   * doesn't abort the run; this counter tracks the aggregate so SREs
+   * can alert on a cron-wide degradation. Sibling of `lapseCyclesErrors`.
+   * Alert rule: any non-zero rate sustained for 15 min pages on-call.
+   */
+  enterAwaitingCyclesErrors: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_enter_awaiting_cycles_errors_total',
+          'F8 enterAwaitingPaymentOnExpiry per-cycle error count (DB transition throws + audit emit failures); cron continues per-member fault-isolated',
         ).add(value, { tenant: attrs.tenant_id });
       });
     },
@@ -2603,7 +2682,7 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile' | 'prune_consumed_tokens',
+    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'enter_awaiting' | 'reconcile' | 'prune_consumed_tokens',
   ): void {
     safeMetric(() => {
       counter(

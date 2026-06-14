@@ -58,13 +58,22 @@ import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
  *       - `renewal_skipped_no_joined_at`
  *       - `escalation_task_created` (also second emit site = task channel)
  *
- * `renewal_cycle_created` is RESERVED for a future cycle-creation
- * hook (F4 invoice-paid callback wiring — `markCycleCompleteFromInvoicePaid`
- * use-case in `f8OnPaidCallbacks`). NOT in `F8_ENUM_SHIPPED` until
- * that emit site + ADD VALUE migration lands; see the spec backlog
- * (FR-006) for the deferral target.
+ * `renewal_cycle_created` SHIPPED in F8-completion slice 1 — emitted
+ * by the shared `createCycleInTx` helper (consumed by the on-paid
+ * next-cycle callback, the member import, and the create-member
+ * onboarding listener). It was a WHITELIST MOVE (deferred→shipped) — no
+ * ADD VALUE migration was needed because the pgEnum value already
+ * existed from migration 0109.
  */
 const F8_ENUM_SHIPPED_TUPLE = [
+  // --- F8-completion slice 2 — T-0 payability flip emit site -----------
+  // Migration 0215 adds the pgEnum value. Emit sites:
+  //   - enter-awaiting-payment-on-expiry.ts (T-0 cron, source:'cron')
+  //   - confirm-renewal.ts (lazy self-transition, slice 2.5, source:'confirm')
+  // Shipped (not deferred) because the slice-2 cron emits it today.
+  'renewal_entered_awaiting_payment',
+  // --- F8-completion slice 1 — shared createCycleInTx emit site --------
+  'renewal_cycle_created',
   'renewal_cycle_cancelled',
   'renewal_cycle_completed_offline',
   'renewal_cross_tenant_probe',
@@ -242,10 +251,9 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(
 // exhaustiveness assertion below (`typeof _F8_ENUM_DEFERRED`); ESLint
 // `no-unused-vars` ignores `_`-prefixed identifiers.
 const _F8_ENUM_DEFERRED = [
-  // Reserved for future cycle-creation hook (F4 invoice-paid →
-  // markCycleCompleteFromInvoicePaid use-case in `f8OnPaidCallbacks`);
-  // see FR-006 deferral target.
-  'renewal_cycle_created',
+  // `renewal_cycle_created` GRADUATED to F8_ENUM_SHIPPED_TUPLE in
+  // F8-completion slice 1 (shared createCycleInTx emit site; whitelist
+  // MOVE, no migration — pgEnum value already in migration 0109).
   // F8 Phase 7 tier-upgrade-suggestion event types — MOVED to
   // F8_ENUM_SHIPPED_TUPLE in Phase 7 (T179-T185). Migration 0116
   // adds the matching pgEnum values. The audit emit sites land in

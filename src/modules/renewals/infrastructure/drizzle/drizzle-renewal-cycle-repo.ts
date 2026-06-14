@@ -20,6 +20,7 @@
 import { and, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
+import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
@@ -44,7 +45,11 @@ import {
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
-import type { CycleStatus } from '../../domain/value-objects/cycle-status';
+import {
+  assertCanTransition,
+  InvalidCycleTransitionError,
+  type CycleStatus,
+} from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 
 // ---------------------------------------------------------------------------
@@ -101,7 +106,12 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     cycleLengthMonths: row.cycleLengthMonths,
     tierAtCycleStart: row.tierAtCycleStart as TierBucket,
     planIdAtCycleStart: row.planIdAtCycleStart,
-    frozenPlanPriceThb: row.frozenPlanPriceThb,
+    // Construction boundary (I-1): brand-validate the DB `decimal(12,2)`
+    // column value into ThbDecimal. The DB CHECK keeps the stored shape
+    // well-formed, so this never throws in practice — it pins the
+    // invariant at the row→domain boundary so the frozen price the
+    // §86/4 path consumes is brand-typed end to end.
+    frozenPlanPriceThb: parseThbDecimal(row.frozenPlanPriceThb),
     frozenPlanTermMonths: row.frozenPlanTermMonths,
     frozenPlanCurrency: row.frozenPlanCurrency as 'THB',
     linkedCreditNoteId: row.linkedCreditNoteId,
@@ -376,6 +386,10 @@ export function makeDrizzleRenewalCycleRepo(
           tenantId: tenant.slug,
           cycleId: input.cycleId,
           memberId: input.memberId,
+          // F8-completion Slice 1 — default 'upcoming' (the column
+          // default + steady-state entry points); Slice 3 passes
+          // 'awaiting_payment' for the admin lapsed-comeback fresh cycle.
+          status: input.startStatus ?? 'upcoming',
           periodFrom: new Date(input.periodFrom),
           periodTo: new Date(input.periodTo),
           // expires_at trigger denormalises from period_to.
@@ -480,6 +494,38 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    /**
+     * F8-completion Slice 1 — tx-bound variant of `findActiveForMember`.
+     * Uses the caller's tx handle so the read participates in the
+     * surrounding transaction: it sees an uncommitted prior-cycle
+     * `→completed` flip made earlier in the SAME tx (F4
+     * `f8OnPaidCallbacks[0]` before `withTx` commits). Threads the F4
+     * tx — NO `runInTenant` (the caller already established the tenant
+     * GUC). MUST only be called from inside a `runInTenant` block where
+     * `SET LOCAL app.current_tenant` is already set. Tenant scope comes
+     * from the inherited GUC, NOT a `WHERE tenant_id` predicate — same
+     * RLS precedent as `findByIdInTx`; `_tenantId` is intentionally
+     * unused.
+     */
+    async findActiveForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.memberId, memberId),
+            sql`${renewalCycles.status} NOT IN ('lapsed','cancelled','completed')`,
+          ),
+        )
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    },
+
     async findLatestCyclesForMembers(
       _tenantId: string,
       memberIds: readonly string[],
@@ -569,7 +615,7 @@ export function makeDrizzleRenewalCycleRepo(
       args: {
         readonly planIdAtCycleStart: string;
         readonly tierAtCycleStart: TierBucket;
-        readonly frozenPlanPriceThb: string;
+        readonly frozenPlanPriceThb: ThbDecimal;
         readonly frozenPlanTermMonths: number;
         readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
       },
@@ -710,6 +756,41 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async listCyclesEligibleForAwaitingPayment(
+      _tenantId: string,
+      args: {
+        readonly nowIso: string;
+        readonly pageSize: number;
+      },
+    ): Promise<RenewalCyclePage> {
+      return runInTenant(tenant, async (tx) => {
+        // F8-completion slice 2 — eligible = cycles still in
+        // `upcoming`/`reminded` whose `expires_at <= nowIso` (reached
+        // T-0). RLS scopes to the tenant context. `<= now` (vs the lapse
+        // cron's `< now - grace`) keeps the two crons disjoint in a
+        // single pass: a cycle becomes `awaiting_payment` here at T-0,
+        // and only later (after grace) does the lapse cron see it. Order
+        // by `expires_at ASC` so oldest expiries are flipped first
+        // (smallest blast radius on a partial cron run).
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              sql`${renewalCycles.status} IN ('upcoming','reminded')`,
+              sql`${renewalCycles.expiresAt} <= ${args.nowIso}`,
+            ),
+          )
+          .orderBy(sql`${renewalCycles.expiresAt} ASC`)
+          .limit(args.pageSize);
+
+        return {
+          items: rows.map(rowToDomain),
+          nextCursor: null,
+        };
+      });
+    },
+
     async transitionStatus(
       tx: unknown,
       _tenantId: string,
@@ -724,6 +805,18 @@ export function makeDrizzleRenewalCycleRepo(
         readonly linkedCreditNoteId?: string;
       },
     ): Promise<RenewalCycle> {
+      // G5b (F8-completion slice 0) — defence-in-depth: assert the
+      // (from → to) edge is DECLARED in the domain TRANSITIONS map BEFORE
+      // the optimistic CAS below. An illegal edge fails fast here
+      // (InvalidCycleTransitionError) so the map stays the single source
+      // of truth for what a writer may do; a legal-but-STALE `from`
+      // (concurrent flip) still surfaces a CycleTransitionConflictError
+      // from the CAS `WHERE status = from` probe. Both guards run — the
+      // domain edge check first, optimistic concurrency second.
+      const guard = assertCanTransition(args.from, args.to);
+      if (!guard.ok) {
+        throw new InvalidCycleTransitionError(args.from, args.to);
+      }
       const txDb = tx as typeof db;
       const setClause: Record<string, unknown> = {
         status: args.to,

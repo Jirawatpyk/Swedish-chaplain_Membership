@@ -22,6 +22,7 @@ import {
   hashRequestBody,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 import { createMember, directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import type { MemberId } from '@/modules/members';
@@ -190,13 +191,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const deps = buildMembersDeps(tenant);
+  // F8-completion Slice 1 · Task 1.6 — wire the F8 onboarding listener
+  // (create the new member's initial renewal cycle) into the create path
+  // when F8 is enabled. The listener runs POST-COMMIT — AFTER the member +
+  // contact + audit rows have committed durably — in its OWN runInTenant tx
+  // (best-effort; a failure is logged + counted and does NOT roll back the
+  // already-committed member create). Mirrors the changePlan wiring at
+  // [memberId]/route.ts. When F8 is off, createMember is unchanged.
+  const createDeps = env.features.f8Renewals
+    ? {
+        ...deps,
+        onboardingListeners: (
+          await import('@/modules/renewals')
+        ).f8OnCreateMemberCallbacks(tenant.slug),
+      }
+    : deps;
   const result = await createMember(
     rawBody,
     {
       actorUserId: ctx.current.user.id,
       requestId: ctx.requestId,
     },
-    deps,
+    createDeps,
   );
 
   if (result.ok) {

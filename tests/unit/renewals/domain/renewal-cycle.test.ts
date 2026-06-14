@@ -2,6 +2,7 @@
  * T034 spec — RenewalCycle aggregate invariants.
  */
 import { describe, expect, it } from 'vitest';
+import { parseThbDecimal } from '@/lib/money';
 import {
   CLOSED_REASONS,
   asCycleId,
@@ -23,8 +24,19 @@ const VALID_UUID = '00000000-0000-0000-0000-0000000000c1';
  * the status-aware factories below (`buildCompletedCycle`,
  * `buildLapsedCycle`, etc.) which return the specific union arm WITHOUT
  * a cast — those exercise the DU compile-time guarantee.
+ *
+ * `frozenPlanPriceThb` is widened to a plain `string` in the override
+ * type (vs the domain's branded `ThbDecimal`) so the malformed-input
+ * tests below can feed deliberately-invalid values ('', 'abc', '-100',
+ * '1e6') WITHOUT routing them through `parseThbDecimal` (which would
+ * throw at construction and defeat the runtime-reject assertions). The
+ * trailing `as RenewalCycle` re-brands the well-formed default.
  */
-function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
+function buildCycle(
+  overrides: Partial<Omit<RenewalCycle, 'frozenPlanPriceThb'>> & {
+    frozenPlanPriceThb?: string;
+  } = {},
+): RenewalCycle {
   return {
     tenantId: 't',
     cycleId: asCycleId(VALID_UUID),
@@ -66,7 +78,10 @@ const baseFields = {
   cycleLengthMonths: 12,
   tierAtCycleStart: 'regular' as const,
   planIdAtCycleStart: 'p1',
-  frozenPlanPriceThb: '50000.00',
+  // Known-valid literal → brand via the constructor (the status-aware
+  // factories below spread this and return `RenewalCycle` WITHOUT a
+  // cast, so the field must already be `ThbDecimal`).
+  frozenPlanPriceThb: parseThbDecimal('50000.00'),
   frozenPlanTermMonths: 12,
   frozenPlanCurrency: 'THB' as const,
   linkedCreditNoteId: null,

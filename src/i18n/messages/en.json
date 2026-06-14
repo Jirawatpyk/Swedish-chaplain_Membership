@@ -956,6 +956,31 @@
             "cancelled": "Cancelled"
           }
         },
+        "renewLapsed": {
+          "trigger": "Renew member",
+          "title": "Renew this member?",
+          "description": "This starts a new membership year for this member and creates a renewal invoice for them to pay. The price is frozen at the member's current plan. The member becomes active again once the invoice is paid.",
+          "cancel": "Cancel",
+          "confirm": "Create renewal invoice",
+          "submitting": "Creating…",
+          "toast": {
+            "success": "Renewal invoice created and sent to the member.",
+            "failure": "Could not renew this member.",
+            "error": {
+              "member_not_found": "Member not found.",
+              "member_archived": "This member is archived. Restore the member before renewing.",
+              "member_has_active_cycle": "This member already has an active renewal cycle.",
+              "plan_not_found": "The member's plan could not be resolved.",
+              "invoice_issue_failed": "The renewal invoice could not be issued. The renewal was not completed — please try again.",
+              "rate_limited": "Too many renewal attempts. Please wait a moment and try again.",
+              "invalid_body": "The request could not be processed. Please refresh the page and try again.",
+              "invalid_input": "The renewal request was invalid. Please refresh the page and try again.",
+              "feature_disabled": "Renewals are currently disabled.",
+              "forbidden": "You do not have permission to renew members.",
+              "server_error": "Something went wrong. Please try again."
+            }
+          }
+        },
         "subscription": {
           "subscribed": "Subscribed",
           "unsubscribed": "Unsubscribed",
@@ -4617,6 +4642,10 @@
         "subtitle": "Review your membership and confirm to receive an invoice.",
         "membershipPlanHeading": "Membership plan"
       },
+      "notYetOpenTitle": "Renewal window not yet open",
+      "notYetOpenBody": "Your renewal isn't due yet. We'll email you when it's time to renew — there's nothing to do here for now.",
+      "pendingReviewTitle": "Awaiting admin verification",
+      "pendingReviewBody": "We've received your renewal and our team is verifying it. You'll be notified once it's confirmed — no further action is needed right now.",
       "loading": {
         "announce": "Loading your renewal details…"
       },

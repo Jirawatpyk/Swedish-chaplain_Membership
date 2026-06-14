@@ -30,12 +30,11 @@
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { addMonthsUtc } from '@/lib/dates';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
-import {
-  parseCycleId,
-  type CycleId,
-} from '../../domain/renewal-cycle';
+import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
+import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 // Type-only imports keep Application layer free of cross-module runtime
 // coupling (Constitution Principle III). Brands are compile-time no-op
 // casts; the upstream `memberId` (bare string in domain) and `invoiceId`
@@ -97,20 +96,6 @@ export type MarkPaidOfflineError =
 // the tenant's grace_period_days. Admins marking those paid use the
 // same `awaiting_payment` codepath; the urgency derivation is read-only.
 const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
-
-/**
- * Compute the next cycle's expires_at by adding `frozenPlanTermMonths`
- * to the current `period_to`. Direct UTC arithmetic is correct here
- * because Asia/Bangkok is UTC+7 with no DST transitions: a
- * `setUTCMonth(+N)` produces a UTC instant that lands at the same
- * Bangkok calendar date for every supported plan term (1–60 months).
- * No js-joda needed.
- */
-function deriveNewExpiresAt(currentPeriodToIso: string, termMonths: number): string {
-  const d = new Date(currentPeriodToIso);
-  d.setUTCMonth(d.getUTCMonth() + termMonths);
-  return d.toISOString();
-}
 
 /**
  * Round 5 S-04 — Bangkok fiscal year extraction. Asia/Bangkok is UTC+7
@@ -181,13 +166,15 @@ export async function markPaidOffline(
     });
   }
 
-  // FR-021a frozen-price invariant: F4 `createInvoiceDraft` fetches
-  // the plan-year fee from F2 (NOT from `cycle.frozen_plan_price_thb`).
-  // This relies on F2's plan-year immutability rule — once any issued
-  // invoice references a plan-year, F2's `editable_until` guard freezes
-  // the fee. The cycle-vs-invoice price drift assertion lives in the
-  // integration test for offline mark-paid; a runtime mismatch would
-  // surface there before reaching production.
+  // FR-022 frozen-price invariant (068 cluster A): the offline §86/4 bills
+  // the cycle's FROZEN price (`lockedCycle.frozen_plan_price_thb`), NOT the
+  // live F2 catalogue fee. The frozen price is threaded into the F4 chain as
+  // the `renewalSignal` ~145 lines below (see the `frozenPlanPriceThb` arg on
+  // `issueAndMarkPaid`), which overrides the membership-line price + suppresses
+  // the reg-fee re-bill — mirroring the online confirm-renewal path. This
+  // protects a member from a mid-cycle catalogue price bump and keeps the tax
+  // document off the price-tampering surface. The cycle-vs-invoice price
+  // assertion lives in the offline mark-paid integration test.
   //
   // Round 5 S-04 — Bangkok-local fiscal year. UTC `getUTCFullYear()` is
   // wrong at BKK boundaries: a period_from of 2026-12-31T17:00:00Z =
@@ -230,7 +217,10 @@ export async function markPaidOffline(
       // periodTo, not the pre-lock snapshot. If a concurrent path
       // mutated period anchors between preLoad and lock acquisition,
       // the response + audit would otherwise carry a stale value.
-      const newExpiresAt = deriveNewExpiresAt(
+      // 068 cluster G — shared `addMonthsUtc` (was the byte-identical local
+      // `deriveNewExpiresAt`). Same UTC arithmetic; Asia/Bangkok is UTC+7 with
+      // no DST so the next expires_at lands on the same Bangkok calendar date.
+      const newExpiresAt = addMonthsUtc(
         lockedCycle.periodTo,
         lockedCycle.frozenPlanTermMonths,
       );
@@ -278,6 +268,42 @@ export async function markPaidOffline(
             summary: `Admin marked cycle ${cycleId} paid offline (${input.paymentMethod} ref=${input.paymentReference})`,
           },
         );
+
+        // 068-f8-completion (slice 1) — renewal-loop closer on the OFFLINE
+        // path. The online/record-payment paths run the full
+        // `f8OnPaidCallbacks` array whose callback[2] creates the next
+        // cycle; the offline path builds this single `onPaid` instead (the
+        // bridge wraps it as `[onPaid]`), so callback[2] never fires here.
+        // Without this call the cycle completes but the member silently
+        // drops out of the renewal pipeline — broken renewal loop for the
+        // bank-transfer-dominant SweCham/TSCC tenant.
+        //
+        // SAME-TX ordering: this runs AFTER the completion flip above
+        // marked the prior cycle →completed in THIS tx. `createCycleInTx`'s
+        // in-tx idempotency guard (`findActiveForMemberInTx`) therefore
+        // sees the uncommitted completion and EXCLUDES the prior cycle, so
+        // the next cycle IS created on the first mark (identical correctness
+        // contract to the online callback[2]). `tx` is the outer
+        // `runInTenant` tx the F4 bridge reuses via `externalTx` — the same
+        // tx the completion flip rode.
+        //
+        // THROWS on failure (consistent with the online path + this path's
+        // in-tx discipline): a throw rolls the whole offline-mark tx back,
+        // the admin's "mark paid" returns an error, and they retry — the
+        // `findActiveForMemberInTx` guard + `renewal_cycles_active_member_uniq`
+        // partial index make retry safe (no duplicate next cycle). NEVER
+        // swallowed: a swallow would complete the payment while the member
+        // drops out of the pipeline with no retry trigger.
+        await createNextCycleOnPaidInTx(
+          {
+            cyclesRepo: deps.cyclesRepo,
+            planLookup: deps.planLookupForRenewal,
+            auditEmitter: deps.auditEmitter,
+            idFactory: deps.cycleIdFactory,
+          },
+          evt,
+          tx,
+        );
       };
 
       const bridgeResult = await deps.f4InvoiceBridge.issueAndMarkPaid({
@@ -285,6 +311,15 @@ export async function markPaidOffline(
         memberId,
         planId,
         planYear,
+        // FR-022 — bill the cycle's FROZEN price on the offline §86/4, NOT
+        // the live F2 catalogue price (which may have been bumped since the
+        // cycle was created). Server-sourced from the LOCKED cycle row (the
+        // same snapshot the period anchors + completion flip ride), never a
+        // request body — a renewal §86/4 is a price-tampering surface on a
+        // tax document. The bridge converts to VAT-exclusive satang +
+        // suppresses the reg-fee re-bill. Mirrors the online confirm-renewal
+        // path. (cluster A, 068 code-review fix.)
+        frozenPlanPriceThb: lockedCycle.frozenPlanPriceThb,
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
         paymentDate: input.paymentDate,

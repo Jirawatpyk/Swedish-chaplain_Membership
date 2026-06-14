@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { CycleStatus } from '@/modules/renewals/client';
 import type { EngagementBand } from '@/modules/insights';
+import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
 
 export interface RenewalHealthCardProps {
   /**
@@ -47,6 +48,31 @@ export interface RenewalHealthCardProps {
   readonly engagementBand: EngagementBand | null;
   /** Deep link to the renewals dashboard (or the specific cycle). */
   readonly viewHref: string;
+  /**
+   * F8-completion Slice 3 — admin-only "Renew / reactivate this member"
+   * action. The trigger is rendered ONLY when `canRenew` (admin role) AND
+   * the member is lapsed (no active cycle: status ∈ lapsed | cancelled |
+   * completed | null). Managers never receive `canRenew=true`, so they
+   * never see the affordance (no broken button). Omitted on surfaces that
+   * don't supply the member id (the dialog needs it).
+   */
+  readonly canRenew?: boolean;
+  /** Member id for the renew POST (required when `canRenew` is true). */
+  readonly memberId?: string;
+}
+
+/**
+ * A member has NO active renewal cycle when its most-recent cycle is in a
+ * terminal/absent state. Only then is the admin lapsed-comeback action
+ * meaningful (the use-case would 409 `member_has_active_cycle` otherwise).
+ */
+function isLapsed(status: CycleStatus | null): boolean {
+  return (
+    status === null ||
+    status === 'lapsed' ||
+    status === 'cancelled' ||
+    status === 'completed'
+  );
 }
 
 /** Decorative Badge variant per cycle status (label still carries meaning). */
@@ -77,6 +103,8 @@ export function RenewalHealthCard({
   engagementScore,
   engagementBand,
   viewHref,
+  canRenew = false,
+  memberId,
 }: RenewalHealthCardProps): React.ReactElement {
   const t = useTranslations('admin.members.detail.renewalHealth');
   const tBand = useTranslations('admin.members.directory.engagementBand');
@@ -98,13 +126,18 @@ export function RenewalHealthCard({
           <CalendarClockIcon className="size-4" aria-hidden="true" />
           {t('title')}
         </h2>
-        <Link
-          href={viewHref}
-          className={buttonVariants({ variant: 'outline', size: 'sm' })}
-        >
-          {t('viewRenewal')}
-          <ArrowRightIcon className="size-3.5" aria-hidden="true" />
-        </Link>
+        <div className="flex items-center gap-2">
+          {canRenew && memberId !== undefined && isLapsed(status) && (
+            <RenewLapsedMemberDialog memberId={memberId} />
+          )}
+          <Link
+            href={viewHref}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            {t('viewRenewal')}
+            <ArrowRightIcon className="size-3.5" aria-hidden="true" />
+          </Link>
+        </div>
       </CardHeader>
       <CardContent>
         {status === null ? (

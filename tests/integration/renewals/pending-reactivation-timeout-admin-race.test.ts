@@ -58,6 +58,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { parseThbDecimal } from '@/lib/money';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
@@ -211,7 +212,7 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
       cycleLengthMonths: 12,
       tierAtCycleStart: 'regular',
       planIdAtCycleStart: randomUUID(),
-      frozenPlanPriceThb: '50000.00',
+      frozenPlanPriceThb: parseThbDecimal('50000.00'),
       frozenPlanTermMonths: 12,
       frozenPlanCurrency: 'THB',
       enteredPendingAt: enteredPendingAt.toISOString(),

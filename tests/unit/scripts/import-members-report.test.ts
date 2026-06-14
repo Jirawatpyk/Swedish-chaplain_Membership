@@ -94,6 +94,7 @@ describe('report builder (spec § 7 — no PII)', () => {
       committed: {
         membersCreated: 5,
         contactsCreated: 8,
+        cyclesCreated: 5,
         skippedExistingMembers: 2,
         skippedPartialOverlapMembers: 1,
         skippedSoftDeletedContacts: 1,
@@ -103,7 +104,9 @@ describe('report builder (spec § 7 — no PII)', () => {
       },
     });
     const text = renderReportText(committedDoc);
-    expect(text).toContain('Committed: 5 members + 8 contacts');
+    expect(text).toContain(
+      'Committed: 5 members + 8 contacts + 5 initial renewal cycles.',
+    );
     // R4 #12: the 4-count Skipped: summary line must carry every bucket, correctly labelled,
     // so a regression that drops or mislabels a count is caught.
     expect(text).toContain(

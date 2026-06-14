@@ -117,6 +117,8 @@ export {
   type CreateMemberInput,
   type CreateMemberError,
   type CreateMemberDeps,
+  type CreateMemberListener,
+  type CreateMemberListenerEvent,
 } from './application/use-cases/create-member';
 
 export {

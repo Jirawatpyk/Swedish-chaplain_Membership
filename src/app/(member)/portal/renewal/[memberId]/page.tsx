@@ -44,6 +44,9 @@ export default async function RenewalPortalPage({
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('portal.renewal.page');
   const tField = await getTranslations('portal.renewal.fields');
+  // G4 (F8-completion slice 2.6) — payability-gate copy lives one level
+  // up under `portal.renewal.*` (flat keys notYetOpen*/pendingReview*).
+  const tGate = await getTranslations('portal.renewal');
   // UX R5/C2: tier slug → human-readable label via the same i18n
   // namespace admin surfaces use; loud-fail to slug if a future tier
   // is added without a matching key (matches K28 cycle-detail pattern).
@@ -209,22 +212,62 @@ export default async function RenewalPortalPage({
 
       <BenefitSummary benefits={summary.benefits} benefitsAvailable={summary.benefitsAvailable} />
 
-      {/* Confirm flow wrapped in a Card so the renewal page reads as a
-          consistent 3-card stack (plan summary · benefits · confirm) and
-          matches the loading skeleton — was a card-less control group that
-          flashed on hydration (UX R2-I2). */}
-      <Card>
-        <CardContent>
-          <RenewalConfirmFlow
-            memberId={urlMemberId}
-            cycleId={summary.cycleId}
-            planYear={planYear}
-            currentPlanId={summary.planIdAtCycleStart}
-            currentPlanLabel={currentPlanLabel}
-            availablePlans={availablePlans}
-          />
-        </CardContent>
-      </Card>
+      {/* G4 (F8-completion slice 2.6) — payability gate. The Confirm flow
+          renders ONLY for an `awaiting_payment` cycle (the payable state).
+          An `upcoming|reminded` cycle shows a read-only "renewal window not
+          yet open" card; a `pending_admin_reactivation` cycle shows an
+          "awaiting admin verification" notice. The server gate
+          (`confirmRenewal` → 409 cycle_not_payable, with the lazy
+          self-transition for upcoming|reminded in slice 2.5) stays the
+          backstop — this presentation gate just stops a member ever seeing
+          a Confirm button they can't use.
+
+          Reviewer note (do NOT flag as a bug): until the enter-awaiting
+          cron / lazy confirm-writers have run, most members' cycles are
+          still `upcoming|reminded`, so this CORRECTLY renders the
+          not-yet-open state for them — that is correct, not "renewal is
+          broken". A member who renews early hits the slice-2.5 lazy
+          transition via the confirm route. */}
+      {summary.status === 'awaiting_payment' ? (
+        /* Confirm flow wrapped in a Card so the renewal page reads as a
+           consistent 3-card stack (plan summary · benefits · confirm) and
+           matches the loading skeleton — was a card-less control group that
+           flashed on hydration (UX R2-I2). */
+        <Card>
+          <CardContent>
+            <RenewalConfirmFlow
+              memberId={urlMemberId}
+              cycleId={summary.cycleId}
+              planYear={planYear}
+              currentPlanId={summary.planIdAtCycleStart}
+              currentPlanLabel={currentPlanLabel}
+              availablePlans={availablePlans}
+            />
+          </CardContent>
+        </Card>
+      ) : summary.status === 'pending_admin_reactivation' ? (
+        <Card role="region" aria-labelledby="renewal-gate-heading">
+          <CardContent className="flex flex-col gap-2">
+            <h2 id="renewal-gate-heading" className="text-h4">
+              {tGate('pendingReviewTitle')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {tGate('pendingReviewBody')}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card role="region" aria-labelledby="renewal-gate-heading">
+          <CardContent className="flex flex-col gap-2">
+            <h2 id="renewal-gate-heading" className="text-h4">
+              {tGate('notYetOpenTitle')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {tGate('notYetOpenBody')}
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </DetailContainer>
   );
 }

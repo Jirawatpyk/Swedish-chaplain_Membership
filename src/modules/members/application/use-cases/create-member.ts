@@ -22,6 +22,8 @@
 
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asEmail } from '../../domain/value-objects/email';
@@ -113,6 +115,30 @@ export type CreateMemberError =
   | { type: 'audit_failed' }
   | { type: 'server_error'; message: string };
 
+// --- Onboarding listeners (F8-completion Slice 1 · Task 1.6) -----------------
+
+/**
+ * Event handed to each `onboardingListeners` callback POST-COMMIT, after
+ * the create tx (member + contact + audit) has committed durably. F8's
+ * `f8OnCreateMemberCallbacks(tenantId)` factory consumes this to create
+ * the new member's initial renewal cycle (anchored at `registrationDate`).
+ *
+ * `registrationDate` is an ISO 8601 UTC string (the cycle's `period_from`
+ * anchor). `correlationId` is the request id for log+trace correlation.
+ */
+export type CreateMemberListenerEvent = {
+  readonly tenantId: string;
+  readonly memberId: string;
+  /** ISO 8601 UTC — the member's registration_date, the cycle anchor. */
+  readonly registrationDate: string;
+  readonly planId: string;
+  readonly correlationId: string;
+};
+
+export type CreateMemberListener = (
+  evt: CreateMemberListenerEvent,
+) => Promise<void>;
+
 // --- Deps --------------------------------------------------------------------
 
 export type CreateMemberDeps = {
@@ -132,6 +158,19 @@ export type CreateMemberDeps = {
     memberId(): MemberId;
     contactId(): ContactId;
   };
+  /**
+   * F8-completion Slice 1 · Task 1.6 — post-commit best-effort listeners
+   * (e.g. create the member's initial renewal cycle). Mirror change-plan's
+   * `manualPlanChangeListeners`: each runs in its OWN tenant tx (the
+   * listener opens it), and failures are logged + counted
+   * (`renewalsMetrics.bootstrapCycleCreateFailed`) and NEVER roll back the
+   * already-committed member create — there is no tx to roll back and no
+   * webhook retry to heal it (the only swallow site in F8-completion).
+   * Optional — when undefined, createMember is unchanged. F8's
+   * `f8OnCreateMemberCallbacks(tenant.slug)` factory supplies the canonical
+   * single listener.
+   */
+  onboardingListeners?: ReadonlyArray<CreateMemberListener>;
 };
 
 export type CreateMemberCallMeta = {
@@ -397,6 +436,50 @@ export async function createMember(
 
       return result.value;
     });
+
+    // F8-completion Slice 1 · Task 1.6 — invoke the registered onboarding
+    // listeners (e.g. create the member's initial renewal cycle) POST-COMMIT,
+    // after the create tx above has committed durably. Each listener opens
+    // its OWN tenant tx (the factory does) and is best-effort: this is the
+    // ONLY swallow site in F8-completion. There is no tx to roll back and no
+    // webhook retry to heal it, so a failure is logged + counted + ignored —
+    // it must NEVER surface a spurious error on an already-committed member.
+    // Mirrors change-plan.ts:manualPlanChangeListeners exactly.
+    const listeners = deps.onboardingListeners ?? [];
+    if (listeners.length > 0) {
+      const evt: CreateMemberListenerEvent = {
+        tenantId: deps.tenant.slug,
+        memberId: created.member.memberId,
+        registrationDate: created.member.registrationDate.toISOString(),
+        planId: created.member.planId,
+        correlationId: meta.requestId,
+      };
+      for (const listener of listeners) {
+        try {
+          await listener(evt);
+        } catch (e) {
+          // uuid/slug identifiers ONLY — never the member entity / name /
+          // email / company (PII forbidden in logs; Task 1.8 redaction).
+          // INVARIANT: `err` below is a bare STRING — pino's REDACT_PATHS
+          // redact by object KEY, not by scanning string VALUES, so any
+          // future throwable added to the listener chain MUST keep its
+          // message PII-free (the cycle table + audit payload carry zero
+          // PII columns today, so PG error details cannot surface PII —
+          // keep it that way).
+          logger.error(
+            {
+              err: e instanceof Error ? e.message : String(e),
+              tenantId: deps.tenant.slug,
+              memberId: created.member.memberId,
+            },
+            '[create-member] post-commit onboardingListener threw — member already committed; logged + counted, NOT rolled back',
+          );
+          renewalsMetrics.bootstrapCycleCreateFailed.add(1, {
+            tenant_id: deps.tenant.slug,
+          });
+        }
+      }
+    }
 
     return ok({
       memberId: created.member.memberId,

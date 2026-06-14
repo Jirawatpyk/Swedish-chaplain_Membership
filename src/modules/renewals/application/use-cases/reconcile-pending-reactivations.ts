@@ -6,8 +6,13 @@
  *   1. Emit `_reminder_t-7` audit at 23 days since `entered_pending_at`
  *   2. Emit `_reminder_t-3` audit at 27 days
  *   3. Emit `_reminder_t-1` audit at 29 days
- *   4. Auto-timeout at >= 30 days: cancel cycle + refund via F5 +
- *      emit `_timed_out` audit (actor=cron, null userId)
+ *   4. Auto-timeout at >= 30 days: LAPSE the cycle (→ `lapsed`,
+ *      closed_reason='pending_reactivation_timed_out') + refund via F5 +
+ *      emit `_timed_out` audit (actor=cron, null userId). NOTE: timeout
+ *      lands in `lapsed` (passive expiry — stays in the re-engagement
+ *      funnel), NOT `cancelled` (the explicit admin-reject terminal).
+ *      See the terminal-state divergence note in cycle-status.ts
+ *      (do-NOT-converge reporting invariant).
  *
  * The reminder-ladder audits (1-3) are forensic-only this wave — the
  * actual reminder-email send is the dispatcher cron's job (a follow-on

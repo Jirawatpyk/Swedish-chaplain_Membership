@@ -18,10 +18,10 @@
  * What this contract pins:
  *
  *   1. **Factory shape** — `f8OnPaidCallbacks(tenantId)` returns a
- *      2-element ReadonlyArray of async callbacks (one for cycle-
- *      completion T123, one for tier-upgrade-apply T183). The fixed
- *      arity prevents accidental drop of either callback during a
- *      future refactor.
+ *      3-element ReadonlyArray of async callbacks ([0] cycle-completion
+ *      T123, [1] tier-upgrade-apply T183, [2] create-next-cycle-on-paid
+ *      F8-completion slice 1 / Task 1.4). The fixed arity prevents
+ *      accidental drop of any callback during a future refactor.
  *   2. **Callback signature** — each callback accepts
  *      `(event, tx?: unknown) => Promise<void>` matching F4's
  *      `markPaidFromProcessor` onPaidCallbacks contract.
@@ -46,11 +46,12 @@ import { describe, expect, it } from 'vitest';
 import { f8OnPaidCallbacks } from '@/modules/renewals';
 
 describe('F8 F4 onPaidCallback contract — Phase 9 / T258d', () => {
-  it('f8OnPaidCallbacks returns exactly 2 callbacks (T123 cycle-completion + T183 tier-upgrade-apply)', () => {
+  it('f8OnPaidCallbacks returns exactly 3 callbacks (T123 cycle-completion + T183 tier-upgrade-apply + Task 1.4 create-next-cycle)', () => {
     const callbacks = f8OnPaidCallbacks('test-tenant-slug');
-    expect(callbacks).toHaveLength(2);
+    expect(callbacks).toHaveLength(3);
     expect(typeof callbacks[0]).toBe('function');
     expect(typeof callbacks[1]).toBe('function');
+    expect(typeof callbacks[2]).toBe('function');
   });
 
   it('each callback accepts (event, tx) signature — async function with arity ≤2', () => {
@@ -76,16 +77,17 @@ describe('F8 F4 onPaidCallback contract — Phase 9 / T258d', () => {
     // (closure-bound on different tenant slugs).
     expect(a[0]).not.toBe(b[0]);
     expect(a[1]).not.toBe(b[1]);
+    expect(a[2]).not.toBe(b[2]);
   });
 
   it('callback array is ReadonlyArray — callers cannot mutate the registered set (defence-in-depth)', () => {
     const callbacks = f8OnPaidCallbacks('test-tenant-slug');
     // ReadonlyArray is a TypeScript-only contract; at runtime the array
     // is a regular Array. The test asserts the contract by checking
-    // the public array has length 2 — if a future refactor introduces
-    // a 3rd callback without updating this test + the JSDoc count,
+    // the public array has length 3 — if a future refactor introduces
+    // a 4th callback without updating this test + the JSDoc count,
     // the assertion catches the drift before it ships.
-    expect(callbacks).toHaveLength(2);
+    expect(callbacks).toHaveLength(3);
     expect(Array.isArray(callbacks)).toBe(true);
   });
 });

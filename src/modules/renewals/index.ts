@@ -512,6 +512,20 @@ export {
 } from './application/use-cases/confirm-renewal';
 
 export {
+  adminRenewLapsedMember,
+  adminRenewLapsedMemberInputSchema,
+  type AdminRenewLapsedMemberInput,
+  type AdminRenewLapsedMemberOutput,
+  type AdminRenewLapsedMemberError,
+  type AdminRenewLapsedMemberDeps,
+} from './application/use-cases/admin-renew-lapsed-member';
+
+export type {
+  MemberPlanLookupPort,
+  MemberPlanLookupResult,
+} from './application/ports/member-plan-lookup-port';
+
+export {
   // Round 2 (S-11): split into InTx + wrapper variants. F4 onPaidCallback
   // path uses `markCycleCompleteInTx` to participate in F4's tx;
   // standalone callers use the wrapper.
@@ -585,6 +599,15 @@ export {
   type LapseCyclesOnGraceExpiryOutput,
   type LapseCyclesOnGraceExpiryError,
 } from './application/use-cases/lapse-cycles-on-grace-expiry';
+
+// --- F8-completion slice 2 — enterAwaitingPaymentOnExpiry (T-0 cron) ------
+export {
+  enterAwaitingPaymentOnExpiry,
+  enterAwaitingPaymentOnExpiryInputSchema,
+  type EnterAwaitingPaymentOnExpiryInput,
+  type EnterAwaitingPaymentOnExpiryOutput,
+  type EnterAwaitingPaymentOnExpiryError,
+} from './application/use-cases/enter-awaiting-payment-on-expiry';
 
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
@@ -693,6 +716,13 @@ export {
 export {
   f8OnManualPlanChangeCallbacks,
 } from './infrastructure/ports-adapters/f2-plan-change-bridge';
+
+// F8-completion Slice 1 · Task 1.6 — F3 → F8 create-member onboarding
+// bridge (factory for the listener array consumed by F3's `createMember`
+// use-case; creates the new member's initial renewal cycle post-commit).
+export {
+  f8OnCreateMemberCallbacks,
+} from './infrastructure/ports-adapters/f8-on-create-member-callbacks';
 
 // F8 Phase 7 review-fix C-TYPE-1 — canonical event shape (was duplicated
 // across F3 + F8 bridge before consolidation).

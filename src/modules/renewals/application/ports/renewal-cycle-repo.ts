@@ -11,6 +11,7 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { TenantTx } from '@/lib/db';
+import type { ThbDecimal } from '@/lib/money';
 import type {
   CycleId,
   RenewalCycle,
@@ -30,9 +31,18 @@ export interface NewRenewalCycleInput {
   readonly cycleLengthMonths: number;
   readonly tierAtCycleStart: TierBucket;
   readonly planIdAtCycleStart: string;
-  /** Decimal string from DB (`decimal(12,2)`). */
-  readonly frozenPlanPriceThb: string;
+  /** Brand-validated `decimal(12,2)` THB value (I-1, 068 speckit-review). */
+  readonly frozenPlanPriceThb: ThbDecimal;
   readonly frozenPlanTermMonths: number;
+  /**
+   * F8-completion Slice 1 — the cycle's initial status. Defaults to
+   * `'upcoming'` (the DB column default + the steady-state on-paid /
+   * import / onboarding entry points). Slice 3's admin lapsed-comeback
+   * path creates a cycle that starts in `'awaiting_payment'` (already
+   * payable). Constrained to the two valid START states — a new cycle
+   * never begins life in a reminded/pending/terminal status.
+   */
+  readonly startStatus?: 'upcoming' | 'awaiting_payment';
 }
 
 export interface ListRenewalCyclesOpts {
@@ -125,7 +135,10 @@ export interface RenewalCycleRepo {
     args: {
       readonly planIdAtCycleStart: string;
       readonly tierAtCycleStart: TierBucket;
-      readonly frozenPlanPriceThb: string;
+      // ThbDecimal (not bare string) so the §86/4 frozen-price write path is
+      // brand-guarded like the other hops — a raw/display string can't reach
+      // the tax-document price column without going through parseThbDecimal.
+      readonly frozenPlanPriceThb: ThbDecimal;
       readonly frozenPlanTermMonths: number;
       readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
     },
@@ -151,6 +164,30 @@ export interface RenewalCycleRepo {
    * L135. Returns null when the member has no active cycle.
    */
   findActiveForMember(
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
+   * F8-completion Slice 1 — same as `findActiveForMember` but accepts
+   * the caller's tx handle so the read participates in the surrounding
+   * transaction. It can therefore see an uncommitted prior-cycle
+   * `→completed` flip made EARLIER in the SAME tx (e.g. F4
+   * `f8OnPaidCallbacks[0]` flips the just-paid cycle to `completed`
+   * before `withTx` commits). The connection-fresh `findActiveForMember`
+   * opens its OWN `runInTenant` connection and CANNOT see that
+   * uncommitted flip under READ COMMITTED — which would make the
+   * on-paid next-cycle creation idempotency-guard see the prior cycle
+   * as still active → no-op → the next cycle never created on first
+   * delivery. Threading the F4 tx closes that window.
+   *
+   * Tenant context comes from the inherited GUC (set by the caller's
+   * `runInTenant`); `tenantId` is intentionally unused (RLS, not a
+   * WHERE clause) — same precedent as `findByIdInTx`. Constitution
+   * Principle VIII (state↔audit atomicity).
+   */
+  findActiveForMemberInTx(
+    tx: TenantTx,
     tenantId: string,
     memberId: string,
   ): Promise<RenewalCycle | null>;
@@ -236,6 +273,29 @@ export interface RenewalCycleRepo {
     tenantId: string,
     args: {
       readonly cutoffDate: string;
+      readonly pageSize: number;
+    },
+  ): Promise<RenewalCyclePage>;
+
+  /**
+   * F8-completion slice 2 — eligibility cursor for the T-0 expiry cron
+   * (`enterAwaitingPaymentOnExpiry`). Returns cycles still in
+   * `upcoming` or `reminded` whose `expires_at <= nowIso` — i.e. they
+   * have reached T-0 and must become payable. Ordered by `expires_at
+   * ASC` for deterministic batching (oldest expiries first).
+   *
+   * The `<= nowIso` boundary (vs the lapse cron's `< now -
+   * grace_period_days`) is load-bearing: a cycle is never
+   * simultaneously eligible for BOTH the enter-awaiting flip and the
+   * lapse transition in one cron pass — the enter-awaiting cron flips
+   * `upcoming|reminded → awaiting_payment` at T-0; only AFTER it is
+   * `awaiting_payment` does the (later) lapse cron consider it once the
+   * grace window elapses.
+   */
+  listCyclesEligibleForAwaitingPayment(
+    tenantId: string,
+    args: {
+      readonly nowIso: string;
       readonly pageSize: number;
     },
   ): Promise<RenewalCyclePage>;

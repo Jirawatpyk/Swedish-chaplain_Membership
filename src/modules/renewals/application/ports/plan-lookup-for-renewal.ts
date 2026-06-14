@@ -12,11 +12,18 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { ThbDecimal } from '@/lib/money';
 
 export interface PlanFrozenFields {
   readonly tierBucket: 'thai_alumni' | 'start_up' | 'regular' | 'premium' | 'partnership';
-  /** Decimal string mirroring the F2 `priceThb` column. */
-  readonly priceTHB: string;
+  /**
+   * Frozen plan price as a brand-validated `decimal(12,2)` THB value
+   * mirroring the F2 `priceThb` column. `ThbDecimal` (not bare
+   * `string`) so a display label / `planYear.toString()` / SEK price
+   * cannot be assigned into the §86/4 frozen-price slot it flows into
+   * (I-1, 068 speckit-review).
+   */
+  readonly priceTHB: ThbDecimal;
   readonly termMonths: number;
   readonly currency: 'THB' | 'SEK' | 'EUR' | 'USD';
 }

@@ -14,6 +14,11 @@ import type { RowIssue, ValidationReport } from './validate';
 export interface CommitOutcome {
   readonly membersCreated: number;
   readonly contactsCreated: number;
+  /** F8-completion Slice 1 · Task 1.7 — initial renewal cycles created (one per
+   *  member created), inside the same batch tx. Equals `membersCreated` on a
+   *  clean run; a skipped member creates no cycle (its create is short-circuited
+   *  before the cycle step). PII-free count. */
+  readonly cyclesCreated: number;
   /** Members fully skipped: every listed email already exists (ACTIVE or SOFT-DELETED) under
    *  a SINGLE existing member — an idempotent re-run. (Active emails spanning DIFFERENT members
    *  are reported under skippedPartialOverlapMembers, not here.) */
@@ -89,7 +94,8 @@ export function renderReportText(doc: ReportDocument): string {
     lines.push('');
     const c = doc.committed;
     lines.push(
-      `Committed: ${c.membersCreated} members + ${c.contactsCreated} contacts. ` +
+      `Committed: ${c.membersCreated} members + ${c.contactsCreated} contacts ` +
+        `+ ${c.cyclesCreated} initial renewal cycles. ` +
         `Skipped: ${c.skippedExistingMembers} already-imported members, ` +
         `${c.skippedPartialOverlapMembers} partial-overlap members, ` +
         `${c.skippedSoftDeletedContacts} soft-deleted contacts, ` +

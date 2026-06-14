@@ -956,6 +956,31 @@
             "cancelled": "Avbruten"
           }
         },
+        "renewLapsed": {
+          "trigger": "Förnya medlem",
+          "title": "Förnya denna medlem?",
+          "description": "Detta startar ett nytt medlemsår för medlemmen och skapar en förnyelsefaktura som medlemmen ska betala. Priset låses till medlemmens nuvarande plan. Medlemmen blir aktiv igen när fakturan har betalats.",
+          "cancel": "Avbryt",
+          "confirm": "Skapa förnyelsefaktura",
+          "submitting": "Skapar…",
+          "toast": {
+            "success": "Förnyelsefaktura skapad och skickad till medlemmen.",
+            "failure": "Det gick inte att förnya denna medlem.",
+            "error": {
+              "member_not_found": "Medlemmen hittades inte.",
+              "member_archived": "Denna medlem är arkiverad. Återställ medlemmen innan du förnyar.",
+              "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
+              "plan_not_found": "Medlemmens plan kunde inte hittas.",
+              "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",
+              "rate_limited": "För många förnyelseförsök. Vänta en stund och försök igen.",
+              "invalid_body": "Begäran kunde inte behandlas. Uppdatera sidan och försök igen.",
+              "invalid_input": "Förnyelsebegäran var ogiltig. Uppdatera sidan och försök igen.",
+              "feature_disabled": "Förnyelser är för närvarande inaktiverade.",
+              "forbidden": "Du har inte behörighet att förnya medlemmar.",
+              "server_error": "Något gick fel. Försök igen."
+            }
+          }
+        },
         "subscription": {
           "subscribed": "Prenumererar",
           "unsubscribed": "Avregistrerad",
@@ -4620,6 +4645,10 @@
         "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",
         "membershipPlanHeading": "Medlemskapsplan"
       },
+      "notYetOpenTitle": "Förnyelsefönstret är inte öppet ännu",
+      "notYetOpenBody": "Din förnyelse förfaller inte ännu. Vi mejlar dig när det är dags att förnya — det finns inget att göra här just nu.",
+      "pendingReviewTitle": "Inväntar administratörsgranskning",
+      "pendingReviewBody": "Vi har tagit emot din förnyelse och vårt team verifierar den. Du meddelas när den är bekräftad — ingen ytterligare åtgärd krävs just nu.",
       "fields": {
         "plan": "Plan",
         "tier": "Nivå",

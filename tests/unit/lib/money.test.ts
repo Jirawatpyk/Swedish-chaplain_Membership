@@ -22,8 +22,11 @@ import {
   asSatangUnchecked,
   formatSatangAsBaht,
   parseSatang,
+  parseThbDecimal,
+  parseThbDecimalToSatang,
   satangToProcessorAmount,
   subSatang,
+  type ThbDecimal,
   type UntrustedSatang,
 } from '@/lib/money';
 
@@ -209,5 +212,93 @@ describe('formatSatangAsBaht', () => {
     // would lose precision; bigint arithmetic doesn't.
     const huge = asSatang(BigInt('10000000000000000'));
     expect(formatSatangAsBaht(huge)).toBe('100000000000000.00');
+  });
+});
+
+describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
+  it('parses a NON-ZERO satang remainder exactly', () => {
+    // The §86/4 frozen-price case: 50000.50 THB → 5_000_050 satang.
+    // (50000.50 is exactly representable as a double, so it is NOT a
+    //  float-drift demonstrator — that is the next test; this one just
+    //  pins the non-zero-satang remainder path.)
+    expect(parseThbDecimalToSatang(parseThbDecimal('50000.50'))).toBe(
+      5_000_050n,
+    );
+  });
+
+  it('does NOT drift on a value that float-multiply gets wrong', () => {
+    // The reason the parser is integer-only: 8.20 and 0.29 are NOT
+    // exactly representable as doubles, so the naive
+    // `Math.floor(parseFloat(x) * 100)` UNDER-bills by 1 satang on a
+    // §86/4 tax document:
+    //   parseFloat("8.20") * 100 === 819.9999999999999  → floor 819 (WRONG)
+    //   parseFloat("0.29") * 100 === 28.999999999999996 → floor  28 (WRONG)
+    // The integer parser splits on '.' and never touches a float.
+    expect(Math.floor(parseFloat('8.20') * 100)).toBe(819); // proves the drift exists
+    expect(parseThbDecimalToSatang(parseThbDecimal('8.20'))).toBe(820n); // the correct value
+    expect(Math.floor(parseFloat('0.29') * 100)).toBe(28);
+    expect(parseThbDecimalToSatang(parseThbDecimal('0.29'))).toBe(29n);
+  });
+
+  it('parses whole baht (no decimal point)', () => {
+    expect(parseThbDecimalToSatang(parseThbDecimal('50000'))).toBe(5_000_000n);
+  });
+
+  it('parses two-decimal whole-satang', () => {
+    expect(parseThbDecimalToSatang(parseThbDecimal('180000.00'))).toBe(
+      18_000_000n,
+    );
+  });
+
+  it('left-pads a single fractional digit (".5" → 50 satang)', () => {
+    expect(parseThbDecimalToSatang(parseThbDecimal('1.5'))).toBe(150n);
+  });
+
+  it('parses zero', () => {
+    expect(parseThbDecimalToSatang(parseThbDecimal('0'))).toBe(0n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('0.00'))).toBe(0n);
+  });
+
+  it('returns a branded Satang assignable to addSatang', () => {
+    // Compile-time + runtime proof the brand survives.
+    const a = parseThbDecimalToSatang(parseThbDecimal('100.00'));
+    const b = parseThbDecimalToSatang(parseThbDecimal('0.07'));
+    expect(addSatang(a, b)).toBe(10007n);
+  });
+
+  it('the parseThbDecimal CONSTRUCTOR rejects malformed input (RangeError)', () => {
+    // The brand constructor is the FIRST validation gate — distinct from the
+    // inline last-line guard in parseThbDecimalToSatang exercised below. A
+    // raw/display string can never become a ThbDecimal without passing here.
+    expect(() => parseThbDecimal('abc')).toThrow(RangeError);
+    expect(() => parseThbDecimal('')).toThrow(RangeError);
+    expect(() => parseThbDecimal('-1.00')).toThrow(RangeError);
+    expect(() => parseThbDecimal('1.999')).toThrow(RangeError);
+  });
+
+  // The THROWS-on-malformed tests bypass the `parseThbDecimal`
+  // constructor (which would itself throw at construction, before
+  // `parseThbDecimalToSatang` ever runs) by casting a known-bad string
+  // through `as ThbDecimal`. This exercises the retained inline
+  // `VALID_THB_DECIMAL_RE` last-line guard inside `parseThbDecimalToSatang`
+  // — the defence against a value that reached the parser through a
+  // cast-through-the-brand.
+  it('THROWS on a malformed input (3 fractional digits)', () => {
+    expect(() =>
+      parseThbDecimalToSatang('1.234' as ThbDecimal),
+    ).toThrow(RangeError);
+  });
+
+  it('THROWS on a negative input', () => {
+    expect(() =>
+      parseThbDecimalToSatang('-1.00' as ThbDecimal),
+    ).toThrow(RangeError);
+  });
+
+  it('THROWS on a non-numeric input', () => {
+    expect(() => parseThbDecimalToSatang('abc' as ThbDecimal)).toThrow(
+      RangeError,
+    );
+    expect(() => parseThbDecimalToSatang('' as ThbDecimal)).toThrow(RangeError);
   });
 });

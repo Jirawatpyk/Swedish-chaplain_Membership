@@ -290,6 +290,84 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
     });
   });
 
+  // FR-022 (068 speckit-review tests I-1) — UNIT coverage for the
+  // `renewalSignal` branch. This is the security-critical price-tampering
+  // surface on a renewal §86/4 (the membership line MUST bill the cycle's
+  // FROZEN price, NEVER the live F2 catalogue price). Previously covered
+  // only by integration; F4 requires 100% BRANCH coverage on this use-case,
+  // so the `isRenewal` true-branch needs an in-process unit assertion.
+  describe('FR-022 — renewalSignal branch (frozen renewal price)', () => {
+    // Frozen renewal price (50,000 THB) deliberately DIFFERS from the live
+    // catalogue annual fee (16,000 THB) so a failure to honour the signal
+    // (billing the catalogue price) is unambiguous.
+    const FROZEN_SATANG = 5_000_000n; // 50,000.00 THB (VAT-exclusive)
+    const CATALOGUE_SATANG = 1_600_000n; // 16,000.00 THB
+
+    it('(a) membership line unit price == renewalSignal.unitPriceSatang (frozen), NOT the catalogue getAnnualFeeSatang', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        // Registered in a PRIOR FY (a returning member renewing).
+        makeMember({ registrationDate: '2024-06-01', registrationFeePaid: true }),
+        CATALOGUE_SATANG, // live catalogue fee — must be IGNORED on renewal
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        renewalSignal: { unitPriceSatang: FROZEN_SATANG },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        // Unit price + total are the FROZEN 50,000 — not the 16,000 catalogue.
+        expect(line.unitPrice.toString()).toBe('50000.00 THB');
+        expect(line.total.toString()).toBe('50000.00 THB');
+      }
+    });
+
+    it('(b) no registration_fee line even when registrationFeePaid=false (FR-022 reg-fee suppression on renewal)', async () => {
+      const deps = makeDeps(
+        makeSettings({ registrationFeeSatang: asSatang(500000n) }), // 5,000 THB configured
+        // Unpaid reg fee — on a NON-renewal this would add the reg-fee line.
+        makeMember({ registrationFeePaid: false }),
+        CATALOGUE_SATANG,
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        renewalSignal: { unitPriceSatang: FROZEN_SATANG },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Only the membership line — the reg-fee re-bill is suppressed.
+        expect(result.value.lines).toHaveLength(1);
+        expect(result.value.lines[0]!.kind).toBe('membership_fee');
+        expect(
+          result.value.lines.some((l) => l.kind === 'registration_fee'),
+        ).toBe(false);
+      }
+    });
+
+    it('(c) proRateFactor === "1.0000" on a mid-FY-join renewal (always a full cycle, never pro-rated)', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        // Joined mid-FY: a NON-renewal at this date would pro-rate to 0.5000
+        // (see the "mid-July" case above) — the renewal branch forces 1.0000.
+        makeMember({ registrationDate: '2026-07-15', registrationFeePaid: true }),
+        CATALOGUE_SATANG,
+        { clock: { nowIso: () => '2026-07-15T10:00:00Z' } },
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        renewalSignal: { unitPriceSatang: FROZEN_SATANG },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.proRateFactor).toBe('1.0000');
+        // Full frozen price, not 0.5 × anything.
+        expect(line.total.toString()).toBe('50000.00 THB');
+      }
+    });
+  });
+
   it('emits invoice_draft_created audit with pro_rate_factor + registration_fee_included in payload', async () => {
     const deps = makeDeps(
       makeSettings(),

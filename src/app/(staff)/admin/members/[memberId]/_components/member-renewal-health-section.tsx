@@ -44,9 +44,17 @@ import { RenewalHealthCard } from '@/components/members/renewal-health-card';
 export async function MemberRenewalHealthSection({
   tenant,
   memberId,
+  canRenew = false,
 }: {
   readonly tenant: TenantContext;
   readonly memberId: string;
+  /**
+   * F8-completion Slice 3 — when true (admin role), surfaces the
+   * "Renew / reactivate this member" action on the card for a lapsed
+   * member. Managers pass `false`, so the affordance never renders for
+   * them (no broken button). The route enforces admin-only regardless.
+   */
+  readonly canRenew?: boolean;
 }): Promise<React.JSX.Element> {
   const renewalsDeps = makeRenewalsDeps(tenant.slug);
   const renewalRes = await loadMemberRenewalStatus(renewalsDeps, {
@@ -102,6 +110,12 @@ export async function MemberRenewalHealthSection({
       // Deep-link to the renewals dashboard. A specific-cycle deep link is a
       // Pass B refinement once the cycle-detail route is surfaced here.
       viewHref="/admin/renewals"
+      // F8-completion Slice 3 — admin lapsed-comeback action. The renewal
+      // §86/4's plan_year is derived server-side INSIDE the use-case from
+      // the comeback cycle's `period_from` (L2, 068 security review) — the
+      // dialog body is confirmation-only, so no plan_year is plumbed here.
+      canRenew={canRenew}
+      memberId={memberId}
     />
   );
 }

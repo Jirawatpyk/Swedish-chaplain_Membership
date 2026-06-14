@@ -85,7 +85,10 @@ export function isTerminalCycleStatus(
  * the same patch as the constant tuple update.
  */
 const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
-  upcoming: ['reminded', 'awaiting_payment', 'cancelled'],
+  // +completed: offline-mark of an `upcoming` cycle via mark-paid-offline.ts
+  // (its PAYABLE_STATUSES = {awaiting_payment, upcoming}) flips straight to
+  // `completed` without first passing through `awaiting_payment`.
+  upcoming: ['reminded', 'awaiting_payment', 'completed', 'cancelled'],
   reminded: ['awaiting_payment', 'cancelled'],
   awaiting_payment: [
     'completed',
@@ -93,7 +96,10 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
     'pending_admin_reactivation',
     'cancelled',
   ],
-  pending_admin_reactivation: ['completed', 'cancelled'],
+  // +lapsed: a money-hold that times out (reconcile-pending-reactivations.ts)
+  // passively expires to `lapsed` — distinct from an explicit admin reject
+  // (→ `cancelled`). See the terminal-state divergence note below.
+  pending_admin_reactivation: ['completed', 'cancelled', 'lapsed'],
   // Lapsed members can re-enter the cycle when they pay — branches per
   // member.blocked_from_auto_reactivation flag (FR-005b).
   lapsed: ['awaiting_payment', 'pending_admin_reactivation'],
@@ -101,6 +107,28 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
   completed: [],
   cancelled: [],
 };
+
+/**
+ * Terminal-state divergence (INTENTIONAL — do NOT converge).
+ *
+ * Two paths leave `pending_admin_reactivation`, and they MUST land in
+ * different terminal states:
+ *   - admin REJECT (explicit refusal, admin-reject-reactivation.ts)
+ *     → `cancelled`. The member was actively declined; they LEAVE the
+ *     re-engagement funnel.
+ *   - reconcile TIMEOUT (30-day passive expiry with no admin action,
+ *     reconcile-pending-reactivations.ts) → `lapsed`. The member simply
+ *     never got reviewed; they STAY in the at-risk / lapsed re-engagement
+ *     funnel for follow-up.
+ *
+ * Converging these (routing both to `lapsed`, or both to `cancelled`) would
+ * silently shift members between the at-risk and lapsed reporting buckets:
+ * the `URGENCY_CASE_SQL` expression in `drizzle-renewal-cycle-repo.ts`
+ * short-circuits the urgency computation on `status = 'lapsed'`, and the
+ * admin lapsed-tab + at-risk funnel bucket members by these terminal states.
+ * The split is a reporting invariant, not an accident — keep
+ * `reject → cancelled` and `timeout → lapsed` distinct.
+ */
 
 export function canTransition(from: CycleStatus, to: CycleStatus): boolean {
   return (TRANSITIONS[from] as readonly string[]).includes(to);
@@ -118,4 +146,28 @@ export function assertCanTransition(
 ): Result<void, CycleTransitionError> {
   if (canTransition(from, to)) return ok(undefined);
   return err({ kind: 'invalid_transition', from, to });
+}
+
+/**
+ * Thrown by the Infrastructure `transitionStatus` adapter when an
+ * undeclared `(from → to)` edge is attempted — a defence-in-depth domain
+ * guard that runs BEFORE the optimistic CAS (`WHERE status = from`). A
+ * legal-but-stale edge still surfaces a `CycleTransitionConflictError`
+ * from the CAS; an ILLEGAL edge (not in `TRANSITIONS`) fails fast here so
+ * the map stays the single source of truth for what a writer may do.
+ *
+ * Co-located with `assertCanTransition` (the Result-returning policy) so
+ * the throwing wrapper and the policy it enforces live together. The
+ * sibling `CycleNotFoundError` / `CycleTransitionConflictError` live in
+ * the `renewal-cycle-repo` port (CAS/probe outcomes); this is a pure
+ * domain-edge violation and belongs with the transition policy.
+ */
+export class InvalidCycleTransitionError extends Error {
+  constructor(
+    readonly from: CycleStatus,
+    readonly to: CycleStatus,
+  ) {
+    super(`Invalid cycle transition: ${from} → ${to} is not a declared edge`);
+    this.name = 'InvalidCycleTransitionError';
+  }
 }
