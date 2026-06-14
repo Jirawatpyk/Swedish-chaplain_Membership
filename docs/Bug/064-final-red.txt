@@ -1,0 +1,793 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [31m❯[39m tests/unit/invoicing/create-event-invoice-draft.test.ts [2m([22m[2m22 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 34[2mms[22m[39m
+[31m   [31m×[31m createEventInvoiceDraft — Model B inclusive line + member/non-member buyer[2m > [22merror branches[2m > [22mregistration_refunded — 064 M-A: refunded registration is HARD-blocked at draft (server-side twin of the form card); nothing persisted[90m 8[2mms[22m[31m[39m
+[31m     → expected true to be false // Object.is equality[39m
+ [31m❯[39m tests/unit/components/invoices/event-fee-form.test.tsx [2m([22m[2m47 tests[22m[2m | [22m[31m8 failed[39m[2m)[22m[33m 6765[2mms[22m[39m
+[31m   [31m×[31m isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mpayment in the SAME month as today → false (period still open)[90m 5[2mms[22m[31m[39m
+[31m     → isPastVatFilingDeadline is not a function[39m
+[31m   [31m×[31m isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mprior month, today = the 15th of the following month → false (deadline day itself is still timely)[90m 0[2mms[22m[31m[39m
+[31m     → isPastVatFilingDeadline is not a function[39m
+[31m   [31m×[31m isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mprior month, today = the 16th of the following month → true (deadline passed)[90m 0[2mms[22m[31m[39m
+[31m     → isPastVatFilingDeadline is not a function[39m
+[31m   [31m×[31m isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22myear boundary: December payment, today = Jan 16 next year → true; Jan 15 → false[90m 0[2mms[22m[31m[39m
+[31m     → isPastVatFilingDeadline is not a function[39m
+[31m   [31m×[31m isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22ma payment several closed periods back → true[90m 0[2mms[22m[31m[39m
+[31m     → isPastVatFilingDeadline is not a function[39m
+[31m   [31m×[31m isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mmalformed / empty inputs → false (no warning, defensive)[90m 0[2mms[22m[31m[39m
+[31m     → isPastVatFilingDeadline is not a function[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mfetches attendees for the pre-selected event and renders the picker [33m372[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → read-only buyer + pre-filled amount + VAT preview [33m384[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → doc-type badge shows "set at issue" (TIN unknown client-side) [33m350[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with a TIN → doc-type badge flips to Tax Invoice [33m360[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member submit posts the buyer object + no amountOverride when price untouched [33m430[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member submit posts amountOverride when the price was edited (bill_first) [33m402[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22m409 → opens the soft-duplicate dialog instead of redirecting [33m400[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with empty buyer → inline errors + no POST [33m410[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid registration → already_paid pre-selected, payment fields visible, two-step POST [33m401[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22missue-as-paid failure → mapped error toast + draft-remains notice + still lands on the draft [33m382[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mrefunded registration → hard-block card, no mode selector, submit disabled [33m341[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpending non-member without TIN → waiting explainer + bill_first disabled; typing a TIN flips the default to bill_first [33m382[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind) [33m344[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria) [33m353[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with an empty payment date → inline dateRequired error, no POST [33m378[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with a future payment date → inline dateFuture error, no POST [33m368[2mms[22m[39m
+[31m   [31m×[31m <EventFeeForm>[2m > [22mbackdated payment date in a closed ภ.พ.30 period → non-blocking warning visible, submit stays enabled[33m 348[2mms[22m[31m[39m
+[31m     → Unable to find an element by: [data-testid="payment-date-vat-warning"]
+
+Ignored nodes: comments, script, style
+[36m<body[31m
+  [33mstyle[31m=[32m"position: relative; height: calc(100dvh - 784px); width: calc(100vw - 1040px); box-sizing: border-box; overflow: hidden; scroll-behavior: unset;"[31m
+[36m>[31m
+  [36m<div>[31m
+    [36m<form[31m
+      [33mclass[31m=[32m"flex flex-col gap-[var(--page-section-gap)]"[31m
+      [33mnovalidate[31m=[32m""[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-[var(--field-label-gap)]"[31m
+      [36m>[31m
+        [36m<label[31m
+          [33mclass[31m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[31m
+          [33mdata-slot[31m=[32m"label"[31m
+          [33mfor[31m=[32m"eventId"[31m
+        [36m>[31m
+          [0mEvent[0m
+        [36m</label>[31m
+        [36m<button[31m
+          [33maria-expanded[31m=[32m"false"[31m
+          [33maria-haspopup[31m=[32m"dialog"[31m
+          [33maria-label[31m=[32m"Event"[31m
+          [33mclass[31m=[32m"group/button inline-flex shrink-0 cursor-pointer items-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-9 gap-1.5 px-3 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 w-full justify-between"[31m
+          [33mdata-base-ui-click-trigger[31m=[32m""[31m
+          [33mdata-slot[31m=[32m"button"[31m
+          [33mid[31m=[32m"eventId"[31m
+          [33mrole[31m=[32m"combobox"[31m
+          [33mtabindex[31m=[32m"0"[31m
+          [33mtype[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<span[31m
+            [33mclass[31m=[32m"truncate"[31m
+          [36m>[31m
+            [0mAnnual Gala (2026-06-01)[0m
+          [36m</span>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-chevrons-up-down ml-2 size-4 shrink-0 opacity-50"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<path[31m
+              [33md[31m=[32m"m7 15 5 5 5-5"[31m
+            [36m/>[31m
+            [36m<path[31m
+              [33md[31m=[32m"m7 9 5-5 5 5"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-[var(--field-label-gap)]"[31m
+      [36m>[31m
+        [36m<label[31m
+          [33mclass[31m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[31m
+          [33mdata-slot[31m=[32m"label"[31m
+          [33mid[31m=[32m"attendee-picker-label"[31m
+        [36m>[31m
+          [0mAttendee[0m
+        [36m</label>[31m
+        [36m<ul[31m
+          [33maria-labelledby[31m=[32m"attendee-picker-label"[31m
+          [33mclass[31m=[32m"flex flex-col gap-2"[31m
+        [36m>[31m
+          [36m<li>[31m
+            [36m<button[31m
+              [33maria-label[31m=[32m"Alice (member), Matched member, 1,000 THB, payment paid"[31m
+              [33maria-pressed[31m=[32m"true"[31m
+              [33mclass[31m=[32m"flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors border-primary bg-primary/5 hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"[31m
+              [33mtype[31m=[32m"button"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-check size-4 shrink-0 opacity-100"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M20 6 9 17l-5-5"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [36m<span[31m
+                [33mclass[31m=[32m"flex flex-1 flex-col"[31m
+              [36m>[31m
+                [36m<span[31m
+                  [33mclass[31m=[32m"text-sm font-medium"[31m
+                [36m>[31m
+                  [0mAlice (member)[0m
+                [36m</span>[31m
+                [36m<span[31m
+                  [33mclass[31m=[32m"text-xs text-muted-foreground"[31m
+                [36m>[31m
+                  [0mAcme[0m
+                [36m</span>[31m
+              [36m</span>[31m
+              [36m<span[31m
+                [33mclass[31m=[32m"group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80"[31m
+                [33mdata-slot[31m=[32m"badge"[31m
+                [33mdata-variant[31m=[32m"secondary"...[39m
+[31m   [31m×[31m <EventFeeForm>[2m > [22mtoday's payment date → no ภ.พ.30 warning; warning clears when the date returns to an open period[33m 348[2mms[22m[31m[39m
+[31m     → Unable to find an element by: [data-testid="payment-date-vat-warning"]
+
+Ignored nodes: comments, script, style
+[36m<body[31m
+  [33mstyle[31m=[32m"position: relative; height: calc(100dvh - 784px); width: calc(100vw - 1040px); box-sizing: border-box; overflow: hidden; scroll-behavior: unset;"[31m
+[36m>[31m
+  [36m<div>[31m
+    [36m<form[31m
+      [33mclass[31m=[32m"flex flex-col gap-[var(--page-section-gap)]"[31m
+      [33mnovalidate[31m=[32m""[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-[var(--field-label-gap)]"[31m
+      [36m>[31m
+        [36m<label[31m
+          [33mclass[31m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[31m
+          [33mdata-slot[31m=[32m"label"[31m
+          [33mfor[31m=[32m"eventId"[31m
+        [36m>[31m
+          [0mEvent[0m
+        [36m</label>[31m
+        [36m<button[31m
+          [33maria-expanded[31m=[32m"false"[31m
+          [33maria-haspopup[31m=[32m"dialog"[31m
+          [33maria-label[31m=[32m"Event"[31m
+          [33mclass[31m=[32m"group/button inline-flex shrink-0 cursor-pointer items-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-9 gap-1.5 px-3 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 w-full justify-between"[31m
+          [33mdata-base-ui-click-trigger[31m=[32m""[31m
+          [33mdata-slot[31m=[32m"button"[31m
+          [33mid[31m=[32m"eventId"[31m
+          [33mrole[31m=[32m"combobox"[31m
+          [33mtabindex[31m=[32m"0"[31m
+          [33mtype[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<span[31m
+            [33mclass[31m=[32m"truncate"[31m
+          [36m>[31m
+            [0mAnnual Gala (2026-06-01)[0m
+          [36m</span>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-chevrons-up-down ml-2 size-4 shrink-0 opacity-50"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<path[31m
+              [33md[31m=[32m"m7 15 5 5 5-5"[31m
+            [36m/>[31m
+            [36m<path[31m
+              [33md[31m=[32m"m7 9 5-5 5 5"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex flex-col gap-[var(--field-label-gap)]"[31m
+      [36m>[31m
+        [36m<label[31m
+          [33mclass[31m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[31m
+          [33mdata-slot[31m=[32m"label"[31m
+          [33mid[31m=[32m"attendee-picker-label"[31m
+        [36m>[31m
+          [0mAttendee[0m
+        [36m</label>[31m
+        [36m<ul[31m
+          [33maria-labelledby[31m=[32m"attendee-picker-label"[31m
+          [33mclass[31m=[32m"flex flex-col gap-2"[31m
+        [36m>[31m
+          [36m<li>[31m
+            [36m<button[31m
+              [33maria-label[31m=[32m"Alice (member), Matched member, 1,000 THB, payment paid"[31m
+              [33maria-pressed[31m=[32m"true"[31m
+              [33mclass[31m=[32m"flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors border-primary bg-primary/5 hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"[31m
+              [33mtype[31m=[32m"button"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-check size-4 shrink-0 opacity-100"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M20 6 9 17l-5-5"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [36m<span[31m
+                [33mclass[31m=[32m"flex flex-1 flex-col"[31m
+              [36m>[31m
+                [36m<span[31m
+                  [33mclass[31m=[32m"text-sm font-medium"[31m
+                [36m>[31m
+                  [0mAlice (member)[0m
+                [36m</span>[31m
+                [36m<span[31m
+                  [33mclass[31m=[32m"text-xs text-muted-foreground"[31m
+                [36m>[31m
+                  [0mAcme[0m
+                [36m</span>[31m
+              [36m</span>[31m
+              [36m<span[31m
+                [33mclass[31m=[32m"group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80"[31m
+                [33mdata-slot[31m=[32m"badge"[31m
+                [33mdata-variant[31m=[32m"secondary"...[39m
+ [31m❯[39m tests/contract/invoices/event-draft.contract.test.ts [2m([22m[2m25 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 10238[2mms[22m[39m
+[31m   [31m×[31m contract: POST /api/invoices/event-draft (Task 12)[2m > [22m422 registration_refunded — refunded registration is hard-blocked server-side (064 M-A)[90m 6[2mms[22m[31m[39m
+[31m     → expected 500 to be 422 // Object.is equality[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 10 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/invoicing/create-event-invoice-draft.test.ts[2m > 
+[22mcreateEventInvoiceDraft — Model B inclusive line + member/non-member buyer[2m > [22merror 
+branches[2m > [22mregistration_refunded — 064 M-A: refunded registration is HARD-blocked at draft 
+(server-side twin of the form card); nothing persisted
+[31m[1mAssertionError[22m: expected true to be false // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+[36m [2m❯[22m tests/unit/invoicing/create-event-invoice-draft.test.ts:[2m375:20[22m[39m
+    [90m373| [39m      })[33m;[39m
+    [90m374| [39m      [35mconst[39m r [33m=[39m [35mawait[39m 
+[34mcreateEventInvoiceDraft[39m(deps[33m,[39m { [33m...[39mbaseInput[33m,[39m bu…
+    [90m375| [39m      
+[34mexpect[39m(r[33m.[39mok)[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m   | [39m                   [31m^[39m
+    [90m376| [39m      [35mif[39m ([33m![39mr[33m.[39mok) [34mexpect[39m(r[33m.[39merror
+[33m.[39mcode)[33m.[39m[34mtoBe[39m([32m'registration_refunded'[39m)[33m;[39m
+    [90m377| [39m      [34mexpect[39m(deps[33m.[39minvoiceRepo[33m.[39minsertDraft)[33m.[39
+mnot[33m.[39m[34mtoHaveBeenCalled[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22misPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mpayment in the 
+SAME month as today → false (period still open)
+[31m[1mTypeError[22m: isPastVatFilingDeadline is not a function[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m234:12[22m[39m
+    [90m232| [39m[34mdescribe[39m([32m'isPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 
+closed-perio[39m…
+    [90m233| [39m  [34mit[39m([32m'payment in the SAME month as today → false (period still 
+open)'[39m[33m,[39m…
+    [90m234| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-06-05'[39m[33m,[39m 
+[32m'2026-06-30'[39m))[33m.[39m[34mtoBe[39m([35mf[39m…
+    [90m   | [39m           [31m^[39m
+    [90m235| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-06-30'[39m[33m,[39m 
+[32m'2026-06-30'[39m))[33m.[39m[34mtoBe[39m([35mf[39m…
+    [90m236| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22misPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mprior month, 
+today = the 15th of the following month → false (deadline day itself is still timely)
+[31m[1mTypeError[22m: isPastVatFilingDeadline is not a function[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m239:12[22m[39m
+    [90m237| [39m
+    [90m238| [39m  [34mit[39m([32m'prior month, today = the 15th of the following month → false 
+(de[39m…
+    [90m239| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-05-31'[39m[33m,[39m 
+[32m'2026-06-15'[39m))[33m.[39m[34mtoBe[39m([35mf[39m…
+    [90m   | [39m           [31m^[39m
+    [90m240| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-05-01'[39m[33m,[39m 
+[32m'2026-06-15'[39m))[33m.[39m[34mtoBe[39m([35mf[39m…
+    [90m241| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22misPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mprior month, 
+today = the 16th of the following month → true (deadline passed)
+[31m[1mTypeError[22m: isPastVatFilingDeadline is not a function[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m244:12[22m[39m
+    [90m242| [39m
+    [90m243| [39m  [34mit[39m([32m'prior month, today = the 16th of the following month → true 
+(dea[39m…
+    [90m244| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-05-31'[39m[33m,[39m 
+[32m'2026-06-16'[39m))[33m.[39m[34mtoBe[39m([35mt[39m…
+    [90m   | [39m           [31m^[39m
+    [90m245| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-05-01'[39m[33m,[39m 
+[32m'2026-06-16'[39m))[33m.[39m[34mtoBe[39m([35mt[39m…
+    [90m246| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22misPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22myear boundary: 
+December payment, today = Jan 16 next year → true; Jan 15 → false
+[31m[1mTypeError[22m: isPastVatFilingDeadline is not a function[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m249:12[22m[39m
+    [90m247| [39m
+    [90m248| [39m  [34mit[39m([32m'year boundary: December payment, today = Jan 16 next year → 
+true[39m…
+    [90m249| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2025-12-01'[39m[33m,[39m 
+[32m'2026-01-16'[39m))[33m.[39m[34mtoBe[39m([35mt[39m…
+    [90m   | [39m           [31m^[39m
+    [90m250| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2025-12-31'[39m[33m,[39m 
+[32m'2026-01-16'[39m))[33m.[39m[34mtoBe[39m([35mt[39m…
+    [90m251| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2025-12-31'[39m[33m,[39m 
+[32m'2026-01-15'[39m))[33m.[39m[34mtoBe[39m([35mf[39m…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22misPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22ma payment 
+several closed periods back → true
+[31m[1mTypeError[22m: isPastVatFilingDeadline is not a function[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m255:12[22m[39m
+    [90m253| [39m
+    [90m254| [39m  [34mit[39m([32m'a payment several closed periods back → 
+true'[39m[33m,[39m () [33m=>[39m {
+    [90m255| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2020-01-10'[39m[33m,[39m 
+[32m'2026-06-11'[39m))[33m.[39m[34mtoBe[39m([35mt[39m…
+    [90m   | [39m           [31m^[39m
+    [90m256| [39m  })[33m;[39m
+    [90m257| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22misPastVatFilingDeadline (pure, 064 H-1 — ภ.พ.30 closed-period check)[2m > [22mmalformed / 
+empty inputs → false (no warning, defensive)
+[31m[1mTypeError[22m: isPastVatFilingDeadline is not a function[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m259:12[22m[39m
+    [90m257| [39m
+    [90m258| [39m  [34mit[39m([32m'malformed / empty inputs → false (no warning, 
+defensive)'[39m[33m,[39m () [33m=>[39m…
+    [90m259| [39m    [34mexpect[39m([34misPastVatFilingDeadline[39m([32m''[39m[33m,[39m 
+[32m'2026-06-11'[39m))[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m   | [39m           [31m^[39m
+    [90m260| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'2026-06-11'[39m[33m,[39m 
+[32m''[39m))[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m261| [39m    
+[34mexpect[39m([34misPastVatFilingDeadline[39m([32m'not-a-date'[39m[33m,[39m 
+[32m'2026-06-11'[39m))[33m.[39m[34mtoBe[39m([35mf[39m…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22m<EventFeeForm>[2m > [22mbackdated payment date in a closed ภ.พ.30 period → non-blocking 
+warning visible, submit stays enabled
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element by: 
+[data-testid="payment-date-vat-warning"]
+
+Ignored nodes: comments, script, style
+[36m<body[39m
+  [33mstyle[39m=[32m"position: relative; height: calc(100dvh - 784px); width: calc(100vw - 
+1040px); box-sizing: border-box; overflow: hidden; scroll-behavior: unset;"[39m
+[36m>[39m
+  [36m<div>[39m
+    [36m<form[39m
+      [33mclass[39m=[32m"flex flex-col gap-[var(--page-section-gap)]"[39m
+      [33mnovalidate[39m=[32m""[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-[var(--field-label-gap)]"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] 
+text-[length:var(--font-size-body)] leading-none font-medium select-none 
+group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 
+peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[39m
+          [33mdata-slot[39m=[32m"label"[39m
+          [33mfor[39m=[32m"eventId"[39m
+        [36m>[39m
+          [0mEvent[0m
+        [36m</label>[39m
+        [36m<button[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33maria-haspopup[39m=[32m"dialog"[39m
+          [33maria-label[39m=[32m"Event"[39m
+          [33mclass[39m=[32m"group/button inline-flex shrink-0 cursor-pointer items-center 
+rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none 
+select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 
+active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! 
+disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 
+aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 
+dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 
+[&_svg:not([class*='size-'])]:size-4 border-border bg-background hover:bg-muted 
+hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input 
+dark:bg-input/30 dark:hover:bg-input/50 h-9 gap-1.5 px-3 has-data-[icon=inline-end]:pr-2 
+has-data-[icon=inline-start]:pl-2 w-full justify-between"[39m
+          [33mdata-base-ui-click-trigger[39m=[32m""[39m
+          [33mdata-slot[39m=[32m"button"[39m
+          [33mid[39m=[32m"eventId"[39m
+          [33mrole[39m=[32m"combobox"[39m
+          [33mtabindex[39m=[32m"0"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"truncate"[39m
+          [36m>[39m
+            [0mAnnual Gala (2026-06-01)[0m
+          [36m</span>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-chevrons-up-down ml-2 size-4 shrink-0 
+opacity-50"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"m7 15 5 5 5-5"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"m7 9 5-5 5 5"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-[var(--field-label-gap)]"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] 
+text-[length:var(--font-size-body)] leading-none font-medium select-none 
+group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 
+peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[39m
+          [33mdata-slot[39m=[32m"label"[39m
+          [33mid[39m=[32m"attendee-picker-label"[39m
+        [36m>[39m
+          [0mAttendee[0m
+        [36m</label>[39m
+        [36m<ul[39m
+          [33maria-labelledby[39m=[32m"attendee-picker-label"[39m
+          [33mclass[39m=[32m"flex flex-col gap-2"[39m
+        [36m>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Alice (member), Matched member, 1,000 THB, payment 
+paid"[39m
+              [33maria-pressed[39m=[32m"true"[39m
+              [33mclass[39m=[32m"flex w-full items-center gap-3 rounded-md border p-3 text-left 
+transition-colors border-primary bg-primary/5 hover:bg-muted/50 focus-visible:border-ring 
+focus-visible:ring-3 focus-visible:ring-ring/50"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-check size-4 shrink-0 opacity-100"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M20 6 9 17l-5-5"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"flex flex-1 flex-col"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"text-sm font-medium"[39m
+                [36m>[39m
+                  [0mAlice (member)[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"text-xs text-muted-foreground"[39m
+                [36m>[39m
+                  [0mAcme[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"group/badge inline-flex h-5 w-fit shrink-0 items-center 
+justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs 
+font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] 
+focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 
+aria-invalid:border-destructive aria-invalid:ring-destructive/20 
+dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-secondary 
+text-secondary-foreground [a]:hover:bg-secondary/80"[39m
+                [33mdata-slot[39m=[32m"badge"[39m
+                [33mdata-variant[39m=[32m"secondary"...
+[90m [2m❯[22m Object.getElementError node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@
+testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m752:28[22m[39m
+    [90m750| [39m    })[33m;[39m
+    [90m751| [39m
+    [90m752| [39m    [35mconst[39m warning [33m=[39m 
+screen[33m.[39m[34mgetByTestId[39m([32m'payment-date-vat-warning'[39m)[33m;[39m
+    [90m   | [39m                           [31m^[39m
+    [90m753| [39m    [34mexpect[39m(warning)[33m.[39m[34mtoHaveTextContent[39m(
+    [90m754| [39m      enMessages[33m.[39madmin[33m.[39minvoices[33m.[39meventFeeForm[33m.[
+39mpayment[33m.[39mvatPeriodWarning[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/event-fee-form.test.tsx[2m > 
+[22m<EventFeeForm>[2m > [22mtoday's payment date → no ภ.พ.30 warning; warning clears when the 
+date returns to an open period
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element by: 
+[data-testid="payment-date-vat-warning"]
+
+Ignored nodes: comments, script, style
+[36m<body[39m
+  [33mstyle[39m=[32m"position: relative; height: calc(100dvh - 784px); width: calc(100vw - 
+1040px); box-sizing: border-box; overflow: hidden; scroll-behavior: unset;"[39m
+[36m>[39m
+  [36m<div>[39m
+    [36m<form[39m
+      [33mclass[39m=[32m"flex flex-col gap-[var(--page-section-gap)]"[39m
+      [33mnovalidate[39m=[32m""[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-[var(--field-label-gap)]"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] 
+text-[length:var(--font-size-body)] leading-none font-medium select-none 
+group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 
+peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[39m
+          [33mdata-slot[39m=[32m"label"[39m
+          [33mfor[39m=[32m"eventId"[39m
+        [36m>[39m
+          [0mEvent[0m
+        [36m</label>[39m
+        [36m<button[39m
+          [33maria-expanded[39m=[32m"false"[39m
+          [33maria-haspopup[39m=[32m"dialog"[39m
+          [33maria-label[39m=[32m"Event"[39m
+          [33mclass[39m=[32m"group/button inline-flex shrink-0 cursor-pointer items-center 
+rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none 
+select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 
+active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! 
+disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 
+aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 
+dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 
+[&_svg:not([class*='size-'])]:size-4 border-border bg-background hover:bg-muted 
+hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input 
+dark:bg-input/30 dark:hover:bg-input/50 h-9 gap-1.5 px-3 has-data-[icon=inline-end]:pr-2 
+has-data-[icon=inline-start]:pl-2 w-full justify-between"[39m
+          [33mdata-base-ui-click-trigger[39m=[32m""[39m
+          [33mdata-slot[39m=[32m"button"[39m
+          [33mid[39m=[32m"eventId"[39m
+          [33mrole[39m=[32m"combobox"[39m
+          [33mtabindex[39m=[32m"0"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"truncate"[39m
+          [36m>[39m
+            [0mAnnual Gala (2026-06-01)[0m
+          [36m</span>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-chevrons-up-down ml-2 size-4 shrink-0 
+opacity-50"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"m7 15 5 5 5-5"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"m7 9 5-5 5 5"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex flex-col gap-[var(--field-label-gap)]"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"flex items-center gap-2 mb-[var(--field-label-gap)] 
+text-[length:var(--font-size-body)] leading-none font-medium select-none 
+group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 
+peer-disabled:cursor-not-allowed peer-disabled:opacity-50"[39m
+          [33mdata-slot[39m=[32m"label"[39m
+          [33mid[39m=[32m"attendee-picker-label"[39m
+        [36m>[39m
+          [0mAttendee[0m
+        [36m</label>[39m
+        [36m<ul[39m
+          [33maria-labelledby[39m=[32m"attendee-picker-label"[39m
+          [33mclass[39m=[32m"flex flex-col gap-2"[39m
+        [36m>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Alice (member), Matched member, 1,000 THB, payment 
+paid"[39m
+              [33maria-pressed[39m=[32m"true"[39m
+              [33mclass[39m=[32m"flex w-full items-center gap-3 rounded-md border p-3 text-left 
+transition-colors border-primary bg-primary/5 hover:bg-muted/50 focus-visible:border-ring 
+focus-visible:ring-3 focus-visible:ring-ring/50"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-check size-4 shrink-0 opacity-100"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M20 6 9 17l-5-5"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"flex flex-1 flex-col"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"text-sm font-medium"[39m
+                [36m>[39m
+                  [0mAlice (member)[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"text-xs text-muted-foreground"[39m
+                [36m>[39m
+                  [0mAcme[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"group/badge inline-flex h-5 w-fit shrink-0 items-center 
+justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs 
+font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] 
+focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 
+aria-invalid:border-destructive aria-invalid:ring-destructive/20 
+dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-secondary 
+text-secondary-foreground [a]:hover:bg-secondary/80"[39m
+                [33mdata-slot[39m=[32m"badge"[39m
+                [33mdata-variant[39m=[32m"secondary"...
+[90m [2m❯[22m Object.getElementError node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@
+testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m tests/unit/components/invoices/event-fee-form.test.tsx:[2m771:19[22m[39m
+    [90m769| [39m    [35mconst[39m dateInput [33m=[39m 
+screen[33m.[39m[34mgetByLabelText[39m(enMessages[33m.[39madmin[33m.[39minvoices[33m.[39m…
+    [90m770| [39m    fireEvent[33m.[39m[34mchange[39m(dateInput[33m,[39m { target[33m:[39m 
+{ value[33m:[39m [32m'2020-01-10'[39m } })[33m;[39m
+    [90m771| [39m    [34mexpect[39m(screen[33m.[39m[34mgetByTestId[39m([32m'payment-date-vat
+-warning'[39m))[33m.[39m[34mtoBeInTheDo[39m…
+    [90m   | [39m                  [31m^[39m
+    [90m772| [39m
+    [90m773| [39m    fireEvent[33m.[39m[34mchange[39m(dateInput[33m,[39m { target[33m:[39m 
+{ value[33m:[39m [34mbangkokToday[39m() } })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯[22m[39m
+[2m Test Files [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[31m10 failed[39m[22m[2m | [22m[1m[32m84 passed[39m[22m[90m (94)[39m
+[2m   Start at [22m 02:56:44
+[2m   Duration [22m 18.69s[2m (transform 3.45s, setup 685ms, collect 2.99s, tests 17.04s, environment 2.83s, prepare 445ms)[22m
+
+
+[31m[1m[7m FAIL [27m[22m[39m tests/contract/invoices/event-draft.contract.test.ts[2m > 
+[22mcontract: POST /api/invoices/event-draft (Task 12)[2m > [22m422 registration_refunded — 
+refunded registration is hard-blocked server-side (064 M-A)
+[31m[1mAssertionError[22m: expected 500 to be 422 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 422[39m
+[31m+ 500[39m
+
+[36m [2m❯[22m tests/contract/invoices/event-draft.contract.test.ts:[2m493:24[22m[39m
+    [90m491| [39m      [34mmakePostRequest[39m({ eventRegistrationId[33m:[39m 
+[33mVALID_REG_ID[39m[33m,[39m amountOverr…
+    [90m492| [39m    )[33m;[39m
+    [90m493| [39m    
+[34mexpect[39m(res[33m.[39mstatus)[33m.[39m[34mtoBe[39m([34m422[39m)[33m;[39m
+    [90m   | [39m                       [31m^[39m
+    [90m494| [39m    [35mconst[39m body [33m=[39m ([35mawait[39m 
+res[33m.[39m[34mjson[39m()) [35mas[39m { error[33m:[39m { code[33m:[39m string } 
+}[33m;[39m
+    [90m495| [39m    [34mexpect[39m(body[33m.[39merror[33m.[39mcode)[33m.[39m[34mtoBe[39m
+([32m'registration_refunded'[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯[22m[39m
+

@@ -1,0 +1,33 @@
+bytes=23310
+---
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Void Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+

@@ -1,0 +1,48 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/invoicing/create-event-invoice-draft.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-more-menu.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 120[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/non-member-buyer-fields.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[90m 210[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-attendee-picker.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[90m 167[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/email-failure-alert.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 242[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-table.test.tsx [2m([22m[2m14 tests[22m[2m)[22m[33m 374[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/payment-timeline-date.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-create-switcher.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 367[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-fee-form.test.tsx [2m([22m[2m47 tests[22m[2m)[22m[33m 6931[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mfetches attendees for the pre-selected event and renders the picker [33m416[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → read-only buyer + pre-filled amount + VAT preview [33m379[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → doc-type badge shows "set at issue" (TIN unknown client-side) [33m346[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with a TIN → doc-type badge flips to Tax Invoice [33m365[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member submit posts the buyer object + no amountOverride when price untouched [33m457[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member submit posts amountOverride when the price was edited (bill_first) [33m449[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22m409 → opens the soft-duplicate dialog instead of redirecting [33m421[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with empty buyer → inline errors + no POST [33m394[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid registration → already_paid pre-selected, payment fields visible, two-step POST [33m390[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22missue-as-paid failure → mapped error toast + draft-remains notice + still lands on the draft [33m389[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mrefunded registration → hard-block card, no mode selector, submit disabled [33m355[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpending non-member without TIN → waiting explainer + bill_first disabled; typing a TIN flips the default to bill_first [33m385[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind) [33m355[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria) [33m371[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with an empty payment date → inline dateRequired error, no POST [33m368[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with a future payment date → inline dateFuture error, no POST [33m369[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mbackdated payment date in a closed ภ.พ.30 period → non-blocking warning visible, submit stays enabled [33m360[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mtoday's payment date → no ภ.พ.30 warning; warning clears when the date returns to an open period [33m352[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-route-guard.contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 15502[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/event-draft.contract.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 15564[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid.contract.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 15610[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m12 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m [1m[32m177 passed[39m[22m[90m (177)[39m
+[2m   Start at [22m 02:59:42
+[2m   Duration [22m 27.09s[2m (transform 7.01s, setup 4.98s, collect 25.22s, tests 55.16s, environment 25.83s, prepare 4.90s)[22m
+

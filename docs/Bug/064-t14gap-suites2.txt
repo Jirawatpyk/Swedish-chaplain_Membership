@@ -1,0 +1,57 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/components/invoices/invoice-more-menu.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 146[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-attendee-picker.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 393[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/non-member-buyer-fields.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[90m 252[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/recent-activity-section.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 49[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/invoice-filters-props.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 434[2mms[22m[39m
+   [33m[2m✓[22m[39m <InvoiceFilters> — admin defaults (unchanged)[2m > [22mrenders the full status vocabulary incl. draft + overdue by default [33m302[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-table.test.tsx [2m([22m[2m14 tests[22m[2m)[22m[33m 600[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/portal-invoices-page-errors.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[90m 96[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/benefits-tab-param.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/email-failure-alert.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 360[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/parse-status-filter.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-create-switcher.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 729[2mms[22m[39m
+   [33m[2m✓[22m[39m <InvoiceCreateSwitcher>[2m > [22mrenders a 2-option radiogroup (Membership default + Event fee) [33m324[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-fee-form.test.tsx [2m([22m[2m39 tests[22m[2m)[22m[33m 7949[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mfetches attendees for the pre-selected event and renders the picker [33m560[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → read-only buyer + pre-filled amount + VAT preview [33m576[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → doc-type badge shows "set at issue" (TIN unknown client-side) [33m444[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with a TIN → doc-type badge flips to Tax Invoice [33m502[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member submit posts the buyer object + no amountOverride when price untouched [33m591[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member submit posts amountOverride when the price was edited (bill_first) [33m441[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22m409 → opens the soft-duplicate dialog instead of redirecting [33m517[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with empty buyer → inline errors + no POST [33m406[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid registration → already_paid pre-selected, payment fields visible, two-step POST [33m514[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22missue-as-paid failure → mapped error toast + draft-remains notice + still lands on the draft [33m528[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mrefunded registration → hard-block card, no mode selector, submit disabled [33m462[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpending non-member without TIN → waiting explainer + bill_first disabled; typing a TIN flips the default to bill_first [33m505[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind) [33m489[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria) [33m428[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with an empty payment date → inline dateRequired error, no POST [33m533[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with a future payment date → inline dateFuture error, no POST [33m434[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/e-blasts-redirect.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 799[2mms[22m[39m
+   [33m[2m✓[22m[39m /portal/benefits/e-blasts route preservation (058 G1)[2m > [22mpermanently redirects (308) to /portal/benefits?tab=broadcasts (no 404) [33m794[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/payment-timeline-date.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-stats.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/portal-serialise-member.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 17341[2mms[22m[39m
+   [33m[2m✓[22m[39m portal GET /api/portal/profile serialiseMember[2m > [22memits member_number and preserves the redaction whitelist [33m17336[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/invoice-row-view-model.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 483[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-reads.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m19 passed[39m[22m[90m (19)[39m
+[2m      Tests [22m [1m[32m221 passed[39m[22m[90m (221)[39m
+[2m   Start at [22m 00:08:12
+[2m   Duration [22m 46.73s[2m (transform 38.10s, setup 11.94s, collect 170.67s, tests 29.77s, environment 53.04s, prepare 9.47s)[22m
+

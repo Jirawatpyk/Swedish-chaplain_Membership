@@ -1,0 +1,17 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/renewals/load-members-membership-status.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/renewals/load-members-membership-status.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 6005[2mms[22m[39m
+   [33m[2m✓[22m[39m loadMembersMembershipStatus (integration, live Neon)[2m > [22mcross-tenant negative control: tenant A cannot see tenant B lapsed members (Principle I) [33m318[2mms[22m[39m
+   [33m[2m✓[22m[39m loadMembersMembershipStatus (integration, live Neon)[2m > [22mmulti-cycle parity: batch picks the SAME latest cycle as loadMemberRenewalStatus (created_at DESC) [33m318[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 01:32:17
+[2m   Duration [22m 17.60s[2m (transform 3.10s, setup 27ms, collect 10.13s, tests 6.01s, environment 0ms, prepare 102ms)[22m
+

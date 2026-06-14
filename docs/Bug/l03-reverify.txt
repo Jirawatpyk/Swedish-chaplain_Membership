@@ -1,0 +1,21 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/invoicing/member-identity-address.test.ts" "tests/integration/invoicing/issue-vs-archive-race.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/invoicing/issue-vs-archive-race.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 7641[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on archived member returns member_archived and consumes NO sequence [33m1945[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on ACTIVE company member with NO tax_id → tax_id_required, NO sequence consumed (real adapter join) [33m1544[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on ACTIVE company member WITH valid tax_id → succeeds (gate allows; real adapter join) [33m1828[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/member-identity-address.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3066[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with full structured address → multi-line block (not the bare country stub) [33m663[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with NO structured address → snapshot.address degrades to the country code [33m418[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 23:41:47
+[2m   Duration [22m 13.95s[2m (transform 492ms, setup 29ms, collect 1.72s, tests 10.71s, environment 0ms, prepare 98ms)[22m
+

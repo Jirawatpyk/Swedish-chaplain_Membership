@@ -1,0 +1,48 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m14 skipped[39m[2m)[22m[90m 246[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Suites 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)
+[31m[1mError[22m: Failed query: insert into "users" ("id", "email", "role", "status", "password_hash", "display_name", "created_at", "last_sign_in_at", "last_password_changed_at", "failed_signin_count", "locked_until", "email_verified", "requires_password_reset") values (default, $1, $2, $3, $4, default, default, default, $5, default, default, default, default) returning "id", "email", "role", "status", "password_hash", "display_name", "created_at", "last_sign_in_at", "last_password_changed_at", "failed_signin_count", "locked_until", "email_verified", "requires_password_reset"
+params: test-1781183967164-pj35sntt@swecham.test,admin,active,$argon2id$v=19$m=19456,t=2,p=1$6RUcq0Yd/RY3GDDV0Afr8Q$bgIPuEva4m/vwcLhLC+f3nQkOonqgcWWLyXBR6AsIas,2026-06-11T13:19:27.191Z[39m
+[90m [2m❯[22m PostgresJsPreparedQuery.queryWithCache ../Swedish%20chaplain_membership/node_modules/.pnpm/drizzle-orm@0.45.2_@opentel_0695541276f1953b8f582ac811e479d3/node_modules/drizzle-orm/pg-core/session.js:[2m41:15[22m[39m
+[90m [2m❯[22m ../Swedish%20chaplain_membership/node_modules/.pnpm/drizzle-orm@0.45.2_@opentel_0695541276f1953b8f582ac811e479d3/node_modules/drizzle-orm/postgres-js/session.js:[2m37:20[22m[39m
+[36m [2m❯[22m Module.createActiveTestUser tests/integration/helpers/test-users.ts:[2m54:16[22m[39m
+    [90m 52| [39m  [35mconst[39m hash [33m=[39m [35mawait[39m argon2Hasher[33m.[39m[34mhash[39m(password)[33m;[39m
+    [90m 53| [39m
+    [90m 54| [39m  [35mconst[39m rows [33m=[39m [35mawait[39m db
+    [90m   | [39m               [31m^[39m
+    [90m 55| [39m    [33m.[39m[34minsert[39m(users)
+    [90m 56| [39m    [33m.[39m[34mvalues[39m({
+[90m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m214:13[22m[39m
+
+[31m[1mCaused by: PostgresError[22m: Your account or project has exceeded the compute time quota. Upgrade your plan to increase limits.[39m
+[90m [2m❯[22m ErrorResponse ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m817:22[22m[39m
+[90m [2m❯[22m handle ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m489:6[22m[39m
+[90m [2m❯[22m TLSSocket.data ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m324:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ severity_local: 'ERROR', code: 'XX000', query: undefined, parameters: undefined, args: [ 'test-1781183967164-pj35sntt@swecham.test', 'admin', 'active', '$argon2id$v=19$m=19456,t=2,p=1$6RUcq0Yd/RY3GDDV0Afr8Q$bgIPuEva4m/vwcLhLC+f3nQkOonqgcWWLyXBR6AsIas', '2026-06-11T13:19:27.191Z' ], types: null }[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)
+[31m[1mTypeError[22m: Cannot read properties of undefined (reading 'cleanup')[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m223:18[22m[39m
+    [90m221| [39m  [34mafterAll[39m([35masync[39m () [33m=>[39m {
+    [90m222| [39m    [35mawait[39m [34mclearTenant[39m(tenant)[33m.[39m[35mcatch[39m(() [33m=>[39m {})[33m;[39m
+    [90m223| [39m    [35mawait[39m tenant[33m.[39m[34mcleanup[39m()[33m.[39m[35mcatch[39m(() [33m=>[39m {})[33m;[39m
+    [90m   | [39m                 [31m^[39m
+    [90m224| [39m  }[33m,[39m [34m120_000[39m)[33m;[39m
+    [90m225| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [33m14 skipped[39m[90m (14)[39m
+[2m   Start at [22m 20:19:16
+[2m   Duration [22m 11.84s[2m (transform 3.15s, setup 24ms, collect 10.22s, tests 246ms, environment 0ms, prepare 103ms)[22m
+

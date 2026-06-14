@@ -1,0 +1,121 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [31m❯[39m tests/unit/components/invoices/invoice-more-menu.test.tsx [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 130[2mms[22m[39m
+[31m   [31m×[31m InvoiceMoreMenu — as-paid combined main download (064 gap fix)[2m > [22mshows the main Download item with the COMBINED dual-role label when mainDownloadIsCombined[90m 84[2mms[22m[31m[39m
+[31m     → expected 'actions.download' to be 'actions.downloadCombined' // Object.is equality[39m
+ [31m❯[39m tests/unit/portal/invoice-row-view-model.test.ts [2m([22m[2m34 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[90m 43[2mms[22m[39m
+[31m   [31m×[31m toInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)[2m > [22mas-paid TIN (receipt_combined main pdf): main download stays, with the combined flag; no broken receipt action[90m 11[2mms[22m[31m[39m
+[31m     → expected undefined to be true // Object.is equality[39m
+[31m   [31m×[31m toInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)[2m > [22mas-paid no-TIN β (receipt_separate main pdf): no broken receipt action; main download stays[90m 1[2mms[22m[31m[39m
+[31m     → expected undefined to be false // Object.is equality[39m
+[31m   [31m×[31m toInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)[2m > [22mbill-first combined row (issue-time invoice main pdf + rendered receipt blob) is byte-identical[90m 1[2mms[22m[31m[39m
+[31m     → expected undefined to be false // Object.is equality[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 4 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/portal/invoice-row-view-model.test.ts[2m > 
+[22mtoInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)[2m > 
+[22mas-paid TIN (receipt_combined main pdf): main download stays, with the combined flag; no broken 
+receipt action
+[31m[1mAssertionError[22m: expected undefined to be true // Object.is equality[39m
+
+[32m- Expected:[39m 
+true
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2m❯[22m tests/unit/portal/invoice-row-view-model.test.ts:[2m507:39[22m[39m
+    [90m505| [39m      [33mNOW_PAST_DUE[39m[33m,[39m
+    [90m506| [39m    )[33m;[39m
+    [90m507| [39m    [34mexpect[39m(vm[33m.[39mmainPdfIsFinalCombined)[33m.[39m[34mtoBe[39m
+([35mtrue[39m)[33m;[39m
+    [90m   | [39m                                      [31m^[39m
+    [90m508| [39m    [90m// NOT combined-paid in the stale-draft-hiding sense: the main pdf[39m…
+    [90m509| [39m    [90m// final combined doc, not an issue-time pre-payment invoice.[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/portal/invoice-row-view-model.test.ts[2m > 
+[22mtoInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)[2m > 
+[22mas-paid no-TIN β (receipt_separate main pdf): no broken receipt action; main download stays
+[31m[1mAssertionError[22m: expected undefined to be false // Object.is equality[39m
+
+[32m- Expected:[39m 
+false
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2m❯[22m tests/unit/portal/invoice-row-view-model.test.ts:[2m532:39[22m[39m
+    [90m530| [39m    )[33m;[39m
+    [90m531| [39m    [90m// The combined dual-role label is TIN-combined only.[39m
+    [90m532| [39m    [34mexpect[39m(vm[33m.[39mmainPdfIsFinalCombined)[33m.[39m[34mtoBe[39m
+([35mfalse[39m)[33m;[39m
+    [90m   | [39m                                      [31m^[39m
+    [90m533| [39m    
+[34mexpect[39m(vm[33m.[39misCombinedPaid)[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m534| [39m    
+[34mexpect[39m(vm[33m.[39mshowInvoice)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/portal/invoice-row-view-model.test.ts[2m > 
+[22mtoInvoiceRowViewModel — 064 as-paid event invoices (main PDF IS the final document)[2m > 
+[22mbill-first combined row (issue-time invoice main pdf + rendered receipt blob) is byte-identical
+[31m[1mAssertionError[22m: expected undefined to be false // Object.is equality[39m
+
+[32m- Expected:[39m 
+false
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2m❯[22m tests/unit/portal/invoice-row-view-model.test.ts:[2m550:39[22m[39m
+    [90m548| [39m      [33mNOW_PAST_DUE[39m[33m,[39m
+    [90m549| [39m    )[33m;[39m
+    [90m550| [39m    [34mexpect[39m(vm[33m.[39mmainPdfIsFinalCombined)[33m.[39m[34mtoBe[39m
+([35mfalse[39m)[33m;[39m
+    [90m   | [39m                                      [31m^[39m
+    [90m551| [39m    
+[34mexpect[39m(vm[33m.[39misCombinedPaid)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m552| [39m    
+[34mexpect[39m(vm[33m.[39mshowInvoice)[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/unit/components/invoices/invoice-more-menu.test.tsx[2m > 
+[22mInvoiceMoreMenu — as-paid combined main download (064 gap fix)[2m > [22mshows the main 
+Download item with the COMBINED dual-role label when mainDownloadIsCombined
+[31m[1mAssertionError[22m: expected 'actions.download' to be 'actions.downloadCombined' // 
+Object.is equality[39m
+
+Expected: [32m"actions.download[7mCombined[27m"[39m
+Received: [31m"actions.download"[39m
+
+[36m [2m❯[22m tests/unit/components/invoices/invoice-more-menu.test.tsx:[2m133:49[22m[39m
+    [90m131| [39m      [33m/[39m[33m>[39m[33m,[39m
+    [90m132| [39m    )[33m;[39m
+    [90m133| [39m    
+[34mexpect[39m([34mlabelOf[39m([32m'download-invoice-trigger'[39m))[33m.[39m[34mtoBe[39m(
+    [90m   | [39m                                                [31m^[39m
+    [90m134| [39m      [32m'actions.downloadCombined'[39m[33m,[39m
+    [90m135| [39m    )[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m35 passed[39m[22m[90m (39)[39m
+[2m   Start at [22m 23:58:45
+[2m   Duration [22m 57.13s[2m (transform 15.66s, setup 964ms, collect 35.58s, tests 173ms, environment 6.02s, prepare 812ms)[22m
+

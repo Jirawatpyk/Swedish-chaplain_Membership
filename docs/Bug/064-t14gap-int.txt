@@ -1,0 +1,30 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781111399206,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"ca9fcb9f-3ecf-4a03-9215-4d7414873478","tenantId":"test-swecham-f96fff98","msg":"issueEventInvoiceAsPaid: internal error, rolling back"}
+{"level":"warn","time":1781111417298,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"f457a018-78ff-4396-af23-7774a5e3b95d","tenantId":"test-swecham-13368708","msg":"issueEventInvoiceAsPaid: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/issue-as-paid.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 44036[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)[2m > [22mA1 — non-member TIN: ONE paid row, combined PDF + as-paid date pin, dual in-tx audits (non-timeline), exactly ONE outbox email [33m1196[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)[2m > [22mA2 — matched member: audits use the TIMELINE branch (member_id present), combined receipt to the member contact [33m1303[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — same-route double-call concurrency (live Neon)[2m > [22mtwo concurrent as-paid calls: exactly one ok, loser typed invoice_already_issued, §87 consumes exactly 1, ONE audit pair [33m1270[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid vs issueInvoice — cross-route race (live Neon)[2m > [22mexactly one winner across routes (either is legal), loser typed conflict, NO §87 gap — next allocation = winner seq + 1 [33m1334[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — FY boundary from paymentDate (live Neon)[2m > [22mJanuary 2027 back-dated December 2026 payment numbers into FY2026 (doc number, row, blob path) [33m987[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — blob-upload failure rollback (live Neon)[2m > [22mfailed upload → typed err, row stays draft, counter unchanged, ZERO audits, orphan cleanup; retry succeeds with the SAME number [33m1972[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — cross-tenant probe (live Neon)[2m > [22mtenant B as-paid against tenant A's draft → invoice_not_found + invoice_cross_tenant_probe audit with the as-paid route tag [33m495[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live Neon)[2m > [22mT10-1 — no-TIN as-paid: §105 receipt on the RECEIPT stream (RC-2026-000001), invoice-stream counter UNTOUCHED, dual non-timeline audits + outbox [33m1340[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (live Neon)[2m > [22mfailed upload → typed err, row stays draft, RECEIPT counter unchanged, ZERO audits, orphan cleanup; retry gets RC-2026-000001 (no RC burn) [33m2212[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 00:09:19
+[2m   Duration [22m 61.55s[2m (transform 5.08s, setup 28ms, collect 15.87s, tests 44.04s, environment 0ms, prepare 168ms)[22m
+

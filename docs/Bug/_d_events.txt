@@ -1,0 +1,165 @@
+diff --git a/src/modules/events/application/ports/audit-port.ts b/src/modules/events/application/ports/audit-port.ts
+index efc8a6b1..219ad32c 100644
+--- a/src/modules/events/application/ports/audit-port.ts
++++ b/src/modules/events/application/ports/audit-port.ts
+@@ -40,7 +40,6 @@ import type { TenantId, MemberId, ContactId } from '@/modules/members';
+ import type {
+   EventId,
+   RegistrationId,
+-  AttendeeEmail,
+ } from '../../domain/branded-types';
+ import type { MatchType } from '../../domain/value-objects/match-type';
+ import type { ProcessingOutcome } from '../../domain/value-objects/webhook-outcome';
+@@ -316,7 +315,9 @@ export interface AuditPayloads {
+     readonly registrationId: RegistrationId;
+     readonly matchedMemberId: MemberId;
+     readonly matchedContactId: ContactId;
+-    readonly matchedOnEmail: AttendeeEmail;
++    // PDPA/GDPR data-minimisation (S1-P1-11): store the email DOMAIN only, not
++    // the raw attendee email. Domain is enough to confirm match type.
++    readonly matchedOnEmailDomain: string;
+   };
+   attendee_matched_member_domain: {
+     readonly severity: Severity;
+@@ -332,7 +333,10 @@ export interface AuditPayloads {
+   attendee_non_member: {
+     readonly severity: Severity;
+     readonly registrationId: RegistrationId;
+-    readonly attendeeEmail: AttendeeEmail;
++    // PDPA/GDPR data-minimisation (S1-P0-1): store a SHA-256 hex prefix (16
++    // chars) of the attendee email, NOT the raw address. PII-safe correlator
++    // across events; no raw email ever lands in the audit_log payload.
++    readonly attendeeEmailHash: string;
+   };
+   attendee_unmatched: {
+     readonly severity: Severity;
+diff --git a/src/modules/events/application/use-cases/_helpers/attendee-email-hash.ts b/src/modules/events/application/use-cases/_helpers/attendee-email-hash.ts
+new file mode 100644
+index 00000000..1a0ab966
+--- /dev/null
++++ b/src/modules/events/application/use-cases/_helpers/attendee-email-hash.ts
+@@ -0,0 +1,30 @@
++/**
++ * PDPA / GDPR Art. 5(1)(c) data-minimisation helper — attendee email → SHA-256
++ * hex prefix. NEVER store a raw attendee email in an audit_log payload or a log
++ * line; store this PII-safe correlator instead.
++ *
++ * Extracted from `import-csv.ts` (go-live audit S1-P0-1) so the shared
++ * `process-attendee-in-tx.ts` helper can reuse it without a circular import
++ * (`import-csv` already imports `process-attendee-in-tx`).
++ */
++import { createHash } from 'node:crypto';
++
++/**
++ * Branded SHA-256 hex prefix so a future caller cannot accidentally pass a raw
++ * email into a slot that expects a hash. Only `hashAttendeeEmail` can construct
++ * values of this type — TypeScript blocks plain-string assignment.
++ */
++export type EmailHashPrefix = string & {
++  readonly __emailHashPrefix: unique symbol;
++};
++
++/**
++ * Hash `attendee_email` (case-folded) → SHA-256 hex prefix (16 chars). The
++ * branded return makes this the only legal source of `EmailHashPrefix` values.
++ */
++export function hashAttendeeEmail(email: string): EmailHashPrefix {
++  return createHash('sha256')
++    .update(email.toLowerCase())
++    .digest('hex')
++    .slice(0, 16) as EmailHashPrefix;
++}
+diff --git a/src/modules/events/application/use-cases/_helpers/process-attendee-in-tx.ts b/src/modules/events/application/use-cases/_helpers/process-attendee-in-tx.ts
+index d97f68c7..8ddae7b0 100644
+--- a/src/modules/events/application/use-cases/_helpers/process-attendee-in-tx.ts
++++ b/src/modules/events/application/use-cases/_helpers/process-attendee-in-tx.ts
+@@ -84,6 +84,7 @@ import { applyQuotaEffect, buildQuotaLockKey } from '../apply-quota-effect';
+ // cause sites + the `emitOrThrow` raw-throw wrap at L240/849/853) and
+ // `import-csv.ts` continue to resolve via this module path.
+ import { safeStringify } from './safe-stringify';
++import { hashAttendeeEmail } from './attendee-email-hash';
+ 
+ // ---------------------------------------------------------------------------
+ // TxStageError — shared between helper and webhook/CSV callers
+@@ -417,13 +418,14 @@ async function emitMatchResolutionAudit(
+       await emitOrThrow(audit, {
+         ...base,
+         eventType: 'attendee_matched_member_contact',
+-        summary: `attendee matched to member via contact email (${attendeeEmail})`,
++        // PDPA/GDPR (S1-P1-11): no raw email in summary or payload — domain only.
++        summary: `attendee matched to member via contact email`,
+         payload: {
+           severity: 'info',
+           registrationId,
+           matchedMemberId: resolution.matchedMemberId,
+           matchedContactId: resolution.matchedContactId,
+-          matchedOnEmail: asAttendeeEmail(attendeeEmail),
++          matchedOnEmailDomain: attendeeEmail.split('@')[1] ?? '',
+         },
+       });
+       return;
+@@ -464,7 +466,8 @@ async function emitMatchResolutionAudit(
+         payload: {
+           severity: 'info',
+           registrationId,
+-          attendeeEmail: asAttendeeEmail(attendeeEmail),
++          // PDPA/GDPR (S1-P0-1): hashed correlator, never the raw email.
++          attendeeEmailHash: hashAttendeeEmail(attendeeEmail),
+         },
+       });
+       return;
+diff --git a/src/modules/events/application/use-cases/import-csv.ts b/src/modules/events/application/use-cases/import-csv.ts
+index bb3b993d..3c80e217 100644
+--- a/src/modules/events/application/use-cases/import-csv.ts
++++ b/src/modules/events/application/use-cases/import-csv.ts
+@@ -20,7 +20,11 @@
+  *
+  * Pure Application — no framework imports (Constitution Principle III).
+  */
+-import { createHash, randomUUID } from 'node:crypto';
++import { randomUUID } from 'node:crypto';
++import {
++  hashAttendeeEmail,
++  type EmailHashPrefix,
++} from './_helpers/attendee-email-hash';
+ import { logger } from '@/lib/logger';
+ import { eventcreateMetrics } from '@/lib/metrics';
+ import { formatErrorWithCause } from './_helpers/format-error-with-cause';
+@@ -349,14 +353,6 @@ export interface ImportCsvDeps {
+ // contexts). `instanceof` AND brand-equality both must hold.
+ const CANCELLATION_SKIP_BRAND = Symbol('f6.csv-skip.cancellation');
+ 
+-/**
+- * Branded SHA-256 hex prefix so a future caller cannot accidentally
+- * pass a raw email into a slot that expects a hash. Only
+- * `hashAttendeeEmail` can construct values of this type — TypeScript
+- * blocks plain-string assignment at compile time.
+- */
+-type EmailHashPrefix = string & { readonly __emailHashPrefix: unique symbol };
+-
+ /**
+  * PDPA / GDPR Art. 5(1)(c) data minimisation: the marker carries a
+  * SHA-256 hex prefix of `attendee_email_lower`, NOT the raw email.
+@@ -383,19 +379,9 @@ function isCancellationSkip(e: unknown): e is CancellationSkipMarker {
+   );
+ }
+ 
+-/**
+- * Hash `attendee_email_lower` → SHA-256 hex prefix (16 chars). Used
+- * for the cancellation-skip forensic correlator + state-change catch
+- * logging. NEVER store the raw email in audit payloads or logs. The
+- * branded return makes this the only legal source of `EmailHashPrefix`
+- * values.
+- */
+-function hashAttendeeEmail(email: string): EmailHashPrefix {
+-  return createHash('sha256')
+-    .update(email.toLowerCase())
+-    .digest('hex')
+-    .slice(0, 16) as EmailHashPrefix;
+-}
++// `hashAttendeeEmail` + `EmailHashPrefix` moved to
++// `./_helpers/attendee-email-hash` (go-live audit S1-P0-1) so the shared
++// `process-attendee-in-tx` helper can reuse it without a circular import.
+ 
+ // ---------------------------------------------------------------------------
+ // Per-row outcome (use-case-internal — never escapes)

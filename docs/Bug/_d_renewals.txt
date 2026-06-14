@@ -1,0 +1,215 @@
+diff --git a/src/modules/renewals/application/use-cases/_lib/build-renewal-redeem-link-url.ts b/src/modules/renewals/application/use-cases/_lib/build-renewal-redeem-link-url.ts
+new file mode 100644
+index 00000000..3185d5c7
+--- /dev/null
++++ b/src/modules/renewals/application/use-cases/_lib/build-renewal-redeem-link-url.ts
+@@ -0,0 +1,38 @@
++/**
++ * Build the renewal-reminder email CTA URL — go-live audit S1-P0-4 + S1-P1-1.
++ *
++ * The renewal email CTA previously hard-coded `${baseUrl}/portal/account` (a
++ * dead-end: the member landed on account settings, NOT the renewal flow) while
++ * the signed-token redeem-link route + HMAC signer sat as dead code. This helper
++ * wires them together: it signs a single-use HMAC token for (tenant, member,
++ * cycle) and assembles the public redeem-link URL the email CTA points to.
++ *
++ * Redeem-link contract (`src/app/api/portal/renewal/redeem-link/route.ts`):
++ *   GET /api/portal/renewal/redeem-link?t=<token>
++ *   → verify (HMAC + expiry + tenant + cycle + replay) → create session →
++ *     302 /portal/renewal/[memberId].
++ *
++ * Pure Application — no framework/ORM imports (Constitution Principle III).
++ */
++import { buildPayload } from '../../../domain/renewal-link-token';
++import type { RenewalLinkTokenSigner } from '../../ports/renewal-link-token-signer';
++
++export function buildRenewalRedeemLinkUrl(
++  signer: RenewalLinkTokenSigner,
++  baseUrl: string,
++  args: {
++    readonly tenantId: string;
++    readonly memberId: string;
++    readonly cycleId: string;
++    readonly now: Date;
++  },
++): string {
++  const payload = buildPayload({
++    tenantId: args.tenantId,
++    memberId: args.memberId,
++    cycleId: args.cycleId,
++    now: args.now,
++  });
++  const { token } = signer.sign(payload);
++  return `${baseUrl}/api/portal/renewal/redeem-link?t=${encodeURIComponent(token)}`;
++}
+diff --git a/src/modules/renewals/application/use-cases/_lib/dispatch-one-cycle.ts b/src/modules/renewals/application/use-cases/_lib/dispatch-one-cycle.ts
+index 147daa0c..2026b053 100644
+--- a/src/modules/renewals/application/use-cases/_lib/dispatch-one-cycle.ts
++++ b/src/modules/renewals/application/use-cases/_lib/dispatch-one-cycle.ts
+@@ -38,6 +38,7 @@ import { env } from '@/lib/env';
+ import { renewalsMetrics } from '@/lib/metrics';
+ import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
+ import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
++import { buildRenewalRedeemLinkUrl } from './build-renewal-redeem-link-url';
+ import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
+ import { asCycleId } from '../../../domain/renewal-cycle';
+ import { asTaskId } from '../../../domain/renewal-escalation-task';
+@@ -767,11 +768,21 @@ async function dispatchEmailStep(
+       cycle_expires_at: cycle.expiresAt,
+       tier_bucket: cycle.tierAtCycleStart,
+       step_id: step.stepId,
+-      // J1-B1: populate CTA target. Uses the member portal landing
+-      // (`/portal/account`) until the signed-token renewal route lands;
+-      // a blank href would leave every dispatched email with a broken
+-      // CTA button, defeating the reminder's primary purpose.
+-      renewal_link_url: `${env.app.baseUrl}/portal/account`,
++      // S1-P0-4: signed-token redeem-link (was the `/portal/account`
++      // dead-end). Lands the member in the actual renewal flow after a
++      // one-time-use HMAC verify + auto-sign-in.
++      renewal_link_url: buildRenewalRedeemLinkUrl(
++        deps.tokenSigner,
++        env.app.baseUrl,
++        {
++          tenantId: ctx.tenantId,
++          memberId: member.memberId,
++          cycleId: cycle.cycleId,
++          now: new Date(ctx.nowIso),
++        },
++      ),
++      // S1-P1-3: footer opt-out link target.
++      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
+     },
+     idempotencyKey: reminderEventId,
+   });
+diff --git a/src/modules/renewals/application/use-cases/retry-failed-reminders.ts b/src/modules/renewals/application/use-cases/retry-failed-reminders.ts
+index c22f2b89..3c07f279 100644
+--- a/src/modules/renewals/application/use-cases/retry-failed-reminders.ts
++++ b/src/modules/renewals/application/use-cases/retry-failed-reminders.ts
+@@ -36,6 +36,7 @@ import { ok, err, type Result } from '@/lib/result';
+ import { runInTenant, type TenantTx } from '@/lib/db';
+ import { logger } from '@/lib/logger';
+ import { env } from '@/lib/env';
++import { buildRenewalRedeemLinkUrl } from './_lib/build-renewal-redeem-link-url';
+ import { randomUUID } from 'node:crypto';
+ import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
+ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+@@ -201,8 +202,19 @@ async function attemptRetry(
+       cycle_expires_at: candidate.cycle.expiresAt,
+       tier_bucket: candidate.cycle.tierAtCycleStart,
+       step_id: event.stepId,
+-      // J1-B1: same CTA URL as the original dispatch path.
+-      renewal_link_url: `${env.app.baseUrl}/portal/account`,
++      // S1-P0-4: same signed redeem-link as the original dispatch path.
++      renewal_link_url: buildRenewalRedeemLinkUrl(
++        deps.tokenSigner,
++        env.app.baseUrl,
++        {
++          tenantId: event.tenantId,
++          memberId: candidate.member.memberId,
++          cycleId: event.cycleId,
++          now: new Date(nowIso),
++        },
++      ),
++      // S1-P1-3: footer opt-out link target.
++      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
+     },
+     idempotencyKey: event.reminderEventId,
+   });
+diff --git a/src/modules/renewals/infrastructure/email/templates/base-renewal-layout.tsx b/src/modules/renewals/infrastructure/email/templates/base-renewal-layout.tsx
+index 4a077fab..1cd0f847 100644
+--- a/src/modules/renewals/infrastructure/email/templates/base-renewal-layout.tsx
++++ b/src/modules/renewals/infrastructure/email/templates/base-renewal-layout.tsx
+@@ -20,12 +20,24 @@ import {
+   Container,
+   Head,
+   Html,
++  Link,
+   Preview,
+   Section,
+   Text,
+ } from '@react-email/components';
+ import type { RenewalEmailLocale } from './copy';
+ 
++/**
++ * S1-P1-3 — localised "manage reminder preferences" link label. Renewal
++ * reminders previously carried no opt-out path in the email body; this footer
++ * link points members at /portal/preferences/renewals (FR-016 opt-out page).
++ */
++const MANAGE_PREFS_LABEL: Record<RenewalEmailLocale, string> = {
++  en: 'Manage reminder preferences',
++  th: 'จัดการการแจ้งเตือนต่ออายุ',
++  sv: 'Hantera påminnelseinställningar',
++};
++
+ export interface BaseRenewalLayoutProps {
+   readonly locale: RenewalEmailLocale;
+   readonly previewText: string;
+@@ -39,6 +51,12 @@ export interface BaseRenewalLayoutProps {
+   readonly footer?: React.ReactNode;
+   /** Footer brand line — tenant-hardcoded for MVP per OOS-17. */
+   readonly footerBrand?: string;
++  /**
++   * S1-P1-3 — absolute URL to the renewal-reminder opt-out page
++   * (`/portal/preferences/renewals`). When set, a localised "manage
++   * preferences" link renders in the footer. Omitted → no link (back-compat).
++   */
++  readonly preferencesUrl?: string;
+ }
+ 
+ const FOOTER_BRAND_DEFAULT = 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)';
+@@ -92,6 +110,7 @@ export function BaseRenewalLayout({
+   ctaHref,
+   footer,
+   footerBrand = FOOTER_BRAND_DEFAULT,
++  preferencesUrl,
+ }: BaseRenewalLayoutProps) {
+   return (
+     <Html lang={locale}>
+@@ -107,6 +126,13 @@ export function BaseRenewalLayout({
+             </Button>
+           </Section>
+           {footer ?? null}
++          {preferencesUrl ? (
++            <Text style={FOOTER_BRAND_STYLE}>
++              <Link href={preferencesUrl} style={{ color: '#6b7280' }}>
++                {MANAGE_PREFS_LABEL[locale]}
++              </Link>
++            </Text>
++          ) : null}
+           <Text style={FOOTER_BRAND_STYLE}>{footerBrand}</Text>
+         </Container>
+       </Body>
+diff --git a/src/modules/renewals/infrastructure/email/templates/renewal-reminder-email.tsx b/src/modules/renewals/infrastructure/email/templates/renewal-reminder-email.tsx
+index f1f9299e..1e66388a 100644
+--- a/src/modules/renewals/infrastructure/email/templates/renewal-reminder-email.tsx
++++ b/src/modules/renewals/infrastructure/email/templates/renewal-reminder-email.tsx
+@@ -52,6 +52,8 @@ export interface RenewalReminderEmailProps {
+   readonly expiresAtIso: string;
+   readonly daysUntilExpiry: number;
+   readonly renewalLinkUrl: string;
++  /** S1-P1-3 — opt-out/manage-preferences URL for the footer link. */
++  readonly preferencesUrl?: string;
+ }
+ 
+ /**
+@@ -98,6 +100,7 @@ export function RenewalReminderEmail(props: RenewalReminderEmailProps) {
+       bodyContent={body}
+       ctaLabel={ctaLabel}
+       ctaHref={props.renewalLinkUrl}
++      {...(props.preferencesUrl ? { preferencesUrl: props.preferencesUrl } : {})}
+       footer={
+         <DualFormatDateFooter
+           locale={props.locale}
+diff --git a/src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx b/src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx
+index 82ace076..11e7a531 100644
+--- a/src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx
++++ b/src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx
+@@ -287,6 +287,8 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
+         input.templateVariables.days_until_expiry ?? deriveDaysFromOffset(offset),
+       ),
+       renewalLinkUrl: String(input.templateVariables.renewal_link_url ?? ''),
++      // S1-P1-3 — opt-out link in the footer (empty → no link rendered).
++      preferencesUrl: String(input.templateVariables.preferences_url ?? ''),
+     };
+ 
+     // 3. Compute subject (interpolated; same formula as the template body).

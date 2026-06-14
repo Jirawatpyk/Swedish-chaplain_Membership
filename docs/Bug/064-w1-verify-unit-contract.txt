@@ -1,0 +1,114 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/contract/payments/post-payments-initiate.contract.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 455[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/process-charge-refunded.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","tenantId":"test-swecham","invoiceId":"00000000-0000-0000-0000-000000000001","invoiceSubject":"event","msg":"issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting"}
+ [32m✓[39m tests/unit/invoicing/issue-credit-note.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 79[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/record-payment.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 114[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/issue-invoice.test.ts [2m([22m[2m39 tests[22m[2m)[22m[90m 189[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/issue-event-invoice-as-paid.test.ts [2m([22m[2m56 tests[22m[2m)[22m[90m 246[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/issue-refund.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 72[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/post-refunds-initiate.contract.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 235[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/create-event-invoice-draft.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 47[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-auto-email.test.ts [2m([22m[2m30 tests[22m[2m)[22m[33m 326[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobNotFoundError: blob not found","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":true,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Upstream 404 Not Found","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":true,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Connection refused","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":false,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"string-style not found error","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":true,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+ [32m✓[39m tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/post-webhooks-stripe-events.contract.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 3147[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/webhooks/stripe (T042)[2m > [22m(a) missing Stripe-Signature header → 401, body never parsed [33m3096[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-pdf.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobNotFoundError: blob not found","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":true,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Upstream 404 Not Found","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":true,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Connection refused","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":false,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"string-style not found error","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":true,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+ [32m✓[39m tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 40[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","eventId":"evt_pi_negative","eventType":"payment_intent.succeeded","account":"acct_test","livemode":false,"objectType":"payment_intent","rawAmount":-100,"errKind":"RangeError","msg":"stripe-webhook-verifier.amount_projection_failed"}
+ [32m✓[39m tests/unit/payments/stripe-webhook-verifier.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/member-identity-snapshot.test.ts [2m([22m[2m39 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/domain/value-objects-and-helpers.test.ts [2m([22m[2m35 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/record-payment-async-pdf.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/render-receipt-pdf.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/invoice.test.ts [2m([22m[2m48 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/export-paid-invoices-csv.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/void-invoice.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/create-invoice-draft.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/webhook-idempotency.contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2901[2mms[22m[39m
+   [33m[2m✓[22m[39m webhook-idempotency: SC-005 same event delivered twice (T045)[2m > [22mfirst delivery: 200, processWebhookEvent called once [33m2869[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice-for-payment.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/row-to-subject-fields-malformed.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/calculate-credit-note-vat.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 47[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/audit-port-non-member-compile-guard.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/shared-helpers.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/derive-overdue.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/invoicing-bridge.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/update-invoice-draft.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/compute-remaining-refundable.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/domain/refund-state-machine.test.ts [2m([22m[2m26 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-state-machine.test.ts [2m([22m[2m30 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/value-objects-and-helpers.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/calculate-pro-rate-factor.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/event-registration-lookup-adapter.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/load-tenant-logo.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/money.test.ts [2m([22m[2m26 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/process-webhook-event.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 76[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/sweep-stale-pending-refunds.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 78[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/cancel-and-fail-payment.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 102[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/confirm-payment.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 126[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/initiate-payment.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 153[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/event-draft.contract.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 43995[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid.contract.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 44110[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/credit-note.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/domain/refundable-amount.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/infrastructure/stripe-gateway-mapping.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/index-barrel.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 13496[2mms[22m[39m
+   [33m[2m✓[22m[39m payments barrel — public API contract[2m > [22mexposes every expected Domain + Application + composition-root export [33m13479[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/enforce-credit-cannot-exceed-remainder.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/event-details-lookup-adapter.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice-for-payment.prop.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/enforce-one-subject-line.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/rbac-policy.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/pdf-union-partial-state.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/domain/payment-state-machine.test.ts [2m([22m[2m44 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/infrastructure/drizzle-tenant-payment-settings-repo-cache.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/document-kind.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/f4-invoice-paid-event.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-line.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/vat-inclusive.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/compose-buyer-address.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/domain/one-succeeded-payment-per-invoice.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/list-succeeded-payment-methods.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/load-invoice-payment-activity.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/pro-rate-policy.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/serialise-no-blob-key.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/application/audit-payload-exhaustive.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/sanitise-error-reason.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/application/create-event-invoice-draft-member-number.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/domain/decline-code-catalogue.test.ts [2m([22m[2m63 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/logo-blob-key-guard.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/document-number.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-authz-policy.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/calculate-vat.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/fiscal-year.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/vat-rate.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/stripe-api-version.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 840[2mms[22m[39m
+   [33m[2m✓[22m[39m getStripeApiVersion — mockable env-reader[2m > [22mpicks up a changed env between calls (getter, not const) [33m716[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-variant-for-failed-event.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resolve-invoice-event-copy.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-route-guard.contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 22596[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/deterministic-render.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/stripe-client.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/list-invoices-by-member.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/barrel-exports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 14490[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 barrel — F5 bridge export surface (T010–T014)[2m > [22mre-exports the 3 F5 bridge use-cases + Money aliased as AmountSatang [33m14484[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/kill-switch-async-receipt-pdf.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m89 passed[39m[22m[90m (89)[39m
+[2m      Tests [22m [1m[32m1268 passed[39m[22m[90m (1268)[39m
+[2m   Start at [22m 09:13:14
+[2m   Duration [22m 93.61s[2m (transform 29.68s, setup 69.81s, collect 321.87s, tests 149.14s, environment 139.81s, prepare 56.24s)[22m
+

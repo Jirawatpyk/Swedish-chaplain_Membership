@@ -1,0 +1,248 @@
+
+> swecham-membership@0.1.0 test:perf C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/run-perf-tests.ts
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1780487126171,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"[REDACTED]"},"invoiceId":"0dd60d70-5396-4db7-82a9-dc0539ffb824","tenantId":"test-swecham-75d0410c","msg":"issueInvoice: internal error, rolling back"}
+{"level":"warn","time":1780487129220,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"8745b36e-ae2c-41ce-ba68-248d5ec8abc4","tenantId":"test-swecham-b57b0340","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/seq-number-atomicity.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 29535[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(f) tenant_document_sequences row missing → allocator creates with seq=1 [33m418[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h) Sequential calls allocate 1 → 2 → 3 with no gaps [33m1052[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(d) 10 concurrent allocations on same (tenant, FY) produce 1..10 with no duplicates [33m2130[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(e) FY-boundary crossover — adjacent fiscal years allocate independently [33m1103[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(a) PDF render throws → rollback, seq unchanged, no invoice row [33m3102[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(b) Blob upload throws → rollback, seq unchanged, no invoice row [33m3017[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(g) Audit emit throws → rollback, no invoice issued, no seq consumed [33m3277[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h-replay) Re-issuing an already-issued invoice does NOT consume a new sequence number [33m3232[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(perf) 50 concurrent issues produce contiguous 1..50 in < 30s wall-clock [33m10145[2mms[22m[39m
+[90mstdout[2m | tests/integration/renewals/tier-upgrade-evaluate-perf.test.ts[2m > [22m[2mF8 evaluateTierUpgrade perf — integration (T264, RUN_PERF=1)
+[22m[39m[T264] Seeded 1000 candidates in 1842ms
+
+[90mstdout[2m | tests/integration/renewals/tier-upgrade-evaluate-perf.test.ts[2m > [22m[2mF8 evaluateTierUpgrade perf — integration (T264, RUN_PERF=1)[2m > [22m[2mper-tenant evaluation <30000ms @ 1000 members (strict=false)
+[22m[39m[T264] scanned=999 suggestions=333 alreadyAtTarget=666 dur=1893ms (1.90ms/member)
+
+ [32m✓[39m tests/integration/renewals/tier-upgrade-evaluate-perf.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 6348[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 evaluateTierUpgrade perf — integration (T264, RUN_PERF=1)[2m > [22mper-tenant evaluation <30000ms @ 1000 members (strict=false) [33m1902[2mms[22m[39m
+[90mstdout[2m | tests/integration/broadcasts/benefits-page-perf.test.ts[2m > [22m[2mF7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22m[2mcomputeQuotaCounter p95 < 800ms (over 20 runs)
+[22m[39m[perf] computeQuotaCounter p95=620.1ms
+
+[90mstdout[2m | tests/integration/broadcasts/benefits-page-perf.test.ts[2m > [22m[2mF7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22m[2mlistMemberBroadcasts page=1 of 10 over 200 rows: p95 < 600ms
+[22m[39m[perf] listMemberBroadcasts page=1 p95=280.8ms
+
+[90mstdout[2m | tests/integration/broadcasts/benefits-page-perf.test.ts[2m > [22m[2mF7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22m[2mlistMemberBroadcasts deep page=10 of 10 over 200 rows: p95 < 600ms
+[22m[39m[perf] listMemberBroadcasts page=10 (offset=90) p95=274.3ms
+
+[90mstdout[2m | tests/integration/broadcasts/benefits-page-perf.test.ts[2m > [22m[2mF7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22m[2mgetMemberBroadcast (single row + delivery aggregate) p95 < 500ms
+[22m[39m[perf] getMemberBroadcast p95=369.8ms
+
+[90mstdout[2m | tests/integration/broadcasts/benefits-page-perf.test.ts[2m > [22m[2mF7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22m[2mEXPLAIN ANALYZE: listMemberBroadcasts uses the new covering index
+[22m[39m[perf] EXPLAIN plan: [{"QUERY PLAN":[{"Plan":{"Node Type":"Limit","Parallel Aware":false,"Async Capable":false,"Startup Cost":0.27,"Total Cost":7.48,"Plan Rows":10,"Plan Width":46,"Actual Startup Time":0.029,"Actual Total Time":0.036,"Actual Rows":10,"Actual Loops":1,"Shared Hit Blocks":3,"Shared Read Blocks":0,"Shared Dirtied Blocks":0,"Shared Written Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Dirtied Blocks":0,"Local Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Plans":[{"Node Ty
+
+ [32m✓[39m tests/integration/broadcasts/benefits-page-perf.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 31950[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22mcomputeQuotaCounter p95 < 800ms (over 20 runs) [33m12111[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22mlistMemberBroadcasts page=1 of 10 over 200 rows: p95 < 600ms [33m5128[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22mlistMemberBroadcasts deep page=10 of 10 over 200 rows: p95 < 600ms [33m5039[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 US3 perf — benefits page (E1, RUN_PERF=1)[2m > [22mgetMemberBroadcast (single row + delivery aggregate) p95 < 500ms [33m7266[2mms[22m[39m
+[90mstdout[2m | tests/integration/renewals/at-risk-recompute-perf.test.ts[2m > [22m[2mF8 at-risk recompute perf — integration (T174, RUN_PERF=1)
+[22m[39m[T174] Seeded 5000 members in 10039ms
+
+[90mstdout[2m | tests/integration/renewals/at-risk-recompute-perf.test.ts[2m > [22m[2mF8 at-risk recompute perf — integration (T174, RUN_PERF=1)[2m > [22m[2mper-tenant cron pass <60000ms @ 5000 members
+[22m[39m[T174] members=5000 list=313ms cron=1953ms (batched ⇒ p50=p95=p99=avg=0.4ms/member)
+
+ [32m✓[39m tests/integration/renewals/at-risk-recompute-perf.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 19861[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk recompute perf — integration (T174, RUN_PERF=1)[2m > [22mper-tenant cron pass <60000ms @ 5000 members [33m2456[2mms[22m[39m
+{"level":"warn","time":1780487217941,"service":"swecham-membership","env":"test","fallbackName":"SweCham","msg":"broadcasts.tenant_display_name.env_fallback"}
+[90mstdout[2m | tests/integration/broadcasts/snapshot-template-perf.test.ts[2m > [22m[2mF7.1a snapshotTemplateToDraft perf — SC-007a (M-test-6, RUN_PERF=1)[2m > [22m[2mp95 < 500ms over 100 sequential samples
+[22m[39m[M-test-6] snapshotTemplateToDraft samples=100 p50=662ms p95=683ms p99=688ms
+
+ [31m❯[39m tests/integration/broadcasts/snapshot-template-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 68627[2mms[22m[39m
+[31m   [31m×[31m F7.1a snapshotTemplateToDraft perf — SC-007a (M-test-6, RUN_PERF=1)[2m > [22mp95 < 500ms over 100 sequential samples[33m 66717[2mms[22m[31m[39m
+[31m     → expected 682.7003000000259 to be less than 500[39m
+ [32m✓[39m tests/integration/perf/webhook-async-pdf-benchmark.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 315522[2mms[22m[39m
+   [33m[2m✓[22m[39m T166-12 — webhook async-PDF latency benchmark[2m > [22mrecordPayment p95 (asyncReceiptPdf=true) < 1500ms over 100 runs (5-warmup discarded) [33m313759[2mms[22m[39m
+[90mstdout[2m | tests/integration/renewals/renewal-confirm-perf.test.ts[2m > [22m[2mF8 confirmRenewal perf — integration (T265, RUN_PERF=1)
+[22m[39m[T265] Seeded 55 cycles in awaiting_payment status
+
+[90mstdout[2m | tests/integration/renewals/renewal-confirm-perf.test.ts[2m > [22m[2mF8 confirmRenewal perf — integration (T265, RUN_PERF=1)[2m > [22m[2mp95 TTFB <600ms / total <1200ms (strict=false)
+[22m[39m[T265] samples=50 p50=457.2ms p95=482.8ms p99=484.2ms avg=457.3ms
+
+ [32m✓[39m tests/integration/renewals/renewal-confirm-perf.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 27725[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 confirmRenewal perf — integration (T265, RUN_PERF=1)[2m > [22mp95 TTFB <600ms / total <1200ms (strict=false) [33m25143[2mms[22m[39m
+[90mstdout[2m | tests/integration/renewals/pipeline-perf.test.ts[2m > [22m[2mF8 loadPipeline perf — integration (T261, RUN_PERF=1)
+[22m[39m[T261] Seeded 1000 members + cycles in 1719ms
+
+[90mstdout[2m | tests/integration/renewals/pipeline-perf.test.ts[2m > [22m[2mF8 loadPipeline perf — integration (T261, RUN_PERF=1)[2m > [22m[2mp95 <500ms @ 1000 members (strict=false)
+[22m[39m[T261] members=1000 samples=20 p50=322.2ms p95=403.7ms p99=403.7ms avg=320.7ms
+
+ [32m✓[39m tests/integration/renewals/pipeline-perf.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 12171[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 loadPipeline perf — integration (T261, RUN_PERF=1)[2m > [22mp95 <500ms @ 1000 members (strict=false) [33m7961[2mms[22m[39m
+{"level":"info","time":1780487673648,"service":"swecham-membership","env":"test","tenantId":"test-swecham-017f0152","correlationId":"6e8cb4e0-0933-45f9-9703-bd671105ceb8","candidatesProcessed":5000,"emailsSent":236,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":5,"durationMs":21436,"msg":"dispatchRenewalCycle: cron pass complete"}
+[90mstdout[2m | tests/integration/perf/renewals-cron-5k.test.ts[2m > [22m[2mF8 cron dispatch perf — 5k members per tenant (FR-017 / SC-005)[2m > [22m[2mcold pass: 5,000 candidates dispatched < 60 s
+[22m[39m[T115 perf] cold pass: 21438 ms · processed 5000 · sent 236 · skipped not_due_today 4764
+
+{"level":"info","time":1780487689942,"service":"swecham-membership","env":"test","tenantId":"test-swecham-017f0152","correlationId":"f3f5ccf9-4b28-4103-a0df-825d21d27d3a","candidatesProcessed":5000,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":5,"durationMs":16291,"msg":"dispatchRenewalCycle: cron pass complete"}
+[90mstdout[2m | tests/integration/perf/renewals-cron-5k.test.ts[2m > [22m[2mF8 cron dispatch perf — 5k members per tenant (FR-017 / SC-005)[2m > [22m[2mwarm pass: 5,000 candidates idempotency-replayed < 60 s
+[22m[39m[T115 perf] warm pass: 16291 ms · processed 5000 · sent 0 · already_sent 236
+
+ [32m✓[39m tests/integration/perf/renewals-cron-5k.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 48075[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cron dispatch perf — 5k members per tenant (FR-017 / SC-005)[2m > [22mcold pass: 5,000 candidates dispatched < 60 s [33m21440[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cron dispatch perf — 5k members per tenant (FR-017 / SC-005)[2m > [22mwarm pass: 5,000 candidates idempotency-replayed < 60 s [33m16291[2mms[22m[39m
+[90mstdout[2m | tests/integration/perf/csv-import-perf.test.ts[2m > [22m[2mSC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB[2m > [22m[2m200 rows import within 60000ms + peak heap delta < 500 MiB
+[22m[39m[SC-006 bench] rows=200 csvSize=0.03MiB duration=78901ms heapDelta=-3.92MiB outcome=timeout
+
+ [31m❯[39m tests/integration/perf/csv-import-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 80918[2mms[22m[39m
+[31m   [31m×[31m SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB[2m > [22m200 rows import within 60000ms + peak heap delta < 500 MiB[33m 78905[2mms[22m[31m[39m
+[31m     → expected 'timeout' to be 'completed' // Object.is equality[39m
+[90mstdout[2m | tests/integration/renewals/cron-dispatch-perf.test.ts[2m > [22m[2mF8 dispatchRenewalCycle perf — integration (T262, RUN_PERF=1)
+[22m[39m[T262] Seeded 1000 dispatch candidates in 2049ms
+
+{"level":"info","time":1780487866163,"service":"swecham-membership","env":"test","tenantId":"test-swecham-723bf063","correlationId":"efb04fd9-ea81-4c04-83fa-7ee36e99609a","candidatesProcessed":1000,"emailsSent":1000,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":5,"durationMs":88110,"msg":"dispatchRenewalCycle: cron pass complete"}
+[90mstdout[2m | tests/integration/renewals/cron-dispatch-perf.test.ts[2m > [22m[2mF8 dispatchRenewalCycle perf — integration (T262, RUN_PERF=1)[2m > [22m[2mper-tenant cron pass <60000ms @ 1000 members (strict=false)
+[22m[39m[T262] candidates=1000 sent=1000 cron=88108ms (88.11ms/candidate)
+
+ [32m✓[39m tests/integration/renewals/cron-dispatch-perf.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 92896[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 dispatchRenewalCycle perf — integration (T262, RUN_PERF=1)[2m > [22mper-tenant cron pass <60000ms @ 1000 members (strict=false) [33m88116[2mms[22m[39m
+[90mstdout[2m | tests/integration/invoicing/invoice-list-perf.test.ts[2m > [22m[2mT110a — invoice-list query perf (SC-005)[2m > [22m[2mfirst-page 50-row listPaged p95 < 500ms at 5,000 rows × 2 tenants
+[22m[39m[T110a] invoice-list-perf: p50=366.0ms p95=387.9ms p99=397.5ms (n=100)
+
+ [32m✓[39m tests/integration/invoicing/invoice-list-perf.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 51782[2mms[22m[39m
+   [33m[2m✓[22m[39m T110a — invoice-list query perf (SC-005)[2m > [22mfirst-page 50-row listPaged p95 < 500ms at 5,000 rows × 2 tenants [33m43206[2mms[22m[39m
+   [33m[2m✓[22m[39m T110a — invoice-list query perf (SC-005)[2m > [22msmoke: listPaged returns at small scale [33m1918[2mms[22m[39m
+[90mstdout[2m | tests/integration/perf/renewals-pipeline-perf.test.ts[2m > [22m[2mF8 renewal pipeline perf (SC-003 / FR-046 — RUN_PERF=1)[2m > [22m[2mloadPipeline first-page p95 < 500ms @ 5k members + 600 in window
+[22m[39m[F8 pipeline perf] p50=286ms p95=325ms p99=327ms (n=50)
+
+[90mstdout[2m | tests/integration/perf/renewals-pipeline-perf.test.ts[2m > [22m[2mF8 renewal pipeline perf (SC-003 / FR-046 — RUN_PERF=1)[2m > [22m[2mcross-tenant: tenant B query stays within budget too (RLS overhead)
+[22m[39m[F8 pipeline perf · tenant B] p95=319ms
+
+ [32m✓[39m tests/integration/perf/renewals-pipeline-perf.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 49868[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 renewal pipeline perf (SC-003 / FR-046 — RUN_PERF=1)[2m > [22mloadPipeline first-page p95 < 500ms @ 5k members + 600 in window [33m17425[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 renewal pipeline perf (SC-003 / FR-046 — RUN_PERF=1)[2m > [22mcross-tenant: tenant B query stays within budget too (RLS overhead) [33m17126[2mms[22m[39m
+[90mstdout[2m | tests/integration/members/timeline-perf.test.ts[2m > [22m[2mtimeline perf (E3, RUN_PERF=1)[2m > [22m[2mp95 < 300ms for first page (50 of 1000 events)
+[22m[39m  timeline perf @ 1000 events: p50=553ms p95=584ms
+
+ [31m❯[39m tests/integration/members/timeline-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 15020[2mms[22m[39m
+[31m   [31m×[31m timeline perf (E3, RUN_PERF=1)[2m > [22mp95 < 300ms for first page (50 of 1000 events)[33m 11684[2mms[22m[31m[39m
+[31m     → expected 584.2664999999106 to be less than 300[39m
+[90mstdout[2m | tests/integration/insights/dashboard-perf.test.ts[2m > [22m[2mdashboard perf @ 5k members (T098, RUN_PERF=1)[2m > [22m[2mcompute @ 5000 members < 60000ms (cron cost, FR-005 freshness)
+[22m[39m  dashboard COMPUTE @ 5000 members: p95=18872ms (target 60000ms)
+
+[90mstdout[2m | tests/integration/insights/dashboard-perf.test.ts[2m > [22m[2mdashboard perf @ 5k members (T098, RUN_PERF=1)[2m > [22m[2mread (listDashboard) p95 < 1500ms @ 5000 members (SC-002 data path)
+[22m[39m  dashboard READ @ 5000 members: p50=242ms p95=246ms (target 1500ms)
+
+ [32m✓[39m tests/integration/insights/dashboard-perf.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 122341[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard perf @ 5k members (T098, RUN_PERF=1)[2m > [22mcompute @ 5000 members < 60000ms (cron cost, FR-005 freshness) [33m112063[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard perf @ 5k members (T098, RUN_PERF=1)[2m > [22mread (listDashboard) p95 < 1500ms @ 5000 members (SC-002 data path) [33m5063[2mms[22m[39m
+[90mstdout[2m | tests/integration/invoicing/pdf-render-benchmark.test.ts[2m > [22m[2mT110 — PDF render benchmark (post-critique E6)[2m > [22m[2minvoice kind: p95 < 800ms over 100 renders
+[22m[39m[T110] pdf-render-benchmark: p50=69.4ms p95=81.8ms p99=99.8ms (n=100)
+
+ [32m✓[39m tests/integration/invoicing/pdf-render-benchmark.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 7599[2mms[22m[39m
+   [33m[2m✓[22m[39m T110 — PDF render benchmark (post-critique E6)[2m > [22minvoice kind: p95 < 800ms over 100 renders [33m7528[2mms[22m[39m
+[90mstdout[2m | tests/integration/members/search-perf.test.ts[2m > [22m[2mdirectory search perf — SC-002 (T060)[2m > [22m[2msubstring p95 < 500ms at 5,000-row tenant
+[22m[39m[T060] p50=287.7ms p95=324.5ms over 100 samples
+
+ [32m✓[39m tests/integration/members/search-perf.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 44302[2mms[22m[39m
+   [33m[2m✓[22m[39m directory search perf — SC-002 (T060)[2m > [22msubstring p95 < 500ms at 5,000-row tenant [33m41441[2mms[22m[39m
+   [33m[2m✓[22m[39m directory search perf — SC-002 (T060)[2m > [22msmoke: substring search returns rows at small scale [33m459[2mms[22m[39m
+{"level":"warn","time":1780488177162,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-57dedd8e-e435-4cd0-8d32-4828dece177a","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488177495,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-39857638-f9ff-45fd-a477-de6c0cb4792f","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488177823,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-d0270d68-6c39-4aed-96ca-d6f1ecab450e","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488178149,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-6a3c2568-4f58-435a-9df5-102decb98cd3","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488178469,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-030a375d-229f-44f6-bb95-1262a7042652","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488178804,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-cf5c2f90-51b3-4a57-9b73-606e285cfc68","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488179153,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-75431973-b3b1-443e-b318-34dd3b1962fc","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488179515,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-a439f3ce-59fa-433c-a5a3-c45f24663b1e","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488179866,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-e5d8e1fb-ce9b-446b-bc71-dae3585be289","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488180235,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-28a54a4d-bc2c-4c20-bdc4-1af1ff6bd949","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488180570,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-903ea583-5b5b-454b-bec1-93e8543c56b5","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488180927,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-3b1f7f47-1cc9-4b29-877d-3ab43f35d60a","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488181277,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-9b4e1870-49e6-493c-9dc1-87a31f9f919a","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488181644,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-6fe86704-fb5b-4649-b7f5-cfd39d43c662","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488181995,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-1a6c0c87-6c6c-4962-ab38-1a42cdd12336","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488182357,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-d15d39a7-416e-4557-85a5-b75b6cbd5646","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488182708,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-6e0db1b8-635b-4017-97c6-0103fdc3c2a9","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488183071,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-874a02e3-c673-4792-9fed-a5e7ac428412","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488183433,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-a026bb84-41ca-4d93-acfe-1f4d8a12e128","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488183787,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-289e8081-7b38-4133-a279-be08efd81f2f","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488184133,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-495045ac-5390-4712-af28-4f2149be8528","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+[90mstdout[2m | tests/integration/insights/audit-perf.test.ts[2m > [22m[2maudit perf @ 50k events (T098, RUN_PERF=1)[2m > [22m[2mfirst page p95 < 1000ms (50 of 50000 events)
+[22m[39m  audit perf @ 50000 events: p50=344ms p95=377ms (target 1000ms)
+
+{"level":"warn","time":1780488184457,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-2e2fe78d-8d91-4858-bfd5-1ceb49505300","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488184769,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-95aa12f5-47f4-4230-a2e0-d865ed8d3230","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488185091,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-bd564cba-9cbd-4746-973e-df72882b4af0","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488185431,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-8ae19dd3-c420-4f1c-9bb5-715769227034","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488185789,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-90167e80-9fde-4942-b14b-47ba30a061dc","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488186114,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-88c301d3-0636-4ede-8cca-aa7f6dfef73b","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488186437,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-a226c176-eb58-4881-982e-86b6d8e89ce3","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488186774,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-09ba770b-def0-4b89-8313-4d514ef27675","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488187095,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-1bf34920-015e-4f8c-bc6c-48542e306904","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488187410,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-ee105ce9-75c2-442c-969d-c9872ef6d9c3","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488187734,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-198236b5-5d10-4921-bef2-a7038f1ab84a","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488188071,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-5e46216b-5a91-48be-8435-d996b4be01ba","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488188400,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-3cc2b08c-7a27-4b43-b4d6-40b68d9e89c0","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488188726,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-a84dcb9f-12a5-4835-b52c-e368f959a7a6","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488189037,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-9169a9ed-746e-4317-98d3-bf465df71dfc","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488189347,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-59f8237a-c2bc-4c35-9942-5376efdd26d3","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488189696,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-960df6ab-52e0-4bf5-a750-ead72d8aebb7","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488190032,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-6ff96d98-3fa6-48bb-bdb4-fb1d169c7130","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488190378,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-b3988135-f601-44a2-9ffa-aca0c2a5ff54","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488190688,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-2b545122-3798-47cc-96f4-a5c8225e64b6","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+{"level":"warn","time":1780488191009,"service":"swecham-membership","env":"test","tenantId":"test-swecham-0d14ebb7","requestId":"audit-perf-a4a4064a-ad4b-47e8-a9a9-2514e86ff576","errKind":"DrizzleQueryError","msg":"insights.audit_query.identity_resolve_threw"}
+[90mstdout[2m | tests/integration/insights/audit-perf.test.ts[2m > [22m[2maudit perf @ 50k events (T098, RUN_PERF=1)[2m > [22m[2mevent-type-filtered page p95 < 1000ms (composite index)
+[22m[39m  audit perf (event-type filter) @ 50000: p95=364ms (target 1000ms)
+
+ [32m✓[39m tests/integration/insights/audit-perf.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 28419[2mms[22m[39m
+   [33m[2m✓[22m[39m audit perf @ 50k events (T098, RUN_PERF=1)[2m > [22mfirst page p95 < 1000ms (50 of 50000 events) [33m7291[2mms[22m[39m
+   [33m[2m✓[22m[39m audit perf @ 50k events (T098, RUN_PERF=1)[2m > [22mevent-type-filtered page p95 < 1000ms (composite index) [33m6879[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 3 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/broadcasts/snapshot-template-perf.test.ts[2m > [22mF7.1a snapshotTemplateToDraft perf — SC-007a (M-test-6, RUN_PERF=1)[2m > [22mp95 < 500ms over 100 sequential samples
+[31m[1mAssertionError[22m: expected 682.7003000000259 to be less than 500[39m
+[36m [2m❯[22m tests/integration/broadcasts/snapshot-template-perf.test.ts:[2m268:19[22m[39m
+    [90m266| [39m      )[33m;[39m
+    [90m267| [39m
+    [90m268| [39m      [34mexpect[39m(p95)[33m.[39m[34mtoBeLessThan[39m([33mSNAPSHOT_P95_MS[39m)[33m;[39m
+    [90m   | [39m                  [31m^[39m
+    [90m269| [39m      [90m// TC-032 closure fix 2026-05-21: bumped vitest test timeout from[39m
+    [90m270| [39m      [90m// 120s → 15 min so the worst-case fixture (`PERF_DRAFT_COUNT=10[39m…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/members/timeline-perf.test.ts[2m > [22mtimeline perf (E3, RUN_PERF=1)[2m > [22mp95 < 300ms for first page (50 of 1000 events)
+[31m[1mAssertionError[22m: expected 584.2664999999106 to be less than 300[39m
+[36m [2m❯[22m tests/integration/members/timeline-perf.test.ts:[2m206:17[22m[39m
+    [90m204| [39m      [32m`  timeline perf @ [39m[36m${[39m[33mSEED_EVENTS[39m[36m}[39m[32m events: p50=[39m[36m${[39mp50[33m.[39m[34mtoFixed[39m([34m0[39m)[36m}[39m[32mm[39m…
+    [90m205| [39m    )[33m;[39m
+    [90m206| [39m    [34mexpect[39m(p95)[33m.[39m[34mtoBeLessThan[39m([33mP95_TARGET_MS[39m)[33m;[39m
+    [90m   | [39m                [31m^[39m
+    [90m207| [39m  }[33m,[39m [34m60_000[39m)[33m;[39m
+    [90m208| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/perf/csv-import-perf.test.ts[2m > [22mSC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB[2m > [22m200 rows import within 60000ms + peak heap delta < 500 MiB
+[31m[1mAssertionError[22m: expected 'timeout' to be 'completed' // Object.is equality[39m
+
+Expected: [32m"completed"[39m
+Received: [31m"timeout"[39m
+
+[36m [2m❯[22m tests/integration/perf/csv-import-perf.test.ts:[2m213:28[22m[39m
+    [90m211| [39m      )[33m;[39m
+    [90m212| [39m
+    [90m213| [39m      [34mexpect[39m(outcome[33m.[39mkind)[33m.[39m[34mtoBe[39m([32m'completed'[39m)[33m;[39m
+    [90m   | [39m                           [31m^[39m
+    [90m214| [39m      [35mif[39m (outcome[33m.[39mkind [33m===[39m [32m'completed'[39m) {
+    [90m215| [39m        [34mexpect[39m(outcome[33m.[39msummary[33m.[39mrowsProcessed)[33m.[39m[34mtoBe[39m([33mFIXTURE_ROW_COUNT[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (18)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m34 passed[39m[22m[90m (37)[39m
+[2m   Start at [22m 18:45:16
+[2m   Duration [22m 1076.93s[2m (transform 3.56s, setup 54ms, collect 21.73s, tests 1052.96s, environment 0ms, prepare 136ms)[22m
+
+ ELIFECYCLE  Command failed with exit code 1.

@@ -1,0 +1,613 @@
+
+> swecham-membership@0.1.0 check:layout C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/check-layout-container-usage.ts
+
+check:layout — OK (117 page/loading files; pairs consistent).
+
+> swecham-membership@0.1.0 check:template-seed C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/generate-template-seed-migration.ts --check
+
+[generate-template-seed] --check OK (15 rows, no drift)
+
+> swecham-membership@0.1.0 check:fixme C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/check-fixme-budget.ts
+
+
+=== check:fixme budget report ===
+
+[32mPASS[0m (0/0) tests/e2e (excluding viewport-gated conditional skips)
+[32mPASS[0m (0/0) tests/contract
+
+[32m✓ check:fixme: all suites within budget[0m
+
+
+> swecham-membership@0.1.0 check:dates C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/check-dates.ts
+
+[32m✓ check:dates: no banned date patterns found[0m
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/contract/payments/post-refunds-initiate.contract.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 372[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/post-payments-initiate.contract.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 283[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-unsubscribe-token.contract.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 466[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /unsubscribe/[token] (T136 contract)[2m > [22mvalid token → renders confirmation + invokes unsubscribeRecipient with verified payload [33m431[2mms[22m[39m
+ [32m✓[39m tests/contract/scheduled-plan-changes/cancel-route.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 4536[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)[2m > [22m200 happy path — returns the cancelled scheduled-plan-change envelope [33m4495[2mms[22m[39m
+ [32m✓[39m tests/contract/f2-scheduled-plan-change.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/post-webhooks-stripe-events.contract.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 1709[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/webhooks/stripe (T042)[2m > [22m(a) missing Stripe-Signature header → 401, body never parsed [33m1655[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/dispatch-broadcast-batch.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit storage down","eventType":"broadcast_template_snapshot_refused_deleted","tenantId":"tenant-swe","actorUserId":"user_mem_42","requestId":"req-r6.4-m1-audit-fail","msg":"broadcasts.audit.emit_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","tenantId":"tenant-swe","draftId":"44444444-4444-4444-4444-444444444444","templateId":"55555555-5555-5555-5555-555555555555","msg":"broadcasts.snapshot.post_ownership_check_disappearance"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Postgres connection lost","tenantId":"tenant-swe","draftId":"44444444-4444-4444-4444-444444444444","templateId":"55555555-5555-5555-5555-555555555555","msg":"broadcasts.snapshot.unexpected_error"}
+ [32m✓[39m tests/contract/broadcasts/snapshot-template-to-draft.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 49[2mms[22m[39m
+ [32m✓[39m tests/contract/invite-with-member.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 7783[2mms[22m[39m
+ [32m✓[39m tests/contract/events/webhook-eventcreate-v1.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 14074[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/event-draft.contract.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 16326[2mms[22m[39m
+ [32m✓[39m tests/contract/events/csv-import-eventcreate-format.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 16384[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid.contract.test.ts [2m([22m[2m30 tests[22m[2m)[22m[33m 16320[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","event":"admin_events_list_error","error":{"kind":"db_error","message":"connection refused"},"msg":"admin events list use-case failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","event":"admin_event_detail_error","error":{"kind":"db_error","message":"pg dead"},"eventId":"evt-1","msg":"admin event detail use-case failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","event":"admin_event_detail_tenant_resolve_failed","err":"unknown host","eventId":"evt-1","msg":"[F6] resolveTenantFromRequest threw on detail route"}
+ [32m✓[39m tests/contract/events/admin-events-create.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 9351[2mms[22m[39m
+ [32m✓[39m tests/contract/f4-on-paid-callbacks.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","tenantId":"swecham","errKind":"Error","msg":"insights.audit_query.audit_emit_threw"}
+ [32m✓[39m tests/contract/insights/audit-query.contract.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 178[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/broadcasts-barrel.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 779[2mms[22m[39m
+   [33m[2m✓[22m[39m broadcasts module barrel — architecture guard (R1.3-S2)[2m > [22mforbids NEW deep imports from src/app/** + src/components/** into broadcasts internals [33m773[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/invoicing-presentation-imports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1212[2mms[22m[39m
+   [33m[2m✓[22m[39m invoicing module barrel — presentation deep-import guard (065 item 6)[2m > [22mforbids NEW deep imports from src/app/** + src/components/** into invoicing internals [33m819[2mms[22m[39m
+   [33m[2m✓[22m[39m invoicing module barrel — presentation deep-import guard (065 item 6)[2m > [22mthe application/domain layers carry exactly ONE sanctioned deep import (the codes leaf) [33m388[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals-audit-port.contract.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-webhooks-resend-broadcasts-events.contract.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 338[2mms[22m[39m
+ [32m✓[39m tests/contract/insights/export-download.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/read-only-mode-guard.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 5313[2mms[22m[39m
+   [33m[2m✓[22m[39m R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes[2m > [22mPOST /api/plans (create) → 503 [33m4264[2mms[22m[39m
+   [33m[2m✓[22m[39m R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes[2m > [22mPOST /api/plans/[year]/[planId]/deactivate → 503 [33m729[2mms[22m[39m
+ [32m✓[39m tests/contract/events/csv-import-api.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 29393[2mms[22m[39m
+   [33m[2m✓[22m[39m T090 — POST /api/admin/events/import (CSV import contract)[2m > [22mFR-035 kill-switch — 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mreturns 404 when feature flag is off [33m6661[2mms[22m[39m
+   [33m[2m✓[22m[39m T090 — POST /api/admin/events/import (CSV import contract)[2m > [22mAudit emit on success (FR-029 / FR-035)[2m > [22mdoes NOT call standalone audit-emit on the happy 200 path — the use-case emits csv_import_completed inside the tx [33m6366[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-events-api.test.ts [2m([22m[2m39 tests[22m[2m)[22m[33m 29867[2mms[22m[39m
+   [33m[2m✓[22m[39m T3 — kill-switch off → 404 + no audit[2m > [22mlist route 404 when env.features.f6EventCreate=false [33m7588[2mms[22m[39m
+   [33m[2m✓[22m[39m T3 — kill-switch off → 404 + no audit[2m > [22mdetail route 404 when env.features.f6EventCreate=false [33m4933[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/webhook-idempotency.contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2920[2mms[22m[39m
+   [33m[2m✓[22m[39m webhook-idempotency: SC-005 same event delivered twice (T045)[2m > [22mfirst delivery: 200, processWebhookEvent called once [33m2863[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/retry-failed-batches.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-reject.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 5301[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m200 happy: returns { broadcastId, status, rejectedAt, reservationReleased } [33m2526[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m404 broadcast_not_found: use-case returns not_found [33m918[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m403: manager role attempting reject (admin-context guard rejects write) [33m761[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobAccessError: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobStoreSuspendedError: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobClientTokenExpiredError: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobServiceRateLimited: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobServiceNotAvailable: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+ [32m✓[39m tests/contract/broadcasts/upload-inline-image.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 215[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-broadcasts-submit.contract.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 8262[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, reviewSlaTargetHours } [33m2801[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m401: no session [33m973[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_member_halted_pending_review (FR-002 precondition k) [33m806[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_subject_too_long (FR-002 precondition c) [33m796[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_body_too_large (FR-002 precondition d body size) [33m783[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit storage down — chaos test","eventType":"broadcast_cross_tenant_probe","tenantId":"tenant-swe","actorUserId":"user_admin_42","requestId":"req-h10-atomicity","msg":"broadcasts.audit.emit_failed"}
+ [32m✓[39m tests/contract/broadcasts/manage-image-allowlist.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/activate-deactivate.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 2606[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/activate (T122)[2m > [22m200 on activate — returns plan with is_active: true [33m2529[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-integration-eventcreate-api.test.ts [2m([22m[2m35 tests[22m[2m)[22m[33m 40189[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mGET config returns 404 when kill-switch is off [33m7598[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST generate-secret returns 404 when kill-switch is off [33m4266[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST rotate-secret returns 404 when kill-switch is off [33m2871[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST test-webhook returns 404 when kill-switch is off [33m4503[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST disable returns 404 when kill-switch is off [33m3430[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-approve.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 9100[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m200 send_now: { broadcastId, status:approved, approvedAt, scheduledFor, resendBroadcastId:null } [33m2342[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m200 schedule: scheduledFor reflects future timestamp [33m886[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m400 invalid_body: scheduledFor < now+5min (zod refine) [33m888[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m400 invalid_body: malformed JSON [33m846[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m422 broadcast_schedule_too_soon (use-case branch) [33m878[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m500 internal_error: use-case throws [33m859[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22mmember email failure does NOT 5xx the request (best-effort) [33m798[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-mark-paid-offline-route.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 17440[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract[2m > [22m503 when feature flag off [33m17287[2mms[22m[39m
+ [32m✓[39m tests/contract/members/email-change-revert-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 13345[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST|GET /api/auth/email-change/revert/[token][2m > [22m200 — POST happy path: rate limit passes, token found, type=revert, use case succeeds [33m11393[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST|GET /api/auth/email-change/revert/[token][2m > [22m400 — token lookup miss: findActiveToken returns err [33m1797[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-broadcasts-draft.contract.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 4001[2mms[22m[39m
+   [33m[2m✓[22m[39m POST/PUT /api/broadcasts/draft — Wave 6 GREEN (T036)[2m > [22mPOST 201: returns { broadcastId, status:draft, createdAt, updatedAt, subject, segmentType } [33m3806[2mms[22m[39m
+ [32m✓[39m tests/contract/admin-invoices-csv-export-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 1131[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/invoices/export.csv — route handler contract[2m > [22mmissing `to` → 400 invalid_range_format [33m915[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-relink-api.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 12827[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/batch-dispatcher.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/contract/resend-webhook.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 71[2mms[22m[39m
+ [32m✓[39m tests/contract/tenant-invoice-settings-logo-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3228[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)[2m > [22mfirst-time classification → proceeds to use-case and returns 201 with logo_blob_key [33m3200[2mms[22m[39m
+ [32m✓[39m tests/contract/credit-notes-route.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 15983[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/update-broadcast-template.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-proxy-submit.contract.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 3176[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)[2m > [22m200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, actorRole:admin_proxy } [33m2932[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-accept-tier-upgrade-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 13881[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept[2m > [22m500 server_error — emits logger.error with errorId F8.ACCEPT_TIER.SERVER_ERROR and the typed message [33m13824[2mms[22m[39m
+ [32m✓[39m tests/contract/events/csv-import-history-api.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 1168[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/events/import/history — F6.1 contract[2m > [22m200 happy path — returns paginated rows + records[] shape per contract [33m1114[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/update-plan.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 3198[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/plans/[year]/[planId] (T111)[2m > [22m200 on successful cosmetic update — returns the updated plan [33m3165[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-erase-api.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 10868[2mms[22m[39m
+ [32m✓[39m tests/contract/members/update-contact.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 10925[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)[2m > [22m200 on non-email update [33m10866[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-reconcile-stuck-sending.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 978[2mms[22m[39m
+   [33m[2m✓[22m[39m cron reconcile-stuck-sending — wire contract[2m > [22mmissing Authorization → 401 unauthorized [33m923[2mms[22m[39m
+ [32m✓[39m tests/contract/members/archive-undelete.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 9935[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/archive (T134)[2m > [22m200 happy path — archive succeeds [33m8367[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/undelete (T134)[2m > [22m200 happy path — undelete succeeds [33m1514[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/create-broadcast-template.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-tasks-reassign-route.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 13243[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/tasks/[taskId]/reassign — contract (R10 W2)[2m > [22m503 when feature flag off [33m13155[2mms[22m[39m
+ [32m✓[39m tests/contract/members/email-verification-route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 101[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/create-plan.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2575[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans (T092)[2m > [22m201 on successful create — returns the created plan [33m2544[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/image-source-allowlist.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/concurrent-retry-race.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/batch-dispatch.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/contract/csrf.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/clone-plans.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2305[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/clone (T093)[2m > [22m201 on successful clone — returns summary with 9 cloned plan_ids [33m2270[2mms[22m[39m
+ [32m✓[39m tests/contract/members/invite-portal.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 14216[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts/[contactId]/invite-portal[2m > [22m200 success — returns user_id + email [33m14169[2mms[22m[39m
+ [32m✓[39m tests/contract/events/error-csv-signed-url-api.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 13093[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/events/import/{recordId}/error-csv — F6.1 contract[2m > [22m307 happy path — Location header points to signed URL + Cache-Control: no-store [33m13035[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/profile.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 10156[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/portal/profile (T114)[2m > [22m200 returns member + contacts (notes redacted) [33m10128[2mms[22m[39m
+ [32m✓[39m tests/contract/members/inline-edit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 11019[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-10)[2m > [22m200 on status change — happy path [33m10982[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/data-export-route.contract.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 900[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/members/[id]/data-export (admin on-behalf)[2m > [22mfeature off → 503 [33m670[2mms[22m[39m
+ [32m✓[39m tests/contract/members/member-invoices-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 11714[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId]/invoices[2m > [22m401 when unauthenticated (requireAdminContext returns response) [33m11682[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/api-templates-route.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 2899[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/templates — R6.3 H-4 bilingual envelope contract[2m > [22munauthenticated → 401 with bilingual no_session envelope + standard headers [33m2874[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-broadcasts-gauges.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2109[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/internal/metrics/broadcasts-gauges — wire contract[2m > [22mmissing Authorization → 401 unauthorized [33m2076[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/palette-search.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 23413[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — returns { results: { plans, actions, navigate } } envelope [33m12474[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — manager gets filtered actions (no create/clone) [33m3172[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m400 when q is missing [33m1044[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m401 when unauthenticated [33m2610[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — member results include member_number_display (SCCM-NNNN) [33m4100[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-dispatch-batches.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1445[2mms[22m[39m
+   [33m[2m✓[22m[39m cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)[2m > [22mmissing Authorization → 401 unauthorized [33m1422[2mms[22m[39m
+ [32m✓[39m tests/contract/client-error.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 138[2mms[22m[39m
+ [32m✓[39m tests/contract/change-role.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 168[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/delete-broadcast-template.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/invoices-search.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 14624[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/portal/invoices/search (T086)[2m > [22m401 when member-context returns a rejection (no session) [33m14584[2mms[22m[39m
+ [32m✓[39m tests/contract/members/create-member.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 13337[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members (T040)[2m > [22m201 happy path — returns member_id + primary_contact_id [33m13306[2mms[22m[39m
+ [32m✓[39m tests/contract/members/add-contact.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 14038[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts (addContact)[2m > [22m201 happy path → serialised contact [33m14008[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-admin-broadcasts-sla-stats.contract.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 2776[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)[2m > [22m200: full envelope shape with stats [33m2730[2mms[22m[39m
+ [32m✓[39m tests/contract/f2-plan-change-audit-payloads.contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/undelete-plan.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1808[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/undelete (T124)[2m > [22m200 on successful undelete — deleted_at cleared, is_active forced false (AS4) [33m1778[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/admin-retry-route.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2602[2mms[22m[39m
+   [33m[2m✓[22m[39m admin retry route — wire contract (Phase 3F.11.5 / Finding 8a)[2m > [22madmin auth rejection → returns the auth rejection response (401/403) [33m2559[2mms[22m[39m
+ [32m✓[39m tests/contract/redeem-invite.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 223[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-pipeline-route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 14453[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/renewals — contract[2m > [22m404 when feature flag off (FR-052b — K2 spec compliance) [33m14409[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/admin-accept-partial-route.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2384[2mms[22m[39m
+   [33m[2m✓[22m[39m admin accept-partial route — wire contract (Phase 3F.11.5 / Finding 8b)[2m > [22madmin auth rejection → returns the auth response (401/403) [33m2321[2mms[22m[39m
+ [32m✓[39m tests/contract/event-attendees-port.contract.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-broadcasts-quota.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3864[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m200: returns the contract envelope { planId, eblastPerYear, quotaYear, used, reserved, remaining, nextResetAt, tenantTimezone } [33m2315[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m401 when member-context guard returns response (unauthenticated) [33m683[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22mRound 4 M1 — 403 when authenticated session is admin/manager (member-only route) [33m635[2mms[22m[39m
+ [32m✓[39m tests/contract/members/update-member.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 14978[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId] (T071 / T090)[2m > [22m200 on field update — happy path [33m14937[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/accept-partial-delivery.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-tasks-done-route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 14259[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/tasks/[taskId]/done — contract (R10 W2)[2m > [22m503 when feature flag off [33m14211[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/audit-event-zod-vs-handwritten.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m tests/contract/members/bulk-action.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 14567[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/bulk (T099 / US4)[2m > [22m200 on archive action — happy path [33m14541[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid-f8.contract.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 12954[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/insights-barrel.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 545[2mms[22m[39m
+   [33m[2m✓[22m[39m insights module barrel — architecture guard (verify F1)[2m > [22mforbids deep imports from src/app/** + src/components/** into insights internals [33m540[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/api-snapshot-template-route.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3161[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/member/broadcasts/draft/[id]/snapshot-template — R8.3 M-4 HTTP-status contract[2m > [22muse-case template_soft_deleted → HTTP 410 (R3-F11 + R6.4 M-1) [33m3124[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/preferred-locale.contract.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 820[2mms[22m[39m
+   [33m[2m✓[22m[39m PATCH /api/admin/members/[id]/preferred-locale[2m > [22m400 invalid_body: malformed JSON [33m616[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/delete-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 3270[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: DELETE /api/plans/[year]/[planId] (T123)[2m > [22m200 on successful soft-delete — returns plan with deleted_at set [33m3242[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-route-guard.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 14072[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-776a-96b9-15fc4494634a","msg":"reset-password.infra-error"}
+ [32m✓[39m tests/contract/reset-password.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 68[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/audit-export-route.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1294[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/audit/export.csv — route contract[2m > [22mnon-staff role → 403 (does not dispatch) [33m397[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/audit/export.csv — route contract[2m > [22muse-case forbidden → 403; too_large → 409; invalid_range → 400 [33m650[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/timeline-route.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1016[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/portal/timeline — route contract[2m > [22mFR-017 — always queries the SESSION-derived member, never a URL-supplied id [33m920[2mms[22m[39m
+ [32m✓[39m tests/contract/members/bulk-send-portal-invite.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 12915[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/bulk send_portal_invite (P1-17)[2m > [22m200 with per-member buckets body on partial success [33m12890[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/apply-batch-webhook-event.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/preferred-locale.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1368[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/portal/preferred-locale[2m > [22m200 returns current value derived from session memberId (IDOR boundary) [33m1284[2mms[22m[39m
+ [32m✓[39m tests/contract/members/timeline.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 13835[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId]/timeline (T127)[2m > [22m200 happy path — returns items + next_cursor [33m13810[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-774d-ba16-c72bec2035dc","msg":"change-password.infra-error"}
+ [32m✓[39m tests/contract/change-password.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 81[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/auto-retry-failed-batches.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/list-plans.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2128[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans (T062)[2m > [22m200 on success — returns data + meta envelope [33m2105[2mms[22m[39m
+ [32m✓[39m tests/contract/insights/source-adapters-boundary.contract.test.ts [2m([22m[2m11 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/application-layer-imports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 303[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-tasks-skip-route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 13189[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/tasks/[taskId]/skip — contract (R10 W2)[2m > [22m503 when feature flag off [33m13139[2mms[22m[39m
+ [32m✓[39m tests/contract/members/get-member.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 12590[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId][2m > [22m200 — returns serialised member with contacts on success [33m12568[2mms[22m[39m
+ [32m✓[39m tests/contract/members/resend-verification.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 9574[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts/[contactId]/resend-verification[2m > [22m200 — returns outbox_row_id and invalidated_prior on successful re-send [33m9543[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/users-staff-active-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 9566[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/users/staff-active — contract (R10 W3)[2m > [22mreturns 401 when requireSession throws non-redirect (e.g. Upstash outage) [33m9533[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/get-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 1877[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/[year]/[planId] (T063)[2m > [22m200 on found plan — returns the full plan object [33m1858[2mms[22m[39m
+ [32m✓[39m tests/contract/disable-user.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 3833[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/disable (T111)[2m > [22m200 on success — returns sessionsRevoked [33m3801[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/template-save-image-allowlist.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-cycle-detail-route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 12540[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/renewals/[cycleId] — contract[2m > [22m503 when feature flag off [33m12515[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-cancel-route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 13539[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/[cycleId]/cancel — contract[2m > [22m503 when feature flag off [33m13496[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/dialog-final-focus.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/post-renewal-confirm.contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 119[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/members-search-api.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 11751[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/members/search (Round-1 test-M5)[2m > [22m200 OK — returns mapped items with companyName + primaryContactName [33m11724[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/pay-route-guard.contract.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 11436[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-7f8b-9921-fc9970dfc929","msg":"sign-in.infra-error"}
+ [32m✓[39m tests/contract/sign-in.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 59[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-7f72-bef9-69da345bafc1","msg":"sign_out failed — clearing cookie anyway for client safety"}
+ [32m✓[39m tests/contract/sign-out.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 64[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/insights-dismiss-route.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 893[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/insights/dismiss[2m > [22mreturns 401 when there is no session [33m742[2mms[22m[39m
+ [32m✓[39m tests/contract/members/promote-primary.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 13016[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /promote-primary (T071)[2m > [22m200 returns { demoted, promoted } envelope [33m12995[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 121[2mms[22m[39m
+ [32m✓[39m tests/contract/heartbeat.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 733[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/auth/heartbeat[2m > [22m200 with lastSeenAt ISO string on success [33m710[2mms[22m[39m
+ [32m✓[39m tests/contract/enable-user.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 4558[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/enable (T112)[2m > [22m200 on success [33m4532[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"test-req-id","msg":"invite.infra-error"}
+ [32m✓[39m tests/contract/invite.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 60[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/template-variable-substitution.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-797d-9e9c-f4819ac721bf","msg":"forgot-password.infra-error"}
+ [32m✓[39m tests/contract/forgot-password.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 68[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-pseudonymise-eventcreate.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 23515[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate[2m > [22mreturns 401 envelope when gate rejects [33m12672[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate[2m > [22mreturns 200 skipped when feature flag off [33m6603[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate[2m > [22mreturns 200 with perTenant success on happy path [33m4229[2mms[22m[39m
+ [32m✓[39m tests/contract/members/list-members.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 10945[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members (T058)[2m > [22m200 — returns { items, next_cursor } envelope [33m10932[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/template-render-html-escape.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/events-barrel.test.ts [2m([22m[2m47 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/list-broadcast-templates.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-events-create-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10713[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-erase-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10458[2mms[22m[39m
+ [32m✓[39m tests/contract/members/affected-members.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 9756[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/[year]/[planId]/affected-members (T071)[2m > [22m200 — returns { plan_id, plan_year, count } [33m9745[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-error-csv-blobs-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10980[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-recompute-match-rate.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3048[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/observability/recompute-match-rate[2m > [22mreturns 401 when gate rejects [33m2914[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-eventcreate-idempotency.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 10028[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/sweep-eventcreate-idempotency[2m > [22mreturns 401 when gate rejects [33m10019[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-error-csv-blobs.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 9820[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/sweep-error-csv-blobs[2m > [22mreturns 401 when gate rejects [33m9811[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-relink-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10049[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-eventcreate-idempotency-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 8660[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m145 passed[39m[22m[90m (145)[39m
+[2m      Tests [22m [1m[32m1380 passed[39m[22m[2m | [22m[90m2 todo[39m[90m (1382)[39m
+[2m   Start at [22m 22:37:37
+[2m   Duration [22m 167.54s[2m (transform 37.59s, setup 89.20s, collect 225.20s, tests 874.90s, environment 221.59s, prepare 76.19s)[22m
+
+[pre-push] Spec Coverage Gate — modules touched: renewals 
+[pre-push] running integration tests for src/modules/renewals → tests/integration/renewals
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/renewals/"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781192443021,"service":"swecham-membership","env":"test","suggestionId":"aae9366b-ff32-4355-acb9-dc8ae5ba9193","memberId":"e8148022-b09d-4450-b818-4f9d2e5952d3","msg":"[accept-tier-upgrade] member has no primary-contact email — notify skipped + audit attempted"}
+{"level":"warn","time":1781192445972,"service":"swecham-membership","env":"test","suggestionId":"bc8a439f-6596-46c4-bac4-42daa587077d","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192448790,"service":"swecham-membership","env":"test","suggestionId":"678619ae-e3ed-49d6-85a6-a52c80d601de","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192452094,"service":"swecham-membership","env":"test","suggestionId":"93829e31-42da-4118-b0f1-187a56bc680d","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192455087,"service":"swecham-membership","env":"test","suggestionId":"4cd077a5-8368-426a-8fa5-cfa1256b8642","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192457887,"service":"swecham-membership","env":"test","suggestionId":"cadcffb2-656a-4d60-a05b-2ca46fa9cea1","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192461531,"service":"swecham-membership","env":"test","suggestionId":"d37d4de8-eaab-492e-90d9-333130aabc20","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192464058,"service":"swecham-membership","env":"test","err":"synthetic_dispatch_lookup_crash:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","suggestionId":"188acfcc-7417-46c9-be2d-279fe34f77ad","msg":"[accept-tier-upgrade] gateway / lookup path threw — emitting failed audit"}
+{"level":"warn","time":1781192467332,"service":"swecham-membership","env":"test","suggestionId":"5b2a5c91-ef69-4336-b348-5cadd4e79f9e","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192470539,"service":"swecham-membership","env":"test","suggestionId":"7cdec01f-de71-4fe8-a575-39ec2f0a7cf7","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192474976,"service":"swecham-membership","env":"test","suggestionId":"f05283ac-1108-4baa-abbd-106fc8169205","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192480002,"service":"swecham-membership","env":"test","suggestionId":"d96de126-cff2-47d1-8b83-d7b805f436f8","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192483111,"service":"swecham-membership","env":"test","suggestionId":"3eee1f23-dbc0-430c-8f7c-aec8cd83bdda","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192483596,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-48bf5c90","invoiceId":"7934bde6-e44c-4202-9bd9-8622d7a5072d","memberId":"126621fa-6d18-49d4-bbf3-866b0cb1f983","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"warn","time":1781192487252,"service":"swecham-membership","env":"test","suggestionId":"b151c3b9-66c6-449f-b883-8ecdb62cb318","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192487494,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-48bf5c90","invoiceId":"69828c3c-309b-4ccc-aee0-2f44f4c52f67","memberId":"f0346483-4612-4071-a9b2-c02d01eecdba","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"warn","time":1781192491878,"service":"swecham-membership","env":"test","suggestionId":"8c7463c5-30c4-4005-8165-c020260f1818","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192492530,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-48bf5c90","invoiceId":"445afd60-9212-4ec2-b903-0ec178263e66","memberId":"64420d20-d82a-4c43-a628-425646439d3a","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"warn","time":1781192496605,"service":"swecham-membership","env":"test","suggestionId":"ebc44639-f61b-48e8-9910-0a2c24a43f48","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192499301,"service":"swecham-membership","env":"test","suggestionId":"2fa158c5-0bab-4857-8491-487c6344aa08","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192499715,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-48bf5c90","invoiceId":"7082f82a-92d1-4874-8aeb-e3dbfd6a9f70","memberId":"15cc6319-2d87-490b-8c7e-6280f938a01f","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m17 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 63961[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR2-CRIT-3.A — accept with no primary contact emits notify_skipped audit [33m2534[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit[33m 2953[2mms[22m[31m[39m
+[31m     → expected 0 to be greater than or equal to 1[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22maccept happy path — pending state + scheduled-plan-change + audit [33m3173[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mT-180 verify task — created when expires_at > 180d [33m3126[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mT-180 skipped — no task when expires_at <= 180d [33m2798[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mapply at renewal — pending → applied + audit [33m3635[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mmanual override supersede — accepted_pending_apply → superseded + audit [33m3424[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)[33m 2104[2mms[22m[31m[39m
+[31m     → expected 'gateway_4xx' to be 'unknown' // Object.is equality[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011 concurrent Accept race — partial UNIQUE catches second writer + state remains pending exactly once [33m3273[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011b deterministic double-accept probe — CAS on transitionStatus rejects the stale-read second accepter [33m3927[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011c genuine concurrent-at-step-a — INSERT collision maps loser to suggestion_not_open (409) + one winner pending row [33m3895[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-013 manual-supersede on open suggestion — fromStatus=open + audit emitted [33m1620[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS7 stale-read race — concurrent accept then supersede MUST still supersede (set-membership CAS) [33m3380[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when the suggestion was superseded (cancelled upgrade) [33m4152[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block) [33m4560[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mFix A S1 retry-heal — F2 finaliser heals a stranded pending row even when F8 apply no-ops on the retry (suggestion already applied) [33m4734[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mFix A re-accept precision — F2 finaliser flips suggestion2 pending→applied even when a SUPERSEDED suggestion1 also targets the cycle [33m7479[2mms[22m[39m
+{"level":"info","time":1781192507101,"service":"swecham-membership","env":"test","tenantId":"test-swecham-4011f183","correlationId":"fbc03659-e1e7-4309-adb5-303f3fb29a33","candidatesProcessed":1,"emailsSent":1,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":788,"msg":"dispatchRenewalCycle: cron pass complete"}
+{"level":"error","time":1781192509402,"service":"swecham-membership","env":"test","err":"Failed query: insert into \"at_risk_outreach\" (\"tenant_id\", \"outreach_id\", \"member_id\", \"channel\", \"template_id\", \"outcome_note\", \"actor_user_id\", \"related_audit_event_id\", \"created_at\") values ($1, default, $2, $3, $4, $5, $6, default, default) returning \"outreach_id\", \"created_at\"\nparams: test-chamber-7ee00795,7b0c8160-06cf-430e-9c6d-3eb4dc119780,email,at_risk.outreach.event_drought,cross-tenant probe,43fa0fde-e04f-4722-a702-6884a7afc251","tenantId":"test-chamber-7ee00795","memberId":"7b0c8160-06cf-430e-9c6d-3eb4dc119780","msg":"[record-at-risk-outreach] insert failed"}
+{"level":"error","time":1781192514331,"service":"swecham-membership","env":"test","err":{"query":"insert into \"renewal_escalation_tasks\" (\"tenant_id\", \"task_id\", \"member_id\", \"cycle_id\", \"task_type\", \"assigned_to_role\", \"assigned_to_user_id\", \"due_at\", \"status\", \"outcome_note\", \"skipped_reason\", \"closed_by_user_id\", \"related_suggestion_id\", \"year_in_cycle\", \"created_at\", \"closed_at\") values ($1, $2, $3, $4, $5, $6, $7, $8, default, default, default, default, $9, default, default, default) on conflict (\"tenant_id\",\"member_id\",\"cycle_id\",\"task_type\") where status = 'open' do nothing returning \"tenant_id\", \"task_id\", \"member_id\", \"cycle_id\", \"task_type\", \"assigned_to_role\", \"assigned_to_user_id\", \"due_at\", \"status\", \"outcome_note\", \"skipped_reason\", \"closed_by_user_id\", \"related_suggestion_id\", \"year_in_cycle\", \"created_at\", \"closed_at\"","params":["test-swecham-4011f183","d139444d-d1a6-43d8-ad28-2dcbec2f79c8","cd2b8791-d64a-48df-ad13-8d17dd033668",null,"manual_outreach_required","admin",null,"2026-07-01T00:00:00.000Z",null],"cause":{"name":"PostgresError","severity_local":"ERROR","severity":"ERROR","code":"23503","detail":"Key is not present in table \"members\".","schema_name":"public","table_name":"renewal_escalation_tasks","constraint_name":"renewal_escalation_tasks_member_fk","file":"ri_triggers.c","line":"2599","routine":"ri_ReportViolation"}},"tenantId":"test-swecham-4011f183","memberId":"cd2b8791-d64a-48df-ad13-8d17dd033668","correlationId":"af0a0f07-8262-439b-b10e-23b2d9562121","msg":"[create-escalation-task] unexpected error → server_error"}
+ [32m✓[39m tests/integration/renewals/cross-tenant-isolation.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 18641[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mdispatchRenewalCycle[2m > [22mA.dispatch sees ONLY A cycles — B cycle invisible to RLS-bound candidate query [33m974[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mdetectBounceThreshold[2m > [22mA.detect(B's memberId) returns no_threshold_crossed with zero counts — B.email_unverified flag untouched [33m653[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mlookupMemberByEmail (MTA+STD escape hatch)[2m > [22memail collision across A + B: returns ONE deterministic match (MTA+STD safety contract) [33m302[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mat-risk surfaces (Phase 6 review C4)[2m > [22msnoozeAtRiskMember in tenant B context cannot snooze tenant A member [33m355[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mat-risk surfaces (Phase 6 review C4)[2m > [22mrecordAtRiskOutreach in tenant B context cannot record outreach against tenant A member [33m536[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mat-risk surfaces (Phase 6 review C4)[2m > [22mlistAtRiskWidgetMembers in tenant B context never sees tenant A rows [33m566[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mescalation-task admin actions (Phase 8 T223 extension)[2m > [22mA.'complete'(B-tenant taskId) → task_not_found + B row unchanged + zero audit leak [33m1266[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mescalation-task admin actions (Phase 8 T223 extension)[2m > [22mA.'skip'(B-tenant taskId) → task_not_found + B row unchanged + zero audit leak [33m1256[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mescalation-task admin actions (Phase 8 T223 extension)[2m > [22mA.'reassign'(B-tenant taskId) → task_not_found + B row unchanged + zero audit leak [33m1274[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mescalation-task admin actions (Phase 8 T223 extension)[2m > [22mA.create(B-tenant memberId) → task lands in tenant A, NOT B (RLS pins inserted row to current tenant) [33m361[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mtier-upgrade cross-tenant probes (Phase 7 / Round 6 F-001)[2m > [22mA.acceptTierUpgrade(B-tenant suggestionId) → suggestion_not_found + B row stays open [33m1150[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mtier-upgrade cross-tenant probes (Phase 7 / Round 6 F-001)[2m > [22mA.dismissTierUpgrade(B-tenant suggestionId) → suggestion_not_found + B row stays open [33m1138[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mtier-upgrade cross-tenant probes (Phase 7 / Round 6 F-001)[2m > [22mA.escalateTierUpgrade(B-tenant suggestionId) → suggestion_not_found + B row stays open + zero outreach inserted [33m890[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)[2m > [22mtier-upgrade cross-tenant probes (Phase 7 / Round 6 F-001)[2m > [22mA.evaluateTierUpgrade — B tier_upgrade_suggestions count stays 0 (candidate query is RLS-bound) [33m1246[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/tenant-isolation.test.ts [2m([22m[2m50 tests[22m[2m)[22m[33m 18002[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mrenewal_cycles[2m > [22mA.UPDATE(B row) affects 0 rows + B unchanged [33m355[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mrenewal_cycles[2m > [22mA.DELETE(B row) affects 0 rows + B exists [33m362[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mrenewal_reminder_events[2m > [22mA.DELETE(B row) affects 0 rows + B exists [33m357[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mat_risk_outreach[2m > [22mA.DELETE(B row) affects 0 rows + B exists [33m353[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mtier_upgrade_suggestions[2m > [22mA.DELETE(B row) affects 0 rows + B exists [33m355[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mrenewal_escalation_tasks[2m > [22mA.DELETE(B row) affects 0 rows + B exists [33m359[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)[2m > [22mconsumed_link_tokens[2m > [22mA.DELETE(B token) affects 0 rows + B token exists [33m355[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/at-risk-scorer-convergence.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 15810[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22me-blast: member ORIGINATED 50% of quota → factor does NOT fire on EITHER scorer (old single mis-fired on recipient axis) [33m1608[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22me-blast: member RECEIVED 2 but ORIGINATED 0 → factor FIRES on BOTH (proves axis is sender, not recipient) [33m2027[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22m#8 e-blast: 1 sent-this-year + 1 stale prior-year RESERVED → usage=1 (reserved NOT counted) → +15 FIRES on BOTH [33m1606[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22m#8 e-blast: 2 sent-this-year + 1 stale prior-year RESERVED → usage=2 (50% >= 30%) → factor does NOT fire on BOTH [33m1791[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22m#8 edge: 0 sent + N reserved THIS year → usage=0 (reserved excluded) → +15 FIRES on BOTH [33m1620[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22m#8 edge: 1 sent PRIOR quota year + 1 submitted THIS year → usage=0 (year-fence excludes both) → +15 FIRES on BOTH [33m1606[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22mtier: same-bucket fee CUT → factor does NOT fire on EITHER scorer (old single mis-fired on annual_fee axis) [33m1500[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 at-risk scorer convergence — e-blast axis + tier bucket[2m > [22mtier: real bucket downgrade premium→regular → factor FIRES on BOTH [33m1486[2mms[22m[39m
+{"level":"info","time":1781192560810,"service":"swecham-membership","env":"test","invoiceId":"46dab595-2ed5-46cc-9594-cb1807896019","tenantId":"test-15150f4f","msg":"[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment"}
+{"level":"info","time":1781192561463,"service":"swecham-membership","env":"test","invoiceId":"659866b5-8f69-4786-aa29-71b8381780e9","tenantId":"test-chamber-f8276950","msg":"[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment"}
+{"level":"warn","time":1781192566425,"service":"swecham-membership","env":"test","cycleId":"236096bd-7a51-4831-9185-ab057bb09398","currentStatus":"completed","invoiceId":"8f588580-1c82-48d5-9aa2-a2e7c004ee54","msg":"[mark-cycle-complete] cycle not in awaiting_payment — skip (idempotent re-fire or out-of-band transition)"}
+{"level":"info","time":1781192567791,"service":"swecham-membership","env":"test","invoiceId":"75997724-96e4-4bd6-874f-0802a146e446","tenantId":"test-15150f4f","msg":"[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment"}
+ [32m✓[39m tests/integration/renewals/self-service-renewal-tx.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 11470[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markCycleCompleteFromInvoicePaid — integration (T145)[2m > [22mhappy path: awaiting_payment → completed + emits renewal_completed [33m1033[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markCycleCompleteFromInvoicePaid — integration (T145)[2m > [22mFR-005b admin-block branch: cycle held in pending_admin_reactivation + renewal_completed_post_lapse audit [33m1005[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markCycleCompleteFromInvoicePaid — integration (T145)[2m > [22mcross_tenant: tenant B context with tenant A invoice id returns no_cycle_for_invoice (Principle I sub-clause 3 / Review-Gate blocker) [33m4604[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markCycleCompleteFromInvoicePaid — integration (T145)[2m > [22mI11 review-fix: re-fire on already-completed cycle is idempotent skip + does NOT duplicate audit (live Postgres) [33m1366[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markCycleCompleteFromInvoicePaid — integration (T145)[2m > [22mD1 / US3 AS4 lock: F5 payment_failed → F4 NOT paid → F8 onPaidCallback NOT fired → cycle stays awaiting_payment + linked_invoice_id intact + zero completion audit [33m830[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/tier-upgrade-evaluate.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 17546[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22mhappy path — eligible member produces a tier_upgrade_suggested + open row [33m2654[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22midempotent — re-running the cron does not duplicate [33m3005[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22mtenant-disabled — auto_upgrade_enabled=false skips entire cron pass [33m1902[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22mno-thresholds — catalogue without min_turnover skips with audit [33m1920[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22mR3-IMP-8 — no_plans skip_reason discriminator (catalogue empty) [33m1307[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22mAS4 — member already on highest qualifying plan emits already_at_target audit [33m2296[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade evaluate — integration (T202)[2m > [22msuppression — dismissed row in last 90d hides the member [33m2135[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/bulk-port-methods.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 7585[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bulk port methods — Phase 10 R5 / B3[2m > [22mbulkGetSuppressedMembers[2m > [22mreturns memberIds with active suppression (status=dismissed + suppressed_until > now) [33m944[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bulk port methods — Phase 10 R5 / B3[2m > [22mbulkInsertOpenIfAbsent[2m > [22minserts all when no conflicts; returns row count matching input [33m780[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bulk port methods — Phase 10 R5 / B3[2m > [22mbulkInsertOpenIfAbsent[2m > [22mR5-C1: explicit conflict target — partial unique on (tenant, member, status IN (open, accepted_pending_apply)) silently absorbs duplicate; PK collision would NOT be swallowed [33m646[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bulk port methods — Phase 10 R5 / B3[2m > [22mbulkInsertIfAbsent (reminder events)[2m > [22minserts all when (cycle, step, year) are unique; conflict on replay returns the input as conflicted [33m829[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bulk port methods — Phase 10 R5 / B3[2m > [22mbulkTransitionToSent[2m > [22mhappy path: pre-claimed pending rows transition to sent in 1 RTT with per-row dispatchedAt + deliveryId [33m944[2mms[22m[39m
+{"level":"info","time":1781192598240,"service":"swecham-membership","env":"test","cycleId":"59db83a7-d8f2-4d53-808a-a5aa82913fcc","tenantId":"test-0bb4ba8d","msg":"[reconcile-pending-reactivations] cycle no longer pending at lock — admin action won race; skipping refund"}
+{"level":"warn","time":1781192600117,"service":"swecham-membership","env":"test","cycleId":"f19da54c-758c-471c-b467-d3732506b08c","tenantId":"test-0bb4ba8d","refundIssued":true,"observedStatus":"completed","msg":"[reconcile-pending-reactivations] POST-refund admin race — refund issued against a now-non-pending cycle (accepted residual #6); cycle is already terminal, no further cron action"}
+ [32m✓[39m tests/integration/renewals/pending-reactivation-timeout-admin-race.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5510[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 reconcilePendingReactivations — admin-approve-before-lock money safety (063)[2m > [22madmin approves before the cron lock → cron does NOT refund; cycle stays completed [33m783[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 reconcilePendingReactivations — admin-approve-before-lock money safety (063)[2m > [22mStep-3: refund issues, THEN admin approves before tx2 lock → timeout_refund_orphaned=1 (NOT timed_out) [33m1901[2mms[22m[39m
+{"level":"info","time":1781192604329,"service":"swecham-membership","env":"test","tenantId":"test-swecham-e71a2059","memberId":"3c02a2b1-487b-4028-862d-742bdc3f260d","cancelledCount":1,"skippedConcurrentCount":0,"cascade":"f3_member_archival_or_erasure","msg":"renewals.cascade.completed"}
+{"level":"error","time":1781192607402,"service":"swecham-membership","env":"test","err":"NeonDbError: invalid input value for enum","errName":"AuditEmitError","underlyingErrorName":"NeonDbError","tenantId":"test-swecham-e71a2059","memberId":"3c02a2b1-487b-4028-862d-742bdc3f260d","cycleId":"77acf10f-4445-4c3d-bb0f-42bd4cae46dd","cascade":"f3_member_archival_or_erasure","msg":"renewals.cascade.audit_emit_failed"}
+{"level":"error","time":1781192607523,"service":"swecham-membership","env":"test","err":"synthetic-adapter-throw — RLS context drift","errName":"SyntheticAdapterError","tenantId":"test-swecham-e71a2059","memberId":"3c02a2b1-487b-4028-862d-742bdc3f260d","cascade":"f3_member_archival_or_erasure","msg":"renewals.cascade.lookup_failed"}
+ [32m✓[39m tests/integration/renewals/f3-archival-cascade.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 6594[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 F3-archival cascade — Phase 9 / T240[2m > [22mcancels in-flight cycle on F3 archive + emits renewal_cycle_cancelled audit (Principle VIII state↔audit atomicity) [33m657[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 F3-archival cascade — Phase 9 / T240[2m > [22mcross-tenant isolation — cascade for a member-id from tenant B does not affect tenant A cycle (Principle I clause 3) [33m2058[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 F3-archival cascade — Phase 9 / T240[2m > [22mPhase 9 verify-fix Round-2 — typed AuditEmitError thrown inside tx classifies as cascade_audit_emit_failed (structural, not heuristic) [33m776[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/escalation-task-lifecycle.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 8036[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalation task lifecycle — integration (T223)[2m > [22mcomplete: open → done with outcome note + audit [33m1345[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalation task lifecycle — integration (T223)[2m > [22mskip: open → skipped with required reason + audit [33m1331[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalation task lifecycle — integration (T223)[2m > [22mreassign: NULL assignee → admin2 + audit captures from/to [33m1332[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalation task lifecycle — integration (T223)[2m > [22mcomplete on already-done task → task_not_open + no duplicate audit [33m1385[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/renewals/tier-upgrade-evaluate-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+ [32m✓[39m tests/integration/renewals/at-risk-f6-fallback.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 5876[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk F6-readiness fallback — integration (T173)[2m > [22mF6 active: full 8-factor formula reaches active_max=100, bands at 0-24/25-49/50-74/75-100 [33m971[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk F6-readiness fallback — integration (T173)[2m > [22mF6 inactive: events + cultural_ticket factors skipped; active_max=70 in audit [33m777[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk F6-readiness fallback — integration (T173)[2m > [22mband crossed UP (warning → at-risk) emits at_risk_score_threshold_crossed (FR-031) [33m840[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk F6-readiness fallback — integration (T173)[2m > [22mband crossed DOWN (critical → healthy) does NOT emit threshold_crossed (FR-031 deterioration-only) [33m777[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/tier-upgrade-dismiss.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 6718[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 dismissTierUpgrade — integration (Round 6 F-002)[2m > [22mAS3 happy path — dismiss without reason transitions open → dismissed + sets suppressed_until ≈ today+90d + emits audit [33m1324[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 dismissTierUpgrade — integration (Round 6 F-002)[2m > [22mAS3 with reason — reason persisted in dismissed_reason + audit payload [33m1327[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 dismissTierUpgrade — integration (Round 6 F-002)[2m > [22mRe-dismiss attempt — second call on same suggestion returns suggestion_not_open + B row unchanged [33m1501[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/renewals/at-risk-recompute-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+ [32m✓[39m tests/integration/renewals/bounce-threshold.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 10041[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bounce-threshold detection — integration (T111)[2m > [22mHard bounce (1 permanent) → flag flip + task + dual audit [33m1678[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bounce-threshold detection — integration (T111)[2m > [22mSoft streak (3 transient in cycle) → flag flip + soft_streak trigger [33m1375[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bounce-threshold detection — integration (T111)[2m > [22mSoft rolling 30d (5 transient outside cycle) → soft_rolling trigger [33m1667[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bounce-threshold detection — integration (T111)[2m > [22mJ10-M9: 30d boundary INCLUSIVE — 5 bounces at 0/7/14/22/30 days ago all counted (=5 → soft_rolling threshold) [33m1673[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 bounce-threshold detection — integration (T111)[2m > [22mJ10-M9: 30d boundary EXCLUSIVE on >30d — 5 bounces at 0/7/14/22/31 days ago → only 4 counted, NO threshold cross [33m1246[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/mark-paid-offline.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 6573[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markPaidOffline — integration (T077)[2m > [22mcross-tenant: B cannot mark-paid A cycle (probe audit emits) [33m426[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 markPaidOffline — integration (T077)[2m > [22mhappy path: cycle flips to completed + audit emitted [33m960[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/at-risk-snooze-outreach.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 7612[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk snooze + outreach — integration (T175)[2m > [22msnooze hides member from widget query (risk_snoozed_until in future) [33m1425[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk snooze + outreach — integration (T175)[2m > [22msnooze auto-expires — past timestamp lets member reappear in widget [33m857[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk snooze + outreach — integration (T175)[2m > [22mmanager records outreach (FR-052a exception) — INSERT + audit succeed [33m961[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk snooze + outreach — integration (T175)[2m > [22mmanager attempts snooze → use-case-layer 403 (zod literal rejects "manager") [33m658[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk snooze + outreach — integration (T175)[2m > [22moutreach insert is picked up by pause-reminders read (FR-033 cascade) [33m1069[2mms[22m[39m
+{"level":"info","time":1781192661138,"service":"swecham-membership","env":"test","tenantId":"test-swecham-68db4797","correlationId":"b848c6b2-5472-4a49-8c4a-09ff9a9c326b","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":536,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/legacy-rundate-today-exactly-double-send.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3698[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 residual · legacy run-date-year today-exactly double-send guard — live Neon[2m > [22mtoday-exactly boundary-adjacent re-run recognises a PRE-063 run-date-year row (no duplicate row, no duplicate send) [33m716[2mms[22m[39m
+{"level":"info","time":1781192664179,"service":"swecham-membership","env":"test","tenantId":"test-swecham-4c6e9196","correlationId":"integration-test-prune-1","pruned":1,"cutoffIso":"2026-03-12T00:00:00.000Z","retentionDays":60,"durationMs":176,"msg":"renewals.prune_consumed_tokens.complete"}
+{"level":"info","time":1781192664769,"service":"swecham-membership","env":"test","tenantId":"test-swecham-4c6e9196","correlationId":"integration-test-prune-2","pruned":0,"cutoffIso":"2026-03-12T00:00:00.000Z","retentionDays":60,"durationMs":173,"msg":"renewals.prune_consumed_tokens.complete"}
+{"level":"info","time":1781192664949,"service":"swecham-membership","env":"test","tenantId":"test-chamber-e466c460","correlationId":"integration-test-prune-3","pruned":1,"cutoffIso":"2026-03-12T00:00:00.000Z","retentionDays":60,"durationMs":179,"msg":"renewals.prune_consumed_tokens.complete"}
+{"level":"info","time":1781192665421,"service":"swecham-membership","env":"test","tenantId":"test-chamber-e466c460","correlationId":"integration-test-prune-defence-in-depth","pruned":0,"cutoffIso":"2026-03-12T00:00:00.000Z","retentionDays":60,"durationMs":177,"msg":"renewals.prune_consumed_tokens.complete"}
+ [32m✓[39m tests/integration/renewals/prune-consumed-tokens.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 5315[2mms[22m[39m
+   [33m[2m✓[22m[39m pruneConsumedTokens — integration (Phase 9 retrofit)[2m > [22mprune for tenant B works independently after tenant A prune [33m356[2mms[22m[39m
+   [33m[2m✓[22m[39m pruneConsumedTokens — integration (Phase 9 retrofit)[2m > [22mdefence-in-depth — adapter-bound tenant overrides input.tenantId for DB scope [33m416[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/renewals/renewal-confirm-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+ [32m✓[39m tests/integration/renewals/renewal-link-token.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 7921[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 verifyRenewalLinkToken — integration (T144)[2m > [22mhappy path: signs + verifies token + inserts consumed_link_tokens row [33m714[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 verifyRenewalLinkToken — integration (T144)[2m > [22mreplay: same token verified twice → second returns replayed [33m1483[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 verifyRenewalLinkToken — integration (T144)[2m > [22mmember_not_found_in_tenant: token cid does not match any cycle in tenant [33m356[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/renewals/pipeline-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+{"level":"info","time":1781192680827,"service":"swecham-membership","env":"test","tenantId":"test-swecham-694695ef","correlationId":"a8309076-0d0f-40e7-86de-ec7c2d900056","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":537,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/legacy-rundate-year-catchup-double-send.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3694[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 residual · legacy run-date-year catch-up double-send guard — live Neon[2m > [22mcatch-up recognises a PRE-063 run-date-year row near the boundary (no duplicate row, no duplicate send) [33m716[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/at-risk-f2-f7-factors.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 4590[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota[2m > [22mdetects a tier downgrade in the last 12mo via audit_log JSONB scan [33m1013[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota[2m > [22mcounts e-blasts the member ORIGINATED against their sending quota [33m957[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/tier-upgrade-reconcile.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 7752[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade reconcile — integration (T204)[2m > [22mcancelled-cycle orphan — dismisses + emits audit [33m1381[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade reconcile — integration (T204)[2m > [22mlapsed-cycle orphan — dismisses + emits audit [33m1212[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade reconcile — integration (T204)[2m > [22mhealthy pending — non-terminal cycle is NOT touched [33m954[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade reconcile — integration (T204)[2m > [22midempotent — re-running does not re-emit audit [33m1818[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/tier-upgrade-escalate.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5918[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalateTierUpgrade — integration (Round 6 F-003)[2m > [22mAS (escalate) — happy path: at_risk_outreach inserted + audit emitted + suggestion stays open [33m1275[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalateTierUpgrade — integration (Round 6 F-003)[2m > [22mSuggestion stays open after escalate (non-terminal action) [33m1069[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalateTierUpgrade — integration (Round 6 F-003)[2m > [22mOptional outcomeNote persisted in outcome_note column [33m1069[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/auto-reactivation-flow.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 4938[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 auto-reactivation flow — integration (T147)[2m > [22mblock-auto-reactivation: sets flag + emits audit [33m652[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 auto-reactivation flow — integration (T147)[2m > [22midempotent re-block: returns alreadyBlocked=true + no duplicate audit [33m531[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 auto-reactivation flow — integration (T147)[2m > [22munblock-auto-reactivation: clears flag + emits audit [33m478[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 auto-reactivation flow — integration (T147)[2m > [22madmin-reject-reactivation (no_payment_found): cycle without linked invoice → cancelled, no Stripe call [33m713[2mms[22m[39m
+{"level":"info","time":1781192710473,"service":"swecham-membership","env":"test","tenantId":"test-swecham-125011cf","correlationId":"116036cb-1f1f-4d91-8f13-e019a3fa0f9c","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":541,"msg":"dispatchRenewalCycle: cron pass complete"}
+{"level":"info","time":1781192711908,"service":"swecham-membership","env":"test","tenantId":"test-swecham-125011cf","correlationId":"e412e442-de76-48cb-b228-02644a82364f","candidatesProcessed":2,"emailsSent":0,"tasksCreated":1,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":830,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/multi-year-cycle.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5391[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 multi-year cycle gating — integration (T110)[2m > [22mYear 1 / T-30 email step due → Gate 9 skips multi_year_non_final_year [33m1148[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 multi-year cycle gating — integration (T110)[2m > [22mYear 1 / T-120 task step due → escalation_task_created (Gate 9 NOT applied to task channel) [33m1607[2mms[22m[39m
+{"level":"info","time":1781192716703,"service":"swecham-membership","env":"test","tenantId":"test-swecham-ddd70e5b","correlationId":"51b153b8-0480-4e23-aa66-83bc2c790b1c","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":533,"msg":"dispatchRenewalCycle: cron pass complete"}
+{"level":"info","time":1781192718307,"service":"swecham-membership","env":"test","tenantId":"test-swecham-ddd70e5b","correlationId":"c8434c91-59dd-49bf-827f-20dfe399270b","candidatesProcessed":1,"emailsSent":1,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":775,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/reminder-pause-after-outreach.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5543[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 reminder pause after outreach — integration (T112)[2m > [22mFRESH outreach (1d old): cron pass skips reminder + emits outreach_in_progress audit [33m1364[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 reminder pause after outreach — integration (T112)[2m > [22mSTALE outreach (>7d old): cron pass dispatches the reminder [33m1548[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/renewals/cron-dispatch-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+ [32m✓[39m tests/integration/renewals/pending-reactivation-timeout.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5663[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 reconcilePendingReactivations — integration (T148)[2m > [22mreminder ladder + auto-timeout: emits audits + cancels timed-out cycle [33m2553[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/evaluate-tier-upgrade-outer-tx-rollback.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3755[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 evaluateTierUpgrade outerTx rollback — Staff-R003 close[2m > [22mR6-B1: outerTx + bulkEmitInTx throw → runInTenant rolls back; zero rows persisted [33m896[2mms[22m[39m
+{"level":"info","time":1781192734563,"service":"swecham-membership","env":"test","tenantId":"test-swecham-9213e111","correlationId":"f443e48e-4c05-4673-840b-ee470a954fdc","candidatesProcessed":1,"emailsSent":1,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":1422,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/same-offset-pair-catchup.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 4821[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 #5 same-offsetDay pair on last window day — live Neon[2m > [22mfires BOTH the t-60 email AND the t-60 task on the last window day (neither dropped) [33m1838[2mms[22m[39m
+{"level":"info","time":1781192739200,"service":"swecham-membership","env":"test","tenantId":"test-swecham-ddc995ec","correlationId":"ebf66991-b517-4e11-ab96-5424d09c9153","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":532,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/cross-year-catchup-double-send.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3705[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 #1 cross-year catch-up double-send guard — live Neon[2m > [22mcatch-up on the 365-day boundary does NOT re-fire the prior-year step (no duplicate row, no duplicate send) [33m715[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/lapse-cycles-on-grace-expiry.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5017[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)[2m > [22mdecision branch on live Neon: grace_expired (no F5 payments) + payment_failed (>=1 F5 failed) + audit emits [33m1600[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/escalation-task-idempotency.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5296[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalation task idempotency — integration (T224)[2m > [22mcreateEscalationTask twice with same key → 1 row, 2 audits with idempotent_replay flag [33m1221[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 escalation task idempotency — integration (T224)[2m > [22mpartial unique only applies to open: close A=done → new row with same key succeeds [33m1514[2mms[22m[39m
+{"level":"error","time":1781192755037,"service":"swecham-membership","env":"test","err":"audit_log: simulated insert failure (J7-H5)","stack":"Error: audit_log: simulated insert failure (J7-H5)\n    at Object.<anonymous> (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\integration\\renewals\\audit-emit-rollback.test.ts:162:17)\n    at Object.mockCall (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+spy@2.1.9/node_modules/@vitest/spy/dist/index.js:61:17)\n    at Object.emitInTx (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/tinyspy@3.0.2/node_modules/tinyspy/dist/index.js:45:80)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\renewals\\application\\use-cases\\_lib\\dispatch-one-cycle.ts:1180:31\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\lib\\db.ts:256:20\n    at scope (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:260:18)\n    at Function.begin (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:243:14)\n    at fireStep (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\renewals\\application\\use-cases\\_lib\\dispatch-one-cycle.ts:969:14)\n    at dispatchOneCycleInner (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\renewals\\application\\use-cases\\_lib\\dispatch-one-cycle.ts:737:24)","cycleId":"a122da26-0919-4ccc-86a8-b1ddedd3d7c3","memberId":"28078729-dcca-41e3-b214-68a863b09d03","reminderEventId":"5e1caec6-8fed-4813-bb13-7c3ee18cc287","stepId":"t-30.email","channel":"email","tenantId":"test-swecham-f933c5c2","correlationId":"a3deef74-8171-4f93-9398-9f54960062e1","msg":"dispatchOneCycle: dispatcher crashed mid-flight — defensively transitioning pending row to failed for retry pickup"}
+{"level":"info","time":1781192755282,"service":"swecham-membership","env":"test","tenantId":"test-swecham-f933c5c2","correlationId":"a3deef74-8171-4f93-9398-9f54960062e1","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":1,"failedPermanent":0,"pages":1,"durationMs":963,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/audit-emit-rollback.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 4197[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 audit-emit failure rollback (J7-H5) — Principle VIII state↔audit atomicity[2m > [22memit failure inside success-path tx → rollback + defensive transition to failed (NOT orphaned at pending) [33m1264[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/rbac-defence-in-depth.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2877[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/concurrent-admin-send.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3818[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 concurrent admin send-reminder 409 metadata — Phase 9 / T258e[2m > [22mtwo concurrent sendReminderNow calls — second returns kind=skipped reason=already_sent with full forensic metadata [33m830[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/lapsed-portal-scope.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 5023[2mms[22m[39m
+{"level":"info","time":1781192773474,"service":"swecham-membership","env":"test","tenantId":"test-swecham-322683f5","correlationId":"babf8cb1-633e-4003-ad62-820a32b18d37","candidatesProcessed":1,"emailsSent":1,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":949,"msg":"dispatchRenewalCycle: cron pass complete"}
+{"level":"info","time":1781192774011,"service":"swecham-membership","env":"test","tenantId":"test-swecham-322683f5","correlationId":"dec7adf5-f915-47c2-a574-24e12475b1b3","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":534,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/dispatch-missed-cron-catchup.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 4635[2mms[22m[39m
+   [33m[2m✓[22m[39m 063 dispatchRenewalCycle — missed-cron catch-up on live Neon[2m > [22mfires the T-7 step exactly once (catch-up) + caught_up audit + idempotent on re-run [33m1730[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/reminder-audit-query.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4191[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/cron-bearer-auth-rejected.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 3049[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cron-bearer auth-rejected — Phase 9 / T258a[2m > [22mmissing Bearer → 401 + cron_bearer_auth_rejected audit row in audit_log [33m796[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/concurrent-admin-race.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3939[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 concurrent admin send-reminder race (J10-M12)[2m > [22mPromise.all([sendReminderNow x2]) on same cycle → exactly one sent + one already_sent (FR-011 idempotency under concurrency) [33m1016[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/tier-bucket-repair-mapping.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5012[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 migration 0114 tier_bucket repair (B2 SQL contract)[2m > [22mruns the 4 repair UPDATEs and resolves each plan to its canonical bucket [33m476[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 migration 0114 tier_bucket repair (B2 SQL contract)[2m > [22mmigration UPDATE does NOT touch unrelated tenants (tenant_id filter holds) [33m2039[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/frozen-price.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3813[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 frozen-price invariant — integration (T149)[2m > [22mFR-021a: F2 plan price change does NOT shift the cycle frozen price [33m533[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 frozen-price invariant — integration (T149)[2m > [22mFR-021b: updateFrozenPlan atomically updates all four frozen columns [33m364[2mms[22m[39m
+{"level":"info","time":1781192799894,"service":"swecham-membership","env":"test","tenantId":"test-swecham-4ce8a653","correlationId":"d7ffe05d-f847-45ef-a0ca-66ca21e5c484","candidatesProcessed":1,"emailsSent":1,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":776,"msg":"dispatchRenewalCycle: cron pass complete"}
+{"level":"info","time":1781192800491,"service":"swecham-membership","env":"test","tenantId":"test-swecham-4ce8a653","correlationId":"c073210b-f1be-4b6e-8ac4-3b1af8ecb384","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":595,"msg":"dispatchRenewalCycle: cron pass complete"}
+{"level":"info","time":1781192801084,"service":"swecham-membership","env":"test","tenantId":"test-swecham-4ce8a653","correlationId":"355c679e-2308-4812-b2b5-47247fd6ee98","candidatesProcessed":1,"emailsSent":0,"tasksCreated":0,"failedTransient":0,"failedPermanent":0,"pages":1,"durationMs":592,"msg":"dispatchRenewalCycle: cron pass complete"}
+ [32m✓[39m tests/integration/renewals/dispatch-cron-idempotency.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5127[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 dispatchRenewalCycle — idempotency on live Neon (T109)[2m > [22mFR-011: cron run 3× same day → 1 reminder_event + 1 sent audit + 1 gateway call [33m2206[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/email-locale-fallback.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/plan-id-at-cycle-start-text.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 3735[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 plan_id_at_cycle_start TEXT schema (migration 0113)[2m > [22ma real F2 plan slug round-trips and joins to membership_plans [33m538[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 plan_id_at_cycle_start TEXT schema (migration 0113)[2m > [22mlegacy UUID-shaped values still queryable as text [33m537[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/payment-method-enum-parity.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/load-member-renewal-status.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 5835[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/load-pipeline.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 7450[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/cancel-cycle.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 6060[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cancelCycle — integration (T076)[2m > [22mcross-tenant: B cannot cancel A cycle (returns cycle_not_found + emits probe audit) [33m592[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 cancelCycle — integration (T076)[2m > [22mhappy path: awaiting_payment → cancelled + audit emitted [33m777[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/f5-refund-bridge.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/audit-log-tier-change-idx.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 123[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/kill-switch-granular.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2594[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/at-risk-bulk-write.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 4411[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 at-risk batched recompute — DB write proof (Date regression guard)[2m > [22mwrites risk_score_last_computed_at to every recomputed member (regression guard) [33m1906[2mms[22m[39m
+ [32m✓[39m tests/integration/renewals/f4-callback-rollback.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit
+[31m[1mAssertionError[22m: expected 0 to be greater than or equal to 1[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m370:33[22m[39m
+    [90m368| [39m        )[33m,[39m
+    [90m369| [39m    )[33m;[39m
+    [90m370| [39m    [34mexpect[39m(notifyAudits[33m.[39mlength)[33m.[39m[34mtoBeGreaterThanOrEqual[39m([34m1[39m)[33m;[39m
+    [90m   | [39m                                [31m^[39m
+    [90m371| [39m  }[33m,[39m [34m60_000[39m)[33m;[39m
+    [90m372| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)
+[31m[1mAssertionError[22m: expected 'gateway_4xx' to be 'unknown' // Object.is equality[39m
+
+Expected: [32m"unknown"[39m
+Received: [31m"gateway_4xx"[39m
+
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m666:35[22m[39m
+    [90m664| [39m        }
+    [90m665| [39m      [33m|[39m [35mnull[39m[33m;[39m
+    [90m666| [39m    [34mexpect[39m(payload[33m?.[39mfailure_kind)[33m.[39m[34mtoBe[39m([32m'unknown'[39m)[33m;[39m
+    [90m   | [39m                                  [31m^[39m
+    [90m667| [39m    [34mexpect[39m(payload[33m?.[39mrecipient_email_hashed)[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m668| [39m    [34mexpect[39m(payload[33m?.[39mfailure_message)[33m.[39m[34mtoMatch[39m([36m/synthetic_dispatch_looku[39m…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m52 passed[39m[22m[2m | [22m[33m5 skipped[39m[90m (58)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m258 passed[39m[22m[2m | [22m[33m5 skipped[39m[90m (265)[39m
+[2m   Start at [22m 22:40:29
+[2m   Duration [22m 408.60s[2m (transform 3.49s, setup 114ms, collect 38.09s, tests 368.89s, environment 0ms, prepare 98ms)[22m
+
+ ELIFECYCLE  Command failed with exit code 1.
+[pre-push] ❌ integration tests failed for module: renewals
+[pre-push]    Fix the failures OR set SKIP_INTEGRATION_PREPUSH=1 to push anyway
+[pre-push]    (document the skip rationale in commit message)
+husky - pre-push script failed (code 1)
+error: failed to push some refs to 'https://github.com/Jirawatpyk/Swedish-chaplain_Membership.git'

@@ -1,0 +1,69 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m2 failed[39m[2m | [22m[33m12 skipped[39m[2m)[22m[33m 10448[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing[33m 4418[2mms[22m[31m[39m
+[31m     → Failed query: update "renewal_cycles" set "linked_invoice_id" = $1 where "renewal_cycles"."cycle_id" = $2
+params: ca78f89b-6aa0-4f24-ae25-cd63eb63ba81,9464bc8a-e278-4672-8fbe-3f3e6b500bcd[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block)[33m 2873[2mms[22m[31m[39m
+[31m     → Failed query: update "renewal_cycles" set "linked_invoice_id" = $1 where "renewal_cycles"."cycle_id" = $2
+params: d30903cc-d028-48cd-93d7-5ebd4e8d4da2,a34a2511-740a-4b81-be95-673ad658383e[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing
+[31m[1mError[22m: Failed query: update "renewal_cycles" set "linked_invoice_id" = $1 where "renewal_cycles"."cycle_id" = $2
+params: ca78f89b-6aa0-4f24-ae25-cd63eb63ba81,9464bc8a-e278-4672-8fbe-3f3e6b500bcd[39m
+[90m [2m❯[22m PostgresJsPreparedQuery.queryWithCache ../Swedish%20chaplain_membership/node_modules/.pnpm/drizzle-orm@0.45.2_@opentel_0695541276f1953b8f582ac811e479d3/node_modules/drizzle-orm/pg-core/session.js:[2m41:15[22m[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m1170:7[22m[39m
+    [90m1168| [39m        )[33m;[39m
+    [90m1169| [39m      [90m// Link the cycle to the invoice the bridge resolves by.[39m
+    [90m1170| [39m      [35mawait[39m (tx [35mas[39m unknown [35mas[39m [35mtypeof[39m db)
+    [90m   | [39m      [31m^[39m
+    [90m1171| [39m        [33m.[39m[34mupdate[39m(renewalCycles)
+    [90m1172| [39m        [33m.[39m[35mset[39m({ linkedInvoiceId[33m:[39m fakeInvoiceId })
+[90m [2m❯[22m src/lib/db.ts:[2m256:20[22m[39m
+[90m [2m❯[22m scope ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m260:18[22m[39m
+[90m [2m❯[22m Function.begin ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m243:14[22m[39m
+[90m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m1162:5[22m[39m
+
+[31m[1mCaused by: PostgresError[22m: insert or update on table "renewal_cycles" violates foreign key constraint "renewal_cycles_linked_invoice_fk"[39m
+[90m [2m❯[22m ErrorResponse ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m815:30[22m[39m
+[90m [2m❯[22m handle ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m489:6[22m[39m
+[90m [2m❯[22m TLSSocket.data ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m324:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ severity_local: 'ERROR', severity: 'ERROR', code: '23503', detail: 'Key is not present in table "invoices".', schema_name: 'public', table_name: 'renewal_cycles', constraint_name: 'renewal_cycles_linked_invoice_fk', file: 'ri_triggers.c', line: '2599', routine: 'ri_ReportViolation', query: 'update "renewal_cycles" set "linked_invoice_id" = $1 where "renewal_cycles"."cycle_id" = $2', parameters: [ 'ca78f89b-6aa0-4f24-ae25-cd63eb63ba81', '9464bc8a-e278-4672-8fbe-3f3e6b500bcd' ], args: [ 'ca78f89b-6aa0-4f24-ae25-cd63eb63ba81', '9464bc8a-e278-4672-8fbe-3f3e6b500bcd' ], types: [ 2950, 2950 ] }[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block)
+[31m[1mError[22m: Failed query: update "renewal_cycles" set "linked_invoice_id" = $1 where "renewal_cycles"."cycle_id" = $2
+params: d30903cc-d028-48cd-93d7-5ebd4e8d4da2,a34a2511-740a-4b81-be95-673ad658383e[39m
+[90m [2m❯[22m PostgresJsPreparedQuery.queryWithCache ../Swedish%20chaplain_membership/node_modules/.pnpm/drizzle-orm@0.45.2_@opentel_0695541276f1953b8f582ac811e479d3/node_modules/drizzle-orm/pg-core/session.js:[2m41:15[22m[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m1249:7[22m[39m
+    [90m1247| [39m    [35mconst[39m fakeInvoiceId [33m=[39m [34mrandomUUID[39m()[33m;[39m
+    [90m1248| [39m    [35mawait[39m [34mrunInTenant[39m(tenant[33m.[39mctx[33m,[39m [35masync[39m (tx) [33m=>[39m {
+    [90m1249| [39m      [35mawait[39m (tx [35mas[39m unknown [35mas[39m [35mtypeof[39m db)
+    [90m   | [39m      [31m^[39m
+    [90m1250| [39m        [33m.[39m[34mupdate[39m(renewalCycles)
+    [90m1251| [39m        [33m.[39m[35mset[39m({ linkedInvoiceId[33m:[39m fakeInvoiceId })
+[90m [2m❯[22m src/lib/db.ts:[2m256:20[22m[39m
+[90m [2m❯[22m scope ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m260:18[22m[39m
+[90m [2m❯[22m Function.begin ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m243:14[22m[39m
+[90m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m1248:5[22m[39m
+
+[31m[1mCaused by: PostgresError[22m: insert or update on table "renewal_cycles" violates foreign key constraint "renewal_cycles_linked_invoice_fk"[39m
+[90m [2m❯[22m ErrorResponse ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m815:30[22m[39m
+[90m [2m❯[22m handle ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m489:6[22m[39m
+[90m [2m❯[22m TLSSocket.data ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m324:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ severity_local: 'ERROR', severity: 'ERROR', code: '23503', detail: 'Key is not present in table "invoices".', schema_name: 'public', table_name: 'renewal_cycles', constraint_name: 'renewal_cycles_linked_invoice_fk', file: 'ri_triggers.c', line: '2599', routine: 'ri_ReportViolation', query: 'update "renewal_cycles" set "linked_invoice_id" = $1 where "renewal_cycles"."cycle_id" = $2', parameters: [ 'd30903cc-d028-48cd-93d7-5ebd4e8d4da2', 'a34a2511-740a-4b81-be95-673ad658383e' ], args: [ 'd30903cc-d028-48cd-93d7-5ebd4e8d4da2', 'a34a2511-740a-4b81-be95-673ad658383e' ], types: [ 2950, 2950 ] }[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[33m12 skipped[39m[90m (14)[39m
+[2m   Start at [22m 19:55:25
+[2m   Duration [22m 23.10s[2m (transform 3.44s, setup 26ms, collect 11.07s, tests 10.45s, environment 0ms, prepare 108ms)[22m
+

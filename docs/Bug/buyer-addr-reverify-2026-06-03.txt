@@ -1,0 +1,19 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/invoicing/member-identity-address.test.ts" "tests/integration/invoicing/credit-note-pdf-golden.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/invoicing/credit-note-pdf-golden.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3673[2mms[22m[39m
+   [33m[2m✓[22m[39m T127 — credit-note PDF render-input golden (live Neon)[2m > [22mpartial CN (50%) renders exactly 1 synthetic line with unitPrice=total=creditAmount + bilingual original-doc ref [33m1633[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/member-identity-address.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2632[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with full structured address → multi-line block (not the bare country stub) [33m572[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with NO structured address → snapshot.address degrades to the country code [33m356[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 22:47:39
+[2m   Duration [22m 10.53s[2m (transform 756ms, setup 31ms, collect 2.60s, tests 6.30s, environment 0ms, prepare 142ms)[22m
+

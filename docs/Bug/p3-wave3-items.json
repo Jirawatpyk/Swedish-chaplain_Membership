@@ -1,0 +1,592 @@
+[
+ {
+  "n": 1,
+  "module": "auth",
+  "dimension": "audit-trail completeness",
+  "type": "missing",
+  "title": "reissueInvitation emits no F1 audit event — silent path if called outside F3",
+  "evidence": "src/modules/auth/application/reissue-invitation.ts:46-53 — JSDoc explicitly states 'Audit: this F1 primitive emits NO audit event of its own. The chamber-facing trail is owned by the F3 caller, which emits `member_portal_invite_queued`.' The tx block at lines 123-175 contains no `deps.audit.appendInTx` call. Only a `logger.info` breadcrumb at line 179.",
+  "recommendation": "Add an `account_invitation_resent` audit event type (new migration) and emit it inside the `reissueInvitation` tx after the outbox enqueue. Alternatively, promote the F3 `member_portal_invite_queued` emission into the F1 primitive's tx and remove the coupling. Test: unit test that asserts `audit.app",
+  "fileHint": "src/modules/auth/application/reissue-invitation.ts:46"
+ },
+ {
+  "n": 2,
+  "module": "auth",
+  "dimension": "concurrency / race condition",
+  "type": "defect",
+  "title": "change-role / disable-user countActiveAdmins uses pool-global db outside any transaction",
+  "evidence": "src/modules/auth/application/change-role.ts:80-84 — calls `deps.users.countActiveAdmins()` then `deps.users.setRole()` as two separate operations with no enclosing transaction. src/modules/auth/application/disable-user.ts:82-86 — same pattern. src/modules/auth/infrastructure/db/user-repo.ts:263-269 — `countActiveAdmins` uses `db` (pool-global), not a tx handle.",
+  "recommendation": "No action required for go-live. For future hardening: move the `countActiveAdmins` check inside a `db.transaction` together with `setRole` / `disable` and acquire a `SELECT ... FOR UPDATE` advisory lock to remove the explicit dependency on the DB trigger as a safety net. Document this in a follow-up",
+  "fileHint": "src/modules/auth/application/change-role.ts:80"
+ },
+ {
+  "n": 3,
+  "module": "auth",
+  "dimension": "a11y",
+  "type": "defect",
+  "title": "UsersFilters 'Clear filters' button: XIcon not aria-hidden — redundant SR announcement",
+  "evidence": "src/components/auth/users-filters.tsx:153 — <XIcon className=\"size-4\" /> has no aria-hidden attribute. The button has visible text 'Clear filters' (from t('clear')). Without aria-hidden on the icon, SR announces 'X Clear filters button' or 'X image Clear filters button' depending on the browser+SR pair. Every other icon in the auth module and adjacent filter components uses aria-hidden on decorative icons.",
+  "recommendation": "Add aria-hidden to the XIcon: <XIcon className=\"size-4\" aria-hidden />. Consistent with all other lucide icons in the auth UI.",
+  "fileHint": "src/components/auth/users-filters.ts"
+ },
+ {
+  "n": 4,
+  "module": "auth",
+  "dimension": "perf",
+  "type": "defect",
+  "title": "Argon2id dummy-hash is computed lazily on first cold-start sign-in attempt — adds ~50ms to first cold-start unknown-email path only",
+  "evidence": "src/modules/auth/infrastructure/password/argon2-hasher.ts:68-75 — `getDummyHash()` uses `let dummyHashPromise: Promise<string> | null = null` and computes the dummy hash on first call. The hash computation uses the same ARGON2_OPTIONS (memory=19456 KiB, t=2) which takes ~50ms. On a Vercel cold-start, the first `signInImpl` call that hits an unknown email address will compute this hash. Subsequent warm calls reuse the cached promise.",
+  "recommendation": "Consider warming the dummy hash during module initialisation (module load time) rather than lazily. Add a top-level `void getDummyHash()` call after the `Argon2Hasher` class definition (line 144 of argon2-hasher.ts). This pays the ~50ms cost at module import time (cold start) rather than on the firs",
+  "fileHint": "src/modules/auth/infrastructure/password/argon2-hasher.ts:68"
+ },
+ {
+  "n": 5,
+  "module": "auth",
+  "dimension": "scope",
+  "type": "missing",
+  "title": "FR-025 invitation resend affordance: user-initiated resend intentionally absent — design divergence from spec literal",
+  "evidence": "spec.md:512-514 (FR-025): 'Every email-dependent flow (password reset, invitation, future account-recovery notifications) MUST provide a resend email affordance that the user can invoke after 60 seconds.' src/app/(auth-public)/invite/[token]/page.tsx:28-31 comment: 'no request new link affordance — the admin must explicitly re-invite because invitations are admin-scoped, not user-scoped.' The page renders a link-invalid card with 'contact administrator' copy. SC-017 only tests forgot-password + reset flows; no corresponding SC for invitation resend. The F3 reissue-invitation use case (src/modules/auth/application/reissue-invitation.ts) provides the admin-side resend path.",
+  "recommendation": "Acknowledge and document the scope divergence: the spec's literal reading ('invitation' flow = user-initiated resend) conflicts with the spec's own trust model (invitations are admin-scoped; a pending invitee cannot generate their own new token). The current implementation is the correct product dec",
+  "fileHint": "/page.ts"
+ },
+ {
+  "n": 6,
+  "module": "tenants",
+  "dimension": "correctness / maintainability",
+  "type": "defect",
+  "title": "SLUG_PATTERN duplicated in tenant-context.ts and tenant-slug.ts without sharing the exported constant",
+  "evidence": "src/modules/tenants/domain/tenant-context.ts:46 — `const SLUG_PATTERN = /^[a-z0-9-]{1,63}$/;` (private). src/modules/tenants/domain/tenant-slug.ts:27 — identical `const SLUG_PATTERN = /^[a-z0-9-]{1,63}$/;` (private). The canonical export `TENANT_SLUG_PATTERN` in tenant-context.ts:75 exists but tenant-slug.ts does not import it; instead both modules define the pattern independently. src/lib/db.ts:250 and src/app/api/cron/outbox-dispatch/route.ts:447 also inline the regex rather than importing the exported constant, which is how the P1 off-by-one arose.",
+  "recommendation": "In tenant-slug.ts, remove the local `SLUG_PATTERN` declaration and import it from tenant-context.ts, or extract the regex into a shared private constant in a third internal file. Additionally, lint against inline tenant slug regexes in production code (ESLint rule `no-restricted-syntax` on the liter",
+  "fileHint": "tenant-context.ts"
+ },
+ {
+  "n": 7,
+  "module": "tenants",
+  "dimension": "security",
+  "type": "missing",
+  "title": "unsafeBrandTenantSlug exported from public barrel with documentation-only call-site enforcement — no ESLint rule blocks new violating call sites",
+  "evidence": "src/modules/tenants/index.ts:28 — `unsafeBrandTenantSlug` re-exported from the module's public barrel. src/modules/tenants/domain/tenant-slug.ts:60-82 — allowed production call sites are enumerated in a JSDoc comment but there is no `eslint-plugin-no-restricted-imports` rule (or equivalent AST-level gate) that would fail CI if a new production file imports and calls `unsafeBrandTenantSlug` outside the approved set (hmac-signer.ts, tenant-context.ts, member.ts). Verified: grepping `src/` for `unsafeBrandTenantSlug` shows only three production callers, all in the allowed set. However the guard is governance-by-comment only.",
+  "recommendation": "Add an ESLint `no-restricted-imports` rule (or a dedicated `@/lib/no-unsafe-brand` wrapper) that reports an error if `unsafeBrandTenantSlug` is imported outside the three approved files. Alternatively, move `unsafeBrandTenantSlug` to a separate barrel (`@/modules/tenants/unsafe`) that is explicitly ",
+  "fileHint": "src/modules/tenants/index.ts:28"
+ },
+ {
+  "n": 8,
+  "module": "tenants",
+  "dimension": "security",
+  "type": "missing",
+  "title": "No dedicated unit tests for asTenantSlug or unsafeBrandTenantSlug — rejection cases and the weak tryTenantId pattern-gap are untested",
+  "evidence": "tests/unit/tenants/ contains only tenant-context.test.ts and iana-timezone.test.ts. There is no tenant-slug.test.ts. Verified via Glob: no file matches `tests/unit/tenants/**/*slug*`. `asTenantSlug` (the validated constructor) and `unsafeBrandTenantSlug` (the unsafe escape hatch) have zero dedicated tests. Additionally, tests/unit/members/domain/member-state.test.ts:194-209 tests `tryTenantId` but does NOT assert that e.g. `tryTenantId('SweCham')` returns `ok` (it does — the non-empty check passes uppercase slugs), and no test documents that this is intentional (the JSDoc at tenant-slug.ts:77 notes the gap but there is no test enforcing or documenting the accepted contract).",
+  "recommendation": "Create `tests/unit/tenants/domain/tenant-slug.test.ts` covering: (a) `asTenantSlug` happy path (valid slug returns branded string), (b) `asTenantSlug` rejection cases matching the existing `asTenantContext` rejection suite (uppercase, spaces, underscore, dot, slash, >63 chars, empty, non-string), (c",
+  "fileHint": "tenant-context.test.ts"
+ },
+ {
+  "n": 9,
+  "module": "tenants",
+  "dimension": "scope",
+  "type": "missing",
+  "title": "Missing architecture scan test backstop for the tenants barrel — ESLint no-restricted-imports rule is silently shadowed",
+  "evidence": "eslint.config.mjs:294-303 defines a no-restricted-imports pattern blocking @/modules/tenants/domain/** deep imports from outside the module. However, the known ESLint flat-config last-wins shadow bug (documented in tests/unit/architecture/broadcasts-barrel.test.ts:10-20 and specs/014-email-broadcast-advance/retrospective.md) means the events block at eslint.config.mjs:692 (files: src/**/*.{ts,tsx}) silently overwrites the tenants barrel rule for all src/ files. The broadcasts, events, and insights modules each have a source-scan architecture test as a backstop (tests/unit/architecture/broadcasts-barrel.test.ts, events-barrel.test.ts, insights-barrel.test.ts). No equivalent test exists for sr",
+  "recommendation": "Add tests/unit/architecture/tenants-barrel.test.ts scanning src/app/** and src/components/** for deep imports into @/modules/tenants/(domain|application|infrastructure)/. Model after the insights-barrel.test.ts (KNOWN_BACKLOG starts empty — baseline is clean). Scan patterns: /from\\s+['\"]@\\/modules\\/",
+  "fileHint": "eslint.config.mjs:294"
+ },
+ {
+  "n": 10,
+  "module": "plans",
+  "dimension": "Error Handling",
+  "type": "defect",
+  "title": "planPatchSchema comment misrepresents merged-result validation (misleading for future maintainers)",
+  "evidence": "src/modules/plans/domain/plan-validators.ts:220-224 — the comment reads 'When only one side is patched, the merged-result validation in update-plan.ts catches cross-field mismatches against the full plan.' No such merged-result validation exists in update-plan.ts. The update-plan.ts flow (lines 147-262) loads the plan, validates the patch with `planPatchSchema.safeParse`, checks locked fields, and calls `planRepo.update` — there is no step that merges the existing plan with the patch and re-runs `planSchema.safeParse`. The comment was written to describe an intended-but-unimplemented defence, which is now the documented rationale for skipping a more thorough check in the zod superRefine.",
+  "recommendation": "Either (a) delete or correct the comment to accurately describe what the code does, or (b) implement the merged-result validation the comment promises and add a test for the `plan_category`-only patch scenario. If the patch is implemented as part of the P1 fix, the comment can be updated to describe",
+  "fileHint": "src/modules/plans/domain/plan-validators.ts:220"
+ },
+ {
+  "n": 11,
+  "module": "plans",
+  "dimension": "secrets in logs",
+  "type": "defect",
+  "title": "plan-audit-adapter logger.error passes raw err string — verify forbidden-field exclusion at Infrastructure boundary",
+  "evidence": "src/modules/plans/infrastructure/audit/plan-audit-adapter.ts:121-136. The catch block passes `err: message` (a string extracted from `e.message`) to logger.error. If a Postgres error message includes connection-string fragments (e.g., DSN password in misconfigured environments), the string lands in structured logs.",
+  "recommendation": "No code change required for launch. For post-launch hardening: consider adding a pino redact rule for /err.message/ patterns matching connection-string keywords (`postgresql://`, `@neon.tech`) in `src/lib/logger.ts`, mirroring the existing forbidden-field redact list.",
+  "fileHint": "src/modules/plans/infrastructure/audit/plan-audit-adapter.ts:121"
+ },
+ {
+  "n": 12,
+  "module": "plans",
+  "dimension": "secrets in logs",
+  "type": "defect",
+  "title": "searchPlans palette route passes raw caught exception objects to logger.warn — potential structured log noise from sub-query errors",
+  "evidence": "src/app/api/plans/search/route.ts:113-120 (members sub-query catch), lines 252-261 (refundable invoices outer catch). Both pass `err: e` (the raw caught value, which may be an Error object) directly to logger.warn/error. The pino logger serialises Error objects including .stack. Stack traces can expose internal file paths and line numbers.",
+  "recommendation": "No code change required for launch. Post-launch: normalise catch blocks to `err: e instanceof Error ? e.message : String(e)` to avoid stack-trace fan-out in Vercel log drain, matching the pattern already used in plan-audit-adapter.ts.",
+  "fileHint": "src/app/api/plans/search/route.ts:113"
+ },
+ {
+  "n": 13,
+  "module": "plans",
+  "dimension": "ui",
+  "type": "defect",
+  "title": "Bare ⚠ glyph used for missing-translation badge instead of a lucide icon",
+  "evidence": "src/components/plans/locale-text-display.tsx:55 ({locale.toUpperCase()} ⚠) and src/components/plans/locale-text-input.tsx:98 ({l.label} ⚠) append a literal U+26A0 emoji glyph into the badge text via a JS string.",
+  "recommendation": "Swap the ⚠ glyph for a sized lucide icon (e.g. <AlertTriangle className=\"size-3\" aria-hidden />) inside the Badge, keeping the existing title attribute for the SR/hover hint. Apply in both files for consistency.",
+  "fileHint": "src/components/plans/locale-text-display.ts"
+ },
+ {
+  "n": 14,
+  "module": "plans",
+  "dimension": "ui",
+  "type": "defect",
+  "title": "Prior-year lock banner hand-rolls an outline-button className instead of reusing buttonVariants",
+  "evidence": "src/components/plans/prior-year-lock-banner.tsx:38-44 — the 'Clone to current year' link uses a manual className: 'inline-flex items-center rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground'. The list page (page.tsx:59) and the empty-state CTAs (plans-table.tsx:371) both correctly use buttonVariants({ variant: 'outline' }).",
+  "recommendation": "Replace the manual className with className={buttonVariants({ variant: 'outline', size: 'sm' })} on the <Link>, matching the empty-state and page-header CTA pattern already used elsewhere in this module.",
+  "fileHint": "src/components/plans/prior-year-lock-banner.ts"
+ },
+ {
+  "n": 15,
+  "module": "plans",
+  "dimension": "scope",
+  "type": "defect",
+  "title": "deferred-to-f3.md D1 'Resolved' section still empty despite F3 shipping — maintenance artifact misleads future readers",
+  "evidence": "specs/002-membership-plans/deferred-to-f3.md lines 88-89: '## Resolved in F3 — None yet — F3 hasn't shipped.' F3 shipped per CLAUDE.md ('F3 Members & Contacts ... SHIPPED'). The BundleChangeWarningDialog component (T095) was built. The file's invariant clause (line 16-19) states it MUST NOT be deleted until every row is resolved or rejected — but the Resolved section was never updated after F3 shipped.",
+  "recommendation": "After wiring the bundle-change warning (P1 finding above), move D1 to the Resolved section with a pointer to the commit. If the wiring is deferred to post-launch, add a note 'Partially delivered — component T095 exists, client wiring pending, tracked as [issue/task].'",
+  "fileHint": ""
+ },
+ {
+  "n": 16,
+  "module": "members",
+  "dimension": "reliability / audit completeness",
+  "type": "defect",
+  "title": "listLinkedUserIdsForMemberInTx silently returns [] on DB error, archive cascade may proceed without full session revocation",
+  "evidence": "src/modules/members/infrastructure/db/drizzle-contact-repo.ts:207-236 — on any DB exception the function catches, logs via logger.error, and returns [] rather than propagating the error. archive-member.ts:151-154 uses this return value to build uniqueLinkedUserIds; if it silently returns [] the archive proceeds, status is committed, but NO sessions are revoked and the former portal user retains an active session post-archive.",
+  "recommendation": "When listLinkedUserIdsForMemberInTx returns an empty array due to error (distinguish via a returned boolean flag or typed error result), emit a `member_archive_session_revocation_skipped` audit event inside the archive tx with `payload: { member_id, reason: 'contact_lookup_failed', error_class }`. T",
+  "fileHint": "src/modules/members/infrastructure/db/drizzle-contact-repo.ts:207"
+ },
+ {
+  "n": 17,
+  "module": "members",
+  "dimension": "ui",
+  "type": "defect",
+  "title": "Members empty/error-state headings stack .text-h3 token utility with conflicting text-lg font-semibold",
+  "evidence": "src/components/members/empty-states.tsx:41,71,103 — <h2 className=\"text-h3 text-lg font-semibold\">. .text-h3 (globals.css:350-353) sets font-size: var(--font-size-h3) and font-weight: var(--font-weight-heading); the same element then applies Tailwind text-lg (1.125rem) and font-semibold (600), which override the token values via utility source-order. Grep confirms NO other component in src/components composes .text-h1/.text-h2/.text-h3/.text-h4 — these three sites are the only ones, and they are the only ones that bolt extra size/weight utilities onto the token class.",
+  "recommendation": "Pick one source of truth: either keep className=\"text-h3\" alone (recommended — matches the token system) or drop text-h3 and keep text-lg font-semibold. Do not stack both.",
+  "fileHint": "src/components/members/empty-states.ts"
+ },
+ {
+  "n": 18,
+  "module": "members",
+  "dimension": "ux",
+  "type": "defect",
+  "title": "Bulk-archive typed-phrase in TH locale requires typing complex Thai script — may block staff without Thai IME active",
+  "evidence": "src/app/(staff)/admin/members/_components/archive-confirm-dialog.tsx:59 — `const expectedPhrase = t('archivePhrase', { count })`. TH locale resolves to `'ย้าย {count} สมาชิก ไปถังเก็บ'` (confirmed in `src/i18n/messages/th.json`). Admin staff operating the system in TH locale must type this Thai phrase exactly, which requires their keyboard/IME to be in Thai input mode.",
+  "recommendation": "Consider offering an invariant English phrase ('Archive N members') regardless of locale for the typed-match confirmation, matching GitHub and Stripe's pattern (they always use English for irreversible-action confirmations). Alternatively, document the IME requirement in the confirmation label hint ",
+  "fileHint": "/admin/members/_components/archive-confirm-dialog.ts"
+ },
+ {
+  "n": 19,
+  "module": "members",
+  "dimension": "perf",
+  "type": "defect",
+  "title": "searchDirectory correlated EXISTS subquery for q-filter not guarded by the contacts_tenant_member_idx partial index — potential secondary seq scan on non-removed contacts",
+  "evidence": "src/modules/members/infrastructure/db/drizzle-member-repo.ts:160-167 — directoryQFilter EXISTS uses `c.tenant_id = ${members.tenantId} AND c.member_id = ${members.memberId} AND c.removed_at IS NULL`. drizzle/migrations/0009_members_contacts.sql:87 creates `contacts_tenant_member_idx` ON contacts(tenant_id, member_id) WHERE removed_at IS NULL. This index should be usable for the EXISTS probe on (tenant_id, member_id) with the removed_at partial filter. However the additional ILIKE conditions on first_name, last_name, email cannot be satisfied by btree — they need trgm. The planner will use the btree index to narrow to the member's contacts, then evaluate the ILIKE conditions on the resulting ",
+  "recommendation": "No action needed beyond the email trgm index in finding 2. Document that the EXISTS probe is bounded by contacts-per-member cardinality.",
+  "fileHint": "src/modules/members/infrastructure/db/drizzle-member-repo.ts:160"
+ },
+ {
+  "n": 20,
+  "module": "invoicing",
+  "dimension": "Information Disclosure (STRIDE)",
+  "type": "defect",
+  "title": "serialiseInvoice returns internal Vercel Blob object keys (pdf_blob_key, receipt_pdf_blob_key) to admin API consumers",
+  "evidence": "src/app/api/invoices/_serialise.ts:48 — `pdf_blob_key: invoice.pdf?.blobKey ?? null`; line 56 — `receipt_pdf_blob_key: invoice.receiptPdf?.blobKey ?? null`. These fields are returned by GET /api/invoices/[invoiceId], GET /api/invoices, and GET /api/members/[memberId]/invoices (all admin-only). The blob key format is `invoicing/{tenantSlug}/invoices/{uuid}/{type}-v{n}.pdf`.",
+  "recommendation": "Consider omitting pdf_blob_key and receipt_pdf_blob_key from the admin serialiser response, or replacing them with a boolean `has_pdf` / `has_receipt_pdf` flag. The admin UI uses the dedicated download route (/api/invoices/[id]/pdf), not the raw blob key. If the key is needed for operator debugging,",
+  "fileHint": "src/app/api/invoices/_serialise.ts:48"
+ },
+ {
+  "n": 21,
+  "module": "invoicing",
+  "dimension": "Tenant Isolation (Principle I sub-clause 3)",
+  "type": "missing",
+  "title": "Cross-tenant invoice probe integration test exercises missing-ID path but not a real two-tenant scenario",
+  "evidence": "tests/integration/invoicing/void-invoice.test.ts:506-532 — the cross-tenant probe test calls voidInvoice with `invoiceId: randomUUID()` (guaranteed not found in any tenant), not with a real invoiceId belonging to a second test tenant. The Principle I sub-clause 3 requirement is: 'cross-tenant probe test: is there an integration test that tries to read/write another tenant's row and asserts failure.'",
+  "recommendation": "Add an integration test that seeds an invoice under tenant-A, then calls findById (or getInvoice / voidInvoice) using tenant-B's runInTenant context with tenant-A's real invoiceId, and asserts the result is null (not found). Pattern already exists in F3 members (tests/integration/members/us3-tenant-",
+  "fileHint": "tests/integration/invoicing/void-invoice.test.ts:506"
+ },
+ {
+  "n": 22,
+  "module": "invoicing",
+  "dimension": "empty/loading/error visuals + brand consistency",
+  "type": "missing",
+  "title": "Logo upload confirms via opaque blob-key text, not a visual preview",
+  "evidence": "src/components/invoices/invoice-settings-form.tsx:530-538 — after a tenant logo is uploaded, the only confirmation is `logo.currentKey: <font-mono blobKey>` rendered as text (`<span className=\"font-mono\">{logoBlobKey}</span>`). There is no `<img>` thumbnail of the uploaded logo. This is the brand asset that prints on every legal Thai tax invoice/receipt PDF.",
+  "recommendation": "Render a small bordered thumbnail (`<img>` from the signed blob URL, e.g. max-h-16, on a neutral `bg-muted` chip so a transparent-PNG logo stays visible in dark mode) next to or instead of the raw key string. Keep the key for power-user/debug but make the primary confirmation visual.",
+  "fileHint": "src/components/invoices/invoice-settings-form.ts"
+ },
+ {
+  "n": 23,
+  "module": "invoicing",
+  "dimension": "scope",
+  "type": "excess",
+  "title": "Excess: `export-paid-invoices-csv` in-memory full-tenant page-scan is a latency risk at any tenant with >1k paid invoices",
+  "evidence": "src/modules/invoicing/application/use-cases/export-paid-invoices-csv.ts:87-148 — fetches ALL paid invoices for a tenant in 100-row pages (`status: 'paid'`) then post-filters by `paidAt` date range in memory. Comment at line 16 acknowledges this: 'For chamber scale (~131 members × ~10 invoices/year ≈ 1.3k rows/year), fetching all paid rows for the tenant and post-filtering in memory costs <1MB / <50ms'. This is correct for SweCham but the same code is deployed as multi-tenant SaaS.",
+  "recommendation": "Acceptable at launch per the documented trade-off. Add a `paidAt >= from AND paidAt <= to` filter directly to `InvoiceRepo.listPaged` before onboarding a second tenant with >2k invoices. Track as a database scalability improvement for F10/multi-tenant readiness.",
+  "fileHint": "src/modules/invoicing/application/use-cases/export-paid-invoices-csv.ts:87"
+ },
+ {
+  "n": 24,
+  "module": "payments",
+  "dimension": "audit-trail completeness",
+  "type": "missing",
+  "title": "POST /api/refunds/initiate rate-limit hit emits no audit event",
+  "evidence": "src/app/api/refunds/initiate/route.ts:141-153 — on `!rl.success` branch the route returns 429 with no call to `f5AuditAdapter.emit`. Contrast: `src/app/api/payments/initiate/route.ts:181-200` emits `payment_initiate_rate_limited` and `src/app/api/payments/[id]/cancel/route.ts:123-143` emits `payment_cancel_rate_limited`, both explicitly. The refund route is the only F5 rate-limited surface without a forensic audit trail on rate-limit hits.",
+  "recommendation": "Add a `f5AuditAdapter.emit(null, { eventType: 'refund_initiate_rate_limited', ... })` call inside the `!rl.success` branch of `/api/refunds/initiate/route.ts` (after the logger.warn at line 148, before the errorResponse at line 152). Mirror the exact payload shape used by the payment-initiate route.",
+  "fileHint": "src/app/api/refunds/initiate/route.ts:141"
+ },
+ {
+  "n": 25,
+  "module": "payments",
+  "dimension": "ui",
+  "type": "defect",
+  "title": "Test-mode badge uses arbitrary text-[10px] instead of the type scale",
+  "evidence": "src/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline.tsx:408 — <Badge variant=\"secondary\" className=\"text-[10px] uppercase\"> for the TEST-mode chip. The project mandates the .text-h1../.text-caption scale; text-caption is the established smallest token. The same arbitrary text-[10px] recurs at invoice-table.tsx:386 (credit-note chip).",
+  "recommendation": "Use text-caption (or text-xs) + the existing Badge sizing rather than text-[10px]. If a visually-smaller chip is intentional, encode it as a Badge size variant in the primitive instead of an arbitrary per-call value, so the scale stays centralized.",
+  "fileHint": "/_components/payment-timeline.ts"
+ },
+ {
+  "n": 26,
+  "module": "payments",
+  "dimension": "a11y / focus",
+  "type": "defect",
+  "title": "SecurityFooter privacy disclosure <a> (Stripe privacy link) has no accessible name beyond its text content — focus ring uses underline only, not ring-2",
+  "evidence": "src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/security-footer.tsx:39-51 — the Stripe privacy link uses className='underline hover:text-foreground' with no focus-visible:ring-2 / focus-visible:outline classes. Compare payment-timeline.tsx:422 which correctly uses focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm on the 'View in Stripe' link.",
+  "recommendation": "Add focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:rounded-sm to the anchor className in security-footer.tsx.",
+  "fileHint": "/_components/pay-sheet/security-footer.ts"
+ },
+ {
+  "n": 27,
+  "module": "payments",
+  "dimension": "flow completeness",
+  "type": "defect",
+  "title": "PaymentTimeline empty state 'Record payment manually' link uses fragment href (#record-payment) — unreliable scroll on Safari + broken if element not in DOM",
+  "evidence": "src/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline.tsx:469-476 — <a href={`/admin/invoices/${invoiceId}#record-payment`}> targets the RecordPaymentDialog trigger element which has id='record-payment'. On the same page this is an in-page anchor. Scroll-anchoring with sticky headers (DetailContainer layout) may obscure the target. Additionally, if the staff role check hides the RecordPaymentDialog trigger (isAdmin=false branch) the link navigates to an id that does not exist.",
+  "recommendation": "Wrap the fragment link with scroll-margin-top or use router.push + sheet trigger programmatic open instead of href fragment. Also gate the link render more tightly: it is already conditionally rendered only when isAdmin && invoiceStatus === 'issued', but verify the RecordPaymentDialog trigger is alw",
+  "fileHint": "/_components/payment-timeline.ts"
+ },
+ {
+  "n": 28,
+  "module": "payments",
+  "dimension": "a11y",
+  "type": "defect",
+  "title": "PaySheetInternal aria-live announcer is role=status — 'success' state announcement may be politely queued behind ongoing SR speech",
+  "evidence": "src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-sheet-internal.tsx:809-816 — the persistent live region uses aria-live='polite' role='status'. derivePayStateAnnouncement returns t('success.title') when kind==='success'. However success is a high-importance moment; if the SR is mid-sentence on other content (e.g. reading the ConfirmationPanel that just mounted), the polite queue may delay or drop the announcement on NVDA.",
+  "recommendation": "No immediate code change required. For the success transition only, consider switching the announcer text to an aria-live='assertive' sibling (or upgrading role to 'alert') at the moment kind transitions to 'success'. However, this risks double-announce if ConfirmationPanel's focus also reads the he",
+  "fileHint": "/_components/pay-sheet/pay-sheet-internal.ts"
+ },
+ {
+  "n": 29,
+  "module": "events",
+  "dimension": "error-handling",
+  "type": "defect",
+  "title": "wasAlreadyPseudonymised idempotency condition is non-obvious and partially redundant",
+  "evidence": "src/modules/events/application/use-cases/pseudonymise-stale-non-member-pii.ts:146-147 — `const wasAlreadyPseudonymised = updateResult.value.piiPseudonymisedAt !== null && updateResult.value.piiPseudonymisedAt.getTime() !== input.occurredAt.getTime()`. The condition relies on timestamp inequality to distinguish 'just written by us (equal)' from 'written by a prior sweep (different)'. It is correct but fragile: if a future caller passes the same `occurredAt` on retry AND a concurrent sweep already ran, the guard returns false (timestamps equal) and the audit double-emits.",
+  "recommendation": "Simplify the condition to `updateResult.value.piiPseudonymisedAt !== null` — if the repo returned a row with non-null piiPseudonymisedAt, it was already pseudonymised (the UPDATE wrote it or a concurrent writer did). The timestamp-inequality check is misleading and unnecessary. Add a code comment ex",
+  "fileHint": "src/modules/events/application/use-cases/pseudonymise-stale-non-member-pii.ts:146"
+ },
+ {
+  "n": 30,
+  "module": "events",
+  "dimension": "security",
+  "type": "defect",
+  "title": "Webhook rate-limit step-4 metric label fires 'rejected_bad_sig' for pre-auth rate-limits",
+  "evidence": "src/app/api/webhooks/eventcreate/v1/[tenantSlug]/route.ts:364-385 — the rate-limit exceeded branch (Step 4) calls `eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'rate_limited')`. The label `rejected_bad_sig` is semantically incorrect for a rate-limit event (no signature was attempted) and is meant to represent signature-mismatch outcomes. The file-level comment at line 167-173 maps verify-kinds to `'rejected_bad_sig'` but rate_limiting is not a verify-kind — it fires before signature verification. This misclassifies rate-limited requests as 'rejected_bad_sig' in the OTel histogram.",
+  "recommendation": "Change line 364 from `'rejected_bad_sig'` to `'rejected_pre_auth'` to match the correct metric label used by the Content-Type and body-size pre-auth checks (lines 284-290, 314). The metric type definition already includes `'rejected_pre_auth'` as a valid label (see its usage at line 284).",
+  "fileHint": "/route.ts:364"
+ },
+ {
+  "n": 31,
+  "module": "events",
+  "dimension": "ui — design-token adherence / accessibility",
+  "type": "defect",
+  "title": "Match-status and quota-effect badges use hardcoded multi-hue palettes — justified deviation, but text-contrast (4.5:1) is unverified",
+  "evidence": "src/components/events/match-status-badge.tsx:63-87 (5-state ladder: member_contact filled emerald, member_domain outline emerald, member_fuzzy amber, non_member neutral, unmatched destructive) and src/components/events/quota-effect-badge.tsx:52-68 (sky=partnership, violet=cultural, amber=over_quota); same outline-emerald/sky/violet/amber reused for the Partner/Cultural badges in event-detail-header.tsx:163,173 and events-list-table.tsx:162,172. Docstrings (match-status-badge.tsx:56-62) document a U1 verify-finding tuning dark borders -700→-500 for ≥3:1 non-text contrast only.",
+  "recommendation": "KEEP the hardcoded hues — the 4-token semantic system (success/warning/info/destructive) genuinely cannot express '2 distinct greens' (contact vs domain) or 'sky vs violet' (partnership vs cultural), and color is always paired with icon+text (WCAG 1.4.1 satisfied). Post-launch: (a) verify the badge ",
+  "fileHint": "src/components/events/match-status-badge.ts"
+ },
+ {
+  "n": 32,
+  "module": "events",
+  "dimension": "scope",
+  "type": "defect",
+  "title": "FR-005 rate-limit spec text (10 req/min) contradicts implemented value (60 req/min) — spec.md not updated after round-2 E13 adjustment",
+  "evidence": "spec.md:193 FR-005 reads '10 requests per minute per tenant'. src/lib/events-webhook-deps.ts:68 `const F6_WEBHOOK_MAX_PER_MIN = 60`. Route handler comment at src/app/api/webhooks/eventcreate/v1/[tenantSlug]/route.ts:4 says 'Rate-limit check (60 req/min per tenant, FR-005)'. security checklist at specs/012-eventcreate-integration/checklists/security.md:63 documents: 'CHK035 verified: 60 req/min/tenant Upstash rate limit (FR-005 final; round-2 E13 adjustment applied)'. review-20260513-010953.md:146 flags 'spec FR-005 says 10/min — actual implementation 60/min; spec drift to reconcile'.",
+  "recommendation": "Update spec.md FR-005 to read '60 requests per minute per tenant' and add a parenthetical noting the round-2 E13 upward adjustment from the initial 10 req/min proposal. One-line change; no code change required.",
+  "fileHint": "src/lib/events-webhook-deps.ts:68"
+ },
+ {
+  "n": 33,
+  "module": "events",
+  "dimension": "scope",
+  "type": "excess",
+  "title": "drizzle-registrations-repository.ts header comment incorrectly lists implemented methods as stubs",
+  "evidence": "src/modules/events/infrastructure/drizzle-registrations-repository.ts:16-17 JSDoc lists 'stubs (findByEmailLower, updateMatchAndQuota, listPseudonymiseEligible, pseudonymiseRow, hardDelete) still throw not_implemented'. Verified via grep: updateMatchAndQuota is implemented at line 478, listPseudonymiseEligible at line 856, pseudonymiseRow at line 888, hardDelete at line 947. Only findByEmailLower at line 425-426 is actually still a stub.",
+  "recommendation": "Update the repository file header comment to remove the four implemented methods and retain only 'findByEmailLower' as the sole remaining stub.",
+  "fileHint": "drizzle-registrations-repository.ts"
+ },
+ {
+  "n": 34,
+  "module": "broadcasts",
+  "dimension": "Audit integrity / IDOR",
+  "type": "defect",
+  "title": "Inline-image upload draftId not ownership-checked at route layer",
+  "evidence": "src/app/api/broadcasts/inline-image-upload/route.ts:76 — `draftId` is accepted from the form field and passed directly to the use-case as an audit label (src/modules/broadcasts/application/use-cases/upload-inline-image.ts input.draftId). No DB lookup or ownership assertion is performed at the route or use-case level. Any authenticated member can pass any draftId UUID string.",
+  "recommendation": "In the route handler, after resolving `ctx.member.memberId`, do a lightweight DB check: `broadcastsRepo.findOwnedByMember(ctx.tenant.slug, ctx.member.memberId, parseBroadcastId(draftId))`. Return 404 on `cross_member` or `not_found` probe kinds. This is the same pattern already used in `snapshot-tem",
+  "fileHint": "src/app/api/broadcasts/inline-image-upload/route.ts:76"
+ },
+ {
+  "n": 35,
+  "module": "broadcasts",
+  "dimension": "scope",
+  "type": "excess",
+  "title": "F7.1b deferred engagement-tracking, per-contact opt-in, saved-segment, attachments, and PII-scanner contracts are documents only — zero application code shipped",
+  "evidence": "specs/014-email-broadcast-advance/contracts/deferred-f71b/ contains tracking-settings.md, contact-broadcast-opt-in.md, saved-segment.md, broadcast-attachment.md, pii-detector.md. Grep of src/modules/broadcasts for 'engagement', 'click_tracking', 'open_tracking', 'receive_broadcasts', 'SavedSegment', 'PiiDetect' returns zero matches. No DB migrations for engagement_events or saved_segments exist.",
+  "recommendation": "No action required for go-live. Optionally add a file-level header comment to each deferred-f71b contract stating 'NOT wired — F7.1b backlog; do not generate code from this file until the user story is promoted.' This prevents future contributors from mistaking these for implemented surfaces.",
+  "fileHint": ""
+ },
+ {
+  "n": 36,
+  "module": "broadcasts",
+  "dimension": "scope",
+  "type": "excess",
+  "title": "ComposeStaleDraftBanner component shipped as a building block but no page mounts it (intentional per spec FR-019)",
+  "evidence": "spec.md (014-email-broadcast-advance) FR-019 states: 'ComposeStaleDraftBanner component ships in F7.1a as a reusable building block ... but the consumer mount-point is deferred to F7.1b'. The component is inert dead code at go-live (unreachable by any user-navigable page).",
+  "recommendation": "No action required. Keep the component. Verify it carries a JSDoc comment referencing the F7.1b promotion criteria so it is not accidentally deleted as dead code during a cleanup pass.",
+  "fileHint": ""
+ },
+ {
+  "n": 37,
+  "module": "renewals",
+  "dimension": "Tenant Isolation",
+  "type": "defect",
+  "title": "drizzle-bounce-event-query step-2 uses global db (intentional, documented)",
+  "evidence": "src/modules/renewals/infrastructure/drizzle/drizzle-bounce-event-query.ts:85 — `const rows = await db.select()...from(emailDeliveryEvents)` runs without runInTenant. File header at line 24-27 documents the design: cross-tenant scan on email_delivery_events is intentional because the F1 bounce webhook doesn't know the tenant until after email lookup, and emails are globally unique under the partial-unique-index constraint.",
+  "recommendation": "Add a future-MTA ticket to scope the step-2 query by tenant once F10 multi-tenant SaaS lands. No action needed for go-live under MTA+STD. Optionally add a code comment referencing the MTA+STD rationale note already in the file header.",
+  "fileHint": "src/modules/renewals/infrastructure/drizzle/drizzle-bounce-event-query.ts:85"
+ },
+ {
+  "n": 38,
+  "module": "renewals",
+  "dimension": "Tenant Isolation",
+  "type": "defect",
+  "title": "drizzle-reminder-audit-query-repo uses global db without runInTenant",
+  "evidence": "src/modules/renewals/infrastructure/drizzle/drizzle-reminder-audit-query-repo.ts:28-46 — `await db.select()` on `audit_log` with explicit `WHERE tenant_id = ${tenantId}` predicate. File header explains: \"The audit_log RLS policy is permissive (cross-tenant visibility for super-admin compliance), so we still apply a `WHERE tenant_id = ?` predicate explicitly.\"",
+  "recommendation": "Keep as-is under MTA+STD. The explicit WHERE-tenantId is the correct substitute for the permissive audit_log RLS. Document in the file header that this is the intentional pattern for audit_log queries (distinct from tenant-scoped tables that rely on runInTenant + RLS+FORCE).",
+  "fileHint": "src/modules/renewals/infrastructure/drizzle/drizzle-reminder-audit-query-repo.ts:28"
+ },
+ {
+  "n": 39,
+  "module": "renewals",
+  "dimension": "design-token adherence (classification note)",
+  "type": "excess",
+  "title": "Tier / urgency / risk badge multi-hue scales are JUSTIFIED — do not flag as token drift",
+  "evidence": "src/components/renewals/tier-badge.tsx:22-33 (5 categorical brand hues: thai_alumni=gold/amber, start_up=blue, regular=slate, premium=purple, partnership=emerald), urgency-pill.tsx:16-33 (8-step ordinal gradient slate→amber→orange→red→red+dashed→gray), risk-score-badge.tsx:24-33 (4-band ordinal healthy/warning/at-risk/critical, with orange as a distinct mid-band). All ship explicit dark: variants; docstrings document WCAG dark-ring contrast tuning (-600 floor) and no-color-only signalling per FR-050 (role=img + aria-label).",
+  "recommendation": "KEEP as-is. The 4-tone semantic system (success/warning/info/destructive) cannot express 5 categorical tiers, an 8-step urgency gradient, or a 4-band scale with a distinct orange mid-band. This is the same justified-deviation pattern as the F6 events match-status confidence ladder. Recording explici",
+  "fileHint": "src/components/renewals/tier-badge.ts"
+ },
+ {
+  "n": 40,
+  "module": "renewals",
+  "dimension": "i18n",
+  "type": "defect",
+  "title": "SV locale tierBucket.thai_alumni untranslated — kept as 'Thai Alumni' (same as EN)",
+  "evidence": "src/i18n/messages/sv.json — admin.renewals.tasks.tierBucket.thai_alumni = 'Thai Alumni', identical to EN. This is the only renewal key where the SV value equals EN (verified via parity scan across all 514 renewal keys). The TH locale correctly uses the Thai script translation.",
+  "recommendation": "Determine with the product owner whether 'Thai Alumni' is acceptable in SV (it is a recognised proper-noun-adjacent category name) or whether a descriptor like 'Thai alumnimedlem' is preferred for SV. If the proper-noun decision is intentional, add a code comment in the SV messages file marking it a",
+  "fileHint": "src/i18n/messages/sv.json"
+ },
+ {
+  "n": 41,
+  "module": "insights",
+  "dimension": "Denial of Service / Resource Exhaustion",
+  "type": "missing",
+  "title": "No rate limit on admin directory export request — CPU-intensive PDF build unbounded",
+  "evidence": "src/app/api/admin/directory/exports/route.ts (entire file) — no rateLimiter import or call. A staff user (admin or manager) can POST `/api/admin/directory/exports` repeatedly to queue unlimited `directory_ebook` (react-pdf render) or `directory_json` jobs. The export job repo has no queue-depth cap.",
+  "recommendation": "Add `rateLimiter.check('dir-export:${session.user.id}', 5, 300)` (5 per 5 minutes per staff actor) after the session/role gate in `POST /api/admin/directory/exports/route.ts`. Return 429 with `Retry-After`. Implement post-launch as the staff-only risk profile is lower.",
+  "fileHint": "src/app/api/admin/directory/exports/route.ts"
+ },
+ {
+  "n": 42,
+  "module": "insights",
+  "dimension": "Information Disclosure (LINDDUN: Disclosure of information)",
+  "type": "defect",
+  "title": "Download token exposed in Vercel platform access logs via URL query string",
+  "evidence": "src/app/api/portal/account/data-export/[jobId]/download/route.ts:94 — `url.searchParams.set('token', result.value.token)` then `NextResponse.redirect(url, 303)`. Same pattern in src/app/api/admin/members/[id]/data-export/[jobId]/download/route.ts:64 and src/app/api/admin/directory/exports/[jobId]/download/route.ts:87. The `?token=<value>` appears in Vercel access logs, browser history, and any Referer header from the redirect destination.",
+  "recommendation": "Post-launch: replace the 303 redirect + query-string pattern with a short-lived (60-second) signed cookie scoped to the proxy path, or pass the token in a `POST` body to the proxy. For the current launch window, document the residual in `specs/015-admin-dashboard/security.md § 5` as an accepted risk",
+  "fileHint": "/download/route.ts:94"
+ },
+ {
+  "n": 43,
+  "module": "presentation",
+  "dimension": "information disclosure / log hygiene",
+  "type": "defect",
+  "title": "raw DB e.message leaks into Vercel function logs via SearchPlansError",
+  "evidence": "src/modules/plans/application/search-plans.ts:363-368 builds `SearchPlansError = { type: 'server_error', message: e instanceof Error ? e.message : String(e) }`. src/app/api/plans/search/route.ts:274-276 passes this plain object as `{ err: result.error }` to pino. Because pino is configured with no `serializers.err` but `SearchPlansError` is a plain object with enumerable fields, its `message` property (containing the raw Postgres exception text, which can include table names, column names, and SQL fragments) is serialised into Vercel function logs.",
+  "recommendation": "In src/modules/plans/application/search-plans.ts:363-368, replace `message: e instanceof Error ? e.message : String(e)` with `errKind: errKind(e)` (import from @/lib/log-id). Update src/app/api/plans/search/route.ts:275 to log `{ requestId: ctx.requestId, errKind: result.error.errKind }` instead of ",
+  "fileHint": "src/modules/plans/application/search-plans.ts:363"
+ },
+ {
+  "n": 44,
+  "module": "presentation",
+  "dimension": "denial-of-service / resource exhaustion",
+  "type": "missing",
+  "title": "No rate limit on staff directory export enqueue (POST /api/admin/directory/exports)",
+  "evidence": "src/app/api/admin/directory/exports/route.ts:29-79 — no rateLimiter import or call. Admin and manager roles can queue unlimited directory_ebook (react-pdf, CPU-heavy for large directories) or directory_json jobs. Each job builds a private Blob artefact processed by the cron worker.",
+  "recommendation": "Add `rateLimiter.check('dir-export:${tenantId}', 5, 300)` (5 directory export requests per tenant per 5 minutes). Return 429 on limit exceeded. Acceptable to defer to post-launch backlog given the staff-only gate.",
+  "fileHint": "src/app/api/admin/directory/exports/route.ts:29"
+ },
+ {
+  "n": 45,
+  "module": "presentation",
+  "dimension": "denial-of-service / resource exhaustion",
+  "type": "missing",
+  "title": "No rate limit on admin on-behalf GDPR export (POST /api/admin/members/[id]/data-export)",
+  "evidence": "src/app/api/admin/members/[id]/data-export/route.ts:22-73 — no rateLimiter import or call. An admin can queue GDPR archive builds for any member in the tenant without a per-actor or per-tenant frequency cap.",
+  "recommendation": "Add `rateLimiter.check('admin-gdpr-export:${tenantId}', 10, 3600)` (10 on-behalf exports per tenant per hour). Acceptable to defer to post-launch backlog.",
+  "fileHint": "/data-export/route.ts:22"
+ },
+ {
+  "n": 46,
+  "module": "presentation",
+  "dimension": "observability",
+  "type": "missing",
+  "title": "observability.md §25.1 metrics catalogue is complete and all 4 US1 counters/histograms are wired in metrics.ts",
+  "evidence": "observability.md §25.1 declares 4 metrics for F9 US1: `insights_snapshot_refresh_duration_ms`, `insights_snapshot_refresh_total`, `insights_dashboard_viewed_total`, `insights_insight_dismissed_total`. src/lib/metrics.ts:3576-3612 confirms all 4 are wired with matching instrument names. Additionally, US2/US3/US5/US6 metrics (`auditQueryDurationMs`, `timelineQueryDurationMs`, `directoryListingUpdated`, `exportJobDurationMs`, `exportJobProcessed`, `exportJobReclaimed`, `exportDownloaded`) are wired. No gap found in the declared vs wired comparison.",
+  "recommendation": "No action required. The four SLO-backing instruments are wired. The one gap (snapshotRefreshDurationMs on failure path) is captured separately as P1.",
+  "fileHint": "metrics.ts"
+ },
+ {
+  "n": 47,
+  "module": "presentation",
+  "dimension": "scope",
+  "type": "excess",
+  "title": "F9-flag-off fallback lists F3–F6 as 'upcoming' despite all being shipped",
+  "evidence": "src/app/(staff)/admin/page.tsx:57 — const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const. src/i18n/messages/en.json:461-469 — cardDescription: 'F1 (auth) is the foundation. The rest of the staff workspace lands in upcoming phases.' roadmap keys list F3–F6 as coming-soon items. F3–F8 are all shipped per CLAUDE.md and branches plan. This placeholder is rendered only when env.features.f9Dashboard is false.",
+  "recommendation": "Replace the roadmap placeholder copy with a neutral 'Dashboard is loading — please try again shortly' message (or remove the card entirely), since the only reason a staff user sees this in production is a flag being off, not a genuinely-unreleased feature set. Update en/th/sv.json accordingly.",
+  "fileHint": "/admin/page.ts"
+ },
+ {
+  "n": 48,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 1 — no PAN/CVV on server",
+  "type": "bug",
+  "title": "PASS — PAN/CVV never received by application server; PaymentElement used exclusively",
+  "evidence": "src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/card-form.tsx:230 — uses <PaymentElement> from @stripe/react-stripe-js. No custom card input field exists in the codebase. stripe-gateway.ts:289 creates PaymentIntents with payment_method_types only — never receives raw card data.",
+  "recommendation": "No action required. Any future addition of CardNumberElement, CardCvcElement, or a raw input for card fields would be a SHIP BLOCKER requiring immediate escalation.",
+  "fileHint": "/_components/pay-sheet/card-form.ts"
+ },
+ {
+  "n": 49,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 6 — webhook signature verification",
+  "type": "bug",
+  "title": "PASS — Webhook uses request.text() before any parse; constructEvent called with raw body",
+  "evidence": "src/app/api/webhooks/stripe/route.ts:302 rawBody = await request.text(). Line 331 webhookVerifier.constructEvent(rawBody, sig, env.stripe.webhookSecret). export const dynamic = 'force-dynamic' at line 79. Stripe-Signature header read at line 280 BEFORE body read (T044 verify-before-parse invariant). Clock-skew reject at stripe-webhook-verifier.ts:204 enforces +/-5 min.",
+  "recommendation": "No action required.",
+  "fileHint": "src/app/api/webhooks/stripe/route.ts:302"
+ },
+ {
+  "n": 50,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 5 — no logging of payment payloads",
+  "type": "bug",
+  "title": "PASS — clientSecret never logged; REDACT_PATHS covers clientSecret, client_secret, and card.*",
+  "evidence": "src/lib/logger.ts:201-207 REDACT_PATHS includes clientSecret, *.clientSecret, client_secret, *.client_secret. Lines 170-226 cover card_number, cvc, cvv, cvv2, card.*, payment_method_details.* en bloc. PAN_REGEX at logger.ts:599 catches bare PAN strings by value pattern regardless of field name. initiate/route.ts:247 serialises clientSecret into response body — no pino call includes it.",
+  "recommendation": "No action required.",
+  "fileHint": "src/lib/logger.ts:201"
+ },
+ {
+  "n": 51,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 4 — no storage of sensitive authentication data",
+  "type": "bug",
+  "title": "PASS — DB stores only last4, brand, expMonth, expYear; no PAN, CVV, or fingerprint",
+  "evidence": "src/modules/payments/infrastructure/schema.ts:66-70 — payments table has card_brand, card_last4, card_exp_month, card_exp_year only. No card_number, cvc, track_data, fingerprint, iin columns. stripe-gateway.ts:199-228 extractCardMetadata() drops all fields except the 4 allow-listed ones; returns null if any field is missing or wrong type.",
+  "recommendation": "No action required.",
+  "fileHint": "src/modules/payments/infrastructure/schema.ts:66"
+ },
+ {
+  "n": 52,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 3 — HTTPS and CSP isolating Stripe iframes",
+  "type": "bug",
+  "title": "PASS — CSP frame-src includes js.stripe.com and hooks.stripe.com; nonce-based script-src in production",
+  "evidence": "src/proxy.ts:133-137 frameSrcParts = [\"'self'\", 'https://js.stripe.com', 'https://hooks.stripe.com']. script-src includes https://js.stripe.com at lines 112 and 131. Production path uses nonce + strict-dynamic. HSTS at line 160 max-age=63072000 includeSubDomains preload.",
+  "recommendation": "No action required.",
+  "fileHint": "src/proxy.ts:133"
+ },
+ {
+  "n": 53,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 7 and 8 — API keys in correct place; no test/live mixing",
+  "type": "bug",
+  "title": "PASS — STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET never under NEXT_PUBLIC_ prefix; boot-time live/test segregation enforced",
+  "evidence": "src/lib/env.ts:225-248 STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are server-only schema fields. NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY at line 236 is the only client-visible key. Cross-validation at lines 638-653 refuses sk_live_ when NODE_ENV != production and refuses STRIPE_LIVE_MODE mismatch. Webhook route step 4 (route.ts:406) rejects livemode mismatch with audit emit.",
+  "recommendation": "No action required.",
+  "fileHint": "src/lib/env.ts:225"
+ },
+ {
+  "n": 54,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 9 — idempotency keys on state-changing Stripe requests",
+  "type": "bug",
+  "title": "PASS — Idempotency keys present on createPaymentIntent and createRefund",
+  "evidence": "src/modules/payments/infrastructure/stripe/stripe-gateway.ts:323-333 createPaymentIntent passes idempotencyKey to SDK. Line 521 createRefund passes idempotencyKey. initiate-payment.ts:536 key format inv-{invoiceId}-attempt-{seq}. processor_events table (schema.ts:172) provides webhook idempotency via natural PK = Stripe event id.",
+  "recommendation": "No action required.",
+  "fileHint": "src/modules/payments/infrastructure/stripe/stripe-gateway.ts:323"
+ },
+ {
+  "n": 55,
+  "module": "compliance:pci-payments",
+  "dimension": "PCI SAQ-A Red Line 10 — 3DS/SCA configuration",
+  "type": "bug",
+  "title": "PASS — 3DS/SCA handled: requires_action state + client-side poll loop via useThreeDSecurePoll",
+  "evidence": "card-form.tsx:198 routes pi.status === 'requires_action' to onRequiresAction. src/hooks/use-three-d-secure-poll.ts polls stripe.retrievePaymentIntent every 2s (THREE_DS_POLL_INTERVAL_MS), 150 iterations = 5-min cap. pay-sheet-internal.tsx wires both card and PromptPay into the same poll hook. PaymentElement automatically handles 3DS challenges via Stripe iframe mechanism.",
+  "recommendation": "No action required.",
+  "fileHint": "card-form.ts"
+ },
+ {
+  "n": 56,
+  "module": "compliance:pdpa-pii",
+  "dimension": "consent mechanics",
+  "type": "missing",
+  "title": "Broadcasts consent banner: acknowledgement stores locale but not consent notice version",
+  "evidence": "src/modules/broadcasts/application/use-cases/acknowledge-broadcasts-terms.ts:147-155 — the member_acknowledged_broadcasts_terms audit payload stores memberId, userId, acknowledgedAt, bannerLocale. It does not store a consent notice version or URL. The members.broadcasts_acknowledged_at column (schema-members.ts:116) similarly has no associated version column. The banner content lives in i18n messages, which may change over time.",
+  "recommendation": "Add a notice_version field to the audit payload (e.g. a short hash of the banner text at time of acknowledgement, or a semantic version string maintained in i18n config). Add a broadcasts_terms_notice_version text column to the members table. This provides a durable record linking the acknowledgemen",
+  "fileHint": "src/modules/broadcasts/application/use-cases/acknowledge-broadcasts-terms.ts:147"
+ },
+ {
+  "n": 57,
+  "module": "journey:admin",
+  "dimension": "ux",
+  "type": "defect",
+  "title": "Smart-insight 'at_risk_followup' line is informational text with a scopeRef but no link to act on it",
+  "evidence": "computeDashboardSnapshot emits at_risk_followup with a count (src/modules/insights/application/use-cases/compute-dashboard-snapshot.ts:105) and the page threads scopeRef into the InsightLine (src/app/(staff)/admin/page.tsx:222-226). But InsightsPanel renders the line as a plain <span>{line.text}</span> with only a dismiss button (src/components/dashboard/insights-panel.tsx:45) — no navigation to the affected members.",
+  "recommendation": "Make insights with a known scope clickable (wrap in a Link to the relevant filtered list, e.g. the at-risk members view) while keeping the dismiss control. Keep non-navigable insights as text.",
+  "fileHint": "src/modules/insights/application/use-cases/compute-dashboard-snapshot.ts:105"
+ },
+ {
+  "n": 58,
+  "module": "journey:manager",
+  "dimension": "ux",
+  "type": "missing",
+  "title": "Manager sidebar shows the same nav as admin; combined with the detail-page issue there is no role-level signal that the staff surface is read-only",
+  "evidence": "src/config/nav.ts:34-36 documents that NavItem.roles is 'Type-only for now — filtering logic deferred until a role-differentiated nav item exists', and staffNavConfig (lines 95-238) sets no per-role visibility; src/components/layout/staff-sidebar consumes the config unfiltered. The admin layout (src/app/(staff)/admin/layout.tsx:30-35) only distinguishes member→redirect, not admin vs manager. So a manager sees Plans, Members, Invoices, Broadcasts, Users, Settings, etc. identical to admin.",
+  "recommendation": "Out of scope for a point-fix, but consider a single persistent 'Read-only' role indicator in the staff header (the UserMenu already receives role at layout.tsx:67) so the constraint is communicated proactively rather than discovered per-action. This is a polish/backlog item, not a launch blocker.",
+  "fileHint": "src/config/nav.ts:34"
+ },
+ {
+  "n": 59,
+  "module": "journey:member",
+  "dimension": "ux",
+  "type": "defect",
+  "title": "Invitation dead-link offers no self-service recovery and the page-level dead-token branch lacks the 'contact admin' guidance the form branch has",
+  "evidence": "On a dead/expired token the page (src/app/(auth-public)/invite/[token]/page.tsx:78-86) renders only `t('errors.tokenExpired')` inside the alert. The form's own link-invalid branch (src/components/auth/invite-redeem-form.tsx:154-164) additionally renders `t('errors.contactAdminCta')` ('contact administrator to request a new link'). The two dead-token surfaces are inconsistent: a token that is dead at page-load gives the member less guidance than one that goes dead at submit.",
+  "recommendation": "Add `t('errors.contactAdminCta')` to the page-level dead-token alert block so both invitation dead-token surfaces render the same recovery guidance.",
+  "fileHint": "/page.ts"
+ }
+]

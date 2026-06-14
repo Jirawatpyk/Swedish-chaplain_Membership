@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Folder name caveat**: the directory is historically `Swedish chaplain_membership`. "chaplain" is a typo for "chamber". Refer to the product as **Chamber-OS** (platform) or **SweCham / TSCC** (first tenant), never "chaplain". Rename is tracked as R6 in `docs/phases-plan.md` (manual action — cannot be done from inside the active working directory).
 
-**Repository status (as of 2026-05-22)**: **F1–F8 SHIPPED.** F1 Auth & RBAC (PR #1) · F2 Membership Plans · F3 Members & Contacts · F4 Invoices & Receipts · F5 Online Payment / Stripe + PromptPay (PR #16) · F6 EventCreate Integration (PR #26, flag-flipped to production 2026-05-19) · F7 Email Broadcast / E-Blast (PR #23) · F8 Renewal Tracking + Smart Reminders (PR #24). **Current branch: `014-email-broadcast-advance`** (F7.1a/b Email Broadcast Advanced — pagination + image upload + template library) — review-clean + staff-review-clean; only ship-day operator gates remain (ClamAV Fly.io deploy, Vercel env vars, cron-job.org coordinators, staging QA, flag-flip sequence). See § Recent Changes for full per-feature provenance and the human-gated residuals on each feature. Source modules: `src/modules/auth/**` (F1) · `src/modules/tenants/**` + `src/modules/plans/**` (F2) · `src/modules/members/**` (F3) · `src/modules/invoicing/**` (F4) · `src/modules/payments/**` (F5) · `src/modules/events/**` (F6) · `src/modules/broadcasts/**` (F7/F7.1) · `src/modules/renewals/**` (F8) · `src/modules/insights/**` (F9 — admin dashboard, audit viewer, timeline, benefit usage, directory + E-Book/JSON export; on branch `015-admin-dashboard`) · presentation in `src/app/(staff)/admin/**` + `src/app/(member)/portal/**` + `src/components/layout/**`.
+**Repository status (as of 2026-06-06)**: **F1–F8 SHIPPED; F9 + member-number in progress.** F1 Auth & RBAC (PR #1) · F2 Membership Plans · F3 Members & Contacts · F4 Invoices & Receipts · F5 Online Payment / Stripe + PromptPay (PR #16) · F6 EventCreate Integration (PR #26, flag-flipped to production 2026-05-19) · F7 Email Broadcast / E-Blast (PR #23) · F8 Renewal Tracking + Smart Reminders (PR #24). **Current branch: `055-member-number`** (per-tenant `SCCM-NNNN` member numbers surfaced across the Members directory, command palette, portal badge, and F4 tax PDFs). The **launch-gating workstream is F9 (insights / admin-dashboard, spec `015-admin-dashboard`)** — `docs/go-live-readiness.md` (the master launch plan) locks launch scope at F1–F9 and is ON HOLD until `015-admin-dashboard` merges to `main`. See § Recent Changes for full per-feature provenance and the human-gated residuals on each feature. Source modules: `src/modules/auth/**` (F1) · `src/modules/tenants/**` + `src/modules/plans/**` (F2) · `src/modules/members/**` (F3) · `src/modules/invoicing/**` (F4) · `src/modules/payments/**` (F5) · `src/modules/events/**` (F6) · `src/modules/broadcasts/**` (F7/F7.1) · `src/modules/renewals/**` (F8) · `src/modules/insights/**` (F9 — admin dashboard, audit viewer, timeline, benefit usage, directory + E-Book/JSON export; on branch `015-admin-dashboard`) · presentation in `src/app/(staff)/admin/**` + `src/app/(member)/portal/**` + `src/components/layout/**`.
 
 ## Language for AI sessions
 
@@ -16,13 +16,13 @@ User prefers **Thai** for conversational turns. Code, specs, commit messages, an
 
 ## Governance — read before proposing architecture changes
 
-- `.specify/memory/constitution.md` — **v1.4.0** (amended 2026-04-11; v1.4.0 MINOR adds explicit SaaS tenant-isolation requirements under Principle I with 5 sub-clauses: app-layer, db-layer, integration test, audit, super-admin), authoritative. 10 principles (4 NON-NEGOTIABLE: Data Privacy & Security, Test-First, Clean Architecture, PCI DSS) plus 6 Core (i18n, Inclusive UX, Perf & Observability, Reliability, Code Quality, Simplicity). Principle I now requires **two-layer tenant isolation** (application + database) with a mandatory cross-tenant integration test as a Review-Gate blocker. Principle III requires every `src/modules/*` module to ship a public barrel + ESLint `no-restricted-imports` rule. Principle IX + Gate 9 + § Governance + § Development Workflow Additional rules carry a **solo-maintainer substitute** clause for the default ≥2-reviewers + no-direct-push rules, applicable when no second human reviewer is available. Amendments go through a PR with ≥2 maintainer approvals (or the solo-maintainer substitute) + a Sync Impact Report.
+- `.specify/memory/constitution.md` — **v1.4.2** (current), authoritative. v1.4.0 (MINOR, 2026-04-11) added explicit SaaS tenant-isolation requirements under Principle I with 5 sub-clauses (app-layer, db-layer, integration test, audit, super-admin); v1.4.1 + v1.4.2 are PATCH amendments (solo-maintainer co-sign footer-template precedent — no principle added, removed, or redefined). 10 principles (4 NON-NEGOTIABLE: Data Privacy & Security, Test-First, Clean Architecture, PCI DSS) plus 6 Core (i18n, Inclusive UX, Perf & Observability, Reliability, Code Quality, Simplicity). Principle I now requires **two-layer tenant isolation** (application + database) with a mandatory cross-tenant integration test as a Review-Gate blocker. Principle III requires every `src/modules/*` module to ship a public barrel + ESLint `no-restricted-imports` rule. Principle IX + Gate 9 + § Governance + § Development Workflow Additional rules carry a **solo-maintainer substitute** clause for the default ≥2-reviewers + no-direct-push rules, applicable when no second human reviewer is available. Amendments go through a PR with ≥2 maintainer approvals (or the solo-maintainer substitute) + a Sync Impact Report.
 - Every `/speckit.plan` runs a **Constitution Check** against all 10 principles. Any deviation lives in `plan.md` § Complexity Tracking with a rejected simpler alternative — unjustified violations block the gate.
 - The escape clause that allows Singapore hosting (Constitution § Compliance: Hosting & Residency) is used by F1. See `specs/001-auth-rbac/plan.md` Complexity Tracking.
 
 ## Key project docs (read in this order for context)
 
-1. `.specify/memory/constitution.md` — principles and quality gates (v1.4.0, includes SaaS tenant-isolation requirements under Principle I)
+1. `.specify/memory/constitution.md` — principles and quality gates (v1.4.2; SaaS tenant-isolation requirements under Principle I added in v1.4.0)
 2. `docs/phases-plan.md` — **10 core + 4 SaaS = 14 features** across 5 phases. Includes 6 resolved decisions (SV+EN+TH locales, TH-primary hosting, Stripe, 3 roles, no day-1 Excel migration, folder rename) + 2026-04-11 SaaS pivot update + scope boundary vs `swecham.com`.
 3. `docs/saas-architecture.md` — **multi-tenant strategy (MTA+STD)**, Postgres RLS, auth model (cross-tenant users, tenant-scoped membership), billing layers, white-label scope, migration path, pricing vision. Read this before designing any F2+ feature.
 4. `docs/membership-benefits-analysis.md` — authoritative 2026 Membership Package tier data from the PDF (6 corporate + 3 partnership tiers, full benefit matrix, data model, Q1–Q5 for F2 clarify). **Supersedes the deleted `docs/database-analysis.md`** which was Excel-derived and inaccurate.
@@ -32,6 +32,7 @@ User prefers **Thai** for conversational turns. Code, specs, commit messages, an
 8. `docs/ux-standards.md` — enterprise UX playbook (shimmer skeletons, toasts, confirmation dialogs, idle warning, theming, keyboard & focus management). F1 auth screens MUST pass the § 15 checklist before merge.
 9. `docs/observability.md` — metrics, SLOs, alerts, log schema
 10. `specs/001-auth-rbac/` — F1 feature bundle (shipped via PR #1)
+11. `docs/go-live-readiness.md` — **master launch plan** (F1–F9 launch scope, ON HOLD until `015-admin-dashboard` merges); `docs/code-conventions.md` + `docs/ux-patterns.md` — coding + UX conventions added post-MVP
 
 **Note**: `docs/database-analysis.md` was **deleted 2026-04-11** — it was Excel-derived and known to be inaccurate after the 2026 Membership Package PDF was provided. The reusable analyzer script lives at `.specify/scripts/analyze_excel.py`. Git history preserves the old content.
 
@@ -151,7 +152,7 @@ Coverage thresholds (enforced in `vitest.config.ts`): Domain 100% line; Applicat
 One-off: bootstrap the first admin (safe to re-run — refuses if any admin exists):
 
 ```bash
-BOOTSTRAP_ADMIN_EMAIL=first.admin@swecham.example pnpm tsx scripts/seed-bootstrap-admin.ts
+BOOTSTRAP_ADMIN_EMAIL=first.admin@swecham.example pnpm db:seed-admin
 ```
 
 Vercel workflow:
@@ -179,7 +180,7 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 
 - **TDD**: failing test → commit red → implement → commit green. Every user story in a spec MUST have ≥1 acceptance test authored before implementation starts.
 - **Contract tests** at every external and inter-module boundary (`tests/contract/`).
-- **Integration tests hit real Postgres** (Docker container on port 55432), not mocks — catches SQL, migration, and transaction bugs that mocks hide.
+- **Integration tests hit real Postgres** (local dev: live Neon Singapore via `DATABASE_URL` in `.env.local`; CI: Docker Postgres or a Neon branch), not mocks — catches SQL, migration, and transaction bugs that mocks hide. Run with `pnpm test:integration` (config `vitest.integration.config.ts`); the historical "Docker on port 55432" note is superseded.
 - A red test suite on `main` is a stop-the-line event — no new work until green.
 
 ## Conventions
@@ -282,4 +283,4 @@ Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived i
 - 012-eventcreate-integration: F6 EventCreate Integration SHIPPED (PR #26) + flag-flipped to production 2026-05-19 — CSV attendee import + webhook ingest + benefit-quota tracking; F8 at-risk bridge port live-wired.
 - 011-renewal-reminders: F8 Renewal Tracking + Smart Reminders SHIPPED (PR #24) — pipeline dashboard, tier-aware reminder schedule, 8-factor at-risk scoring, auto tier-upgrade, manual escalation queue.
 
-Last updated: 2026-05-25 (CLAUDE.md trimmed under 40k-char threshold; full history → docs/changelog.md)
+Last updated: 2026-06-06 (refreshed `db:*` command names, Constitution v1.4.2, integration-test source of truth, F9/member-number current status; full history → docs/changelog.md)

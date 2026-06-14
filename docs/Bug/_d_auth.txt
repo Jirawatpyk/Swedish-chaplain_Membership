@@ -1,0 +1,232 @@
+diff --git a/src/modules/auth/application/change-password.ts b/src/modules/auth/application/change-password.ts
+index 6f121d02..6bf31999 100644
+--- a/src/modules/auth/application/change-password.ts
++++ b/src/modules/auth/application/change-password.ts
+@@ -41,9 +41,9 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+ import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+ import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+-import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
++import { MalformedHashError } from '@/modules/auth/application/password-errors';
+ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
++import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
+ import { defaultChangePasswordDeps } from '@/lib/auth-deps';
+ 
+ // --- Public types -------------------------------------------------------------
+diff --git a/src/modules/auth/application/forgot-password.ts b/src/modules/auth/application/forgot-password.ts
+index 3c020061..7136ea57 100644
+--- a/src/modules/auth/application/forgot-password.ts
++++ b/src/modules/auth/application/forgot-password.ts
+@@ -34,7 +34,7 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+ import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
+ import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
++import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
+ import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
+ // `buildResetPasswordEmail` is a PURE template function (no DB, no
+ // network). The function VALUE is injected via `ForgotPasswordDeps`
+diff --git a/src/modules/auth/application/heartbeat.ts b/src/modules/auth/application/heartbeat.ts
+index 8cc19c5d..cb435665 100644
+--- a/src/modules/auth/application/heartbeat.ts
++++ b/src/modules/auth/application/heartbeat.ts
+@@ -28,7 +28,7 @@ import type { SessionToken } from '@/modules/auth/domain/branded';
+ // Type-only — see sign-in.ts for the Clean Architecture rationale.
+ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
++import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
+ import { defaultHeartbeatDeps } from '@/lib/auth-deps';
+ import { sha256Hex } from '@/lib/crypto';
+ 
+diff --git a/src/modules/auth/application/password-errors.ts b/src/modules/auth/application/password-errors.ts
+new file mode 100644
+index 00000000..35c3482a
+--- /dev/null
++++ b/src/modules/auth/application/password-errors.ts
+@@ -0,0 +1,21 @@
++/**
++ * Application-layer password error type — go-live audit S1-P1-13.
++ *
++ * `MalformedHashError` is thrown by the Infrastructure hasher
++ * (`argon2-hasher.ts`) but inspected by Application use-cases (sign-in,
++ * change-password) to distinguish "wrong password" from "stored hash is
++ * corrupt". It lived in Infrastructure, so the use-cases imported an
++ * Infrastructure VALUE — a Principle III (Clean Architecture, NON-NEGOTIABLE)
++ * violation. Moved here so the use-cases depend only on the Application layer;
++ * the hasher imports + re-exports it for back-compat.
++ *
++ * Pure TypeScript — no framework/ORM imports.
++ */
++export class MalformedHashError extends Error {
++  override readonly cause: unknown;
++  constructor(cause: unknown) {
++    super('argon2 verify: malformed hash');
++    this.name = 'MalformedHashError';
++    this.cause = cause;
++  }
++}
+diff --git a/src/modules/auth/application/rate-limit-retry.ts b/src/modules/auth/application/rate-limit-retry.ts
+new file mode 100644
+index 00000000..c0b81257
+--- /dev/null
++++ b/src/modules/auth/application/rate-limit-retry.ts
+@@ -0,0 +1,19 @@
++/**
++ * Application-layer `retryAfterSeconds` helper — go-live audit S1-P1-13.
++ *
++ * Derives the `Retry-After` value (seconds, floored at 1) from one or more
++ * rate-limit results. Used by six auth use-cases. It previously lived in the
++ * Infrastructure rate-limiter (`upstash-rate-limiter.ts`), so the use-cases
++ * imported an Infrastructure VALUE — a Principle III violation. Moved here.
++ *
++ * Decoupled from the full `RateLimitResult` shape — it only needs `reset` (the
++ * bucket-reset unix-ms), so it accepts the minimal `{ reset: number }`.
++ *
++ * Pure TypeScript — no framework/ORM imports.
++ */
++export function retryAfterSeconds(
++  ...results: ReadonlyArray<{ readonly reset: number }>
++): number {
++  const now = Date.now();
++  return Math.max(...results.map((r) => Math.ceil((r.reset - now) / 1000)), 1);
++}
+diff --git a/src/modules/auth/application/redeem-invite.ts b/src/modules/auth/application/redeem-invite.ts
+index bf19b618..a7d8ee64 100644
+--- a/src/modules/auth/application/redeem-invite.ts
++++ b/src/modules/auth/application/redeem-invite.ts
+@@ -54,7 +54,7 @@ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo'
+ import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+ import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
++import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
+ import { defaultRedeemInviteDeps } from '@/lib/auth-deps';
+ 
+ // --- Public types -------------------------------------------------------------
+diff --git a/src/modules/auth/application/reset-password.ts b/src/modules/auth/application/reset-password.ts
+index 4265e269..f179452c 100644
+--- a/src/modules/auth/application/reset-password.ts
++++ b/src/modules/auth/application/reset-password.ts
+@@ -62,7 +62,7 @@ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo'
+ import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+ import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
++import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
+ import type { Role } from '@/modules/auth/domain/role';
+ import { PORTAL_FOR_ROLE } from '@/modules/auth/domain/role';
+ import { defaultResetPasswordDeps } from '@/lib/auth-deps';
+diff --git a/src/modules/auth/application/sign-in.ts b/src/modules/auth/application/sign-in.ts
+index df2bb0aa..7fc9e0e4 100644
+--- a/src/modules/auth/application/sign-in.ts
++++ b/src/modules/auth/application/sign-in.ts
+@@ -57,9 +57,9 @@ import type { Session } from '@/modules/auth/domain/session';
+ // concrete Infrastructure singletons into its own module graph.
+ // Default wiring lives in the composition root (@/lib/auth-deps).
+ import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+-import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
++import { MalformedHashError } from '@/modules/auth/application/password-errors';
+ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+-import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
++import { retryAfterSeconds } from '@/modules/auth/application/rate-limit-retry';
+ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+ import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+diff --git a/src/modules/auth/index.ts b/src/modules/auth/index.ts
+index 39c0de2f..0be7867d 100644
+--- a/src/modules/auth/index.ts
++++ b/src/modules/auth/index.ts
+@@ -186,6 +186,8 @@ export type { EmailLocale } from './infrastructure/email/reset-password-email';
+ 
+ export type { AuditEventType, AuditEvent, ActorRef } from './domain/audit-event';
+ export { AUDIT_EVENT_TYPES, AUDIT_SUMMARY_MAX_LENGTH } from './domain/audit-event';
++// Canonical FULL cross-module audit-event-type list (S1-P1-7) — see schema.ts.
++export { ALL_AUDIT_EVENT_TYPES } from './infrastructure/db/schema';
+ 
+ // F9 activity feed (FR-003) — read-only recent-audit-events reader.
+ export {
+diff --git a/src/modules/auth/infrastructure/db/schema.ts b/src/modules/auth/infrastructure/db/schema.ts
+index a44bbb82..141b686f 100644
+--- a/src/modules/auth/infrastructure/db/schema.ts
++++ b/src/modules/auth/infrastructure/db/schema.ts
+@@ -303,6 +303,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
+   'insights_cross_tenant_probe',
+ ]);
+ 
++/**
++ * Canonical FULL set of audit-event-type codes. Every module writes to this one
++ * `audit_event_type` pg enum, so its values are the complete cross-module list
++ * (auth + F2..F9). Surfaced through the auth barrel for the audit-viewer filter
++ * (S1-P1-7) — which must list every type that can appear in `audit_log`, not
++ * just auth/payment codes. Sorted for a stable dropdown order.
++ */
++export const ALL_AUDIT_EVENT_TYPES: readonly string[] = [
++  ...auditEventTypeEnum.enumValues,
++].sort();
++
+ export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
+   'verification',
+   'revert',
+diff --git a/src/modules/auth/infrastructure/password/argon2-hasher.ts b/src/modules/auth/infrastructure/password/argon2-hasher.ts
+index 5ff463a1..abdecff2 100644
+--- a/src/modules/auth/infrastructure/password/argon2-hasher.ts
++++ b/src/modules/auth/infrastructure/password/argon2-hasher.ts
+@@ -30,6 +30,10 @@ import {
+   type PasswordHash,
+ } from '@/modules/auth/domain/branded';
+ import { logger } from '@/lib/logger';
++// S1-P1-13: `MalformedHashError` moved to the Application layer (use-cases
++// inspect it; Principle III forbids them importing an Infrastructure VALUE).
++// The hasher throws it + re-exports it here for existing consumers/tests.
++import { MalformedHashError } from '@/modules/auth/application/password-errors';
+ 
+ /**
+  * B4 (post-ship 2026-05-17) — typed error thrown by `verify` when the
+@@ -39,16 +43,9 @@ import { logger } from '@/lib/logger';
+  * skip the `incrementFailedCount` + lockout-trigger path — otherwise
+  * a DB corruption issue would lock the legitimate user out and the
+  * audit trail would read "user kept entering wrong password",
+- * misleading operators.
++ * misleading operators. Definition now in `application/password-errors.ts`.
+  */
+-export class MalformedHashError extends Error {
+-  override readonly cause: unknown;
+-  constructor(cause: unknown) {
+-    super('argon2 verify: malformed hash');
+-    this.name = 'MalformedHashError';
+-    this.cause = cause;
+-  }
+-}
++export { MalformedHashError };
+ 
+ // `@node-rs/argon2` exports `Algorithm` as an ambient const enum which
+ // trips Next.js' `isolatedModules: true`. We use the literal value:
+diff --git a/src/modules/auth/infrastructure/rate-limit/upstash-rate-limiter.ts b/src/modules/auth/infrastructure/rate-limit/upstash-rate-limiter.ts
+index f6dc4f7b..4e9acf5c 100644
+--- a/src/modules/auth/infrastructure/rate-limit/upstash-rate-limiter.ts
++++ b/src/modules/auth/infrastructure/rate-limit/upstash-rate-limiter.ts
+@@ -44,20 +44,8 @@ export interface RateLimitResult {
+   readonly fellBack: boolean;
+ }
+ 
+-/**
+- * C3 (post-ship 2026-05-17) — derived `retryAfterSeconds` from one or
+- * more rate-limit results. Six call sites previously duplicated the
+- * `Math.max(Math.ceil((reset - Date.now()) / 1000), 1)` formula (with
+- * the floor-at-1 invariant) — extracting it eliminates the silent-drift
+- * risk where one caller's "1 second minimum" diverges from another's.
+- */
+-export function retryAfterSeconds(...results: RateLimitResult[]): number {
+-  const now = Date.now();
+-  return Math.max(
+-    ...results.map((r) => Math.ceil((r.reset - now) / 1000)),
+-    1,
+-  );
+-}
++// S1-P1-13: `retryAfterSeconds` moved to `application/rate-limit-retry.ts` so
++// the six auth use-cases no longer import an Infrastructure VALUE (Principle III).
+ 
+ export interface RateLimiter {
+   /**

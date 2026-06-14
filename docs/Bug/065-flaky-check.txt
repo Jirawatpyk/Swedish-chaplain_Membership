@@ -1,0 +1,81 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781192919211,"service":"swecham-membership","env":"test","suggestionId":"5122e9ec-ad20-4112-b8cc-9d08669d6ec4","memberId":"4a80cdde-e51a-4d44-a2a8-5e4489346bd5","msg":"[accept-tier-upgrade] member has no primary-contact email — notify skipped + audit attempted"}
+{"level":"warn","time":1781192923009,"service":"swecham-membership","env":"test","suggestionId":"479e3fee-b334-46f3-8aa6-82aa51148d47","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192925726,"service":"swecham-membership","env":"test","suggestionId":"fc654723-aa6c-4746-a3f8-dc0aad6c6561","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192929639,"service":"swecham-membership","env":"test","suggestionId":"96974b5c-fab8-4a9a-85ef-51a910b9a9ce","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192932475,"service":"swecham-membership","env":"test","suggestionId":"8a96b447-117d-49f1-87bf-3df33559ecd7","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192935155,"service":"swecham-membership","env":"test","suggestionId":"0e1199c2-e3de-44c5-93aa-d8b16271e02e","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192938694,"service":"swecham-membership","env":"test","suggestionId":"3fe1ffdc-5280-4014-bb4b-1fcdf204e10a","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192941161,"service":"swecham-membership","env":"test","err":"synthetic_dispatch_lookup_crash:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","suggestionId":"59aac610-7f30-41b7-9fdb-5342a2ad8f30","msg":"[accept-tier-upgrade] gateway / lookup path threw — emitting failed audit"}
+{"level":"warn","time":1781192944077,"service":"swecham-membership","env":"test","suggestionId":"a67ebb22-698c-4549-8a8d-3ac11c39ec96","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192947230,"service":"swecham-membership","env":"test","suggestionId":"28a541b2-5efe-4dc0-a3ee-6d189711680a","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192951591,"service":"swecham-membership","env":"test","suggestionId":"3a97bb12-c6d9-4b36-ac2c-63eb2d062946","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192956505,"service":"swecham-membership","env":"test","suggestionId":"559f7620-be7b-4c06-bb5a-248688e28af7","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192959620,"service":"swecham-membership","env":"test","suggestionId":"1bb2ad22-c602-4897-996e-01e270b0b9cd","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192960081,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-f35e9e43","invoiceId":"56b430c0-456b-4271-8930-6de71ac6dd93","memberId":"da2e660f-491a-449a-8159-4384033a91cb","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"warn","time":1781192963674,"service":"swecham-membership","env":"test","suggestionId":"24b1ccbf-ae55-4342-a846-4ff3843ae2c5","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192963911,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-f35e9e43","invoiceId":"5164cf90-3b05-4356-97b4-d991ed028f77","memberId":"1c44d36b-bfaf-4a7c-ad85-d4987d742ff6","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"warn","time":1781192968273,"service":"swecham-membership","env":"test","suggestionId":"2f26e8e1-3d57-4b75-bfc0-e2237be2ba6d","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192968911,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-f35e9e43","invoiceId":"f69a1985-010d-4981-8ea1-1a0622af6fb0","memberId":"4b2544c2-4d8c-4354-a4af-68faddd38457","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"warn","time":1781192973668,"service":"swecham-membership","env":"test","suggestionId":"bcc67b34-6da6-41cd-8bbc-c51b0b0d37a7","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781192976324,"service":"swecham-membership","env":"test","suggestionId":"27117886-1c09-4111-bcdb-afd3c77c75ba","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"error","time":1781192976729,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-f35e9e43","invoiceId":"9f42f0cd-ce0d-48c3-a434-ba496f120029","memberId":"9b85e1e7-53c5-49f3-a9f7-611b199f1db6","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m17 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 64350[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR2-CRIT-3.A — accept with no primary contact emits notify_skipped audit [33m2310[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit[33m 3803[2mms[22m[31m[39m
+[31m     → expected 0 to be greater than or equal to 1[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22maccept happy path — pending state + scheduled-plan-change + audit [33m3051[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mT-180 verify task — created when expires_at > 180d [33m3743[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mT-180 skipped — no task when expires_at <= 180d [33m2671[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mapply at renewal — pending → applied + audit [33m3504[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mmanual override supersede — accepted_pending_apply → superseded + audit [33m3297[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)[33m 2058[2mms[22m[31m[39m
+[31m     → expected 'gateway_4xx' to be 'unknown' // Object.is equality[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011 concurrent Accept race — partial UNIQUE catches second writer + state remains pending exactly once [33m2915[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011b deterministic double-accept probe — CAS on transitionStatus rejects the stale-read second accepter [33m3850[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011c genuine concurrent-at-step-a — INSERT collision maps loser to suggestion_not_open (409) + one winner pending row [33m3850[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-013 manual-supersede on open suggestion — fromStatus=open + audit emitted [33m1579[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS7 stale-read race — concurrent accept then supersede MUST still supersede (set-membership CAS) [33m3303[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when the suggestion was superseded (cancelled upgrade) [33m4113[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block) [33m4528[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mFix A S1 retry-heal — F2 finaliser heals a stranded pending row even when F8 apply no-ops on the retry (suggestion already applied) [33m4660[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mFix A re-accept precision — F2 finaliser flips suggestion2 pending→applied even when a SUPERSEDED suggestion1 also targets the cycle [33m8097[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit
+[31m[1mAssertionError[22m: expected 0 to be greater than or equal to 1[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m370:33[22m[39m
+    [90m368| [39m        )[33m,[39m
+    [90m369| [39m    )[33m;[39m
+    [90m370| [39m    [34mexpect[39m(notifyAudits[33m.[39mlength)[33m.[39m[34mtoBeGreaterThanOrEqual[39m([34m1[39m)[33m;[39m
+    [90m   | [39m                                [31m^[39m
+    [90m371| [39m  }[33m,[39m [34m60_000[39m)[33m;[39m
+    [90m372| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)
+[31m[1mAssertionError[22m: expected 'gateway_4xx' to be 'unknown' // Object.is equality[39m
+
+Expected: [32m"unknown"[39m
+Received: [31m"gateway_4xx"[39m
+
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m666:35[22m[39m
+    [90m664| [39m        }
+    [90m665| [39m      [33m|[39m [35mnull[39m[33m;[39m
+    [90m666| [39m    [34mexpect[39m(payload[33m?.[39mfailure_kind)[33m.[39m[34mtoBe[39m([32m'unknown'[39m)[33m;[39m
+    [90m   | [39m                                  [31m^[39m
+    [90m667| [39m    [34mexpect[39m(payload[33m?.[39mrecipient_email_hashed)[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m668| [39m    [34mexpect[39m(payload[33m?.[39mfailure_message)[33m.[39m[34mtoMatch[39m([36m/synthetic_dispatch_looku[39m…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 22:48:22
+[2m   Duration [22m 78.98s[2m (transform 3.90s, setup 29ms, collect 12.98s, tests 64.35s, environment 0ms, prepare 132ms)[22m
+

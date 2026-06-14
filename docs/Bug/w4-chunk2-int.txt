@@ -1,0 +1,21 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781153704167,"service":"swecham-membership","env":"test","outboxRowId":"a008e3b9-92e3-40e9-b1b7-300db53f8c77","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"warn","time":1781153704663,"service":"swecham-membership","env":"test","outboxRowId":"f5c1acdf-9567-420d-85a9-5eb8f0b501ae","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"info","time":1781153704748,"service":"swecham-membership","env":"test","requestId":"019eb508-a499-7658-9492-cf07193a8d6a","inspected":3,"sent":0,"retried":2,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"error","time":1781153710495,"service":"swecham-membership","env":"test","outboxRowId":"b0207ccf-3a19-4bca-aefd-9f7ef60cae17","expectedSha":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","actualShaPrefix":"5f78c33274e43fa9","msg":"cron.outbox_dispatch.invoice_voided.attachment_sha_mismatch"}
+{"level":"info","time":1781153710778,"service":"swecham-membership","env":"test","requestId":"019eb508-c0f8-7703-8612-e6a0cb1d0c18","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/auto-email-outbox.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 18188[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(1) + (4a) issue enqueues invoice_auto_email[invoice_issued]; admin resend adds fresh invoice_pdf_resent row + timeline audit [33m1916[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4b) resend receipt after recordPayment → receipt_pdf_resent outbox + audit WITHOUT member_id [33m4382[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed [33m3656[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4c) portal member-mismatch → no outbox row, probe audit lands, opaque not_found [33m3607[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(R18-01) dispatcher permanently-fails invoice_voided row when prefetched bytes sha256 mismatches expected_pdf_sha256 [33m2451[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 11:54:45
+[2m   Duration [22m 29.91s[2m (transform 3.16s, setup 26ms, collect 10.22s, tests 18.19s, environment 0ms, prepare 109ms)[22m
+

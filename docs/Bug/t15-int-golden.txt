@@ -1,0 +1,14 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/invoicing/event-invoice-pdf-golden.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 6582[2mms[22m[39m
+   [33m[2m✓[22m[39m 054 Task 9 — event-invoice PDF golden (§86/4 doc-type render)[2m > [22m(i) event + buyer TIN → title ใบกำกับภาษี / Tax Invoice, inclusive line + amounts + VAT-included annotation + buyer Tax ID [33m318[2mms[22m[39m
+   [33m[2m✓[22m[39m 064 Task 14 — as-paid PDF goldens via the REAL chain (live Neon)[2m > [22m(i) TIN as-paid → combined title, document date = BACKDATED paymentDate (CE face + BE display year), AS-VAT-01 amounts + VAT-included, invoice-stream number [33m1095[2mms[22m[39m
+   [33m[2m✓[22m[39m 064 Task 14 — as-paid PDF goldens via the REAL chain (live Neon)[2m > [22m(ii) no-TIN as-paid → §105 receipt title, RC receipt-stream number on the face, same VAT-inclusive breakdown, NO buyer Tax ID line [33m1090[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m 02:07:13
+[2m   Duration [22m 19.73s[2m (transform 3.22s, setup 24ms, collect 11.72s, tests 6.58s, environment 0ms, prepare 108ms)[22m
+

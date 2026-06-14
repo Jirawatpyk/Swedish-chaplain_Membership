@@ -1,0 +1,89 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/architecture/broadcasts-barrel.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1212[2mms[22m[39m
+   [33m[2m✓[22m[39m broadcasts module barrel — architecture guard (R1.3-S2)[2m > [22mforbids NEW deep imports from src/app/** + src/components/** into broadcasts internals [33m1206[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/invoicing-presentation-imports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1611[2mms[22m[39m
+   [33m[2m✓[22m[39m invoicing module barrel — presentation deep-import guard (065 item 6)[2m > [22mforbids NEW deep imports from src/app/** + src/components/** into invoicing internals [33m1281[2mms[22m[39m
+   [33m[2m✓[22m[39m invoicing module barrel — presentation deep-import guard (065 item 6)[2m > [22mthe application/domain layers carry exactly ONE sanctioned deep import (the codes leaf) [33m325[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/portal-invoices-page-errors.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[90m 72[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/invoice-filters-props.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 496[2mms[22m[39m
+   [33m[2m✓[22m[39m <InvoiceFilters> — admin defaults (unchanged)[2m > [22mrenders the full status vocabulary incl. draft + overdue by default [33m339[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-table.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[33m 491[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-more-menu.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 221[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/insights-barrel.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1112[2mms[22m[39m
+   [33m[2m✓[22m[39m insights module barrel — architecture guard (verify F1)[2m > [22mforbids deep imports from src/app/** + src/components/** into insights internals [33m1107[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-attendee-picker.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 415[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/application-layer-imports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 277[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/non-member-buyer-fields.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[90m 235[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/recent-activity-section.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/issue-error-status.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-fee-form.test.tsx [2m([22m[2m60 tests[22m[2m)[22m[33m 14172[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mfetches attendees for the pre-selected event and renders the picker [33m443[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → read-only buyer + pre-filled amount + VAT preview [33m542[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → doc-type badge shows "set at issue" (TIN unknown client-side) [33m473[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with a TIN → doc-type badge flips to Tax Invoice [33m480[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member submit posts the buyer object + no amountOverride when price untouched [33m685[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member submit posts amountOverride when the price was edited (bill_first) [33m500[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22m409 → opens the soft-duplicate dialog instead of redirecting [33m418[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with empty buyer → inline errors + no POST [33m399[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid registration → already_paid pre-selected, payment fields visible, two-step POST [33m447[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22missue-as-paid failure → mapped error toast + draft-remains notice + Retry action + still lands on the draft [33m448[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22missue-as-paid 422 payment_date_too_old → mapped error toast (wave-3 S10 typo-year guard) [33m388[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mS6: clicking the toast Retry re-POSTs issue-as-paid; on success → success toast + happy-path navigation [33m486[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mS6: invoice_already_issued failure → draft-remains toast WITHOUT a Retry action (row already final) [33m510[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mS4/M-3: network rejection on the issue-as-paid POST → CONNECTION copy (not unknown) WITH draft-remains + retry; lands on the draft; no unhandled rejection [33m424[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mM-3: HTTP failure WITHOUT an error code → codeFallback interpolates the HTTP status (HTTP_500), draft-remains + retry [33m393[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mM-1: 201 with a BROKEN body → draft-remains toast WITHOUT retry (no id) + lands on the invoice LIST; issue-as-paid never fires [33m438[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mS4: network rejection on the FIRST (event-draft) POST → plain unknown-error toast, no navigation [33m418[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mW0: a backdated payment date resets to Bangkok-today when a DIFFERENT attendee is selected [33m395[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mW2: reference + notes thread into the issue-as-paid body (and reset on attendee switch) [33m662[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mW2: blank reference/notes are OMITTED from the issue-as-paid body (route records null) [33m519[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mB5: matched member with buyerHasTin=false → no-TIN rules (bill_first aria-disabled + visible reason) [33m437[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mB5: matched member with buyerHasTin=true → bill_first selectable (explicit server truth) [33m416[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mB5: buyerHasTin ABSENT (older API shape) → legacy matched⇒has-TIN guess keeps bill_first selectable [33m351[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mrefunded registration → hard-block card, no mode selector, submit disabled [33m368[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpending non-member without TIN → waiting explainer + bill_first disabled; typing a TIN flips the default to bill_first [33m510[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind) [33m440[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria) [33m401[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with an empty payment date → inline dateRequired error, no POST [33m491[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with a future payment date → inline dateFuture error, no POST [33m504[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mbackdated payment date in a closed ภ.พ.30 period → non-blocking warning visible, submit stays enabled [33m397[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mtoday's payment date → no ภ.พ.30 warning; warning clears when the date returns to an open period [33m373[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-create-switcher.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 624[2mms[22m[39m
+   [33m[2m✓[22m[39m <InvoiceCreateSwitcher>[2m > [22mrenders a 2-option radiogroup (Membership default + Event fee) [33m414[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid-f8.contract.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 17922[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/issue-as-paid-error-i18n.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 142[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/email-failure-alert.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 413[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/benefits-tab-param.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-stats.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/pay-route-guard.contract.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 18046[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-route-guard.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 26163[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/invoice-row-view-model.test.ts [2m([22m[2m35 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/event-draft.contract.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 31974[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid.contract.test.ts [2m([22m[2m30 tests[22m[2m)[22m[33m 32090[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 314[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/parse-status-filter.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/e-blasts-redirect.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 47[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/payment-timeline-date.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/events-barrel.test.ts [2m([22m[2m47 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/legacy-no-tin.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-reads.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/portal-serialise-member.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5582[2mms[22m[39m
+   [33m[2m✓[22m[39m portal GET /api/portal/profile serialiseMember[2m > [22memits member_number and preserves the redaction whitelist [33m5578[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m33 passed[39m[22m[90m (33)[39m
+[2m      Tests [22m [1m[32m385 passed[39m[22m[90m (385)[39m
+[2m   Start at [22m 15:56:28
+[2m   Duration [22m 54.55s[2m (transform 17.82s, setup 15.63s, collect 167.29s, tests 153.84s, environment 64.09s, prepare 14.59s)[22m
+

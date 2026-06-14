@@ -1,0 +1,77 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/invoicing/domain/member-identity-snapshot.test.ts [2m([22m[2m39 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobNotFoundError: blob not found","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":true,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Upstream 404 Not Found","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":true,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Connection refused","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":false,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"string-style not found error","invoiceId":"i","tenantId":"t","blobKey":"invoicing/t/2026/i_receipt_v1.pdf","notFound":true,"msg":"getReceiptPdfSignedUrl: blob sign failed"}
+ [32m✓[39m tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 43[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobNotFoundError: blob not found","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":true,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+ [32m✓[39m tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 59[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Upstream 404 Not Found","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":true,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Connection refused","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":false,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"string-style not found error","invoiceId":"i","tenantId":"t","blobKey":"tenants/t/invoices/i/v1.pdf","notFound":true,"msg":"getInvoicePdfSignedUrl: blob sign failed"}
+ [32m✓[39m tests/unit/invoicing/create-event-invoice-draft.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-auto-email.test.ts [2m([22m[2m30 tests[22m[2m)[22m[90m 284[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-pdf.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/invoice.test.ts [2m([22m[2m52 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m tests/contract/f4-on-paid-callbacks.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/record-payment-async-pdf.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 43[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","tenantId":"test-swecham","invoiceId":"00000000-0000-0000-0000-000000000001","invoiceSubject":"event","msg":"issueCreditNote: event invoice missing event_registration_id (corrupted row) — rejecting"}
+ [32m✓[39m tests/unit/invoicing/issue-credit-note.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 128[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/record-payment.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 161[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/issue-invoice.test.ts [2m([22m[2m39 tests[22m[2m)[22m[90m 255[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/issue-event-invoice-as-paid.test.ts [2m([22m[2m58 tests[22m[2m)[22m[33m 331[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/render-receipt-pdf.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/export-paid-invoices-csv.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/create-invoice-draft.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/void-invoice.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice-for-payment.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/calculate-credit-note-vat.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 57[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/audit-port-non-member-compile-guard.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-state-machine.test.ts [2m([22m[2m30 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/update-invoice-draft.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/calculate-pro-rate-factor.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/value-objects-and-helpers.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/derive-overdue.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/event-registration-lookup-adapter.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/money.test.ts [2m([22m[2m26 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/load-tenant-logo.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/credit-note.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/row-to-subject-fields-malformed.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/enforce-credit-cannot-exceed-remainder.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/event-details-lookup-adapter.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice-for-payment.prop.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/pdf-union-partial-state.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/enforce-one-subject-line.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/document-kind.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/f4-invoice-paid-event.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-line.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/compose-buyer-address.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/domain/vat-inclusive.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/sanitise-error-reason.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/pro-rate-policy.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/document-number.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/serialise-no-blob-key.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/application/create-event-invoice-draft-member-number.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/logo-blob-key-guard.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-authz-policy.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/calculate-vat.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/fiscal-year.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/vat-rate.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/deterministic-render.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-variant-for-failed-event.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/kill-switch-async-receipt-pdf.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/barrel-exports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 15384[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 barrel — F5 bridge export surface (T010–T014)[2m > [22mre-exports the 3 F5 bridge use-cases + Money aliased as AmountSatang [33m15378[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/list-invoices-by-member.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resolve-invoice-event-copy.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m57 passed[39m[22m[90m (57)[39m
+[2m      Tests [22m [1m[32m742 passed[39m[22m[90m (742)[39m
+[2m   Start at [22m 11:43:09
+[2m   Duration [22m 59.59s[2m (transform 24.92s, setup 46.73s, collect 182.56s, tests 17.62s, environment 86.82s, prepare 51.01s)[22m
+

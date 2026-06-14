@@ -1,0 +1,48 @@
+diff --git a/src/app/api/cron/insights/process-export-jobs/route.ts b/src/app/api/cron/insights/process-export-jobs/route.ts
+index 845e03ec..cad9ce73 100644
+--- a/src/app/api/cron/insights/process-export-jobs/route.ts
++++ b/src/app/api/cron/insights/process-export-jobs/route.ts
+@@ -86,7 +86,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
+         });
+       }
+       const did = await runInTenant(tenant, (tx) => repo.markExpiredInTx(tx, jobId));
+-      if (did) expired += 1;
++      if (did) {
++        expired += 1;
++        // S1-P1-15: emit the registered `data_export_expired` audit event — it
++        // was declared (5y retention) + listed in SC-004 completeness but never
++        // emitted, so an auditor saw exports created/delivered but never expired.
++        // Best-effort (timeline completeness only); never fails the tick.
++        await deps.audit
++          .record({
++            tenantId: tenant.slug,
++            requestId: null,
++            eventType: 'data_export_expired',
++            actorUserId: 'system:cron',
++            retentionYears: 5,
++            summary: `Data export artefact expired + swept (job ${jobId})`,
++            payload: { job_id: jobId },
++          })
++          .catch(() => {});
++      }
+     }
+ 
+     const durationMs = Date.now() - startedAt;
+diff --git a/src/modules/insights/infrastructure/sources/gdpr-archive-source-adapter.ts b/src/modules/insights/infrastructure/sources/gdpr-archive-source-adapter.ts
+index 0a4e4406..d5bf6315 100644
+--- a/src/modules/insights/infrastructure/sources/gdpr-archive-source-adapter.ts
++++ b/src/modules/insights/infrastructure/sources/gdpr-archive-source-adapter.ts
+@@ -273,6 +273,13 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
+         legalEntityType: member.legalEntityType,
+         country: member.country,
+         taxId: member.taxId,
++        // S1-P1-12: postal address (migration 0195) — part of the data
++        // subject's profile, required for GDPR Art. 20 portability completeness.
++        addressLine1: member.addressLine1,
++        addressLine2: member.addressLine2,
++        city: member.city,
++        province: member.province,
++        postalCode: member.postalCode,
+         website: member.website,
+         description: member.description,
+         foundedYear: member.foundedYear,

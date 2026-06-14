@@ -1,0 +1,124 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/renewals/domain/tier-upgrade-suggestion.test.ts [2m([22m[2m24 tests[22m[2m)[22m[90m 86[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/value-objects/value-objects.test.ts [2m([22m[2m35 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/at-risk-score.test.ts [2m([22m[2m35 tests[22m[2m)[22m[90m 109[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/verify-renewal-link-token.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/detect-bounce-threshold.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 53[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/retry-failed-reminders.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 63[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/resend-transactional-renewal-gateway.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 110[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"CTE query timed out","tenantId":"tenantA","memberId":"00000000-0000-0000-0000-00000000a154","msg":"[compute-at-risk-score] scorer threw — propagating to cron for partial-failure audit"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[compute-at-risk-score] audit emit failed inside tx — rolling back"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/compute-at-risk-score.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/_lib/dispatch-one-cycle.test.ts [2m([22m[2m46 tests[22m[2m)[22m[33m 2567[2mms[22m[39m
+   [33m[2m✓[22m[39m dispatchOneCycle[2m > [22mskip gates[2m > [22mGate 1 — feature_flag_disabled: silent skip + NO audit emit [33m1445[2mms[22m[39m
+   [33m[2m✓[22m[39m dispatchOneCycle[2m > [22mskip gates[2m > [22mGate 2 — read_only_mode: skip + emit renewal_reminder_deferred_read_only [33m919[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"cycleId":"00000000-0000-0000-0000-0000000000c2","tenantId":"tenantA","msg":"cancelCycle: unexpected error"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"cycleId":"00000000-0000-0000-0000-0000000000c2","tenantId":"tenantA","msg":"cancelCycle: unexpected error"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"cycleId":"00000000-0000-0000-0000-0000000000c2","tenantId":"tenantA","msg":"cancelCycle: unexpected error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/cancel-cycle.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"cycleId":"00000000-0000-0000-0000-0000000000c4","tenantId":"tenantA","msg":"markPaidOffline: unexpected error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/mark-paid-offline.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/renewal-cycle.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/dispatch-renewal-cycle.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"synthetic_audit_emit_failure","tenantId":"tenantA","memberId":"00000000-0000-0000-0000-000000000001","reason":"[REDACTED]","msg":"[reschedule-on-plan-change] reschedule_skipped audit emit failed — counter bumped; F3 plan-flip will still commit"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"synthetic_success_path_audit_emit_failure","tenantId":"tenantA","memberId":"00000000-0000-0000-0000-000000000001","cycleId":"cyc-1","oldTierBucket":"regular","newTierBucket":"premium","msg":"[reschedule-on-plan-change] rescheduled audit emit failed — counter bumped; F3 plan-flip will still commit"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/reschedule-on-plan-change.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"db: connection lost","taskId":"00000000-0000-0000-0000-000000000b01","memberId":"00000000-0000-0000-0000-000000000aaa","correlationId":"corr-1","msg":"resetEmailUnverified: unexpected task transition error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/reset-email-unverified.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 41[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"FK violation: member not found","tenantId":"tenantA","memberId":"00000000-0000-0000-0000-00000000a156","msg":"[record-at-risk-outreach] insert failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[record-at-risk-outreach] audit emit failed inside tx — rolling back"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"FK violation","tenantId":"tenantA","memberId":"00000000-0000-0000-0000-00000000a156","msg":"[record-at-risk-outreach] insert failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit failed","msg":"[record-at-risk-outreach] audit emit failed inside tx — rolling back"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/record-at-risk-outreach.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/f8-onPaid-f2-finalise.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/update-schedule-policy.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/tenant-renewal-schedule-policy.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"tenantId":"tenantA","taskId":"22222222-2222-2222-2222-222222220209","correlationId":"corr-209","msg":"[complete-escalation-task] unexpected error → server_error"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"tenantId":"tenantA","taskId":"22222222-2222-2222-2222-222222220209","correlationId":"corr-209","msg":"[complete-escalation-task] unexpected error → server_error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/complete-escalation-task.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-pipeline-otel.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+[90mstderr[2m | tests/unit/renewals/components/renewal-confirm-flow.test.tsx[2m > [22m[2m<RenewalConfirmFlow> — Round 4 R4-I1[2m > [22m[2mR3-S3 lock: 200 with non-JSON body → setError("malformed_response") + beacon with that distinct code
+[22m[39m[renewal-confirm] malformed response body SyntaxError: Unexpected token < in JSON at position 0
+    at Object.json [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mtests\unit\renewals\components\renewal-confirm-flow.test.tsx:157:15[90m)[39m
+    at [90mC:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\app\(member)\portal\renewal\[memberId]\_components\renewal-confirm-flow.tsx:172:30
+
+ [32m✓[39m tests/unit/renewals/components/renewal-confirm-flow.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 291[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"tenantId":"tenantA","memberId":"00000000-0000-0000-0000-000000000208","correlationId":"corr-208","msg":"[create-escalation-task] unexpected error → server_error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/create-escalation-task.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/reconcile-pending-applications.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+{"level":"error","time":1781184230424,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[snooze-at-risk-member] audit emit failed inside tx — rolling back"}
+{"level":"error","time":1781184230436,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[snooze-at-risk-member] audit emit failed inside tx — rolling back"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/snooze-at-risk-member.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/email/templates/copy.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"tenantId":"tenantA","taskId":"22222222-2222-2222-2222-222222220210","correlationId":"corr-210","msg":"[skip-escalation-task] unexpected error → server_error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/skip-escalation-task.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"tenantId":"tenantA","taskId":"22222222-2222-2222-2222-222222220211","correlationId":"corr-211","msg":"[reassign-escalation-task] unexpected error → server_error"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/reassign-escalation-task.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/drizzle-bounce-event-query.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/ports.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/send-reminder-now.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 72[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/f8-on-paid-callbacks.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 47[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","errorId":"F8.RECONCILE.AUDIT_QUERY_FAILED","tenantId":"tenantA","cycleId":"00000000-0000-0000-0000-00000000c001","err":"audit_log: connection lost","msg":"[reconcile-pending-reactivations] reminderAuditQuery failed — falling back to fire-all-crossed-rungs"}
+ [32m✓[39m tests/unit/renewals/application/f8-audit-payload-shapes.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-renewal-summary.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","errorId":"F8.LAPSE.CYCLE_TRANSITION_FAILED","tenantId":"tenantA","cycleId":"00000000-0000-0000-0000-00000000c001","err":{},"msg":"[lapse-cycles-on-grace-expiry] cycle transition threw — counted in errors; cron continues"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","cycleId":"00000000-0000-0000-0000-0000000c1220","invoiceId":"inv-1","msg":"[confirm-renewal] cycle gone between confirm + linkInvoice — orphan invoice in F4"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","errorId":"F8.LAPSE.CYCLE_TRANSITION_FAILED","tenantId":"tenantA","cycleId":"00000000-0000-0000-0000-00000000c001","err":{},"msg":"[lapse-cycles-on-grace-expiry] cycle transition threw — counted in errors; cron continues"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","errorId":"F8.LAPSE.CYCLE_TRANSITION_FAILED","tenantId":"tenantA","cycleId":"00000000-0000-0000-0000-00000000c001","err":{},"msg":"[lapse-cycles-on-grace-expiry] cycle transition threw — counted in errors; cron continues"}
+ [32m✓[39m tests/unit/renewals/infrastructure/drizzle-renewal-audit-emitter.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[confirm-renewal] audit emit failed inside tx — rolling back link"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/lapse-cycles-on-grace-expiry.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 64[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/confirm-renewal.test.ts [2m([22m[2m26 tests[22m[2m)[22m[90m 76[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","cycleId":"00000000-0000-0000-0000-00000000c001","tenantId":"tenantA","refundIssued":true,"err":"audit_log: connection reset mid-tx","msg":"[reconcile-pending-reactivations] timeout transition threw after refund — refund is durable, cycle stays pending; next cron run self-heals (F5 short-circuits the second refund)"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","cycleId":"00000000-0000-0000-0000-00000000c001","tenantId":"tenantA","refundIssued":false,"err":"audit_log: connection reset mid-tx","msg":"[reconcile-pending-reactivations] timeout transition threw (no money moved) — cycle stays pending; next cron run self-heals (informational, not a money residual)"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","cycleId":"00000000-0000-0000-0000-00000000c001","tenantId":"tenantA","refundIssued":false,"err":"audit_log: connection reset mid-tx","msg":"[reconcile-pending-reactivations] timeout transition threw (no money moved) — cycle stays pending; next cron run self-heals (informational, not a money residual)"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","errorId":"F8.RECONCILE.REMINDER_EMIT_FAILED","tenantId":"tenantA","cycleId":"00000000-0000-0000-0000-00000000c001","type":"lapsed_member_admin_reactivation_reminder_t-7","err":"audit_log: insert failed","msg":"[reconcile-pending-reactivations] reminder audit emit failed — counted in remindersFailed; cron continues"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/reconcile-pending-reactivations.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 89[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","cycleId":"00000000-0000-0000-0000-0000000c1d37","refundCreditNoteId":"cn-1","err":"cycle 00000000-0000-0000-0000-0000000c1d37 expected status=pending_admin_reactivation but row is cancelled","msg":"[admin-reject-reactivation] refund issued but cycle transition lost race — manual reconciliation needed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","cycleId":"00000000-0000-0000-0000-0000000c1d37","tenantId":"tenantA","refundCreditNoteId":"cn-1","refundIssuedRequiresReconciliation":true,"msg":"[admin-reject-reactivation] audit emit failed inside tx — rolling back; refund stays issued, manual reconciliation required when refundCreditNoteId is set"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/admin-reject-reactivation.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 44[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/cursor-hmac.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/renewal-escalation-task.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/tier-bucket-ordinal-sql.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/pause-reminders-after-outreach.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"tenantId":"tenantA","correlationId":"corr-prune-1","msg":"renewals.prune_consumed_tokens.failed"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/prune-consumed-tokens.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[admin-reactivate-lapsed-cycle] audit emit failed inside tx — rolling back"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/admin-reactivate-lapsed-cycle.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/renewal-link-token.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/email/templates/tier-upgrade-approval-email.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[90m 146[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/accept-tier-upgrade-prefork-errors.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/email/templates/renewal-reminder-email.test.tsx [2m([22m[2m19 tests[22m[2m)[22m[33m 350[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/components/task-action-dialog.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 586[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/build-renewal-redeem-link-url.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/sha256-hex.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/value-objects/sanitize-error-message.test.ts [2m([22m[2m31 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/_lib/parse-input.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/rowToDomain-invariants.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[block-auto-reactivation] audit emit failed inside tx — rolling back"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/block-auto-reactivation.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-cycle-detail.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-member-renewal-status.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/components/describe-error.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/email/templates/dual-format-date-footer.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 74[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/at-risk-outreach.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-schedule-policies.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit_log: insert failed","msg":"[unblock-auto-reactivation] audit emit failed inside tx — rolling back"}
+ [32m✓[39m tests/unit/renewals/application/use-cases/unblock-auto-reactivation.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/ports/is-permanent-gateway-error.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/tenant-renewal-settings.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-pipeline.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/opt-in-renewal-reminders.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/opt-out-renewal-reminders.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/infrastructure/renewals-deps.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/reminder-ladder-invariants.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m71 passed[39m[22m[90m (71)[39m
+[2m      Tests [22m [1m[32m914 passed[39m[22m[90m (914)[39m
+[2m   Start at [22m 20:23:05
+[2m   Duration [22m 93.56s[2m (transform 47.70s, setup 49.43s, collect 488.53s, tests 6.11s, environment 138.76s, prepare 50.36s)[22m
+

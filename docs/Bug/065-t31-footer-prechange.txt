@@ -1,0 +1,673 @@
+===== v1 invoice bytes=23547 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 invoice_preview bytes=23162 =====
+PREVIEW
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 receipt_combined bytes=24032 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี / ใบเสร็จรับเงิน
+Tax Invoice / Official Receipt
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 receipt_separate bytes=23551 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบเสร็จรับเงิน
+Official Receipt
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 credit_note_no_ctx bytes=23242 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบลดหนี้
+Credit Note
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 credit_note_with_ctx bytes=24189 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบลดหนี้
+Credit Note
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+อ้างอิงใบกํากับภาษีต้นฉบับ / Reference to Original Tax Invoice
+เลขที่ / No.: SC-2026-000042
+วันที่ / Date: 2026-03-01 (พ.ศ. 2569)
+เหตุผล / Reason: Membership cancelled mid-year
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 void_absent_underlying bytes=23275 =====
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 void_underlying_receipt_separate bytes=23264 =====
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบเสร็จรับเงิน
+Official Receipt
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 void_underlying_receipt_combined bytes=23748 =====
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี / ใบเสร็จรับเงิน
+Tax Invoice / Official Receipt
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v1 invoice_j2_credited_annotation bytes=25669 =====
+ลดหนี้บางส่วน
+ 
+/
+PARTIALLY
+CREDITED
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+อ้างอิงใบลดหนี้ / Referenced by credit note(s):
+SCC-2026-000007 2026-05-01 535.00 THB
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 invoice bytes=23547 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 invoice_preview bytes=23162 =====
+PREVIEW
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 receipt_combined bytes=24032 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี / ใบเสร็จรับเงิน
+Tax Invoice / Official Receipt
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 receipt_separate bytes=23551 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบเสร็จรับเงิน
+Official Receipt
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 credit_note_no_ctx bytes=23242 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบลดหนี้
+Credit Note
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 credit_note_with_ctx bytes=24189 =====
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบลดหนี้
+Credit Note
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+อ้างอิงใบกํากับภาษีต้นฉบับ / Reference to Original Tax Invoice
+เลขที่ / No.: SC-2026-000042
+วันที่ / Date: 2026-03-01 (พ.ศ. 2569)
+เหตุผล / Reason: Membership cancelled mid-year
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 void_absent_underlying bytes=23275 =====
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 void_underlying_receipt_separate bytes=23264 =====
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบเสร็จรับเงิน
+Official Receipt
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 void_underlying_receipt_combined bytes=23748 =====
+VOID /
+ 
+ยกเลิก
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี / ใบเสร็จรับเงิน
+Tax Invoice / Official Receipt
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+
+
+===== v2 invoice_j2_credited_annotation bytes=25669 =====
+ลดหนี้บางส่วน
+ 
+/
+PARTIALLY
+CREDITED
+หอการค้าไทย-สวีเดน
+Thailand-Swedish Chamber of Commerce
+กรุงเทพมหานคร
+Bangkok
+เลขประจําตัวผู้เสียภาษี / Tax ID: 0000000000000
+ใบกํากับภาษี
+Tax Invoice
+ต้นฉบับ / ORIGINAL
+No. SC-2026-000042
+วันที่ / Date: 2026-04-18 (พ.ศ. 2569)
+ครบกําหนด / Due: 2026-05-18
+ลูกค้า / Customer
+Simulated Capture Co., Ltd.
+Tax ID: 1234567890123
+99/1 Sukhumvit Rd
+ผู้ติดต่อ / Contact: Sim Contact
+รายการ / Description จํานวน / Qty ราคา / Unit รวม / Total
+ค่าสมาชิก ปี 2026
+Membership 2026
+1.0000 1000.00 1000.00
+รวมก่อนภาษี / Subtotal: 1000.00
+VAT 7.00%: 70.00
+รวมทั้งสิ้น / Total (THB): 1070.00
+(ตัวอักษร ) หนึ่งพันเจ็ดสิบบาทถ้วน
+(one thousand seventy baht)
+อ้างอิงใบลดหนี้ / Referenced by credit note(s):
+SCC-2026-000007 2026-05-01 535.00 THB
+Rendered by Chamber-OS (เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4)
+
+-- 1 of 1 --
+
+

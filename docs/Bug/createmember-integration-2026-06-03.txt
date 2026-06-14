@@ -1,0 +1,19 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/members/create-member.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/members/create-member.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 6890[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22mhappy path: creates member + primary contact + audit events [33m1197[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22mrejects creating a member onto a SOFT-DELETED plan → plan_not_found (code-review #9-#14 follow-up) [33m624[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22msoft-duplicate: repeating (company_name, country) without confirm rejects [33m1112[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22msoft-duplicate: confirm_soft_duplicate=true proceeds [33m1489[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 22:05:10
+[2m   Duration [22m 19.88s[2m (transform 3.39s, setup 32ms, collect 11.28s, tests 6.89s, environment 0ms, prepare 156ms)[22m
+

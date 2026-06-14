@@ -10,6 +10,8 @@
     "stripe@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true,
     "atomic-agents@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true
+    "superpowers@claude-plugins-official": true,
+    "remember@claude-plugins-official": true,
+    "firecrawl@claude-plugins-official": true
   }
 }

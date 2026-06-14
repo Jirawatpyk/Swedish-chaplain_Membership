@@ -1,0 +1,275 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/contract/payments/post-refunds-initiate.contract.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 368[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/post-payments-initiate.contract.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 371[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-unsubscribe-token.contract.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 456[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /unsubscribe/[token] (T136 contract)[2m > [22mvalid token → renders confirmation + invokes unsubscribeRecipient with verified payload [33m428[2mms[22m[39m
+ [32m✓[39m tests/contract/scheduled-plan-changes/cancel-route.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 5927[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)[2m > [22m200 happy path — returns the cancelled scheduled-plan-change envelope [33m5860[2mms[22m[39m
+ [32m✓[39m tests/contract/f2-scheduled-plan-change.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/post-webhooks-stripe-events.contract.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 1778[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/webhooks/stripe (T042)[2m > [22m(a) missing Stripe-Signature header → 401, body never parsed [33m1729[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/dispatch-broadcast-batch.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit storage down","eventType":"broadcast_template_snapshot_refused_deleted","tenantId":"tenant-swe","actorUserId":"user_mem_42","requestId":"req-r6.4-m1-audit-fail","msg":"broadcasts.audit.emit_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","tenantId":"tenant-swe","draftId":"44444444-4444-4444-4444-444444444444","templateId":"55555555-5555-5555-5555-555555555555","msg":"broadcasts.snapshot.post_ownership_check_disappearance"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"Postgres connection lost","tenantId":"tenant-swe","draftId":"44444444-4444-4444-4444-444444444444","templateId":"55555555-5555-5555-5555-555555555555","msg":"broadcasts.snapshot.unexpected_error"}
+ [32m✓[39m tests/contract/broadcasts/snapshot-template-to-draft.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/contract/invite-with-member.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 7621[2mms[22m[39m
+ [32m✓[39m tests/contract/events/webhook-eventcreate-v1.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 15126[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/event-draft.contract.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 17885[2mms[22m[39m
+ [32m✓[39m tests/contract/events/csv-import-eventcreate-format.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 17808[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-as-paid.contract.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 17831[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","event":"admin_events_list_error","error":{"kind":"db_error","message":"connection refused"},"msg":"admin events list use-case failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","event":"admin_event_detail_error","error":{"kind":"db_error","message":"pg dead"},"eventId":"evt-1","msg":"admin event detail use-case failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","event":"admin_event_detail_tenant_resolve_failed","err":"unknown host","eventId":"evt-1","msg":"[F6] resolveTenantFromRequest threw on detail route"}
+ [32m✓[39m tests/contract/events/admin-events-create.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 8870[2mms[22m[39m
+ [32m✓[39m tests/contract/f4-on-paid-callbacks.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-webhooks-resend-broadcasts-events.contract.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 328[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","tenantId":"swecham","errKind":"Error","msg":"insights.audit_query.audit_emit_threw"}
+ [32m✓[39m tests/contract/insights/audit-query.contract.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 116[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/broadcasts-barrel.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1255[2mms[22m[39m
+   [33m[2m✓[22m[39m broadcasts module barrel — architecture guard (R1.3-S2)[2m > [22mforbids NEW deep imports from src/app/** + src/components/** into broadcasts internals [33m1250[2mms[22m[39m
+ [32m✓[39m tests/contract/insights/export-download.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 40[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals-audit-port.contract.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/read-only-mode-guard.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 4662[2mms[22m[39m
+   [33m[2m✓[22m[39m R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes[2m > [22mPOST /api/plans (create) → 503 [33m4166[2mms[22m[39m
+ [32m✓[39m tests/contract/events/csv-import-api.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 29508[2mms[22m[39m
+   [33m[2m✓[22m[39m T090 — POST /api/admin/events/import (CSV import contract)[2m > [22mFR-035 kill-switch — 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mreturns 404 when feature flag is off [33m6802[2mms[22m[39m
+   [33m[2m✓[22m[39m T090 — POST /api/admin/events/import (CSV import contract)[2m > [22mAudit emit on success (FR-029 / FR-035)[2m > [22mdoes NOT call standalone audit-emit on the happy 200 path — the use-case emits csv_import_completed inside the tx [33m4866[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-events-api.test.ts [2m([22m[2m35 tests[22m[2m)[22m[33m 30788[2mms[22m[39m
+   [33m[2m✓[22m[39m T3 — kill-switch off → 404 + no audit[2m > [22mlist route 404 when env.features.f6EventCreate=false [33m5662[2mms[22m[39m
+   [33m[2m✓[22m[39m T3 — kill-switch off → 404 + no audit[2m > [22mdetail route 404 when env.features.f6EventCreate=false [33m6388[2mms[22m[39m
+ [32m✓[39m tests/contract/payments/webhook-idempotency.contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2056[2mms[22m[39m
+   [33m[2m✓[22m[39m webhook-idempotency: SC-005 same event delivered twice (T045)[2m > [22mfirst delivery: 200, processWebhookEvent called once [33m2020[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/retry-failed-batches.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-reject.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 3464[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m200 happy: returns { broadcastId, status, rejectedAt, reservationReleased } [33m1691[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m404 broadcast_not_found: use-case returns not_found [33m766[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobAccessError: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobStoreSuspendedError: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobClientTokenExpiredError: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobServiceRateLimited: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"BlobServiceNotAvailable: simulated outage","tenantId":"tenant_swe","contentHash":"5947c00ce4da5eac3e8b3731df34e42a2d7b7e88bdb7bd93b8152afcedaa2f92","mime":"image/png","msg":"broadcasts.blob_put_failed"}
+ [32m✓[39m tests/contract/broadcasts/upload-inline-image.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 282[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-mark-paid-offline-route.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 12885[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract[2m > [22m503 when feature flag off [33m12727[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-integration-eventcreate-api.test.ts [2m([22m[2m35 tests[22m[2m)[22m[33m 37822[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mGET config returns 404 when kill-switch is off [33m5723[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST generate-secret returns 404 when kill-switch is off [33m6341[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST rotate-secret returns 404 when kill-switch is off [33m1816[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST test-webhook returns 404 when kill-switch is off [33m1075[2mms[22m[39m
+   [33m[2m✓[22m[39m FR-035 kill-switch — all endpoints return 404 when FEATURE_F6_EVENTCREATE is false[2m > [22mPOST disable returns 404 when kill-switch is off [33m3847[2mms[22m[39m
+ [32m✓[39m tests/contract/members/email-change-revert-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 10718[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST|GET /api/auth/email-change/revert/[token][2m > [22m200 — POST happy path: rate limit passes, token found, type=revert, use case succeeds [33m10565[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-broadcasts-submit.contract.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 7758[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, reviewSlaTargetHours } [33m1687[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m400 invalid_body: tier segment without tierCodes [33m797[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_not_in_plan (FR-002 precondition a) [33m1329[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_quota_blocked (FR-002 precondition b) [33m681[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_body_unsafe_html (FR-002 precondition e) [33m780[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_audience_too_large (FR-002 precondition h / FR-016a 5k cap) [33m683[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-approve.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 9367[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m200 send_now: { broadcastId, status:approved, approvedAt, scheduledFor, resendBroadcastId:null } [33m1783[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m400 invalid_body: scheduledFor < now+5min (zod refine) [33m883[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m404 broadcast_not_found: invalid uuid in path [33m1371[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m404 broadcast_not_found: use-case not_found [33m753[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m409 broadcast_concurrent_action_blocked [33m840[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m422 broadcast_schedule_too_soon (use-case branch) [33m748[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22mmember email failure does NOT 5xx the request (best-effort) [33m1590[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/activate-deactivate.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 3765[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/activate (T122)[2m > [22m200 on activate — returns plan with is_active: true [33m3707[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":"audit storage down — chaos test","eventType":"broadcast_cross_tenant_probe","tenantId":"tenant-swe","actorUserId":"user_admin_42","requestId":"req-h10-atomicity","msg":"broadcasts.audit.emit_failed"}
+ [32m✓[39m tests/contract/broadcasts/manage-image-allowlist.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+ [32m✓[39m tests/contract/admin-invoices-csv-export-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 238[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-broadcasts-draft.contract.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 5735[2mms[22m[39m
+   [33m[2m✓[22m[39m POST/PUT /api/broadcasts/draft — Wave 6 GREEN (T036)[2m > [22mPOST 201: returns { broadcastId, status:draft, createdAt, updatedAt, subject, segmentType } [33m5575[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-relink-api.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 13532[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/batch-dispatcher.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/contract/resend-webhook.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 73[2mms[22m[39m
+ [32m✓[39m tests/contract/tenant-invoice-settings-logo-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3220[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)[2m > [22mfirst-time classification → proceeds to use-case and returns 201 with logo_blob_key [33m3181[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-proxy-submit.contract.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 3904[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)[2m > [22m200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, actorRole:admin_proxy } [33m3675[2mms[22m[39m
+ [32m✓[39m tests/contract/credit-notes-route.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 16510[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/update-broadcast-template.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-accept-tier-upgrade-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 12603[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept[2m > [22m500 server_error — emits logger.error with errorId F8.ACCEPT_TIER.SERVER_ERROR and the typed message [33m12523[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/update-plan.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2206[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/plans/[year]/[planId] (T111)[2m > [22m200 on successful cosmetic update — returns the updated plan [33m2162[2mms[22m[39m
+ [32m✓[39m tests/contract/events/csv-import-history-api.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 1097[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/events/import/history — F6.1 contract[2m > [22m200 happy path — returns paginated rows + records[] shape per contract [33m1036[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-erase-api.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 13057[2mms[22m[39m
+ [32m✓[39m tests/contract/members/update-contact.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 12622[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)[2m > [22m200 on non-email update [33m12573[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-reconcile-stuck-sending.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2278[2mms[22m[39m
+   [33m[2m✓[22m[39m cron reconcile-stuck-sending — wire contract[2m > [22mmissing Authorization → 401 unauthorized [33m2200[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-tasks-reassign-route.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 14357[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/tasks/[taskId]/reassign — contract (R10 W2)[2m > [22m503 when feature flag off [33m14233[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/create-broadcast-template.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m tests/contract/members/email-verification-route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 71[2mms[22m[39m
+ [32m✓[39m tests/contract/members/archive-undelete.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 15015[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/archive (T134)[2m > [22m200 happy path — archive succeeds [33m13166[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/undelete (T134)[2m > [22m200 happy path — undelete succeeds [33m1794[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/create-plan.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 3910[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans (T092)[2m > [22m201 on successful create — returns the created plan [33m3884[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/image-source-allowlist.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/concurrent-retry-race.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/batch-dispatch.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/clone-plans.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2057[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/clone (T093)[2m > [22m201 on successful clone — returns summary with 9 cloned plan_ids [33m2007[2mms[22m[39m
+ [32m✓[39m tests/contract/csrf.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m tests/contract/members/invite-portal.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 16450[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts/[contactId]/invite-portal[2m > [22m200 success — returns user_id + email [33m16403[2mms[22m[39m
+ [32m✓[39m tests/contract/members/member-invoices-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 11071[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId]/invoices[2m > [22m401 when unauthenticated (requireAdminContext returns response) [33m11035[2mms[22m[39m
+ [32m✓[39m tests/contract/members/inline-edit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 12656[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-10)[2m > [22m200 on status change — happy path [33m12613[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/profile.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 14267[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/portal/profile (T114)[2m > [22m200 returns member + contacts (notes redacted) [33m14237[2mms[22m[39m
+ [32m✓[39m tests/contract/events/error-csv-signed-url-api.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 19086[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/events/import/{recordId}/error-csv — F6.1 contract[2m > [22m307 happy path — Location header points to signed URL + Cache-Control: no-store [33m19032[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/palette-search.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 27844[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — returns { results: { plans, actions, navigate } } envelope [33m15514[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — manager gets filtered actions (no create/clone) [33m5144[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m400 when q is missing [33m1525[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m401 when unauthenticated [33m1416[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — member results include member_number_display (SCCM-NNNN) [33m4239[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/data-export-route.contract.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 1522[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/members/[id]/data-export (admin on-behalf)[2m > [22mfeature off → 503 [33m1261[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-broadcasts-gauges.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1622[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/internal/metrics/broadcasts-gauges — wire contract[2m > [22mmissing Authorization → 401 unauthorized [33m1587[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/api-templates-route.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 3612[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/templates — R6.3 H-4 bilingual envelope contract[2m > [22munauthenticated → 401 with bilingual no_session envelope + standard headers [33m3585[2mms[22m[39m
+ [32m✓[39m tests/contract/change-role.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 243[2mms[22m[39m
+ [32m✓[39m tests/contract/client-error.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 155[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-dispatch-batches.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 2331[2mms[22m[39m
+   [33m[2m✓[22m[39m cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)[2m > [22mmissing Authorization → 401 unauthorized [33m2312[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/delete-broadcast-template.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/contract/members/add-contact.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 15715[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts (addContact)[2m > [22m201 happy path → serialised contact [33m15679[2mms[22m[39m
+ [32m✓[39m tests/contract/members/create-member.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 15796[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members (T040)[2m > [22m201 happy path — returns member_id + primary_contact_id [33m15734[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/invoices-search.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 19566[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/portal/invoices/search (T086)[2m > [22m401 when member-context returns a rejection (no session) [33m19537[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-admin-broadcasts-sla-stats.contract.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 3345[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)[2m > [22m200: full envelope shape with stats [33m3306[2mms[22m[39m
+ [32m✓[39m tests/contract/f2-plan-change-audit-payloads.contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/undelete-plan.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1979[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/undelete (T124)[2m > [22m200 on successful undelete — deleted_at cleared, is_active forced false (AS4) [33m1953[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/admin-accept-partial-route.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2567[2mms[22m[39m
+   [33m[2m✓[22m[39m admin accept-partial route — wire contract (Phase 3F.11.5 / Finding 8b)[2m > [22madmin auth rejection → returns the auth response (401/403) [33m2518[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/admin-retry-route.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2627[2mms[22m[39m
+   [33m[2m✓[22m[39m admin retry route — wire contract (Phase 3F.11.5 / Finding 8a)[2m > [22madmin auth rejection → returns the auth rejection response (401/403) [33m2587[2mms[22m[39m
+ [32m✓[39m tests/contract/event-attendees-port.contract.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/contract/redeem-invite.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 186[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/accept-partial-delivery.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-pipeline-route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 17276[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/renewals — contract[2m > [22m404 when feature flag off (FR-052b — K2 spec compliance) [33m17243[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/audit-event-zod-vs-handwritten.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m tests/contract/members/update-member.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 16203[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId] (T071 / T090)[2m > [22m200 on field update — happy path [33m16157[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-broadcasts-quota.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 4864[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m200: returns the contract envelope { planId, eblastPerYear, quotaYear, used, reserved, remaining, nextResetAt, tenantTimezone } [33m3822[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m200: remaining = eblastPerYear - used - reserved invariant holds [33m763[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-tasks-done-route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 18293[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/tasks/[taskId]/done — contract (R10 W2)[2m > [22m503 when feature flag off [33m18238[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/insights-barrel.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1291[2mms[22m[39m
+   [33m[2m✓[22m[39m insights module barrel — architecture guard (verify F1)[2m > [22mforbids deep imports from src/app/** + src/components/** into insights internals [33m1284[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/delete-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2552[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: DELETE /api/plans/[year]/[planId] (T123)[2m > [22m200 on successful soft-delete — returns plan with deleted_at set [33m2531[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/api-snapshot-template-route.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3405[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/member/broadcasts/draft/[id]/snapshot-template — R8.3 M-4 HTTP-status contract[2m > [22muse-case template_soft_deleted → HTTP 410 (R3-F11 + R6.4 M-1) [33m3372[2mms[22m[39m
+ [32m✓[39m tests/contract/members/bulk-action.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 18739[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/bulk (T099 / US4)[2m > [22m200 on archive action — happy path [33m18711[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/preferred-locale.contract.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 935[2mms[22m[39m
+   [33m[2m✓[22m[39m PATCH /api/admin/members/[id]/preferred-locale[2m > [22m400 invalid_body: malformed JSON [33m714[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/audit-export-route.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 770[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/audit/export.csv — route contract[2m > [22mnon-staff role → 403 (does not dispatch) [33m541[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/timeline-route.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 646[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/portal/timeline — route contract[2m > [22mFR-017 — always queries the SESSION-derived member, never a URL-supplied id [33m540[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-75bd-a45c-2fda23446c26","msg":"reset-password.infra-error"}
+ [32m✓[39m tests/contract/reset-password.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 103[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/preferred-locale.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 227[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/apply-batch-webhook-event.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/contract/members/bulk-send-portal-invite.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 16544[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/bulk send_portal_invite (P1-17)[2m > [22m200 with per-member buckets body on partial success [33m16522[2mms[22m[39m
+ [32m✓[39m tests/contract/members/timeline.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 17820[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId]/timeline (T127)[2m > [22m200 happy path — returns items + next_cursor [33m17791[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-737b-b699-276892331bfd","msg":"change-password.infra-error"}
+ [32m✓[39m tests/contract/change-password.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 110[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/list-plans.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2799[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans (T062)[2m > [22m200 on success — returns data + meta envelope [33m2777[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/auto-retry-failed-batches.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/contract/insights/source-adapters-boundary.contract.test.ts [2m([22m[2m11 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-tasks-skip-route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 16089[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/tasks/[taskId]/skip — contract (R10 W2)[2m > [22m503 when feature flag off [33m16032[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/application-layer-imports.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 487[2mms[22m[39m
+   [33m[2m✓[22m[39m Architecture — application layer must not import ORM/framework/infrastructure VALUES (Principle III)[2m > [22mhas no NEW forbidden value imports outside the audit-tracked backlog [33m398[2mms[22m[39m
+ [32m✓[39m tests/contract/members/get-member.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 13252[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId][2m > [22m200 — returns serialised member with contacts on success [33m13232[2mms[22m[39m
+ [32m✓[39m tests/contract/disable-user.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 3150[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/disable (T111)[2m > [22m200 on success — returns sessionsRevoked [33m3121[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/get-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2317[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/[year]/[planId] (T063)[2m > [22m200 on found plan — returns the full plan object [33m2299[2mms[22m[39m
+ [32m✓[39m tests/contract/members/resend-verification.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 13333[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts/[contactId]/resend-verification[2m > [22m200 — returns outbox_row_id and invalidated_prior on successful re-send [33m13308[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/users-staff-active-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 11098[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/users/staff-active — contract (R10 W3)[2m > [22mreturns 401 when requireSession throws non-redirect (e.g. Upstash outage) [33m11072[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-cycle-detail-route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 12087[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/renewals/[cycleId] — contract[2m > [22m503 when feature flag off [33m12066[2mms[22m[39m
+ [32m✓[39m tests/contract/renewals/admin-cancel-route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 10211[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/renewals/[cycleId]/cancel — contract[2m > [22m503 when feature flag off [33m10172[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/template-save-image-allowlist.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/dialog-final-focus.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/members-search-api.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 11848[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/members/search (Round-1 test-M5)[2m > [22m200 OK — returns mapped items with companyName + primaryContactName [33m11820[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/post-renewal-confirm.contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 235[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-75f2-9f11-6605dfe7f7e3","msg":"sign-in.infra-error"}
+ [32m✓[39m tests/contract/sign-in.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 97[2mms[22m[39m
+ [32m✓[39m tests/contract/members/promote-primary.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 13424[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /promote-primary (T071)[2m > [22m200 returns { demoted, promoted } envelope [33m13398[2mms[22m[39m
+ [32m✓[39m tests/contract/admin/insights-dismiss-route.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 162[2mms[22m[39m
+ [32m✓[39m tests/contract/invoices/issue-route-guard.contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 15248[2mms[22m[39m
+ [32m✓[39m tests/contract/heartbeat.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 803[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/auth/heartbeat[2m > [22m200 with lastSeenAt ISO string on success [33m780[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-7793-9344-a805f9b9cc01","msg":"sign_out failed — clearing cookie anyway for client safety"}
+ [32m✓[39m tests/contract/sign-out.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 43[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 155[2mms[22m[39m
+ [32m✓[39m tests/contract/enable-user.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 4217[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/enable (T112)[2m > [22m200 on success [33m3616[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/enable (T112)[2m > [22m500 with requestId when enable-user throws (infra error) [33m582[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"test-req-id","msg":"invite.infra-error"}
+ [32m✓[39m tests/contract/invite.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 60[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-pseudonymise-eventcreate.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 25129[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate[2m > [22mreturns 401 envelope when gate rejects [33m13433[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate[2m > [22mreturns 200 skipped when feature flag off [33m4180[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate[2m > [22mreturns 200 with perTenant success on happy path [33m7501[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/template-variable-substitution.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{},"requestId":"019d721d-0e00-7001-9a3a-61094684743b","msg":"forgot-password.infra-error"}
+ [32m✓[39m tests/contract/forgot-password.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 66[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/template-render-html-escape.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/contract/members/list-members.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 13811[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members (T058)[2m > [22m200 — returns { items, next_cursor } envelope [33m13798[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/list-broadcast-templates.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/events-barrel.test.ts [2m([22m[2m47 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-events-create-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10199[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-erase-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 11000[2mms[22m[39m
+ [32m✓[39m tests/contract/members/affected-members.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 11081[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/[year]/[planId]/affected-members (T071)[2m > [22m200 — returns { plan_id, plan_year, count } [33m11066[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-error-csv-blobs-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10388[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-recompute-match-rate.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3116[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/observability/recompute-match-rate[2m > [22mreturns 401 when gate rejects [33m3012[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-eventcreate-idempotency.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 11852[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/sweep-eventcreate-idempotency[2m > [22mreturns 401 when gate rejects [33m11841[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-error-csv-blobs.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 10945[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase B B11 — POST /api/internal/retention/sweep-error-csv-blobs[2m > [22mreturns 401 when gate rejects [33m10932[2mms[22m[39m
+ [32m✓[39m tests/contract/events/admin-registration-relink-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10334[2mms[22m[39m
+ [32m✓[39m tests/contract/cron/f6-sweep-eventcreate-idempotency-killswitch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 10493[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m142 passed[39m[22m[90m (142)[39m
+[2m      Tests [22m [1m[32m1365 passed[39m[22m[2m | [22m[90m2 todo[39m[90m (1367)[39m
+[2m   Start at [22m 06:10:49
+[2m   Duration [22m 186.25s[2m (transform 50.49s, setup 105.44s, collect 260.78s, tests 923.89s, environment 256.58s, prepare 85.12s)[22m
+

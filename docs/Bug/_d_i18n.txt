@@ -1,0 +1,66 @@
+diff --git a/src/i18n/messages/en.json b/src/i18n/messages/en.json
+index 6087bb84..9c5d5ab6 100644
+--- a/src/i18n/messages/en.json
++++ b/src/i18n/messages/en.json
+@@ -1762,6 +1762,7 @@
+         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
+         "errors": {
+           "failed": "Issue failed",
++          "tax_id_required": "This member is a company tier but has no tax ID on record. A Thai tax invoice requires the buyer's tax ID — update the member before issuing.",
+           "codeFallback": "Error code: {code}",
+           "unknown": "An unknown error occurred. Please try again."
+         },
+@@ -3647,7 +3648,8 @@
+       "timeline": "Timeline",
+       "account": "Account",
+       "ariaLabel": "Member navigation",
+-      "benefits": "Benefits"
++      "benefits": "Benefits",
++      "renewalPrefs": "Renewal reminders"
+     }
+   },
+   "breadcrumb": {
+diff --git a/src/i18n/messages/sv.json b/src/i18n/messages/sv.json
+index d34ecdfe..e1e6668a 100644
+--- a/src/i18n/messages/sv.json
++++ b/src/i18n/messages/sv.json
+@@ -1762,6 +1762,7 @@
+         "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
+         "errors": {
+           "failed": "Kunde inte utfärda",
++          "tax_id_required": "Den här medlemmen är en företagsnivå men saknar skattenummer i registret. En thailändsk skattefaktura kräver köparens skattenummer — uppdatera medlemsposten innan du utfärdar.",
+           "codeFallback": "Felkod: {code}",
+           "unknown": "Ett okänt fel inträffade. Försök igen."
+         },
+@@ -3647,7 +3648,8 @@
+       "timeline": "Tidslinje",
+       "account": "Mitt konto",
+       "ariaLabel": "Medlemsnavigering",
+-      "benefits": "Förmåner"
++      "benefits": "Förmåner",
++      "renewalPrefs": "Förnyelsepåminnelser"
+     }
+   },
+   "breadcrumb": {
+diff --git a/src/i18n/messages/th.json b/src/i18n/messages/th.json
+index 2c7effa0..52a06c02 100644
+--- a/src/i18n/messages/th.json
++++ b/src/i18n/messages/th.json
+@@ -1762,6 +1762,7 @@
+         "irreversibleWarning": "การออกใบแจ้งหนี้จะจัดสรรเลขเอกสารตามลำดับ §87 ของกรมสรรพากร และไม่สามารถย้อนกลับได้ — หากต้องการยกเลิกต้องออกใบลดหนี้ (Credit Note)",
+         "errors": {
+           "failed": "ออกใบแจ้งหนี้ไม่สำเร็จ",
++          "tax_id_required": "สมาชิกประเภทบริษัทยังไม่มีเลขประจำตัวผู้เสียภาษีในระบบ ใบกำกับภาษีต้องระบุเลขประจำตัวผู้เสียภาษีของผู้ซื้อ กรุณาแก้ไขข้อมูลสมาชิกก่อนออกเอกสาร",
+           "codeFallback": "รหัสข้อผิดพลาด: {code}",
+           "unknown": "เกิดข้อผิดพลาดที่ไม่รู้จัก กรุณาลองใหม่"
+         },
+@@ -3647,7 +3648,8 @@
+       "timeline": "ไทม์ไลน์",
+       "account": "บัญชีของฉัน",
+       "ariaLabel": "เมนูนำทางสำหรับสมาชิก",
+-      "benefits": "สิทธิประโยชน์"
++      "benefits": "สิทธิประโยชน์",
++      "renewalPrefs": "การแจ้งเตือนต่ออายุ"
+     }
+   },
+   "breadcrumb": {

@@ -1,0 +1,65 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781142620548,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"[REDACTED]"},"invoiceId":"d85beb87-6bb8-4a24-96d9-7fccd3746b17","tenantId":"test-swecham-585951c0","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/audit-coverage.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 5866[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22maudit_log composite PK + append-only trigger allow F4 event types [33m1367[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — updateInvoiceDraft emits `invoice_draft_updated` [33m699[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT122 — issueInvoice PDF-render failure emits `pdf_render_failed` audit [33m850[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — deleteInvoiceDraft emits `invoice_draft_deleted` [33m593[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/seq-interleaved-membership-event.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 14022[2mms[22m[39m
+   [33m[2m✓[22m[39m §87 interleaved membership+event sequence continuity (live Neon)[2m > [22mmembership → event → membership issues produce strictly consecutive §87 sequence numbers on ONE shared stream [33m5388[2mms[22m[39m
+   [33m[2m✓[22m[39m §87 interleaved membership+event sequence continuity (live Neon)[2m > [22m064 Task 6+10 — as-paid legs: membership → bill-first event → no-TIN as-paid (RECEIPT stream, no burn) → TIN as-paid are N, N+1, N+2 on the invoice stream [33m6439[2mms[22m[39m
+{"level":"warn","time":1781142645876,"service":"swecham-membership","env":"test","event":"invoice_auto_email_skipped_no_recipient","tenantId":"test-swecham-e2d2be71","invoiceId":"4137ccd4-a12a-482f-a07e-da7f1495447d","invoiceSubject":"event","msg":"issueInvoice: auto-email skipped — buyer has no contact email"}
+ [32m✓[39m tests/integration/invoicing/issue-event-invoice.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 9355[2mms[22m[39m
+   [33m[2m✓[22m[39m issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-member)[2m > [22mnon-member WITH tin: issues, Model-B EXACT VAT on 100.04 THB (10004 satang), tax-invoice snapshot, non-timeline audit, pre-pinned buyer snapshot [33m1463[2mms[22m[39m
+   [33m[2m✓[22m[39m issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-member)[2m > [22m064 §105 ROOT FIX — non-member WITHOUT tin: plain issue is REJECTED, no §87 number burned, row stays draft with the no-TIN snapshot pinned [33m1045[2mms[22m[39m
+   [33m[2m✓[22m[39m issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-member)[2m > [22mmatched member: issues with snapshot from getForIssue (their tax_id), TIMELINE audit branch (payload has member_id) [33m1660[2mms[22m[39m
+   [33m[2m✓[22m[39m issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-member)[2m > [22m(Task 14 / B) non-member event WITH buyer email → enqueues outbox row carrying privacy_footer_kind:event_non_member [33m1384[2mms[22m[39m
+   [33m[2m✓[22m[39m issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-member)[2m > [22m(Task 14 / A) non-member event with EMPTY buyer email → NO outbox row, invoice still issues [33m1390[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/record-payment-event-invoice.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 8680[2mms[22m[39m
+   [33m[2m✓[22m[39m recordPayment — NON-member EVENT-fee invoices (admin manual mark-paid, spec §9 NF-B)[2m > [22mnon-member WITH tin: recordPayment flips issued→paid, receipt render uses pre-pinned buyer snapshot, NON-timeline invoice_paid audit [33m2469[2mms[22m[39m
+   [33m[2m✓[22m[39m recordPayment — NON-member EVENT-fee invoices (admin manual mark-paid, spec §9 NF-B)[2m > [22m064 INTERIM — LEGACY issued no-TIN event row (direct insert, pre-064 shape) → recordPayment rejects with legacy_no_tin_event_needs_remediation [33m818[2mms[22m[39m
+   [33m[2m✓[22m[39m recordPayment — NON-member EVENT-fee invoices (admin manual mark-paid, spec §9 NF-B)[2m > [22mregression — matched-member event invoice still flips to paid + TIMELINE invoice_paid audit (payload HAS member_id) [33m2646[2mms[22m[39m
+   [33m[2m✓[22m[39m recordPayment — NON-member EVENT-fee invoices (admin manual mark-paid, spec §9 NF-B)[2m > [22m064 INTERIM — F5 payability read rejects a LEGACY matched-member issued no-TIN event row with legacy_no_tin_event_not_payable [33m435[2mms[22m[39m
+{"level":"warn","time":1781142665085,"service":"swecham-membership","env":"test","outboxRowId":"91b9faf7-5205-41d8-9dfc-071c6884a5f2","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"warn","time":1781142665578,"service":"swecham-membership","env":"test","outboxRowId":"e19289bc-e157-4e09-a4ae-f0c2e02e627e","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"info","time":1781142665663,"service":"swecham-membership","env":"test","requestId":"019eb460-3316-78ee-a8ad-f015a6fcaba8","inspected":3,"sent":0,"retried":2,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"error","time":1781142671153,"service":"swecham-membership","env":"test","outboxRowId":"a67ebf75-b9be-47ad-ae40-e726a881cc0e","expectedSha":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","actualShaPrefix":"5f78c33274e43fa9","msg":"cron.outbox_dispatch.invoice_voided.attachment_sha_mismatch"}
+{"level":"info","time":1781142671424,"service":"swecham-membership","env":"test","requestId":"019eb460-4e8e-7e76-b177-6ca333c038cb","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/auto-email-outbox.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 17113[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(1) + (4a) issue enqueues invoice_auto_email[invoice_issued]; admin resend adds fresh invoice_pdf_resent row + timeline audit [33m1823[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4b) resend receipt after recordPayment → receipt_pdf_resent outbox + audit WITHOUT member_id [33m4157[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed [33m3605[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4c) portal member-mismatch → no outbox row, probe audit lands, opaque not_found [33m3437[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(R18-01) dispatcher permanently-fails invoice_voided row when prefetched bytes sha256 mismatches expected_pdf_sha256 [33m2333[2mms[22m[39m
+{"level":"warn","time":1781142681402,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"[REDACTED]"},"invoiceId":"1a538446-82d9-4977-8380-934790ea5bbe","tenantId":"test-swecham-6caa1981","msg":"issueInvoice: internal error, rolling back"}
+{"level":"warn","time":1781142684491,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"6d692262-4d8e-4359-974a-e601f708dde4","tenantId":"test-swecham-faa63bcb","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/seq-number-atomicity.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 19009[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(f) tenant_document_sequences row missing → allocator creates with seq=1 [33m414[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h) Sequential calls allocate 1 → 2 → 3 with no gaps [33m1062[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(d) 10 concurrent allocations on same (tenant, FY) produce 1..10 with no duplicates [33m2090[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(e) FY-boundary crossover — adjacent fiscal years allocate independently [33m1066[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(a) PDF render throws → rollback, seq unchanged, no invoice row [33m3083[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(b) Blob upload throws → rollback, seq unchanged, no invoice row [33m3060[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(g) Audit emit throws → rollback, no invoice issued, no seq consumed [33m3189[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h-replay) Re-issuing an already-issued invoice does NOT consume a new sequence number [33m3258[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/event-invoice-schema.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 8025[2mms[22m[39m
+   [33m[2m✓[22m[39m invoices event-subject schema — 054-event-fee-invoices (live Neon)[2m > [22m(1) persists an event-subject draft (null member/plan) + maps via rowsToInvoice [33m568[2mms[22m[39m
+   [33m[2m✓[22m[39m invoices event-subject schema — 054-event-fee-invoices (live Neon)[2m > [22m(3) partial unique index — one non-void event invoice per registration; void is excluded [33m1575[2mms[22m[39m
+   [33m[2m✓[22m[39m invoices.pdf_doc_kind — 064-event-invoice-paid-flow Task 2 (live Neon)[2m > [22m(1) issueInvoice persists pdf_doc_kind=invoice for a membership invoice + rowsToInvoice maps it [33m1747[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-event-invoice.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5773[2mms[22m[39m
+   [33m[2m✓[22m[39m issueCreditNote — NON-member EVENT invoice (Task 8, live Neon)[2m > [22mfull credit persists a CN, reconciles VAT to the stored split, flips invoice → credited, emits non-timeline audit [33m1333[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/issue-vs-archive-race.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 6725[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on archived member returns member_archived and consumes NO sequence [33m1558[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on ACTIVE company member with NO tax_id → tax_id_required, NO sequence consumed (real adapter join) [33m1435[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on ACTIVE company member WITH valid tax_id → succeeds (gate allows; real adapter join) [33m1707[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/vat-source-chain.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3572[2mms[22m[39m
+   [33m[2m✓[22m[39m T123 — VAT source chain pin (tenant_invoice_settings → invoice row)[2m > [22minvoice issued under vat_rate=0.0850 snapshots 0.0850 into invoices.vat_rate_snapshot [33m1781[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m      Tests [22m [1m[32m42 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (43)[39m
+[2m   Start at [22m 08:50:05
+[2m   Duration [22m 116.22s[2m (transform 3.47s, setup 44ms, collect 16.45s, tests 98.14s, environment 0ms, prepare 95ms)[22m
+

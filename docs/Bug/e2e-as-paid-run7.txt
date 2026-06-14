@@ -1,0 +1,44 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test --workers=1 "tests/e2e/invoices/event-fee-as-paid.spec.ts" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+[e2e global setup] reset F5 issued-invoice fixture b070ff99-e7f1-48c4-a87c-f04cada85036
+[e2e seed broadcasts] OK broadcast=dd1ecfba-f6f3-48e1-bec0-82cd65ea6e97 halted="Fogmaker Thailand Demo"
+[e2e seed renewals] OK upcoming=7d7d581d-8935-4a34-addb-bd5e47136e1a lapsed=80d87084-b234-4d8a-9555-ba8322d68947 suggestion=457c600c-d9a8-4cfe-93ad-5bf616118e4d member=b317dece-9e23-4ffa-84d5-12c059ba9624 expires=2026-07-11T05:07:24.572Z
+[e2e seed F6] OK — tenant=swecham events=3 registrations=10 (3 non_member + 3 unmatched + 4 matched) — badges covered: Partnership benefit + Cultural event + Over quota + Not counted — payment statuses: paid + pending + refunded + free
+
+Running 27 tests using 1 worker
+
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓   1 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:144:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (48.3s)
+  ✓   2 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:204:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (7.6s)
+  ✓   3 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:243:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (7.7s)
+  ✓   4 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:270:7 › 064 event-fee as-paid form modes @f4 › refunded: destructive block card, NO mode radio group in the DOM, submit disabled (7.8s)
+  ✓   5 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:300:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (7.6s)
+  ✓   6 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:324:7 › 064 event-fee as-paid form modes @f4 › event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y (21.4s)
+  ✓   7 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:376:7 › 064 event-fee as-paid form modes @f4 › future payment date → inline i18n error (noValidate path); input keeps the ISO CE value (7.5s)
+  ✓   8 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:407:7 › 064 event-fee as-paid form modes @f4 › two-step failure: 500 on issue-as-paid → error toast + draftRemains description, lands on the surviving draft detail (10.6s)
+  ✓   9 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:456:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (7.4s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  10 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:144:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (21.8s)
+  ✓  11 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:204:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (10.0s)
+  ✓  12 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:243:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (11.1s)
+  ✓  13 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:270:7 › 064 event-fee as-paid form modes @f4 › refunded: destructive block card, NO mode radio group in the DOM, submit disabled (10.1s)
+  ✓  14 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:300:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (11.0s)
+  ✓  15 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:324:7 › 064 event-fee as-paid form modes @f4 › event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y (20.7s)
+  ✓  16 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:376:7 › 064 event-fee as-paid form modes @f4 › future payment date → inline i18n error (noValidate path); input keeps the ISO CE value (13.8s)
+  ✓  17 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:407:7 › 064 event-fee as-paid form modes @f4 › two-step failure: 500 on issue-as-paid → error toast + draftRemains description, lands on the surviving draft detail (17.4s)
+  ✓  18 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:456:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (9.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  19 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:144:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (18.9s)
+  ✓  20 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:204:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (7.4s)
+  ✓  21 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:243:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (7.4s)
+  ✓  22 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:270:7 › 064 event-fee as-paid form modes @f4 › refunded: destructive block card, NO mode radio group in the DOM, submit disabled (7.4s)
+  ✓  23 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:300:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (7.4s)
+  ✓  24 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:324:7 › 064 event-fee as-paid form modes @f4 › event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y (21.0s)
+  ✓  25 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:376:7 › 064 event-fee as-paid form modes @f4 › future payment date → inline i18n error (noValidate path); input keeps the ISO CE value (7.4s)
+  ✓  26 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:407:7 › 064 event-fee as-paid form modes @f4 › two-step failure: 500 on issue-as-paid → error toast + draftRemains description, lands on the surviving draft detail (10.4s)
+  ✓  27 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:456:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (7.3s)
+
+  27 passed (6.1m)

@@ -1,0 +1,32 @@
+diff --git a/src/modules/broadcasts/application/use-cases/reject-broadcast.ts b/src/modules/broadcasts/application/use-cases/reject-broadcast.ts
+index 2584d178..c391e6e9 100644
+--- a/src/modules/broadcasts/application/use-cases/reject-broadcast.ts
++++ b/src/modules/broadcasts/application/use-cases/reject-broadcast.ts
+@@ -17,7 +17,10 @@ import { logger } from '@/lib/logger';
+ import type { TenantContext } from '@/modules/tenants';
+ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
+ import type { AuditPort } from '../ports/audit-port';
+-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
++import {
++  BroadcastConcurrentMutationError,
++  type BroadcastsRepo,
++} from '../ports/broadcasts-repo';
+ import type { EmailTransactionalPort } from '../ports/email-transactional-port';
+ import type { MembersBridgePort } from '../ports/members-bridge-port';
+ import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
+@@ -126,7 +129,14 @@ export async function rejectBroadcast(
+           },
+           'submitted', // R4 Types-#5 — race-guard against concurrent action
+         );
+-      } catch {
++      } catch (e) {
++        // S1-P1-21: narrow to the concurrency sentinel only (mirrors
++        // approve-broadcast HIGH-1). A bare catch swallowed Neon/FK/RLS
++        // throws as `broadcast_concurrent_action_blocked` (wrong 409 vs 500,
++        // wrong metric, misleading on-call signal).
++        if (!(e instanceof BroadcastConcurrentMutationError)) {
++          throw e;
++        }
+         const refresh = await deps.broadcastsRepo.findByIdInTx(
+           tx,
+           deps.tenant.slug,

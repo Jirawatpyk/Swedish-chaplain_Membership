@@ -1,0 +1,28 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781193092032,"service":"swecham-membership","env":"test","suggestionId":"8f663b36-2ab2-45ff-badf-e0d06fedc22b","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m17 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m16 skipped[39m[2m)[22m[33m 6069[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit[33m 2922[2mms[22m[31m[39m
+[31m     → expected 0 to be greater than or equal to 1[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit
+[31m[1mAssertionError[22m: expected 0 to be greater than or equal to 1[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m370:33[22m[39m
+    [90m368| [39m        )[33m,[39m
+    [90m369| [39m    )[33m;[39m
+    [90m370| [39m    [34mexpect[39m(notifyAudits[33m.[39mlength)[33m.[39m[34mtoBeGreaterThanOrEqual[39m([34m1[39m)[33m;[39m
+    [90m   | [39m                                [31m^[39m
+    [90m371| [39m  }[33m,[39m [34m60_000[39m)[33m;[39m
+    [90m372| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[33m16 skipped[39m[90m (17)[39m
+[2m   Start at [22m 22:51:17
+[2m   Duration [22m 18.17s[2m (transform 3.25s, setup 27ms, collect 10.61s, tests 6.07s, environment 0ms, prepare 132ms)[22m
+

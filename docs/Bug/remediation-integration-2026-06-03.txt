@@ -1,0 +1,99 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/members/change-plan-soft-deleted-plan.test.ts" "tests/integration/members/change-plan-emits-both-audits.test.ts" "tests/integration/members/change-plan-bundle-changed-audit.test.ts" "tests/integration/plans/" "tests/integration/scripts/import-members.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/scripts/import-members.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 17107[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22minserts member + contacts under the tenant, emits audit (RLS-scoped) [33m828[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mis idempotent: re-running the SAME member skips it (active email exists) [33m574[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mRLS isolation: a member committed under tenantA is invisible to tenantB [33m747[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mpartial overlap: a member sharing one active email + a new one is SKIPPED + flagged, never auto-attached (R2 fix — items 1/2/4/5/7/8) [33m749[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mnew member whose PRIMARY email is soft-deleted is skipped, never created with no primary (review items 2/8) [33m806[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mnew member with a soft-deleted SECONDARY: created with its primary, secondary skipped; re-run idempotent (R3 items 1/10) [33m1038[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mcross-member collision: active emails spanning TWO existing members is FLAGGED, never silently counted as already-imported (R4 #1/#7) [33m969[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mmixed active+soft+new emails → partial overlap (a genuinely-new email wins over the soft set) (R4 #5) [33m1318[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mNEW member whose every email is soft-deleted → primary-collision skip, idempotent on re-run (R4 #14/#15) [33m1495[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mNEW member with multiple secondaries, only one soft-deleted → primary + good secondary inserted, soft one skipped+counted (R4 #10) [33m1093[2mms[22m[39m
+   [33m[2m✓[22m[39m commitMembers — integration (spec § 5)[2m > [22mall-or-nothing: a mid-batch FK failure rolls back the whole import [33m875[2mms[22m[39m
+ [32m✓[39m tests/integration/members/change-plan-bundle-changed-audit.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 16177[2mms[22m[39m
+   [33m[2m✓[22m[39m G2 — changePlan plan_bundle_changed audit (US3 AS5 / FR-010)[2m > [22mG2a: changing to a Partnership plan with a DIFFERENT bundled corporate-plan-id WITHOUT confirm_bundle_change returns bundle_change_requires_confirmation and emits NO plan_bundle_changed audit [33m2073[2mms[22m[39m
+   [33m[2m✓[22m[39m G2 — changePlan plan_bundle_changed audit (US3 AS5 / FR-010)[2m > [22mG2b: changing to a Partnership plan with a DIFFERENT bundled corporate-plan-id WITH confirm_bundle_change: true emits plan_bundle_changed audit with correct old/new corporate-plan-id payload [33m2344[2mms[22m[39m
+   [33m[2m✓[22m[39m G2 — changePlan plan_bundle_changed audit (US3 AS5 / FR-010)[2m > [22mG2c: same-bundle Partnership plan change does NOT emit plan_bundle_changed (no confirmation needed, no bundle audit) [33m2231[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/cancel-audit-failed-row-persists.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 8448[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — cancelScheduledPlanChange audit-failed row-persists (R4-I9 / R3-S4)[2m > [22mR4-I9: row is cancelled in DB but audit row absent when audit-port returns persist_failed [33m1240[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — cancelScheduledPlanChange audit-failed row-persists (R4-I9 / R3-S4)[2m > [22mR4-I9: happy-path control — audit success path persists both the cancel + the audit row [33m1057[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — cancelScheduledPlanChange audit-failed row-persists (R4-I9 / R3-S4)[2m > [22mR5-I8: row is cancelled in DB but audit row absent when audit-port returns invalid_payload [33m1228[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-state-mutations.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 16614[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_activated — payload round-trips with is_active diff [33m2545[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_deactivated — payload round-trips with is_active diff [33m2693[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_soft_deleted — payload round-trips with deleted_at diff (before: null, after: ISO) [33m2659[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_undeleted — payload round-trips with deleted_at diff (before: ISO, after: null) [33m3179[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mactivate on soft-deleted plan returns not_found (illegal transition guard) [33m2754[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mdeactivate on soft-deleted plan returns not_found (illegal transition guard) [33m2784[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/soft-delete-toctou-advisory-lock.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5612[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete TOCTOU advisory lock (W0-02)[2m > [22mRegression — soft-delete with an active member returns has_active_members (no deleted_at) [33m2698[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete TOCTOU advisory lock (W0-02)[2m > [22mRace condition closed — member assigned before lock: softDeleteGuarded refuses with has_active_members [33m2914[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/tenant-isolation.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 5626[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22mA.update(B.plan_id) affects 0 rows [33m326[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22mA.delete(B.plan_id) affects 0 rows [33m326[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22maudit_log permissive policy: F1 NULL-tenant rows visible from both A and B [33m383[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/prior-year-lock.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 16701[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 1 — edit plan_name.en on 2026 plan (when current=2027) succeeds [33m2530[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 2 — edit description.en on 2026 plan succeeds [33m2559[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 3 — edit sort_order on 2026 plan succeeds [33m2543[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 4 — edit annual_fee_minor_units on 2026 plan returns 422 locked [33m2157[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 5 — edit benefit_matrix on 2026 plan returns 422 locked [33m2173[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 6 — edit annual_fee on current-year (2027) plan succeeds [33m2552[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 7 — no-op write of locked field (same value) succeeds [33m2186[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/soft-delete-with-members.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 10925[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 1 — 1 active member → refuses with has_active_members [33m2699[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 2 — 0 members attached → soft-delete succeeds [33m2772[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 3 — 2 real F3 members (active + inactive) → refuses with count=2 [33m2696[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 4 — 1 archived F3 member → soft-delete succeeds (archived excluded) [33m2759[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/search-plans-filter.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 3643[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/scheduled-plan-changes-partial-unique.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 12422[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — scheduled_plan_changes partial-unique invariant[2m > [22matomic supersede+insert: re-scheduling the same (member, cycle) flips prior pending → superseded + inserts new pending in one tx [33m957[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — scheduled_plan_changes partial-unique invariant[2m > [22mpartial unique rejects a second concurrent pending insert if supersede is skipped [33m696[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — scheduled_plan_changes partial-unique invariant[2m > [22mRLS+FORCE blocks tenantB from observing tenantA pending rows (cross-tenant probe) [33m1074[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/cancel-scheduled-plan-change-tenant-isolation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 10822[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — cancelScheduledPlanChange tenant isolation (R2-C5)[2m > [22mTenant A cannot cancel a pending row owned by Tenant B (strong cross-tenant probe) [33m1073[2mms[22m[39m
+ [32m✓[39m tests/integration/members/change-plan-emits-both-audits.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5393[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — changeMemberPlan emits both member_plan_changed events[2m > [22mD1: a single changeMemberPlan call lands BOTH audit rows for the same member (member_plan_changed + member_plan_manually_changed) inside the same tx [33m2225[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/create-plan-validation.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/clone-idempotency.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 15956[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 1 — fresh clone 2026→2027 inserts 9 inactive rows [33m3678[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 2 — second clone with target_year populated returns error [33m3720[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 3 — delete target then re-clone succeeds [33m3965[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 4 — source_year_empty when source has zero plans [33m1945[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 5 — activate_cloned=true lands rows active [33m2649[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/list-plans-filtering.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 5554[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/concurrent-edit-lww.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5807[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: concurrent edit LWW (T113)[2m > [22mScenario 1 — non-overlapping edits both survive [33m2641[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: concurrent edit LWW (T113)[2m > [22mScenario 2 — overlapping edits last-write-wins [33m3167[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-create-clone.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5920[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: audit-diff round-trip for create + clone (T096)[2m > [22mplan_created audit payload round-trips through auditPayloadSchema [33m2215[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: audit-diff round-trip for create + clone (T096)[2m > [22mplan_cloned audit payload round-trips through auditPayloadSchema [33m3705[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/clone-concurrent-advisory-lock.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 6046[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: cloneYear concurrent advisory lock (post-ship R6 I3)[2m > [22mtwo concurrent cloneYear calls — exactly one succeeds, one returns target_year_populated [33m3042[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: cloneYear concurrent advisory lock (post-ship R6 I3)[2m > [22mlocks are disjoint per (tenant, targetYear) — different target years run in parallel without blocking [33m3003[2mms[22m[39m
+ [32m✓[39m tests/integration/members/change-plan-soft-deleted-plan.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5052[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — changePlan refuses a soft-deleted target plan (W0-02 #1)[2m > [22massigning a member to a soft-deleted plan → plan_not_found, member FK unchanged [33m1886[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/get-plan-404-cross-tenant.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 4412[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: get-plan 404 cross-tenant probe (T066)[2m > [22mgetPlan from Tenant A context returns not_found (not forbidden) [33m335[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: get-plan 404 cross-tenant probe (T066)[2m > [22mappends plan_not_found audit event with the expected payload shape [33m516[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/scheduled-plan-change-find-by-id.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5450[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration — drizzleScheduledPlanChangeRepo.findById terminal rows (R3-I10)[2m > [22mhydrates pending row + applied row + superseded row + cancelled row cleanly through assertValidScheduledPlanChange [33m2107[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-update.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2399[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: plan_updated audit-diff round-trip (T114)[2m > [22mpayload round-trips through auditPayloadSchema with correct diff shape [33m2398[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/seed-swecham-2026-fixture.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/missing-translation-indicator.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2603[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/plans/rls-debug-state.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+
+[2m Test Files [22m [1m[32m24 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (25)[39m
+[2m      Tests [22m [1m[32m115 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (116)[39m
+[2m   Start at [22m 20:32:02
+[2m   Duration [22m 211.28s[2m (transform 3.62s, setup 72ms, collect 20.79s, tests 188.69s, environment 0ms, prepare 127ms)[22m
+

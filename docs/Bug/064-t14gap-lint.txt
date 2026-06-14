@@ -1,0 +1,30 @@
+﻿
+> swecham-membership@0.1.0 lint C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> eslint
+
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\.remember\tmp\last-ndc.ts
+  1:1  warning  Expected an assignment or function call and instead saw an expression  @typescript-eslint/no-unused-expressions
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\.superpowers\assemble-d2-plan.js
+  1:12  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\.superpowers\assemble-plan.js
+  1:12  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\integration\portal\account-hub-cross-tenant.test.ts
+  41:10  warning  'db' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\unit\app\portal\profile\portal-profile-body.test.tsx
+  117:10  warning  'collectByType' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\unit\members\domain\member-number.test.ts
+  7:8  warning  'MemberNumber' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\unit\members\infrastructure\schema-member-sequences.test.ts
+   6:8  warning  'TenantMemberSequenceInsert' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  11:8  warning  'TenantMemberSettingsInsert' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+✖ 8 problems (2 errors, 6 warnings)
+
+ ELIFECYCLE  Command failed with exit code 1.

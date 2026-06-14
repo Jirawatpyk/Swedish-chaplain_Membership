@@ -1,0 +1,15 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"error","time":1781183087507,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-aeea9fe8","invoiceId":"b4078d9c-09e7-49be-9dcb-6db8e9510acd","memberId":"f1b64d14-42b9-474e-8243-e49cb295c6e5","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"error","time":1781183091109,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-aeea9fe8","invoiceId":"5cd29a66-9edb-42dd-9518-6efeb5fa3221","memberId":"9b98e6f2-22e6-403a-9fc0-cfa5fba5e762","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+ [32m✓[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m12 skipped[39m[2m)[22m[33m 12108[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing [33m4947[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block) [33m4363[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m2 passed[39m[22m[2m | [22m[33m12 skipped[39m[90m (14)[39m
+[2m   Start at [22m 20:04:31
+[2m   Duration [22m 24.22s[2m (transform 3.24s, setup 26ms, collect 10.56s, tests 12.11s, environment 0ms, prepare 113ms)[22m
+

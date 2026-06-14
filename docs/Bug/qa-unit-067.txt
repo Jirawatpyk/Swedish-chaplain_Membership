@@ -1,0 +1,888 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/members/presentation/edit-member-payloads.test.ts [2m([22m[2m23 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/override-warning-message.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 41[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/timeline-event-item-i18n.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[90m 281[2mms[22m[39m
+[90mstderr[2m | tests/unit/members/presentation/renewal-health-card.test.tsx[2m > [22m[2mRenewalHealthCard (Pass A · Section 1)[2m > [22m[2mrenders status, expiry, days remaining, and engagement when populated
+[22m[39mIntlError: MISSING_FORMAT: Format `dateMedium2Digit` is not available.
+    at resolveFormatOrOptions [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:305:23[90m)[39m
+    at getFormattedValue [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:323:17[90m)[39m
+    at Object.dateTime [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:335:12[90m)[39m
+    at RenewalHealthCard [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\renewal-health-card.tsx:128:31[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_FORMAT'[39m,
+  originalMessage: [32m'Format `dateMedium2Digit` is not available.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/renewal-health-card.test.tsx[2m > [22m[2mRenewalHealthCard (Pass A · Section 1)[2m > [22m[2mshows an overdue label when days remaining is negative
+[22m[39mIntlError: MISSING_FORMAT: Format `dateMedium2Digit` is not available.
+    at resolveFormatOrOptions [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:305:23[90m)[39m
+    at getFormattedValue [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:323:17[90m)[39m
+    at Object.dateTime [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:335:12[90m)[39m
+    at RenewalHealthCard [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\renewal-health-card.tsx:128:31[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_FORMAT'[39m,
+  originalMessage: [32m'Format `dateMedium2Digit` is not available.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/renewal-health-card.test.tsx[2m > [22m[2mRenewalHealthCard (Pass A · Section 1)[2m > [22m[2momits the engagement line when engagement is absent (F9 flag off)
+[22m[39mIntlError: MISSING_FORMAT: Format `dateMedium2Digit` is not available.
+    at resolveFormatOrOptions [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:305:23[90m)[39m
+    at getFormattedValue [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:323:17[90m)[39m
+    at Object.dateTime [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:335:12[90m)[39m
+    at RenewalHealthCard [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\renewal-health-card.tsx:128:31[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_FORMAT'[39m,
+  originalMessage: [32m'Format `dateMedium2Digit` is not available.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/renewal-health-card.test.tsx[2m > [22m[2mRenewalHealthCard (Pass A · Section 1)[2m > [22m[2mrenders the title as a real <h2> heading with the supplied id
+[22m[39mIntlError: MISSING_FORMAT: Format `dateMedium2Digit` is not available.
+    at resolveFormatOrOptions [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:305:23[90m)[39m
+    at getFormattedValue [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:323:17[90m)[39m
+    at Object.dateTime [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:335:12[90m)[39m
+    at RenewalHealthCard [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\renewal-health-card.tsx:128:31[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_FORMAT'[39m,
+  originalMessage: [32m'Format `dateMedium2Digit` is not available.'[39m
+}
+
+ [32m✓[39m tests/unit/members/presentation/renewal-health-card.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 348[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/members-table-lapsed-badge.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 356[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/members-table-member-number.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 679[2mms[22m[39m
+   [33m[2m✓[22m[39m MembersTable member number column[2m > [22mrenders the formatted member number and a sort header [33m329[2mms[22m[39m
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable selection (T108 regression)[2m > [22m[2monSelectionChange receives member_id, not row index
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+ [32m✓[39m tests/unit/members/presentation/member-form-a11y.test.tsx [2m([22m[2m33 tests[22m[2m)[22m[33m 1848[2mms[22m[39m
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable selection (T108 regression)[2m > [22m[2mheader checkbox selects all member_ids
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable selection (T108 regression)[2m > [22m[2mno checkboxes when enableSelection is false
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable inline-edit rendering (round-2 review I-6)[2m > [22m[2mrenders InlineStatusCell button when enableSelection + onInlineEdit provided (admin)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable inline-edit rendering (round-2 review I-6)[2m > [22m[2mdoes NOT render InlineStatusCell when onInlineEdit is undefined (manager read-only)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:709:26[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MembersTable [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:710:39[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.tableCaption` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:220:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByMemberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at MemberNumberSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:222:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.memberNumber` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:266:19[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.sortByEngagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at EngagementSortHeader [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:268:8[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.columns.engagement` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.11.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-CUsOI8u2.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:276:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+ [32m✓[39m tests/unit/members/presentation/members-table-selection.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 3551[2mms[22m[39m
+   [33m[2m✓[22m[39m MembersTable selection (T108 regression)[2m > [22monSelectionChange receives member_id, not row index [33m3308[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/subscription-badge.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 127[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/timeline-event-item.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/members-page-sort-wiring.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/members-table-skeleton.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[90m 59[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/member-detail-number-field.test.tsx [2m([22m[2m1 test[22m[2m)[22m[90m 104[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/resolve-contact-subscriptions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/application/use-cases/load-members-membership-status.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/renewals/domain/is-membership-lapsed.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-stats.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/serialise-member-number.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m18 passed[39m[22m[90m (18)[39m
+[2m      Tests [22m [1m[32m168 passed[39m[22m[90m (168)[39m
+[2m   Start at [22m 01:30:38
+[2m   Duration [22m 32.20s[2m (transform 11.91s, setup 10.73s, collect 115.03s, tests 7.50s, environment 38.12s, prepare 5.84s)[22m
+

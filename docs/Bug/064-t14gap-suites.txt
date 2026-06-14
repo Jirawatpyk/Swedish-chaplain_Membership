@@ -1,0 +1,609 @@
+﻿node.exe : [33mThe CJS build of Vite's Node API is deprecated. See 
+https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/corepack/dist/pnpm. ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mThe CJS bu...e details.[39m:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/unit/components/invoices/invoice-more-menu.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 164[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/recent-activity-section.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 50[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/non-member-buyer-fields.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[90m 254[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-attendee-picker.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 309[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/invoice-filters-props.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 218[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-table.test.tsx [2m([22m[2m14 tests[22m[2m)[22m[33m 506[2mms[22m[39m
+   [33m[2m✓[22m[39m <InvoicesTable> buyer column[2m > [22mrenders the buyer header (renamed from "Member") [33m320[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/portal-invoices-page-errors.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[90m 86[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/benefits-tab-param.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/email-failure-alert.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 433[2mms[22m[39m
+   [33m[2m✓[22m[39m EmailFailureAlert (B7 / FR-026)[2m > [22mposts the RECEIPT variant + toasts the returned (current) recipient, not the stale prop [33m310[2mms[22m[39m
+ [32m✓[39m tests/unit/app/portal/invoices/parse-status-filter.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/e-blasts-redirect.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 57[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/payment-timeline-date.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/invoice-create-switcher.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 514[2mms[22m[39m
+   [33m[2m✓[22m[39m <InvoiceCreateSwitcher>[2m > [22mrenders a 2-option radiogroup (Membership default + Event fee) [33m312[2mms[22m[39m
+ [32m✓[39m tests/unit/components/invoices/event-fee-form.test.tsx [2m([22m[2m39 tests[22m[2m)[22m[33m 7358[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mfetches attendees for the pre-selected event and renders the picker [33m542[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → read-only buyer + pre-filled amount + VAT preview [33m570[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member → doc-type badge shows "set at issue" (TIN unknown client-side) [33m454[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with a TIN → doc-type badge flips to Tax Invoice [33m425[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member submit posts the buyer object + no amountOverride when price untouched [33m497[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmatched member submit posts amountOverride when the price was edited (bill_first) [33m444[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22m409 → opens the soft-duplicate dialog instead of redirecting [33m425[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mnon-member with empty buyer → inline errors + no POST [33m502[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid registration → already_paid pre-selected, payment fields visible, two-step POST [33m417[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22missue-as-paid failure → mapped error toast + draft-remains notice + still lands on the draft [33m426[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mrefunded registration → hard-block card, no mode selector, submit disabled [33m364[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpending non-member without TIN → waiting explainer + bill_first disabled; typing a TIN flips the default to bill_first [33m437[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mpaid non-member with a TIN → combined Tax Invoice/Receipt badge (as-paid kind) [33m380[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mmode-radio label wiring produces no duplicate "-label" ids (duplicate-id-aria) [33m382[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with an empty payment date → inline dateRequired error, no POST [33m539[2mms[22m[39m
+   [33m[2m✓[22m[39m <EventFeeForm>[2m > [22mas-paid submit with a future payment date → inline dateFuture error, no POST [33m534[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-stats.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/portal-serialise-member.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 21412[2mms[22m[39m
+   [33m[2m✓[22m[39m portal GET /api/portal/profile serialiseMember[2m > [22memits member_number and preserves the redaction whitelist [33m21406[2mms[22m[39m
+ [32m✓[39m tests/unit/portal/invoice-row-view-model.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [31m❯[39m tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx [2m([22m[2m9 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 454[2mms[22m[39m
+[31m   [31m×[31m <PortalInvoiceCardList> — combined-paid[2m > [22mshows the combined "Tax invoice / Receipt" download, NO separate invoice anchor, and OMITS the receipt-number line[90m 48[2mms[22m[31m[39m
+[31m     → Unable to find an element by: [data-testid="receipt-download"]
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<ul[31m
+      [33mclass[31m=[32m"flex flex-col gap-3"[31m
+      [33mdata-testid[31m=[32m"portal-invoice-card-list"[31m
+      [33mrole[31m=[32m"list"[31m
+    [36m>[31m
+      [36m<li[31m
+        [33maria-label[31m=[32m"Invoice INV-2026-000001, Paid"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"group/card flex flex-col gap-4 overflow-hidden rounded-[var(--card-radius)] bg-card py-[var(--card-padding)] text-sm text-card-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-[var(--card-radius)] *:[img:last-child]:rounded-b-[var(--card-radius)]"[31m
+          [33mdata-size[31m=[32m"default"[31m
+          [33mdata-slot[31m=[32m"card"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"px-[var(--card-padding)] group-data-[size=sm]/card:px-3 flex flex-col gap-3"[31m
+            [33mdata-slot[31m=[32m"card-content"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"flex items-start justify-between gap-3"[31m
+            [36m>[31m
+              [36m<a[31m
+                [33maria-label[31m=[32m"View invoice INV-2026-000001"[31m
+                [33mclass[31m=[32m"rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"[31m
+                [33mhref[31m=[32m"/portal/invoices/11111111-2222-4333-8444-555555555555"[31m
+              [36m>[31m
+                [36m<h2[31m
+                  [33mclass[31m=[32m"font-mono text-sm font-medium leading-snug"[31m
+                [36m>[31m
+                  [0mINV-2026-000001[0m
+                [36m</h2>[31m
+              [36m</a>[31m
+              [36m<span[31m
+                [33mclass[31m=[32m"group/badge h-5 w-fit justify-center overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-primary text-primary-foreground [a]:hover:bg-primary/80 inline-flex items-center gap-1 shrink-0"[31m
+                [33mdata-slot[31m=[32m"badge"[31m
+                [33mdata-variant[31m=[32m"default"[31m
+              [36m>[31m
+                [36m<svg[31m
+                  [33maria-hidden[31m=[32m"true"[31m
+                  [33mclass[31m=[32m"lucide lucide-circle-check size-3.5"[31m
+                  [33mfill[31m=[32m"none"[31m
+                  [33mheight[31m=[32m"24"[31m
+                  [33mstroke[31m=[32m"currentColor"[31m
+                  [33mstroke-linecap[31m=[32m"round"[31m
+                  [33mstroke-linejoin[31m=[32m"round"[31m
+                  [33mstroke-width[31m=[32m"2"[31m
+                  [33mviewBox[31m=[32m"0 0 24 24"[31m
+                  [33mwidth[31m=[32m"24"[31m
+                  [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+                [36m>[31m
+                  [36m<circle[31m
+                    [33mcx[31m=[32m"12"[31m
+                    [33mcy[31m=[32m"12"[31m
+                    [33mr[31m=[32m"10"[31m
+                  [36m/>[31m
+                  [36m<path[31m
+                    [33md[31m=[32m"m9 12 2 2 4-4"[31m
+                  [36m/>[31m
+                [36m</svg>[31m
+                [0mPaid[0m
+              [36m</span>[31m
+            [36m</div>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-sm text-muted-foreground"[31m
+            [36m>[31m
+              [0mIssued[0m
+              [0m [0m
+              [0mApr 1, 2026[0m
+              [0m ·[0m
+              [0m [0m
+              [0mDue[0m
+              [0m [0m
+              [0mApr 30, 2026[0m
+            [36m</p>[31m
+            [36m<div[31m
+              [33maria-orientation[31m=[32m"horizontal"[31m
+              [33mclass[31m=[32m"shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch"[31m
+              [33mdata-orientation[31m=[32m"horizontal"[31m
+              [33mdata-slot[31m=[32m"separator"[31m
+              [33mrole[31m=[32m"separator"[31m
+            [36m/>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-base font-semibold tabular-nums"[31m
+            [36m>[31m
+              [0m107.00 THB[0m
+            [36m</p>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"flex flex-wrap items-center gap-2"[31m
+            [36m>[31m
+              [36m<button[31m
+                [33maria-label[31m=[32m"resend INV-2026-000001"[31m
+                [33mdata-testid[31m=[32m"resend"[31m
+                [33mtype[31m=[32m"button"[31m
+              [36m>[31m
+                [0mresend[0m
+              [36m</button>[31m
+            [36m</div>[31m
+          [36m</div>[31m
+        [36m</div>[31m
+      [36m</li>[31m
+    [36m</ul>[31m
+  [36m</div>[31m
+[36m</body>[31m[39m
+[31m   [31m×[31m <PortalInvoiceCardList> — separate-paid[2m > [22mshows BOTH Invoice + Receipt buttons (short labels) AND the receipt-number line[90m 18[2mms[22m[31m[39m
+[31m     → Unable to find an element by: [data-testid="receipt-download"]
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<ul[31m
+      [33mclass[31m=[32m"flex flex-col gap-3"[31m
+      [33mdata-testid[31m=[32m"portal-invoice-card-list"[31m
+      [33mrole[31m=[32m"list"[31m
+    [36m>[31m
+      [36m<li[31m
+        [33maria-label[31m=[32m"Invoice INV-2026-000001, Paid"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"group/card flex flex-col gap-4 overflow-hidden rounded-[var(--card-radius)] bg-card py-[var(--card-padding)] text-sm text-card-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-[var(--card-radius)] *:[img:last-child]:rounded-b-[var(--card-radius)]"[31m
+          [33mdata-size[31m=[32m"default"[31m
+          [33mdata-slot[31m=[32m"card"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"px-[var(--card-padding)] group-data-[size=sm]/card:px-3 flex flex-col gap-3"[31m
+            [33mdata-slot[31m=[32m"card-content"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"flex items-start justify-between gap-3"[31m
+            [36m>[31m
+              [36m<a[31m
+                [33maria-label[31m=[32m"View invoice INV-2026-000001"[31m
+                [33mclass[31m=[32m"rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"[31m
+                [33mhref[31m=[32m"/portal/invoices/11111111-2222-4333-8444-555555555555"[31m
+              [36m>[31m
+                [36m<h2[31m
+                  [33mclass[31m=[32m"font-mono text-sm font-medium leading-snug"[31m
+                [36m>[31m
+                  [0mINV-2026-000001[0m
+                [36m</h2>[31m
+              [36m</a>[31m
+              [36m<span[31m
+                [33mclass[31m=[32m"group/badge h-5 w-fit justify-center overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-primary text-primary-foreground [a]:hover:bg-primary/80 inline-flex items-center gap-1 shrink-0"[31m
+                [33mdata-slot[31m=[32m"badge"[31m
+                [33mdata-variant[31m=[32m"default"[31m
+              [36m>[31m
+                [36m<svg[31m
+                  [33maria-hidden[31m=[32m"true"[31m
+                  [33mclass[31m=[32m"lucide lucide-circle-check size-3.5"[31m
+                  [33mfill[31m=[32m"none"[31m
+                  [33mheight[31m=[32m"24"[31m
+                  [33mstroke[31m=[32m"currentColor"[31m
+                  [33mstroke-linecap[31m=[32m"round"[31m
+                  [33mstroke-linejoin[31m=[32m"round"[31m
+                  [33mstroke-width[31m=[32m"2"[31m
+                  [33mviewBox[31m=[32m"0 0 24 24"[31m
+                  [33mwidth[31m=[32m"24"[31m
+                  [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+                [36m>[31m
+                  [36m<circle[31m
+                    [33mcx[31m=[32m"12"[31m
+                    [33mcy[31m=[32m"12"[31m
+                    [33mr[31m=[32m"10"[31m
+                  [36m/>[31m
+                  [36m<path[31m
+                    [33md[31m=[32m"m9 12 2 2 4-4"[31m
+                  [36m/>[31m
+                [36m</svg>[31m
+                [0mPaid[0m
+              [36m</span>[31m
+            [36m</div>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-sm text-muted-foreground"[31m
+            [36m>[31m
+              [0mIssued[0m
+              [0m [0m
+              [0mApr 1, 2026[0m
+              [0m ·[0m
+              [0m [0m
+              [0mDue[0m
+              [0m [0m
+              [0mApr 30, 2026[0m
+            [36m</p>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-sm text-muted-foreground"[31m
+            [36m>[31m
+              [0mReceipt No.[0m
+              [0m [0m
+              [36m<span[31m
+                [33mclass[31m=[32m"font-mono tabular-nums text-foreground"[31m
+              [36m>[31m
+                [0mRCP-2026-000009[0m
+              [36m</span>[31m
+            [36m</p>[31m
+            [36m<div[31m
+              [33maria-orientation[31m=[32m"horizontal"[31m
+              [33mclass[31m=[32m"shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch"[31m
+              [33mdata-orientation[31m=[32m"horizontal"[31m
+              [33mdata-slot[31m=[32m"separator"[31m
+              [33mrole[31m=[32m"separator"[31m
+            [36m/>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-base font-semibold tabular-nums"[31m
+            [36m>[31m
+              [0m107.00 THB[0m
+            [36m</p>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"flex flex-wrap items-center gap-2"[31m
+            [36m>[31m
+              [36m<button[31m
+                [33maria-label[31m=[32m"Download tax invoice PDF for invoice INV-2026-000001"[31m
+                [33mdata-testid[31m=[32m"invoice-download"[31m
+                [33mtype[31m=[32m"button"[31m
+              [36m>[31m
+                [0mInvoice[0m
+              [36m</button>[31m
+              [36m<button[31m
+                [33maria-label[31m=[32m"resend INV-2026-000001"[31m
+                [33mdata-testid[31m=[32m"resend"[31m
+                [33mtype[31m=[32m"button"[31m
+              [36m>[31m
+                [0mresend[0m
+              [36m</button>[31m
+            [36m</div>[31m
+          [36m</div>[31m
+        [36m</div>[31m
+      [36m</li>[31m
+    [36m</ul>[31m
+  [36m</div>[31m
+[36m</body>[31m[39m
+ [32m✓[39m tests/unit/portal/dashboard/dashboard-reads.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m 
+tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx[2m > [22m<PortalInvoiceCardList> 
+— combined-paid[2m > [22mshows the combined "Tax invoice / Receipt" download, NO separate invoice 
+anchor, and OMITS the receipt-number line
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element by: 
+[data-testid="receipt-download"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<ul[39m
+      [33mclass[39m=[32m"flex flex-col gap-3"[39m
+      [33mdata-testid[39m=[32m"portal-invoice-card-list"[39m
+      [33mrole[39m=[32m"list"[39m
+    [36m>[39m
+      [36m<li[39m
+        [33maria-label[39m=[32m"Invoice INV-2026-000001, Paid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"group/card flex flex-col gap-4 overflow-hidden 
+rounded-[var(--card-radius)] bg-card py-[var(--card-padding)] text-sm text-card-foreground 
+shadow-[var(--card-shadow)] ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 
+has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 
+data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-[var(--card-radius)] 
+*:[img:last-child]:rounded-b-[var(--card-radius)]"[39m
+          [33mdata-size[39m=[32m"default"[39m
+          [33mdata-slot[39m=[32m"card"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"px-[var(--card-padding)] group-data-[size=sm]/card:px-3 flex 
+flex-col gap-3"[39m
+            [33mdata-slot[39m=[32m"card-content"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-start justify-between gap-3"[39m
+            [36m>[39m
+              [36m<a[39m
+                [33maria-label[39m=[32m"View invoice INV-2026-000001"[39m
+                [33mclass[39m=[32m"rounded-sm underline underline-offset-4 hover:no-underline 
+focus-visible:outline-2 focus-visible:outline-offset-2"[39m
+                [33mhref[39m=[32m"/portal/invoices/11111111-2222-4333-8444-555555555555"[39m
+              [36m>[39m
+                [36m<h2[39m
+                  [33mclass[39m=[32m"font-mono text-sm font-medium leading-snug"[39m
+                [36m>[39m
+                  [0mINV-2026-000001[0m
+                [36m</h2>[39m
+              [36m</a>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"group/badge h-5 w-fit justify-center overflow-hidden 
+rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap 
+transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 
+has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 
+aria-invalid:border-destructive aria-invalid:ring-destructive/20 
+dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-primary 
+text-primary-foreground [a]:hover:bg-primary/80 inline-flex items-center gap-1 shrink-0"[39m
+                [33mdata-slot[39m=[32m"badge"[39m
+                [33mdata-variant[39m=[32m"default"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-circle-check size-3.5"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"12"[39m
+                    [33mcy[39m=[32m"12"[39m
+                    [33mr[39m=[32m"10"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mPaid[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+            [36m>[39m
+              [0mIssued[0m
+              [0m [0m
+              [0mApr 1, 2026[0m
+              [0m ·[0m
+              [0m [0m
+              [0mDue[0m
+              [0m [0m
+              [0mApr 30, 2026[0m
+            [36m</p>[39m
+            [36m<div[39m
+              [33maria-orientation[39m=[32m"horizontal"[39m
+              [33mclass[39m=[32m"shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full 
+data-vertical:w-px data-vertical:self-stretch"[39m
+              [33mdata-orientation[39m=[32m"horizontal"[39m
+              [33mdata-slot[39m=[32m"separator"[39m
+              [33mrole[39m=[32m"separator"[39m
+            [36m/>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-base font-semibold tabular-nums"[39m
+            [36m>[39m
+              [0m107.00 THB[0m
+            [36m</p>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex flex-wrap items-center gap-2"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"resend INV-2026-000001"[39m
+                [33mdata-testid[39m=[32m"resend"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0mresend[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</li>[39m
+    [36m</ul>[39m
+  [36m</div>[39m
+[36m</body>[39m
+[90m [2m❯[22m Object.getElementError node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@
+testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m 
+tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx:[2m297:28[22m[39m
+    [90m295| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByTestId[39m([32m'invoice-downlo
+ad'[39m))[33m.[39mnot[33m.[39m[34mtoBeInTheDocu[39m…
+    [90m296| [39m    [90m// …and shows ONLY the receipt button carrying the COMBINED label.[39m
+    [90m297| [39m    [35mconst[39m receipt [33m=[39m 
+screen[33m.[39m[34mgetByTestId[39m([32m'receipt-download'[39m)[33m;[39m
+    [90m   | [39m                           [31m^[39m
+    [90m298| [39m    [34mexpect[39m(receipt)[33m.[39m[34mtoHaveTextContent[39m([32m'Tax 
+invoice / Receipt'[39m)[33m;[39m
+    [90m299| [39m    [90m// Combined aria preserved for SR users (the long form).[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m 
+tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx[2m > [22m<PortalInvoiceCardList> 
+— separate-paid[2m > [22mshows BOTH Invoice + Receipt buttons (short labels) AND the 
+receipt-number line
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element by: 
+[data-testid="receipt-download"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<ul[39m
+      [33mclass[39m=[32m"flex flex-col gap-3"[39m
+      [33mdata-testid[39m=[32m"portal-invoice-card-list"[39m
+      [33mrole[39m=[32m"list"[39m
+    [36m>[39m
+      [36m<li[39m
+        [33maria-label[39m=[32m"Invoice INV-2026-000001, Paid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"group/card flex flex-col gap-4 overflow-hidden 
+rounded-[var(--card-radius)] bg-card py-[var(--card-padding)] text-sm text-card-foreground 
+shadow-[var(--card-shadow)] ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 
+has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 
+data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-[var(--card-radius)] 
+*:[img:last-child]:rounded-b-[var(--card-radius)]"[39m
+          [33mdata-size[39m=[32m"default"[39m
+          [33mdata-slot[39m=[32m"card"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"px-[var(--card-padding)] group-data-[size=sm]/card:px-3 flex 
+flex-col gap-3"[39m
+            [33mdata-slot[39m=[32m"card-content"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-start justify-between gap-3"[39m
+            [36m>[39m
+              [36m<a[39m
+                [33maria-label[39m=[32m"View invoice INV-2026-000001"[39m
+                [33mclass[39m=[32m"rounded-sm underline underline-offset-4 hover:no-underline 
+focus-visible:outline-2 focus-visible:outline-offset-2"[39m
+                [33mhref[39m=[32m"/portal/invoices/11111111-2222-4333-8444-555555555555"[39m
+              [36m>[39m
+                [36m<h2[39m
+                  [33mclass[39m=[32m"font-mono text-sm font-medium leading-snug"[39m
+                [36m>[39m
+                  [0mINV-2026-000001[0m
+                [36m</h2>[39m
+              [36m</a>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"group/badge h-5 w-fit justify-center overflow-hidden 
+rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap 
+transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 
+has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 
+aria-invalid:border-destructive aria-invalid:ring-destructive/20 
+dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3! bg-primary 
+text-primary-foreground [a]:hover:bg-primary/80 inline-flex items-center gap-1 shrink-0"[39m
+                [33mdata-slot[39m=[32m"badge"[39m
+                [33mdata-variant[39m=[32m"default"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-circle-check size-3.5"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"12"[39m
+                    [33mcy[39m=[32m"12"[39m
+                    [33mr[39m=[32m"10"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mPaid[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+            [36m>[39m
+              [0mIssued[0m
+              [0m [0m
+              [0mApr 1, 2026[0m
+              [0m ·[0m
+              [0m [0m
+              [0mDue[0m
+              [0m [0m
+              [0mApr 30, 2026[0m
+            [36m</p>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+            [36m>[39m
+              [0mReceipt No.[0m
+              [0m [0m
+              [36m<span[39m
+                [33mclass[39m=[32m"font-mono tabular-nums text-foreground"[39m
+              [36m>[39m
+                [0mRCP-2026-000009[0m
+              [36m</span>[39m
+            [36m</p>[39m
+            [36m<div[39m
+              [33maria-orientation[39m=[32m"horizontal"[39m
+              [33mclass[39m=[32m"shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full 
+data-vertical:w-px data-vertical:self-stretch"[39m
+              [33mdata-orientation[39m=[32m"horizontal"[39m
+              [33mdata-slot[39m=[32m"separator"[39m
+              [33mrole[39m=[32m"separator"[39m
+            [36m/>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-base font-semibold tabular-nums"[39m
+            [36m>[39m
+              [0m107.00 THB[0m
+            [36m</p>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex flex-wrap items-center gap-2"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"Download tax invoice PDF for invoice INV-2026-000001"[39m
+                [33mdata-testid[39m=[32m"invoice-download"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0mInvoice[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"resend INV-2026-000001"[39m
+                [33mdata-testid[39m=[32m"resend"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0mresend[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</li>[39m
+    [36m</ul>[39m
+  [36m</div>[39m
+[36m</body>[39m
+[90m [2m❯[22m Object.getElementError node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@
+testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dis
+t/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m 
+tests/unit/app/portal/invoices/portal-invoice-card-list.test.tsx:[2m328:28[22m[39m
+    [90m326| [39m    [90m// Both downloads present; the receipt uses the SHORT separate lab[39m…
+    [90m327| [39m    [34mexpect[39m(screen[33m.[39m[34mgetByTestId[39m([32m'invoice-download
+'[39m))[33m.[39m[34mtoHaveTextContent[39m([32m'[39m…
+    [90m328| [39m    [35mconst[39m receipt [33m=[39m 
+screen[33m.[39m[34mgetByTestId[39m([32m'receipt-download'[39m)[33m;[39m
+    [90m   | [39m                           [31m^[39m
+    [90m329| [39m    
+[34mexpect[39m(receipt)[33m.[39m[34mtoHaveTextContent[39m([32m'Receipt'[39m)[33m;[39m
+    [90m330| [39m    
+[34mexpect[39m(receipt)[33m.[39mnot[33m.[39m[34mtoHaveTextContent[39m([32m'Tax invoice / 
+Receipt'[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m18 passed[39m[22m[90m (19)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m218 passed[39m[22m[90m (220)[39m
+[2m   Start at [22m 00:05:13
+[2m   Duration [22m 48.23s[2m (transform 35.17s, setup 11.86s, collect 173.99s, tests 31.94s, environment 48.39s, prepare 10.38s)[22m
+

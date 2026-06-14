@@ -1,0 +1,262 @@
+diff --git a/src/modules/invoicing/application/ports/invoice-repo.ts b/src/modules/invoicing/application/ports/invoice-repo.ts
+index f29adfd4..57335e30 100644
+--- a/src/modules/invoicing/application/ports/invoice-repo.ts
++++ b/src/modules/invoicing/application/ports/invoice-repo.ts
+@@ -76,7 +76,10 @@ export interface InvoiceRepo {
+     opts: {
+       readonly offset: number;
+       readonly pageSize: number;
+-      readonly status?: InvoiceStatus | 'all' | undefined;
++      // 'overdue' is a DERIVED filter (issued + Bangkok-today > dueDate), not a
++      // stored status — the repo translates it to the equivalent predicate
++      // (S1-P1-8). All other values map to stored `invoices.status`.
++      readonly status?: InvoiceStatus | 'all' | 'overdue' | undefined;
+       readonly fiscalYear?: number | undefined;
+       readonly memberId?: string | undefined;
+       readonly search?: string | undefined;
+diff --git a/src/modules/invoicing/application/ports/member-identity-port.ts b/src/modules/invoicing/application/ports/member-identity-port.ts
+index 802b9815..2da4c8b6 100644
+--- a/src/modules/invoicing/application/ports/member-identity-port.ts
++++ b/src/modules/invoicing/application/ports/member-identity-port.ts
+@@ -12,6 +12,15 @@ export interface MemberIdentityView {
+   readonly isActive: boolean;
+   readonly isArchived: boolean;
+   readonly snapshot: MemberIdentitySnapshot;
++  /**
++   * The member's plan `memberTypeScope` (S1-P1-16). `'company'` members MUST
++   * carry a tax_id to be issued a Thai tax invoice (FR-009a / Revenue Code §86);
++   * person tiers (`'individual'`) and mixed `'both'`-scope plans are exempt.
++   * `null` when the plan row is missing (defensive — treated as not-a-company so
++   * issue is never blocked on a data gap). The gate fires ONLY on an explicit
++   * `'company'` scope, so `'both'`/`'individual'`/`null` all fail open.
++   */
++  readonly memberTypeScope: 'company' | 'individual' | 'both' | null;
+   /**
+    * ISO date string (YYYY-MM-DD) of when the member joined the chamber.
+    * Used by the invoicing pro-rate policy to decide the correct factor
+diff --git a/src/modules/invoicing/application/use-cases/issue-invoice.ts b/src/modules/invoicing/application/use-cases/issue-invoice.ts
+index 3bd79c1d..75a0c750 100644
+--- a/src/modules/invoicing/application/use-cases/issue-invoice.ts
++++ b/src/modules/invoicing/application/use-cases/issue-invoice.ts
+@@ -100,6 +100,7 @@ export type IssueInvoiceError =
+   | { code: 'settings_missing' }
+   | { code: 'member_not_found' }
+   | { code: 'member_archived' }
++  | { code: 'tax_id_required' }
+   | { code: 'invalid_lines'; reason: string }
+   | { code: 'overflow'; fiscalYear: FiscalYear }
+   | { code: 'pdf_render_failed'; reason: string }
+@@ -207,6 +208,25 @@ export async function issueInvoice(
+     if (!member) return err({ code: 'member_not_found' });
+     if (member.isArchived) return err({ code: 'member_archived' });
+ 
++    // S1-P1-16 — a Thai tax invoice for a COMPANY member must carry the buyer's
++    // tax_id (FR-009a / Revenue Code §86). Person tiers (memberTypeScope
++    // 'individual'/'both'/null) are exempt. Early-exit BEFORE allocateNext so a
++    // missing tax_id never burns a §87 sequence number. Defense-in-depth: the
++    // member importer already requires tax_id at company-member entry.
++    //
++    // KNOWN FUTURE-TENANT GAP: a `'both'`-scope plan admits BOTH company and
++    // person members, so a company entity on a 'both' plan would be exempted
++    // here. No SweCham 2026 plan uses 'both' (corporate tiers are 'company',
++    // partnership tiers 'individual'), so there is no live defect. A future
++    // tenant introducing a 'both' plan with company members must re-scope this
++    // gate to the member's entity type rather than the plan scope.
++    if (
++      member.memberTypeScope === 'company' &&
++      (member.snapshot.tax_id ?? '').trim() === ''
++    ) {
++      return err({ code: 'tax_id_required' });
++    }
++
+     // Domain invariant — exactly one membership_fee line required
+     // before issue (spec § invariant). Runs BEFORE allocateNext so a
+     // malformed draft cannot consume a §87 sequence number.
+diff --git a/src/modules/invoicing/application/use-cases/list-invoices.ts b/src/modules/invoicing/application/use-cases/list-invoices.ts
+index 1f100117..5c89443a 100644
+--- a/src/modules/invoicing/application/use-cases/list-invoices.ts
++++ b/src/modules/invoicing/application/use-cases/list-invoices.ts
+@@ -58,7 +58,17 @@ export const listInvoicesPagedSchema = z.object({
+   offset: z.number().int().min(0).default(0),
+   pageSize: z.number().int().min(1).max(100).default(50),
+   status: z
+-    .enum(['draft', 'issued', 'paid', 'void', 'credited', 'partially_credited', 'all'])
++    .enum([
++      'draft',
++      'issued',
++      'paid',
++      'void',
++      'credited',
++      'partially_credited',
++      'all',
++      // S1-P1-8: derived filter — repo translates to issued + past-due.
++      'overdue',
++    ])
+     .optional(),
+   fiscalYear: z.number().int().optional(),
+   memberId: z.string().uuid().optional(),
+@@ -81,7 +91,9 @@ export async function listInvoicesPaged(
+   const { rows, total } = await deps.invoiceRepo.listPaged(input.tenantId, {
+     offset: input.offset,
+     pageSize: input.pageSize,
+-    status: (input.status as InvoiceStatus | 'all' | undefined) ?? undefined,
++    status:
++      (input.status as InvoiceStatus | 'all' | 'overdue' | undefined) ??
++      undefined,
+     fiscalYear: input.fiscalYear,
+     memberId: input.memberId,
+     search: input.search,
+diff --git a/src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts b/src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts
+index 82478d39..d3c6aaed 100644
+--- a/src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts
++++ b/src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts
+@@ -30,20 +30,37 @@ export const memberIdentityAdapter: MemberIdentityPort = {
+     const tx = txUnknown as TenantTx;
+     const forUpdate = opts?.forUpdate === true;
+ 
++    // S1-P1-16: LEFT JOIN the F2 plan to read `member_type_scope` (company vs
++    // individual) so issue-invoice can require a tax_id on company tax invoices.
++    // Cross-module raw SQL — same posture this adapter already takes when it
++    // reads the F3 `members` table from the invoicing module (RLS still scopes
++    // both tables via the per-tenant `tx`); the F2 plans barrel exposes no
++    // per-issue scope lookup. `FOR UPDATE OF m` locks ONLY the members row (the
++    // archive-race guard), never the plan catalogue.
+     const memberRows = (await tx.execute(
+       forUpdate
+         ? sql`
+-            SELECT member_id, company_name, tax_id, country, status, archived_at,
+-                   registration_date, registration_fee_paid
+-              FROM members
+-             WHERE tenant_id = ${tenantId} AND member_id = ${memberId}
+-             FOR UPDATE
++            SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
++                   m.archived_at, m.registration_date, m.registration_fee_paid,
++                   mp.member_type_scope
++              FROM members m
++              LEFT JOIN membership_plans mp
++                ON mp.tenant_id = m.tenant_id
++               AND mp.plan_id = m.plan_id
++               AND mp.plan_year = m.plan_year
++             WHERE m.tenant_id = ${tenantId} AND m.member_id = ${memberId}
++             FOR UPDATE OF m
+           `
+         : sql`
+-            SELECT member_id, company_name, tax_id, country, status, archived_at,
+-                   registration_date, registration_fee_paid
+-              FROM members
+-             WHERE tenant_id = ${tenantId} AND member_id = ${memberId}
++            SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
++                   m.archived_at, m.registration_date, m.registration_fee_paid,
++                   mp.member_type_scope
++              FROM members m
++              LEFT JOIN membership_plans mp
++                ON mp.tenant_id = m.tenant_id
++               AND mp.plan_id = m.plan_id
++               AND mp.plan_year = m.plan_year
++             WHERE m.tenant_id = ${tenantId} AND m.member_id = ${memberId}
+           `,
+     )) as unknown as Array<{
+       member_id: string;
+@@ -54,6 +71,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
+       archived_at: Date | null;
+       registration_date: Date | string;
+       registration_fee_paid: boolean;
++      member_type_scope: 'company' | 'individual' | 'both' | null;
+     }>;
+ 
+     const m = memberRows[0];
+@@ -80,6 +98,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
+       memberId,
+       isActive: m.status === 'active',
+       isArchived: m.archived_at !== null,
++      memberTypeScope: m.member_type_scope ?? null,
+       registrationDate: regDate,
+       registrationFeePaid: m.registration_fee_paid,
+       snapshot: makeMemberIdentitySnapshot({
+diff --git a/src/modules/invoicing/infrastructure/repos/drizzle-invoice-repo.ts b/src/modules/invoicing/infrastructure/repos/drizzle-invoice-repo.ts
+index 6e287195..b444969f 100644
+--- a/src/modules/invoicing/infrastructure/repos/drizzle-invoice-repo.ts
++++ b/src/modules/invoicing/infrastructure/repos/drizzle-invoice-repo.ts
+@@ -5,7 +5,7 @@
+  * role via `runInTenant(ctx, fn)` so RLS policies enforce tenant
+  * scoping even on paths that forget an explicit WHERE filter.
+  */
+-import { and, asc, desc, eq, gt, ne, sql, ilike } from 'drizzle-orm';
++import { and, asc, desc, eq, isNotNull, isNull, lt, ne, or, sql, ilike } from 'drizzle-orm';
+ import type { InvoiceRepo } from '../../application/ports/invoice-repo';
+ import {
+   asInvoiceId,
+@@ -357,7 +357,39 @@ export function makeDrizzleInvoiceRepo(
+           filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+         }
+         if (opts.cursor) {
+-          filters.push(gt(invoices.invoiceId, opts.cursor));
++          // S1-P1-9b: composite (issueDate, invoiceId) keyset matching the
++          // ORDER BY desc(issueDate) [Postgres DESC = NULLS FIRST], desc(invoiceId).
++          // A single-column invoiceId keyset is wrong here — invoiceId is a
++          // random UUID, NOT aligned with issueDate — so across >1 page it
++          // skipped/duplicated rows, skewing the F9 insights paginated
++          // aggregation (revenue/overdue) once a tenant exceeds PAGE=100 rows.
++          // Cursor format: `${issueDate ?? ''}|${invoiceId}` — an empty
++          // issueDate-part means a NULL issueDate (a draft), which sorts FIRST.
++          const sep = opts.cursor.indexOf('|');
++          const cIssue = sep >= 0 ? opts.cursor.slice(0, sep) : '';
++          const cId = sep >= 0 ? opts.cursor.slice(sep + 1) : opts.cursor;
++          if (cIssue === '') {
++            // Cursor row had a NULL issueDate (draft): remaining = other null
++            // rows with a smaller invoiceId, OR every non-null row (which sort
++            // after the null group).
++            filters.push(
++              or(
++                and(isNull(invoices.issueDate), lt(invoices.invoiceId, cId)),
++                isNotNull(invoices.issueDate),
++              )!,
++            );
++          } else {
++            // Cursor row had a real issueDate — the null group already preceded it.
++            filters.push(
++              and(
++                isNotNull(invoices.issueDate),
++                or(
++                  lt(invoices.issueDate, cIssue),
++                  and(eq(invoices.issueDate, cIssue), lt(invoices.invoiceId, cId)),
++                ),
++              )!,
++            );
++          }
+         }
+ 
+         const rows = await tx
+@@ -369,7 +401,13 @@ export function makeDrizzleInvoiceRepo(
+ 
+         const hasMore = rows.length > opts.pageSize;
+         const page = rows.slice(0, opts.pageSize) as InvoiceRow[];
+-        const nextCursor = hasMore ? page[page.length - 1]!.invoiceId : null;
++        // S1-P1-9b: composite cursor — encode (issueDate, invoiceId) of the last
++        // row so the next page resumes the keyset correctly.
++        const lastRow = page[page.length - 1];
++        const nextCursor =
++          hasMore && lastRow
++            ? `${lastRow.issueDate ?? ''}|${lastRow.invoiceId}`
++            : null;
+ 
+         // Load lines in a single follow-up query for each invoice on the page.
+         const invoiceIds = page.map((r) => r.invoiceId);
+@@ -409,7 +447,16 @@ export function makeDrizzleInvoiceRepo(
+         if (!includeDrafts && !opts.status) {
+           filters.push(sql`${invoices.status} != 'draft'`);
+         }
+-        if (opts.status && opts.status !== 'all') {
++        if (opts.status === 'overdue') {
++          // S1-P1-8: 'overdue' is a DERIVED view, not a stored status, so the
++          // old `eq(status,'overdue')` matched zero rows. Mirror the
++          // computeIsOverdue rule (status='issued' AND Bangkok-today > dueDate,
++          // strict) in SQL so this filter agrees with the per-row overdue badge.
++          filters.push(eq(invoices.status, 'issued'));
++          filters.push(
++            sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < (now() AT TIME ZONE 'Asia/Bangkok')::date`,
++          );
++        } else if (opts.status && opts.status !== 'all') {
+           filters.push(eq(invoices.status, opts.status));
+         }
+         if (opts.fiscalYear !== undefined) {

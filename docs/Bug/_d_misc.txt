@@ -1,0 +1,47 @@
+diff --git a/src/components/plans/benefit-matrix-editor.tsx b/src/components/plans/benefit-matrix-editor.tsx
+index 9d32245f..3e26678b 100644
+--- a/src/components/plans/benefit-matrix-editor.tsx
++++ b/src/components/plans/benefit-matrix-editor.tsx
+@@ -71,7 +71,8 @@ function NumberField({
+   const id = useId();
+   return (
+     <div className="space-y-1">
+-      <Label>{label}</Label>
++      {/* S1-P1-19: associate Label↔Input (WCAG 1.3.1 / 4.1.2). */}
++      <Label htmlFor={id}>{label}</Label>
+       <Input
+         id={id}
+         type="number"
+diff --git a/src/config/nav.ts b/src/config/nav.ts
+index fe34c504..edebe872 100644
+--- a/src/config/nav.ts
++++ b/src/config/nav.ts
+@@ -291,6 +291,15 @@ export const memberNavConfig: NavConfig = {
+           href: '/portal/timeline',
+           activePattern: '/portal/timeline',
+         },
++        // S1-P1-2 — inbound link to the renewal-reminder opt-out page, which
++        // otherwise had ZERO in-app links (reachable only by direct URL). The
++        // renewal FLOW page is reached via the email CTA (S1-P0-4 redeem-link).
++        {
++          titleKey: 'nav.member.renewalPrefs',
++          icon: CalendarClockIcon,
++          href: '/portal/preferences/renewals',
++          activePattern: '/portal/preferences/renewals',
++        },
+         {
+           titleKey: 'nav.member.account',
+           icon: UserCircleIcon,
+diff --git a/src/modules/plans/infrastructure/members/drizzle-member-attachment-checker.ts b/src/modules/plans/infrastructure/members/drizzle-member-attachment-checker.ts
+index 951d56ae..4c1cd0d8 100644
+--- a/src/modules/plans/infrastructure/members/drizzle-member-attachment-checker.ts
++++ b/src/modules/plans/infrastructure/members/drizzle-member-attachment-checker.ts
+@@ -9,7 +9,7 @@
+  *   `countActiveMembersOnPlan(ctx, planId, planYear)`
+  *
+  * No deep import into F3 internals; the F3 free function lives at
+- * `src/modules/members/application/use-cases/count-active-members-on-plan.ts`
++ * `src/modules/members/infrastructure/db/count-active-members-on-plan.ts`
+  * and is re-exported from `@/modules/members`.
+  */
+ import { countActiveMembersOnPlan } from '@/modules/members';

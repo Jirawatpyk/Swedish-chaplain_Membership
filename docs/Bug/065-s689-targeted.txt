@@ -1,0 +1,29 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781184421015,"service":"swecham-membership","env":"test","suggestionId":"cc894f62-c128-4c94-a171-4cd2b9b13a72","memberId":"31b68b1b-3dde-462c-b081-24a9b93c2cff","msg":"[accept-tier-upgrade] member has no primary-contact email — notify skipped + audit attempted"}
+{"level":"warn","time":1781184446401,"service":"swecham-membership","env":"test","err":"synthetic_dispatch_lookup_crash:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","suggestionId":"5def60af-4d56-4a9d-832d-dfde9f72e440","msg":"[accept-tier-upgrade] gateway / lookup path threw — emitting failed audit"}
+{"level":"error","time":1781184462087,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-701c0011","invoiceId":"64ac89ba-bbbc-4558-968b-be4bd184b99a","memberId":"c33c5264-893b-42de-a0ce-2ee8def4e5fa","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"error","time":1781184465809,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-701c0011","invoiceId":"caa9a52e-107a-4909-91d8-b73fa7f7c589","memberId":"65c213df-8ef3-4edd-a292-f55a34c618f2","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+ [32m✓[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 53339[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR2-CRIT-3.A — accept with no primary contact emits notify_skipped audit [33m4047[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit [33m4061[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22maccept happy path — pending state + scheduled-plan-change + audit [33m4195[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mT-180 verify task — created when expires_at > 180d [33m4004[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mT-180 skipped — no task when expires_at <= 180d [33m2884[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mapply at renewal — pending → applied + audit [33m3746[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mmanual override supersede — accepted_pending_apply → superseded + audit [33m3472[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown) [33m2134[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011 concurrent Accept race — partial UNIQUE catches second writer + state remains pending exactly once [33m3016[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-011b deterministic double-accept probe — CAS on transitionStatus rejects the stale-read second accepter [33m3979[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mW-013 manual-supersede on open suggestion — fromStatus=open + audit emitted [33m1618[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS7 stale-read race — concurrent accept then supersede MUST still supersede (set-membership CAS) [33m3545[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing [33m3861[2mms[22m[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block) [33m4570[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+[2m   Start at [22m 20:26:44
+[2m   Duration [22m 66.26s[2m (transform 3.57s, setup 29ms, collect 11.34s, tests 53.34s, environment 0ms, prepare 105ms)[22m
+

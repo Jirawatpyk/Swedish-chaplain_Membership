@@ -1,0 +1,47 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781193386792,"service":"swecham-membership","env":"test","suggestionId":"dab54638-abe0-45a2-b5f0-be894973d3ae","errorKind":"gateway_4xx","msg":"[accept-tier-upgrade] member notification email failed — audit attempted"}
+{"level":"warn","time":1781193388677,"service":"swecham-membership","env":"test","err":"synthetic_dispatch_lookup_crash:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","suggestionId":"5969539e-a3d4-461b-8963-ebfc58b46c99","msg":"[accept-tier-upgrade] gateway / lookup path threw — emitting failed audit"}
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m17 tests[22m[2m | [22m[31m2 failed[39m[2m | [22m[33m15 skipped[39m[2m)[22m[33m 9000[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit[33m 3873[2mms[22m[31m[39m
+[31m     → expected 0 to be greater than or equal to 1[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)[33m 2056[2mms[22m[31m[39m
+[31m     → expected 'gateway_4xx' to be 'unknown' // Object.is equality[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mAS2 — accept dispatches member email + emits notify audit
+[31m[1mAssertionError[22m: expected 0 to be greater than or equal to 1[39m
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m370:33[22m[39m
+    [90m368| [39m        )[33m,[39m
+    [90m369| [39m    )[33m;[39m
+    [90m370| [39m    [34mexpect[39m(notifyAudits[33m.[39mlength)[33m.[39m[34mtoBeGreaterThanOrEqual[39m([34m1[39m)[33m;[39m
+    [90m   | [39m                                [31m^[39m
+    [90m371| [39m  }[33m,[39m [34m60_000[39m)[33m;[39m
+    [90m372| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mR4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)
+[31m[1mAssertionError[22m: expected 'gateway_4xx' to be 'unknown' // Object.is equality[39m
+
+Expected: [32m"unknown"[39m
+Received: [31m"gateway_4xx"[39m
+
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m666:35[22m[39m
+    [90m664| [39m        }
+    [90m665| [39m      [33m|[39m [35mnull[39m[33m;[39m
+    [90m666| [39m    [34mexpect[39m(payload[33m?.[39mfailure_kind)[33m.[39m[34mtoBe[39m([32m'unknown'[39m)[33m;[39m
+    [90m   | [39m                                  [31m^[39m
+    [90m667| [39m    [34mexpect[39m(payload[33m?.[39mrecipient_email_hashed)[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m668| [39m    [34mexpect[39m(payload[33m?.[39mfailure_message)[33m.[39m[34mtoMatch[39m([36m/synthetic_dispatch_looku[39m…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[33m15 skipped[39m[90m (17)[39m
+[2m   Start at [22m 22:56:10
+[2m   Duration [22m 21.65s[2m (transform 3.44s, setup 25ms, collect 11.03s, tests 9.00s, environment 0ms, prepare 106ms)[22m
+

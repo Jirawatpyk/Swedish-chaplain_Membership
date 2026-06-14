@@ -1,0 +1,34 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"error","time":1781182889907,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-aca699eb","invoiceId":"58ede71e-88f2-443a-a89c-68919ade1391","memberId":"c10028fd-f9a3-4196-afb1-698d907877d9","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+{"level":"error","time":1781182893743,"service":"swecham-membership","env":"test","errorId":"F8.APPLY_TIER.INVALID_TX","tenantId":"test-swecham-aca699eb","invoiceId":"bbfba048-b309-42d2-9b9a-8beafde081ae","memberId":"c78e3c80-76c7-4850-b08a-586f1d66d1f7","txKeys":null,"txType":"undefined","msg":"[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected"}
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m12 skipped[39m[2m)[22m[33m 12402[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing[33m 5236[2mms[22m[31m[39m
+[31m     → expected 'applied' to be 'pending' // Object.is equality[39m
+   [33m[2m✓[22m[39m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block) [33m4280[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing
+[31m[1mAssertionError[22m: expected 'applied' to be 'pending' // Object.is equality[39m
+
+Expected: [32m"pending"[39m
+Received: [31m"applied"[39m
+
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m1232:30[22m[39m
+    [90m1230| [39m        [33m.[39m[34mwhere[39m([34meq[39m(scheduledPlanChanges[33m.[39mmemberId[33m,[39m seeded[33m.[39mmemberId))[33m,[39m
+    [90m1231| [39m    )[33m;[39m
+    [90m1232| [39m    [34mexpect[39m(afterRow[33m?.[39mstatus)[33m.[39m[34mtoBe[39m([32m'pending'[39m)[33m;[39m
+    [90m   | [39m                             [31m^[39m
+    [90m1233| [39m    [34mexpect[39m(afterRow[33m?.[39mappliedAt)[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m1234| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[2m | [22m[33m12 skipped[39m[90m (14)[39m
+[2m   Start at [22m 20:01:12
+[2m   Duration [22m 25.37s[2m (transform 3.60s, setup 25ms, collect 11.45s, tests 12.40s, environment 0ms, prepare 104ms)[22m
+

@@ -1,0 +1,1517 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test --workers=1 "--grep" "@a11y|@i18n" "--project=chromium" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+[e2e global setup] reset F5 issued-invoice fixture b070ff99-e7f1-48c4-a87c-f04cada85036
+[e2e seed broadcasts] OK broadcast=411e4144-0191-4dfd-bf7d-3da71a09126f halted="Fogmaker Thailand Demo"
+[e2e seed renewals] OK upcoming=3a2c84cf-3455-4235-b427-d9af3d2ce539 lapsed=7d8ac616-47fc-4c23-bd81-64a11324c2b4 suggestion=2536db32-205e-421d-a359-1444f7edf984 member=b317dece-9e23-4ffa-84d5-12c059ba9624 expires=2026-07-03T11:06:14.984Z
+[e2e seed F6] OK — tenant=swecham events=3 registrations=10 (3 non_member + 3 unmatched + 4 matched) — badges covered: Partnership benefit + Cultural event + Over quota + Not counted — payment statuses: paid + pending + refunded + free
+
+Running 219 tests using 1 worker
+
+  ✘    1 [chromium] › tests\e2e\broadcast-a11y.spec.ts:82:7 › @a11y T192 — Tiptap zoom 200% › compose form remains usable at 320px viewport (WCAG 2.1 1.4.4 reflow) (7.1s)
+  ✘    2 [chromium] › tests\e2e\broadcast-a11y.spec.ts:82:7 › @a11y T192 — Tiptap zoom 200% › compose form remains usable at 320px viewport (WCAG 2.1 1.4.4 reflow) (retry #1) (6.6s)
+  ✘    3 [chromium] › tests\e2e\broadcast-a11y.spec.ts:82:7 › @a11y T192 — Tiptap zoom 200% › compose form remains usable at 320px viewport (WCAG 2.1 1.4.4 reflow) (retry #2) (5.9s)
+  ✓    4 [chromium] › tests\e2e\broadcast-a11y.spec.ts:126:7 › @a11y T194 — prefers-reduced-motion › reduced-motion media query is detected by the page (1.7s)
+  ✓    5 [chromium] › tests\e2e\broadcast-axe.spec.ts:46:7 › @a11y T190 — F7 axe-core scan › public unsubscribe page (invalid token render path) (8.6s)
+  ✓    6 [chromium] › tests\e2e\broadcast-axe.spec.ts:60:9 › @a11y T190 — F7 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › compose form (7.8s)
+  ✓    7 [chromium] › tests\e2e\broadcast-axe.spec.ts:79:9 › @a11y T190 — F7 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › member benefits page (8.0s)
+  ✓    8 [chromium] › tests\e2e\broadcast-axe.spec.ts:104:9 › @a11y T190 — F7 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › admin queue (8.8s)
+  ✓    9 [chromium] › tests\e2e\broadcast-i18n.spec.ts:42:9 › @i18n T193 — html-lang-attribute-correct-per-resolved-locale › unsubscribe page lang=en sets <main lang="en"> (2.9s)
+  ✓   10 [chromium] › tests\e2e\broadcast-i18n.spec.ts:42:9 › @i18n T193 — html-lang-attribute-correct-per-resolved-locale › unsubscribe page lang=th sets <main lang="th"> (2.1s)
+  ✓   11 [chromium] › tests\e2e\broadcast-i18n.spec.ts:42:9 › @i18n T193 — html-lang-attribute-correct-per-resolved-locale › unsubscribe page lang=sv sets <main lang="sv"> (2.4s)
+  ✓   12 [chromium] › tests\e2e\broadcast-i18n.spec.ts:62:7 › @i18n T195 — Tiptap TH IME composition › TH text inserted into Tiptap renders correctly + cursor advances (6.2s)
+  ✓   13 [chromium] › tests\e2e\broadcast-i18n.spec.ts:90:9 › @i18n T196 — TH+EN+SV dispatch round-trip › TH-only subject preserved through submit (5.9s)
+  ✓   14 [chromium] › tests\e2e\broadcast-i18n.spec.ts:90:9 › @i18n T196 — TH+EN+SV dispatch round-trip › bidi LTR/RTL subject preserved through submit (5.9s)
+  ✓   15 [chromium] › tests\e2e\broadcast-i18n.spec.ts:90:9 › @i18n T196 — TH+EN+SV dispatch round-trip › emoji subject preserved through submit (6.2s)
+  ✘   16 [chromium] › tests\e2e\broadcast-i18n.spec.ts:104:9 › @i18n T197 — TH locale length-expansion at 320px + 1280px › compose form has no horizontal overflow at 320px (TH locale) (5.8s)
+  ✘   17 [chromium] › tests\e2e\broadcast-i18n.spec.ts:104:9 › @i18n T197 — TH locale length-expansion at 320px + 1280px › compose form has no horizontal overflow at 320px (TH locale) (retry #1) (9.1s)
+  ✘   18 [chromium] › tests\e2e\broadcast-i18n.spec.ts:104:9 › @i18n T197 — TH locale length-expansion at 320px + 1280px › compose form has no horizontal overflow at 320px (TH locale) (retry #2) (8.3s)
+  ✓   19 [chromium] › tests\e2e\broadcast-i18n.spec.ts:104:9 › @i18n T197 — TH locale length-expansion at 320px + 1280px › compose form has no horizontal overflow at 1280px (TH locale) (8.5s)
+  ✓   20 [chromium] › tests\e2e\broadcasts\image-upload-allowlist.spec.ts:50:7 › F7.1a US2 — Image upload + allowlist E2E @a11y › admin allowlist editor renders + passes axe scan (7.0s)
+  ✓   21 [chromium] › tests\e2e\broadcasts\image-upload-allowlist.spec.ts:76:7 › F7.1a US2 — Image upload + allowlist E2E @a11y › member compose surface exposes image upload toolbar button (8.3s)
+  ✓   22 [chromium] › tests\e2e\broadcasts\image-upload-allowlist.spec.ts:101:7 › F7.1a US2 — Image upload + allowlist E2E @a11y › upload of 6MB file shows size-cap error inline (8.6s)
+  ✓   23 [chromium] › tests\e2e\broadcasts\pagination-batch-breakdown.spec.ts:72:7 › @a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T040) › partially_sent broadcast → per-batch breakdown collapsible visible + axe-clean (10.6s)
+  ✓   24 [chromium] › tests\e2e\broadcasts\pagination-batch-breakdown.spec.ts:96:7 › @a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T040) › retry button → AlertDialog with budget-remaining + focus-trap + Esc closes (6.5s)
+  ✓   25 [chromium] › tests\e2e\broadcasts\pagination-batch-breakdown.spec.ts:116:7 › @a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T040) › accept-partial button → AlertDialog with reason text-area (max 500) (5.7s)
+  ✓   26 [chromium] › tests\e2e\broadcasts\pagination-batch-breakdown.spec.ts:147:7 › @a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T040) › prefers-reduced-motion → AlertDialog has no animation (5.2s)
+  ✓   27 [chromium] › tests\e2e\escalation-task-queue.spec.ts:52:7 › F8 — escalation task queue (US6) @a11y › AS1: renders queue page heading + status tabs (admin view) (4.9s)
+  ✓   28 [chromium] › tests\e2e\escalation-task-queue.spec.ts:69:7 › F8 — escalation task queue (US6) @a11y › AS1: 8 column headers render in admin mode (4.3s)
+  ✓   29 [chromium] › tests\e2e\escalation-task-queue.spec.ts:107:7 › F8 — escalation task queue (US6) @a11y › AS2: Done dialog opens + Cancel keeps task open (4.7s)
+  ✓   30 [chromium] › tests\e2e\escalation-task-queue.spec.ts:133:7 › F8 — escalation task queue (US6) @a11y › AS3: Reassign dialog opens with assignee combobox (4.5s)
+  ✓   31 [chromium] › tests\e2e\escalation-task-queue.spec.ts:165:7 › F8 — escalation task queue (US6) @a11y › AS3: ?assignment=mine filter chip pressed-state announces correctly (4.7s)
+  ✓   32 [chromium] › tests\e2e\escalation-task-queue.spec.ts:177:7 › F8 — escalation task queue (US6) @a11y › AS4: overdue banner OR no-overdue annotation (4.2s)
+  ✓   33 [chromium] › tests\e2e\escalation-task-queue.spec.ts:201:7 › F8 — escalation task queue (US6) @a11y › W7: manager visits the queue → action column hidden + read-only notice rendered (4.1s)
+  ✓   34 [chromium] › tests\e2e\escalation-task-queue.spec.ts:230:7 › F8 — escalation task queue (US6) @a11y › W8: clicking a member row link navigates to /admin/members/[id] (4.2s)
+  ✓   35 [chromium] › tests\e2e\escalation-task-queue.spec.ts:258:7 › F8 — escalation task queue (US6) @a11y › a11y: axe-core scan finds no WCAG 2.1 AA violations (5.9s)
+  ✓   36 [chromium] › tests\e2e\escalation-task-queue.spec.ts:278:7 › F8 — escalation task queue (US6) @a11y › a11y: prefers-reduced-motion neutralises animation (3.8s)
+  ✓   37 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:95:7 › @a11y T055 — F6 events list+detail axe-core scan › admin events list (/admin/events) (6.7s)
+  ✓   38 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:108:7 › @a11y T055 — F6 events list+detail axe-core scan › admin event detail (/admin/events/[eventId]) (10.0s)
+  ✓   39 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:144:7 › @a11y T055 — F6 events list+detail axe-core scan › admin integration wizard (/admin/integrations/eventcreate) (6.8s)
+  ✓   40 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:168:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import — idle state (/admin/events/import) @a11y (6.4s)
+  ✓   41 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:178:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import — preview-error state (malformed header) @a11y (6.6s)
+  ✓   42 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:213:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import — completed-with-result state @a11y (12.2s)
+  ✓   43 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:294:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import — completed-with-errors expanded state @a11y (12.3s)
+  ✓   44 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:391:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import F6.1 — event-picker visible @a11y (5.7s)
+  ✓   45 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:406:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import F6.1 — inline create modal open @a11y (6.1s)
+  ✓   46 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:428:7 › @a11y T055 — F6 events list+detail axe-core scan › admin CSV import F6.1 — event-mismatch warning dialog open @a11y (14.5s)
+  ✓   47 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:561:7 › @a11y T055 — F6 events list+detail axe-core scan › @a11y F6.1 — /admin/events/import/history (paginated history table) (6.7s)
+  ✓   48 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:588:7 › @a11y T055 — F6 events list+detail axe-core scan › @a11y R8.W R060 — safetyNetFailedOpen=true chip axe scan (intercepted response) (10.2s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✓   49 [chromium] › tests\e2e\eventcreate-a11y.spec.ts:681:7 › @a11y T055 — F6 events list+detail axe-core scan › @a11y A8 — /admin/events/[eventId]/registrations/[registrationId]/erase (dedicated PII erasure page) (10.7s)
+  ✓   50 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:45:9 › @i18n T056 — F6 admin events list+detail locale coverage › en — /admin/events has no translation key leaks (5.0s)
+  ✓   51 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:75:9 › @i18n T056 — F6 admin events list+detail locale coverage › en — /admin/events <html lang> matches (4.7s)
+  ✓   52 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:103:9 › @i18n T056 — F6 admin events list+detail locale coverage › en — empty-state copy is localised (no EN fallback in TH/SV) (4.6s)
+  ✓   53 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:158:9 › @i18n T056 — F6 admin events list+detail locale coverage › en — /admin/settings/integrations/eventcreate has no translation key leaks (4.6s)
+  ✓   54 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:192:9 › @i18n T056 — F6 admin events list+detail locale coverage › en — /admin/settings/integrations/eventcreate <html lang> matches (4.1s)
+  ✓   55 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:220:9 › @i18n T056 — F6 admin events list+detail locale coverage › en — wizard copy is localised (locale-specific keyword present) (4.1s)
+  ✓   56 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:45:9 › @i18n T056 — F6 admin events list+detail locale coverage › th — /admin/events has no translation key leaks (4.7s)
+  ✓   57 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:75:9 › @i18n T056 — F6 admin events list+detail locale coverage › th — /admin/events <html lang> matches (5.0s)
+  ✓   58 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:103:9 › @i18n T056 — F6 admin events list+detail locale coverage › th — empty-state copy is localised (no EN fallback in TH/SV) (4.8s)
+  ✓   59 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:158:9 › @i18n T056 — F6 admin events list+detail locale coverage › th — /admin/settings/integrations/eventcreate has no translation key leaks (4.9s)
+  ✓   60 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:192:9 › @i18n T056 — F6 admin events list+detail locale coverage › th — /admin/settings/integrations/eventcreate <html lang> matches (4.2s)
+  ✓   61 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:220:9 › @i18n T056 — F6 admin events list+detail locale coverage › th — wizard copy is localised (locale-specific keyword present) (4.5s)
+  ✓   62 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:45:9 › @i18n T056 — F6 admin events list+detail locale coverage › sv — /admin/events has no translation key leaks (4.8s)
+  ✓   63 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:75:9 › @i18n T056 — F6 admin events list+detail locale coverage › sv — /admin/events <html lang> matches (4.4s)
+  ✓   64 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:103:9 › @i18n T056 — F6 admin events list+detail locale coverage › sv — empty-state copy is localised (no EN fallback in TH/SV) (4.6s)
+  ✓   65 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:158:9 › @i18n T056 — F6 admin events list+detail locale coverage › sv — /admin/settings/integrations/eventcreate has no translation key leaks (4.5s)
+  ✓   66 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:192:9 › @i18n T056 — F6 admin events list+detail locale coverage › sv — /admin/settings/integrations/eventcreate <html lang> matches (4.0s)
+  ✓   67 [chromium] › tests\e2e\eventcreate-i18n.spec.ts:220:9 › @i18n T056 — F6 admin events list+detail locale coverage › sv — wizard copy is localised (locale-specific keyword present) (4.2s)
+  ✓   68 [chromium] › tests\e2e\f9-a11y.spec.ts:56:7 › @a11y T097 — F9 dashboard axe-core scan › operations dashboard (/admin) (6.7s)
+  ✓   69 [chromium] › tests\e2e\f9-a11y.spec.ts:63:7 › @a11y T097 — F9 dashboard axe-core scan › members list with engagement column (/admin/members) (9.1s)
+  ✓   70 [chromium] › tests\e2e\f9-a11y.spec.ts:76:7 › @a11y T097 — F9 dashboard axe-core scan › member benefit view (/admin/members/[id]/benefits) (13.6s)
+  ✓   71 [chromium] › tests\e2e\f9-a11y.spec.ts:96:7 › @a11y T097 — F9 dashboard axe-core scan › member benefit view (/portal/benefits) (8.1s)
+  ✓   72 [chromium] › tests\e2e\f9-a11y.spec.ts:110:7 › @a11y T097 — F9 dashboard axe-core scan › staff directory (/admin/directory) (7.4s)
+  ✓   73 [chromium] › tests\e2e\f9-a11y.spec.ts:127:7 › @a11y T097 — F9 dashboard axe-core scan › member directory settings (/portal/profile/directory) (8.1s)
+  ✓   74 [chromium] › tests\e2e\f9-a11y.spec.ts:141:7 › @a11y T097 — F9 dashboard axe-core scan › member data export (/portal/account/data-export) (7.9s)
+  ✓   75 [chromium] › tests\e2e\f9-a11y.spec.ts:159:7 › @a11y T097 — F9 dashboard axe-core scan › admin member detail GDPR card (/admin/members/[id]) (14.8s)
+  ✓   76 [chromium] › tests\e2e\focus-ring.spec.ts:25:7 › F4 SC-011 — universal focus ring @a11y @layout › Tab focus exposes ring box-shadow on every focusable element (9.7s)
+  ✓   77 [chromium] › tests\e2e\invoice-admin-a11y.spec.ts:45:7 › F4 admin a11y regressions @a11y @f4 › every F4 admin static surface passes WCAG 2.1 AA (20.3s)
+  ✓   78 [chromium] › tests\e2e\invoice-admin-a11y.spec.ts:78:7 › F4 admin a11y regressions @a11y @f4 › /admin/invoices/[invoiceId] detail passes WCAG 2.1 AA (14.1s)
+  ✓   79 [chromium] › tests\e2e\layout-a11y.spec.ts:28:7 › F4 — layout a11y regressions @a11y @layout › every migrated admin page passes WCAG 2.1 AA (17.2s)
+  ✓   80 [chromium] › tests\e2e\members-a11y.spec.ts:72:7 › F3 admin comprehensive a11y scan @f3 @a11y › 1. /admin/members directory — no axe violations (8.4s)
+  ✓   81 [chromium] › tests\e2e\members-a11y.spec.ts:83:7 › F3 admin comprehensive a11y scan @f3 @a11y › 2. /admin/members/new create form — no axe violations (7.1s)
+  ✓   82 [chromium] › tests\e2e\members-a11y.spec.ts:96:7 › F3 admin comprehensive a11y scan @f3 @a11y › 3. /admin/members/:id detail — no axe violations (10.4s)
+  ✓   83 [chromium] › tests\e2e\members-a11y.spec.ts:112:7 › F3 admin comprehensive a11y scan @f3 @a11y › 4. /admin/members/:id/edit — no axe violations (13.0s)
+  ✓   84 [chromium] › tests\e2e\members-a11y.spec.ts:128:7 › F3 admin comprehensive a11y scan @f3 @a11y › 5. /admin/members/:id/timeline — no axe violations (12.0s)
+  ✓   85 [chromium] › tests\e2e\members-a11y.spec.ts:146:7 › F3 admin comprehensive a11y scan @f3 @a11y › 6. /admin/members directory with bulk bar open — no axe violations (8.9s)
+  ✓   86 [chromium] › tests\e2e\members-archive-undelete.spec.ts:61:7 › members archive/undelete — F3 US7 @f3 @a11y @i18n › detail page renders Archive CTA for active members (8.7s)
+  ✓   87 [chromium] › tests\e2e\members-archive-undelete.spec.ts:74:7 › members archive/undelete — F3 US7 @f3 @a11y @i18n › Archive dialog opens with reason textarea + Cancel/Confirm (8.1s)
+  ✓   88 [chromium] › tests\e2e\members-archive-undelete.spec.ts:98:7 › members archive/undelete — F3 US7 @f3 @a11y @i18n › @a11y — archive flow has zero WCAG 2.1 AA violations (12.1s)
+  ✓   89 [chromium] › tests\e2e\members-archive-undelete.spec.ts:125:7 › members archive/undelete — F3 US7 @f3 @a11y @i18n › @i18n — TH + SV locales render archive UI without leaks (10.7s)
+  ✓   90 [chromium] › tests\e2e\members-bulk-actions.spec.ts:76:7 › members bulk actions @f3 › @a11y axe-core scan on directory with selection (9.3s)
+  ✓   91 [chromium] › tests\e2e\members-bulk-actions.spec.ts:97:9 › members bulk actions i18n @f3 @i18n › en locale renders without i18n leak (4.8s)
+  ✓   92 [chromium] › tests\e2e\members-bulk-actions.spec.ts:97:9 › members bulk actions i18n @f3 @i18n › th locale renders without i18n leak (4.7s)
+  ✓   93 [chromium] › tests\e2e\members-bulk-actions.spec.ts:97:9 › members bulk actions i18n @f3 @i18n › sv locale renders without i18n leak (4.6s)
+  ✘   94 [chromium] › tests\e2e\members-create.spec.ts:64:7 › members create — F3 US1 @f3 @a11y @i18n › admin creates a new member via the form (8.4s)
+  -   95 [chromium] › tests\e2e\members-create.spec.ts:101:7 › members create — F3 US1 @f3 @a11y @i18n › @a11y — /admin/members/new has zero WCAG 2.1 AA violations
+  -   96 [chromium] › tests\e2e\members-create.spec.ts:116:7 › members create — F3 US1 @f3 @a11y @i18n › @i18n — TH + SV locales render the form title without leaks
+  -   97 [chromium] › tests\e2e\members-create.spec.ts:141:7 › members create — F3 US1 @f3 @a11y @i18n › keyboard-only path: every required input is reachable
+  ✓   98 [chromium] › tests\e2e\members-create.spec.ts:64:7 › members create — F3 US1 @f3 @a11y @i18n › admin creates a new member via the form (retry #1) (10.9s)
+  ✓   99 [chromium] › tests\e2e\members-create.spec.ts:101:7 › members create — F3 US1 @f3 @a11y @i18n › @a11y — /admin/members/new has zero WCAG 2.1 AA violations (retry #1) (7.3s)
+  ✓  100 [chromium] › tests\e2e\members-create.spec.ts:116:7 › members create — F3 US1 @f3 @a11y @i18n › @i18n — TH + SV locales render the form title without leaks (retry #1) (7.7s)
+  ✓  101 [chromium] › tests\e2e\members-create.spec.ts:141:7 › members create — F3 US1 @f3 @a11y @i18n › keyboard-only path: every required input is reachable (retry #1) (5.1s)
+  ✓  102 [chromium] › tests\e2e\members-directory-search.spec.ts:46:7 › members directory search — F3 US2 @f3 @a11y @i18n › directory page renders + filter input is keyboard-accessible (5.1s)
+  ✓  103 [chromium] › tests\e2e\members-directory-search.spec.ts:63:7 › members directory search — F3 US2 @f3 @a11y @i18n › substring search round-trips through the URL (4.8s)
+  ✓  104 [chromium] › tests\e2e\members-directory-search.spec.ts:73:7 › members directory search — F3 US2 @f3 @a11y @i18n › @a11y — /admin/members has zero WCAG 2.1 AA violations (8.8s)
+  ✓  105 [chromium] › tests\e2e\members-directory-search.spec.ts:86:7 › members directory search — F3 US2 @f3 @a11y @i18n › @i18n — TH + SV locales render without raw key leaks (8.8s)
+  ✓  106 [chromium] › tests\e2e\members-edit-with-bundle-warning.spec.ts:75:7 › members edit + bundle warning — F3 US3 @f3 @a11y @i18n › edit form renders for an existing member (7.6s)
+  ✓  107 [chromium] › tests\e2e\members-edit-with-bundle-warning.spec.ts:85:7 › members edit + bundle warning — F3 US3 @f3 @a11y @i18n › @a11y — edit form has zero WCAG 2.1 AA violations (10.5s)
+  ✓  108 [chromium] › tests\e2e\members-edit-with-bundle-warning.spec.ts:98:7 › members edit + bundle warning — F3 US3 @f3 @a11y @i18n › @i18n — TH + SV locales render edit form without raw key leaks (9.3s)
+  ✓  109 [chromium] › tests\e2e\members-focus-not-obscured.spec.ts:53:7 › members focus-not-obscured by bulk toolbar @f3 @a11y › focused elements not fully obscured by sticky bulk toolbar (5.1s)
+  ✓  110 [chromium] › tests\e2e\members-i18n.spec.ts:72:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members renders in EN without key leaks (4.5s)
+  ✓  111 [chromium] › tests\e2e\members-i18n.spec.ts:95:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members page title in EN (4.9s)
+  ✓  112 [chromium] › tests\e2e\members-i18n.spec.ts:111:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members axe-core WCAG 2.1+2.2 AA scan in EN (8.4s)
+  ✓  113 [chromium] › tests\e2e\members-i18n.spec.ts:72:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members renders in TH without key leaks (4.7s)
+  ✓  114 [chromium] › tests\e2e\members-i18n.spec.ts:95:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members page title in TH (5.2s)
+  ✓  115 [chromium] › tests\e2e\members-i18n.spec.ts:111:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members axe-core WCAG 2.1+2.2 AA scan in TH (8.6s)
+  ✓  116 [chromium] › tests\e2e\members-i18n.spec.ts:72:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members renders in SV without key leaks (4.6s)
+  ✓  117 [chromium] › tests\e2e\members-i18n.spec.ts:95:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members page title in SV (5.3s)
+  ✓  118 [chromium] › tests\e2e\members-i18n.spec.ts:111:9 › F3 members i18n locale coverage @f3 @i18n › /admin/members axe-core WCAG 2.1+2.2 AA scan in SV (9.4s)
+  ✓  119 [chromium] › tests\e2e\members-i18n.spec.ts:127:7 › F3 members i18n locale coverage @f3 @i18n › Thai locale: DOB field shows Buddhist Era year on member detail (8.3s)
+  ✓  120 [chromium] › tests\e2e\members-page-titles.spec.ts:68:7 › F3 admin route page titles @f3 @a11y › /admin/members has title "Members · SweCham" (4.8s)
+  ✓  121 [chromium] › tests\e2e\members-page-titles.spec.ts:77:7 › F3 admin route page titles @f3 @a11y › /admin/members/new has title "Add member · SweCham" (4.5s)
+  ✓  122 [chromium] › tests\e2e\members-page-titles.spec.ts:88:7 › F3 admin route page titles @f3 @a11y › /admin/members/:id has unique member detail title (9.3s)
+  ✓  123 [chromium] › tests\e2e\members-page-titles.spec.ts:103:7 › F3 admin route page titles @f3 @a11y › /admin/members/:id/edit has unique edit title (8.6s)
+  ✓  124 [chromium] › tests\e2e\members-page-titles.spec.ts:118:7 › F3 admin route page titles @f3 @a11y › /admin/members/:id/timeline has unique timeline title (8.2s)
+  ✓  125 [chromium] › tests\e2e\members-page-titles.spec.ts:135:7 › F3 admin route page titles @f3 @a11y › all collected F3 admin titles are unique (19.6s)
+  ✓  126 [chromium] › tests\e2e\members-reduced-motion.spec.ts:54:7 › members reduced-motion compliance @f3 @a11y › (i) shimmer skeleton on /admin/members has no active animation (4.7s)
+  ✓  127 [chromium] › tests\e2e\members-reduced-motion.spec.ts:78:7 › members reduced-motion compliance @f3 @a11y › (ii) timeline page renders instantly — no staggered animation (8.3s)
+  ✓  128 [chromium] › tests\e2e\members-reduced-motion.spec.ts:114:7 › members reduced-motion compliance @f3 @a11y › (iii) command palette open/close has no slide animation (5.0s)
+  ✓  129 [chromium] › tests\e2e\members-self-service.spec.ts:56:7 › US5 Member self-service portal @f3 @a11y @i18n › admin creates member with portal-invitable contact (7.5s)
+  ✓  130 [chromium] › tests\e2e\members-self-service.spec.ts:99:7 › US5 Member self-service portal @f3 @a11y @i18n › @a11y WCAG 2.1 AA scan on member detail page (9.2s)
+  ✓  131 [chromium] › tests\e2e\members-self-service.spec.ts:117:7 › US5 Member self-service portal @f3 @a11y @i18n › @i18n TH+SV locale — no raw i18n key leak on member pages (7.1s)
+  ✓  132 [chromium] › tests\e2e\members-target-size-2-2.spec.ts:66:7 › members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y › row checkboxes meet 24×24 minimum target size (4.6s)
+  ✓  133 [chromium] › tests\e2e\members-target-size-2-2.spec.ts:88:7 › members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y › load-more button meets 24×24 minimum target size (4.8s)
+  ✓  134 [chromium] › tests\e2e\members-target-size-2-2.spec.ts:109:7 › members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y › bulk action bar buttons meet 24×24 minimum target size when visible (5.6s)
+  ✓  135 [chromium] › tests\e2e\members-target-size-2-2.spec.ts:137:7 › members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y › archive dialog close button meets 24×24 minimum target size (8.6s)
+  ✓  136 [chromium] › tests\e2e\members-timeline.spec.ts:60:7 › members timeline — F3 US6 @f3 @a11y @i18n › timeline page renders with events + back button (6.9s)
+  ✓  137 [chromium] › tests\e2e\members-timeline.spec.ts:86:7 › members timeline — F3 US6 @f3 @a11y @i18n › @a11y — timeline page has zero WCAG 2.1 AA violations (9.8s)
+  ✓  138 [chromium] › tests\e2e\members-timeline.spec.ts:100:7 › members timeline — F3 US6 @f3 @a11y @i18n › @i18n — TH + SV locales render timeline without leaks (10.6s)
+  ✓  139 [chromium] › tests\e2e\members-timeline.spec.ts:126:7 › members timeline — F3 US6 @f3 @a11y @i18n › reduced-motion: timeline dots are static (no animation) (7.6s)
+  ✓  140 [chromium] › tests\e2e\nav-a11y.spec.ts:18:7 › nav a11y — US5 @a11y › /admin sidebar expanded — zero WCAG 2.1 AA violations (6.1s)
+  ✓  141 [chromium] › tests\e2e\nav-a11y.spec.ts:44:7 › nav a11y — US5 @a11y › /admin sidebar collapsed — zero WCAG 2.1 AA violations (6.3s)
+  ✓  142 [chromium] › tests\e2e\nav-a11y.spec.ts:70:7 › nav a11y — US5 @a11y › /portal member nav — zero WCAG 2.1 AA violations (7.5s)
+  ✓  143 [chromium] › tests\e2e\nav-a11y.spec.ts:88:7 › nav a11y — US5 @a11y › staff sidebar has aria-label attribute (3.5s)
+  ✓  144 [chromium] › tests\e2e\nav-a11y.spec.ts:102:7 › nav a11y — US5 @a11y › skip-link is first Tab stop (WCAG 2.4.1) (4.0s)
+  ✓  145 [chromium] › tests\e2e\nav-a11y.spec.ts:118:7 › nav a11y — US5 @a11y › keyboard Tab reaches sidebar links (6.0s)
+  ✓  146 [chromium] › tests\e2e\payment-a11y.spec.ts:47:7 › F5 payment surfaces a11y @a11y @payment @e2e (T144) › portal invoice detail passes WCAG 2.1 AA (12.1s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  147 [chromium] › tests\e2e\payment-a11y.spec.ts:73:7 › F5 payment surfaces a11y @a11y @payment @e2e (T144) › PaySheet drawer (card tab) passes WCAG 2.1 AA on open (12.4s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  148 [chromium] › tests\e2e\payment-a11y.spec.ts:112:7 › F5 payment surfaces a11y @a11y @payment @e2e (T144) › PaySheet drawer (PromptPay tab) passes WCAG 2.1 AA (8.7s)
+  ✓  149 [chromium] › tests\e2e\payment-a11y.spec.ts:144:7 › F5 payment surfaces a11y @a11y @payment @e2e (T144) › confirmation panel (paid invoice) passes WCAG 2.1 AA (8.9s)
+  ✓  150 [chromium] › tests\e2e\payment-a11y.spec.ts:162:7 › F5 payment surfaces a11y @a11y @payment @e2e (T144) › reduced-motion: PaySheet open animations respect prefers-reduced-motion (6.6s)
+  ✓  151 [chromium] › tests\e2e\payment-i18n.spec.ts:77:9 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › portal invoice detail renders cleanly under NEXT_LOCALE=en (7.3s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  152 [chromium] › tests\e2e\payment-i18n.spec.ts:93:9 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › PaySheet drawer renders cleanly under NEXT_LOCALE=en (9.4s)
+  ✓  153 [chromium] › tests\e2e\payment-i18n.spec.ts:77:9 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › portal invoice detail renders cleanly under NEXT_LOCALE=th (7.3s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  154 [chromium] › tests\e2e\payment-i18n.spec.ts:93:9 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › PaySheet drawer renders cleanly under NEXT_LOCALE=th (9.6s)
+  ✓  155 [chromium] › tests\e2e\payment-i18n.spec.ts:77:9 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › portal invoice detail renders cleanly under NEXT_LOCALE=sv (7.4s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  156 [chromium] › tests\e2e\payment-i18n.spec.ts:93:9 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › PaySheet drawer renders cleanly under NEXT_LOCALE=sv (9.4s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  157 [chromium] › tests\e2e\payment-i18n.spec.ts:122:7 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › Stripe Elements locale prop matches NEXT_LOCALE=th (FR-022) (10.5s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  158 [chromium] › tests\e2e\payment-i18n.spec.ts:170:7 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › R2-E2 Thai card-form labels do not horizontally truncate at narrow viewport (8.7s)
+  ✓  159 [chromium] › tests\e2e\payment-i18n.spec.ts:208:7 › F5 i18n locale coverage @f5 @i18n @e2e (T145) › decline-code translations exist for EN+TH+SV (portal.payment.retry.reason*) (233ms)
+  ✓  160 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:187:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPhone SE (320×568, smallest supported) › drawer opens + occupies correct layout (FR-028h) (6.3s)
+  ✓  161 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:243:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPhone SE (320×568, smallest supported) › close button tap target ≥ 44×44 px (SC 2.5.5 / 2.5.8) (6.9s)
+  ✓  162 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:250:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPhone SE (320×568, smallest supported) › sticky header remains pinned during drawer-body scroll (SC 2.4.11) (7.1s)
+  ✓  163 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:286:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPhone SE (320×568, smallest supported) › scroll-padding-top offsets focused field below sticky header (iOS soft-keyboard contract) (6.7s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  164 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:313:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPhone SE (320×568, smallest supported) › focused field geometry is NOT obscured by sticky header (SC 2.4.11 actual-geometry) (7.1s)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  165 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:353:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPhone SE (320×568, smallest supported) › axe-core scan: zero serious/critical violations on drawer (WCAG 2.1 AA) (10.2s)
+  ✓  166 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:187:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPad portrait (768×1024, sm breakpoint boundary) › drawer opens + occupies correct layout (FR-028h) (7.7s)
+  ✓  167 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:243:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPad portrait (768×1024, sm breakpoint boundary) › close button tap target ≥ 44×44 px (SC 2.5.5 / 2.5.8) (7.4s)
+  -  168 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:250:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPad portrait (768×1024, sm breakpoint boundary) › sticky header remains pinned during drawer-body scroll (SC 2.4.11)
+  -  169 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:286:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPad portrait (768×1024, sm breakpoint boundary) › scroll-padding-top offsets focused field below sticky header (iOS soft-keyboard contract)
+  -  170 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:313:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPad portrait (768×1024, sm breakpoint boundary) › focused field geometry is NOT obscured by sticky header (SC 2.4.11 actual-geometry)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  171 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:353:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › iPad portrait (768×1024, sm breakpoint boundary) › axe-core scan: zero serious/critical violations on drawer (WCAG 2.1 AA) (8.7s)
+  ✓  172 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:187:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › FHD desktop (1920×1080) › drawer opens + occupies correct layout (FR-028h) (7.4s)
+  ✓  173 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:243:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › FHD desktop (1920×1080) › close button tap target ≥ 44×44 px (SC 2.5.5 / 2.5.8) (7.0s)
+  -  174 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:250:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › FHD desktop (1920×1080) › sticky header remains pinned during drawer-body scroll (SC 2.4.11)
+  -  175 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:286:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › FHD desktop (1920×1080) › scroll-padding-top offsets focused field below sticky header (iOS soft-keyboard contract)
+  -  176 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:313:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › FHD desktop (1920×1080) › focused field geometry is NOT obscured by sticky header (SC 2.4.11 actual-geometry)
+[2m[WebServer] [22m[36m[browser][39m [33mYou may test your Stripe.js integration over HTTP. However, live Stripe.js integrations must use HTTPS.[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  177 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:353:11 › PaySheet viewport + mobile layout — @payment @a11y @f5 › FHD desktop (1920×1080) › axe-core scan: zero serious/critical violations on drawer (WCAG 2.1 AA) (9.1s)
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 595ms
+[browser:log] [stripe-mock] init script installed
+[browser:log] [HMR] connected
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:warning] Stripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning
+[2m[WebServer] [22m[36m[browser][39m [33mStripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+[browser:log] [Fast Refresh] rebuilding
+  ✓  178 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › iPhone SE (320×568, smallest supported) › download-receipt CTA ≥ 44×44 px after successful settlement (7.8s)
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 629ms
+[browser:log] [stripe-mock] init script installed
+[browser:log] [HMR] connected
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:warning] Stripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning
+[2m[WebServer] [22m[36m[browser][39m [33mStripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✘  179 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › iPad portrait (768×1024, sm breakpoint boundary) › download-receipt CTA ≥ 44×44 px after successful settlement (30.4s)
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 647ms
+[browser:log] [stripe-mock] init script installed
+[browser:log] [HMR] connected
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:warning] Stripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning
+[2m[WebServer] [22m[36m[browser][39m [33mStripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✘  180 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › iPad portrait (768×1024, sm breakpoint boundary) › download-receipt CTA ≥ 44×44 px after successful settlement (retry #1) (30.5s)
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 630ms
+[browser:log] [stripe-mock] init script installed
+[browser:log] [HMR] connected
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:warning] Stripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning
+[2m[WebServer] [22m[36m[browser][39m [33mStripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✘  181 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › iPad portrait (768×1024, sm breakpoint boundary) › download-receipt CTA ≥ 44×44 px after successful settlement (retry #2) (30.4s)
+[browser:log] [Fast Refresh] rebuilding
+[browser:log] [Fast Refresh] done in 636ms
+[browser:log] [stripe-mock] init script installed
+[browser:info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[browser:log] [HMR] connected
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:log] [stripe-mock] intercepted initiate /api/payments/initiate
+[browser:warning] Stripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning
+[2m[WebServer] [22m[36m[browser][39m [33mStripe.js@undefined was loaded on the page, but @stripe/stripe-js@9.3.0 expected Stripe.js@dahlia. This may result in unexpected behavior. For more information, see https://docs.stripe.com/sdks/stripejs-versioning[39m [2m(file://C:/Users/Jirawat.p/Documents/Swedish chaplain_membership/.next/dev/static/chunks/0wrg_next_dist_0_8yy62._.js:2431:13)[22m
+  ✓  182 [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › FHD desktop (1920×1080) › download-receipt CTA ≥ 44×44 px after successful settlement (11.8s)
+  ✓  183 [chromium] › tests\e2e\plans-a11y.spec.ts:21:7 › plans a11y — US1 @a11y › /admin/plans has zero WCAG 2.1 AA violations (6.5s)
+  ✓  184 [chromium] › tests\e2e\plans-a11y.spec.ts:38:7 › plans a11y — US1 @a11y › /admin/plans/2026/premium detail view has zero WCAG 2.1 AA violations (10.4s)
+  ✓  185 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in EN (4.0s)
+  ✘  186 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in TH (30.1s)
+  ✘  187 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in TH (retry #1) (30.2s)
+  ✘  188 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in TH (retry #2) (30.1s)
+  ✘  189 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in SV (30.1s)
+  ✘  190 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in SV (retry #1) (30.2s)
+  ✘  191 [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in SV (retry #2) (30.1s)
+  ✓  192 [chromium] › tests\e2e\plans-list.spec.ts:44:7 › plans list — US1 @i18n › admin sees 9 SweCham 2026 plans with filter + locale switch (8.8s)
+  ✓  193 [chromium] › tests\e2e\plans-list.spec.ts:70:7 › plans list — US1 @i18n › invalid year query param does not crash the page (regression) (7.7s)
+  ✓  194 [chromium] › tests\e2e\plans-list.spec.ts:92:7 › plans list — US1 @i18n › member role is denied /admin/plans with 403 (2.6s)
+  ✓  195 [chromium] › tests\e2e\portal-invoices-a11y.spec.ts:34:7 › F4 Phase 5 — portal a11y regressions @a11y @f4 › every Phase-5 member surface passes WCAG 2.1 AA (12.3s)
+  ✓  196 [chromium] › tests\e2e\quota-accounting.spec.ts:220:7 › F6 quota accounting — admin UI surface @workers=1 › @a11y F6 quota admin surface (event detail + AlertDialog) axe-core scan (9.8s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  197 [chromium] › tests\e2e\relink-attendee.spec.ts:74:7 › @a11y @e2e F6 US6 manual relink › AS1 — admin relinks a non_member row to the e2e-member via picker (no page reload) (17.1s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  198 [chromium] › tests\e2e\relink-attendee.spec.ts:74:7 › @a11y @e2e F6 US6 manual relink › AS1 — admin relinks a non_member row to the e2e-member via picker (no page reload) (retry #1) (21.1s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  199 [chromium] › tests\e2e\relink-attendee.spec.ts:74:7 › @a11y @e2e F6 US6 manual relink › AS1 — admin relinks a non_member row to the e2e-member via picker (no page reload) (retry #2) (19.9s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  200 [chromium] › tests\e2e\relink-attendee.spec.ts:140:7 › @a11y @e2e F6 US6 manual relink › AS2 — admin relinks counted A → relink-target B with success toast (not noop) (19.6s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  201 [chromium] › tests\e2e\relink-attendee.spec.ts:140:7 › @a11y @e2e F6 US6 manual relink › AS2 — admin relinks counted A → relink-target B with success toast (not noop) (retry #1) (20.2s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  202 [chromium] › tests\e2e\relink-attendee.spec.ts:140:7 › @a11y @e2e F6 US6 manual relink › AS2 — admin relinks counted A → relink-target B with success toast (not noop) (retry #2) (20.5s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  203 [chromium] › tests\e2e\relink-attendee.spec.ts:202:7 › @a11y @e2e F6 US6 manual relink › FR-014 round-2 R4 — pseudonymised row renders inline disallowed message instead of Relink CTA (13.9s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  204 [chromium] › tests\e2e\relink-attendee.spec.ts:202:7 › @a11y @e2e F6 US6 manual relink › FR-014 round-2 R4 — pseudonymised row renders inline disallowed message instead of Relink CTA (retry #1) (13.8s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  205 [chromium] › tests\e2e\relink-attendee.spec.ts:202:7 › @a11y @e2e F6 US6 manual relink › FR-014 round-2 R4 — pseudonymised row renders inline disallowed message instead of Relink CTA (retry #2) (18.5s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✓  206 [chromium] › tests\e2e\relink-attendee.spec.ts:251:9 › @a11y @e2e F6 US6 manual relink › FR-014 disallowed message renders in TH locale (8.2s)
+  ✓  207 [chromium] › tests\e2e\relink-attendee.spec.ts:251:9 › @a11y @e2e F6 US6 manual relink › FR-014 disallowed message renders in SV locale (6.0s)
+  ✘  208 [chromium] › tests\e2e\relink-attendee.spec.ts:311:7 › @a11y @e2e F6 US6 manual relink › FR-035 manager → 403 on POST relink (spec.md:248-251 action-level deny) (3.7s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  209 [chromium] › tests\e2e\relink-attendee.spec.ts:311:7 › @a11y @e2e F6 US6 manual relink › FR-035 manager → 403 on POST relink (spec.md:248-251 action-level deny) (retry #1) (6.4s)
+[e2e seed F6 relink] OK — tenant=swecham event=c348fa6f-ee2b-4ee7-b13b-49b8ddc6fb18 registrations=3 (non_member + counted + pseudonymised) e2eMember=b317dece-9e23-4ffa-84d5-12c059ba9624 relinkTarget=ae642cbb-57d3-415f-a946-3a4141e0a700 (Relink Target E2E Co)
+  ✘  210 [chromium] › tests\e2e\relink-attendee.spec.ts:311:7 › @a11y @e2e F6 US6 manual relink › FR-035 manager → 403 on POST relink (spec.md:248-251 action-level deny) (retry #2) (6.0s)
+  ✓  211 [chromium] › tests\e2e\renewal-a11y.spec.ts:73:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals (light) (9.8s)
+  ✓  212 [chromium] › tests\e2e\renewal-a11y.spec.ts:81:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals/tasks (light) (6.4s)
+  ✓  213 [chromium] › tests\e2e\renewal-a11y.spec.ts:89:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals/tier-upgrades (light) (7.3s)
+  -  214 [chromium] › tests\e2e\renewal-a11y.spec.ts:97:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals/[cycleId] (light)
+  ✓  215 [chromium] › tests\e2e\renewal-a11y.spec.ts:73:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals (dark) (6.5s)
+  ✓  216 [chromium] › tests\e2e\renewal-a11y.spec.ts:81:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals/tasks (dark) (6.2s)
+  ✓  217 [chromium] › tests\e2e\renewal-a11y.spec.ts:89:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals/tier-upgrades (dark) (5.9s)
+  -  218 [chromium] › tests\e2e\renewal-a11y.spec.ts:97:11 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › /admin/renewals/[cycleId] (dark)
+  ✓  219 [chromium] › tests\e2e\renewal-a11y.spec.ts:113:9 › @a11y T267 — F8 axe-core scan › admin surfaces (gated on E2E_ADMIN_*) › admin pipeline with prefers-reduced-motion (5.4s)
+[axe /portal/preferences/renewals (light)] 1 serious/critical violations: [
+  {
+    "id": "aria-toggle-field-name",
+    "impact": "serious",
+    "tags": [
+      "cat.aria",
+      "wcag2a",
+      "wcag412",
+      "TTv5",
+      "TT5.c",
+      "EN-301-549",
+      "EN-9.4.1.2",
+      "ACT",
+      "RGAAv4",
+      "RGAA-7.1.1"
+    ],
+    "description": "Ensure every ARIA toggle field has an accessible name",
+    "help": "ARIA toggle fields must have an accessible name",
+    "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/aria-toggle-field-name?application=playwright",
+    "nodes": [
+      {
+        "any": [
+          {
+            "id": "has-visible-text",
+            "data": null,
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "Element does not have text that is visible to screen readers"
+          },
+          {
+            "id": "aria-label",
+            "data": null,
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "aria-label attribute does not exist or is empty"
+          },
+          {
+            "id": "aria-labelledby",
+            "data": null,
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty"
+          },
+          {
+            "id": "non-empty-title",
+            "data": {
+              "messageKey": "noAttr"
+            },
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "Element has no title attribute"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<span data-unchecked=\"\" role=\"switch\" tabindex=\"0\" id=\"base-ui-_R_2klritpes...\" aria-checked=\"false\" data-slot=\"switch\" data-size=\"default\" class=\"peer group/switch re...\">",
+        "target": [
+          "#base-ui-_R_2klritpesl5ritqlb_"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute"
+      }
+    ]
+  }
+]
+  ✘  220 [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (light) (9.6s)
+  ✓  221 [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (light) (retry #1) (10.8s)
+  -  222 [chromium] › tests\e2e\renewal-a11y.spec.ts:151:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/renewal/[memberId] (light)
+[axe /portal/preferences/renewals (dark)] 1 serious/critical violations: [
+  {
+    "id": "aria-toggle-field-name",
+    "impact": "serious",
+    "tags": [
+      "cat.aria",
+      "wcag2a",
+      "wcag412",
+      "TTv5",
+      "TT5.c",
+      "EN-301-549",
+      "EN-9.4.1.2",
+      "ACT",
+      "RGAAv4",
+      "RGAA-7.1.1"
+    ],
+    "description": "Ensure every ARIA toggle field has an accessible name",
+    "help": "ARIA toggle fields must have an accessible name",
+    "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/aria-toggle-field-name?application=playwright",
+    "nodes": [
+      {
+        "any": [
+          {
+            "id": "has-visible-text",
+            "data": null,
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "Element does not have text that is visible to screen readers"
+          },
+          {
+            "id": "aria-label",
+            "data": null,
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "aria-label attribute does not exist or is empty"
+          },
+          {
+            "id": "aria-labelledby",
+            "data": null,
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty"
+          },
+          {
+            "id": "non-empty-title",
+            "data": {
+              "messageKey": "noAttr"
+            },
+            "relatedNodes": [],
+            "impact": "serious",
+            "message": "Element has no title attribute"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<span data-unchecked=\"\" role=\"switch\" tabindex=\"0\" id=\"base-ui-_R_2klritpes...\" aria-checked=\"false\" data-slot=\"switch\" data-size=\"default\" class=\"peer group/switch re...\">",
+        "target": [
+          "#base-ui-_R_2klritpesl5ritqlb_"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute"
+      }
+    ]
+  }
+]
+  ✘  223 [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (dark) (7.4s)
+  ✓  224 [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (dark) (retry #1) (11.0s)
+  -  225 [chromium] › tests\e2e\renewal-a11y.spec.ts:151:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/renewal/[memberId] (dark)
+  ✓  226 [chromium] › tests\e2e\renewal-i18n.spec.ts:57:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals lang=en sets <html lang="en"> (4.4s)
+  ✓  227 [chromium] › tests\e2e\renewal-i18n.spec.ts:68:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals/tasks lang=en sets <html lang="en"> (4.3s)
+  ✓  228 [chromium] › tests\e2e\renewal-i18n.spec.ts:79:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals/tier-upgrades lang=en sets <html lang="en"> (4.3s)
+  ✓  229 [chromium] › tests\e2e\renewal-i18n.spec.ts:57:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals lang=th sets <html lang="th"> (4.2s)
+  ✓  230 [chromium] › tests\e2e\renewal-i18n.spec.ts:68:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals/tasks lang=th sets <html lang="th"> (5.0s)
+  ✓  231 [chromium] › tests\e2e\renewal-i18n.spec.ts:79:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals/tier-upgrades lang=th sets <html lang="th"> (4.4s)
+  ✓  232 [chromium] › tests\e2e\renewal-i18n.spec.ts:57:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals lang=sv sets <html lang="sv"> (4.2s)
+  ✓  233 [chromium] › tests\e2e\renewal-i18n.spec.ts:68:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals/tasks lang=sv sets <html lang="sv"> (4.2s)
+  ✓  234 [chromium] › tests\e2e\renewal-i18n.spec.ts:79:9 › @i18n T268 — F8 <html lang> attribute correctness › /admin/renewals/tier-upgrades lang=sv sets <html lang="sv"> (4.2s)
+  ✓  235 [chromium] › tests\e2e\renewal-i18n.spec.ts:99:9 › @i18n T268 — Member portal i18n › /portal/preferences/renewals lang=en (6.9s)
+  ✓  236 [chromium] › tests\e2e\renewal-i18n.spec.ts:99:9 › @i18n T268 — Member portal i18n › /portal/preferences/renewals lang=th (6.0s)
+  ✓  237 [chromium] › tests\e2e\renewal-i18n.spec.ts:99:9 › @i18n T268 — Member portal i18n › /portal/preferences/renewals lang=sv (5.9s)
+  -  238 [chromium] › tests\e2e\renewal-i18n.spec.ts:117:7 › @i18n T268 — Buddhist Era display rule (TH only) › admin pipeline displays BE year ≥ 2567 in TH locale
+  ✓  239 [chromium] › tests\e2e\renewal-i18n.spec.ts:155:9 › @i18n T268 — TH locale length-expansion at 320px + 1280px › /admin/renewals no horizontal overflow at 320px (TH locale) (4.0s)
+  ✓  240 [chromium] › tests\e2e\renewal-i18n.spec.ts:155:9 › @i18n T268 — TH locale length-expansion at 320px + 1280px › /admin/renewals no horizontal overflow at 1280px (TH locale) (3.9s)
+  -  241 [chromium] › tests\e2e\renewal-i18n.spec.ts:192:9 › @i18n T268 — Self-service renewal page locale render › /portal/renewal/[memberId] renders in en
+  -  242 [chromium] › tests\e2e\renewal-i18n.spec.ts:192:9 › @i18n T268 — Self-service renewal page locale render › /portal/renewal/[memberId] renders in th
+  -  243 [chromium] › tests\e2e\renewal-i18n.spec.ts:192:9 › @i18n T268 — Self-service renewal page locale render › /portal/renewal/[memberId] renders in sv
+
+
+  1) [chromium] › tests\e2e\broadcast-a11y.spec.ts:82:7 › @a11y T192 — Tiptap zoom 200% › compose form remains usable at 320px viewport (WCAG 2.1 1.4.4 reflow) 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: < [32m32[39m
+    Received:   [31m60[39m
+
+      114 |         document.documentElement.clientWidth,
+      115 |     );
+    > 116 |     expect(overflow).toBeLessThan(32);
+          |                      ^
+      117 |   });
+      118 | });
+      119 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\broadcast-a11y.spec.ts:116:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: < [32m32[39m
+    Received:   [31m60[39m
+
+      114 |         document.documentElement.clientWidth,
+      115 |     );
+    > 116 |     expect(overflow).toBeLessThan(32);
+          |                      ^
+      117 |   });
+      118 | });
+      119 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\broadcast-a11y.spec.ts:116:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: < [32m32[39m
+    Received:   [31m60[39m
+
+      114 |         document.documentElement.clientWidth,
+      115 |     );
+    > 116 |     expect(overflow).toBeLessThan(32);
+          |                      ^
+      117 |   });
+      118 | });
+      119 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\broadcast-a11y.spec.ts:116:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\broadcast-a11y--a11y-T192--785c0-port-WCAG-2-1-1-4-4-reflow--chromium-retry2\error-context.md
+
+  2) [chromium] › tests\e2e\broadcast-i18n.spec.ts:104:9 › @i18n T197 — TH locale length-expansion at 320px + 1280px › compose form has no horizontal overflow at 320px (TH locale) 
+
+    Error: TH @ 320px must not overflow
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mfalse[39m
+    Received: [31mtrue[39m
+
+      124 |         );
+      125 |       });
+    > 126 |       expect(horizontalOverflow, `TH @ ${width}px must not overflow`).toBe(false);
+          |                                                                       ^
+      127 |     });
+      128 |   }
+      129 | });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\broadcast-i18n.spec.ts:126:71
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: TH @ 320px must not overflow
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mfalse[39m
+    Received: [31mtrue[39m
+
+      124 |         );
+      125 |       });
+    > 126 |       expect(horizontalOverflow, `TH @ ${width}px must not overflow`).toBe(false);
+          |                                                                       ^
+      127 |     });
+      128 |   }
+      129 | });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\broadcast-i18n.spec.ts:126:71
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: TH @ 320px must not overflow
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mfalse[39m
+    Received: [31mtrue[39m
+
+      124 |         );
+      125 |       });
+    > 126 |       expect(horizontalOverflow, `TH @ ${width}px must not overflow`).toBe(false);
+          |                                                                       ^
+      127 |     });
+      128 |   }
+      129 | });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\broadcast-i18n.spec.ts:126:71
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\broadcast-i18n--i18n-T197--0e641-verflow-at-320px-TH-locale--chromium-retry2\error-context.md
+
+  3) [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › iPad portrait (768×1024, sm breakpoint boundary) › download-receipt CTA ≥ 44×44 px after successful settlement 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('pay-sheet-card-submit')[22m
+    [2m    - locator resolved to <button tabindex="0" type="submit" data-slot="button" data-testid="pay-sheet-card-submit" class="group/button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! disabled:opacity-50 aria-i…>Pay 5,350.00 THB</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    43 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      441 |           await expect(submit).toBeVisible({ timeout: 10_000 });
+      442 |           await expect(submit).toBeEnabled({ timeout: 10_000 });
+    > 443 |           await submit.click();
+          |                        ^
+      444 |
+      445 |           // Assert the confirmation panel renders + the download CTA
+      446 |           // meets the ≥ 44×44 tap-target contract (WCAG 2.5.5 /
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\pay-sheet-viewport.spec.ts:443:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('pay-sheet-card-submit')[22m
+    [2m    - locator resolved to <button tabindex="0" type="submit" data-slot="button" data-testid="pay-sheet-card-submit" class="group/button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! disabled:opacity-50 aria-i…>Pay 5,350.00 THB</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    37 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      441 |           await expect(submit).toBeVisible({ timeout: 10_000 });
+      442 |           await expect(submit).toBeEnabled({ timeout: 10_000 });
+    > 443 |           await submit.click();
+          |                        ^
+      444 |
+      445 |           // Assert the confirmation panel renders + the download CTA
+      446 |           // meets the ≥ 44×44 tap-target contract (WCAG 2.5.5 /
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\pay-sheet-viewport.spec.ts:443:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('pay-sheet-card-submit')[22m
+    [2m    - locator resolved to <button tabindex="0" type="submit" data-slot="button" data-testid="pay-sheet-card-submit" class="group/button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-auto! disabled:cursor-not-allowed! disabled:opacity-50 aria-i…>Pay 5,350.00 THB</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    33 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <div data-open="" aria-hidden="true" role="presentation" data-base-ui-inert="" data-slot="sheet-overlay" class="fixed inset-0 z-50 transition-opacity duration-[var(--modal-duration)] data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs"></div> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m    - waiting for element to be visible, enabled and stable[22m
+
+
+      441 |           await expect(submit).toBeVisible({ timeout: 10_000 });
+      442 |           await expect(submit).toBeEnabled({ timeout: 10_000 });
+    > 443 |           await submit.click();
+          |                        ^
+      444 |
+      445 |           // Assert the confirmation panel renders + the download CTA
+      446 |           // meets the ≥ 44×44 tap-target contract (WCAG 2.5.5 /
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\pay-sheet-viewport.spec.ts:443:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\pay-sheet-viewport-PayShee-f641a-after-successful-settlement-chromium-retry2\error-context.md
+
+  4) [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in TH 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel(/email/i)[22m
+
+
+      46 |
+      47 |       await page.goto('/admin/sign-in');
+    > 48 |       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+         |                                       ^
+      49 |       await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
+      50 |       await page.getByRole('button', { name: /sign in/i }).click();
+      51 |       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\plans-i18n-coverage.spec.ts:48:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel(/email/i)[22m
+
+
+      46 |
+      47 |       await page.goto('/admin/sign-in');
+    > 48 |       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+         |                                       ^
+      49 |       await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
+      50 |       await page.getByRole('button', { name: /sign in/i }).click();
+      51 |       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\plans-i18n-coverage.spec.ts:48:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel(/email/i)[22m
+
+
+      46 |
+      47 |       await page.goto('/admin/sign-in');
+    > 48 |       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+         |                                       ^
+      49 |       await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
+      50 |       await page.getByRole('button', { name: /sign in/i }).click();
+      51 |       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\plans-i18n-coverage.spec.ts:48:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\plans-i18n-coverage-plans--ced85-8n-plans-list-renders-in-TH-chromium-retry2\error-context.md
+
+  5) [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in SV 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel(/email/i)[22m
+
+
+      46 |
+      47 |       await page.goto('/admin/sign-in');
+    > 48 |       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+         |                                       ^
+      49 |       await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
+      50 |       await page.getByRole('button', { name: /sign in/i }).click();
+      51 |       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\plans-i18n-coverage.spec.ts:48:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel(/email/i)[22m
+
+
+      46 |
+      47 |       await page.goto('/admin/sign-in');
+    > 48 |       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+         |                                       ^
+      49 |       await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
+      50 |       await page.getByRole('button', { name: /sign in/i }).click();
+      51 |       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\plans-i18n-coverage.spec.ts:48:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel(/email/i)[22m
+
+
+      46 |
+      47 |       await page.goto('/admin/sign-in');
+    > 48 |       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+         |                                       ^
+      49 |       await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
+      50 |       await page.getByRole('button', { name: /sign in/i }).click();
+      51 |       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\plans-i18n-coverage.spec.ts:48:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\plans-i18n-coverage-plans--745c7-8n-plans-list-renders-in-SV-chromium-retry2\error-context.md
+
+  6) [chromium] › tests\e2e\relink-attendee.spec.ts:74:7 › @a11y @e2e F6 US6 manual relink › AS1 — admin relinks a non_member row to the e2e-member via picker (no page reload) 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('option').first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('option').first()[22m
+
+
+      113 |     // first match. Items render as cmdk `CommandItem`s with role=option.
+      114 |     const firstOption = page.getByRole('option').first();
+    > 115 |     await expect(firstOption).toBeVisible({ timeout: 10_000 });
+          |                               ^
+      116 |     await firstOption.click();
+      117 |
+      118 |     // Sonner toast surfaces with the success status role=status. The
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:115:31
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('status').filter({ hasText: /relinked/i })
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('status').filter({ hasText: /relinked/i })[22m
+
+
+      120 |     await expect(
+      121 |       page.getByRole('status').filter({ hasText: /relinked/i }),
+    > 122 |     ).toBeVisible({ timeout: 10_000 });
+          |       ^
+      123 |
+      124 |     // The row's match-status badge updates from "Non-member" to
+      125 |     // "Verified contact" (matchType=member_contact). The badge text
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:122:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('status').filter({ hasText: /relinked/i })
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('status').filter({ hasText: /relinked/i })[22m
+
+
+      120 |     await expect(
+      121 |       page.getByRole('status').filter({ hasText: /relinked/i }),
+    > 122 |     ).toBeVisible({ timeout: 10_000 });
+          |       ^
+      123 |
+      124 |     // The row's match-status badge updates from "Non-member" to
+      125 |     // "Verified contact" (matchType=member_contact). The badge text
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:122:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--c3982--via-picker-no-page-reload--chromium-retry2\error-context.md
+
+  7) [chromium] › tests\e2e\relink-attendee.spec.ts:140:7 › @a11y @e2e F6 US6 manual relink › AS2 — admin relinks counted A → relink-target B with success toast (not noop) 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('status').filter({ hasText: /relinked/i })
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('status').filter({ hasText: /relinked/i })[22m
+
+
+      185 |     await expect(
+      186 |       page.getByRole('status').filter({ hasText: /relinked/i }),
+    > 187 |     ).toBeVisible({ timeout: 10_000 });
+          |       ^
+      188 |
+      189 |     // Round-3 test-M closure — verify the row's match badge updated
+      190 |     // to "Verified contact" (matchType=member_contact) AFTER the
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:187:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('status').filter({ hasText: /relinked/i })
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('status').filter({ hasText: /relinked/i })[22m
+
+
+      185 |     await expect(
+      186 |       page.getByRole('status').filter({ hasText: /relinked/i }),
+    > 187 |     ).toBeVisible({ timeout: 10_000 });
+          |       ^
+      188 |
+      189 |     // Round-3 test-M closure — verify the row's match badge updated
+      190 |     // to "Verified contact" (matchType=member_contact) AFTER the
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:187:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('status').filter({ hasText: /relinked/i })
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('status').filter({ hasText: /relinked/i })[22m
+
+
+      185 |     await expect(
+      186 |       page.getByRole('status').filter({ hasText: /relinked/i }),
+    > 187 |     ).toBeVisible({ timeout: 10_000 });
+          |       ^
+      188 |
+      189 |     // Round-3 test-M closure — verify the row's match badge updated
+      190 |     // to "Verified contact" (matchType=member_contact) AFTER the
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:187:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--91805-ith-success-toast-not-noop--chromium-retry2\error-context.md
+
+  8) [chromium] › tests\e2e\relink-attendee.spec.ts:202:7 › @a11y @e2e F6 US6 manual relink › FR-014 round-2 R4 — pseudonymised row renders inline disallowed message instead of Relink CTA 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921')
+    Expected pattern: [32m/retention-purged/i[39m
+    Received string:  [31m"PII purged — cannot relink"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921')[22m
+    [2m    9 × locator resolved to <span role="note" tabindex="0" data-slot="tooltip-trigger" id="base-ui-_R_1tvkinebn5rkt5ritqlb_" data-testid="relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921" class="text-muted-foreground inline-flex items-center gap-1 text-xs" aria-label="Cannot relink — attendee PII has been retention-purged. The original attendee identity is no longer recoverable. Manually re-import the registration via CSV if you have the original data.">…</span>[22m
+    [2m      - unexpected value "PII purged — cannot relink"[22m
+
+
+      218 |     await expect(disallowed).toBeVisible();
+      219 |     // i18n-localised FR-014 message — EN default substring.
+    > 220 |     await expect(disallowed).toContainText(/retention-purged/i);
+          |                              ^
+      221 |
+      222 |     // And the Relink CTA must be ABSENT for this row.
+      223 |     const trigger = page.getByTestId(
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:220:30
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921')
+    Expected pattern: [32m/retention-purged/i[39m
+    Received string:  [31m"PII purged — cannot relink"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921')[22m
+    [2m    9 × locator resolved to <span role="note" tabindex="0" data-slot="tooltip-trigger" id="base-ui-_R_1tvkinebn5rkt5ritqlb_" data-testid="relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921" class="text-muted-foreground inline-flex items-center gap-1 text-xs" aria-label="Cannot relink — attendee PII has been retention-purged. The original attendee identity is no longer recoverable. Manually re-import the registration via CSV if you have the original data.">…</span>[22m
+    [2m      - unexpected value "PII purged — cannot relink"[22m
+
+
+      218 |     await expect(disallowed).toBeVisible();
+      219 |     // i18n-localised FR-014 message — EN default substring.
+    > 220 |     await expect(disallowed).toContainText(/retention-purged/i);
+          |                              ^
+      221 |
+      222 |     // And the Relink CTA must be ABSENT for this row.
+      223 |     const trigger = page.getByTestId(
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:220:30
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921')
+    Expected pattern: [32m/retention-purged/i[39m
+    Received string:  [31m"PII purged — cannot relink"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921')[22m
+    [2m    9 × locator resolved to <span role="note" tabindex="0" data-slot="tooltip-trigger" id="base-ui-_R_1tvkinebn5rkt5ritqlb_" data-testid="relink-disallowed-4a38e0fe-d5e4-45a3-b403-c2fbc731a921" class="text-muted-foreground inline-flex items-center gap-1 text-xs" aria-label="Cannot relink — attendee PII has been retention-purged. The original attendee identity is no longer recoverable. Manually re-import the registration via CSV if you have the original data.">…</span>[22m
+    [2m      - unexpected value "PII purged — cannot relink"[22m
+
+
+      218 |     await expect(disallowed).toBeVisible();
+      219 |     // i18n-localised FR-014 message — EN default substring.
+    > 220 |     await expect(disallowed).toContainText(/retention-purged/i);
+          |                              ^
+      221 |
+      222 |     // And the Relink CTA must be ABSENT for this row.
+      223 |     const trigger = page.getByTestId(
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:220:30
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--7fbfe-ssage-instead-of-Relink-CTA-chromium-retry2\error-context.md
+
+  9) [chromium] › tests\e2e\relink-attendee.spec.ts:311:7 › @a11y @e2e F6 US6 manual relink › FR-035 manager → 403 on POST relink (spec.md:248-251 action-level deny) 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"Forbidden"[39m
+    Received: [31mundefined[39m
+
+      340 |     expect(response.status()).toBe(403);
+      341 |     const body = (await response.json()) as { title?: string; detail?: string };
+    > 342 |     expect(body.title).toBe('Forbidden');
+          |                        ^
+      343 |     expect(body.detail).toContain('admin');
+      344 |   });
+      345 | });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:342:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"Forbidden"[39m
+    Received: [31mundefined[39m
+
+      340 |     expect(response.status()).toBe(403);
+      341 |     const body = (await response.json()) as { title?: string; detail?: string };
+    > 342 |     expect(body.title).toBe('Forbidden');
+          |                        ^
+      343 |     expect(body.detail).toContain('admin');
+      344 |   });
+      345 | });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:342:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"Forbidden"[39m
+    Received: [31mundefined[39m
+
+      340 |     expect(response.status()).toBe(403);
+      341 |     const body = (await response.json()) as { title?: string; detail?: string };
+    > 342 |     expect(body.title).toBe('Forbidden');
+          |                        ^
+      343 |     expect(body.detail).toContain('admin');
+      344 |   });
+      345 | });
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\relink-attendee.spec.ts:342:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\relink-attendee--a11y-e2e--04cd2--248-251-action-level-deny--chromium-retry2\error-context.md
+
+  10) [chromium] › tests\e2e\members-create.spec.ts:64:7 › members create — F3 US1 @f3 @a11y @i18n › admin creates a new member via the form 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('E2E Co mpxz42ja')
+    Expected: visible
+    Error: strict mode violation: getByText('E2E Co mpxz42ja') resolved to 2 elements:
+        1) <h1 data-slot="page-header-title" class="text-h1 text-foreground focus-visible:outline-none">E2E Co mpxz42ja</h1> aka getByRole('heading', { name: 'E2E Co mpxz42ja' })
+        2) <p class="text-sm text-muted-foreground">“E2E Co mpxz42ja”</p> aka getByText('“E2E Co mpxz42ja”')
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('E2E Co mpxz42ja')[22m
+
+
+      88 |         timeout: 15_000,
+      89 |       });
+    > 90 |       await expect(page.getByText(`E2E Co ${suffix}`)).toBeVisible();
+         |                                                        ^
+      91 |     } else if (response.status() === 422) {
+      92 |       // Soft-duplicate or business-rule warning surfaced as the
+      93 |       // override-reason dialog. The form is correctly wired; we
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\members-create.spec.ts:90:56
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\members-create-members-cre-d08e3-s-a-new-member-via-the-form-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\members-create-members-cre-d08e3-s-a-new-member-via-the-form-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\members-create-members-cre-d08e3-s-a-new-member-via-the-form-chromium\error-context.md
+
+  11) [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (light) 
+
+    Error: /portal/preferences/renewals (light): serious/critical axe violations
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoHaveLength[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected length: [32m0[39m
+    Received length: [31m1[39m
+    Received array:  [31m[{"description": "Ensure every ARIA toggle field has an accessible name", "help": "ARIA toggle fields must have an accessible name", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/aria-toggle-field-name?application=playwright", "id": "aria-toggle-field-name", "impact": "serious", "nodes": [{"all": [], "any": [{"data": null, "id": "has-visible-text", "impact": "serious", "message": "Element does not have text that is visible to screen readers", "relatedNodes": []}, {"data": null, "id": "aria-label", "impact": "serious", "message": "aria-label attribute does not exist or is empty", "relatedNodes": []}, {"data": null, "id": "aria-labelledby", "impact": "serious", "message": "aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty", "relatedNodes": []}, {"data": {"messageKey": "noAttr"}, "id": "non-empty-title", "impact": "serious", "message": "Element has no title attribute", "relatedNodes": []}], "failureSummary": "Fix any of the following:[39m
+    [31m  Element does not have text that is visible to screen readers[39m
+    [31m  aria-label attribute does not exist or is empty[39m
+    [31m  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty[39m
+    [31m  Element has no title attribute", "html": "<span data-unchecked=\"\" role=\"switch\" tabindex=\"0\" id=\"base-ui-_R_2klritpes...\" aria-checked=\"false\" data-slot=\"switch\" data-size=\"default\" class=\"peer group/switch re...\">", "impact": "serious", "none": [], "target": ["#base-ui-_R_2klritpesl5ritqlb_"]}], "tags": ["cat.aria", "wcag2a", "wcag412", "TTv5", "TT5.c", "EN-301-549", "EN-9.4.1.2", "ACT", "RGAAv4", "RGAA-7.1.1"]}][39m
+
+      48 |     );
+      49 |   }
+    > 50 |   expect(seriousOrWorse, `${surface}: serious/critical axe violations`).toHaveLength(0);
+         |                                                                         ^
+      51 | }
+      52 |
+      53 | async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+        at expectNoAxeViolations (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\renewal-a11y.spec.ts:50:73)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\renewal-a11y.spec.ts:145:9
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\renewal-a11y--a11y-T267-—--d0ca3-preferences-renewals-light--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\renewal-a11y--a11y-T267-—--d0ca3-preferences-renewals-light--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\renewal-a11y--a11y-T267-—--d0ca3-preferences-renewals-light--chromium\video-1.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\renewal-a11y--a11y-T267-—--d0ca3-preferences-renewals-light--chromium\error-context.md
+
+  12) [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (dark) 
+
+    Error: /portal/preferences/renewals (dark): serious/critical axe violations
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoHaveLength[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected length: [32m0[39m
+    Received length: [31m1[39m
+    Received array:  [31m[{"description": "Ensure every ARIA toggle field has an accessible name", "help": "ARIA toggle fields must have an accessible name", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/aria-toggle-field-name?application=playwright", "id": "aria-toggle-field-name", "impact": "serious", "nodes": [{"all": [], "any": [{"data": null, "id": "has-visible-text", "impact": "serious", "message": "Element does not have text that is visible to screen readers", "relatedNodes": []}, {"data": null, "id": "aria-label", "impact": "serious", "message": "aria-label attribute does not exist or is empty", "relatedNodes": []}, {"data": null, "id": "aria-labelledby", "impact": "serious", "message": "aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty", "relatedNodes": []}, {"data": {"messageKey": "noAttr"}, "id": "non-empty-title", "impact": "serious", "message": "Element has no title attribute", "relatedNodes": []}], "failureSummary": "Fix any of the following:[39m
+    [31m  Element does not have text that is visible to screen readers[39m
+    [31m  aria-label attribute does not exist or is empty[39m
+    [31m  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty[39m
+    [31m  Element has no title attribute", "html": "<span data-unchecked=\"\" role=\"switch\" tabindex=\"0\" id=\"base-ui-_R_2klritpes...\" aria-checked=\"false\" data-slot=\"switch\" data-size=\"default\" class=\"peer group/switch re...\">", "impact": "serious", "none": [], "target": ["#base-ui-_R_2klritpesl5ritqlb_"]}], "tags": ["cat.aria", "wcag2a", "wcag412", "TTv5", "TT5.c", "EN-301-549", "EN-9.4.1.2", "ACT", "RGAAv4", "RGAA-7.1.1"]}][39m
+
+      48 |     );
+      49 |   }
+    > 50 |   expect(seriousOrWorse, `${surface}: serious/critical axe violations`).toHaveLength(0);
+         |                                                                         ^
+      51 | }
+      52 |
+      53 | async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+        at expectNoAxeViolations (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\renewal-a11y.spec.ts:50:73)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\renewal-a11y.spec.ts:145:9
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\renewal-a11y--a11y-T267-—--7b5c4--preferences-renewals-dark--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\renewal-a11y--a11y-T267-—--7b5c4--preferences-renewals-dark--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\renewal-a11y--a11y-T267-—--7b5c4--preferences-renewals-dark--chromium\video-1.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\renewal-a11y--a11y-T267-—--7b5c4--preferences-renewals-dark--chromium\error-context.md
+
+  9 failed
+    [chromium] › tests\e2e\broadcast-a11y.spec.ts:82:7 › @a11y T192 — Tiptap zoom 200% › compose form remains usable at 320px viewport (WCAG 2.1 1.4.4 reflow) 
+    [chromium] › tests\e2e\broadcast-i18n.spec.ts:104:9 › @i18n T197 — TH locale length-expansion at 320px + 1280px › compose form has no horizontal overflow at 320px (TH locale) 
+    [chromium] › tests\e2e\pay-sheet-viewport.spec.ts:407:13 › PaySheet viewport + mobile layout — @payment @a11y @f5 › confirmation panel (post-settlement) › iPad portrait (768×1024, sm breakpoint boundary) › download-receipt CTA ≥ 44×44 px after successful settlement 
+    [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in TH 
+    [chromium] › tests\e2e\plans-i18n-coverage.spec.ts:36:9 › plans i18n coverage — US1 @i18n › plans list renders in SV 
+    [chromium] › tests\e2e\relink-attendee.spec.ts:74:7 › @a11y @e2e F6 US6 manual relink › AS1 — admin relinks a non_member row to the e2e-member via picker (no page reload) 
+    [chromium] › tests\e2e\relink-attendee.spec.ts:140:7 › @a11y @e2e F6 US6 manual relink › AS2 — admin relinks counted A → relink-target B with success toast (not noop) 
+    [chromium] › tests\e2e\relink-attendee.spec.ts:202:7 › @a11y @e2e F6 US6 manual relink › FR-014 round-2 R4 — pseudonymised row renders inline disallowed message instead of Relink CTA 
+    [chromium] › tests\e2e\relink-attendee.spec.ts:311:7 › @a11y @e2e F6 US6 manual relink › FR-035 manager → 403 on POST relink (spec.md:248-251 action-level deny) 
+  3 flaky
+    [chromium] › tests\e2e\members-create.spec.ts:64:7 › members create — F3 US1 @f3 @a11y @i18n › admin creates a new member via the form 
+    [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (light) 
+    [chromium] › tests\e2e\renewal-a11y.spec.ts:140:11 › @a11y T267 — F8 axe-core scan › member surfaces (gated on E2E_MEMBER_*) › /portal/preferences/renewals (dark) 
+  14 skipped
+  193 passed (36.2m)
+ ELIFECYCLE  Command failed with exit code 1.

@@ -1,0 +1,46 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [31m❯[39m tests/integration/renewals/tier-upgrade-pending.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m2 failed[39m[2m | [22m[33m12 skipped[39m[2m)[22m[33m 186544[2mms[22m[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing[33m 5400[2mms[22m[31m[39m
+[31m     → expected 'applied' to be 'pending' // Object.is equality[39m
+[31m   [31m×[31m F8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block)[33m 60466[2mms[22m[31m[39m
+[31m     → Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Suites 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)
+[31m[1mError[22m: Hook timed out in 120000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 orphan supersede — F2 finaliser MUST NOT flip pending→applied when F8 applied nothing
+[31m[1mAssertionError[22m: expected 'applied' to be 'pending' // Object.is equality[39m
+
+Expected: [32m"pending"[39m
+Received: [31m"applied"[39m
+
+[36m [2m❯[22m tests/integration/renewals/tier-upgrade-pending.test.ts:[2m1227:30[22m[39m
+    [90m1225| [39m        [33m.[39m[34mwhere[39m([34meq[39m(scheduledPlanChanges[33m.[39mmemberId[33m,[39m seeded[33m.[39mmemberId))[33m,[39m
+    [90m1226| [39m    )[33m;[39m
+    [90m1227| [39m    [34mexpect[39m(afterRow[33m?.[39mstatus)[33m.[39m[34mtoBe[39m([32m'pending'[39m)[33m;[39m
+    [90m   | [39m                             [31m^[39m
+    [90m1228| [39m    [34mexpect[39m(afterRow[33m?.[39mappliedAt)[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m1229| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/renewals/tier-upgrade-pending.test.ts[2m > [22mF8 tier-upgrade pending lifecycle — integration (T203)[2m > [22mS6 regression — accepted-then-paid upgrade applies BOTH F8 + F2 (no gate over-block)
+[31m[1mError[22m: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[33m12 skipped[39m[90m (14)[39m
+[2m   Start at [22m 19:57:06
+[2m   Duration [22m 199.62s[2m (transform 3.64s, setup 26ms, collect 11.49s, tests 186.54s, environment 0ms, prepare 104ms)[22m
+

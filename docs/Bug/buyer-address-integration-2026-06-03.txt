@@ -1,0 +1,38 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/invoicing/member-identity-address.test.ts" "tests/integration/invoicing/credit-note-pdf-golden.test.ts" "tests/integration/invoicing/audit-coverage.test.ts" "tests/integration/invoicing/vat-source-chain.test.ts" "tests/integration/invoicing/auto-email-outbox.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1780501114995,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"[REDACTED]"},"invoiceId":"75d5ba74-db75-43d9-8107-d4faad00b5c8","tenantId":"test-swecham-b7a01938","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/audit-coverage.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 5761[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22maudit_log composite PK + append-only trigger allow F4 event types [33m1317[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — updateInvoiceDraft emits `invoice_draft_updated` [33m711[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT122 — issueInvoice PDF-render failure emits `pdf_render_failed` audit [33m862[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — deleteInvoiceDraft emits `invoice_draft_deleted` [33m614[2mms[22m[39m
+{"level":"warn","time":1780501130826,"service":"swecham-membership","env":"test","outboxRowId":"61ba80a3-75ad-4b41-866c-6d37943735ff","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"warn","time":1780501131752,"service":"swecham-membership","env":"test","outboxRowId":"872cd716-ebca-45d8-94d7-0839f7dd0045","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"info","time":1780501131835,"service":"swecham-membership","env":"test","requestId":"019e8e23-2931-7332-a276-8c6d1b2537db","inspected":3,"sent":0,"retried":2,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"error","time":1780501137150,"service":"swecham-membership","env":"test","outboxRowId":"0e8a8038-d472-410c-a085-cec9eb03f304","expectedSha":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","actualShaPrefix":"5f78c33274e43fa9","msg":"cron.outbox_dispatch.invoice_voided.attachment_sha_mismatch"}
+{"level":"info","time":1780501137427,"service":"swecham-membership","env":"test","requestId":"019e8e23-465b-7a40-9d4c-5678c255f514","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/auto-email-outbox.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 17317[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(1) + (4a) issue enqueues invoice_auto_email[invoice_issued]; admin resend adds fresh invoice_pdf_resent row + timeline audit [33m1854[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4b) resend receipt after recordPayment → receipt_pdf_resent outbox + audit WITHOUT member_id [33m4098[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed [33m4106[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4c) portal member-mismatch → no outbox row, probe audit lands, opaque not_found [33m3360[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(R18-01) dispatcher permanently-fails invoice_voided row when prefetched bytes sha256 mismatches expected_pdf_sha256 [33m2236[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-pdf-golden.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3591[2mms[22m[39m
+   [33m[2m✓[22m[39m T127 — credit-note PDF render-input golden (live Neon)[2m > [22mpartial CN (50%) renders exactly 1 synthetic line with unitPrice=total=creditAmount + bilingual original-doc ref [33m1728[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/vat-source-chain.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3782[2mms[22m[39m
+   [33m[2m✓[22m[39m T123 — VAT source chain pin (tenant_invoice_settings → invoice row)[2m > [22minvoice issued under vat_rate=0.0850 snapshots 0.0850 into invoices.vat_rate_snapshot [33m2031[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/member-identity-address.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2746[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with full structured address → multi-line block (not the bare country stub) [33m408[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with NO structured address → snapshot.address degrades to the country code [33m405[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m16 passed[39m[22m[90m (16)[39m
+[2m   Start at [22m 22:38:25
+[2m   Duration [22m 46.03s[2m (transform 3.07s, setup 48ms, collect 10.97s, tests 33.20s, environment 0ms, prepare 166ms)[22m
+

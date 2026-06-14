@@ -1,0 +1,17 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test --workers=1 "--grep" "@journey" "--project=chromium" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+[e2e global setup] reset F5 issued-invoice fixture b070ff99-e7f1-48c4-a87c-f04cada85036
+[e2e seed broadcasts] OK broadcast=411e4144-0191-4dfd-bf7d-3da71a09126f halted="Fogmaker Thailand Demo"
+[e2e seed renewals] OK upcoming=f0e2ff79-a481-4480-a591-2b7a09d8d89d lapsed=6065d1ab-d639-431c-8e06-692d9089ceb6 suggestion=fb68443d-925e-464b-bac1-875300124e46 member=b317dece-9e23-4ffa-84d5-12c059ba9624 expires=2026-07-03T11:01:58.454Z
+[e2e seed F6] OK — tenant=swecham events=3 registrations=10 (3 non_member + 3 unmatched + 4 matched) — badges covered: Partnership benefit + Cultural event + Over quota + Not counted — payment statuses: paid + pending + refunded + free
+
+Running 3 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\admin-journey.spec.ts:41:7 › Journey — admin golden path across module seams @journey › admin walks sign-in → plans → members → invoice → payment → broadcast → dashboard → audit → renewals (1.9m)
+  ✓  2 [chromium] › tests\e2e\manager-journey.spec.ts:35:7 › Journey — manager read-only golden path across module seams @journey › manager walks sign-in → members → invoices (read-only) → dashboard → audit → escalation (19.8s)
+  ✓  3 [chromium] › tests\e2e\member-journey.spec.ts:41:7 › Journey — member self-service golden path across module seams @journey › member walks sign-in → invoices → pay → profile → benefits → GDPR export (18.4s)
+
+  3 passed (4.0m)

@@ -1,0 +1,253 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/invoicing/"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1780504437858,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"[REDACTED]"},"invoiceId":"59681c42-1302-44c2-9953-6c7dc36ef1e4","tenantId":"test-swecham-e9aa3ff0","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/audit-coverage.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 5940[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22maudit_log composite PK + append-only trigger allow F4 event types [33m1354[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — updateInvoiceDraft emits `invoice_draft_updated` [33m738[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT122 — issueInvoice PDF-render failure emits `pdf_render_failed` audit [33m876[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — deleteInvoiceDraft emits `invoice_draft_deleted` [33m616[2mms[22m[39m
+{"level":"warn","time":1780504454260,"service":"swecham-membership","env":"test","outboxRowId":"08e03370-f44a-4739-897d-7974989f6f13","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"warn","time":1780504454763,"service":"swecham-membership","env":"test","outboxRowId":"57fb1e2d-d369-4ddb-9ffc-340cac019dfe","err":{},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"info","time":1780504454847,"service":"swecham-membership","env":"test","requestId":"019e8e55-e03a-7063-a46b-0febf695016e","inspected":3,"sent":0,"retried":2,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"error","time":1780504460321,"service":"swecham-membership","env":"test","outboxRowId":"39527b4f-92ff-4786-aee5-3094d300a44d","expectedSha":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","actualShaPrefix":"5f78c33274e43fa9","msg":"cron.outbox_dispatch.invoice_voided.attachment_sha_mismatch"}
+{"level":"info","time":1780504460606,"service":"swecham-membership","env":"test","requestId":"019e8e55-fb7a-7465-9f9d-c080fb9366b2","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/auto-email-outbox.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 17059[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(1) + (4a) issue enqueues invoice_auto_email[invoice_issued]; admin resend adds fresh invoice_pdf_resent row + timeline audit [33m1877[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4b) resend receipt after recordPayment → receipt_pdf_resent outbox + audit WITHOUT member_id [33m4211[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed [33m3518[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4c) portal member-mismatch → no outbox row, probe audit lands, opaque not_found [33m3458[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(R18-01) dispatcher permanently-fails invoice_voided row when prefetched bytes sha256 mismatches expected_pdf_sha256 [33m2302[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-partial-accumulation.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 16241[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mtwo partials sum-to-total flip paid → partially_credited → credited [33m3419[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mrejects a third partial against a fully-credited invoice [33m2100[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mrejects partial that exceeds remainder by 1 satang (no seq gap) [33m1227[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mAS4 — CN rollup re-renders invoice PDF with annotation + emits invoice_pdf_regenerated audit [33m2103[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mAS3 — issued (unpaid) invoice → invalid_status, no CN written [33m1115[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mAS3 — voided invoice → invalid_status, no CN written [33m941[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mSG-3 — settings_missing branch surfaces cleanly when settings row is absent [33m1400[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mR2-E1 concurrent race — 2 admins issue 60% each; exactly one succeeds [33m2078[2mms[22m[39m
+{"level":"warn","time":1780504486547,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"[REDACTED]"},"invoiceId":"3cdbacaf-2eb4-4ba9-97be-db5d4f6aa48c","tenantId":"test-swecham-bbf5adfe","msg":"issueInvoice: internal error, rolling back"}
+{"level":"warn","time":1780504489636,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"4836cc2e-afb8-48aa-8457-60843c326008","tenantId":"test-swecham-0a27f067","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/seq-number-atomicity.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 19122[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(f) tenant_document_sequences row missing → allocator creates with seq=1 [33m420[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h) Sequential calls allocate 1 → 2 → 3 with no gaps [33m1062[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(d) 10 concurrent allocations on same (tenant, FY) produce 1..10 with no duplicates [33m2140[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(e) FY-boundary crossover — adjacent fiscal years allocate independently [33m1122[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(a) PDF render throws → rollback, seq unchanged, no invoice row [33m3079[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(b) Blob upload throws → rollback, seq unchanged, no invoice row [33m3039[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(g) Audit emit throws → rollback, no invoice issued, no seq consumed [33m3261[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h-replay) Re-issuing an already-issued invoice does NOT consume a new sequence number [33m3258[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/portal-ownership.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 8385[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22malpha member hitting gamma invoice → forbidden + probe audit [33m538[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22malpha member hitting tenant-B invoice id → not_found + probe audit [33m467[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mlistInvoicesPaged(memberId=alpha) excludes gamma invoice (same tenant) [33m430[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mlistInvoicesPaged(memberId=alpha) under tenant A cannot see tenant-B invoice [33m381[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mAS1 — seed 3 issued invoices, listInvoicesPaged returns exactly 3 with portal fields [33m893[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mSC-003 source-of-truth — two getInvoicePdfSignedUrl calls return same blob key [33m1061[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/receipt-pdf-render-no-realloc.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 7967[2mms[22m[39m
+   [33m[2m✓[22m[39m R2-CG-2 — worker reads receipt_document_number_raw, never re-allocates[2m > [22mR3-I2 §87 — retry-after-failure: tick-0 render throws, tick-1 succeeds, sequence counter UNCHANGED across both [33m2245[2mms[22m[39m
+   [33m[2m✓[22m[39m R2-CG-2 — worker reads receipt_document_number_raw, never re-allocates[2m > [22mcombined-mode — worker reuses invoice documentNumber, no realloc, no defensive throw [33m1159[2mms[22m[39m
+   [33m[2m✓[22m[39m R3-C1 idempotent early-exit on already-rendered row[2m > [22mrenderReceiptPdf on a row already rendered → ok early-exit at line 127, attempts unchanged [33m1082[2mms[22m[39m
+{"level":"error","time":1780504521957,"service":"swecham-membership","env":"test","err":{},"invoiceId":"f093b218-2276-43a3-8128-5064d2188323","tenantId":"test-chamber-f0431ef9","phase":"blob_upload","msg":"voidInvoice: phase 2 blob+sha sync failed; invoice voided but PDF overlay deferred"}
+ [32m✓[39m tests/integration/invoicing/void-invoice.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 10950[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mvoids an issued invoice, re-renders PDF, emits audit + outbox [33m1905[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mrefuses to void a paid invoice (directs admin to credit-note flow) [33m914[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mrefuses to re-void a voided invoice (terminal state) [33m935[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mT-PH2 — Phase 2 blob upload failure keeps void committed, emits invoice_pdf_sync_failed [33m1629[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mdoes not enqueue outbox when auto_email_on_issue=false [33m1377[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mT-DISP — auto_email_on_issue=null falls back to tenant settings.autoEmailEnabled [33m1386[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22memits cross-tenant probe audit on unknown invoice id [33m860[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/processor-bridge.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 11842[2mms[22m[39m
+   [33m[2m✓[22m[39m F5 → F4 processor-bridge integration (T015)[2m > [22mgetInvoiceForPayment projects {id,status,totalSatang,memberId,tenantId} DTO [33m1035[2mms[22m[39m
+   [33m[2m✓[22m[39m F5 → F4 processor-bridge integration (T015)[2m > [22mgetInvoiceForPayment returns not_found when invoice does not exist [33m758[2mms[22m[39m
+   [33m[2m✓[22m[39m F5 → F4 processor-bridge integration (T015)[2m > [22mmarkPaidFromProcessor transitions issued → paid + persists Stripe metadata [33m1731[2mms[22m[39m
+   [33m[2m✓[22m[39m F5 → F4 processor-bridge integration (T015)[2m > [22mmarkPaidFromProcessor handles PromptPay (null charge id) — paymentNotes omits charge= [33m1700[2mms[22m[39m
+   [33m[2m✓[22m[39m F5 → F4 processor-bridge integration (T015)[2m > [22missueCreditNoteFromRefund creates CN with populated source_refund_id [33m2521[2mms[22m[39m
+   [33m[2m✓[22m[39m F5 → F4 processor-bridge integration (T015)[2m > [22mF4-manual issueCreditNote still produces source_refund_id=NULL [33m2098[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/tenant-isolation.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 9660[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.update(B invoice) affects 0 rows [33m360[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.delete(B invoice) affects 0 rows [33m340[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.update(B invoice_line) affects 0 rows [33m339[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.delete(B invoice_line) affects 0 rows [33m315[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.update(B credit_note) affects 0 rows [33m364[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.delete(B credit_note) affects 0 rows [33m345[2mms[22m[39m
+{"level":"warn","time":1780504550531,"service":"swecham-membership","env":"test","requestId":"019e8e57-5b6b-7923-9049-0029d0d7d699","tenantId":"test-beb7b79b","invoiceId":"eb8e924b-e974-4c46-9cb1-0d96ef53b5fd","attempts":1,"msg":"cron.receipt_pdf_reconcile.re_enqueued"}
+{"level":"info","time":1780504550532,"service":"swecham-membership","env":"test","requestId":"019e8e57-5b6b-7923-9049-0029d0d7d699","total":1,"reEnqueued":1,"permanentlyFailed":0,"alreadyAlerted":0,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"error","time":1780504551313,"service":"swecham-membership","env":"test","requestId":"019e8e57-5e68-7c77-b6d2-dad3f7ac2031","tenantId":"test-beb7b79b","invoiceId":"0eb76b8d-f00c-48a8-8948-417230da6e55","attempts":3,"msg":"cron.receipt_pdf_reconcile.permanently_failed"}
+{"level":"info","time":1780504551314,"service":"swecham-membership","env":"test","requestId":"019e8e57-5e68-7c77-b6d2-dad3f7ac2031","total":1,"reEnqueued":0,"permanentlyFailed":1,"alreadyAlerted":0,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"error","time":1780504552231,"service":"swecham-membership","env":"test","requestId":"019e8e57-614f-7884-aecf-8e9cc5bd44a2","tenantId":"test-beb7b79b","invoiceId":"74dcfe79-8ca0-4976-ae8e-81622e84cab0","attempts":3,"msg":"cron.receipt_pdf_reconcile.permanently_failed"}
+{"level":"info","time":1780504552231,"service":"swecham-membership","env":"test","requestId":"019e8e57-614f-7884-aecf-8e9cc5bd44a2","total":2,"reEnqueued":0,"permanentlyFailed":1,"alreadyAlerted":1,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"info","time":1780504552627,"service":"swecham-membership","env":"test","requestId":"019e8e57-6328-7ce3-8766-f60ca44df9f2","total":2,"reEnqueued":0,"permanentlyFailed":0,"alreadyAlerted":2,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"error","time":1780504553691,"service":"swecham-membership","env":"test","requestId":"019e8e57-66a4-7a3f-a11e-be019373b78b","tenantId":"test-beb7b79b","invoiceId":"2f025303-6cec-4448-8f7c-d1a36ce5b46b","errKind":"Error","msg":"cron.receipt_pdf_reconcile.row_failed"}
+{"level":"info","time":1780504553692,"service":"swecham-membership","env":"test","requestId":"019e8e57-66a4-7a3f-a11e-be019373b78b","total":3,"reEnqueued":0,"permanentlyFailed":0,"alreadyAlerted":2,"errored":1,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"warn","time":1780504554817,"service":"swecham-membership","env":"test","requestId":"019e8e57-6acc-74a7-a73e-54c20107035b","tenantId":"test-beb7b79b","invoiceId":"2f025303-6cec-4448-8f7c-d1a36ce5b46b","attempts":1,"msg":"cron.receipt_pdf_reconcile.re_enqueued"}
+{"level":"warn","time":1780504555039,"service":"swecham-membership","env":"test","requestId":"019e8e57-6acc-74a7-a73e-54c20107035b","tenantId":"test-beb7b79b","invoiceId":"2661c54e-3f89-4fee-ab7c-cdd8f627808c","attempts":1,"msg":"cron.receipt_pdf_reconcile.re_enqueued"}
+{"level":"info","time":1780504555039,"service":"swecham-membership","env":"test","requestId":"019e8e57-6acc-74a7-a73e-54c20107035b","total":4,"reEnqueued":2,"permanentlyFailed":0,"alreadyAlerted":2,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"warn","time":1780504556365,"service":"swecham-membership","env":"test","requestId":"019e8e57-70cd-7605-946a-7f7b4ad7b99c","tenantId":"test-beb7b79b","invoiceId":"a05aa8ca-81bb-410e-b49f-035715159937","attempts":0,"msg":"cron.receipt_pdf_reconcile.re_enqueued"}
+{"level":"info","time":1780504556366,"service":"swecham-membership","env":"test","requestId":"019e8e57-70cd-7605-946a-7f7b4ad7b99c","total":3,"reEnqueued":1,"permanentlyFailed":0,"alreadyAlerted":2,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+{"level":"info","time":1780504557456,"service":"swecham-membership","env":"test","requestId":"019e8e57-75f3-7265-a1e0-bfa556f92474","total":2,"reEnqueued":0,"permanentlyFailed":0,"alreadyAlerted":2,"errored":0,"msg":"cron.receipt_pdf_reconcile.completed"}
+ [32m✓[39m tests/integration/invoicing/receipt-pdf-reconcile-cron.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 9490[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mattempts<3 → re-enqueues a fresh receipt_pdf_render outbox row under tenant context [33m812[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mattempts>=3 → emits pdf_render_permanently_failed audit (does NOT re-enqueue) [33m785[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mdedupe — second cron tick on already-alerted exhausted row does NOT re-emit [33m1311[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mR5-C1 atomicity — enqueue throw rolls back the status flip (no orphan pending) [33m1065[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mR5-C1 atomicity — happy path: both writes commit together [33m1410[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mstuck-pending sweep — pending row >1h old is re-enqueued (orphan recovery) [33m1323[2mms[22m[39m
+   [33m[2m✓[22m[39m R1-CG-2 — receipt PDF reconcile cron[2m > [22mstuck-pending sweep — pending row <1h old is NOT picked up [33m1026[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/settings-form.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 7719[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mFR-010 — bootstrap gate[2m > [22mfirst upsert creates the row and emits audit [33m599[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mUS4 AS1 — partial PATCH preserves untouched fields[2m > [22mfull PATCH with only vatRate changed preserves other fields across call [33m583[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mFR-011 — live settings surface to next issue + trigger-enforced snapshot freeze[2m > [22mchanging VAT 10→5 updates what getForIssue returns (next issue snapshots 5%) [33m867[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mFR-011 — live settings surface to next issue + trigger-enforced snapshot freeze[2m > [22mdirect FR-011 — immutability trigger rejects vat_rate_snapshot mutation on issued invoice (F-03) [33m900[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mPrinciple I clause 3 — cross-tenant invisibility[2m > [22mtenant-A settings are not visible to tenant-B reads [33m321[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mPrinciple I clause 3 — cross-tenant invisibility[2m > [22mtenant-B bootstrap does not affect tenant-A state [33m724[2mms[22m[39m
+{"level":"info","time":1780504568939,"service":"swecham-membership","env":"test","requestId":"019e8e57-a26b-717f-96f8-c028a9b4f588","inspected":1,"sent":0,"retried":0,"permanent":0,"skipped":1,"msg":"cron.outbox_dispatch.done"}
+{"level":"info","time":1780504569765,"service":"swecham-membership","env":"test","requestId":"019e8e57-a591-7fbc-9bd3-00dcd386880c","inspected":1,"sent":1,"retried":0,"permanent":0,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"info","time":1780504571012,"service":"swecham-membership","env":"test","requestId":"019e8e57-aa96-7b0e-8af7-b74a337bb1da","inspected":1,"sent":0,"retried":0,"permanent":0,"skipped":1,"msg":"cron.outbox_dispatch.done"}
+{"level":"info","time":1780504572225,"service":"swecham-membership","env":"test","requestId":"019e8e57-af54-7d26-8dd5-e9d967a8589f","inspected":1,"sent":0,"retried":0,"permanent":0,"skipped":1,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/email-gate-receipt-pdf.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 6072[2mms[22m[39m
+   [33m[2m✓[22m[39m T166-09 — invoice_paid email gate on receipt_pdf_status[2m > [22mskips invoice_paid email when receipt_pdf_status=pending, then sends after status flips to rendered [33m1867[2mms[22m[39m
+   [33m[2m✓[22m[39m T166-09 — invoice_paid email gate on receipt_pdf_status[2m > [22mR2-I-2 — invoice missing under tenant RLS scope → bump attempts + push back (does NOT loop forever) [33m1250[2mms[22m[39m
+   [33m[2m✓[22m[39m T166-09 — invoice_paid email gate on receipt_pdf_status[2m > [22mR3-I1 — receipt_pdf_status=failed bumps attempts (NOT legitimate wait) [33m1216[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/receipt-prefix-change-audit.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 12190[2mms[22m[39m
+   [33m[2m✓[22m[39m Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)[2m > [22mfirst-time bootstrap does NOT emit tenant_receipt_prefix_changed [33m514[2mms[22m[39m
+   [33m[2m✓[22m[39m Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)[2m > [22mprefix flip after issuing documents captures correct last_sequences [33m2015[2mms[22m[39m
+   [33m[2m✓[22m[39m Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)[2m > [22mprefix flip on pre-issue tenant emits with last_sequences: [] [33m2629[2mms[22m[39m
+   [33m[2m✓[22m[39m Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)[2m > [22mcredit-note prefix flip emits with changed_prefixes.credit_note_number_prefix [33m2656[2mms[22m[39m
+   [33m[2m✓[22m[39m Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)[2m > [22mreceipt prefix flip emits with changed_prefixes.receipt_number_prefix [33m2641[2mms[22m[39m
+ [31m❯[39m tests/integration/invoicing/issue-vs-archive-race.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 6552[2mms[22m[39m
+[31m   [31m×[31m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on archived member returns member_archived and consumes NO sequence[33m 1278[2mms[22m[31m[39m
+[31m     → member_identity_snapshot failed validation at creation (2 issues)[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on ACTIVE company member with NO tax_id → tax_id_required, NO sequence consumed (real adapter join) [33m1560[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on ACTIVE company member WITH valid tax_id → succeeds (gate allows; real adapter join) [33m1724[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/retention-member-archive.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 6627[2mms[22m[39m
+   [33m[2m✓[22m[39m T112 — FR-029/FR-030 retention + member-archive invariant (live Neon)[2m > [22marchiving a member preserves: invoice row, frozen snapshots, timeline enumerability [33m1808[2mms[22m[39m
+   [33m[2m✓[22m[39m T112 — FR-029/FR-030 retention + member-archive invariant (live Neon)[2m > [22mcross-tenant probe: tenant B cannot enumerate tenant A’s archived invoices [33m2834[2mms[22m[39m
+{"level":"info","time":1780504602766,"service":"swecham-membership","env":"test","requestId":"019e8e58-2416-7e00-8a30-f84bd0329045","inspected":1,"sent":1,"retried":0,"permanent":0,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/receipt-pdf-render-dispatch.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 6035[2mms[22m[39m
+   [33m[2m✓[22m[39m async receipt PDF dispatcher — T166-06/07[2m > [22mhappy path — dispatcher picks up receipt_pdf_render row, runs use-case under runInTenant, flips invoice + outbox status, emits receipt_rendered audit [33m1814[2mms[22m[39m
+   [33m[2m✓[22m[39m async receipt PDF dispatcher — T166-06/07[2m > [22mcross-tenant Review-Gate — tenant B runInTenant cannot see tenant A invoice (RLS scoping) [33m791[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-download-audit-emit.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 3511[2mms[22m[39m
+   [33m[2m✓[22m[39m R10-T4 — PDF-download audit emit (live Neon happy path)[2m > [22minvoice_pdf_downloaded — admin happy path emits with retention_years=10 [33m356[2mms[22m[39m
+   [33m[2m✓[22m[39m R10-T4 — PDF-download audit emit (live Neon happy path)[2m > [22minvoice_pdf_downloaded — member happy path populates actor_member_id [33m345[2mms[22m[39m
+   [33m[2m✓[22m[39m R10-T4 — PDF-download audit emit (live Neon happy path)[2m > [22mreceipt_pdf_downloaded — paid invoice combined-mode emits with retention_years=10 [33m612[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/f3-timeline-integration.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 6270[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mtimeline surfaces all 6 F4 member-timeline event types (AS2) [33m540[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mevery F4 row preserves actor + payload shape for copy resolver [33m522[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mSC-011 — F4 events surface in the member timeline within 5 s [33m526[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mF4 events are chronologically interleaved with F3 events (AS2) [33m514[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mF4 rows are not visible from a different tenant (RLS) [33m1832[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/record-payment-rollback.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 4332[2mms[22m[39m
+   [33m[2m✓[22m[39m R3-S1 — record-payment rollback observed on live Neon[2m > [22menqueue throws → recordPayment rejects + invoice stays issued + no invoice_paid audit committed [33m1221[2mms[22m[39m
+   [33m[2m✓[22m[39m R3-S1 — record-payment rollback observed on live Neon[2m > [22monPaidCallback throws → recordPayment rejects + invoice stays issued + no invoice_paid audit committed (F8 hook) [33m1378[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-deterministic.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1171[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-pdf-golden.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3800[2mms[22m[39m
+   [33m[2m✓[22m[39m T127 — credit-note PDF render-input golden (live Neon)[2m > [22mpartial CN (50%) renders exactly 1 synthetic line with unitPrice=total=creditAmount + bilingual original-doc ref [33m1823[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/apply-receipt-pdf-failure-repo.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5861[2mms[22m[39m
+   [33m[2m✓[22m[39m R4-I3 — applyReceiptPdfFailure discriminated return on real Postgres[2m > [22mrow in pending state → kind=failed, attempts incremented, status=failed [33m808[2mms[22m[39m
+   [33m[2m✓[22m[39m R4-I3 — applyReceiptPdfFailure discriminated return on real Postgres[2m > [22mrow already rendered → kind=race_won_by_success, status STAYS rendered, attempts UNCHANGED [33m891[2mms[22m[39m
+   [33m[2m✓[22m[39m R4-I3 — applyReceiptPdfFailure discriminated return on real Postgres[2m > [22mrow in another tenant → throws InvoiceApplyConflictError(applyReceiptPdfFailure) [33m2415[2mms[22m[39m
+{"level":"warn","time":1780504633589,"service":"swecham-membership","env":"test","err":"Input buffer contains unsupported image format","tenantId":"test-swecham-logo","declaredMime":"image/png","msg":"uploadTenantLogo: image decode / re-encode failed"}
+{"level":"warn","time":1780504633609,"service":"swecham-membership","env":"test","tenantId":"test-swecham-logo","count":50,"cap":50,"msg":"uploadTenantLogo: logo history cap reached"}
+ [32m✓[39m tests/integration/invoicing/logo-upload-security.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 49[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-routes-cross-tenant-probe.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 4645[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/vat-source-chain.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3579[2mms[22m[39m
+   [33m[2m✓[22m[39m T123 — VAT source chain pin (tenant_invoice_settings → invoice row)[2m > [22minvoice issued under vat_rate=0.0850 snapshots 0.0850 into invoices.vat_rate_snapshot [33m1811[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/invoice-list-perf.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 1894[2mms[22m[39m
+   [33m[2m✓[22m[39m T110a — invoice-list query perf (SC-005)[2m > [22msmoke: listPaged returns at small scale [33m1894[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-immutability.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 3015[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-render-benchmark.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[90m 129[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/invoice-list-cursor-keyset.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3745[2mms[22m[39m
+   [33m[2m✓[22m[39m invoice list() composite cursor keyset (S1-P1-9b)[2m > [22mpages the 5 issued invoices exactly once, in desc(issueDate) order (pageSize=2) [33m690[2mms[22m[39m
+   [33m[2m✓[22m[39m invoice list() composite cursor keyset (S1-P1-9b)[2m > [22mwith includeDrafts: returns all 7 exactly once (drafts first, then issued desc) [33m930[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/invoice-overdue-filter.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2443[2mms[22m[39m
+   [33m[2m✓[22m[39m invoice listPaged — overdue filter (S1-P1-8)[2m > [22mreturns exactly the issued past-due invoices (not future-due, not drafts) [33m370[2mms[22m[39m
+ [31m❯[39m tests/integration/invoicing/member-identity-address.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 2726[2mms[22m[39m
+[31m   [31m×[31m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with full structured address → multi-line block (not the bare country stub)[33m 400[2mms[22m[31m[39m
+[31m     → member_identity_snapshot failed validation at creation (2 issues)[39m
+[31m   [31m×[31m F4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with NO structured address → snapshot.address degrades to the country code[33m 404[2mms[22m[31m[39m
+[31m     → member_identity_snapshot failed validation at creation (2 issues)[39m
+ [32m✓[39m tests/integration/invoicing/overdue-audit-idempotency.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2210[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/find-failed-auto-emails.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 4691[2mms[22m[39m
+   [33m[2m✓[22m[39m findFailedAutoEmailsByInvoice — integration (B7 / FR-026)[2m > [22mdoes not leak a cross-tenant failed row (tenant filter + RLS) [33m358[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/dispatcher-f4-gated.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 577[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-preview-null-issue-date.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 164[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/export-paid-invoices-csv.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2186[2mms[22m[39m
+   [33m[2m✓[22m[39m exportPaidInvoicesCsv — integration (live Neon)[2m > [22memits invoices_csv_exported with retention_years=5 + correct payload [33m447[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/receipt-pdf-render-kill-switch.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2768[2mms[22m[39m
+   [33m[2m✓[22m[39m R2-IG-2 — receipt_pdf_render dispatcher kill-switch[2m > [22mflag=false → dispatcher skips receipt_pdf_render rows (status stays pending, no attempts bump) [33m1027[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/feature-flag-kill-switch.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 328[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/receipt-number-prefix-roundtrip.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2855[2mms[22m[39m
+   [33m[2m✓[22m[39m drizzleTenantSettingsRepo — receipt_number_prefix round-trip (live Neon)[2m > [22mpersists receipt_number_prefix on first-time insert [33m406[2mms[22m[39m
+   [33m[2m✓[22m[39m drizzleTenantSettingsRepo — receipt_number_prefix round-trip (live Neon)[2m > [22mupdates receipt_number_prefix without stomping other fields [33m389[2mms[22m[39m
+   [33m[2m✓[22m[39m drizzleTenantSettingsRepo — receipt_number_prefix round-trip (live Neon)[2m > [22mclears receipt_number_prefix when explicitly set to null [33m409[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/audit-event-type-parity.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 63[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/tenant-invoice-settings-probe.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1856[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 3 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/invoicing/issue-vs-archive-race.test.ts[2m > [22mF4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on archived member returns member_archived and consumes NO sequence
+[31m[1mError[22m: member_identity_snapshot failed validation at creation (2 issues)[39m
+[36m [2m❯[22m Module.makeMemberIdentitySnapshot src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts:[2m100:11[22m[39m
+    [90m 98| [39m  [35mconst[39m result [33m=[39m memberIdentitySnapshotSchema[33m.[39m[34msafeParse[39m(parts)[33m;[39m
+    [90m 99| [39m  [35mif[39m ([33m![39mresult[33m.[39msuccess) {
+    [90m100| [39m    [35mthrow[39m [35mnew[39m [33mInvalidMemberIdentitySnapshotError[39m(result[33m.[39merror[33m.[39missues)[33m;[39m
+    [90m   | [39m          [31m^[39m
+    [90m101| [39m  }
+    [90m102| [39m  [35mreturn[39m [33mObject[39m[33m.[39m[34mfreeze[39m({ [33m...[39mresult[33m.[39mdata })[33m;[39m
+[90m [2m❯[22m Object.getForIssue src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts:[2m114:17[22m[39m
+[90m [2m❯[22m src/modules/invoicing/application/use-cases/issue-invoice.ts:[2m202:20[22m[39m
+[90m [2m❯[22m src/lib/db.ts:[2m256:20[22m[39m
+[90m [2m❯[22m scope ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m260:18[22m[39m
+[90m [2m❯[22m Function.begin ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m243:14[22m[39m
+[90m [2m❯[22m Module.issueInvoice src/modules/invoicing/application/use-cases/issue-invoice.ts:[2m157:10[22m[39m
+[90m [2m❯[22m tests/integration/invoicing/issue-vs-archive-race.test.ts:[2m197:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/invoicing/member-identity-address.test.ts[2m > [22mF4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with full structured address → multi-line block (not the bare country stub)
+[31m[1mError[22m: member_identity_snapshot failed validation at creation (2 issues)[39m
+[36m [2m❯[22m Module.makeMemberIdentitySnapshot src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts:[2m100:11[22m[39m
+    [90m 98| [39m  [35mconst[39m result [33m=[39m memberIdentitySnapshotSchema[33m.[39m[34msafeParse[39m(parts)[33m;[39m
+    [90m 99| [39m  [35mif[39m ([33m![39mresult[33m.[39msuccess) {
+    [90m100| [39m    [35mthrow[39m [35mnew[39m [33mInvalidMemberIdentitySnapshotError[39m(result[33m.[39merror[33m.[39missues)[33m;[39m
+    [90m   | [39m          [31m^[39m
+    [90m101| [39m  }
+    [90m102| [39m  [35mreturn[39m [33mObject[39m[33m.[39m[34mfreeze[39m({ [33m...[39mresult[33m.[39mdata })[33m;[39m
+[90m [2m❯[22m Object.getForIssue src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts:[2m114:17[22m[39m
+[90m [2m❯[22m src/lib/db.ts:[2m256:20[22m[39m
+[90m [2m❯[22m scope ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m260:18[22m[39m
+[90m [2m❯[22m Function.begin ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m243:14[22m[39m
+[90m [2m❯[22m tests/integration/invoicing/member-identity-address.test.ts:[2m88:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/invoicing/member-identity-address.test.ts[2m > [22mF4 member-identity adapter — composes the full buyer address (§86/§87)[2m > [22mmember with NO structured address → snapshot.address degrades to the country code
+[31m[1mError[22m: member_identity_snapshot failed validation at creation (2 issues)[39m
+[36m [2m❯[22m Module.makeMemberIdentitySnapshot src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts:[2m100:11[22m[39m
+    [90m 98| [39m  [35mconst[39m result [33m=[39m memberIdentitySnapshotSchema[33m.[39m[34msafeParse[39m(parts)[33m;[39m
+    [90m 99| [39m  [35mif[39m ([33m![39mresult[33m.[39msuccess) {
+    [90m100| [39m    [35mthrow[39m [35mnew[39m [33mInvalidMemberIdentitySnapshotError[39m(result[33m.[39merror[33m.[39missues)[33m;[39m
+    [90m   | [39m          [31m^[39m
+    [90m101| [39m  }
+    [90m102| [39m  [35mreturn[39m [33mObject[39m[33m.[39m[34mfreeze[39m({ [33m...[39mresult[33m.[39mdata })[33m;[39m
+[90m [2m❯[22m Object.getForIssue src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts:[2m114:17[22m[39m
+[90m [2m❯[22m src/lib/db.ts:[2m256:20[22m[39m
+[90m [2m❯[22m scope ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m260:18[22m[39m
+[90m [2m❯[22m Function.begin ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:[2m243:14[22m[39m
+[90m [2m❯[22m tests/integration/invoicing/member-identity-address.test.ts:[2m128:18[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m39 passed[39m[22m[90m (41)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m180 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (186)[39m
+[2m   Start at [22m 23:33:48
+[2m   Duration [22m 246.94s[2m (transform 3.89s, setup 98ms, collect 18.46s, tests 226.72s, environment 0ms, prepare 149ms)[22m
+
+ ELIFECYCLE  Command failed with exit code 1.

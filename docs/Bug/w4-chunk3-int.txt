@@ -1,0 +1,29 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1781154368707,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"1e41bc04-e36f-4614-9b63-0b28d32efa14","tenantId":"test-swecham-58bb9e1e","msg":"issueEventInvoiceAsPaid: internal error, rolling back"}
+{"level":"warn","time":1781154389139,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"[REDACTED]"},"invoiceId":"74c020ee-7cac-4270-a739-3eae5d5826da","tenantId":"test-swecham-1ec450a8","msg":"issueEventInvoiceAsPaid: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/issue-as-paid.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 52500[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)[2m > [22mA1 — non-member TIN: ONE paid row, combined PDF + as-paid date pin, dual in-tx audits (non-timeline), exactly ONE outbox email [33m1164[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)[2m > [22mA2 — matched member: audits use the TIMELINE branch (member_id present), combined receipt to the member contact [33m1283[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — same-route double-call concurrency (live Neon)[2m > [22mtwo concurrent as-paid calls: exactly one ok, loser typed invoice_already_issued, §87 consumes exactly 1, ONE audit pair [33m1288[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid vs issueInvoice — cross-route race (live Neon)[2m > [22mexactly one winner across routes (either is legal), loser typed conflict, NO §87 gap — next allocation = winner seq + 1 [33m1417[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — FY boundary from paymentDate (live Neon)[2m > [22mJanuary 2027 back-dated December 2026 payment numbers into FY2026 (doc number, row, blob path) [33m992[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — blob-upload failure rollback (live Neon)[2m > [22mfailed upload → typed err, row stays draft, counter unchanged, ZERO audits, orphan cleanup; retry succeeds with the SAME number [33m1978[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — cross-tenant probe (live Neon)[2m > [22mtenant B as-paid against tenant A's draft → invoice_not_found + invoice_cross_tenant_probe audit with the as-paid route tag [33m530[2mms[22m[39m
+   [33m[2m✓[22m[39m applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CHECK relax (0212, live Neon)[2m > [22mT9-1 — receipt_stream commit: paid row, seq/docnum NULL, receipt raw set, receipt_separate; every other CHECK satisfied [33m343[2mms[22m[39m
+   [33m[2m✓[22m[39m applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CHECK relax (0212, live Neon)[2m > [22mW1 (064 remediation) — admin search by the printed §105 receipt number finds the β row in BOTH list variants [33m1714[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live Neon)[2m > [22mT10-1 — no-TIN as-paid: §105 receipt on the RECEIPT stream (RC-2026-000001), invoice-stream counter UNTOUCHED, dual non-timeline audits + outbox [33m1333[2mms[22m[39m
+   [33m[2m✓[22m[39m issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (live Neon)[2m > [22mfailed upload → typed err, row stays draft, RECEIPT counter unchanged, ZERO audits, orphan cleanup; retry gets RC-2026-000001 (no RC burn) [33m2193[2mms[22m[39m
+   [33m[2m✓[22m[39m 064 S1 — registration refunded between draft and issuance (live Neon)[2m > [22mas-paid path: refunded flip after drafting → registration_refunded, row stays draft, NO sequence burned [33m1549[2mms[22m[39m
+   [33m[2m✓[22m[39m 064 S1 — registration refunded between draft and issuance (live Neon)[2m > [22mbill-first path (issueInvoice): refunded flip after drafting → registration_refunded, row stays draft, NO §87 burn [33m1481[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/seq-interleaved-membership-event.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 14325[2mms[22m[39m
+   [33m[2m✓[22m[39m §87 interleaved membership+event sequence continuity (live Neon)[2m > [22mmembership → event → membership issues produce strictly consecutive §87 sequence numbers on ONE shared stream [33m5422[2mms[22m[39m
+   [33m[2m✓[22m[39m §87 interleaved membership+event sequence continuity (live Neon)[2m > [22m064 Task 6+10 — as-paid legs: membership → bill-first event → no-TIN as-paid (RECEIPT stream, no burn) → TIN as-paid are N, N+1, N+2 on the invoice stream [33m6480[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+[2m   Start at [22m 12:05:33
+[2m   Duration [22m 79.52s[2m (transform 3.15s, setup 26ms, collect 11.08s, tests 66.82s, environment 0ms, prepare 103ms)[22m
+

@@ -1,0 +1,1712 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test --workers=1 "tests/e2e/invoices/event-fee-as-paid.spec.ts" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+[e2e global setup] reset F5 issued-invoice fixture b070ff99-e7f1-48c4-a87c-f04cada85036
+[e2e seed broadcasts] OK broadcast=dd1ecfba-f6f3-48e1-bec0-82cd65ea6e97 halted="Fogmaker Thailand Demo"
+[e2e seed renewals] OK upcoming=9dc4eec4-fcb5-4142-9e82-31a3935cda0c lapsed=75a4f834-464d-4864-8cbe-660156838373 suggestion=62f032ac-3662-4ce3-94e9-92b11fe6cf01 member=b317dece-9e23-4ffa-84d5-12c059ba9624 expires=2026-07-10T16:58:45.687Z
+[e2e seed F6] OK — tenant=swecham events=3 registrations=10 (3 non_member + 3 unmatched + 4 matched) — badges covered: Partnership benefit + Cultural event + Over quota + Not counted — payment statuses: paid + pending + refunded + free
+
+Running 27 tests using 1 worker
+
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   1 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (30.4s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   2 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (retry #1) (24.8s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   3 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (retry #2) (23.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   4 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (20.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   5 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (retry #1) (19.6s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   6 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (retry #2) (15.4s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   7 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (30.8s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   8 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (retry #1) (30.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘   9 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (retry #2) (30.5s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  10 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:225:7 › 064 event-fee as-paid form modes @f4 › refunded: destructive block card, NO mode radio group in the DOM, submit disabled (21.3s)
+  ✘  11 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (16.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  12 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (retry #1) (18.0s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  13 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (retry #2) (16.1s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  14 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:279:7 › 064 event-fee as-paid form modes @f4 › event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y (27.2s)
+  ✓  15 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:331:7 › 064 event-fee as-paid form modes @f4 › future payment date → inline i18n error (noValidate path); input keeps the ISO CE value (10.4s)
+  ✓  16 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:362:7 › 064 event-fee as-paid form modes @f4 › two-step failure: 500 on issue-as-paid → error toast + draftRemains description, lands on the surviving draft detail (22.0s)
+  ✘  17 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (8.2s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  18 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (retry #1) (10.4s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  19 [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (retry #2) (9.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  20 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (15.1s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  21 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (retry #1) (15.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  22 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (retry #2) (15.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  23 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (15.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  24 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (retry #1) (16.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  25 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (retry #2) (22.0s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  26 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (30.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  27 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (retry #1) (30.8s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  28 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (retry #2) (30.8s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  29 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:225:7 › 064 event-fee as-paid form modes @f4 › refunded: destructive block card, NO mode radio group in the DOM, submit disabled (10.4s)
+  ✘  30 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (16.3s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  31 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (retry #1) (17.2s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  32 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (retry #2) (17.3s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  33 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:279:7 › 064 event-fee as-paid form modes @f4 › event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y (24.3s)
+  ✓  34 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:331:7 › 064 event-fee as-paid form modes @f4 › future payment date → inline i18n error (noValidate path); input keeps the ISO CE value (16.3s)
+  ✓  35 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:362:7 › 064 event-fee as-paid form modes @f4 › two-step failure: 500 on issue-as-paid → error toast + draftRemains description, lands on the surviving draft detail (21.7s)
+  ✓  36 [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (13.1s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  37 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (18.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  38 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (retry #1) (16.4s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  39 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document (retry #2) (17.1s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  40 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (15.2s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  41 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (retry #1) (15.2s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  42 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it (retry #2) (16.1s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  43 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (30.7s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  44 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (retry #1) (30.9s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  45 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields (retry #2) (30.6s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  46 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:225:7 › 064 event-fee as-paid form modes @f4 › refunded: destructive block card, NO mode radio group in the DOM, submit disabled (11.4s)
+  ✘  47 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (13.2s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  48 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (retry #1) (16.1s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✘  49 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back (retry #2) (14.6s)
+[e2e seed 064 as-paid] OK — tenant=swecham event=fbff75d0-1791-4215-9665-7fb112ad25ec registrations=5 (paid-tin / paid-no-tin / pending / refunded / two-step)
+  ✓  50 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:279:7 › 064 event-fee as-paid form modes @f4 › event-fee tab passes axe in paid-default / pending-no-TIN / refunded states — no duplicate-id-aria + no critical @a11y (22.3s)
+  ✓  51 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:331:7 › 064 event-fee as-paid form modes @f4 › future payment date → inline i18n error (noValidate path); input keeps the ISO CE value (7.5s)
+  ✓  52 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:362:7 › 064 event-fee as-paid form modes @f4 › two-step failure: 500 on issue-as-paid → error toast + draftRemains description, lands on the surviving draft detail (10.2s)
+  ✓  53 [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y (7.2s)
+
+
+  1) [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.waitFor: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('button', { name: /Sim PaidTin Guest/ }) to be visible[22m
+
+
+      79 |   // 60s budget absorbs the Turbopack cold compile of /admin/invoices/new +
+      80 |   // the picker's fetch + its 300ms min-skeleton.
+    > 81 |   await row.waitFor({ state: 'visible', timeout: 60_000 });
+         |             ^
+      82 |   await row.click();
+      83 |   await expect(row).toHaveAttribute('aria-pressed', 'true');
+      84 | }
+        at openEventFeeForm (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:81:13)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:114:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    9 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    9 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-chromium-retry2\error-context.md
+
+  2) [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-chromium-retry2\error-context.md
+
+  3) [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    40 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    36 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    23 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-chromium-retry2\error-context.md
+
+  4) [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-chromium-retry2\error-context.md
+
+  5) [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y 
+
+    Error: as-paid form must not scroll horizontally at 320px (sv)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m209[39m
+    Received:    [31m210[39m
+
+      427 |       metrics.scrollWidth,
+      428 |       'as-paid form must not scroll horizontally at 320px (sv)',
+    > 429 |     ).toBeLessThanOrEqual(metrics.clientWidth);
+          |       ^
+      430 |
+      431 |     // Document-level guard with the repo's dev-mode tolerance (Next.js dev
+      432 |     // banner + scrollbar gutter add ~16px — see broadcast-a11y.spec.ts).
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:429:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: as-paid form must not scroll horizontally at 320px (sv)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m209[39m
+    Received:    [31m210[39m
+
+      427 |       metrics.scrollWidth,
+      428 |       'as-paid form must not scroll horizontally at 320px (sv)',
+    > 429 |     ).toBeLessThanOrEqual(metrics.clientWidth);
+          |       ^
+      430 |
+      431 |     // Document-level guard with the repo's dev-mode tolerance (Next.js dev
+      432 |     // banner + scrollbar gutter add ~16px — see broadcast-a11y.spec.ts).
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:429:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: as-paid form must not scroll horizontally at 320px (sv)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m209[39m
+    Received:    [31m210[39m
+
+      427 |       metrics.scrollWidth,
+      428 |       'as-paid form must not scroll horizontally at 320px (sv)',
+    > 429 |     ).toBeLessThanOrEqual(metrics.clientWidth);
+          |       ^
+      430 |
+      431 |     // Document-level guard with the repo's dev-mode tolerance (Next.js dev
+      432 |     // banner + scrollbar gutter add ~16px — see broadcast-a11y.spec.ts).
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:429:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-d5786-tal-scroll-on-the-form-a11y-chromium-retry2\error-context.md
+
+  6) [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    8 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    8 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    9 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-safari-retry2\error-context.md
+
+  7) [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    8 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-safari-retry2\error-context.md
+
+  8) [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    23 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m    - waiting for element to be visible, enabled and stable[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    24 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m    - waiting for element to be visible, enabled and stable[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    29 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-safari-retry2\error-context.md
+
+  9) [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    8 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    8 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-safari-retry2\error-context.md
+
+  10) [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    9 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    9 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-already-paid')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    9 × locator resolved to <input checked type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      115 |
+      116 |     // Mode pre-selected from the F6 'paid' status.
+    > 117 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+          |                                                               ^
+      118 |       'aria-checked',
+      119 |       'true',
+      120 |     );
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:117:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-288f1--ONE-combined-paid-document-mobile-chrome-retry2\error-context.md
+
+  11) [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input disabled type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      167 |     // up for SR users via aria-describedby (no hover-only tooltip).
+      168 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 169 |     await expect(billFirst).toHaveAttribute('aria-disabled', 'true');
+          |                             ^
+      170 |     await expect(billFirst).toHaveAttribute(
+      171 |       'aria-describedby',
+      172 |       'mode-bill-first-needs-tin',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:169:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-768b9-rows-Space-cannot-select-it-mobile-chrome-retry2\error-context.md
+
+  12) [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    38 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    38 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#issuance-mode-already-paid')[22m
+    [2m    - locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="already_paid" id="issuance-mode-already-paid"/>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - element is outside of the viewport[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    39 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - element is outside of the viewport[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      211 |
+      212 |     // Override — the admin attests the funds were received (F6 may lag).
+    > 213 |     await page.locator('#issuance-mode-already-paid').click();
+          |                                                       ^
+      214 |     await expect(page.locator('#issuance-mode-already-paid')).toHaveAttribute(
+      215 |       'aria-checked',
+      216 |       'true',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:213:55
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-0ce1a--reveals-the-payment-fields-mobile-chrome-retry2\error-context.md
+
+  13) [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveAttribute[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('#issuance-mode-bill-first')
+    Expected: [32m"true"[39m
+    Received: [31m""[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveAttribute" with timeout 5000ms[22m
+    [2m  - waiting for locator('#issuance-mode-bill-first')[22m
+    [2m    9 × locator resolved to <input type="radio" tabindex="-1" aria-hidden="true" value="bill_first" id="issuance-mode-bill-first"/>[22m
+    [2m      - unexpected value "null"[22m
+
+
+      266 |     await fillField(page.locator('#buyer-tax-id'), FAKE_TIN);
+      267 |     const billFirst = page.locator('#issuance-mode-bill-first');
+    > 268 |     await expect(billFirst).toHaveAttribute('aria-checked', 'true');
+          |                             ^
+      269 |     await expect(page.getByTestId('as-paid-fields')).toHaveCount(0);
+      270 |     await expect(page.getByTestId('mode-waiting-explainer')).toHaveCount(0);
+      271 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoices\event-fee-as-paid.spec.ts:268:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoices-event-fee-as-paid-ee9b4--hidden-clearing-flips-back-mobile-chrome-retry2\error-context.md
+
+  13 failed
+    [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document 
+    [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it 
+    [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields 
+    [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back 
+    [chromium] › tests\e2e\invoices\event-fee-as-paid.spec.ts:405:7 › 064 event-fee as-paid form modes @f4 › as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y 
+    [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document 
+    [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it 
+    [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields 
+    [mobile-safari] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back 
+    [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:109:7 › 064 event-fee as-paid form modes @f4 › paid (TIN): already-paid pre-selected + date defaults today + method select → submit issues ONE combined paid document 
+    [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:156:7 › 064 event-fee as-paid form modes @f4 › no-TIN: bill-first radio aria-disabled with aria-describedby reason; arrows/Space cannot select it 
+    [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:195:7 › 064 event-fee as-paid form modes @f4 › pending no-TIN: waiting explainer visible; explicit already-paid override reveals the payment fields 
+    [mobile-chrome] › tests\e2e\invoices\event-fee-as-paid.spec.ts:255:7 › 064 event-fee as-paid form modes @f4 › reactive default: typing a 13-digit TIN flips pending default to bill-first (payment fields hidden); clearing flips back 
+  14 passed (21.0m)
+ ELIFECYCLE  Command failed with exit code 1.

@@ -1,0 +1,107 @@
+diff --git a/src/modules/members/application/ports/member-repo.ts b/src/modules/members/application/ports/member-repo.ts
+index a870cec3..da54b482 100644
+--- a/src/modules/members/application/ports/member-repo.ts
++++ b/src/modules/members/application/ports/member-repo.ts
+@@ -30,7 +30,7 @@ export type DirectoryFilter = {
+    * the supplied value; members with `null` band (not yet scored) are
+    * excluded from the filtered result.
+    */
+-  readonly riskBand?: RiskBand;
++  readonly riskBand?: RiskBand | readonly RiskBand[];
+   readonly limit: number;
+   readonly cursor?: string;
+ };
+@@ -47,7 +47,7 @@ export type DirectoryOffsetFilter = {
+   readonly planYear?: number;
+   readonly country?: string;
+   readonly planId?: string;
+-  readonly riskBand?: RiskBand;
++  readonly riskBand?: RiskBand | readonly RiskBand[];
+   /**
+    * Sort column (FR-007a). `engagement` orders by the F8 risk score inverted
+    * (engagement = 100 − risk): `desc` (default) = healthiest first; `asc` =
+diff --git a/src/modules/members/index.ts b/src/modules/members/index.ts
+index 8956cc64..6d35c77f 100644
+--- a/src/modules/members/index.ts
++++ b/src/modules/members/index.ts
+@@ -168,7 +168,7 @@ export {
+ // F2's `drizzle-member-attachment-checker.ts` infrastructure adapter
+ // calls this free function via the public barrel so the soft-delete
+ // FR-010 guard counts real members instead of always returning 0.
+-export { countActiveMembersOnPlan } from './application/use-cases/count-active-members-on-plan';
++export { countActiveMembersOnPlan } from './infrastructure/db/count-active-members-on-plan';
+ 
+ // --- US1 invite-portal use case ---------------------------------------------
+ 
+diff --git a/src/modules/members/application/use-cases/count-active-members-on-plan.ts b/src/modules/members/infrastructure/db/count-active-members-on-plan.ts
+similarity index 78%
+rename from src/modules/members/application/use-cases/count-active-members-on-plan.ts
+rename to src/modules/members/infrastructure/db/count-active-members-on-plan.ts
+index 7545bccf..3333eea1 100644
+--- a/src/modules/members/application/use-cases/count-active-members-on-plan.ts
++++ b/src/modules/members/infrastructure/db/count-active-members-on-plan.ts
+@@ -18,14 +18,17 @@
+  * still on this plan" for FR-010 purposes; only `archived` rows are
+  * excluded (they're tombstoned).
+  *
+- * Pure F3 Application — reads only its own schema. No deep import
+- * from F2 (the F2 plan_id / plan_year are passed as plain
+- * string + number; branding stays in each module's Domain).
++ * INFRASTRUCTURE layer: this is a raw Drizzle query (imports `drizzle-orm`
++ * operators + the `members` schema table + `runInTenant`). It lived under
++ * `application/use-cases/` until the go-live audit (S1-P0-3) flagged the
++ * Principle III violation — application MUST NOT import an ORM or schema
++ * VALUES. It is genuinely an Infrastructure query (no domain logic), so it
++ * moved here and is re-exported through the members barrel unchanged.
+  */
+ import { and, count, eq, or } from 'drizzle-orm';
+ import { runInTenant } from '@/lib/db';
+ import type { TenantContext } from '@/modules/tenants';
+-import { members } from '../../infrastructure/db/schema-members';
++import { members } from './schema-members';
+ 
+ /**
+  * Count active + inactive F3 members attached to (tenant, planId, planYear).
+@@ -51,10 +54,7 @@ export async function countActiveMembersOnPlan(
+         and(
+           eq(members.planId, planId),
+           eq(members.planYear, planYear),
+-          or(
+-            eq(members.status, 'active'),
+-            eq(members.status, 'inactive'),
+-          ),
++          or(eq(members.status, 'active'), eq(members.status, 'inactive')),
+         ),
+       ),
+   );
+diff --git a/src/modules/members/infrastructure/db/drizzle-member-repo.ts b/src/modules/members/infrastructure/db/drizzle-member-repo.ts
+index 8a90c5a7..b4588a7c 100644
+--- a/src/modules/members/infrastructure/db/drizzle-member-repo.ts
++++ b/src/modules/members/infrastructure/db/drizzle-member-repo.ts
+@@ -37,6 +37,7 @@ import type {
+   MemberPatch,
+   MemberRepo,
+   RepoError,
++  RiskBand,
+ } from '../../application/ports/member-repo';
+ import {
+   memberLifecycle,
+@@ -144,8 +145,16 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
+   // I1 round-10 ui-design-specialist — filter by F8-derived risk_score_band.
+   // Members with `null` band (not yet scored) are excluded when active
+   // (eq() over the nullable column matches only rows with the exact value).
+-  if (filter.riskBand !== undefined)
+-    conds.push(eq(members.riskScoreBand, filter.riskBand));
++  if (filter.riskBand !== undefined) {
++    // S1-P1-6: accept a single band OR an array (the dashboard "needs
++    // attention" KPI drills into all three at-risk bands so the count and the
++    // destination list agree). Members with `null` band are excluded either way.
++    conds.push(
++      Array.isArray(filter.riskBand)
++        ? inArray(members.riskScoreBand, [...filter.riskBand])
++        : eq(members.riskScoreBand, filter.riskBand as RiskBand),
++    );
++  }
+   return conds;
+ }
+ 
