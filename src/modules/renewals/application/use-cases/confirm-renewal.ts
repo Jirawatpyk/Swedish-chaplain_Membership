@@ -312,9 +312,17 @@ export async function confirmRenewal(
     let planChanged = false;
     let resolvedCycle: RenewalCycle = cycle;
     if (input.newPlanId && input.newPlanId !== cycle.planIdAtCycleStart) {
+      // 070 §86/4 — resolve the new plan by THIS cycle's fiscal year
+      // (`requireActiveForYear:true` — a plan-change is an offer check: the
+      // member cannot switch to a plan not offered for this cycle's year,
+      // and an inactive exact-year row must NOT fall through to a different
+      // year's price). The year is the cycle's `period_from`, the SAME
+      // `deriveFiscalYear` anchor the §86/4 numbering uses below (line ~414).
       const planResult = await deps.planLookupForRenewal.loadPlanFrozenFields({
         tenantId: input.tenantId,
         planId: input.newPlanId,
+        fiscalYear: deriveFiscalYear(cycle.periodFrom),
+        requireActiveForYear: true,
       });
       if (planResult.status === 'not_found') {
         return err({ kind: 'plan_not_found' as const });

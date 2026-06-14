@@ -31,6 +31,7 @@
  */
 import type { TenantTx } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import type { MemberId } from '@/modules/members';
 import type {
   NewRenewalCycleInput,
@@ -194,14 +195,36 @@ export async function createCycleInTx(
   // 2. Frozen-price snapshot (FR-021a). The cycle freezes the resolved
   //    plan's price/term/tier at creation; a later catalogue price bump
   //    does NOT change this cycle's billing.
-  const plan = await deps.planLookup.loadPlanFrozenFields({
+  //
+  //    070 §86/4 — the freeze MUST resolve by the cycle's OWN fiscal year
+  //    (`requireActiveForYear:false` — a FREEZE, not a plan-offer check;
+  //    a seeded-but-not-yet-active next-year row is the correct frozen
+  //    price for that year). The cycle's year is the year of the RESOLVED
+  //    `periodFrom` (post current-period anchoring), but anchoring needs
+  //    the plan's `termMonths`. The plan term is stable across catalogue
+  //    years (the multi-year axis is the cycle's own `cycleLengthMonths`),
+  //    so we resolve in two steps:
+  //      (a) a provisional lookup keyed on the RAW input year supplies the
+  //          term used to anchor `periodFrom`;
+  //      (b) once `periodFrom` (hence the real fiscal year) is known, the
+  //          definitive freeze lookup uses THAT year — re-querying only
+  //          when anchoring crossed a year boundary (the rare cold-start
+  //          case; the common path's year is unchanged → no second query).
+  const provisionalFiscalYear = deriveFiscalYear(input.periodFrom);
+  const provisionalPlan = await deps.planLookup.loadPlanFrozenFields({
     tenantId: input.tenantId,
     planId: input.planId,
+    fiscalYear: provisionalFiscalYear,
+    requireActiveForYear: false,
   });
-  if (plan.status !== 'found') {
+  if (provisionalPlan.status !== 'found') {
     // 070 Item B — typed sentinel (was a plain `Error` callers string-matched).
     // `plan.status` is narrowed to `'not_found' | 'plan_inactive'` here.
-    throw new PlanNotResolvableError(input.planId, input.memberId, plan.status);
+    throw new PlanNotResolvableError(
+      input.planId,
+      input.memberId,
+      provisionalPlan.status,
+    );
   }
 
   // 3. Gapless period derivation. 068 cluster F — the import cold-start opts
@@ -213,10 +236,33 @@ export async function createCycleInTx(
   const periodFrom = input.anchorToCurrentPeriod
     ? advanceAnchorToCurrentPeriod(
         input.periodFrom,
-        plan.plan.termMonths,
+        provisionalPlan.plan.termMonths,
         input.anchorToCurrentPeriod.nowIso,
       )
     : input.periodFrom;
+
+  // 070 §86/4 — definitive freeze lookup for the cycle's ACTUAL fiscal
+  // year. Reuse the provisional result when anchoring did not cross a
+  // year boundary (always true on the non-anchored paths).
+  const fiscalYear = deriveFiscalYear(periodFrom);
+  let plan = provisionalPlan;
+  if (fiscalYear !== provisionalFiscalYear) {
+    const definitivePlan = await deps.planLookup.loadPlanFrozenFields({
+      tenantId: input.tenantId,
+      planId: input.planId,
+      fiscalYear,
+      requireActiveForYear: false,
+    });
+    if (definitivePlan.status !== 'found') {
+      throw new PlanNotResolvableError(
+        input.planId,
+        input.memberId,
+        definitivePlan.status,
+      );
+    }
+    plan = definitivePlan;
+  }
+
   const periodTo = addMonthsUtc(periodFrom, plan.plan.termMonths);
 
   const cycleId = deps.idFactory.cycleId();

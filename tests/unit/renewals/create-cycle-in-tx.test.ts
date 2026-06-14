@@ -136,6 +136,46 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
     });
   });
 
+  it('070 §86/4 — freezes by the RESOLVED periodFrom fiscal-year with requireActiveForYear:false (FREEZE caller)', async () => {
+    // Regression guard for the latent multi-active-year footgun: the
+    // frozen price MUST resolve by the cycle's own fiscal year, not the
+    // "most-recent active" row. createCycleInTx derives the year from the
+    // RESOLVED periodFrom (post current-period anchoring) and asks the
+    // port for that exact year with requireActiveForYear:false (a freeze,
+    // not a plan-offer check). A regular 2026-01-01 period → FY 2026.
+    const { deps, loadPlanFrozenFields } = makeDeps();
+
+    await createCycleInTx(deps, fakeTx, baseInput);
+
+    expect(loadPlanFrozenFields).toHaveBeenCalledTimes(1);
+    expect(loadPlanFrozenFields).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2026,
+      requireActiveForYear: false,
+    });
+  });
+
+  it('070 §86/4 — fiscalYear tracks the ANCHORED periodFrom, not the raw input year (import cold-start)', async () => {
+    // A long-standing member registered 2020-03-15 anchored to the current
+    // period (now 2026-06-14) lands on 2026-03-15 → FY 2026. The freeze
+    // lookup MUST use 2026 (the cycle's real year), never 2020.
+    const { deps, loadPlanFrozenFields } = makeDeps();
+
+    await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
+    });
+
+    expect(loadPlanFrozenFields).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2026,
+      requireActiveForYear: false,
+    });
+  });
+
   it('068 cluster F — anchorToCurrentPeriod advances a HISTORICAL periodFrom to the current period (anniversary preserved)', async () => {
     const { deps, insert, emitInTx } = makeDeps();
     // Member registered 2020-03-15 (5+ years ago); now = 2026-06-14. With a
