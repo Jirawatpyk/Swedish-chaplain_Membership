@@ -71,10 +71,16 @@ export function RenewLapsedMemberDialog({
           } catch {
             /* ignore */
           }
+          // 068 cluster D — next-intl's 2nd `t()` arg is interpolation VALUES,
+          // not options; there is NO `fallback` option. A route code without a
+          // `toast.error.*` key (rate_limited / invalid_body / invalid_input)
+          // previously rendered the raw dotted key path + logged
+          // MISSING_MESSAGE. Use `t.has(...)` to resolve a known code and fall
+          // back to `server_error` for any unknown future code — cleanly, with
+          // no MISSING_MESSAGE.
+          const key = `toast.error.${code}`;
           toast.error(t('toast.failure'), {
-            description: t(`toast.error.${code}`, {
-              fallback: t('toast.error.server_error'),
-            }),
+            description: t.has(key) ? t(key) : t('toast.error.server_error'),
           });
           return;
         }

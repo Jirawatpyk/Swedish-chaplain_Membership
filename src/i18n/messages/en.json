@@ -975,6 +975,9 @@
               "member_has_active_cycle": "This member already has an active renewal cycle.",
               "plan_not_found": "The member's plan could not be resolved.",
               "invoice_issue_failed": "The renewal invoice could not be issued. The renewal was not completed — please try again.",
+              "rate_limited": "Too many renewal attempts. Please wait a moment and try again.",
+              "invalid_body": "The request could not be processed. Please refresh the page and try again.",
+              "invalid_input": "The renewal request was invalid. Please refresh the page and try again.",
               "feature_disabled": "Renewals are currently disabled.",
               "forbidden": "You do not have permission to renew members.",
               "server_error": "Something went wrong. Please try again."

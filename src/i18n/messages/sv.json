@@ -975,6 +975,9 @@
               "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
               "plan_not_found": "Medlemmens plan kunde inte hittas.",
               "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",
+              "rate_limited": "För många förnyelseförsök. Vänta en stund och försök igen.",
+              "invalid_body": "Begäran kunde inte behandlas. Uppdatera sidan och försök igen.",
+              "invalid_input": "Förnyelsebegäran var ogiltig. Uppdatera sidan och försök igen.",
               "feature_disabled": "Förnyelser är för närvarande inaktiverade.",
               "forbidden": "Du har inte behörighet att förnya medlemmar.",
               "server_error": "Något gick fel. Försök igen."
