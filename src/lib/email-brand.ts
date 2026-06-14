@@ -18,3 +18,21 @@
  * silently drift from the in-app token (S15 speckit-review).
  */
 export const EMAIL_BRAND_PRIMARY = '#10487a' as const;
+
+/**
+ * Absolute URL of the brand logo PNG used in the transactional-email header.
+ *
+ * Email clients (Gmail, Outlook, Apple Mail) cannot render SVG and will not
+ * load app-relative paths, so the logo MUST be an absolute https URL pointing
+ * at the hosted PNG under `public/brand/`.
+ *
+ * Read directly from `process.env.APP_BASE_URL` (NOT the validated `env`
+ * object) so that rendering a template in a unit test — where APP_BASE_URL
+ * may be unset — degrades to an app-relative path instead of throwing at
+ * module load. Production always has APP_BASE_URL set (validated at boot by
+ * `src/lib/env.ts`), so real emails always get a fully-qualified URL.
+ */
+export function emailLogoUrl(): string {
+  const base = (process.env.APP_BASE_URL ?? '').replace(/\/+$/, '');
+  return `${base}/brand/swecham-email-logo.png`;
+}

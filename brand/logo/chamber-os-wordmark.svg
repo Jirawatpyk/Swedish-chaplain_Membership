@@ -1,0 +1,18 @@
+<svg width="560" height="160" viewBox="0 0 560 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Chamber-OS wordmark">
+  <defs>
+    <linearGradient id="wGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B4D8C"/>
+      <stop offset="1" stop-color="#0B2540"/>
+    </linearGradient>
+  </defs>
+  <!-- mark -->
+  <g transform="translate(24,18)">
+    <path d="M92 35 A45 45 0 1 0 92 97" fill="none" stroke="url(#wGrad)" stroke-width="17" stroke-linecap="round"/>
+    <circle cx="96" cy="66" r="13" fill="#2D7FF9"/>
+    <circle cx="96" cy="66" r="4.5" fill="#FFFFFF"/>
+  </g>
+  <!-- wordmark -->
+  <text x="172" y="100" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="54" font-weight="700" letter-spacing="-1">
+    <tspan fill="#0B2540">Chamber</tspan><tspan fill="#9AA7B4">·</tspan><tspan fill="#2D7FF9">OS</tspan>
+  </text>
+</svg>

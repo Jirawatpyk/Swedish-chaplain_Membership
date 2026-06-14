@@ -19,7 +19,7 @@
  */
 import { env } from '@/lib/env';
 import { escapeHtml } from '@/lib/html-escape';
-import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
+import { EMAIL_BRAND_PRIMARY, emailLogoUrl } from '@/lib/email-brand';
 
 export type EmailLocale = 'en' | 'th' | 'sv';
 
@@ -95,6 +95,7 @@ export function buildEmailVerificationEmail(
     <title>${escapeHtml(copy.subject)}</title>
   </head>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 24px; color: #111;">
+    <img src="${emailLogoUrl()}" alt="SweCham — Thailand-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
     <h1 style="font-size: 20px; margin-bottom: 16px;">${escapeHtml(copy.heading)}</h1>
     <p style="line-height: 1.6;">${escapeHtml(copy.intro)}</p>
     <p style="margin: 24px 0;">

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>SweCham — App Tiles</title>
+<style>
+  body{font-family:'Segoe UI',Arial,sans-serif;margin:0;background:#F4F6F8;color:#0B2540}
+  header{padding:32px 40px;background:#fff;border-bottom:1px solid #e3e8ee}
+  h1{margin:0 0 4px;font-size:22px}
+  p.sub{margin:0;color:#5b6b7b;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;padding:32px 40px}
+  .card{background:#fff;border:1px solid #e3e8ee;border-radius:16px;padding:20px}
+  .card h3{margin:0 0 4px;font-size:15px}
+  .card .desc{color:#5b6b7b;font-size:13px;margin-bottom:16px;min-height:34px}
+  .row{display:flex;align-items:center;gap:22px}
+  .row img{width:96px;height:96px;border-radius:22px;box-shadow:0 4px 14px rgba(11,37,64,.18)}
+  .small{width:48px!important;height:48px!important;border-radius:11px!important}
+  .tiny{width:28px!important;height:28px!important;border-radius:7px!important}
+  .home{background:#dfe6ee;padding:18px;border-radius:24px;display:flex;gap:14px}
+  footer{padding:24px 40px;color:#5b6b7b;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>SweCham — App Tiles (ชุดใหม่)</h1>
+  <p class="sub">icon เต็มใบ โมเดิร์น · ต่างจากของเดิม · ไม่ใช่ crest · ดูขนาดจริง 96 / 48 / 28 px</p>
+</header>
+
+<div class="grid">
+  <div class="card">
+    <h3>A · Corner Arc</h3>
+    <div class="desc">น้ำเงินตัด quarter-circle ทอง มุมล่างขวา ดูไดนามิก ทันสมัย</div>
+    <div class="row"><img src="swecham-tile-a-arc.svg"><img class="small" src="swecham-tile-a-arc.svg"><img class="tiny" src="swecham-tile-a-arc.svg"></div>
+  </div>
+  <div class="card">
+    <h3>B · Gold Flat</h3>
+    <div class="desc">พลิกสีเด่นเป็นเหลือง SC น้ำเงิน — เด่นสะดุดตาบนหน้าจอ</div>
+    <div class="row"><img src="swecham-tile-b-gold.svg"><img class="small" src="swecham-tile-b-gold.svg"><img class="tiny" src="swecham-tile-b-gold.svg"></div>
+  </div>
+  <div class="card">
+    <h3>C · Flag Band</h3>
+    <div class="desc">แถบเหลืองกลางบนน้ำเงิน อ้างอิงธงสวีเดน + มีที่ใส่ชื่อ/คำขวัญ</div>
+    <div class="row"><img src="swecham-tile-c-band.svg"><img class="small" src="swecham-tile-c-band.svg"><img class="tiny" src="swecham-tile-c-band.svg"></div>
+  </div>
+  <div class="card">
+    <h3>D · Big Type</h3>
+    <div class="desc">SC ตัวใหญ่ครอปขอบ สไตล์ editorial + จุดทองเป็น accent</div>
+    <div class="row"><img src="swecham-tile-d-typo.svg"><img class="small" src="swecham-tile-d-typo.svg"><img class="tiny" src="swecham-tile-d-typo.svg"></div>
+  </div>
+</div>
+
+<div style="padding:0 40px 36px">
+  <div class="card">
+    <h3>ลองวางบนหน้าจอจริง</h3>
+    <div class="desc">เทียบความโดดเด่นเมื่ออยู่รวมกัน</div>
+    <div class="home">
+      <img class="small" src="swecham-tile-a-arc.svg">
+      <img class="small" src="swecham-tile-b-gold.svg">
+      <img class="small" src="swecham-tile-c-band.svg">
+      <img class="small" src="swecham-tile-d-typo.svg">
+    </div>
+  </div>
+</div>
+
+<footer>Palette: Swedish Blue #006AA7 · Swedish Gold #FECC00 · White #FFFFFF — SVG vector ทั้งหมด</footer>
+</body>
+</html>

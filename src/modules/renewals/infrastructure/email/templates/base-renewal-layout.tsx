@@ -20,11 +20,13 @@ import {
   Container,
   Head,
   Html,
+  Img,
   Link,
   Preview,
   Section,
   Text,
 } from '@react-email/components';
+import { emailLogoUrl } from '@/lib/email-brand';
 import type { RenewalEmailLocale } from './copy';
 
 /**
@@ -68,6 +70,20 @@ const CONTAINER_STYLE: React.CSSProperties = {
   color: '#111',
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+};
+
+const BRAND_HEADER_STYLE: React.CSSProperties = {
+  margin: '0 0 16px',
+  paddingBottom: '16px',
+  borderBottom: '1px solid #eee',
+};
+
+const BRAND_LOGO_STYLE: React.CSSProperties = {
+  display: 'block',
+  border: 0,
+  outline: 'none',
+  textDecoration: 'none',
+  height: 'auto',
 };
 
 const HEADING_STYLE: React.CSSProperties = {
@@ -118,6 +134,14 @@ export function BaseRenewalLayout({
       <Preview>{previewText}</Preview>
       <Body>
         <Container style={CONTAINER_STYLE}>
+          <Section style={BRAND_HEADER_STYLE}>
+            <Img
+              src={emailLogoUrl()}
+              alt="SweCham — Thailand-Swedish Chamber of Commerce"
+              width={200}
+              style={BRAND_LOGO_STYLE}
+            />
+          </Section>
           <Text style={HEADING_STYLE}>{heading}</Text>
           <Text style={BODY_STYLE}>{bodyContent}</Text>
           <Section style={{ margin: '0 0 24px' }}>

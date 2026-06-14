@@ -9,6 +9,7 @@ import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
 import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
+import { BrandMark } from '@/components/shell/brand-mark';
 import { requireSession } from '@/lib/auth-session';
 import { MarketingAcknowledgementBanner } from './_components/marketing-acknowledgement-banner';
 
@@ -66,9 +67,14 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <Link
               href="/portal"
-              className="text-body font-semibold tracking-tight shrink-0 max-w-[6rem] truncate sm:max-w-none"
+              className="flex shrink-0 items-center gap-2"
             >
-              {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · {tPortal('member')}
+              {/* Brand: Interlocking Link mark + tenant wordmark. The mark is
+                  decorative — the adjacent text names the portal. */}
+              <BrandMark variant="mark" className="size-6 shrink-0" />
+              <span className="text-body font-semibold tracking-tight max-w-[6rem] truncate sm:max-w-none">
+                {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · {tPortal('member')}
+              </span>
             </Link>
             <MemberNav />
           </div>

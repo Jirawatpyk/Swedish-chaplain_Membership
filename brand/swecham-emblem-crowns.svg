@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="SweCham three crowns emblem">
+  <title>SweCham heritage emblem (Tre Kronor)</title>
+  <defs>
+    <path id="crown" d="M0,13 L1.5,4 L5,7.5 L8,0.5 L11,7.5 L14.5,4 L16,13 Z"/>
+  </defs>
+  <circle cx="60" cy="60" r="54" fill="#0B2A4A"/>
+  <circle cx="60" cy="60" r="46.5" fill="none" stroke="#F4C430" stroke-width="1.6" opacity="0.9"/>
+  <g fill="#F4C430">
+    <use href="#crown" transform="translate(52,30)"/>
+    <use href="#crown" transform="translate(34,54)"/>
+    <use href="#crown" transform="translate(70,54)"/>
+  </g>
+  <rect x="42" y="78" width="36" height="3" rx="1.5" fill="#F4C430"/>
+  <rect x="48" y="83.5" width="24" height="2.2" rx="1.1" fill="#C8102E"/>
+  <text x="60" y="103" text-anchor="middle" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="600" letter-spacing="3" fill="#FFFFFF">TSCC</text>
+</svg>

@@ -1,0 +1,7 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham bridge">
+  <!-- Two arcs linking = a bi-national bridge between Sweden (yellow) and Thailand (blue), forming an open C -->
+  <path d="M150 60 A70 70 0 1 0 150 180" fill="none" stroke="#006AA7" stroke-width="22" stroke-linecap="round"/>
+  <path d="M150 96 A38 38 0 1 1 150 144" fill="none" stroke="#FECC00" stroke-width="22" stroke-linecap="round"/>
+  <!-- meeting node -->
+  <circle cx="120" cy="120" r="13" fill="#0B2540"/>
+</svg>

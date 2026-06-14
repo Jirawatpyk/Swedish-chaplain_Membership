@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 96" role="img" aria-label="SweCham link mark, single colour navy">
+  <title>SweCham — one-colour navy mark</title>
+  <defs>
+    <mask id="mA"><rect width="104" height="96" fill="#fff"/><rect x="45" y="56" width="14" height="20" fill="#000"/></mask>
+    <mask id="mB"><rect width="104" height="96" fill="#fff"/><rect x="45" y="20" width="14" height="20" fill="#000"/></mask>
+  </defs>
+  <circle cx="42" cy="48" r="20" fill="none" stroke="#0B2A4A" stroke-width="11" mask="url(#mA)"/>
+  <circle cx="62" cy="48" r="20" fill="none" stroke="#0B2A4A" stroke-width="11" mask="url(#mB)"/>
+</svg>

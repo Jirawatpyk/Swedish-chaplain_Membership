@@ -1,0 +1,14 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Chamber-OS concept B">
+  <!-- Interlock C + O: C = Chamber, O = OS, power-node implies "operating system" -->
+  <g fill="none" stroke-linecap="round">
+    <!-- C -->
+    <path d="M150 64 A62 62 0 1 0 150 176" stroke="#0B2540" stroke-width="24"/>
+    <!-- O (offset, interlocking) -->
+    <circle cx="156" cy="120" r="40" stroke="#2D7FF9" stroke-width="24"/>
+  </g>
+  <!-- power / boot node inside O -->
+  <g stroke="#0B2540" stroke-width="9" stroke-linecap="round" fill="none">
+    <line x1="156" y1="100" x2="156" y2="120"/>
+    <path d="M142 110 A20 20 0 1 0 170 110"/>
+  </g>
+</svg>
