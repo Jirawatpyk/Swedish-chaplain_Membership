@@ -144,6 +144,45 @@ describe('commitMembers — initial renewal cycle per imported member (Task 1.7)
     ]);
   }, 60_000);
 
+  it('cold-start: a member with a HISTORICAL registration_date anchors at the CURRENT period (expires_at in the future), not the original (cluster F, 068)', async () => {
+    // A long-standing member registered 5+ years ago. With the naive
+    // `period_from = registration_date` anchoring, period_to = registration +
+    // 12mo would be YEARS in the past → the enter-awaiting + lapse crons would
+    // immediately mark a paid-up member lapsed at launch. The cluster-F fix
+    // advances period_from by whole term-month multiples (preserving the
+    // anniversary) until period_to > now → the member's CURRENT membership year.
+    const historical = '2020-03-15T00:00:00Z';
+    const m = vm({ regDate: historical });
+    const out = await commitMembers(tenantA.ctx, user.userId, [m], 2026);
+    expect(out.cyclesCreated).toBe(1);
+
+    const cycles = await cyclesFor(tenantA.ctx.slug);
+    // Find the just-created historical-member cycle (companyName is unique via vm()).
+    const created = cycles.find(
+      (c) => c.periodFrom.getUTCMonth() === 2 && c.periodFrom.getUTCDate() === 15,
+    );
+    expect(created).toBeDefined();
+
+    const now = Date.now();
+    // CRITICAL: expires_at (period_to) is in the FUTURE — the member is in
+    // their current period, NOT lapsed at launch.
+    expect(created!.periodTo.getTime()).toBeGreaterThan(now);
+    // The original naive expiry (2021-03-15) must NOT be used.
+    expect(created!.periodTo.toISOString()).not.toBe('2021-03-15T00:00:00.000Z');
+    // Anniversary preserved: month=March, day=15 on BOTH ends.
+    expect(created!.periodFrom.getUTCMonth()).toBe(2);
+    expect(created!.periodFrom.getUTCDate()).toBe(15);
+    expect(created!.periodTo.getUTCMonth()).toBe(2);
+    expect(created!.periodTo.getUTCDate()).toBe(15);
+    // Gapless 12-month window: period_to == period_from + 12 months.
+    const pf = created!.periodFrom;
+    const expectedTo = new Date(pf);
+    expectedTo.setUTCMonth(expectedTo.getUTCMonth() + 12);
+    expect(created!.periodTo.toISOString()).toBe(expectedTo.toISOString());
+    // The current period contains "now": period_from <= now < period_to.
+    expect(created!.periodFrom.getTime()).toBeLessThanOrEqual(now);
+  }, 60_000);
+
   it('is idempotent: a re-run of the SAME member does NOT create a 2nd cycle', async () => {
     const m = vm({});
     const first = await commitMembers(tenantB.ctx, user.userId, [m], 2026);

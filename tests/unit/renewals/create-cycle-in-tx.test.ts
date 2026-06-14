@@ -136,6 +136,64 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
     });
   });
 
+  it('068 cluster F — anchorToCurrentPeriod advances a HISTORICAL periodFrom to the current period (anniversary preserved)', async () => {
+    const { deps, insert, emitInTx } = makeDeps();
+    // Member registered 2020-03-15 (5+ years ago); now = 2026-06-14. With a
+    // 12-month term the current period anchors at 2020+6yr = 2026-03-15 (period
+    // 2026-03-15 → 2027-03-15 covers `now`). The anniversary (March 15) is kept.
+    const out = await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      source: 'import',
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
+    });
+    expect(out.kind).toBe('created');
+    const [, , newCycle] = insert.mock.calls[0]!;
+    expect(newCycle).toMatchObject({
+      periodFrom: '2026-03-15T00:00:00.000Z',
+      periodTo: '2027-03-15T00:00:00.000Z',
+    });
+    // Audit payload carries the ANCHORED periodFrom (matches the cycle row).
+    const [, event] = emitInTx.mock.calls[0]!;
+    expect(event.payload).toMatchObject({
+      period_from: '2026-03-15T00:00:00.000Z',
+      period_to: '2027-03-15T00:00:00.000Z',
+    });
+  });
+
+  it('068 cluster F — anchorToCurrentPeriod is a no-op when periodFrom is already in the current/future period', async () => {
+    const { deps, insert } = makeDeps();
+    // A current-period registration: 2026-05-20, now = 2026-06-14. period_to
+    // 2027-05-20 already covers `now` → the FIRST iteration returns unchanged.
+    const out = await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      source: 'import',
+      periodFrom: '2026-05-20T00:00:00.000Z',
+      anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
+    });
+    expect(out.kind).toBe('created');
+    const [, , newCycle] = insert.mock.calls[0]!;
+    expect(newCycle).toMatchObject({
+      periodFrom: '2026-05-20T00:00:00.000Z',
+      periodTo: '2027-05-20T00:00:00.000Z',
+    });
+  });
+
+  it('068 cluster F — WITHOUT anchorToCurrentPeriod a historical periodFrom is used VERBATIM (non-import paths unchanged)', async () => {
+    const { deps, insert } = makeDeps();
+    const out = await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      // no anchorToCurrentPeriod — on-paid / onboarding / lapsed-comeback paths.
+    });
+    expect(out.kind).toBe('created');
+    const [, , newCycle] = insert.mock.calls[0]!;
+    expect(newCycle).toMatchObject({
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      periodTo: '2021-03-15T00:00:00.000Z',
+    });
+  });
+
   it('emits renewal_cycle_created in the same tx after insert, with the canonical payload shape', async () => {
     const { deps, emitInTx, insert } = makeDeps();
 

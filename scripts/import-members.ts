@@ -143,6 +143,15 @@ export async function commitMembers(
     idFactory: { cycleId: () => asCycleId(randomUUID()) },
   };
 
+  // 068 cluster F — one server clock for the whole batch. The import cold-start
+  // anchors each member's initial cycle at their CURRENT membership period
+  // (advancing the historical registration_date by whole term multiples until
+  // the window covers `now`), so a long-standing member (e.g. registered 2015)
+  // is NOT created with a years-past expires_at that the enter-awaiting + lapse
+  // crons would immediately flip to `lapsed` at launch. Captured once so every
+  // row in the batch anchors against the same instant (deterministic).
+  const commitNowIso = new Date().toISOString();
+
   return runInTenant(ctx, async (tx): Promise<CommitOutcome> => {
     let membersCreated = 0;
     let contactsCreated = 0;
@@ -312,6 +321,10 @@ export async function commitMembers(
           actorUserId,
           actorRole: 'system',
           correlationId: `import-members-${randomUUID()}`,
+          // 068 cluster F — anchor at the CURRENT membership period (preserving
+          // the registration anniversary), not the raw historical registration
+          // date, so a long-standing member is not marked lapsed at launch.
+          anchorToCurrentPeriod: { nowIso: commitNowIso },
         });
         cyclesCreated += 1;
       } catch (e) {

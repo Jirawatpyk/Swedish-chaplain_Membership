@@ -74,6 +74,22 @@ export interface CreateCycleInTxInput {
    * is immediately payable.
    */
   readonly startStatus?: 'upcoming' | 'awaiting_payment';
+  /**
+   * 068 cluster F — when set, advance `periodFrom` from its raw value by whole
+   * `termMonths` multiples (preserving the anniversary month/day) until
+   * `periodTo > nowIso`, so the cycle lands on the member's CURRENT membership
+   * period. ONLY the member-import cold-start sets this: a long-standing member
+   * (e.g. registered 2015) anchored at the raw `registration_date` would get
+   * `periodTo = 2016` (years past) → the enter-awaiting + lapse crons would
+   * immediately flip a paid-up member to `lapsed` at launch. The other cycle
+   * entry points already anchor at the current period (on-paid uses
+   * `prior.periodTo`; onboarding / admin-lapsed-comeback use `clock.now()`), so
+   * they DO NOT set this and their behaviour is unchanged.
+   *
+   * `nowIso` is the server clock (ISO 8601 UTC). When omitted, `periodFrom` is
+   * used verbatim (the existing behaviour for every non-import path).
+   */
+  readonly anchorToCurrentPeriod?: { readonly nowIso: string };
 }
 
 export type CreateCycleOutcome =
@@ -91,6 +107,35 @@ function addMonthsUtc(iso: string, months: number): string {
   const d = new Date(iso);
   d.setUTCMonth(d.getUTCMonth() + months);
   return d.toISOString();
+}
+
+/**
+ * 068 cluster F — advance `periodFromIso` by whole `termMonths` multiples
+ * (preserving the anniversary month/day via direct UTC month arithmetic) until
+ * `periodFrom + termMonths > nowIso`, i.e. the member's CURRENT membership
+ * period. A member already in their current/future period (the common case) is
+ * returned unchanged on the first iteration. Used only by the import cold-start
+ * (see `CreateCycleInTxInput.anchorToCurrentPeriod`).
+ *
+ * Bounded by construction: each iteration adds `termMonths` (≥1), so the loop
+ * advances strictly forward and terminates as soon as the window covers `now`.
+ * A hard cap (200 iterations ≈ centuries at a 12-month term) guards against a
+ * pathological `termMonths` of 0 — `createCycleInTx` already rejects such a
+ * plan upstream, but the cap keeps this a total function.
+ */
+function advanceAnchorToCurrentPeriod(
+  periodFromIso: string,
+  termMonths: number,
+  nowIso: string,
+): string {
+  const nowMs = Date.parse(nowIso);
+  let anchor = periodFromIso;
+  for (let i = 0; i < 200; i++) {
+    const periodToMs = Date.parse(addMonthsUtc(anchor, termMonths));
+    if (periodToMs > nowMs) return anchor;
+    anchor = addMonthsUtc(anchor, termMonths);
+  }
+  return anchor;
 }
 
 export async function createCycleInTx(
@@ -124,15 +169,27 @@ export async function createCycleInTx(
     );
   }
 
-  // 3. Gapless period derivation.
-  const periodTo = addMonthsUtc(input.periodFrom, plan.plan.termMonths);
+  // 3. Gapless period derivation. 068 cluster F — the import cold-start opts
+  //    into current-period anchoring (advance the raw registration_date by
+  //    whole term multiples so a long-standing member lands on their CURRENT
+  //    period, not a years-past one). Every other entry point passes
+  //    `periodFrom` already at the current period, so `periodFrom` is used
+  //    verbatim there.
+  const periodFrom = input.anchorToCurrentPeriod
+    ? advanceAnchorToCurrentPeriod(
+        input.periodFrom,
+        plan.plan.termMonths,
+        input.anchorToCurrentPeriod.nowIso,
+      )
+    : input.periodFrom;
+  const periodTo = addMonthsUtc(periodFrom, plan.plan.termMonths);
 
   const cycleId = deps.idFactory.cycleId();
   const newCycle: NewRenewalCycleInput = {
     tenantId: input.tenantId,
     cycleId,
     memberId: input.memberId,
-    periodFrom: input.periodFrom,
+    periodFrom,
     periodTo,
     cycleLengthMonths: plan.plan.termMonths,
     tierAtCycleStart: plan.plan.tierBucket,
@@ -153,7 +210,9 @@ export async function createCycleInTx(
         cycle_id: asCycleId(cycleId),
         member_id: input.memberId as MemberId,
         tier_bucket: plan.plan.tierBucket,
-        period_from: input.periodFrom,
+        // 068 cluster F — the persisted/anchored periodFrom (not the raw
+        // input), so the audit row matches the cycle row exactly.
+        period_from: periodFrom,
         period_to: periodTo,
       },
     },
