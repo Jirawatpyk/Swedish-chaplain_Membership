@@ -3,29 +3,45 @@
  *
  * Member confirms their renewal via the public portal page. Flow:
  *
- *   1. Validate cycle is in `awaiting_payment` + matches the URL [memberId].
- *   2. (Optional plan-change branch FR-025) — if `newPlanId` provided AND
+ *   1. Acquire the per-cycle advisory lock, then read the cycle + validate
+ *      it matches the URL [memberId] (cross-member guard).
+ *   2. Lazy enter-awaiting self-transition (slice 2.5) — if the cycle is
+ *      `upcoming|reminded`, self-transition it `→ awaiting_payment` under
+ *      the lock and emit a `renewal_entered_awaiting_payment` audit
+ *      (`source:'confirm'`) in the SAME tx, so a member can renew EARLY
+ *      before the T-0 enter-awaiting cron runs. A concurrent writer (the
+ *      cron, or another confirm) that wins the CAS surfaces a
+ *      `CycleTransitionConflictError`: we re-read under the lock and, if
+ *      the cycle is now `awaiting_payment`, converge silently (the winner
+ *      emitted its own audit — we do NOT double-emit). Any other current
+ *      status falls through as `cycle_not_payable`.
+ *   3. (Optional plan-change branch FR-025) — if `newPlanId` provided AND
  *      differs from `cycle.planIdAtCycleStart`:
  *        a. Lookup new plan via `planLookupForRenewal` port.
  *        b. Atomically update cycle's `frozen_plan_*` columns
  *           (`cyclesRepo.updateFrozenPlan` — single UPDATE per FR-021b).
  *        c. Emit `renewal_with_plan_change` + `renewal_cycle_price_frozen`
  *           audits inside the same tx.
- *   3. Compose F4 createInvoiceDraft → issueInvoice via the
+ *   4. Compose F4 createInvoiceDraft → issueInvoice via the
  *      `f4InvoicingForRenewalBridge` port.
- *   4. Link the issued invoice to the cycle (`cyclesRepo.linkInvoice`).
- *   5. Emit `renewal_invoice_created` audit.
- *   6. Return `{ invoiceId, payUrl }` for the route handler to redirect
+ *   5. Link the issued invoice to the cycle (`cyclesRepo.linkInvoice`).
+ *   6. Emit `renewal_invoice_created` audit.
+ *   7. Return `{ invoiceId, payUrl }` for the route handler to redirect
  *      to F5 `/portal/invoices/<invoiceId>/pay`.
  *
  * Coverage policy: Constitution Principle II — 100% branch coverage
  * required (security-critical mutating path; collects member payment
  * intent). The branches are:
- *   - happy path no plan-change
+ *   - happy path no plan-change (already `awaiting_payment`)
  *   - happy path with plan-change
+ *   - lazy `upcoming|reminded → awaiting_payment` self-transition
+ *     (emits `renewal_entered_awaiting_payment`, source:'confirm')
+ *   - lazy-transition CAS conflict → re-read converges (already
+ *     `awaiting_payment`, no duplicate audit) vs surfaces
+ *     `cycle_not_payable` (winner moved it to a terminal state)
  *   - cycle_not_found
  *   - cross_member_probe
- *   - cycle_not_payable (status mismatch)
+ *   - cycle_not_payable (terminal/pending_admin_reactivation status)
  *   - plan_not_found / plan_inactive (during plan-change)
  *   - F4 invoice creation failure (create_failed / issue_failed)
  *   - audit emit failure (Principle VIII reverse-direction)

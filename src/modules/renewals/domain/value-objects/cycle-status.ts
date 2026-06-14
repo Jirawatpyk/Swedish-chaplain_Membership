@@ -123,10 +123,11 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
  *
  * Converging these (routing both to `lapsed`, or both to `cancelled`) would
  * silently shift members between the at-risk and lapsed reporting buckets:
- * `drizzle-renewal-cycle-repo.ts:347` short-circuits the urgency computation
- * on `status = 'lapsed'`, and the admin lapsed-tab + at-risk funnel bucket
- * members by these terminal states. The split is a reporting invariant, not
- * an accident — keep `reject → cancelled` and `timeout → lapsed` distinct.
+ * the `URGENCY_CASE_SQL` expression in `drizzle-renewal-cycle-repo.ts`
+ * short-circuits the urgency computation on `status = 'lapsed'`, and the
+ * admin lapsed-tab + at-risk funnel bucket members by these terminal states.
+ * The split is a reporting invariant, not an accident — keep
+ * `reject → cancelled` and `timeout → lapsed` distinct.
  */
 
 export function canTransition(from: CycleStatus, to: CycleStatus): boolean {

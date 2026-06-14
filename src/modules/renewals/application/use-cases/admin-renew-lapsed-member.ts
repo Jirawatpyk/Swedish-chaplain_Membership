@@ -18,8 +18,8 @@
  *
  *   1. **tx1** (`runInTenant`): resolve the member's CURRENT `plan_id`
  *      (`memberPlanLookup.loadMemberPlanInTx`; null ⇒ `member_not_found`),
- *      then `createCycleInTx(..., startStatus:'awaiting_payment', source:
- *      'admin_lapsed_comeback')`. If the member already holds an active
+ *      then `createCycleInTx(..., startStatus:'awaiting_payment')`. If the
+ *      member already holds an active
  *      cycle, `createCycleInTx` no-ops (`skipped_active_exists`) ⇒
  *      `member_has_active_cycle` (the member is NOT lapsed — do not create
  *      a second cycle). If the plan is unresolvable, `createCycleInTx`

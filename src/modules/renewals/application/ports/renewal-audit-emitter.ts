@@ -322,8 +322,8 @@ export interface F8AuditPayloadShapes {
    * `WHERE status = from`), so concurrent cron + confirm flips converge
    * to exactly ONE `awaiting_payment` row — the loser sees a
    * `CycleTransitionConflictError` and re-reads cleanly. `entered_at`
-   * is the writer's injected clock (cron) or `clock.nowIso()` (confirm),
-   * never wall-clock, for deterministic forensic correlation.
+   * is the writer's injected clock (cron) or `clock.now().toISOString()`
+   * (confirm), never wall-clock, for deterministic forensic correlation.
    */
   readonly renewal_entered_awaiting_payment: {
     readonly cycle_id: CycleId;

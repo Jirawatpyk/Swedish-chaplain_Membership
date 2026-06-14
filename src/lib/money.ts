@@ -217,7 +217,8 @@ export const VALID_THB_DECIMAL_RE = /^\d+(\.\d{1,2})?$/;
 /**
  * Parse a non-negative `decimal(12,2)` THB string (e.g. "50000.50")
  * into branded `Satang` using INTEGER-ONLY arithmetic — split on `.`,
- * left-pad the fractional part to two digits, concatenate, `BigInt`.
+ * right-pad the fractional part to two digits (so "5.5" → "50" = 50
+ * satang), concatenate, `BigInt`.
  *
  * Why integer-only (NOT `parseFloat(thb) * 100`): a float multiply
  * drifts on borderline values (IEEE-754) and silently charges the

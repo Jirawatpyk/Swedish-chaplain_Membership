@@ -70,8 +70,11 @@ export interface IssueAndMarkPaidInput {
   readonly externalTx?: unknown;
   /**
    * Cross-module on-paid hook fired inside `recordPayment`'s tx.
-   * The F8 use-case wires its `markCompletedOfflineInTx(tx, …)` here
-   * so the cycle update lands inside the same atomic boundary.
+   * `mark-paid-offline.ts` wires an inline closure here that, on the same
+   * `externalTx`, transitions the cycle `→ completed` (closedReason
+   * `completed_offline`), emits a `renewal_cycle_completed_offline` audit,
+   * and calls `createNextCycleOnPaidInTx` to advance the renewal loop —
+   * all inside the same atomic boundary as `recordPayment`.
    */
   readonly onPaid?: (evt: F4InvoicePaidEvent) => Promise<void>;
   readonly requestId?: string | null;
