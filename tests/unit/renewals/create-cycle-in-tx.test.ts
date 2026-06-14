@@ -88,7 +88,6 @@ const baseInput: CreateCycleInTxInput = {
   memberId: '11111111-1111-1111-1111-111111111111',
   periodFrom: '2026-01-01T00:00:00.000Z',
   planId: 'regular',
-  source: 'on_paid',
   actorUserId: null,
   actorRole: 'system',
   correlationId: 'corr-1',
@@ -143,7 +142,6 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
     // 2026-03-15 → 2027-03-15 covers `now`). The anniversary (March 15) is kept.
     const out = await createCycleInTx(deps, fakeTx, {
       ...baseInput,
-      source: 'import',
       periodFrom: '2020-03-15T00:00:00.000Z',
       anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
     });
@@ -167,7 +165,6 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
     // 2027-05-20 already covers `now` → the FIRST iteration returns unchanged.
     const out = await createCycleInTx(deps, fakeTx, {
       ...baseInput,
-      source: 'import',
       periodFrom: '2026-05-20T00:00:00.000Z',
       anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
     });

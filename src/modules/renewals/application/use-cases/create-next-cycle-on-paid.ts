@@ -12,7 +12,7 @@
  *      (`findByInvoiceIdInTx`). Null ⇒ the paid invoice is not a renewal
  *      invoice (ad-hoc admin / event-fee) ⇒ no-op.
  *   2. Anchor the next cycle at `prior.periodTo` (gapless) and delegate
- *      to `createCycleInTx` with `source: 'on_paid'`.
+ *      to `createCycleInTx`.
  *
  * Because callback[0] flipped the prior cycle `→completed` in THIS tx,
  * `createCycleInTx`'s in-tx idempotency guard (`findActiveForMemberInTx`)
@@ -72,7 +72,6 @@ export async function createNextCycleOnPaidInTx(
     memberId: prior.memberId,
     periodFrom: prior.periodTo,
     planId: prior.planIdAtCycleStart,
-    source: 'on_paid',
     actorUserId: null,
     actorRole: 'system',
     correlationId: `on-paid:${evt.invoiceId}`,

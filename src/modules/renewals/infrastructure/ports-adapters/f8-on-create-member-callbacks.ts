@@ -5,8 +5,9 @@
  * F8 listener registration for the F3 member-create event. A single
  * listener runs POST-COMMIT on every new member created via the admin
  * `createMember` use-case: it creates the member's INITIAL renewal cycle
- * (anchored at the member's `registration_date`, frozen at the resolved
- * plan price) so the new member enters the renewal pipeline.
+ * (anchored at the member's `registration_date` — advanced to the current
+ * membership period when the date is backdated, see R2-1 below — frozen at
+ * the resolved plan price) so the new member enters the renewal pipeline.
  *
  * This is the **post-launch onboarding** arm only — the initial 131-member
  * SweCham cohort is cold-started by the import (Task 1.7), not by this
@@ -67,13 +68,24 @@ export function f8OnCreateMemberCallbacks(
           {
             tenantId: evt.tenantId,
             memberId: evt.memberId,
-            // The cycle is anchored at the member's registration_date.
+            // The cycle is anchored at the member's registration_date, then
+            // advanced to the current period if backdated (anchorToCurrentPeriod
+            // below).
             periodFrom: evt.registrationDate,
             planId: evt.planId,
-            source: 'onboarding',
             actorUserId: null,
             actorRole: 'system',
             correlationId: evt.correlationId,
+            // 068 R2-1 — advance a BACKDATED registration_date to the current
+            // membership period (the admin "New member" form is a free
+            // <input type=date> with no not-in-past constraint, so an admin
+            // onboarding a historical member with a 2-years-ago
+            // registration_date would otherwise create an already-expired
+            // cycle → the enter-awaiting + lapse crons flip the brand-new
+            // member to `lapsed` at creation). Mirrors the import cold-start
+            // (scripts/import-members.ts). A current-date registration is a
+            // no-op (the first iteration already covers `now`).
+            anchorToCurrentPeriod: { nowIso: deps.clock.now().toISOString() },
           },
         );
       });

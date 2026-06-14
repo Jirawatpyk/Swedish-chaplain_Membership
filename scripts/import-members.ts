@@ -317,7 +317,6 @@ export async function commitMembers(
           memberId,
           periodFrom: m.registrationDate.toISOString(),
           planId: m.planId,
-          source: 'import',
           actorUserId,
           actorRole: 'system',
           correlationId: `import-members-${randomUUID()}`,

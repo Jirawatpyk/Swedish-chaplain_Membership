@@ -197,7 +197,6 @@ export async function adminRenewLapsedMember(
         memberId: input.memberId,
         periodFrom: deps.clock.now().toISOString(),
         planId: member.planId,
-        source: 'admin_lapsed_comeback',
         startStatus: 'awaiting_payment',
         actorUserId: input.actorUserId,
         actorRole: 'admin',

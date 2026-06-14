@@ -64,8 +64,6 @@ export interface CreateCycleInTxInput {
    */
   readonly periodFrom: string;
   readonly planId: string;
-  /** Audit/observability provenance. */
-  readonly source: 'on_paid' | 'import' | 'onboarding' | 'admin_lapsed_comeback';
   readonly actorUserId: string | null;
   readonly actorRole: RenewalActorRole;
   readonly correlationId: string;
@@ -76,19 +74,26 @@ export interface CreateCycleInTxInput {
    */
   readonly startStatus?: 'upcoming' | 'awaiting_payment';
   /**
-   * 068 cluster F — when set, advance `periodFrom` from its raw value by whole
-   * `termMonths` multiples (preserving the anniversary month/day) until
-   * `periodTo > nowIso`, so the cycle lands on the member's CURRENT membership
-   * period. ONLY the member-import cold-start sets this: a long-standing member
-   * (e.g. registered 2015) anchored at the raw `registration_date` would get
-   * `periodTo = 2016` (years past) → the enter-awaiting + lapse crons would
-   * immediately flip a paid-up member to `lapsed` at launch. The other cycle
-   * entry points already anchor at the current period (on-paid uses
-   * `prior.periodTo`; onboarding / admin-lapsed-comeback use `clock.now()`), so
-   * they DO NOT set this and their behaviour is unchanged.
+   * 068 cluster F + R2-1 — when set, advance `periodFrom` from its raw value by
+   * whole `termMonths` multiples (preserving the anniversary month/day, clamped
+   * at month-end — see `addMonthsUtc`) until `periodTo > nowIso`, so the cycle
+   * lands on the member's CURRENT membership period. The two cold-start /
+   * onboarding paths anchored at a member-supplied `registration_date` set this:
+   *   - the member-import cold-start (`scripts/import-members.ts`); and
+   *   - the create-member onboarding listener
+   *     (`f8-on-create-member-callbacks.ts`) — the admin "New member" form is a
+   *     free `<input type=date>` with no not-in-past constraint.
+   * A long-standing member (e.g. registered 2015) anchored at the raw
+   * `registration_date` would get `periodTo = 2016` (years past) → the
+   * enter-awaiting + lapse crons would immediately flip a paid-up member to
+   * `lapsed`. The other entry points already anchor at the current period
+   * (on-paid uses `prior.periodTo`; admin-lapsed-comeback uses the comeback
+   * instant), so they DO NOT set this and their behaviour is unchanged.
    *
    * `nowIso` is the server clock (ISO 8601 UTC). When omitted, `periodFrom` is
-   * used verbatim (the existing behaviour for every non-import path).
+   * used verbatim (the existing behaviour for the on-paid / admin-comeback
+   * paths). A current-period `periodFrom` is a no-op (the first iteration
+   * already covers `now`).
    */
   readonly anchorToCurrentPeriod?: { readonly nowIso: string };
 }
@@ -99,11 +104,17 @@ export type CreateCycleOutcome =
 
 /**
  * 068 cluster F — advance `periodFromIso` by whole `termMonths` multiples
- * (preserving the anniversary month/day via direct UTC month arithmetic) until
- * `periodFrom + termMonths > nowIso`, i.e. the member's CURRENT membership
- * period. A member already in their current/future period (the common case) is
- * returned unchanged on the first iteration. Used only by the import cold-start
- * (see `CreateCycleInTxInput.anchorToCurrentPeriod`).
+ * (preserving the anniversary month/day) until `periodFrom + termMonths >
+ * nowIso`, i.e. the member's CURRENT membership period. A member already in
+ * their current/future period (the common case) is returned unchanged on the
+ * first iteration. Used by the two registration_date-anchored paths — the
+ * import cold-start and the create-member onboarding listener (see
+ * `CreateCycleInTxInput.anchorToCurrentPeriod`).
+ *
+ * Anniversary is preserved via `addMonthsUtc`, which clamps a month-end
+ * overflow to the last day of the target month (068 R2-2) — so a Feb-29 or
+ * month-end registration anniversary does NOT drift forward across the
+ * iterations (it would compound under a naïve roll-over).
  *
  * Bounded by construction: each iteration adds `termMonths` (≥1), so the loop
  * advances strictly forward and terminates as soon as the window covers `now`.
@@ -119,9 +130,11 @@ function advanceAnchorToCurrentPeriod(
   const nowMs = Date.parse(nowIso);
   let anchor = periodFromIso;
   for (let i = 0; i < 200; i++) {
-    const periodToMs = Date.parse(addMonthsUtc(anchor, termMonths));
-    if (periodToMs > nowMs) return anchor;
-    anchor = addMonthsUtc(anchor, termMonths);
+    // 068 R2-3 — compute the candidate period end ONCE per iteration (was
+    // called twice with identical args: the `> now` test + the advance).
+    const next = addMonthsUtc(anchor, termMonths);
+    if (Date.parse(next) > nowMs) return anchor;
+    anchor = next;
   }
   return anchor;
 }

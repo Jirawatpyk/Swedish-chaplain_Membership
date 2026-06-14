@@ -5,7 +5,7 @@
  * Runs as `f8OnPaidCallbacks[2]`, AFTER callback[0] flips the prior
  * cycle →completed in the SAME F4 tx. Resolves the just-paid cycle via
  * `findByInvoiceIdInTx`, anchors the next cycle at `prior.periodTo`
- * (gapless), and delegates to `createCycleInTx` with `source: 'on_paid'`.
+ * (gapless), and delegates to `createCycleInTx`.
  *
  * THROWS on failure (in-tx state work — F4 tx must roll back so the
  * Stripe at-least-once retry heals via the idempotency guard). Does NOT

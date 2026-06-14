@@ -137,6 +137,65 @@ describe('Integration — createMember onboarding listener creates the initial c
     ).toBe(cycle.cycleId);
   }, 60_000);
 
+  it('068 R2-1 — a BACKDATED registration_date is anchored to the CURRENT period (cycle expires in the FUTURE, not immediately lapse-eligible)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const seedSlug = randomUUID().slice(0, 8);
+    // Onboarding a long-standing/historical member: registered 2 years ago.
+    // WITHOUT current-period anchoring the cycle's period_to would be ~1 year
+    // in the PAST → the enter-awaiting + lapse crons would flip the brand-new
+    // member to `lapsed` at creation. With the R2-1 anchor it advances to the
+    // current period so expires_at is in the FUTURE.
+    const now = new Date();
+    const twoYearsAgo = new Date(
+      Date.UTC(now.getUTCFullYear() - 2, now.getUTCMonth(), 15),
+    );
+    const registrationDate = twoYearsAgo.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const created = await createMember(
+      {
+        company_name: `Backdated Co ${seedSlug}`,
+        country: 'SE',
+        plan_id: planId,
+        plan_year: 2026,
+        registration_date: registrationDate,
+        primary_contact: {
+          first_name: 'Bram',
+          last_name: 'Backdated',
+          email: `${seedSlug}@backdated.test`,
+          preferred_language: 'en' as const,
+        },
+      },
+      { actorUserId: user.userId, requestId: `backdated-${seedSlug}` },
+      { ...deps, onboardingListeners: f8OnCreateMemberCallbacks(tenant.ctx.slug) },
+    );
+    if (!created.ok)
+      throw new Error(`create failed: ${JSON.stringify(created.error)}`);
+    const memberId = created.value.memberId;
+
+    const cycles = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenant.ctx.slug),
+            eq(renewalCycles.memberId, memberId),
+          ),
+        ),
+    );
+    expect(cycles).toHaveLength(1);
+    const cycle = cycles[0]!;
+    // The cycle window covers `now` → expires_at strictly in the future.
+    expect(cycle.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(cycle.periodTo.getTime()).toBeGreaterThan(Date.now());
+    // period_from must NOT be the raw 2-years-ago registration date — it was
+    // advanced forward by whole 12-month terms (anniversary day preserved).
+    expect(cycle.periodFrom.getTime()).toBeGreaterThan(twoYearsAgo.getTime());
+    expect(cycle.periodFrom.getUTCDate()).toBe(15); // anniversary day kept
+    // The member did not silently lapse: an `upcoming` cycle (not lapsed).
+    expect(cycle.status).toBe('upcoming');
+  }, 60_000);
+
   it('an idempotency replay (same onboarding event re-fired) does NOT create a 2nd cycle', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const seedSlug = randomUUID().slice(0, 8);
