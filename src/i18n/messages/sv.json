@@ -2474,7 +2474,6 @@
     "renewals": {
       "title": "Förnyelsepipeline",
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
-      "pendingReviewTab": "Väntar på granskning",
       "pendingReview": {
         "tab": "Väntar på granskning",
         "countSr": "{count} cykler väntar på granskning",

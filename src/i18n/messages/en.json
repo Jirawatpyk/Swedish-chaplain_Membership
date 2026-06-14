@@ -2474,7 +2474,6 @@
     "renewals": {
       "title": "Renewal pipeline",
       "subtitle": "Active members by renewal date and tier.",
-      "pendingReviewTab": "Pending review",
       "pendingReview": {
         "tab": "Pending review",
         "countSr": "{count} cycles awaiting review",

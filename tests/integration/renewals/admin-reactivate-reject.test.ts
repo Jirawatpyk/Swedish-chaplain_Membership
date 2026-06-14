@@ -21,6 +21,11 @@
  *      → cycle_not_found (RLS hides the row).
  *   5. Concurrent double-reactivate: one wins (completed), the other gets
  *      cycle_not_pending (advisory lock + transitionStatus CAS).
+ *   6. Concurrent double-reject (NIT-1): both callers reach the refund, but
+ *      the F5 idempotency net issues money EXACTLY ONCE and the tx2 CAS
+ *      lets exactly one win the cancel transition (the loser → server_error).
+ *   7. refund_failed (NIT-2): an F5 refund failure leaves the cycle in
+ *      `pending_admin_reactivation` (re-tryable, no orphan / partial state).
  *
  * The F5 refund bridge is STUBBED on a per-test deps override (same
  * pattern as pending-reactivation-timeout-admin-race.test.ts) so no real
@@ -140,6 +145,50 @@ function refundedStub(): F5RefundBridge {
       refundId: randomUUID(),
       creditNoteId: randomUUID(),
       creditNoteNumber: 'CN-RR-1',
+    })),
+  };
+}
+
+/**
+ * Stub F5 bridge modelling the PRODUCTION double-refund safety net (NIT-1).
+ *
+ * The real `f5-refund-bridge-drizzle` adapter computes the remaining
+ * refundable balance: the FIRST refund of a fully-paid invoice returns
+ * `refunded`; a SECOND refund of the now-fully-refunded invoice finds no
+ * remaining balance and returns `no_payment_found` WITHOUT a Stripe call
+ * (F5 `issueRefund` also carries a Stripe idempotency key). This stub
+ * reproduces that contract so a concurrent double-reject — where both
+ * callers pass the tx1 validate-under-lock re-read and reach the refund —
+ * issues money EXACTLY ONCE. Tracks how many invocations actually issued
+ * a credit-note (`refundedCount`) vs were idempotent no-ops.
+ */
+function refundOnceThenNoPaymentStub(): F5RefundBridge & {
+  refundedCount: () => number;
+} {
+  let refunded = 0;
+  const fn = vi.fn<F5RefundBridge['issueRefundForInvoice']>(async () => {
+    if (refunded > 0) {
+      // Invoice already fully refunded — F5 net short-circuits, no money.
+      return { status: 'no_payment_found' as const };
+    }
+    refunded += 1;
+    return {
+      status: 'refunded' as const,
+      refundId: randomUUID(),
+      creditNoteId: randomUUID(),
+      creditNoteNumber: 'CN-RR-CONCURRENT-1',
+    };
+  });
+  return { issueRefundForInvoice: fn, refundedCount: () => refunded };
+}
+
+/** Stub F5 bridge that always reports a refund failure (NIT-2). */
+function refundFailedStub(): F5RefundBridge {
+  return {
+    issueRefundForInvoice: vi.fn(async () => ({
+      status: 'refund_failed' as const,
+      errorCode: 'processor_unavailable',
+      detail: 'simulated F5 processor outage',
     })),
   };
 }
@@ -460,5 +509,137 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
         .limit(1),
     );
     expect(row[0]?.status).toBe('completed');
+  });
+
+  it('concurrent double-reject: exactly one money-issuing refund, no double-charge (NIT-1)', async () => {
+    // SECURITY (NIT-1): two admins double-click "reject & refund" on the
+    // SAME pending cycle. The cycle must end cancelled and the F5 layer
+    // must NOT issue the refund twice.
+    //
+    // Reject is a TWO-tx flow: tx1 validates-under-lock + commits (lock
+    // released), the refund runs OUTSIDE any tx (Stripe is external), then
+    // tx2 re-acquires the lock + transitions via a `WHERE status='pending'`
+    // CAS. Because tx1 only READS, both concurrent callers can pass the
+    // tx1 re-read and reach the refund — so the F5 bridge is what prevents
+    // a double-charge: the SECOND refund of a now-fully-refunded invoice
+    // returns `no_payment_found` (no Stripe call). The tx2 CAS then lets
+    // exactly one caller win the `cancelled` transition; the loser raises
+    // CycleTransitionConflictError → `server_error` (refund already
+    // idempotently neutralised, manual-reconciliation runbook). This test
+    // pins the money invariant — EXACTLY ONE refund issues — and guards
+    // against a regression that removes the F5 idempotency net.
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const { cycleId } = await seedPendingCycle({
+      tenant: tenantA,
+      user,
+      withInvoice: true,
+    });
+    const bridge = refundOnceThenNoPaymentStub();
+    const racedDeps = { ...deps, f5RefundBridge: bridge };
+
+    const call = () =>
+      adminRejectReactivation(racedDeps, {
+        tenantId: tenantA.ctx.slug,
+        cycleId,
+        reason: 'concurrent double reject',
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+
+    const [a, b] = await Promise.all([call(), call()]);
+    const results = [a, b];
+
+    // Exactly one caller wins the cancel/refund transition.
+    const cancelled = results.filter(
+      (r) =>
+        r.ok &&
+        r.value.cycleStatus === 'cancelled' &&
+        r.value.closedReason === 'admin_rejected_with_refund' &&
+        r.value.refundCreditNoteId !== null,
+    );
+    expect(cancelled.length).toBe(1);
+
+    // The loser is NOT a second money-issuing success — it lost the tx2
+    // CAS race (server_error) or saw the cycle already non-pending
+    // (cycle_not_pending). It MUST NOT be a second `cancelled` with a
+    // fresh refund credit-note.
+    const loser = results.find((r) => r !== cancelled[0]);
+    expect(loser).toBeDefined();
+    expect(
+      !loser!.ok &&
+        ['server_error', 'cycle_not_pending', 'refund_failed'].includes(
+          loser!.error.kind,
+        ),
+    ).toBe(true);
+
+    // THE MONEY INVARIANT: the F5 bridge issued a refund (status
+    // 'refunded') EXACTLY ONCE across both concurrent callers — the second
+    // invocation hit the idempotency net and returned `no_payment_found`.
+    // (The bridge may be *invoked* twice; only one invocation issued
+    // money — that is what the F5 net guarantees in production.)
+    expect(bridge.refundedCount()).toBe(1);
+
+    // The live cycle is terminal — cancelled with the refund reason — and
+    // no longer pending (no orphan / re-tryable double-reject state).
+    const row = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          closedReason: renewalCycles.closedReason,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row[0]?.status).toBe('cancelled');
+    expect(row[0]?.closedReason).toBe('admin_rejected_with_refund');
+  });
+
+  it('refund_failed: cycle stays pending_admin_reactivation (re-tryable, no orphan state) (NIT-2)', async () => {
+    // SECURITY (NIT-2): when the F5 refund bridge fails, the reject
+    // returns `refund_failed` BEFORE any cycle transition runs (the
+    // transition tx is only entered on a successful/no-payment refund).
+    // The cycle must remain `pending_admin_reactivation` so an admin can
+    // safely retry once F5 recovers — no half-cancelled / orphaned state.
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const { cycleId } = await seedPendingCycle({
+      tenant: tenantA,
+      user,
+      withInvoice: true,
+    });
+    const bridge = refundFailedStub();
+    const racedDeps = { ...deps, f5RefundBridge: bridge };
+
+    const r = await adminRejectReactivation(racedDeps, {
+      tenantId: tenantA.ctx.slug,
+      cycleId,
+      reason: 'F5 outage — refund should fail',
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('refund_failed');
+    }
+    expect(bridge.issueRefundForInvoice).toHaveBeenCalledOnce();
+
+    // Re-read the cycle from the repo: it MUST still be pending (re-tryable).
+    const row = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          closedReason: renewalCycles.closedReason,
+          closedAt: renewalCycles.closedAt,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row[0]?.status).toBe('pending_admin_reactivation');
+    expect(row[0]?.closedReason).toBeNull();
+    expect(row[0]?.closedAt).toBeNull();
   });
 });

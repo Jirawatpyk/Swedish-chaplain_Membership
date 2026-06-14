@@ -86,6 +86,7 @@ export function PendingReactivationActions({
   const [rejectPending, startReject] = useTransition();
 
   const reactivateCancelRef = useRef<HTMLButtonElement | null>(null);
+  const rejectCancelRef = useRef<HTMLButtonElement | null>(null);
 
   // Render nothing for cycles that aren't awaiting an admin decision.
   if (status !== 'pending_admin_reactivation') {
@@ -200,7 +201,7 @@ export function PendingReactivationActions({
         {t('reject.button')}
       </Button>
       <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent initialFocus={rejectCancelRef}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('reject.dialogTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -233,7 +234,7 @@ export function PendingReactivationActions({
             </p>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={rejectPending}>
+            <AlertDialogCancel ref={rejectCancelRef} disabled={rejectPending}>
               {t('reject.cancel')}
             </AlertDialogCancel>
             <Button
