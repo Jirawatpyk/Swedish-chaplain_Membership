@@ -1,4 +1,4 @@
-import type { Satang } from '@/lib/money';
+import type { Satang, ThbDecimal } from '@/lib/money';
 
 /**
  * F8 → F4 invoice-creation bridge port (Phase 5 Wave B — T122).
@@ -37,9 +37,12 @@ export interface IssueInvoiceForRenewalInput {
    * (`cycle.frozenPlanPriceThb`) inside the confirm-renewal Step-1 tx —
    * NEVER a request body, because a renewal §86/4 is a price-tampering
    * surface on a tax document. The bridge adapter parses this to satang
-   * via the shared integer-only `parseThbDecimalToSatang`.
+   * via the shared integer-only `parseThbDecimalToSatang`. Brand-typed
+   * (`ThbDecimal`, not bare `string`) so a request-body field / display
+   * label cannot be assigned into this tax-document price slot (I-1,
+   * 068 speckit-review).
    */
-  readonly frozenPlanPriceThb: string;
+  readonly frozenPlanPriceThb: ThbDecimal;
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;

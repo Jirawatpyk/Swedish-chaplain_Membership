@@ -22,9 +22,11 @@ import {
   asSatangUnchecked,
   formatSatangAsBaht,
   parseSatang,
+  parseThbDecimal,
   parseThbDecimalToSatang,
   satangToProcessorAmount,
   subSatang,
+  type ThbDecimal,
   type UntrustedSatang,
 } from '@/lib/money';
 
@@ -219,7 +221,9 @@ describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
     // (50000.50 is exactly representable as a double, so it is NOT a
     //  float-drift demonstrator — that is the next test; this one just
     //  pins the non-zero-satang remainder path.)
-    expect(parseThbDecimalToSatang('50000.50')).toBe(5_000_050n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('50000.50'))).toBe(
+      5_000_050n,
+    );
   });
 
   it('does NOT drift on a value that float-multiply gets wrong', () => {
@@ -231,45 +235,60 @@ describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
     //   parseFloat("0.29") * 100 === 28.999999999999996 → floor  28 (WRONG)
     // The integer parser splits on '.' and never touches a float.
     expect(Math.floor(parseFloat('8.20') * 100)).toBe(819); // proves the drift exists
-    expect(parseThbDecimalToSatang('8.20')).toBe(820n); // the correct value
+    expect(parseThbDecimalToSatang(parseThbDecimal('8.20'))).toBe(820n); // the correct value
     expect(Math.floor(parseFloat('0.29') * 100)).toBe(28);
-    expect(parseThbDecimalToSatang('0.29')).toBe(29n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('0.29'))).toBe(29n);
   });
 
   it('parses whole baht (no decimal point)', () => {
-    expect(parseThbDecimalToSatang('50000')).toBe(5_000_000n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('50000'))).toBe(5_000_000n);
   });
 
   it('parses two-decimal whole-satang', () => {
-    expect(parseThbDecimalToSatang('180000.00')).toBe(18_000_000n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('180000.00'))).toBe(
+      18_000_000n,
+    );
   });
 
   it('left-pads a single fractional digit (".5" → 50 satang)', () => {
-    expect(parseThbDecimalToSatang('1.5')).toBe(150n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('1.5'))).toBe(150n);
   });
 
   it('parses zero', () => {
-    expect(parseThbDecimalToSatang('0')).toBe(0n);
-    expect(parseThbDecimalToSatang('0.00')).toBe(0n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('0'))).toBe(0n);
+    expect(parseThbDecimalToSatang(parseThbDecimal('0.00'))).toBe(0n);
   });
 
   it('returns a branded Satang assignable to addSatang', () => {
     // Compile-time + runtime proof the brand survives.
-    const a = parseThbDecimalToSatang('100.00');
-    const b = parseThbDecimalToSatang('0.07');
+    const a = parseThbDecimalToSatang(parseThbDecimal('100.00'));
+    const b = parseThbDecimalToSatang(parseThbDecimal('0.07'));
     expect(addSatang(a, b)).toBe(10007n);
   });
 
+  // The THROWS-on-malformed tests bypass the `parseThbDecimal`
+  // constructor (which would itself throw at construction, before
+  // `parseThbDecimalToSatang` ever runs) by casting a known-bad string
+  // through `as ThbDecimal`. This exercises the retained inline
+  // `VALID_THB_DECIMAL_RE` last-line guard inside `parseThbDecimalToSatang`
+  // — the defence against a value that reached the parser through a
+  // cast-through-the-brand.
   it('THROWS on a malformed input (3 fractional digits)', () => {
-    expect(() => parseThbDecimalToSatang('1.234')).toThrow(RangeError);
+    expect(() =>
+      parseThbDecimalToSatang('1.234' as ThbDecimal),
+    ).toThrow(RangeError);
   });
 
   it('THROWS on a negative input', () => {
-    expect(() => parseThbDecimalToSatang('-1.00')).toThrow(RangeError);
+    expect(() =>
+      parseThbDecimalToSatang('-1.00' as ThbDecimal),
+    ).toThrow(RangeError);
   });
 
   it('THROWS on a non-numeric input', () => {
-    expect(() => parseThbDecimalToSatang('abc')).toThrow(RangeError);
-    expect(() => parseThbDecimalToSatang('')).toThrow(RangeError);
+    expect(() => parseThbDecimalToSatang('abc' as ThbDecimal)).toThrow(
+      RangeError,
+    );
+    expect(() => parseThbDecimalToSatang('' as ThbDecimal)).toThrow(RangeError);
   });
 });

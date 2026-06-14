@@ -20,7 +20,7 @@
  *   numbers without dependent types.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { parseThbDecimalToSatang } from '@/lib/money';
+import { parseThbDecimalToSatang, type Satang, type ThbDecimal } from '@/lib/money';
 import { isTerminalCycleStatus } from './value-objects/cycle-status';
 import { type TierBucket } from './value-objects/tier-bucket';
 
@@ -112,8 +112,8 @@ interface RenewalCycleBase {
   /** Frozen tier bucket at cycle creation (FR-021a). */
   readonly tierAtCycleStart: TierBucket;
   readonly planIdAtCycleStart: string;
-  /** Decimal string from Postgres `decimal(12,2)`. Use `cycleFrozenPriceSatang(cycle)` for cross-module bigint. */
-  readonly frozenPlanPriceThb: string;
+  /** Brand-validated `decimal(12,2)` THB value from Postgres. Use `cycleFrozenPriceSatang(cycle)` for cross-module bigint. */
+  readonly frozenPlanPriceThb: ThbDecimal;
   readonly frozenPlanTermMonths: number;
   readonly frozenPlanCurrency: 'THB';
 
@@ -249,7 +249,7 @@ export function assertCycleInvariants(
  * conversion site — single source of truth + lossless rounding via
  * cents-multiplication.
  */
-export function cycleFrozenPriceSatang(cycle: RenewalCycle): bigint {
+export function cycleFrozenPriceSatang(cycle: RenewalCycle): Satang {
   // Single conversion site for cross-module bigint arithmetic (F4
   // invoice issue, F5 PaymentIntent.amount). Delegates the integer-only
   // parse to the shared `parseThbDecimalToSatang` (@/lib/money) — both

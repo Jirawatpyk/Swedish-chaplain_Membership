@@ -214,11 +214,57 @@ export function formatSatangAsBaht(s: Satang): string {
  */
 export const VALID_THB_DECIMAL_RE = /^\d+(\.\d{1,2})?$/;
 
+declare const ThbDecimalBrand: unique symbol;
+
 /**
- * Parse a non-negative `decimal(12,2)` THB string (e.g. "50000.50")
+ * 068 speckit-review (type-design I-1) — branded `decimal(12,2)` THB
+ * string carrying the "validated against `VALID_THB_DECIMAL_RE`"
+ * invariant. Sibling-in-spirit to `Satang`: the F8 frozen-price
+ * (§86/4, FR-022) threaded through five port/domain hops as a bare
+ * `string`, so a display label, `planYear.toString()`, a SEK price, or
+ * a raw request-body field was freely assignable into the tax-document
+ * price slot. `ThbDecimal & string` is runtime-identical to `string`
+ * (zero cost) but constructible ONLY through `parseThbDecimal`, which
+ * validates the decimal shape. A `ThbDecimal` is still assignable to a
+ * plain `string` sink (audit payloads, the Drizzle `decimal(12,2)`
+ * column setter) because the brand is a subtype of `string`.
+ */
+export type ThbDecimal = string & { readonly [ThbDecimalBrand]: true };
+
+/**
+ * Construct a `ThbDecimal` from a raw string, validating the
+ * `decimal(12,2)` shape with the SAME `VALID_THB_DECIMAL_RE`
+ * `parseThbDecimalToSatang` uses (no second validator — the regex is
+ * the single source of the accepted shape). THROWS on malformed /
+ * negative input.
+ *
+ * Thread this at the CONSTRUCTION BOUNDARIES where a raw string first
+ * becomes a frozen price: the F2 plan-lookup adapter (minor-units →
+ * decimal), the `renewal_cycles` row-mapper (DB `decimal(12,2)` →
+ * string), and test fixtures carrying a known-valid literal.
+ */
+export function parseThbDecimal(raw: string): ThbDecimal {
+  if (!VALID_THB_DECIMAL_RE.test(raw)) {
+    throw new RangeError(
+      `parseThbDecimal: malformed THB decimal "${raw}" — expected decimal(12,2) format`,
+    );
+  }
+  return raw as ThbDecimal;
+}
+
+/**
+ * Parse a non-negative `decimal(12,2)` THB value (e.g. "50000.50")
  * into branded `Satang` using INTEGER-ONLY arithmetic — split on `.`,
  * right-pad the fractional part to two digits (so "5.5" → "50" = 50
  * satang), concatenate, `BigInt`.
+ *
+ * The input is a `ThbDecimal` — already brand-validated at
+ * construction via `parseThbDecimal` (or the F8 frozen-price boundary
+ * adapters), so callers can no longer pass an arbitrary string. The
+ * inline `VALID_THB_DECIMAL_RE` test is retained as a defensive
+ * last-line (the brand is a compile-time guarantee; this guards a
+ * cast-through-the-brand) but is NOT a second validator — it is the
+ * same shared regex.
  *
  * Why integer-only (NOT `parseFloat(thb) * 100`): a float multiply
  * drifts on borderline values (IEEE-754) and silently charges the
@@ -230,7 +276,7 @@ export const VALID_THB_DECIMAL_RE = /^\d+(\.\d{1,2})?$/;
  * THROWS on a malformed/negative input (the DB CHECK + Application
  * invariants reject these upstream; this is the last-line defence).
  */
-export function parseThbDecimalToSatang(thb: string): Satang {
+export function parseThbDecimalToSatang(thb: ThbDecimal): Satang {
   if (!VALID_THB_DECIMAL_RE.test(thb)) {
     throw new RangeError(
       `parseThbDecimalToSatang: malformed THB decimal "${thb}" — expected decimal(12,2) format`,

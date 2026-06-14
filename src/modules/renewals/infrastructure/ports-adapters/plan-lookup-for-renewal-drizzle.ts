@@ -28,6 +28,7 @@
  */
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import { parseThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import type {
@@ -119,7 +120,14 @@ export function makeDrizzlePlanLookupForRenewal(
         const priceMinor = row.annualFeeMinorUnits;
         const baht = Math.floor(priceMinor / 100);
         const satang = priceMinor % 100;
-        const priceTHB = `${baht}.${String(satang).padStart(2, '0')}`;
+        // Construction boundary (I-1): brand-validate the assembled
+        // decimal(12,2) string into ThbDecimal. The minor-units split
+        // always yields a well-formed `\d+\.\d{2}` value, so this never
+        // throws — it pins the invariant at the point the frozen price
+        // is born from the F2 catalogue minor-units column.
+        const priceTHB = parseThbDecimal(
+          `${baht}.${String(satang).padStart(2, '0')}`,
+        );
         return {
           status: 'found',
           plan: {

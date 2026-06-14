@@ -5,7 +5,7 @@
  * critical mutating path collecting member payment intent).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { asSatang } from '@/lib/money';
+import { asSatang, parseThbDecimal } from '@/lib/money';
 import {
   confirmRenewal,
   selfServiceFailureReason,
@@ -119,7 +119,7 @@ function fakeDeps(args: {
         status: 'found',
         plan: {
           tierBucket: 'premium',
-          priceTHB: '180000.00',
+          priceTHB: parseThbDecimal('180000.00'),
           termMonths: 12,
           currency: 'THB',
         },

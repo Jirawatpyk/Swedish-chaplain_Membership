@@ -20,6 +20,7 @@
 import { and, eq, ne, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
+import { parseThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
@@ -105,7 +106,12 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     cycleLengthMonths: row.cycleLengthMonths,
     tierAtCycleStart: row.tierAtCycleStart as TierBucket,
     planIdAtCycleStart: row.planIdAtCycleStart,
-    frozenPlanPriceThb: row.frozenPlanPriceThb,
+    // Construction boundary (I-1): brand-validate the DB `decimal(12,2)`
+    // column value into ThbDecimal. The DB CHECK keeps the stored shape
+    // well-formed, so this never throws in practice — it pins the
+    // invariant at the row→domain boundary so the frozen price the
+    // §86/4 path consumes is brand-typed end to end.
+    frozenPlanPriceThb: parseThbDecimal(row.frozenPlanPriceThb),
     frozenPlanTermMonths: row.frozenPlanTermMonths,
     frozenPlanCurrency: row.frozenPlanCurrency as 'THB',
     linkedCreditNoteId: row.linkedCreditNoteId,

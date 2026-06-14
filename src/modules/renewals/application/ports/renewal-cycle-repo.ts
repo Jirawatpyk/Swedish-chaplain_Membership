@@ -11,6 +11,7 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { TenantTx } from '@/lib/db';
+import type { ThbDecimal } from '@/lib/money';
 import type {
   CycleId,
   RenewalCycle,
@@ -30,8 +31,8 @@ export interface NewRenewalCycleInput {
   readonly cycleLengthMonths: number;
   readonly tierAtCycleStart: TierBucket;
   readonly planIdAtCycleStart: string;
-  /** Decimal string from DB (`decimal(12,2)`). */
-  readonly frozenPlanPriceThb: string;
+  /** Brand-validated `decimal(12,2)` THB value (I-1, 068 speckit-review). */
+  readonly frozenPlanPriceThb: ThbDecimal;
   readonly frozenPlanTermMonths: number;
   /**
    * F8-completion Slice 1 — the cycle's initial status. Defaults to

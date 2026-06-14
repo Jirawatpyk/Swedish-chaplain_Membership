@@ -30,7 +30,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { parseThbDecimalToSatang } from '@/lib/money';
+import { parseThbDecimalToSatang, type ThbDecimal } from '@/lib/money';
 import {
   createInvoiceDraft,
   issueInvoice,
@@ -58,9 +58,11 @@ export interface IssueAndMarkPaidInput {
    * as `renewalSignal` into `createInvoiceDraft` so the membership line bills
    * the frozen price, not the live F2 catalogue price, AND the one-off
    * `registration_fee` re-bill is suppressed. Mirrors the online path
-   * (`f4-invoicing-for-renewal-bridge-drizzle.ts`).
+   * (`f4-invoicing-for-renewal-bridge-drizzle.ts`). Brand-typed
+   * (`ThbDecimal`, not bare `string`) so a request-body field cannot be
+   * assigned into this tax-document price slot (I-1, 068 speckit-review).
    */
-  readonly frozenPlanPriceThb: string;
+  readonly frozenPlanPriceThb: ThbDecimal;
   readonly paymentMethod: F4OfflinePaymentMethod;
   readonly paymentReference: string;
   /** YYYY-MM-DD Bangkok-local. */

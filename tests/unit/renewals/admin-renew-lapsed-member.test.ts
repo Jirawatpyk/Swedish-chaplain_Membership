@@ -36,14 +36,17 @@ import {
   CycleNotFoundError,
   InvoiceLinkConflictError,
 } from '@/modules/renewals/application/ports/renewal-cycle-repo';
-import { asSatang } from '@/lib/money';
+import { asSatang, parseThbDecimal } from '@/lib/money';
 import { buildCycle as buildCycleShared } from './_helpers/build-cycle';
 
 const TENANT_ID = 'tenantA';
 const MEMBER_ID = '00000000-0000-0000-0000-0000000000a1';
 const CYCLE_UUID = '00000000-0000-0000-0000-0000000000c3';
 const PLAN_ID = 'plan-regular';
-const FROZEN_THB = '50000.00';
+// Brand the known-valid frozen-price literal once — feeds the
+// `PlanFrozenFields.priceTHB` mock (now `ThbDecimal`), the cycle builder,
+// and the bridge-arg assertion.
+const FROZEN_THB = parseThbDecimal('50000.00');
 
 // `runInTenant` just runs the callback with a fake tx — the unit test
 // asserts the orchestration, not the SQL (covered by the integration test).
