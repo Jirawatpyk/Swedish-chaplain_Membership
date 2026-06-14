@@ -1,4 +1,8 @@
 import type { Satang, ThbDecimal } from '@/lib/money';
+import type {
+  CreateInvoiceDraftError,
+  IssueInvoiceError,
+} from '@/modules/invoicing';
 
 /**
  * F8 → F4 invoice-creation bridge port (Phase 5 Wave B — T122).
@@ -50,6 +54,23 @@ export interface IssueInvoiceForRenewalInput {
   readonly requestId: string | null;
 }
 
+/**
+ * I-2 (068 speckit-review) — the closed error vocabulary the bridge can
+ * surface, derived DIRECTLY from the two F4 use-cases it composes
+ * (`createInvoiceDraft` -> `issueInvoice`). The bridge forwards the
+ * failed F4 error variant's `code` verbatim, so the union of both F4
+ * code spaces is exactly what `errorCode` may carry. Deriving (rather
+ * than re-listing) makes an F4-side code rename a COMPILE error here
+ * instead of a runtime missing-toast — closing the erased-error-
+ * vocabulary finding. The `create_failed` arm carries a create-stage
+ * code, `issue_failed` an issue-stage code; both are widened to the
+ * union for a flat error space the F8 use-case can branch on without
+ * coupling to which stage produced it.
+ */
+export type RenewalInvoiceErrorCode =
+  | CreateInvoiceDraftError['code']
+  | IssueInvoiceError['code'];
+
 export type IssueInvoiceForRenewalResult =
   | {
       readonly status: 'issued';
@@ -59,12 +80,12 @@ export type IssueInvoiceForRenewalResult =
     }
   | {
       readonly status: 'create_failed';
-      readonly errorCode: string;
+      readonly errorCode: RenewalInvoiceErrorCode;
       readonly detail: string;
     }
   | {
       readonly status: 'issue_failed';
-      readonly errorCode: string;
+      readonly errorCode: RenewalInvoiceErrorCode;
       readonly detail: string;
     };
 

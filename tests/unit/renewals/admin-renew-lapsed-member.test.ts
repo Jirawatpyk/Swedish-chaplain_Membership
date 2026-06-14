@@ -346,8 +346,12 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
   it('create-failed bridge result maps to invoice_issue_failed stage=create', async () => {
     const t = makeDeps({
       bridgeResult: {
+        // Real create-stage F4 code (CreateInvoiceDraftError['code']) — the
+        // closed RenewalInvoiceErrorCode union rejects fabricated codes
+        // (was 'plan_inactive', which the bridge can never emit). The test
+        // only asserts stage='create', so the exact code is not load-bearing.
         status: 'create_failed',
-        errorCode: 'plan_inactive',
+        errorCode: 'plan_not_found',
         detail: 'plan archived',
       },
     });

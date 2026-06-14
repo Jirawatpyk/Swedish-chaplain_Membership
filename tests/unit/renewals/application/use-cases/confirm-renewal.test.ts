@@ -534,9 +534,14 @@ describe('confirmRenewal (T122) — F4 invoice creation failures', () => {
     const { deps } = fakeDeps({
       cycle,
       invoiceResult: {
+        // Real issue-stage F4 code (IssueInvoiceError['code']) — the closed
+        // RenewalInvoiceErrorCode union rejects fabricated codes (was
+        // 'sequence_allocator_locked', which the bridge can never emit). The
+        // test only asserts stage='issue', so the exact code is not
+        // load-bearing.
         status: 'issue_failed',
-        errorCode: 'sequence_allocator_locked',
-        detail: 'F4 §87 advisory lock timeout',
+        errorCode: 'overflow',
+        detail: 'F4 §87 sequence overflow',
       },
     });
     const r = await confirmRenewal(deps, baseInput);

@@ -69,6 +69,7 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
   F4InvoicingForRenewalBridge,
   IssueInvoiceForRenewalResult,
+  RenewalInvoiceErrorCode,
 } from '../ports/f4-invoicing-bridge';
 import type { PlanLookupForRenewalPort } from '../ports/plan-lookup-for-renewal';
 import type { MemberPlanLookupPort } from '../ports/member-plan-lookup-port';
@@ -126,7 +127,10 @@ export type AdminRenewLapsedMemberError =
   | {
       readonly kind: 'invoice_issue_failed';
       readonly stage: 'create' | 'issue';
-      readonly errorCode: string;
+      // I-2 (068 speckit-review) — pinned to the bridge's closed F4
+      // error vocabulary (was bare `string`) so an F4-side code rename
+      // surfaces as a compile error rather than a runtime missing-toast.
+      readonly errorCode: RenewalInvoiceErrorCode;
       readonly detail: string;
     }
   | { readonly kind: 'server_error'; readonly message: string };
