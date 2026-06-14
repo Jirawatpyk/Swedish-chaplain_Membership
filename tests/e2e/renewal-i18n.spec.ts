@@ -59,8 +59,11 @@ test.describe('@i18n T268 — F8 <html lang> attribute correctness', () => {
     }) => {
       await signInAsAdmin(page);
       await setLocaleCookie(page, locale);
-      await page.goto('/admin/renewals');
-      await page.waitForLoadState('domcontentloaded');
+      // S10 — match the BE-display goto: waitUntil:'domcontentloaded' so a
+      // cold-compile dev server doesn't block on every subresource (the bare
+      // default 'load' can exceed the test timeout). The redundant follow-on
+      // waitForLoadState('domcontentloaded') is dropped (goto already waited).
+      await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
       const htmlLang = await page.locator('html').first().getAttribute('lang');
       expect(htmlLang).toBe(locale);
     });
@@ -128,7 +131,11 @@ test.describe('@i18n T268 — Buddhist Era display rule (TH only)', () => {
     // 180s on the email field before timing out.
     await signInAsAdmin(page);
     await setLocaleCookie(page, 'th');
-    await page.goto('/admin/renewals');
+    // 067 — page.goto defaults to waitUntil:'load', which blocks on EVERY
+    // subresource; on a cold-compile dev server the heavy /admin/renewals route
+    // can exceed the 180s test timeout waiting for 'load'. domcontentloaded is
+    // all the next line + the body-text BE-year assertion actually need.
+    await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('domcontentloaded');
     // Pull the page text and check for a BE year in the visible range.
     // R4 review M1 fix: drop the bare-number `/256[5-9]/` fallback —
@@ -159,17 +166,49 @@ test.describe('@i18n T268 — TH locale length-expansion at 320px + 1280px', () 
       // R4 H3 fix: sign in BEFORE locale flip; sign-in form is EN.
       await signInAsAdmin(page);
       await setLocaleCookie(page, 'th');
-      await page.goto('/admin/renewals');
-      await page.waitForLoadState('domcontentloaded');
+      // S10 — waitUntil:'domcontentloaded' (parity with the BE-display goto);
+      // the redundant follow-on waitForLoadState is dropped.
+      await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
       const overflow = await page.evaluate(() => {
         // Look for any element whose scrollWidth exceeds the viewport.
-        // Skip elements that are explicitly horizontally-scrollable
-        // (overflow-x: scroll/auto) — those are intentional (data tables).
+        // Skip elements that are horizontally-scrollable OR live inside a
+        // horizontally-scrollable ancestor (overflow-x: scroll/auto). That
+        // content — the pipeline data table and the urgency tab rail — is
+        // INTENTIONALLY sideways-scrollable, and WCAG 1.4.10 exempts such 2D
+        // content (data tables / toolbars) from the no-horizontal-scroll rule.
+        // The original check inspected only the element itself, so a wide
+        // <table>/<Tabs> nested in an overflow-x:auto wrapper was wrongly
+        // flagged even though the wrapper scrolls it and the page never
+        // overflows. A genuine bug — an over-wide element with NO scrollable
+        // ancestor that forces the whole PAGE to scroll sideways — is still
+        // caught (its ancestor chain up to <body> has no overflow-x scroller).
+        // S11 — an `overflow-y:auto` container computes `overflow-x:auto` too,
+        // so a vertical-only scroller would wrongly exempt a real horizontal
+        // overflow nested inside it. Require the scrollable ancestor to ALSO
+        // actually overflow horizontally (`scrollWidth > clientWidth`) before
+        // treating it as the intentional sideways-scroll container that earns
+        // the WCAG 1.4.10 exemption. A y-only container (no x-overflow) no
+        // longer masks a genuine page-level x-overflow beneath it.
+        const scrollableSelfOrAncestor = (start: HTMLElement): boolean => {
+          for (
+            let node: HTMLElement | null = start;
+            node;
+            node = node.parentElement
+          ) {
+            const ox = window.getComputedStyle(node).overflowX;
+            if (
+              (ox === 'scroll' || ox === 'auto') &&
+              node.scrollWidth > node.clientWidth
+            ) {
+              return true;
+            }
+          }
+          return false;
+        };
         const all = document.querySelectorAll<HTMLElement>('*');
         const violations: string[] = [];
         for (const el of all) {
-          const cs = window.getComputedStyle(el);
-          if (cs.overflowX === 'scroll' || cs.overflowX === 'auto') continue;
+          if (scrollableSelfOrAncestor(el)) continue;
           if (el.scrollWidth > window.innerWidth + 2) {
             violations.push(`${el.tagName}.${el.className}: scrollWidth=${el.scrollWidth}`);
             if (violations.length >= 3) break;

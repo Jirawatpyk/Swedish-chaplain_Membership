@@ -58,6 +58,7 @@ import {
   ArrowUpDownIcon,
   ArrowUpIcon,
   PencilIcon,
+  TriangleAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
@@ -97,6 +98,13 @@ export type MembersTableRow = {
    */
   readonly plan_display_name: string | null;
   readonly status: 'active' | 'inactive' | 'archived';
+  /**
+   * #4 — true when the member's most-recent renewal cycle has lapsed
+   * (terminal lapsed/cancelled, past expiry). Derived server-side in the page
+   * via loadMembersMembershipStatus; the cell renders a badge when true.
+   * Always set (never optional) to match the row-builder's exhaustive map.
+   */
+  readonly membership_lapsed: boolean;
   /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
@@ -523,16 +531,39 @@ export function MembersTable({
     }),
     columnHelper.accessor('status', {
       header: () => t('columns.status'),
-      cell: (info) =>
-        enableSelection ? (
-          <InlineStatusCell
-            memberId={info.row.original.member_id}
-            status={info.getValue()}
-            onSave={onInlineEdit}
-          />
-        ) : (
-          <StatusBadge status={info.getValue()} />
-        ),
+      // #4 — the Lapsed badge is a SIBLING of the status control, OUTSIDE the
+      // InlineStatusCell <button>. Inside the button it would fire the status
+      // toggle on click and pollute the button's accessible name.
+      cell: (info) => (
+        <span className="inline-flex items-center gap-1.5">
+          {enableSelection ? (
+            <InlineStatusCell
+              memberId={info.row.original.member_id}
+              status={info.getValue()}
+              onSave={onInlineEdit}
+            />
+          ) : (
+            <StatusBadge status={info.getValue()} />
+          )}
+          {/* 067 #4 review-fix — suppress the lapsed badge for archived
+              members. The badge surfaces "active-looking but lapsed"
+              awareness; on an archived row (only visible via ?show_archived=1)
+              it is redundant next to the Archived status badge — archived
+              already means out. */}
+          {info.row.original.membership_lapsed && info.getValue() !== 'archived' ? (
+            <Badge
+              variant="outline"
+              className="gap-1 border-destructive/40 text-destructive"
+            >
+              <TriangleAlert aria-hidden="true" className="size-3" />
+              {/* visible label is aria-hidden so a SR user hears ONLY the full
+                  sr-only phrase below, not "Lapsed Membership lapsed …" twice. */}
+              <span aria-hidden="true">{t('membershipLapsed')}</span>
+              <span className="sr-only">{t('membershipLapsedSr')}</span>
+            </Badge>
+          ) : null}
+        </span>
+      ),
     }),
     // 056-members-table-compact — the standalone Risk column was removed.
     // Engagement (below) is the positive-framed inverse of the same F8 risk

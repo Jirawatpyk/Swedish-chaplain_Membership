@@ -67,13 +67,29 @@ export function RenewalRemindersToggle({
   return (
     <div className="flex items-center justify-between gap-3">
       <Label htmlFor="renewal-reminders-toggle" className="flex flex-col">
-        <span className="font-medium">{t('pauseLabel')}</span>
-        <span className="text-xs text-muted-foreground">
+        <span id="renewal-reminders-toggle-label" className="font-medium">
+          {t('pauseLabel')}
+        </span>
+        <span
+          id="renewal-reminders-toggle-description"
+          className="text-xs text-muted-foreground"
+        >
           {t('pauseDescription')}
         </span>
       </Label>
       <Switch
         id="renewal-reminders-toggle"
+        // 067 a11y — Base UI Switch.Root renders a <button role="switch">; the
+        // `<label htmlFor>` accessible-name association can resolve late on
+        // hydration (the intermittent axe "switch must have an accessible name"
+        // flake). Pin the name directly via aria-labelledby → the visible
+        // pauseLabel span, so the switch is named on first paint, every render.
+        aria-labelledby="renewal-reminders-toggle-label"
+        // aria-describedby pins the supporting description span (S13
+        // speckit-review). aria-labelledby alone names the switch from the
+        // pauseLabel only, dropping the description from the accessible
+        // description — screen readers now announce both.
+        aria-describedby="renewal-reminders-toggle-description"
         checked={optedOut}
         onCheckedChange={onChange}
         disabled={isPending}

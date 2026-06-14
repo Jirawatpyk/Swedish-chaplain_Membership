@@ -44,18 +44,10 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 
-// Language endonyms (shown in their own language) — full names so screen
-// readers announce "English" / "ภาษาไทย" / "Svenska" instead of spelling
-// out the "EN" / "TH" / "SV" abbreviations letter by letter.
-const LANG_LABELS: Record<'en' | 'th' | 'sv', string> = {
-  en: 'English',
-  th: 'ภาษาไทย',
-  sv: 'Svenska',
-};
 
 export type ContactInitial = {
   readonly contactId: string;
@@ -89,6 +81,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
   const t = useTranslations('admin.members.contactForm');
   const tf = useTranslations('admin.members.create.fields');
   const tA = useTranslations('admin.members.detail.contactActions');
+  const tLang = useTranslations('common');
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -365,17 +358,17 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger id="cf-language" className="w-full">
-                    <SelectValue>
-                      {(value: string | null) =>
-                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
-                        LANG_LABELS.en
+                    <TranslatedSelectValue
+                      placeholder={tLang('languageOptions.en')}
+                      translate={(value) =>
+                        tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
                       }
-                    </SelectValue>
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
-                    <SelectItem value="th">{LANG_LABELS.th}</SelectItem>
-                    <SelectItem value="sv">{LANG_LABELS.sv}</SelectItem>
+                    <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
+                    <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
+                    <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

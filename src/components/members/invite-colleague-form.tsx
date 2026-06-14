@@ -22,7 +22,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 /**
@@ -43,6 +43,7 @@ type InviteFormValues = z.infer<typeof inviteSchema>;
 
 export function InviteColleagueForm() {
   const t = useTranslations('portal.invite');
+  const tLang = useTranslations('common');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -181,14 +182,18 @@ export function InviteColleagueForm() {
               name="preferred_language"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="preferred_language">
-                    <SelectValue />
+                  <SelectTrigger id="preferred_language" className="w-full">
+                    <TranslatedSelectValue
+                      translate={(value: string) =>
+                        tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {/* W-7: i18n language option labels */}
-                    <SelectItem value="en">{t('languageOptions.en')}</SelectItem>
-                    <SelectItem value="th">{t('languageOptions.th')}</SelectItem>
-                    <SelectItem value="sv">{t('languageOptions.sv')}</SelectItem>
+                    <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
+                    <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
+                    <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

@@ -27,7 +27,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import type {
@@ -220,7 +220,11 @@ export function BenefitMatrixEditor({
               items={WEBSITE_PAGE_OPTIONS}
             >
               <SelectTrigger aria-label={tM('websitePageType')} className="w-full">
-                <SelectValue />
+                <TranslatedSelectValue
+                  translate={(v) =>
+                    WEBSITE_PAGE_OPTIONS.find((o) => o.value === v)?.label ?? null
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {WEBSITE_PAGE_OPTIONS.map((o) => (
@@ -245,7 +249,11 @@ export function BenefitMatrixEditor({
               items={LOGO_CATEGORY_OPTIONS}
             >
               <SelectTrigger aria-label={tM('homepageLogoCategory')} className="w-full">
-                <SelectValue />
+                <TranslatedSelectValue
+                  translate={(v) =>
+                    LOGO_CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? null
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {LOGO_CATEGORY_OPTIONS.map((o) => (
@@ -270,7 +278,11 @@ export function BenefitMatrixEditor({
               items={DIRECTORY_SIZE_OPTIONS}
             >
               <SelectTrigger aria-label={tM('directoryListingSize')} className="w-full">
-                <SelectValue />
+                <TranslatedSelectValue
+                  translate={(v) =>
+                    DIRECTORY_SIZE_OPTIONS.find((o) => o.value === v)?.label ?? null
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {DIRECTORY_SIZE_OPTIONS.map((o) => (
@@ -299,7 +311,11 @@ export function BenefitMatrixEditor({
             items={DISCOUNT_SCOPE_OPTIONS}
           >
             <SelectTrigger aria-label={tM('eventDiscountScope')} className="w-full">
-              <SelectValue />
+              <TranslatedSelectValue
+                translate={(v) =>
+                  DISCOUNT_SCOPE_OPTIONS.find((o) => o.value === v)?.label ?? null
+                }
+              />
             </SelectTrigger>
             <SelectContent>
               {DISCOUNT_SCOPE_OPTIONS.map((o) => (
@@ -388,7 +404,11 @@ export function BenefitMatrixEditor({
                   items={VIDEO_DURATION_OPTIONS}
                 >
                   <SelectTrigger aria-label={tM('videoDuration')} className="w-full">
-                    <SelectValue />
+                    <TranslatedSelectValue
+                      translate={(v) =>
+                        VIDEO_DURATION_OPTIONS.find((o) => o.value === v)?.label ?? null
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {VIDEO_DURATION_OPTIONS.map((o) => (
@@ -410,7 +430,11 @@ export function BenefitMatrixEditor({
                   items={VIDEO_FREQUENCY_OPTIONS}
                 >
                   <SelectTrigger aria-label={tM('videoFrequencyScope')} className="w-full">
-                    <SelectValue />
+                    <TranslatedSelectValue
+                      translate={(v) =>
+                        VIDEO_FREQUENCY_OPTIONS.find((o) => o.value === v)?.label ?? null
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {VIDEO_FREQUENCY_OPTIONS.map((o) => (
@@ -433,7 +457,11 @@ export function BenefitMatrixEditor({
                   items={DIRECTORY_AD_OPTIONS}
                 >
                   <SelectTrigger aria-label={tM('directoryAdPosition')} className="w-full">
-                    <SelectValue />
+                    <TranslatedSelectValue
+                      translate={(v) =>
+                        DIRECTORY_AD_OPTIONS.find((o) => o.value === v)?.label ?? null
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {DIRECTORY_AD_OPTIONS.map((o) => (

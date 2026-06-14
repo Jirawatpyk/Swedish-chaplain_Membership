@@ -30,7 +30,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 // Inlined intentionally — importing from `@/modules/members` (barrel)
@@ -116,21 +116,14 @@ export function OverrideReasonDialog({
                 aria-required="true"
                 className="w-full"
               >
-                <SelectValue placeholder={t('codePlaceholder')}>
-                  {(value: string | null) => {
-                    if (
-                      !value ||
-                      !(OVERRIDE_REASON_CODES as readonly string[]).includes(
-                        value,
-                      )
-                    ) {
-                      return t('codePlaceholder');
-                    }
-                    return t(
-                      `codes.${value}` as Parameters<typeof t>[0],
-                    );
-                  }}
-                </SelectValue>
+                <TranslatedSelectValue
+                  placeholder={t('codePlaceholder')}
+                  translate={(value) =>
+                    (OVERRIDE_REASON_CODES as readonly string[]).includes(value)
+                      ? t(`codes.${value}` as Parameters<typeof t>[0])
+                      : null
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {OVERRIDE_REASON_CODES.map((c) => (

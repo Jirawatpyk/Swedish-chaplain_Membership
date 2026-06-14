@@ -113,6 +113,19 @@ export const renewalCycles = pgTable(
       table.tenantId,
       table.memberId,
     ),
+    // Serves the lapsed-badge batch query: DISTINCT ON (member_id)
+    // ORDER BY member_id, created_at DESC, cycle_id DESC. The index covers
+    // (tenant_id, member_id, created_at DESC) but NOT cycle_id, so the
+    // `cycle_id DESC` tiebreak still does a tiny per-member in-memory sort —
+    // it is an index-ordered scan, NOT a pure skip-scan with zero Sort. The
+    // residual sort is negligible (a handful of cycles per member); adding
+    // cycle_id to the index was judged not worth a new migration (S2
+    // speckit-review).
+    memberRecencyIdx: index('renewal_cycles_member_recency_idx').on(
+      table.tenantId,
+      table.memberId,
+      table.createdAt.desc(),
+    ),
     eligibilityIdx: index('renewal_cycles_eligibility_idx')
       .on(table.tenantId, table.status, table.expiresAt)
       .where(sql`status IN ('upcoming','reminded','awaiting_payment')`),

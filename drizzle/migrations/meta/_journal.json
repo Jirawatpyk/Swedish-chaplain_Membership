@@ -1511,7 +1511,14 @@
 			"idx": 215,
 			"version": "7",
 			"when": 1798534400000,
-			"tag": "0215_f8_renewal_entered_awaiting_payment",
+			"tag": "0215_f8_renewal_cycles_member_recency_idx",
+			"breakpoints": true
+		},
+		{
+			"idx": 216,
+			"version": "7",
+			"when": 1798534500000,
+			"tag": "0216_f8_renewal_entered_awaiting_payment",
 			"breakpoints": true
 		}
 	]

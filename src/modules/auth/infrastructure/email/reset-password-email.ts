@@ -18,6 +18,8 @@
  *     as a clickable link regardless of inline-HTML sanitisation
  */
 import { env } from '@/lib/env';
+import { escapeHtml } from '@/lib/html-escape';
+import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
 
 export type EmailLocale = 'en' | 'th' | 'sv';
 
@@ -88,18 +90,18 @@ export function buildResetPasswordEmail(input: ResetPasswordEmailInput): BuiltEm
 <html lang="${locale}">
   <head>
     <meta charset="utf-8" />
-    <title>${escape(copy.subject)}</title>
+    <title>${escapeHtml(copy.subject)}</title>
   </head>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 24px; color: #111;">
-    <h1 style="font-size: 20px; margin-bottom: 16px;">${escape(copy.heading)}</h1>
-    <p style="line-height: 1.6;">${escape(copy.intro)}</p>
+    <h1 style="font-size: 20px; margin-bottom: 16px;">${escapeHtml(copy.heading)}</h1>
+    <p style="line-height: 1.6;">${escapeHtml(copy.intro)}</p>
     <p style="margin: 24px 0;">
-      <a href="${url}" style="display: inline-block; background: #10487a; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escape(copy.cta)}</a>
+      <a href="${url}" style="display: inline-block; background: ${EMAIL_BRAND_PRIMARY}; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px;">${escapeHtml(copy.cta)}</a>
     </p>
-    <p style="color: #555; font-size: 13px;">${escape(copy.expiryNotice)}</p>
-    <p style="color: #555; font-size: 13px;">${escape(copy.ignoreNotice)}</p>
+    <p style="color: #555; font-size: 13px;">${escapeHtml(copy.expiryNotice)}</p>
+    <p style="color: #555; font-size: 13px;">${escapeHtml(copy.ignoreNotice)}</p>
     <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0 16px;" />
-    <p style="color: #777; font-size: 12px;">${escape(copy.footer)}</p>
+    <p style="color: #777; font-size: 12px;">${escapeHtml(copy.footer)}</p>
   </body>
 </html>`;
 
@@ -112,13 +114,4 @@ export function buildResetPasswordEmail(input: ResetPasswordEmailInput): BuiltEm
     `— ${copy.footer}\n`;
 
   return { subject: copy.subject, html, text };
-}
-
-function escape(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }

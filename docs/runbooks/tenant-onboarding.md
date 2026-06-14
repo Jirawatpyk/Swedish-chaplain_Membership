@@ -123,6 +123,22 @@ Per `docs/runbooks/cron-jobs.md` § 5 (F7) + § 6 (F8). The cron endpoints are t
 2. Create a test member + plan → invoice flow → payment → renewal cycle creation
 3. Verify `pnpm check:multi-tenant` still passes 24/24 SCOPED tables for the new tenant slug
 
+### 9. Large-tenant index hardening (CONCURRENTLY out-of-band) — OPTIONAL
+
+> **WHEN**: Only for a new tenant whose `renewal_cycles` table is expected to be large at onboarding time (e.g. a bulk historical import of tens of thousands of cycles), AND that tenant shares the live deployment with other active tenants. For SweCham scale (~131 members) this is a no-op — skip it.
+>
+> **WHY**: Migration `0215_f8_renewal_cycles_member_recency_idx.sql` creates `renewal_cycles_member_recency_idx` with `CREATE INDEX IF NOT EXISTS` (NOT `CONCURRENTLY`). The Drizzle migration runner (`scripts/run-migrations.ts` → `drizzle-orm/postgres-js` migrator) wraps every migration in a single transaction, and Postgres forbids `CREATE INDEX CONCURRENTLY` inside a transaction block (SQLSTATE 25001). So the migration intentionally uses the blocking form. A blocking `CREATE INDEX` takes a SHARE lock on `renewal_cycles` for the duration of the build — sub-second on small tables, but proportional to row count on a large one, during which writes to that tenant's renewal cycles block.
+
+Because `IF NOT EXISTS` makes the migration a no-op once the index exists, you can build the index CONCURRENTLY out-of-band BEFORE the tenant's first run of `pnpm db:migrate` (or before importing the large cycle dataset). Run, outside any transaction, on the unpooled connection:
+
+```sql
+-- Run OUTSIDE a transaction (psql autocommit). Builds without a long SHARE lock.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "renewal_cycles_member_recency_idx"
+  ON "renewal_cycles" ("tenant_id", "member_id", "created_at" DESC);
+```
+
+When migration 0215 later runs, its `IF NOT EXISTS` sees the index already present and does nothing. If `CREATE INDEX CONCURRENTLY` fails partway it leaves an INVALID index — drop it (`DROP INDEX CONCURRENTLY "renewal_cycles_member_recency_idx";`) and retry before letting the migration run.
+
 ---
 
 ## Rollback

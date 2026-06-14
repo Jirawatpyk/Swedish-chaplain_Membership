@@ -10,6 +10,7 @@ import {
   daysUntilExpiry,
   isOverdue,
   isTerminalCycleStatus,
+  isMembershipLapsed,
   type RenewalCycle,
 } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
@@ -73,20 +74,15 @@ export function deriveMembershipStat(
   // sub-case shown "Renew to restore your benefits" is slightly off, but a
   // dedicated copy variant is deferred (057 R2 finding #6) — low value for a
   // ~131-member org; the destructive/renew framing is acceptable meanwhile.
-  const isEndedTerminal =
-    isTerminalCycleStatus(status) && status !== 'completed';
-  // Finding F — an ended-terminal cycle (lapsed/cancelled) has no live
-  // coverage regardless of `expiresAt`. Resolve it to `lapsed` even when
-  // `expiresAt` is unparseable (Date.parse → NaN, where `NaN < now` is false
-  // and previously fell through to `active`). When the date IS parseable, use
-  // an instant-level comparison (same `<` semantics as `isOverdue`, not the
-  // Math.ceil day-granularity of `days < 0`) so a cycle expiring at 08:00 BKK
-  // is treated as ended at 14:00 BKK that same day (057 Defer 2).
-  if (isEndedTerminal) {
-    const expiresMs = Date.parse(cycle.expiresAt);
-    if (!Number.isFinite(expiresMs) || expiresMs < now.getTime()) {
-      return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
-    }
+  // 057 R2 finding A — only ENDED-terminal cycles (lapsed/cancelled, NOT the
+  // paid/renewed `completed`) past expiry represent ended coverage. This is the
+  // canonical `isMembershipLapsed` predicate (single source of truth shared with
+  // the admin member-table badge). The `isOverdue` branch above already consumed
+  // every non-terminal past-expiry cycle, so delegating here is behavior-
+  // preserving (pinned by the characterization test). Return shape is byte-for-
+  // byte the original lapsed branch (`expiryIso: cycle.expiresAt`).
+  if (isMembershipLapsed(cycle, now)) {
+    return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
   }
   if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
     return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt };
@@ -97,7 +93,7 @@ export function deriveMembershipStat(
   // date must NOT read "in good standing" (which would silence a possibly-
   // lapsed membership). Surface it honestly as the `error` "Status unavailable"
   // state rather than falling through to `active`. (A terminal cycle with a
-  // malformed date is already handled by the `isEndedTerminal` branch → lapsed.)
+  // malformed date is already handled by the `isMembershipLapsed` branch → lapsed.)
   if (days === null && !isTerminalCycleStatus(status)) {
     return { kind: 'error', variant: 'warning', daysRemaining: null, status, expiryIso: cycle.expiresAt };
   }

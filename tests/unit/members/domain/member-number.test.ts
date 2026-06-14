@@ -4,7 +4,6 @@ import {
   formatMemberNumber,
   parseMemberNumberQuery,
   InvalidMemberNumberError,
-  type MemberNumber,
 } from '@/modules/members/domain/value-objects/member-number';
 import type { Member } from '@/modules/members/domain/member';
 import type { MemberPatch } from '@/modules/members/application/ports/member-repo';

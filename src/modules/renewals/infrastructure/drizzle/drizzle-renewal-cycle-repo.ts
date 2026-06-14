@@ -17,7 +17,7 @@
  * `listEligibleForDispatch`) are implemented for port completeness but
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
-import { and, eq, ne, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
+import { and, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
@@ -299,6 +299,17 @@ export function decodeCursor(
  * Build the next-cursor token for a paginated cycle query.
  * `pageRows` is the page-sized slice; `hasNextPage` is true when the
  * adapter fetched limit+1 rows and at least one was excluded.
+ *
+ * SCOPE the returned token encodes `(expiresAt, cycleId)` and is therefore
+ * only meaningful for `expires_at`-ORDERED queries (`listEligibleForDispatch`,
+ * `loadPipelinePage`), whose keyset WHERE/ORDER BY is `(expires_at, cycle_id)`.
+ * It is NOT a valid cursor for the `created_at_desc` arm of `list()` — that
+ * query orders by `(created_at DESC, cycle_id DESC)`, so paginating it with
+ * this cursor would compare the wrong key and skip/repeat rows. This is benign
+ * today: `ListRenewalCyclesOpts` has no `cursor` field, and the only
+ * `created_at_desc` caller (`loadMemberRenewalStatus`) reads `items[0]` with
+ * `pageSize: 1` and discards `nextCursor`. Do NOT start paginating a
+ * `created_at_desc` query with the returned `nextCursor`.
  */
 function buildNextCursor(
   pageRows: ReadonlyArray<{ expiresAt: Date; cycleId: string }>,
@@ -515,6 +526,31 @@ export function makeDrizzleRenewalCycleRepo(
       return rows[0] ? rowToDomain(rows[0]) : null;
     },
 
+    async findLatestCyclesForMembers(
+      _tenantId: string,
+      memberIds: readonly string[],
+    ): Promise<ReadonlyArray<RenewalCycle>> {
+      if (memberIds.length === 0) return [];
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .selectDistinctOn([renewalCycles.memberId])
+          .from(renewalCycles)
+          .where(inArray(renewalCycles.memberId, [...memberIds]))
+          // DISTINCT ON requires the leading ORDER BY key to match the distinct
+          // column; created_at DESC + cycle_id DESC picks the latest, deterministic
+          // tiebreak. The single-read path (loadMemberRenewalStatus → list()
+          // with sort:'created_at_desc') applies the SAME created_at DESC,
+          // cycle_id DESC ordering, so both paths resolve the identical latest
+          // cycle on an equal created_at (S1 speckit-review).
+          .orderBy(
+            renewalCycles.memberId,
+            desc(renewalCycles.createdAt),
+            desc(renewalCycles.cycleId),
+          );
+        return rows.map(rowToDomain);
+      });
+    },
+
     async list(
       _tenantId: string,
       opts: ListRenewalCyclesOpts,
@@ -542,8 +578,21 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(whereClause)
           .orderBy(
+            // `created_at_desc` adds `cycle_id DESC` as a deterministic
+            // tiebreak so this single-read path (used by
+            // loadMemberRenewalStatus) picks the SAME latest cycle as the
+            // batch `findLatestCyclesForMembers` DISTINCT-ON when two cycles
+            // share an identical `created_at` — otherwise the portal chip
+            // and admin badge could disagree (S1 speckit-review).
+            //
+            // NOTE: the `nextCursor` returned below encodes `(expires_at,
+            // cycle_id)` — valid ONLY for the expires_at-ordered sorts. It
+            // is meaningless for THIS `created_at_desc` ordering and MUST NOT
+            // be used to paginate it (see `buildNextCursor`). Harmless today:
+            // `ListRenewalCyclesOpts` has no cursor field and the lone
+            // created_at_desc caller reads `items[0]` with `pageSize: 1`.
             opts.sort === 'created_at_desc'
-              ? sql`${renewalCycles.createdAt} DESC`
+              ? sql`${renewalCycles.createdAt} DESC, ${renewalCycles.cycleId} DESC`
               : opts.sort === 'expires_at_desc'
                 ? sql`${renewalCycles.expiresAt} DESC`
                 : sql`${renewalCycles.expiresAt} ASC`,

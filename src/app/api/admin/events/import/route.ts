@@ -469,14 +469,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         { status: 200 },
       );
     case 'invalid_header':
-      return NextResponse.json(
-        {
-          type: 'https://chamber-os.app/errors/csv-header-invalid',
-          title: 'CSV header row is invalid',
-          status: 400,
-          missingColumns: outcome.missingColumns,
-        },
-        { status: 400 },
+      return problemResponse(
+        400,
+        'csv-header-invalid',
+        'CSV header row is invalid',
+        undefined,
+        { extras: { missingColumns: outcome.missingColumns } },
       );
     case 'timeout':
       return problemResponse(

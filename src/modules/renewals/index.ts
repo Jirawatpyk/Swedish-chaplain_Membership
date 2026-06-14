@@ -79,6 +79,7 @@ export {
   cycleFrozenPriceSatang,
   isOverdue,
   daysUntilExpiry,
+  isMembershipLapsed,
   type CycleId,
   type CycleIdError,
   type ClosedReason,
@@ -116,6 +117,14 @@ export {
   type RenewalEscalationTask,
   type EscalationTaskInvariantError,
 } from './domain/renewal-escalation-task';
+
+// Outreach-channel canonical list (mirrors `at_risk_outreach.channel`
+// CHECK at migration 0090) — consumed by the at-risk OutreachDialog
+// channel <Select> in Presentation.
+export {
+  OUTREACH_CHANNELS,
+  type OutreachChannel,
+} from './domain/at-risk-outreach';
 
 export {
   RENEWAL_LINK_TOKEN_VERSION,
@@ -486,6 +495,12 @@ export {
   type LoadMemberRenewalStatusError,
 } from './application/use-cases/load-member-renewal-status';
 
+// Pass A · Section 5 — Members-directory batch "lapsed" badge read.
+export {
+  loadMembersMembershipStatus,
+  type LoadMembersMembershipStatusInput,
+} from './application/use-cases/load-members-membership-status';
+
 export {
   confirmRenewal,
   confirmRenewalInputSchema,
@@ -763,5 +778,12 @@ export {
 } from './application/use-cases/prune-consumed-tokens';
 
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
-export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
+export {
+  makeRenewalsDeps,
+  // Lean factory for the members-directory lapsed-badge read — builds only
+  // `cyclesRepo` + `clock` (067 #4: avoids the ~20-adapter makeRenewalsDeps
+  // on the directory hot path).
+  makeMembersMembershipStatusDeps,
+  f8OnPaidCallbacks,
+} from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

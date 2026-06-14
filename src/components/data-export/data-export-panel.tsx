@@ -30,6 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { ExportStatus } from '@/modules/insights';
+import { exportStatusVariant } from '@/lib/export-status-variant';
 
 export interface DataExportRow {
   readonly jobId: string;
@@ -56,18 +57,6 @@ export interface DataExportLabels {
   /** Shown (+ button disabled) when an export is already requested/processing. */
   readonly alreadyPending: string;
 }
-
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
-
-// Text already encodes meaning (WCAG 1.4.1); the variant is a redundant cue.
-const STATUS_VARIANT = {
-  requested: 'secondary',
-  processing: 'secondary',
-  ready: 'default',
-  delivered: 'default',
-  expired: 'destructive',
-  failed: 'destructive',
-} as const satisfies Record<ExportStatus, BadgeVariant>;
 
 export function DataExportPanel({
   rows,
@@ -163,7 +152,7 @@ export function DataExportPanel({
                 {rows.map((row) => (
                   <TableRow key={row.jobId}>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[row.status]}>{row.statusLabel}</Badge>
+                      <Badge variant={exportStatusVariant(row.status)}>{row.statusLabel}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{row.requestedAt}</TableCell>
                     <TableCell className="text-right">

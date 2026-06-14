@@ -93,12 +93,7 @@
       "portalMismatch": "This account can't sign in here."
     },
     "memberPortal": {
-      "title": "Member portal",
-      "welcome": "Welcome, {name}",
-      "versionBadge": "v1.0",
-      "intro": "You're signed in to the SweCham member portal. The full experience is being rolled out phase by phase.",
-      "contactHeading": "Need help?",
-      "contactDescription": "Until self-service lands, email us and we'll help directly."
+      "title": "Member portal"
     },
     "emailChangeRevert": {
       "title": "Revert email change",
@@ -192,7 +187,12 @@
   },
   "common": {
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "languageOptions": {
+      "en": "English",
+      "th": "ไทย (Thai)",
+      "sv": "Svenska (Swedish)"
+    }
   },
   "directorySettings": {
     "title": "Directory listing",
@@ -806,11 +806,6 @@
       "title": "Notification language",
       "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
       "useTenantDefault": "Use chamber default",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
@@ -913,6 +908,8 @@
         "selectRow": "Select {company}",
         "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}",
         "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection.",
+        "membershipLapsed": "Lapsed",
+        "membershipLapsedSr": "Membership lapsed — needs renewal",
         "tableCaption": "Members directory"
       },
       "emptyStates": {
@@ -2400,11 +2397,6 @@
           "updatedAt": "Last modified",
           "actions": "Actions"
         },
-        "locale": {
-          "en": "English",
-          "th": "ไทย",
-          "sv": "Svenska"
-        },
         "rowAction": {
           "edit": "Edit",
           "editAria": "Edit {name}",
@@ -2516,6 +2508,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filter by renewal urgency",
+        "aria_label_scroll": "Renewal urgency tabs, scrollable",
         "countSr": "{count, plural, one {# member} other {# members}}",
         "t_90": "T-90",
         "t_60": "T-60",
@@ -3670,13 +3663,6 @@
     "integrations": {
       "eventcreate": {
         "_bootstrap": "EventCreate Integration",
-        "placeholder": {
-          "title": "EventCreate Integration",
-          "subtitle": "Set up the Zapier-powered attendee import pipeline.",
-          "heading": "Coming soon",
-          "body": "The EventCreate integration setup wizard is rolling out shortly. Until then, please contact your administrator for help configuring the Zap.",
-          "backToEvents": "Back to events"
-        },
         "page": {
           "title": "EventCreate integration",
           "subtitle": "Connect Zapier so EventCreate attendee registrations import automatically.",
@@ -3900,6 +3886,10 @@
       "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
+        "membership": "Membership",
+        "finance": "Finance",
+        "engagement": "Engagement",
+        "system": "System",
         "settings": "Settings"
       },
       "collapse": "Collapse sidebar",
@@ -3907,6 +3897,7 @@
       "ariaLabel": "Staff navigation",
       "members": "Members",
       "invoices": "Invoices",
+      "creditNotes": "Credit Notes",
       "broadcasts": "Broadcasts",
       "renewals": "Renewals",
       "audit": "Audit log",
@@ -3986,6 +3977,7 @@
         "overdueSub": "Overdue by {days} days",
         "lapsedValue": "Membership lapsed",
         "lapsedSub": "Your membership has ended. Renew to restore your benefits.",
+        "renewNow": "Renew now",
         "errorValue": "Status unavailable",
         "errorSub": "We couldn't load your membership status. Please try again.",
         "emptyValue": "Welcome aboard",
@@ -4050,11 +4042,6 @@
       "title": "Notification language",
       "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
       "useTenantDefault": "Use chamber default",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
@@ -4508,12 +4495,7 @@
       "saving": "Saving…",
       "saveSuccess": "Profile updated successfully.",
       "saveError": "Could not save changes. Please try again.",
-      "noChanges": "No changes to save.",
-      "languageOptions": {
-        "en": "English",
-        "th": "ไทย (Thai)",
-        "sv": "Svenska (Swedish)"
-      }
+      "noChanges": "No changes to save."
     },
     "invite": {
       "pageTitle": "Invite Colleague",
@@ -4534,12 +4516,7 @@
       "sendSuccess": "Invitation sent successfully.",
       "sendError": "Could not send invitation. Please try again.",
       "emailTaken": "This email is already registered.",
-      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again.",
-      "languageOptions": {
-        "en": "English",
-        "th": "ไทย (Thai)",
-        "sv": "Svenska (Swedish)"
-      }
+      "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again."
     },
     "payment": {
       "payNow": "Pay now",
@@ -4569,7 +4546,7 @@
         "cardAriaLabel": "Card — switch payment method",
         "promptpayAriaLabel": "PromptPay — switch payment method",
         "cardPlaceholder": "Preparing secure payment form…",
-        "promptpayPlaceholder": "PromptPay is coming soon."
+        "promptpayPlaceholder": "Preparing the PromptPay QR code…"
       },
       "success": {
         "title": "Payment received",

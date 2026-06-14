@@ -37,6 +37,7 @@ export function AdminPreferredLocaleCard({
   initialValue,
 }: AdminPreferredLocaleCardProps): ReactElement {
   const t = useTranslations('admin.membersPreferredLocale');
+  const tLang = useTranslations('common');
   const titleId = `admin-preferred-locale-title-${memberId}`;
   const [value, setValue] = useState<PreferredLocale>(initialValue);
   const [saving, setSaving] = useState(false);
@@ -90,7 +91,7 @@ export function AdminPreferredLocaleCard({
             {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
               const id = `admin-preferred-locale-${memberId}-${opt}`;
               const label =
-                opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
+                opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`);
               return (
                 <div key={opt} className="flex items-center gap-2">
                   <RadioGroupItem id={id} value={opt} aria-label={label} />

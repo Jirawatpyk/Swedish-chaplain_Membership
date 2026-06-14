@@ -33,12 +33,20 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-
-const CHANNELS = ['email', 'phone', 'meeting'] as const;
-type Channel = (typeof CHANNELS)[number];
+// 067 #4 review-fix — single-source the channel list (mirrors the
+// `at_risk_outreach.channel` CHECK at migration 0090) instead of a hand-
+// maintained local copy that silently drifts if a 4th channel is added.
+// Imported via the client-safe sub-barrel (`@/modules/renewals/client`),
+// NOT the full barrel: this is a `'use client'` component and the full
+// barrel pulls the server-side graph (postgres/fs/net) into the browser
+// bundle — see client.ts for the Turbopack-eager-walk rationale.
+import {
+  OUTREACH_CHANNELS as CHANNELS,
+  type OutreachChannel as Channel,
+} from '@/modules/renewals/client';
 
 // Template IDs are taken from FR-013 / FR-014 + smart-chamber-features.md
 // outreach catalogue. Compact list for MVP — extensible.
@@ -145,8 +153,10 @@ export function OutreachDialog({
               value={channel}
               onValueChange={(v) => setChannel(v as Channel)}
             >
-              <SelectTrigger id="outreach-channel">
-                <SelectValue />
+              <SelectTrigger id="outreach-channel" className="w-full">
+                <TranslatedSelectValue
+                  translate={(v) => t(`channel.option.${v}`)}
+                />
               </SelectTrigger>
               <SelectContent>
                 {CHANNELS.map((c) => (
@@ -166,8 +176,12 @@ export function OutreachDialog({
                 value={templateId}
                 onValueChange={(v) => setTemplateId(v ?? EMAIL_TEMPLATES[0])}
               >
-                <SelectTrigger id="outreach-template">
-                  <SelectValue />
+                <SelectTrigger id="outreach-template" className="w-full">
+                  <TranslatedSelectValue
+                    translate={(v) =>
+                      t(`template.option.${v.replace(/\./g, '_')}`)
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {EMAIL_TEMPLATES.map((tpl) => (

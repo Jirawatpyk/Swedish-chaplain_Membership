@@ -31,6 +31,15 @@ export {
 
 export { type CycleStatus } from './domain/value-objects/cycle-status';
 
+// Outreach-channel canonical list — pure Domain TS (imports only
+// `@/lib/result`), so it is client-bundle-safe. Consumed by the at-risk
+// OutreachDialog channel <Select> (067 #4 review-fix — replaced a
+// hand-maintained local copy in outreach-dialog.tsx).
+export {
+  OUTREACH_CHANNELS,
+  type OutreachChannel,
+} from './domain/at-risk-outreach';
+
 export type {
   PipelineRow,
   UrgencyBucket,

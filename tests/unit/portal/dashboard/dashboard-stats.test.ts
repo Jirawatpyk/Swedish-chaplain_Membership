@@ -5,6 +5,7 @@ import {
   deriveOutstandingStat,
   deriveBenefitsStat,
 } from '@/app/(member)/portal/_lib/dashboard-stats';
+import { isMembershipLapsed } from '@/modules/renewals';
 import type { RenewalCycle } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
 
@@ -157,6 +158,33 @@ describe('deriveMembershipStat', () => {
     expect(stat.variant).toBe('warning');
     expect(stat.daysRemaining).toBeNull();
     expect(stat.status).toBeNull();
+  });
+});
+
+describe('deriveMembershipStat ⟺ isMembershipLapsed (characterization)', () => {
+  // The admin lapsed-badge reuses isMembershipLapsed; this pins the
+  // equivalence so the step-4 refactor below stays behavior-preserving.
+  const PAST = '2026-01-01T00:00:00.000Z';
+  const FUTURE = '2027-01-01T00:00:00.000Z';
+  const cases: ReadonlyArray<Partial<import('@/modules/renewals').RenewalCycle>> = [
+    { status: 'lapsed', closedAt: PAST, closedReason: 'lapsed', expiresAt: PAST },
+    { status: 'cancelled', closedAt: PAST, closedReason: 'cancelled', expiresAt: PAST },
+    { status: 'completed', closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1', expiresAt: PAST },
+    { status: 'awaiting_payment', expiresAt: PAST },
+    { status: 'awaiting_payment', expiresAt: FUTURE },
+    { status: 'lapsed', closedAt: PAST, closedReason: 'lapsed', expiresAt: FUTURE },
+  ];
+  it.each(cases)('kind===lapsed iff isMembershipLapsed for %o', (override) => {
+    const c = cycle(override);
+    const kindIsLapsed = deriveMembershipStat(c, NOW).kind === 'lapsed';
+    expect(kindIsLapsed).toBe(isMembershipLapsed(c, NOW));
+  });
+});
+
+describe('deriveMembershipStat overdue regression (post-refactor)', () => {
+  it('a non-terminal past-expiry cycle stays kind:overdue, NOT lapsed', () => {
+    const c = cycle({ status: 'awaiting_payment', expiresAt: '2026-01-01T00:00:00.000Z' });
+    expect(deriveMembershipStat(c, NOW).kind).toBe('overdue');
   });
 });
 

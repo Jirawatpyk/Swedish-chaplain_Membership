@@ -428,6 +428,26 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
   };
 }
 
+/**
+ * Lean composition for the members-directory "lapsed" badge read
+ * (067 #4 review-fix). `loadMembersMembershipStatus` consumes only
+ * `Pick<RenewalsDeps, 'cyclesRepo' | 'clock'>`, so the member-directory
+ * hot path must NOT call `makeRenewalsDeps` — that eagerly constructs ~20
+ * Drizzle repos/adapters (audit emitter, at-risk scorer, tier-upgrade
+ * repo, F5 bridge, …) on every directory render just to read two deps.
+ * This factory builds exactly those two (mirrors how `makeRenewalsDeps`
+ * wires `cyclesRepo` + `clock`).
+ */
+export function makeMembersMembershipStatusDeps(
+  tenantId: string,
+): Pick<RenewalsDeps, 'cyclesRepo' | 'clock'> {
+  const tenant = asTenantContext(tenantId);
+  return {
+    cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    clock: wallClock,
+  };
+}
+
 // Re-export the stub so test composition + early-Phase emit sites can
 // fall back to the in-memory pino logger when the real adapter is
 // undesirable (e.g. unit tests that don't want to write to audit_log).
