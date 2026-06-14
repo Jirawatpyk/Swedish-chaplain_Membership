@@ -30,6 +30,14 @@ export const memberPlanLookupDrizzle: MemberPlanLookupPort = {
         `memberPlanLookupDrizzle: member lookup failed (${result.error.code}) for member ${memberId}`,
       );
     }
-    return { planId: result.value.planId };
+    // 068 cluster C — surface archive state so the admin lapsed-comeback
+    // use-case can reject archived members BEFORE creating a cycle (avoids an
+    // orphan awaiting_payment cycle + permanently-wedged retries). The F3
+    // Member aggregate's lifecycle sub-shape encodes status='archived' ⟺
+    // archivedAt != null; reading `status` is the canonical archive check.
+    return {
+      planId: result.value.planId,
+      isArchived: result.value.status === 'archived',
+    };
   },
 };

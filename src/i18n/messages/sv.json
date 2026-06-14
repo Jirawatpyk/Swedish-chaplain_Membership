@@ -971,6 +971,7 @@
             "failure": "Det gick inte att förnya denna medlem.",
             "error": {
               "member_not_found": "Medlemmen hittades inte.",
+              "member_archived": "Denna medlem är arkiverad. Återställ medlemmen innan du förnyar.",
               "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
               "plan_not_found": "Medlemmens plan kunde inte hittas.",
               "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",

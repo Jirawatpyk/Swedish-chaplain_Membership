@@ -479,6 +479,51 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     expect(memberInvoices[0]?.status).toBe('issued');
   }, 180_000);
 
+  it('archived member: renewing an archived member returns member_archived + creates NO cycle (cluster C, 068)', async () => {
+    // Seed a member then ARCHIVE it (status='archived' + archivedAt). The
+    // admin renew-lapsed UI affordance is NOT gated on archive status, so an
+    // archived member could otherwise reach createCycleInTx (committed cycle
+    // in tx1) before createInvoiceDraft later rejects member_archived →
+    // orphan cycle + every retry returns member_has_active_cycle (wedged).
+    // The cluster-C precheck rejects archived BEFORE the cycle is created.
+    const memberId = await seedLapsedMember();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({ status: 'archived', archivedAt: new Date() })
+        .where(eq(members.memberId, memberId)),
+    );
+
+    const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-archived-${memberId}`,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_archived');
+
+    // CRITICAL: NO cycle was created — no orphan awaiting_payment row.
+    const cycles = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ cycleId: renewalCycles.cycleId })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.memberId, memberId)),
+    );
+    expect(cycles).toHaveLength(0);
+
+    // And no §86/4 was issued for the archived member.
+    const memberInvoices = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(eq(invoices.memberId, memberId)),
+    );
+    expect(memberInvoices).toHaveLength(0);
+  }, 180_000);
+
   it('cross-tenant probe: tenant A admin cannot renew tenant B member → member_not_found (no cross-tenant cycle/invoice)', async () => {
     // Seed a member in a SEPARATE tenant B.
     const tenantB = await createTestTenant();

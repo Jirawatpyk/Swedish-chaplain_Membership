@@ -117,6 +117,10 @@ export interface AdminRenewLapsedMemberOutput {
 export type AdminRenewLapsedMemberError =
   | { readonly kind: 'invalid_input'; readonly message: string }
   | { readonly kind: 'member_not_found' }
+  // 068 cluster C — the member exists but is archived. Rejected BEFORE the
+  // cycle is created so an archived member never gets an orphan
+  // awaiting_payment cycle. Admin must un-archive first.
+  | { readonly kind: 'member_archived' }
   | { readonly kind: 'member_has_active_cycle' }
   | { readonly kind: 'plan_not_found' }
   | {
@@ -172,6 +176,17 @@ export async function adminRenewLapsedMember(
       );
       if (!member) {
         return err({ kind: 'member_not_found' as const });
+      }
+
+      // 068 cluster C — reject archived members BEFORE creating the cycle.
+      // The renew-lapsed UI affordance is NOT gated on archive status, so
+      // without this precheck an archived member would get a committed
+      // `awaiting_payment` cycle in tx1 before `createInvoiceDraft` (Step 2)
+      // rejects `member_archived` → orphan cycle, and every retry returns
+      // `member_has_active_cycle` (permanently wedged). Fail fast inside tx1
+      // (no cycle written) so the admin gets a clear "un-archive first" error.
+      if (member.isArchived) {
+        return err({ kind: 'member_archived' as const });
       }
 
       // createCycleInTx no-ops if an active cycle exists (the member is

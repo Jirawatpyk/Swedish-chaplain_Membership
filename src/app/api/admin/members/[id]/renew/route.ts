@@ -128,6 +128,15 @@ export async function POST(
             code: 'member_not_found',
             correlationId: ctx.correlationId,
           });
+        case 'member_archived':
+          // 068 cluster C — the member exists but is archived. 409 (conflict
+          // with current state): the admin must un-archive the member before
+          // renewing. Rejected before any cycle is created (no orphan).
+          return errorResponse({
+            status: 409,
+            code: 'member_archived',
+            correlationId: ctx.correlationId,
+          });
         case 'member_has_active_cycle':
           return errorResponse({
             status: 409,

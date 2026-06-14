@@ -971,6 +971,7 @@
             "failure": "Could not renew this member.",
             "error": {
               "member_not_found": "Member not found.",
+              "member_archived": "This member is archived. Restore the member before renewing.",
               "member_has_active_cycle": "This member already has an active renewal cycle.",
               "plan_not_found": "The member's plan could not be resolved.",
               "invoice_issue_failed": "The renewal invoice could not be issued. The renewal was not completed — please try again.",

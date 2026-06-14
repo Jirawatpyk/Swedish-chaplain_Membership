@@ -28,6 +28,18 @@ import type { TenantTx } from '@/lib/db';
 export interface MemberPlanLookupResult {
   /** The member's current F2 plan id (drives the frozen §86/4 price). */
   readonly planId: string;
+  /**
+   * 068 cluster C — whether the member is archived (F3 `status='archived'`).
+   * The admin lapsed-comeback use-case rejects archived members BEFORE
+   * creating a cycle: the renew-lapsed UI affordance is NOT gated on archive
+   * status, so without this an archived member would get a committed
+   * `awaiting_payment` cycle in tx1 before `createInvoiceDraft` later rejects
+   * `member_archived` → orphan cycle, and every retry returns
+   * `member_has_active_cycle` (permanently wedged). The cross-tenant /
+   * absent case is still surfaced as `null` (no oracle); a present-but-
+   * archived member resolves to `{ planId, isArchived: true }`.
+   */
+  readonly isArchived: boolean;
 }
 
 export interface MemberPlanLookupPort {

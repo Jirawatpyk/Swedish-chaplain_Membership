@@ -77,13 +77,15 @@ interface DepsResult {
 }
 
 function makeDeps(opts?: {
-  memberPlan?: { planId: string } | null;
+  memberPlan?: { planId: string; isArchived: boolean } | null;
   activeCycle?: RenewalCycle | null;
   planFrozenStatus?: 'found' | 'not_found' | 'plan_inactive';
   bridgeResult?: IssueInvoiceForRenewalResult;
 }): DepsResult {
   const memberPlan =
-    opts?.memberPlan === undefined ? { planId: PLAN_ID } : opts.memberPlan;
+    opts?.memberPlan === undefined
+      ? { planId: PLAN_ID, isArchived: false }
+      : opts.memberPlan;
   const activeCycle = opts?.activeCycle ?? null;
   const planFrozenStatus = opts?.planFrozenStatus ?? 'found';
   const bridgeResult: IssueInvoiceForRenewalResult =
@@ -226,6 +228,20 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     if (result.ok) return;
     expect(result.error.kind).toBe('member_not_found');
     expect(t.findActiveMock).not.toHaveBeenCalled();
+    expect(t.bridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('member_archived: an archived member is rejected BEFORE the cycle is created (cluster C) — no cycle, no invoice', async () => {
+    const t = makeDeps({ memberPlan: { planId: PLAN_ID, isArchived: true } });
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_archived');
+    // The archive precheck fires before the active-cycle lookup + the cycle
+    // insert + the F4 bridge — no orphan cycle, no §86/4.
+    expect(t.findActiveMock).not.toHaveBeenCalled();
+    expect(t.insertMock).not.toHaveBeenCalled();
     expect(t.bridgeMock).not.toHaveBeenCalled();
   });
 

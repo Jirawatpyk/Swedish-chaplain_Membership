@@ -259,6 +259,17 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     expect((await res.json()).error.code).toBe('member_has_active_cycle');
   });
 
+  it('409 member_archived (cluster C — archived member rejected before cycle creation)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRenewLapsedMemberMock.mockResolvedValueOnce(
+      err({ kind: 'member_archived' }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('member_archived');
+  });
+
   it('422 plan_not_found', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRenewLapsedMemberMock.mockResolvedValueOnce(
