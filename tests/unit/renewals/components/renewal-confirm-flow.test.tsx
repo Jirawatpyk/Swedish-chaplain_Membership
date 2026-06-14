@@ -58,7 +58,6 @@ function renderFlow() {
       <RenewalConfirmFlow
         memberId="member-1"
         cycleId="00000000-0000-0000-0000-000000000001"
-        planYear={2026}
         currentPlanId="plan-current"
         currentPlanLabel="Current plan"
         availablePlans={[

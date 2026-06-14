@@ -289,7 +289,11 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId,
-      planYear: 2026,
+      // 070 — planYear is server-derived from the cycle's period_from
+      // (2026-06-01 → deriveFiscalYear = 2026), matching the seeded
+      // membership_plans row (plan_year 2026). Previously this was a
+      // hard-coded client field that masked the portal page's off-by-one
+      // (it derived 2027 from period-END expiresAt).
       actorUserId: user.userId,
       actorRole: 'member',
       correlationId: `lazy-up-${cycleId}`,
@@ -345,7 +349,7 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId,
-      planYear: 2026,
+      // 070 — planYear server-derived from the cycle's period_from.
       actorUserId: user.userId,
       actorRole: 'member',
       correlationId: `lazy-ap-${cycleId}`,
@@ -387,7 +391,7 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
         tenantId: tenant.ctx.slug,
         cycleId,
         memberId,
-        planYear: 2026,
+        // 070 — planYear server-derived from the cycle's period_from.
         actorUserId: user.userId,
         actorRole: 'member',
         correlationId: `conv-confirm-${cycleId}`,

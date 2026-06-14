@@ -39,7 +39,13 @@ const BodySchema = z.object({
   cycleId: z.string().uuid(),
   /** Optional — when present + differs from cycle.planIdAtCycleStart triggers FR-025 plan-change branch. */
   newPlanId: z.string().min(1).optional(),
-  planYear: z.number().int().min(2000).max(2100),
+  // 070 (FR-022 / L2 security) — `planYear` is NO LONGER accepted from the
+  // request body. The §86/4 fiscal year is a tax-document field that must
+  // be SERVER-derived from the authoritative cycle (`confirmRenewal`
+  // derives it via `deriveFiscalYear(cycle.period_from)`). A client-posted
+  // `planYear` is silently ignored — the non-strict schema drops unknown
+  // keys, so an attacker cannot influence the year printed/numbered on the
+  // tax invoice.
 });
 
 export async function POST(
@@ -131,7 +137,8 @@ export async function POST(
           ...(parsed.data.newPlanId !== undefined
             ? { newPlanId: parsed.data.newPlanId }
             : {}),
-          planYear: parsed.data.planYear,
+          // 070 — `planYear` intentionally NOT forwarded: the use-case
+          // derives the §86/4 fiscal year server-side from the cycle.
           actorUserId: ctx.current.user.id,
           actorRole: 'member',
           requestId: ctx.requestId,

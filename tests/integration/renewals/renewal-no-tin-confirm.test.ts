@@ -156,7 +156,9 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId,
-      planYear: 2026,
+      // 070 — `planYear` is server-derived from the cycle (period_from →
+      // deriveFiscalYear). The cycle's period_from (now-30d) is in 2026,
+      // matching the seeded membership_plans row (plan_year 2026).
       actorUserId: user.userId,
       actorRole: 'member',
       correlationId: randomUUID(),

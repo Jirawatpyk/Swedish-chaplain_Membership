@@ -21,6 +21,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asPlanYear, listPlans } from '@/modules/plans';
@@ -127,7 +128,15 @@ export default async function RenewalPortalPage({
     notFound();
   }
   const summary = summaryResult.value;
-  const planYear = new Date(summary.expiresAt).getUTCFullYear();
+  // 070 (FR-022 / L2 security) — derive the renewal fiscal year from the
+  // cycle's `period_from` via the SAME `deriveFiscalYear` the server uses to
+  // bill the §86/4 (confirmRenewal Step-3) and the F4 §87 allocator uses.
+  // Previously this read `new Date(summary.expiresAt).getUTCFullYear()` — the
+  // period-END year, which is off-by-one vs the catalogue `plan_year` for a
+  // cycle whose period crosses a calendar-year boundary. Here it ONLY scopes
+  // the plan-change selector's `listPlans` query (display); the §86/4 year is
+  // derived server-side inside confirmRenewal and is no longer client-posted.
+  const planYear = deriveFiscalYear(summary.periodFrom);
 
   // Fetch active plans for the renewal year — feeds T128 plan-change
   // selector. Falls back to single-option list (current plan only) if
@@ -238,7 +247,6 @@ export default async function RenewalPortalPage({
             <RenewalConfirmFlow
               memberId={urlMemberId}
               cycleId={summary.cycleId}
-              planYear={planYear}
               currentPlanId={summary.planIdAtCycleStart}
               currentPlanLabel={currentPlanLabel}
               availablePlans={availablePlans}

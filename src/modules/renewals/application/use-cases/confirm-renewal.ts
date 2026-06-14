@@ -63,6 +63,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
@@ -88,8 +89,18 @@ export const confirmRenewalInputSchema = z.object({
   memberId: z.string().uuid(),
   /** Optional — when present + differs from cycle.planIdAtCycleStart triggers plan-change branch. */
   newPlanId: z.string().min(1).optional(),
-  /** Calendar year (e.g. 2026) the invoice covers. Mirrors F4 createInvoiceDraft input. */
-  planYear: z.number().int().min(2000).max(2100),
+  // 070 (FR-022 / L2 security) — `planYear` REMOVED from the input. The
+  // §86/4 fiscal year (the "Membership {year}" label + the §87 numbering
+  // bucket) is a tax-document field and MUST be SERVER-derived, never
+  // client-supplied. It is now derived from the authoritative re-read
+  // cycle's `period_from` via `deriveFiscalYear` (see Step-3 below),
+  // mirroring `admin-renew-lapsed-member`. The route no longer trusts a
+  // posted `planYear`; the portal page may still pass it as a display
+  // prop, but the server ignores it. (Previously the client could POST a
+  // different fiscal year than the page rendered → wrong year on a tax
+  // document; the page also derived from `expiresAt` (period END), an
+  // off-by-one vs the catalogue plan_year for cycles crossing a year
+  // boundary.)
   actorUserId: z.string().min(1),
   actorRole: z.enum(['member', 'admin']),
   requestId: z.string().nullable().optional(),
@@ -386,11 +397,27 @@ export async function confirmRenewal(
   // server-side cycle row (already re-snapshotted by `updateFrozenPlan`
   // when the member changed plan), so its `frozenPlanPriceThb` is the
   // authoritative VAT-exclusive amount — never derived from request body.
+  //
+  // 070 (FR-022 / L2 security) — derive `planYear` SERVER-SIDE too. Like
+  // the frozen price, the §86/4's fiscal year is a tax-document field and
+  // must NOT be client-influenceable. We derive it from the authoritative
+  // re-read cycle's `period_from` using the SAME `deriveFiscalYear` the F4
+  // §87 sequential-number allocator + `admin-renew-lapsed-member` use, so a
+  // renewal invoice buckets into the identical fiscal year regardless of
+  // which path (portal confirm vs admin renew vs the F4 invoices surface)
+  // issued it. `period_from` is the period START — the membership the F2
+  // catalogue prices (and keys by `plan_year`) — so this also matches the
+  // `(plan_id, plan_year)` row `createInvoiceDraft.getAnnualFeeSatang`
+  // requires. (The prior `input.planYear`, sourced from the page's
+  // `expiresAt`/period-END `getUTCFullYear()`, was both client-tamperable
+  // AND off-by-one for cycles whose period crosses a calendar-year edge.)
+  const planYear = deriveFiscalYear(cycleAfterPlanChange.periodFrom);
+
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycleAfterPlanChange.planIdAtCycleStart,
-    planYear: input.planYear,
+    planYear,
     frozenPlanPriceThb: cycleAfterPlanChange.frozenPlanPriceThb,
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,

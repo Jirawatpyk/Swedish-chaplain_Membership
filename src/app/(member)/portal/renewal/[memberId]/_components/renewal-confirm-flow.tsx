@@ -67,7 +67,11 @@ export interface RenewalPlanOption {
 interface RenewalConfirmFlowProps {
   readonly memberId: string;
   readonly cycleId: string;
-  readonly planYear: number;
+  // 070 (FR-022 / L2 security) — `planYear` removed. The §86/4 fiscal year
+  // is now derived SERVER-SIDE from the cycle (confirmRenewal →
+  // deriveFiscalYear(cycle.period_from)); the client no longer posts it, so
+  // it must not be a prop here (a client-supplied year cannot reach the tax
+  // document).
   readonly currentPlanId: string;
   readonly currentPlanLabel: string;
   readonly availablePlans: ReadonlyArray<RenewalPlanOption>;
@@ -107,7 +111,6 @@ function reportClientError(payload: {
 export function RenewalConfirmFlow({
   memberId,
   cycleId,
-  planYear,
   currentPlanId,
   currentPlanLabel,
   availablePlans,
@@ -125,11 +128,13 @@ export function RenewalConfirmFlow({
     setError(null);
     startTransition(async () => {
       try {
+        // 070 — `planYear` is NOT posted: the server derives the §86/4
+        // fiscal year from the cycle. Only the cycleId (+ optional plan
+        // change) is client input.
         const body: {
           cycleId: string;
-          planYear: number;
           newPlanId?: string;
-        } = { cycleId, planYear };
+        } = { cycleId };
         if (selectedPlanId !== currentPlanId) {
           body.newPlanId = selectedPlanId;
         }
