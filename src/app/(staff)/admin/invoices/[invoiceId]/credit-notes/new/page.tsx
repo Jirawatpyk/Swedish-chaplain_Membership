@@ -14,7 +14,7 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -38,8 +38,7 @@ export default async function NewCreditNotePage({
   const t = await getTranslations('admin.creditNotes.new');
 
   const hdrs = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   const invoiceResult = await getInvoice(makeGetInvoiceDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,

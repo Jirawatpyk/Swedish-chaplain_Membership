@@ -93,12 +93,7 @@
       "portalMismatch": "Det här kontot kan inte logga in här."
     },
     "memberPortal": {
-      "title": "Medlemsportal",
-      "welcome": "Välkommen, {name}",
-      "versionBadge": "v1.0",
-      "intro": "Du är inloggad i SweCham medlemsportal. Den fullständiga upplevelsen rullas ut fas för fas.",
-      "contactHeading": "Behöver du hjälp?",
-      "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
+      "title": "Medlemsportal"
     },
     "emailChangeRevert": {
       "title": "Återställ e-postbyte",
@@ -192,7 +187,12 @@
   },
   "common": {
     "yes": "Ja",
-    "no": "Nej"
+    "no": "Nej",
+    "languageOptions": {
+      "en": "English (engelska)",
+      "th": "ไทย (thailändska)",
+      "sv": "Svenska"
+    }
   },
   "directorySettings": {
     "title": "Katalogpost",
@@ -806,11 +806,6 @@
       "title": "Språk för aviseringar",
       "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Spara",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
@@ -913,6 +908,8 @@
         "selectRow": "Markera {company}",
         "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
         "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen.",
+        "membershipLapsed": "Förfallen",
+        "membershipLapsedSr": "Medlemskap förfallet — kräver förnyelse",
         "tableCaption": "Medlemsregister"
       },
       "emptyStates": {
@@ -2375,11 +2372,6 @@
           "updatedAt": "Senast ändrad",
           "actions": "Åtgärder"
         },
-        "locale": {
-          "en": "English",
-          "th": "ไทย",
-          "sv": "Svenska"
-        },
         "rowAction": {
           "edit": "Redigera",
           "editAria": "Redigera {name}",
@@ -2491,6 +2483,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filtrera efter förnyelsebrådska",
+        "aria_label_scroll": "Flikar för förnyelsebrådska, rullningsbara",
         "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
         "t_90": "T-90",
         "t_60": "T-60",
@@ -3645,13 +3638,6 @@
     "integrations": {
       "eventcreate": {
         "_bootstrap": "EventCreate-integration",
-        "placeholder": {
-          "title": "EventCreate-integration",
-          "subtitle": "Konfigurera den Zapier-drivna importpipelinen för deltagare.",
-          "heading": "Kommer snart",
-          "body": "Konfigurationsguiden för EventCreate-integrationen lanseras inom kort. Kontakta tills vidare administratören för hjälp med att konfigurera din Zap.",
-          "backToEvents": "Tillbaka till evenemang"
-        },
         "page": {
           "title": "EventCreate-integration",
           "subtitle": "Anslut Zapier så att deltagarregistreringar från EventCreate importeras automatiskt.",
@@ -3875,6 +3861,10 @@
       "events": "Evenemang",
       "sections": {
         "main": "Allmänt",
+        "membership": "Medlemskap",
+        "finance": "Ekonomi",
+        "engagement": "Engagemang",
+        "system": "System",
         "settings": "Inställningar"
       },
       "collapse": "Fäll ihop sidofältet",
@@ -3882,6 +3872,7 @@
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
       "invoices": "Fakturor",
+      "creditNotes": "Kreditnotor",
       "broadcasts": "Utskick",
       "renewals": "Förnyelser",
       "audit": "Granskningslogg",
@@ -3961,6 +3952,7 @@
         "overdueSub": "Försenad med {days} dagar",
         "lapsedValue": "Medlemskap upphört",
         "lapsedSub": "Ditt medlemskap har upphört. Förnya för att återställa dina förmåner.",
+        "renewNow": "Förnya nu",
         "errorValue": "Status ej tillgänglig",
         "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
         "emptyValue": "Välkommen",
@@ -4025,11 +4017,6 @@
       "title": "Språk för aviseringar",
       "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "options": {
-        "en": "English",
-        "th": "ไทย",
-        "sv": "Svenska"
-      },
       "save": "Spara inställning",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
@@ -4483,12 +4470,7 @@
       "saving": "Sparar…",
       "saveSuccess": "Profilen har uppdaterats.",
       "saveError": "Kunde inte spara ändringar. Försök igen.",
-      "noChanges": "Inga ändringar att spara.",
-      "languageOptions": {
-        "en": "English (engelska)",
-        "th": "ไทย (thailändska)",
-        "sv": "Svenska"
-      }
+      "noChanges": "Inga ändringar att spara."
     },
     "invite": {
       "pageTitle": "Bjud in kollega",
@@ -4509,12 +4491,7 @@
       "sendSuccess": "Inbjudan har skickats.",
       "sendError": "Kunde inte skicka inbjudan. Försök igen.",
       "emailTaken": "Denna e-postadress är redan registrerad.",
-      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen.",
-      "languageOptions": {
-        "en": "English (engelska)",
-        "th": "ไทย (thailändska)",
-        "sv": "Svenska"
-      }
+      "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen."
     },
     "payment": {
       "payNow": "Betala nu",
@@ -4544,7 +4521,7 @@
         "cardAriaLabel": "Kort — byt betalningsmetod",
         "promptpayAriaLabel": "PromptPay — byt betalningsmetod",
         "cardPlaceholder": "Förbereder säkert betalningsformulär…",
-        "promptpayPlaceholder": "PromptPay kommer snart."
+        "promptpayPlaceholder": "Förbereder PromptPay-QR-kod…"
       },
       "success": {
         "title": "Betalningen mottagen",

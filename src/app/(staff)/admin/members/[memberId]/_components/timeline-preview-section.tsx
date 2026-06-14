@@ -33,7 +33,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -58,8 +58,7 @@ export async function TimelinePreviewSection({
   const tTimeline = await getTranslations('admin.members.timeline');
 
   const h = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: h });
-  const tenant = resolveTenantFromRequest(pseudoReq as never);
+  const tenant = resolveTenantFromHeaders(h);
   const requestId = requestIdFromHeaders(h);
   const deps = buildMembersDeps(tenant);
 

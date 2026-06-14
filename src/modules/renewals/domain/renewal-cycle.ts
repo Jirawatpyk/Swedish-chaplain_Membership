@@ -284,3 +284,23 @@ export function daysUntilExpiry(cycle: RenewalCycle, now: Date): number {
   const ms = expires - now.getTime();
   return Math.ceil(ms / (24 * 60 * 60 * 1000));
 }
+
+/**
+ * A membership has LAPSED when its most-recent cycle is ended-terminal
+ * (`lapsed` or `cancelled` — NOT `completed`, which means the member
+ * paid/renewed and is in good standing) AND its coverage has ended
+ * (`expiresAt` in the past, or unparseable → still treated as lapsed).
+ *
+ * The terminal-status gate is load-bearing: a NON-terminal cycle that is
+ * merely past `expiresAt` is `overdue` (in grace), NOT lapsed — so the gate
+ * must check the status FIRST, before the expiry. This is the single source
+ * of truth for "lapsed", consumed by both the portal dashboard's
+ * `deriveMembershipStat` and the admin member-table badge.
+ */
+export function isMembershipLapsed(cycle: RenewalCycle, now: Date): boolean {
+  if (!isTerminalCycleStatus(cycle.status) || cycle.status === 'completed') {
+    return false;
+  }
+  const expiresMs = Date.parse(cycle.expiresAt);
+  return !Number.isFinite(expiresMs) || expiresMs < now.getTime();
+}

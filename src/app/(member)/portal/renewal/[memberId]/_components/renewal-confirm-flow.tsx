@@ -29,7 +29,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
@@ -215,10 +215,21 @@ export function RenewalConfirmFlow({
             disabled={isPending}
           >
             <SelectTrigger id="renewal-plan-select" className="w-full">
-              <SelectValue
+              {/*
+                067 fix — Base UI's <Select.Value> renders the raw `value` (the
+                plan id, e.g. "regular"), NOT the selected item's text. Map the
+                id back to the localised plan name via the project's
+                TranslatedSelectValue so the collapsed trigger shows the name.
+                (The open dropdown options already render the name correctly —
+                this was a trigger-only defect.)
+              */}
+              <TranslatedSelectValue
                 placeholder={tSelector('placeholder', {
                   defaultLabel: currentPlanLabel,
                 })}
+                translate={(value) =>
+                  availablePlans.find((p) => p.planId === value)?.label ?? value
+                }
               />
             </SelectTrigger>
             <SelectContent>

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { ExportStatus } from '@/modules/insights';
+import { exportStatusVariant } from '@/lib/export-status-variant';
 
 export interface RecentExportRow {
   readonly jobId: string;
@@ -26,24 +27,6 @@ export interface RecentExportRow {
   readonly downloadable: boolean;
   readonly requestedAt: string;
 }
-
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
-
-/**
- * Status → badge variant (M4). Text already encodes meaning (WCAG 1.4.1); the
- * variant is a redundant visual cue: ready/delivered = actionable (default),
- * failed/expired = attention (destructive), in-flight = neutral (secondary).
- * Keyed by the full `ExportStatus` union via `satisfies`, so adding a status is
- * a compile error here (no silent fall-through to a neutral badge).
- */
-const STATUS_VARIANT = {
-  requested: 'secondary',
-  processing: 'secondary',
-  ready: 'default',
-  delivered: 'default',
-  expired: 'destructive',
-  failed: 'destructive',
-} as const satisfies Record<ExportStatus, BadgeVariant>;
 
 export interface RecentExportsLabels {
   readonly heading: string;
@@ -87,7 +70,7 @@ export function RecentExports({
               <TableRow key={row.jobId}>
                 <TableCell className="font-medium">{row.kindLabel}</TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANT[row.status]}>{row.statusLabel}</Badge>
+                  <Badge variant={exportStatusVariant(row.status)}>{row.statusLabel}</Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{row.requestedAt}</TableCell>
                 <TableCell className="text-right">

@@ -66,12 +66,23 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
       page.getByRole('region', { name: /welcome.*first renewal/i }),
     ).toBeVisible();
 
-    // AS2 — frozen plan summary card visible. The seed uses
-    // 50000.00 THB / 12 months / regular tier.
+    // AS2 — frozen plan summary card visible. The seed uses 50000.00 THB /
+    // 12 months / regular tier. The page formats the locked-in price as a
+    // currency (UX R5/C1: `formatter.number(..., {style:'currency',
+    // currency:'THB'})` → "THB 50,000.00" for the EN member), NOT the raw
+    // "50000.00" — assert the rendered, comma-grouped value.
     await expect(
       page.getByRole('heading', { name: /membership plan/i }),
     ).toBeVisible();
-    await expect(page.getByText('50000.00')).toBeVisible();
+    // S8 — ICU currency formatting uses a NARROW NO-BREAK SPACE (U+202F) or
+    // NO-BREAK SPACE (U+00A0) as the group/spacing separator depending on the
+    // Node ICU build, NOT an ASCII space. A literal `'THB 50,000.00'` (ASCII
+    // space) is brittle across runtimes — match the digits with a separator
+    // class tolerant of ASCII space / U+00A0 / U+202F between "THB" and the
+    // amount.
+    await expect(
+      page.getByText(/THB[\s  ]?50,000\.00/),
+    ).toBeVisible();
     await expect(page.getByText('12 months')).toBeVisible();
 
     // Benefit summary fallback (benefitsAvailable=false in MVP).
@@ -83,6 +94,23 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     const confirmBtn = page.getByRole('button', { name: /confirm renewal/i });
     await expect(confirmBtn).toBeVisible();
     await expect(confirmBtn).toBeEnabled();
+
+    // 067 regression — the plan-change trigger shows the localised plan NAME,
+    // not the raw plan id. Base UI's <Select.Value> renders the raw value
+    // ("regular") by default; the page maps it back to the name via
+    // TranslatedSelectValue. The seed's current plan ('regular') → "Regular
+    // Corporate". (Asserting `toContainText('Regular Corporate')` on the
+    // collapsed trigger fails if it regresses to showing "regular".)
+    const planSelect = page.getByRole('combobox', { name: /choose a plan/i });
+    await expect(planSelect).toBeVisible();
+    await expect(planSelect).toContainText('Regular Corporate');
+    // S9 — the displayed label is the localised plan NAME, decoupled from the
+    // seed's raw `plan_id_at_cycle_start='regular'`. The 'Regular Corporate'
+    // string above is the DB plan record's display name (not something the seed
+    // controls), so pin the actual regression too: the collapsed trigger must
+    // NOT leak the raw plan id. This fails if TranslatedSelectValue regresses to
+    // rendering the raw value, independent of whatever the plan is named.
+    await expect(planSelect).not.toContainText(/^\s*regular\s*$/i);
   });
 
   test('I12 review-fix: clicking confirm posts to API + redirects to /portal/billing/<invoiceId>/pay', async ({

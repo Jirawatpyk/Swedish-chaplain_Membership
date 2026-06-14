@@ -42,7 +42,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 // --- Form shape --------------------------------------------------------------
@@ -126,14 +126,6 @@ export type MemberFormValues = z.infer<
   ReturnType<typeof buildMemberFormSchema>
 >;
 
-// Language endonyms (shown in their own language) — full names so screen
-// readers announce "English" / "ภาษาไทย" / "Svenska" rather than spelling
-// out the "EN" / "TH" / "SV" abbreviations letter by letter (a11y).
-const LANG_LABELS: Record<'en' | 'th' | 'sv', string> = {
-  en: 'English',
-  th: 'ภาษาไทย',
-  sv: 'Svenska',
-};
 
 // --- Props -------------------------------------------------------------------
 
@@ -198,6 +190,7 @@ export function MemberForm({
   const t = useTranslations('admin.members.create');
   const tEdit = useTranslations('admin.members.edit');
   const tf = useTranslations('admin.members.create.fields');
+  const tLang = useTranslations('common');
   const submitLabel = mode === 'edit' ? tEdit('submit') : t('submit');
   const submittingLabel =
     mode === 'edit' ? tEdit('submitting') : t('submitting');
@@ -421,14 +414,12 @@ export function MemberForm({
                         raw value unless we pass a render function that
                         maps value → display. Lookup against the plans
                         array; fall back to placeholder when unset. */}
-                    <SelectValue placeholder={tf('planPlaceholder')}>
-                      {(value: string | null) => {
-                        const match = value
-                          ? plans.find((p) => p.plan_id === value)
-                          : null;
-                        return match ? match.display_name : tf('planPlaceholder');
-                      }}
-                    </SelectValue>
+                    <TranslatedSelectValue
+                      placeholder={tf('planPlaceholder')}
+                      translate={(value) =>
+                        plans.find((p) => p.plan_id === value)?.display_name ?? null
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {plans.map((p) => (
@@ -661,17 +652,23 @@ export function MemberForm({
                     aria-required="true"
                     className="w-full"
                   >
-                    <SelectValue>
-                      {(value: string | null) =>
-                        LANG_LABELS[(value as 'en' | 'th' | 'sv') ?? 'en'] ??
-                        LANG_LABELS.en
+                    {/* 067 #4 review-fix — no `?? LANG_LABELS.en` fallback is
+                        needed here (unlike a free-text Select): the only values
+                        that reach `translate` come from this field, which the
+                        zod schema pins to `z.enum(['en','th','sv'])`, and
+                        `common.languageOptions.{en,th,sv}` exist in all three
+                        locale files (verified). So every reachable value
+                        resolves — there is no MISSING_MESSAGE path to guard. */}
+                    <TranslatedSelectValue
+                      translate={(value) =>
+                        tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
                       }
-                    </SelectValue>
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">{LANG_LABELS.en}</SelectItem>
-                    <SelectItem value="th">{LANG_LABELS.th}</SelectItem>
-                    <SelectItem value="sv">{LANG_LABELS.sv}</SelectItem>
+                    <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
+                    <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
+                    <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

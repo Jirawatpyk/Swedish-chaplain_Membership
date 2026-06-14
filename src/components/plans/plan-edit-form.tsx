@@ -27,7 +27,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { LocaleTextInput } from './locale-text-input';
@@ -165,7 +165,11 @@ export function PlanEditForm({
                 items={MEMBER_TYPE_OPTIONS}
               >
                 <SelectTrigger aria-label={t('memberTypeScope')} className="w-full">
-                  <SelectValue />
+                  <TranslatedSelectValue
+                    translate={(v) =>
+                      MEMBER_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? null
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {MEMBER_TYPE_OPTIONS.map((o) => (

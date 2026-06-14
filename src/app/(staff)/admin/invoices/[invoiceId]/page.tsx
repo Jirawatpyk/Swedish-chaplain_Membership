@@ -24,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
@@ -137,8 +137,7 @@ export default async function InvoiceDetailPage({
 
   const hdrs = await headers();
   const requestId = requestIdFromHeaders(hdrs);
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   const result = await getInvoice(makeGetInvoiceDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,

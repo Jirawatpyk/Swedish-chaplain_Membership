@@ -1,53 +1,78 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  filterNavConfig,
   isNavGroup,
   isNavItemActive,
   memberNavConfig,
   memberBottomTabItems,
   staffNavConfig,
+  type NavConfig,
   type NavGroup,
   type NavItem,
 } from '@/config/nav';
 
 describe('staffNavConfig', () => {
-  it('has exactly 2 sections', () => {
-    expect(staffNavConfig.sections).toHaveLength(2);
+  it('has exactly 6 sections: Overview, Membership, Finance, Engagement, System, Settings', () => {
+    expect(staffNavConfig.sections).toHaveLength(6);
   });
 
-  it('first section has 10 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users, Audit, Directory (F9 US2 Audit + US5 Directory entries added)', () => {
-    const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(10);
-    expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
-    expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
-    expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
-    expect(mainSection.items[3]!.titleKey).toBe('nav.staff.invoices');
-    expect(mainSection.items[4]!.titleKey).toBe('nav.staff.broadcasts');
-    // F6 Phase 4/5 — Events entry inserted between Broadcasts and
-    // Renewals to keep ops-facing surfaces (Broadcasts → Events) above
-    // member-lifecycle surfaces (Renewals → Users).
-    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.events');
-    const eventsItem = mainSection.items[5]! as NavItem;
-    expect(eventsItem.href).toBe('/admin/events');
-    expect(mainSection.items[6]!.titleKey).toBe('nav.staff.renewals');
-    expect(mainSection.items[7]!.titleKey).toBe('nav.staff.users');
-    // F9 US2 — audit log viewer entry appended after Users.
-    expect(mainSection.items[8]!.titleKey).toBe('nav.staff.audit');
-    // F9 US5 — member directory entry appended after Audit.
-    expect(mainSection.items[9]!.titleKey).toBe('nav.staff.directory');
+  it('section 0 (Overview) has no header and only Dashboard', () => {
+    const overview = staffNavConfig.sections[0]!;
+    expect(overview.titleKey).toBeUndefined();
+    expect(overview.items).toHaveLength(1);
+    expect(overview.items[0]!.titleKey).toBe('nav.staff.dashboard');
+    expect((overview.items[0]! as NavItem).href).toBe('/admin');
   });
 
-  it('second section is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate (F7.1a US2 entry added)', () => {
-    // R7 consolidation removed the Fee Configuration page. VAT +
-    // currency + registration fee all live in Invoice Settings now
-    // (tenant_invoice_settings is the authoritative source). F8 added
-    // Reminder schedules at /admin/settings/renewals/schedules. F6
-    // Phase 5 added EventCreate integration setup wizard. F7.1a US2
-    // added Broadcast settings (image-source allowlist) at
-    // /admin/settings/broadcasts (relocated from /admin/broadcasts/
-    // settings to align with centralised-settings IA + auto-derived
-    // breadcrumb).
-    const settingsSection = staffNavConfig.sections[1]!;
+  it('section 1 (Membership) groups Members, Plans, Renewals, Directory', () => {
+    const membership = staffNavConfig.sections[1]!;
+    expect(membership.titleKey).toBe('nav.staff.sections.membership');
+    expect(membership.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.members',
+      'nav.staff.plans',
+      'nav.staff.renewals',
+      'nav.staff.directory',
+    ]);
+  });
+
+  it('section 2 (Finance) holds Invoices, Credit Notes', () => {
+    const finance = staffNavConfig.sections[2]!;
+    expect(finance.titleKey).toBe('nav.staff.sections.finance');
+    expect(finance.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.invoices',
+      'nav.staff.creditNotes',
+    ]);
+    expect((finance.items[0]! as NavItem).href).toBe('/admin/invoices');
+    expect((finance.items[1]! as NavItem).href).toBe('/admin/credit-notes');
+  });
+
+  it('section 3 (Engagement) groups Broadcasts, Events', () => {
+    const engagement = staffNavConfig.sections[3]!;
+    expect(engagement.titleKey).toBe('nav.staff.sections.engagement');
+    expect(engagement.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.broadcasts',
+      'nav.staff.events',
+    ]);
+    expect((engagement.items[1]! as NavItem).href).toBe('/admin/events');
+  });
+
+  it('section 4 (System) groups Users, Audit', () => {
+    const system = staffNavConfig.sections[4]!;
+    expect(system.titleKey).toBe('nav.staff.sections.system');
+    expect(system.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.users',
+      'nav.staff.audit',
+    ]);
+  });
+
+  it('section 5 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
+    // R7 consolidation removed the Fee Configuration page (VAT + currency
+    // + registration fee live in Invoice Settings). F8 added Reminder
+    // schedules; F6 added the EventCreate setup wizard; F7.1a US2 added
+    // Broadcast settings (image-source allowlist) at /admin/settings/
+    // broadcasts. The Settings header is unchanged by the 5-group regroup.
+    const settingsSection = staffNavConfig.sections[5]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
     expect(settingsSection.items).toHaveLength(4);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
@@ -107,6 +132,157 @@ describe('staffNavConfig', () => {
         }
       }
     }
+  });
+});
+
+describe('filterNavConfig (role + visibility-flag filtering)', () => {
+  const hrefs = (cfg: NavConfig) =>
+    cfg.sections.flatMap((s) => s.items.map((i) => (i as NavItem).href));
+
+  it('admin sees every staff entry incl. both admin-only Settings pages', () => {
+    const filtered = filterNavConfig(staffNavConfig, {}, 'admin');
+    expect(filtered.sections).toHaveLength(6);
+    const all = hrefs(filtered);
+    expect(all).toContain('/admin/settings/broadcasts');
+    expect(all).toContain('/admin/settings/integrations/eventcreate');
+  });
+
+  it('manager drops the 2 admin-only Settings pages, keeps everything else', () => {
+    const filtered = filterNavConfig(staffNavConfig, {}, 'manager');
+    // Settings section survives — Invoice Settings + Renewal Schedules stay
+    // manager-readable (rendered read-only), so no section is emptied.
+    expect(filtered.sections).toHaveLength(6);
+    expect(filtered.sections[5]!.items.map((i) => (i as NavItem).href)).toEqual([
+      '/admin/settings/invoicing',
+      '/admin/settings/renewals/schedules',
+    ]);
+    const all = hrefs(filtered);
+    expect(all).not.toContain('/admin/settings/broadcasts');
+    expect(all).not.toContain('/admin/settings/integrations/eventcreate');
+    // Read-only-but-visible surfaces stay (manager reads them; the page
+    // disables writes, the nav entry is NOT hidden).
+    expect(all).toContain('/admin/users');
+    expect(all).toContain('/admin/invoices');
+    expect(all).toContain('/admin/credit-notes');
+    expect(all).toContain('/admin/audit');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S16 (067 speckit-review) — the live staffNavConfig today has NO flagged item
+// and NO NavGroup, so `filterNavConfig`'s `visibilityFlag` branch and the new
+// NavGroup-children recursion (S17) are unexercised by the config-shape tests
+// above. These synthetic-config tests pin both code paths directly so a
+// regression (flag ignored, or an admin-only child leaking to a manager
+// through a group) fails loudly. Synthetic items follow the same `{} as never`
+// icon shape used by the isNavGroup type-guard tests below — filterNavConfig is
+// pure and never renders the icon.
+// ---------------------------------------------------------------------------
+describe('filterNavConfig — synthetic visibilityFlag + NavGroup recursion (S16)', () => {
+  const ICON = {} as never;
+
+  function item(href: string, extra?: Partial<NavItem>): NavItem {
+    return {
+      titleKey: `key.${href}`,
+      icon: ICON,
+      href,
+      activePattern: href as NavItem['activePattern'],
+      ...extra,
+    };
+  }
+
+  it('drops a flagged item when its visibilityFlag is OFF, keeps an always-on sibling', () => {
+    const config: NavConfig = {
+      sections: [
+        {
+          titleKey: 'sec',
+          items: [
+            item('/always'),
+            item('/flagged', { visibilityFlag: 'eventcreateConfigured' }),
+          ],
+        },
+      ],
+    };
+    // Flag absent (→ false): the flagged item is dropped, the sibling stays.
+    const off = filterNavConfig(config, {}, 'admin');
+    const offHrefs = off.sections[0]!.items.map((i) => (i as NavItem).href);
+    expect(offHrefs).toEqual(['/always']);
+  });
+
+  it('keeps a flagged item when its visibilityFlag is ON', () => {
+    const config: NavConfig = {
+      sections: [
+        {
+          titleKey: 'sec',
+          items: [item('/flagged', { visibilityFlag: 'eventcreateConfigured' })],
+        },
+      ],
+    };
+    const on = filterNavConfig(config, { eventcreateConfigured: true }, 'admin');
+    expect(on.sections).toHaveLength(1);
+    expect((on.sections[0]!.items[0]! as NavItem).href).toBe('/flagged');
+  });
+
+  it('drops a section that is emptied by filtering (no orphan header)', () => {
+    const config: NavConfig = {
+      sections: [
+        {
+          titleKey: 'flagged-only',
+          items: [item('/flagged', { visibilityFlag: 'eventcreateConfigured' })],
+        },
+        { titleKey: 'survivor', items: [item('/keep')] },
+      ],
+    };
+    // Flag off → the first section empties → it is removed; only 'survivor' left.
+    const filtered = filterNavConfig(config, {}, 'admin');
+    expect(filtered.sections).toHaveLength(1);
+    expect(filtered.sections[0]!.titleKey).toBe('survivor');
+  });
+
+  it('recurses into a NavGroup: an admin-only child is hidden from the manager role', () => {
+    const group: NavGroup = {
+      titleKey: 'group',
+      icon: ICON,
+      activePattern: '/group',
+      children: [
+        item('/group/shared'),
+        item('/group/admin-only', { roles: ['admin'] }),
+      ],
+    };
+    const config: NavConfig = {
+      sections: [{ titleKey: 'sec', items: [group] }],
+    };
+
+    // Manager: the admin-only child is dropped, the shared child survives, and
+    // the group itself stays (it still has ≥1 visible child).
+    const forManager = filterNavConfig(config, {}, 'manager');
+    const mgrGroup = forManager.sections[0]!.items[0]! as NavGroup;
+    expect(isNavGroup(mgrGroup)).toBe(true);
+    expect(mgrGroup.children.map((c) => c.href)).toEqual(['/group/shared']);
+
+    // Admin: sees both children (proves the manager drop was role-driven).
+    const forAdmin = filterNavConfig(config, {}, 'admin');
+    const adminGroup = forAdmin.sections[0]!.items[0]! as NavGroup;
+    expect(adminGroup.children.map((c) => c.href)).toEqual([
+      '/group/shared',
+      '/group/admin-only',
+    ]);
+  });
+
+  it('drops a NavGroup (and its now-empty section) when filtering leaves it with no children', () => {
+    const group: NavGroup = {
+      titleKey: 'group',
+      icon: ICON,
+      activePattern: '/group',
+      children: [item('/group/admin-only', { roles: ['admin'] })],
+    };
+    const config: NavConfig = {
+      sections: [{ titleKey: 'sec', items: [group] }],
+    };
+    // Manager: the only child is admin-only → group has 0 visible children →
+    // group dropped → section emptied → section dropped → zero sections.
+    const forManager = filterNavConfig(config, {}, 'manager');
+    expect(forManager.sections).toHaveLength(0);
   });
 });
 

@@ -31,22 +31,28 @@ export interface ProblemResponseOptions {
 }
 
 /**
- * Build a `Content-Type: application/problem+json` `NextResponse`
- * with a uniform body shape. `kind` is appended to the canonical
- * `chamber-os.app/errors/` URI to form the problem type.
+ * Build a `NextResponse` carrying an RFC 7807 problem-detail body with a
+ * uniform shape. `kind` is appended to the canonical `chamber-os.app/errors/`
+ * URI to form the problem type.
+ *
+ * NOTE: `NextResponse.json` emits `Content-Type: application/json` (not the
+ * RFC 7807 `application/problem+json`). The JSON body still follows the
+ * problem-detail shape; the doc here matches the actual emitted header (S19
+ * speckit-review). Callers/consumers parse on the body shape, not the media
+ * type, so the `application/json` content-type is intentional and load-bearing.
  */
 export function problemResponse(
   status: number,
   kind: string,
   title: string,
-  detail: string,
+  detail?: string,
   options?: ProblemResponseOptions,
 ): NextResponse {
   const body: ProblemDetail & Record<string, unknown> = {
     type: `${PROBLEM_TYPE_BASE}${kind}`,
     title,
     status,
-    detail,
+    ...(detail !== undefined ? { detail } : {}),
     ...(options?.extras ?? {}),
   };
   return NextResponse.json(body, {

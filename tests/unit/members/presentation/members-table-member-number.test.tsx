@@ -94,6 +94,7 @@ const row: MembersTableRow = {
   plan_year: 2026,
   plan_display_name: 'Corporate',
   status: 'active',
+  membership_lapsed: false,
   engagement: null,
   last_activity_at: null,
   primary_contact: null,

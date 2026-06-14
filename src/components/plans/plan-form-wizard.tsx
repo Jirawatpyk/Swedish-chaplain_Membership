@@ -31,7 +31,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Stepper, type StepperStep } from '@/components/ui/stepper';
@@ -311,7 +311,11 @@ export function PlanFormWizard({
                 items={CATEGORY_OPTIONS}
               >
                 <SelectTrigger aria-label={tLabels('planCategory')} className="w-full">
-                  <SelectValue />
+                  <TranslatedSelectValue
+                    translate={(v) =>
+                      CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? null
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {CATEGORY_OPTIONS.map((o) => (
@@ -330,7 +334,11 @@ export function PlanFormWizard({
                 items={MEMBER_TYPE_OPTIONS}
               >
                 <SelectTrigger aria-label={tLabels('memberTypeScope')} className="w-full">
-                  <SelectValue />
+                  <TranslatedSelectValue
+                    translate={(v) =>
+                      MEMBER_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? null
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {MEMBER_TYPE_OPTIONS.map((o) => (

@@ -22,7 +22,7 @@ import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
 // G-5 — sibling-CN navigation. The list is an admin-view convenience
@@ -84,8 +84,7 @@ export default async function CreditNoteDetailPage({
 
   const hdrs = await headers();
   const requestId = requestIdFromHeaders(hdrs);
-  const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(hdrs);
 
   const result = await getCreditNote(makeGetCreditNoteDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,

@@ -26,7 +26,7 @@ import { requireSession } from '@/lib/auth-session';
 // documented path.
  
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
-import type { Role } from '@/modules/auth';
+import { ROLES, USER_STATUSES, type Role, type UserStatus } from '@/modules/auth';
 import { UserListTable } from '@/components/auth/user-list-table';
 import { UsersFilters } from '@/components/auth/users-filters';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
@@ -49,8 +49,8 @@ interface SearchParams {
   readonly status?: string;
 }
 
-const VALID_ROLES = new Set(['admin', 'manager', 'member']);
-const VALID_STATUSES = new Set(['active', 'disabled', 'pending']);
+const VALID_ROLES = new Set<string>(ROLES);
+const VALID_STATUSES = new Set<string>(USER_STATUSES);
 
 export default async function AdminUsersPage({
   searchParams,
@@ -70,7 +70,7 @@ export default async function AdminUsersPage({
       : undefined;
   const status =
     query.status && VALID_STATUSES.has(query.status)
-      ? (query.status as 'active' | 'disabled' | 'pending')
+      ? (query.status as UserStatus)
       : undefined;
 
   return (
@@ -125,7 +125,7 @@ async function UsersDataSection({
   page: number;
   q?: string;
   role?: Role;
-  status?: 'active' | 'disabled' | 'pending';
+  status?: UserStatus;
 }) {
   const offset = (page - 1) * USERS_PAGE_SIZE;
   const filter = {

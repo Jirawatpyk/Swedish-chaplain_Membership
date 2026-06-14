@@ -66,6 +66,11 @@ export function AdminTemplateLibrary({
   rows,
 }: Props): React.ReactElement | null {
   const t = useTranslations('admin.broadcasts.templates');
+  // Locale labels moved to the single-source `common.languageOptions` (i18n
+  // dedup); the old `admin.broadcasts.templates.locale.{en,th,sv}` sub-object
+  // was removed, so read from `common` like template-form.tsx does — else
+  // every template row throws MISSING_MESSAGE at runtime.
+  const tLang = useTranslations('common');
   const locale = useLocale();
 
   // UX M-2 fix 2026-05-21 (review finding enterprise-ux-designer M-2):
@@ -272,7 +277,7 @@ export function AdminTemplateLibrary({
                     </span>
                   </TableCell>
                   <TableCell className="text-caption text-muted-foreground">
-                    {t(`locale.${tpl.locale}`)}
+                    {tLang(`languageOptions.${tpl.locale}`)}
                   </TableCell>
                   <TableCell className="text-right hidden sm:table-cell tabular-nums">
                     {tpl.startedFromCount}

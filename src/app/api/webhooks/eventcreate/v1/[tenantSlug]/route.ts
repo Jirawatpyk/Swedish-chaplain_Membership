@@ -44,6 +44,7 @@ import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { eventsTracer } from '@/lib/otel-tracer';
 import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
+import { problemResponse } from '@/lib/http/problem-response';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
 import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
@@ -87,76 +88,43 @@ export const dynamic = 'force-dynamic';
 // ---------------------------------------------------------------------------
 
 function bodyOversizedResponse(): NextResponse {
-  return NextResponse.json(
-    {
-      type: 'https://chamber-os.app/errors/payload-too-large',
-      title: 'Payload too large',
-      status: 413,
-      detail: `Webhook body exceeds the ${MAX_WEBHOOK_BODY_BYTES} byte limit.`,
-    },
-    { status: 413 },
+  return problemResponse(
+    413,
+    'payload-too-large',
+    'Payload too large',
+    `Webhook body exceeds the ${MAX_WEBHOOK_BODY_BYTES} byte limit.`,
   );
 }
 
 function genericUnauthorized(): NextResponse {
-  return NextResponse.json(
-    {
-      type: 'https://chamber-os.app/errors/webhook-unauthorized',
-      title: 'Webhook authentication failed',
-      status: 401,
-      detail: 'Signature or timestamp validation failed. See audit log for outcome.',
-    },
-    { status: 401 },
+  return problemResponse(
+    401,
+    'webhook-unauthorized',
+    'Webhook authentication failed',
+    'Signature or timestamp validation failed. See audit log for outcome.',
   );
 }
 
 function notFoundResponse(): NextResponse {
-  return NextResponse.json(
-    {
-      type: 'https://chamber-os.app/errors/not-found',
-      title: 'Not found',
-      status: 404,
-    },
-    { status: 404 },
-  );
+  return problemResponse(404, 'not-found', 'Not found');
 }
 
 function ingestDisabledResponse(): NextResponse {
-  return NextResponse.json(
-    {
-      type: 'https://chamber-os.app/errors/ingest-disabled',
-      title: 'Ingest temporarily disabled',
-      status: 503,
-      detail: 'Tenant ingest is currently paused. Retry later.',
-    },
-    {
-      status: 503,
-      headers: { 'Retry-After': '3600' },
-    },
+  return problemResponse(
+    503,
+    'ingest-disabled',
+    'Ingest temporarily disabled',
+    'Tenant ingest is currently paused. Retry later.',
+    { headers: { 'Retry-After': '3600' } },
   );
 }
 
 function badRequestResponse(detail: string): NextResponse {
-  return NextResponse.json(
-    {
-      type: 'https://chamber-os.app/errors/malformed-webhook',
-      title: 'Bad request',
-      status: 400,
-      detail,
-    },
-    { status: 400 },
-  );
+  return problemResponse(400, 'malformed-webhook', 'Bad request', detail);
 }
 
 function internalErrorResponse(): NextResponse {
-  return NextResponse.json(
-    {
-      type: 'https://chamber-os.app/errors/internal-error',
-      title: 'Internal error',
-      status: 500,
-    },
-    { status: 500 },
-  );
+  return problemResponse(500, 'internal-error', 'Internal error');
 }
 
 // ---------------------------------------------------------------------------
@@ -287,14 +255,11 @@ export async function POST(
             'unsupported_media_type',
           );
           span.setAttribute('f6.outcome', 'unsupported_media_type');
-          return NextResponse.json(
-            {
-              type: 'https://chamber-os.app/errors/unsupported-media-type',
-              title: 'Unsupported media type',
-              status: 415,
-              detail: 'Expected Content-Type: application/json',
-            },
-            { status: 415 },
+          return problemResponse(
+            415,
+            'unsupported-media-type',
+            'Unsupported media type',
+            'Expected Content-Type: application/json',
           );
         }
 
@@ -371,17 +336,12 @@ export async function POST(
             '[F6] webhook rate-limit exceeded',
           );
           span.setAttribute('f6.outcome', 'rate_limited');
-          return NextResponse.json(
-            {
-              type: 'https://chamber-os.app/errors/rate-limited',
-              title: 'Too many requests',
-              status: 429,
-              detail: `Tenant rate limit exceeded. Retry after ${retryAfter}s.`,
-            },
-            {
-              status: 429,
-              headers: { 'Retry-After': retryAfter.toString() },
-            },
+          return problemResponse(
+            429,
+            'rate-limited',
+            'Too many requests',
+            `Tenant rate limit exceeded. Retry after ${retryAfter}s.`,
+            { headers: { 'Retry-After': retryAfter.toString() } },
           );
         }
 
@@ -620,14 +580,12 @@ export async function POST(
             '[F6] webhook body is not valid JSON',
           );
           span.setAttribute('f6.outcome', 'malformed_json');
-          return NextResponse.json(
-            {
-              type: 'https://chamber-os.app/errors/malformed-webhook',
-              title: 'Webhook payload validation failed',
-              status: 400,
-              errors: [{ path: '<root>', message: 'invalid JSON' }],
-            },
-            { status: 400 },
+          return problemResponse(
+            400,
+            'malformed-webhook',
+            'Webhook payload validation failed',
+            undefined,
+            { extras: { errors: [{ path: '<root>', message: 'invalid JSON' }] } },
           );
         }
 
@@ -880,27 +838,22 @@ export async function POST(
           case 'malformed_rejected':
             eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'malformed');
             span.setAttribute('f6.outcome', 'malformed_rejected');
-            return NextResponse.json(
-              {
-                type: 'https://chamber-os.app/errors/malformed-webhook',
-                title: 'Webhook payload validation failed',
-                status: 400,
-                errors: result.error.errors,
-              },
-              { status: 400 },
+            return problemResponse(
+              400,
+              'malformed-webhook',
+              'Webhook payload validation failed',
+              undefined,
+              { extras: { errors: result.error.errors } },
             );
           case 'duplicate_request_id':
             eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'duplicate');
             span.setAttribute('f6.outcome', 'duplicate_request_id');
-            return NextResponse.json(
-              {
-                type: 'https://chamber-os.app/errors/duplicate-webhook',
-                title: 'Duplicate webhook delivery',
-                status: 409,
-                detail: 'Request ID was already processed.',
-                requestId,
-              },
-              { status: 409 },
+            return problemResponse(
+              409,
+              'duplicate-webhook',
+              'Duplicate webhook delivery',
+              'Request ID was already processed.',
+              { extras: { requestId } },
             );
           case 'tenant_ingest_disabled':
             eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'ingest_disabled');
@@ -927,14 +880,11 @@ export async function POST(
             span.setAttribute('f6.outcome', 'rolled_back');
             span.setAttribute('f6.failure_stage', result.error.failureStage);
             markSpanError(span, `rolled_back:${result.error.failureStage}`);
-            return NextResponse.json(
-              {
-                type: 'https://chamber-os.app/errors/internal-error',
-                title: 'Internal error during webhook processing',
-                status: 500,
-                detail: 'Delivery was rolled back. Zapier will retry.',
-              },
-              { status: 500 },
+            return problemResponse(
+              500,
+              'internal-error',
+              'Internal error during webhook processing',
+              'Delivery was rolled back. Zapier will retry.',
             );
           default: {
             // Exhaustiveness assert. If a future phase adds a new

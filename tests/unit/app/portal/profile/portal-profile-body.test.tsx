@@ -73,6 +73,9 @@ const member = {
   companyName: 'Alpha Corp',
   legalEntityType: 'limited',
   country: 'TH',
+  // 067 I5(c) — the member's own tax_id is surfaced on the profile (the §86/4
+  // buyer TIN they can verify). A real value so the rendered cell is asserted.
+  taxId: '0105558012345',
   website: null,
   description: null,
   foundedYear: 2010,
@@ -112,21 +115,6 @@ beforeEach(() => {
   });
   resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
 });
-
-/** Walk the element tree collecting every node's `type` + flattened text. */
-function collectByType(node: unknown, type: string, acc: ReactElement[]) {
-  if (!node || typeof node !== 'object') return acc;
-  if (Array.isArray(node)) {
-    for (const c of node) collectByType(c, type, acc);
-    return acc;
-  }
-  const el = node as ReactElement & { props?: { children?: unknown } };
-  if (el.type === type) acc.push(el);
-  if (el.props && 'children' in el.props) {
-    collectByType(el.props.children, type, acc);
-  }
-  return acc;
-}
 
 describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', () => {
   it('renders section titles as real <h2>, never CardTitle (a11y-6)', async () => {
@@ -225,5 +213,56 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     const html = renderToStaticMarkup(tree as ReactElement);
     // The invite button renders only when ownContact.isPrimary === true.
     expect(html).not.toContain('inviteColleague');
+  });
+
+  // 067 I5(c) — the member's own tax_id is surfaced unconditionally so they can
+  // verify the §86/4 buyer TIN the chamber has on file. (The field renders for
+  // both company and individual members.)
+  it('renders the Tax ID field with the member tax_id value', async () => {
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const html = renderToStaticMarkup(tree as ReactElement);
+    // The label key (identity translator returns the key string) …
+    expect(html).toContain('fields.taxId');
+    // … and the actual value (DetailField renders `String(value)`).
+    expect(html).toContain('0105558012345');
+  });
+
+  /**
+   * 067 I5(b) — company-only field hiding by member TYPE (memberTypeScope).
+   *
+   * `isIndividual = planLookup.ok && plan.memberTypeScope === 'individual'`
+   * gates `legalEntityType` + `foundedYear` behind `!isIndividual`. The default
+   * getPlan mock has NO memberTypeScope, so the existing tests only ever
+   * exercise the company branch — inverting the guard to `isIndividual` would
+   * NOT fail any of them. These two cases drive BOTH scopes so the guard's
+   * direction is locked: the individual case below FAILS if `!isIndividual`
+   * were inverted (the company-only fields would then render for an individual).
+   */
+  describe('company-only field hiding by memberTypeScope (067 I5(b))', () => {
+    it('individual plan → legalEntityType + foundedYear fields are ABSENT', async () => {
+      getPlanMock.mockResolvedValueOnce({
+        ok: true,
+        value: { planNameEn: 'Individual', memberTypeScope: 'individual' },
+      });
+      const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+      const html = renderToStaticMarkup(tree as ReactElement);
+      // Company-only rows are hidden for a natural-person member.
+      expect(html).not.toContain('fields.legalEntityType');
+      expect(html).not.toContain('fields.foundedYear');
+      // The non-company-gated rows still render (sanity: not an empty tree).
+      expect(html).toContain('fields.companyName');
+      expect(html).toContain('fields.taxId');
+    });
+
+    it('company plan → legalEntityType + foundedYear fields are PRESENT', async () => {
+      getPlanMock.mockResolvedValueOnce({
+        ok: true,
+        value: { planNameEn: 'Corporate', memberTypeScope: 'company' },
+      });
+      const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+      const html = renderToStaticMarkup(tree as ReactElement);
+      expect(html).toContain('fields.legalEntityType');
+      expect(html).toContain('fields.foundedYear');
+    });
   });
 });

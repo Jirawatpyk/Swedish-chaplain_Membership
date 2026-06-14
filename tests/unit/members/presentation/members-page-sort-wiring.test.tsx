@@ -24,6 +24,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const directorySearchWithCount = vi.fn();
 const resolveMemberNumberPrefixMock = vi.fn();
+const loadMembersMembershipStatusMock = vi.fn();
 
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant' }),
@@ -35,10 +36,28 @@ vi.mock('@/modules/members', () => ({
   formatMemberNumber: (prefix: string, n: number) => `${prefix}-${String(n).padStart(4, '0')}`,
   resolveMemberNumberPrefix: (...args: unknown[]) =>
     resolveMemberNumberPrefixMock(...args),
+  // `page.tsx` builds `VALID_STATUSES = new Set(MEMBER_STATUSES)` at module
+  // load (since the 8bb1c476 server-const dedupe moved it into this barrel),
+  // so the mock MUST provide it or the whole page module fails to evaluate.
+  MEMBER_STATUSES: ['active', 'inactive', 'archived'] as const,
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({ memberRepo: {}, memberSettings: {} }),
+}));
+
+vi.mock('@/modules/renewals', () => ({
+  // Task 8 (#4) wired the member-directory page to a best-effort lapsed-
+  // membership read. Stub it so this unit test never makes a real
+  // deps/runInTenant DB call (which would hang the page render → 30s timeout).
+  // Empty set → membership_lapsed:false on every row, leaving the sort-wiring +
+  // member-number assertions unaffected. A module-level handle so the
+  // degradation tests (S3) can make it reject / return !ok per-test.
+  loadMembersMembershipStatus: (...args: unknown[]) =>
+    loadMembersMembershipStatusMock(...args),
+  // 067 #4 — page switched from makeRenewalsDeps to the lean
+  // makeMembersMembershipStatusDeps factory (cyclesRepo + clock only).
+  makeMembersMembershipStatusDeps: () => ({}),
 }));
 
 vi.mock('@/modules/plans', () => ({
@@ -77,6 +96,9 @@ beforeEach(() => {
     value: { items: [], total: 0 },
   });
   resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
+  // Default: the lapsed-status read succeeds with an empty set (no badges).
+  // The S3 degradation tests override this per-test.
+  loadMembersMembershipStatusMock.mockResolvedValue({ ok: true, value: new Set() });
 });
 
 describe('parseDirectorySort — allow-list', () => {
@@ -182,5 +204,77 @@ describe('MembersDirectoryBody — row-mapping (FIX-D)', () => {
     // `formatMemberNumber('SCCM', 42) → 'SCCM-0042'`).
     const treeJson = JSON.stringify(result);
     expect(treeJson).toContain('SCCM-0042');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S3 (067 speckit-review) — the page-side best-effort catch around
+// `loadMembersMembershipStatusSafe` degrades gracefully: when the lapsed-status
+// read THROWS (or returns !ok), the directory STILL renders its rows; only the
+// lapsed badges are suppressed. The use-case is typed Result<…, never>, but the
+// page wraps it in try/catch precisely so a future throw on the directory hot
+// path can never blank the whole table.
+// ---------------------------------------------------------------------------
+describe('MembersDirectoryBody — lapsed-status read degradation (S3)', () => {
+  /** One member row so the row-mapping path is reached (not the empty early-out). */
+  function seedOneRow(): void {
+    resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
+    directorySearchWithCount.mockResolvedValue({
+      ok: true,
+      value: {
+        total: 1,
+        items: [
+          {
+            member: {
+              memberId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+              memberNumber: 42,
+              companyName: 'Alpha Corp',
+              legalEntityType: 'limited',
+              country: 'TH',
+              planId: 'corporate',
+              planYear: 2026,
+              status: 'active',
+              lastActivityAt: null,
+              notes: null,
+              tenantId: 'test-tenant',
+            },
+            planDisplayName: 'Corporate',
+            primaryContact: null,
+            riskScore: null,
+            riskScoreBand: null,
+          },
+        ],
+      },
+    });
+  }
+
+  it('lapsed read REJECTS → rows still render (badges suppressed, no throw)', async () => {
+    seedOneRow();
+    loadMembersMembershipStatusMock.mockRejectedValue(new Error('db down'));
+
+    // The page must NOT propagate the rejection — it catches and degrades.
+    const result = await MembersDirectoryBody({
+      query: { sort: 'memberNumber', order: 'asc' },
+      isAdmin: true,
+    });
+
+    // The directory still produced its row (proving the catch degraded rather
+    // than blanking the table).
+    expect(JSON.stringify(result)).toContain('SCCM-0042');
+  });
+
+  it('lapsed read returns {ok:false} → rows still render (badges suppressed)', async () => {
+    seedOneRow();
+    loadMembersMembershipStatusMock.mockResolvedValue({
+      ok: false,
+      error: { code: 'unexpected' },
+    });
+
+    const result = await MembersDirectoryBody({
+      query: { sort: 'memberNumber', order: 'asc' },
+      isAdmin: true,
+    });
+
+    expect(JSON.stringify(result)).toContain('SCCM-0042');
   });
 });
