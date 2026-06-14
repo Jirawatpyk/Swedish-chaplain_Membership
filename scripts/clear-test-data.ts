@@ -289,6 +289,73 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
           )
         )`,
   );
+  // 068 cluster E — F8 renewal_cycles orphan purge in the TEST-USER pass.
+  // The tenant-scoped pass (above, `tenant_id LIKE 'test-%'`) deletes
+  // renewal_cycles, but this test-USER pass deletes orphan invoices + members
+  // REGARDLESS of tenant_id — so a renewal_cycle in a NON-`test-%` tenant that
+  // links a test-user-orphaned invoice (`renewal_cycles_linked_invoice_fk`
+  // NO ACTION) or member (`renewal_cycles_member_fk` RESTRICT) would block the
+  // `DELETE FROM invoices` / `DELETE FROM members` below with an FK violation
+  // and abort the whole script. Purge those cycles (children first, in FK
+  // order) BEFORE the orphan invoice/member deletes. Scoped to exactly the
+  // test-user-orphan set — NOT broadened to all tenants.
+  //
+  // The orphan set: cycles whose `linked_invoice_id` ∈ {invoices referencing a
+  // test user via draft/recorded/voided} OR whose `(tenant_id, member_id)` ∈
+  // {members on a test-user-created/updated plan} — the SAME two predicates the
+  // orphan invoice + member deletes below use. Children of renewal_cycles:
+  //   renewal_reminder_events (CASCADE) · renewal_escalation_tasks (NO ACTION)
+  //   · scheduled_plan_changes.effective_at_cycle_id (RESTRICT).
+  const orphanCyclePredicate = sql`(
+    linked_invoice_id IN (
+      SELECT invoice_id FROM invoices
+      WHERE draft_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR payment_recorded_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR voided_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+    )
+    OR (tenant_id, member_id) IN (
+      SELECT m.tenant_id, m.member_id FROM members m
+      JOIN membership_plans p
+        ON m.tenant_id = p.tenant_id
+       AND m.plan_id = p.plan_id
+       AND m.plan_year = p.plan_year
+      WHERE p.created_by IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR p.updated_by IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+    )
+  )`;
+  // Children of the orphan cycles first (renewal_reminder_events CASCADE is
+  // covered automatically but deleted explicitly for symmetry + determinism).
+  await db.execute(
+    sql`DELETE FROM renewal_reminder_events
+        WHERE (tenant_id, cycle_id) IN (
+          SELECT tenant_id, cycle_id FROM renewal_cycles WHERE ${orphanCyclePredicate}
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM renewal_escalation_tasks
+        WHERE (tenant_id, cycle_id) IN (
+          SELECT tenant_id, cycle_id FROM renewal_cycles WHERE ${orphanCyclePredicate}
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM scheduled_plan_changes
+        WHERE (tenant_id, effective_at_cycle_id) IN (
+          SELECT tenant_id, cycle_id FROM renewal_cycles WHERE ${orphanCyclePredicate}
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM renewal_cycles WHERE ${orphanCyclePredicate}`,
+  );
   // R2-fix C2 (2026-04-26): also purge credit_notes whose
   // `issued_by_user_id` directly references a test user. The previous
   // pattern only chased `original_invoice_id → invoices.*_user_id`

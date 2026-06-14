@@ -13,7 +13,10 @@ import { users } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { asTenantContext } from '@/modules/tenants';
+import { asSatang } from '@/lib/money';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 
@@ -195,6 +198,185 @@ describe('clearTestData script', () => {
       : (remaining as { rows?: unknown[] }).rows?.length ?? 0;
     expect(count).toBe(1);
   }, 30_000);
+
+  // 068 cluster E — the test-USER orphan pass must purge F8 renewal_cycles in
+  // a NON-`test-%` tenant that link a test-user-orphaned invoice/member, or the
+  // orphan `DELETE FROM invoices` / `DELETE FROM members` aborts the whole
+  // script with an FK violation (`renewal_cycles_linked_invoice_fk` NO ACTION /
+  // `renewal_cycles_member_fk` RESTRICT).
+  it('purges renewal_cycles linking a test-user-orphaned invoice in a NON-test tenant (cluster E)', async () => {
+    // A test user (drives the orphan-invoice predicate).
+    const email = `test-${Date.now()}-cyclepurge@swecham.test`;
+    createdEmails.push(email);
+    const hash = await argon2Hasher.hash('Test-Password-CyclePurge-2026!');
+    const userRows = await db
+      .insert(users)
+      .values({
+        email,
+        role: 'admin',
+        status: 'active',
+        passwordHash: hash,
+        lastPasswordChangedAt: new Date(),
+      })
+      .returning();
+    const userId = userRows[0]!.id;
+
+    // A NON-`test-%` tenant slug — so the test-USER orphan pass (not the
+    // tenant-scoped pass) is the only thing that can purge these rows. This
+    // models stale cross-tenant data left by a partial prior cleanup.
+    const slug = `clearcycle-${randomUUID().slice(0, 8)}`;
+    const ctx = asTenantContext(slug);
+    const memberId = randomUUID();
+    const invoiceId = randomUUID();
+    const cycleId = randomUUID();
+
+    try {
+      await runInTenant(ctx, async (tx) => {
+        await tx.insert(tenantInvoiceSettings).values({
+          tenantId: slug,
+          currencyCode: 'THB',
+          vatRate: '0.0700',
+          registrationFeeSatang: 100000n,
+          legalNameTh: 'CycleP TH',
+          legalNameEn: 'CycleP EN',
+          taxId: '0000000000000',
+          registeredAddressTh: 'Addr TH',
+          registeredAddressEn: 'Addr EN',
+          invoiceNumberPrefix: 'INV',
+          creditNoteNumberPrefix: 'CN',
+        });
+        await tx.insert(membershipPlans).values({
+          tenantId: slug,
+          planId: 'clearcycle-plan',
+          planYear: 2026,
+          planName: { en: 'CycleP Plan' },
+          description: { en: 'desc' },
+          sortOrder: 10,
+          planCategory: 'corporate',
+          memberTypeScope: 'company',
+          annualFeeMinorUnits: 5_000_000,
+          includesCorporatePlanId: null,
+          minTurnoverMinorUnits: null,
+          maxTurnoverMinorUnits: null,
+          maxDurationYears: null,
+          maxMemberAge: null,
+          benefitMatrix: MATRIX,
+          isActive: true,
+          // created_by = the test user → drives the orphan-MEMBER predicate too.
+          createdBy: userId,
+          updatedBy: userId,
+        });
+        await tx.insert(members).values({
+          tenantId: slug,
+          memberId,
+          memberNumber: 1,
+          companyName: `CycleP Co ${Date.now()}`,
+          country: 'TH',
+          planId: 'clearcycle-plan',
+          planYear: 2026,
+          registrationDate: new Date().toISOString().slice(0, 10),
+          registrationFeePaid: true,
+          status: 'active',
+          archivedAt: null,
+        });
+        // An ISSUED invoice drafted by the test user → drives the orphan-
+        // INVOICE predicate. Full non-draft snapshot fields per the F4
+        // `invoices_non_draft_has_snapshots` CHECK.
+        await tx.insert(invoices).values({
+          tenantId: slug,
+          invoiceId,
+          memberId,
+          planYear: 2026,
+          planId: 'clearcycle-plan',
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          draftByUserId: userId,
+          fiscalYear: 2026,
+          sequenceNumber: 1,
+          documentNumber: 'INV-2026-000001',
+          issueDate: '2026-05-15',
+          dueDate: '2026-06-14',
+          currency: 'THB',
+          subtotalSatang: asSatang(5_000_000n),
+          vatRateSnapshot: '0.0700',
+          vatSatang: asSatang(350_000n),
+          totalSatang: asSatang(5_350_000n),
+          proRatePolicySnapshot: 'whole_year',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+          memberIdentitySnapshot: {
+            companyName: 'CycleP Co',
+            country: 'TH',
+            legal_name: 'CycleP Co Ltd',
+            address: '1 Test Rd, Bangkok 10110',
+            primary_contact_name: 'Test',
+            primary_contact_email: 'cyclep@example.com',
+          } as unknown,
+          pdfBlobKey: `invoicing/${slug}/2026/${invoiceId}.pdf`,
+          pdfSha256: 'a'.repeat(64),
+          pdfTemplateVersion: 1,
+        });
+        // The renewal_cycle linking BOTH the orphan invoice + member, in the
+        // NON-test tenant — the row that the cluster-E fix must purge.
+        await tx.insert(renewalCycles).values({
+          tenantId: slug,
+          cycleId,
+          memberId,
+          status: 'completed',
+          periodFrom: new Date('2026-06-01T00:00:00Z'),
+          periodTo: new Date('2027-06-01T00:00:00Z'),
+          expiresAt: new Date('2027-06-01T00:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: 'clearcycle-plan',
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          closedAt: new Date(),
+          closedReason: 'paid',
+          linkedInvoiceId: invoiceId,
+        });
+      });
+
+      // The cleanup must NOT throw (without the cluster-E fix it aborts with an
+      // FK violation on the orphan invoice/member delete) AND must remove the
+      // cycle + invoice + member + the test user.
+      const report = await clearTestData();
+      expect(report.testUsers).toBeGreaterThanOrEqual(1);
+
+      const cycleLeft = await db.execute(
+        sql`SELECT cycle_id FROM renewal_cycles WHERE cycle_id = ${cycleId}::uuid`,
+      );
+      const invoiceLeft = await db.execute(
+        sql`SELECT invoice_id FROM invoices WHERE invoice_id = ${invoiceId}::uuid`,
+      );
+      const memberLeft = await db.execute(
+        sql`SELECT member_id FROM members WHERE member_id = ${memberId}::uuid`,
+      );
+      const userLeft = await db.execute(
+        sql`SELECT id FROM users WHERE email = ${email}`,
+      );
+      const count = (r: unknown) =>
+        Array.isArray(r) ? r.length : (r as { rows?: unknown[] }).rows?.length ?? 0;
+      expect(count(cycleLeft)).toBe(0);
+      expect(count(invoiceLeft)).toBe(0);
+      expect(count(memberLeft)).toBe(0);
+      expect(count(userLeft)).toBe(0);
+    } finally {
+      // Defensive cleanup of the non-test tenant (in case an assertion failed
+      // before clearTestData ran, or the fix is absent).
+      await db
+        .delete(renewalCycles)
+        .where(sql`tenant_id = ${slug}`)
+        .catch(() => {});
+      await db.execute(sql`DELETE FROM invoices WHERE tenant_id = ${slug}`).catch(() => {});
+      await db.execute(sql`DELETE FROM members WHERE tenant_id = ${slug}`).catch(() => {});
+      await db.execute(sql`DELETE FROM membership_plans WHERE tenant_id = ${slug}`).catch(() => {});
+      await db
+        .execute(sql`DELETE FROM tenant_invoice_settings WHERE tenant_id = ${slug}`)
+        .catch(() => {});
+    }
+  }, 45_000);
 
   it('is idempotent — second run reports zero deletions', async () => {
     // First run may delete leftovers. Second run must return a clean slate.
