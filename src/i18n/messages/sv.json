@@ -2476,7 +2476,6 @@
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
       "pendingReview": {
         "tab": "Väntar på granskning",
-        "countSr": "{count} cykler väntar på granskning",
         "sectionTitle": "Återaktiveringar som väntar på ditt beslut",
         "sectionSubtitle": "Dessa medlemmar betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Öppna varje post för att godkänna eller avslå med återbetalning.",
         "emptyTitle": "Inget väntar på granskning",

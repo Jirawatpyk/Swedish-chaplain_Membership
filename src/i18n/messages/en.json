@@ -2476,7 +2476,6 @@
       "subtitle": "Active members by renewal date and tier.",
       "pendingReview": {
         "tab": "Pending review",
-        "countSr": "{count} cycles awaiting review",
         "sectionTitle": "Reactivations awaiting your decision",
         "sectionSubtitle": "These members paid to reactivate a lapsed membership but auto-reactivation is blocked. Open each one to approve or reject with a refund.",
         "emptyTitle": "Nothing awaiting review",

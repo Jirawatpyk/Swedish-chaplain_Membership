@@ -28,6 +28,7 @@
  *     Phase 4 alongside the dispatcher cron emit sites.
  */
 import { z } from 'zod';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
@@ -99,17 +100,6 @@ export type MarkPaidOfflineError =
 // same `awaiting_payment` codepath; the urgency derivation is read-only.
 const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
 
-/**
- * Round 5 S-04 — Bangkok fiscal year extraction. Asia/Bangkok is UTC+7
- * with no DST so a fixed +7h offset converts a UTC instant to the
- * corresponding BKK calendar year. Required because the F4 sequential
- * -number allocator buckets per fiscal year and a UTC-year mismatch
- * would burn a sequence in the wrong bucket at BKK midnight boundaries.
- */
-function bangkokFiscalYearOf(utcIso: string): number {
-  return new Date(Date.parse(utcIso) + 7 * 3600_000).getUTCFullYear();
-}
-
 export async function markPaidOffline(
   deps: RenewalsDeps,
   rawInput: MarkPaidOfflineInput,
@@ -178,12 +168,15 @@ export async function markPaidOffline(
   // document off the price-tampering surface. The cycle-vs-invoice price
   // assertion lives in the offline mark-paid integration test.
   //
-  // Round 5 S-04 — Bangkok-local fiscal year. UTC `getUTCFullYear()` is
-  // wrong at BKK boundaries: a period_from of 2026-12-31T17:00:00Z =
-  // 2027-01-01 00:00 BKK belongs to fiscal year 2027, but UTC reads
-  // 2026. Add +7h offset before extracting the year so the F4 sequential
-  // -number allocator buckets the invoice in the correct fiscal year.
-  const planYear = bangkokFiscalYearOf(preLoad.periodFrom);
+  // Round 5 S-04 / 070 code-review — Bangkok-local fiscal year via the
+  // SHARED `deriveFiscalYear` (js-joda Asia/Bangkok, honours the tenant's
+  // fiscal-year start-month) — the identical helper confirm-renewal,
+  // admin-renew and the §87 sequential-number allocator use. UTC
+  // `getUTCFullYear()` is wrong at BKK boundaries; the prior local +7h
+  // helper also hardcoded a January start, so it would diverge from every
+  // other billing path for a non-January-start tenant. One source of truth
+  // for the §86/4 fiscal year across the online + offline rails.
+  const planYear = deriveFiscalYear(preLoad.periodFrom);
   const planId = preLoad.planIdAtCycleStart;
   const memberId = preLoad.memberId;
 

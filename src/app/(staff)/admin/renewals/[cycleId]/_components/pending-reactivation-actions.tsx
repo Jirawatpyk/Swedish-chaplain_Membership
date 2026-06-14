@@ -200,7 +200,15 @@ export function PendingReactivationActions({
       <Button variant="outline" onClick={() => setRejectOpen(true)}>
         {t('reject.button')}
       </Button>
-      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
+      <AlertDialog
+        open={rejectOpen}
+        onOpenChange={(open) => {
+          setRejectOpen(open);
+          // Clear the reason on cancel/close so a reopened dialog never
+          // pre-fills a stale justification onto the refund audit trail.
+          if (!open) setReason('');
+        }}
+      >
         <AlertDialogContent initialFocus={rejectCancelRef}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('reject.dialogTitle')}</AlertDialogTitle>

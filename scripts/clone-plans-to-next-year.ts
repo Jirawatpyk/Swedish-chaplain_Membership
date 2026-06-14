@@ -23,13 +23,14 @@
  *
  *   - `loadPlanFrozenFields`
  *     (`src/modules/renewals/infrastructure/ports-adapters/
- *      plan-lookup-for-renewal-drizzle.ts`) picks the MOST-RECENT ACTIVE
- *     row ordered by `plan_year DESC` (active-only WHERE). If the cloned
- *     Y+1 rows were active, a NEW renewal cycle created NOW (current-year
- *     `period_from`) would freeze its price/tier against the FUTURE-year
- *     row — wrong price/tier for a current membership. Inactive Y+1 rows
- *     are invisible to this reader, so current cycles stay on the
- *     current-year catalogue. ✓
+ *      plan-lookup-for-renewal-drizzle.ts`) is now EXACT-YEAR-FIRST (070
+ *     code-review): a cycle freezes the row for its OWN fiscal year, so
+ *     activating Y+1 early no longer corrupts a current cycle. Cloning Y+1
+ *     as inactive is STILL required because nothing in the DB enforces a
+ *     single active `plan_year` per plan — keeping Y+1 inactive avoids an
+ *     ambiguous two-active-year catalogue + a premature offering before the
+ *     fiscal year opens. Admin flips them active via /admin/plans when Y+1
+ *     opens. ✓
  *
  *   - `getAnnualFeeSatang`
  *     (`src/modules/invoicing/infrastructure/adapters/

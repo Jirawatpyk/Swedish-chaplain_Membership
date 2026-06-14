@@ -135,6 +135,24 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
     expect(result.status).toBe('plan_inactive');
   });
 
+  it('requireActiveForYear:true + exact-year MISS + planId exists for OTHER years → plan_inactive, NOT a cross-year found (070 code-review fix)', async () => {
+    // No row for the cycle's fiscal year, but the planId has a row for a
+    // DIFFERENT year (the offer-probe finds it). PLAN-CHANGE must NOT fall
+    // through to that other year's active price — that would freeze the
+    // WRONG-year §86/4 for a plan not offered this year. Exact-year SELECT
+    // empty, then the offer-probe returns a row → plan_inactive (no
+    // most-recent-active cross-year fall-through on the plan-change path).
+    queueRows([], [{ one: 1 }]);
+    const adapter = makeDrizzlePlanLookupForRenewal(tenant);
+    const result = await adapter.loadPlanFrozenFields({
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2026,
+      requireActiveForYear: true,
+    });
+    expect(result.status).toBe('plan_inactive');
+  });
+
   it('exact-year MISS → falls back to most-recent ACTIVE row (existing behaviour unchanged)', async () => {
     // Primary SELECT empty (no row for fiscalYear 2099) → fallback SELECT
     // returns the most-recent active row.

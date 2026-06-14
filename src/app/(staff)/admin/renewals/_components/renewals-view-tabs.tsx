@@ -22,14 +22,9 @@ const PENDING_REVIEW_VALUE = 'pending-review';
 export interface RenewalsViewTabsProps {
   /** `'pending-review'` when that view is active, else `'pipeline'`. */
   readonly current: 'pipeline' | 'pending-review';
-  /** Count badge for the pending-review tab. */
-  readonly pendingReviewCount: number;
 }
 
-export function RenewalsViewTabs({
-  current,
-  pendingReviewCount,
-}: RenewalsViewTabsProps) {
+export function RenewalsViewTabs({ current }: RenewalsViewTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -56,20 +51,7 @@ export function RenewalsViewTabs({
       <TabsList aria-label={t('pendingReview.tab')}>
         <TabsTrigger value={PIPELINE_VALUE}>{t('title')}</TabsTrigger>
         <TabsTrigger value={PENDING_REVIEW_VALUE}>
-          <span>{t('pendingReview.tab')}</span>
-          {pendingReviewCount > 0 && (
-            <>
-              <span
-                className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
-                aria-hidden
-              >
-                {pendingReviewCount}
-              </span>
-              <span className="sr-only">
-                {t('pendingReview.countSr', { count: pendingReviewCount })}
-              </span>
-            </>
-          )}
+          {t('pendingReview.tab')}
         </TabsTrigger>
       </TabsList>
     </Tabs>

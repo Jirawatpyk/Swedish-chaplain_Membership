@@ -140,7 +140,7 @@ export default async function RenewalsPipelinePage({
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent className="flex flex-col gap-4">
-            <RenewalsViewTabs current="pending-review" pendingReviewCount={0} />
+            <RenewalsViewTabs current="pending-review" />
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               actorUserId={currentUser.id}
@@ -265,7 +265,7 @@ export default async function RenewalsPipelinePage({
               The count badge is loaded only on the pending-review view
               (pipeline hot path takes no extra query), so it renders
               without a badge here. */}
-          <RenewalsViewTabs current="pipeline" pendingReviewCount={0} />
+          <RenewalsViewTabs current="pipeline" />
           {showEmptyState ? (
             <RenewalsEmptyState />
           ) : (

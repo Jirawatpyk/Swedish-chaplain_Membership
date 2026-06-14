@@ -143,11 +143,38 @@ export function makeDrizzlePlanLookupForRenewal(
           return frozenResultFromRow(exactRow);
         }
 
-        // 070 §86/4 — Step 2: EXACT-YEAR MISS. No row at all for this
-        // planId+fiscalYear → fall back to the EXISTING behaviour
-        // UNCHANGED: most-recent ACTIVE row by `plan_year DESC`. This
-        // keeps the not-yet-seeded future-year case + every current case
-        // (when the exact-year row is absent) behaving exactly as before.
+        // 070 §86/4 — EXACT-YEAR MISS: there is NO row (active OR inactive)
+        // for this planId+fiscalYear.
+        //
+        // PLAN-CHANGE (requireActiveForYear:true) MUST NOT fall through to a
+        // DIFFERENT year's active row — switching to a plan not offered for
+        // THIS cycle's fiscal year would freeze the wrong year's price/tier
+        // onto the §86/4 (and `getAnnualFeeSatang` would then reject the
+        // mismatched (plan,year) at issue time anyway). Distinguish "planId
+        // unknown" from "exists for other years only" via the probe so
+        // confirm-renewal still maps not_found→plan_not_found vs
+        // plan_inactive→plan_inactive. The cross-year fallback below is for
+        // the FREEZE path ONLY.
+        if (input.requireActiveForYear) {
+          const offerProbe = await tx
+            .select({ one: sql<number>`1` })
+            .from(membershipPlans)
+            .where(
+              and(
+                eq(membershipPlans.planId, input.planId),
+                isNull(membershipPlans.deletedAt),
+              ),
+            )
+            .limit(1);
+          return offerProbe[0]
+            ? { status: 'plan_inactive' }
+            : { status: 'not_found' };
+        }
+
+        // FREEZE exact-year MISS → fall back to the EXISTING behaviour
+        // UNCHANGED: most-recent ACTIVE row by `plan_year DESC`. This keeps
+        // the not-yet-seeded future-year case + every current case (when the
+        // exact-year row is absent) behaving exactly as before.
         const activeRows = await tx
           .select({
             renewalTierBucket: membershipPlans.renewalTierBucket,
