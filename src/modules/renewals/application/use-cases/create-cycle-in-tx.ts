@@ -43,6 +43,39 @@ import type {
 } from '../ports/renewal-audit-emitter';
 import { asCycleId, type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
 
+/**
+ * The plan a cycle-creation entry point referenced cannot be resolved to a
+ * frozen price (the F2 plan-lookup returned `not_found` or `plan_inactive`).
+ * `createCycleInTx` THROWS this rather than inserting a cycle with no frozen
+ * price — a cycle without a frozen §86/4 price is an unbillable orphan.
+ *
+ * Typed sentinel (070 Item B): callers narrow with
+ * `instanceof PlanNotResolvableError` — NOT a brittle
+ * `message.includes('not resolvable')` string-match (which mis-classified any
+ * coincidentally-worded infra throw as a plan error). The carried fields
+ * (`planId` / `memberId` / `planStatus`) give the caller + forensic logs the
+ * full context without re-parsing the message. The human-readable `message`
+ * text is preserved byte-for-byte for existing log greps.
+ *
+ * Co-located here (the throwing site) mirroring the module's other
+ * Application-layer typed errors (`CycleNotFoundError`,
+ * `CycleTransitionConflictError`, `InvoiceLinkConflictError` in
+ * `renewal-cycle-repo.ts`). Pure Application — no framework imports
+ * (Constitution Principle III).
+ */
+export class PlanNotResolvableError extends Error {
+  override readonly name = 'PlanNotResolvableError';
+  constructor(
+    public readonly planId: string,
+    public readonly memberId: string,
+    public readonly planStatus: 'not_found' | 'plan_inactive',
+  ) {
+    super(
+      `createCycleInTx: plan "${planId}" not resolvable (status=${planStatus}) for member ${memberId} — refusing to create a cycle without a frozen price`,
+    );
+  }
+}
+
 export interface CreateCycleInTxDeps {
   readonly cyclesRepo: Pick<
     RenewalCycleRepo,
@@ -166,9 +199,9 @@ export async function createCycleInTx(
     planId: input.planId,
   });
   if (plan.status !== 'found') {
-    throw new Error(
-      `createCycleInTx: plan "${input.planId}" not resolvable (status=${plan.status}) for member ${input.memberId} — refusing to create a cycle without a frozen price`,
-    );
+    // 070 Item B — typed sentinel (was a plain `Error` callers string-matched).
+    // `plan.status` is narrowed to `'not_found' | 'plan_inactive'` here.
+    throw new PlanNotResolvableError(input.planId, input.memberId, plan.status);
   }
 
   // 3. Gapless period derivation. 068 cluster F — the import cold-start opts

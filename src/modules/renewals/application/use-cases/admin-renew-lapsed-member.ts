@@ -75,6 +75,7 @@ import type { PlanLookupForRenewalPort } from '../ports/plan-lookup-for-renewal'
 import type { MemberPlanLookupPort } from '../ports/member-plan-lookup-port';
 import {
   createCycleInTx,
+  PlanNotResolvableError,
   type CreateCycleInTxDeps,
 } from './create-cycle-in-tx';
 import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
@@ -234,13 +235,16 @@ export async function adminRenewLapsedMember(
       return err({ kind: 'member_has_active_cycle' });
     }
 
-    // createCycleInTx throws ONLY when the plan is unresolvable (it
-    // refuses to create a cycle without a frozen price). Any other throw
+    // createCycleInTx throws the typed `PlanNotResolvableError` ONLY when the
+    // plan is unresolvable (it refuses to create a cycle without a frozen
+    // price). 070 Item B — narrow on the type, NOT a brittle
+    // `message.includes('not resolvable')` string-match (which mis-classified
+    // any coincidentally-worded infra throw as a plan error). Any other throw
     // is a genuine infrastructure error.
-    const message = e instanceof Error ? e.message : String(e);
-    if (message.includes('not resolvable')) {
+    if (e instanceof PlanNotResolvableError) {
       return err({ kind: 'plan_not_found' });
     }
+    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         err: e instanceof Error ? e : new Error(message),

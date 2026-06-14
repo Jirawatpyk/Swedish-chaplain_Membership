@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createCycleInTx,
+  PlanNotResolvableError,
   type CreateCycleInTxDeps,
   type CreateCycleInTxInput,
 } from '@/modules/renewals/application/use-cases/create-cycle-in-tx';
@@ -220,26 +221,44 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
     expect(emitOrder).toBeGreaterThan(insertOrder);
   });
 
-  it('throws when the plan cannot be resolved (not_found) — caller decides to roll back', async () => {
+  it('throws a typed PlanNotResolvableError when the plan cannot be resolved (not_found) — caller decides to roll back', async () => {
     const { deps, insert, emitInTx } = makeDeps({
       planResult: { status: 'not_found' },
     });
 
-    await expect(createCycleInTx(deps, fakeTx, baseInput)).rejects.toThrow(
-      /not resolvable/,
+    // Item B — the throw is a typed sentinel (callers narrow via
+    // `instanceof PlanNotResolvableError`, NOT a brittle message string-match).
+    const err = await createCycleInTx(deps, fakeTx, baseInput).then(
+      () => {
+        throw new Error('expected createCycleInTx to throw');
+      },
+      (e: unknown) => e,
     );
+    expect(err).toBeInstanceOf(PlanNotResolvableError);
+    const typed = err as PlanNotResolvableError;
+    expect(typed.planId).toBe(baseInput.planId);
+    expect(typed.memberId).toBe(baseInput.memberId);
+    expect(typed.planStatus).toBe('not_found');
+    // The original human-readable message text is preserved (forensic logs).
+    expect(typed.message).toMatch(/not resolvable/);
+    expect(typed.name).toBe('PlanNotResolvableError');
     expect(insert).not.toHaveBeenCalled();
     expect(emitInTx).not.toHaveBeenCalled();
   });
 
-  it('throws when the plan is inactive — caller decides to roll back', async () => {
+  it('throws a typed PlanNotResolvableError when the plan is inactive — caller decides to roll back', async () => {
     const { deps, insert } = makeDeps({
       planResult: { status: 'plan_inactive' },
     });
 
-    await expect(createCycleInTx(deps, fakeTx, baseInput)).rejects.toThrow(
-      /not resolvable/,
+    const err = await createCycleInTx(deps, fakeTx, baseInput).then(
+      () => {
+        throw new Error('expected createCycleInTx to throw');
+      },
+      (e: unknown) => e,
     );
+    expect(err).toBeInstanceOf(PlanNotResolvableError);
+    expect((err as PlanNotResolvableError).planStatus).toBe('plan_inactive');
     expect(insert).not.toHaveBeenCalled();
   });
 

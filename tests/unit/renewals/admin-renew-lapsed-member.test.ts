@@ -248,13 +248,44 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     expect(t.bridgeMock).not.toHaveBeenCalled();
   });
 
-  it('plan_not_found: the frozen-price plan lookup is unresolvable (createCycleInTx throws) — no invoice', async () => {
+  it('plan_not_found: the frozen-price plan lookup is unresolvable (createCycleInTx throws PlanNotResolvableError) — no invoice', async () => {
     const t = makeDeps({ planFrozenStatus: 'not_found' });
     const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    // Item B — the mapping is now driven by `instanceof PlanNotResolvableError`
+    // (the typed sentinel createCycleInTx throws), NOT a brittle
+    // `message.includes('not resolvable')` string-match.
     expect(result.error.kind).toBe('plan_not_found');
+    expect(t.bridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('plan_inactive maps to plan_not_found too (the typed sentinel carries planStatus, both unresolvable states map the same)', async () => {
+    const t = makeDeps({ planFrozenStatus: 'plan_inactive' });
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('plan_not_found');
+    expect(t.bridgeMock).not.toHaveBeenCalled();
+  });
+
+  it('Item B — a generic throw whose message merely CONTAINS "not resolvable" is NOT misclassified as plan_not_found (string-match removed)', async () => {
+    const t = makeDeps();
+    // A non-PlanNotResolvableError infra throw whose message coincidentally
+    // contains the legacy "not resolvable" substring. The OLD brittle
+    // `message.includes('not resolvable')` guard would have wrongly mapped
+    // this to plan_not_found; the typed `instanceof` guard correctly surfaces
+    // it as server_error.
+    t.loadMemberPlanMock.mockRejectedValueOnce(
+      new Error('upstream dependency not resolvable: DNS lookup failed'),
+    );
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('server_error');
     expect(t.bridgeMock).not.toHaveBeenCalled();
   });
 
