@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
+import { BrandMark } from '@/components/shell/brand-mark';
 import { EmailChangeRevertForm } from '@/components/auth/email-change-revert-form';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -41,12 +42,17 @@ export default async function EmailChangeRevertPage({
   const t = await getTranslations('auth.emailChangeRevert');
 
   return (
-    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
-      <header className="flex items-center justify-between p-4">
-        <div className="text-sm font-semibold tracking-tight">{process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}</div>
+    <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
+      <header className="absolute right-4 top-4 z-10">
+        {/* Brand wordmark replaced by the vertical lockup above the card. */}
         <ThemeToggle />
       </header>
-      <div className="flex flex-1 items-center justify-center p-4">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-4">
+        <BrandMark
+          variant="vertical"
+          title={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
+          className="w-44"
+        />
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>

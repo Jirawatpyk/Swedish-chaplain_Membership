@@ -1,0 +1,19 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Chamber-OS concept C">
+  <!-- Network C: a "C" drawn as connected member nodes — community / multi-tenant network. Nordic blue + gold -->
+  <g stroke="#1B4D8C" stroke-width="10" stroke-linecap="round">
+    <line x1="158" y1="70" x2="92" y2="58"/>
+    <line x1="92" y1="58" x2="58" y2="104"/>
+    <line x1="58" y1="104" x2="58" y2="136"/>
+    <line x1="58" y1="136" x2="92" y2="182"/>
+    <line x1="92" y1="182" x2="158" y2="170"/>
+  </g>
+  <g fill="#1B4D8C">
+    <circle cx="92" cy="58" r="15"/>
+    <circle cx="58" cy="104" r="15"/>
+    <circle cx="58" cy="136" r="15"/>
+    <circle cx="92" cy="182" r="15"/>
+  </g>
+  <!-- endpoint nodes in gold (the "open" ends of the C) -->
+  <circle cx="158" cy="70" r="17" fill="#FFC857"/>
+  <circle cx="158" cy="170" r="17" fill="#FFC857"/>
+</svg>

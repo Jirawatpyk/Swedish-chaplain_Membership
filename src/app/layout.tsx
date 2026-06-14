@@ -38,6 +38,15 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
   },
+  // iOS standalone (PWA) support. The home-screen icon comes from the
+  // `apple-icon.png` file convention; `statusBarStyle: 'default'` avoids
+  // content slipping under the status bar on the non-`viewport-fit=cover`
+  // admin/auth surfaces (the member portal opts into `cover` per-segment).
+  appleWebApp: {
+    capable: true,
+    title: 'SweCham',
+    statusBarStyle: 'default',
+  },
 };
 
 // NOTE: `viewport-fit=cover` is intentionally NOT exported here. It is scoped

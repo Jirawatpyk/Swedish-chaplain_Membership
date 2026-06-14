@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 96" role="img" aria-label="SweCham bridge link mark">
+  <title>SweCham — interlocking link (Thailand–Sweden partnership)</title>
+  <defs>
+    <clipPath id="topCross">
+      <rect x="44" y="18" width="16" height="24"/>
+    </clipPath>
+  </defs>
+  <!-- Left ring: Swedish navy -->
+  <circle cx="42" cy="48" r="20" fill="none" stroke="#0B2A4A" stroke-width="11"/>
+  <!-- Right ring: Swedish gold, woven over navy at the bottom crossing -->
+  <circle cx="62" cy="48" r="20" fill="none" stroke="#F4C430" stroke-width="11"/>
+  <!-- Re-draw navy at the top crossing so navy sits over gold there -> true chain weave -->
+  <g clip-path="url(#topCross)">
+    <circle cx="42" cy="48" r="20" fill="none" stroke="#0B2A4A" stroke-width="11"/>
+  </g>
+</svg>

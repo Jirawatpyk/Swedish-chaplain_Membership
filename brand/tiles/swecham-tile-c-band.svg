@@ -1,0 +1,15 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham tile band">
+  <defs>
+    <clipPath id="tC"><rect x="0" y="0" width="240" height="240" rx="54"/></clipPath>
+    <linearGradient id="tCbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A7BBF"/><stop offset="1" stop-color="#005C90"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#tC)">
+    <rect x="0" y="0" width="240" height="240" fill="url(#tCbg)"/>
+    <rect x="0" y="96" width="240" height="58" fill="#FECC00"/>
+    <text x="120" y="140" text-anchor="middle" font-family="'Segoe UI',Arial,sans-serif" font-size="50" font-weight="800" fill="#005C90" letter-spacing="-2">SC</text>
+    <text x="120" y="80" text-anchor="middle" font-family="'Segoe UI',Arial,sans-serif" font-size="15" font-weight="700" letter-spacing="6" fill="#FFFFFF">SWECHAM</text>
+    <text x="120" y="186" text-anchor="middle" font-family="'Segoe UI',Arial,sans-serif" font-size="11" letter-spacing="3" fill="#CFE3F2">EST. BANGKOK</text>
+  </g>
+</svg>

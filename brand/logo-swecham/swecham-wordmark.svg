@@ -1,0 +1,13 @@
+<svg width="640" height="160" viewBox="0 0 640 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham wordmark">
+  <!-- mark: bridge -->
+  <g transform="translate(20,20)">
+    <path d="M104 22 A50 50 0 1 0 104 122" fill="none" stroke="#006AA7" stroke-width="16" stroke-linecap="round"/>
+    <path d="M104 48 A27 27 0 1 1 104 96" fill="none" stroke="#FECC00" stroke-width="16" stroke-linecap="round"/>
+    <circle cx="83" cy="72" r="9" fill="#0B2540"/>
+  </g>
+  <!-- wordmark -->
+  <text x="176" y="100" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="58" font-weight="700" letter-spacing="-1">
+    <tspan fill="#006AA7">Swe</tspan><tspan fill="#0B2540">Cham</tspan>
+  </text>
+  <text x="178" y="128" font-family="'Segoe UI',Arial,sans-serif" font-size="14" letter-spacing="2.6" fill="#5b6b7b">THAI · SWEDISH CHAMBER OF COMMERCE</text>
+</svg>

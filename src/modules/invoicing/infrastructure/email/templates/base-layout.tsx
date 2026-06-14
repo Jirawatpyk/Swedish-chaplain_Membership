@@ -23,12 +23,13 @@ import {
   Container,
   Head,
   Html,
+  Img,
   Preview,
   Section,
   Text,
 } from '@react-email/components';
 import * as React from 'react';
-import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
+import { EMAIL_BRAND_PRIMARY, emailLogoUrl } from '@/lib/email-brand';
 import type { InvoiceAutoEmailLocale } from './copy';
 
 export interface BaseEmailLayoutProps {
@@ -75,6 +76,20 @@ const CONTAINER_STYLE: React.CSSProperties = {
   color: '#111',
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+};
+
+const BRAND_HEADER_STYLE: React.CSSProperties = {
+  margin: '0 0 16px',
+  paddingBottom: '16px',
+  borderBottom: '1px solid #eee',
+};
+
+const BRAND_LOGO_STYLE: React.CSSProperties = {
+  display: 'block',
+  border: 0,
+  outline: 'none',
+  textDecoration: 'none',
+  height: 'auto',
 };
 
 const HEADING_STYLE: React.CSSProperties = {
@@ -192,6 +207,14 @@ export function BaseEmailLayout(props: BaseEmailLayoutProps) {
       <Preview>{props.previewText}</Preview>
       <Body style={{ backgroundColor: '#ffffff', margin: 0, padding: 0 }}>
         <Container style={CONTAINER_STYLE}>
+          <Section style={BRAND_HEADER_STYLE}>
+            <Img
+              src={emailLogoUrl()}
+              alt="SweCham — Thailand-Swedish Chamber of Commerce"
+              width={200}
+              style={BRAND_LOGO_STYLE}
+            />
+          </Section>
           <Text style={HEADING_STYLE} role="heading" aria-level={1}>
             {props.heading}
           </Text>

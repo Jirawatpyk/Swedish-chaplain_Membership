@@ -1,0 +1,32 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham laurel crest">
+  <defs><path id="lTop" d="M52 120 A68 68 0 0 1 188 120"/></defs>
+  <circle cx="120" cy="120" r="100" fill="#006AA7"/>
+  <circle cx="120" cy="120" r="100" fill="none" stroke="#FECC00" stroke-width="5"/>
+  <circle cx="120" cy="120" r="86" fill="none" stroke="#FECC00" stroke-width="2" opacity="0.6"/>
+  <!-- laurel branches -->
+  <g fill="#FECC00" stroke="none">
+    <g>
+      <ellipse cx="112" cy="190" rx="5" ry="11" transform="rotate(40 112 190)"/>
+      <ellipse cx="101" cy="184" rx="5" ry="11" transform="rotate(50 101 184)"/>
+      <ellipse cx="91" cy="176" rx="5" ry="11" transform="rotate(60 91 176)"/>
+      <ellipse cx="83" cy="166" rx="5" ry="11" transform="rotate(70 83 166)"/>
+      <ellipse cx="119" cy="180" rx="4.5" ry="9" transform="rotate(18 119 180)"/>
+      <ellipse cx="109" cy="172" rx="4.5" ry="9" transform="rotate(30 109 172)"/>
+      <ellipse cx="100" cy="163" rx="4.5" ry="9" transform="rotate(42 100 163)"/>
+    </g>
+    <g transform="translate(240,0) scale(-1,1)">
+      <ellipse cx="112" cy="190" rx="5" ry="11" transform="rotate(40 112 190)"/>
+      <ellipse cx="101" cy="184" rx="5" ry="11" transform="rotate(50 101 184)"/>
+      <ellipse cx="91" cy="176" rx="5" ry="11" transform="rotate(60 91 176)"/>
+      <ellipse cx="83" cy="166" rx="5" ry="11" transform="rotate(70 83 166)"/>
+      <ellipse cx="119" cy="180" rx="4.5" ry="9" transform="rotate(18 119 180)"/>
+      <ellipse cx="109" cy="172" rx="4.5" ry="9" transform="rotate(30 109 172)"/>
+      <ellipse cx="100" cy="163" rx="4.5" ry="9" transform="rotate(42 100 163)"/>
+    </g>
+  </g>
+  <text x="120" y="128" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="72" font-weight="700" fill="#FFFFFF" letter-spacing="-2">SC</text>
+  <polygon points="120,150 122,156.2 128.6,156.2 123.3,160.1 125.3,166.3 120,162.4 114.7,166.3 116.7,160.1 111.4,156.2 118,156.2" fill="#FECC00"/>
+  <text font-family="Georgia,serif" font-size="14" letter-spacing="3" fill="#FECC00" font-weight="600">
+    <textPath href="#lTop" startOffset="50%" text-anchor="middle">SWECHAM</textPath>
+  </text>
+</svg>

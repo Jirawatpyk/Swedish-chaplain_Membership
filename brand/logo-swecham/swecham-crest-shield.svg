@@ -1,0 +1,11 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham shield crest">
+  <!-- Heraldic shield: traditional commerce / chamber authority -->
+  <path d="M52 46 H188 V120 C188 168 150 198 120 210 C90 198 52 168 52 120 Z" fill="#006AA7" stroke="#FECC00" stroke-width="6" stroke-linejoin="round"/>
+  <!-- gold chief band -->
+  <path d="M52 46 H188 V78 H52 Z" fill="#FECC00"/>
+  <path d="M52 78 H188" stroke="#FECC00" stroke-width="2"/>
+  <text x="120" y="71" text-anchor="middle" font-family="Georgia,serif" font-size="15" letter-spacing="4" fill="#006AA7" font-weight="700">EST. CHAMBER</text>
+  <!-- monogram -->
+  <text x="120" y="150" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="66" font-weight="700" fill="#FFFFFF" letter-spacing="-2">SC</text>
+  <text x="120" y="185" text-anchor="middle" font-family="Georgia,serif" font-size="13" letter-spacing="2" fill="#FECC00">THAI · SWEDISH</text>
+</svg>

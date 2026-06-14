@@ -1,0 +1,18 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham modern roundel">
+  <defs>
+    <path id="mTop" d="M50 120 A70 70 0 0 1 190 120"/>
+    <path id="mBot" d="M54 120 A66 66 0 0 0 186 120"/>
+  </defs>
+  <circle cx="120" cy="120" r="100" fill="#FFFFFF"/>
+  <circle cx="120" cy="120" r="100" fill="none" stroke="#006AA7" stroke-width="6"/>
+  <circle cx="120" cy="120" r="70" fill="#006AA7"/>
+  <text x="120" y="146" text-anchor="middle" font-family="'Segoe UI',Arial,sans-serif" font-size="62" font-weight="800" fill="#FFFFFF" letter-spacing="-3">SC</text>
+  <polygon points="120,15 122,21.2 128.6,21.2 123.3,25.1 125.3,31.3 120,27.4 114.7,31.3 116.7,25.1 111.4,21.2 118,21.2" fill="#FECC00"/>
+  <polygon points="120,207 122,213.2 128.6,213.2 123.3,217.1 125.3,223.3 120,219.4 114.7,223.3 116.7,217.1 111.4,213.2 118,213.2" fill="#FECC00"/>
+  <text font-family="'Segoe UI',Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="4" fill="#006AA7">
+    <textPath href="#mTop" startOffset="50%" text-anchor="middle">SWECHAM</textPath>
+  </text>
+  <text font-family="'Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" letter-spacing="2.5" fill="#5b6b7b">
+    <textPath href="#mBot" startOffset="50%" text-anchor="middle">CHAMBER OF COMMERCE</textPath>
+  </text>
+</svg>

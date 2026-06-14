@@ -11,6 +11,7 @@ import {
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
+import { BrandMark } from '@/components/shell/brand-mark';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
 
@@ -63,24 +64,34 @@ export default async function MemberSignInPage({
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
-    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
-      <header className="flex items-center justify-between p-4">
-        <div className="text-sm font-semibold tracking-tight">{tenantName} · {tPortal('member')}</div>
+    <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
+      <header className="absolute right-4 top-4 z-10">
+        {/* Brand wordmark removed — the vertical lockup above the card now
+            carries the SweCham brand. The theme toggle floats top-right so it
+            doesn't consume layout height, letting the sign-in block centre in
+            the full viewport. */}
         <ThemeToggle />
       </header>
       <div className="flex flex-1 items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>{t('memberCardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {showSecurityBanner ? (
-              <SecurityUpdateBanner message={t('securityUpdateBanner')} />
-            ) : null}
-            <SignInForm portal="member" returnTo={validatedReturnTo} />
-          </CardContent>
-        </Card>
+        <div className="w-full max-w-md space-y-6">
+          <BrandMark
+            variant="vertical"
+            title={`${tenantName} — ${tPortal('member')}`}
+            className="mx-auto w-44"
+          />
+          <Card className="w-full">
+            <CardHeader className="space-y-2">
+              <CardTitle className="text-2xl">{t('title')}</CardTitle>
+              <CardDescription>{t('memberCardDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {showSecurityBanner ? (
+                <SecurityUpdateBanner message={t('securityUpdateBanner')} />
+              ) : null}
+              <SignInForm portal="member" returnTo={validatedReturnTo} />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </main>
   );

@@ -1,0 +1,10 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham tile typographic">
+  <defs><clipPath id="tD"><rect x="0" y="0" width="240" height="240" rx="54"/></clipPath></defs>
+  <g clip-path="url(#tD)">
+    <rect x="0" y="0" width="240" height="240" fill="#006AA7"/>
+    <!-- oversized cropped monogram -->
+    <text x="120" y="196" text-anchor="middle" font-family="'Segoe UI',Arial,sans-serif" font-size="210" font-weight="800" fill="#FFFFFF" letter-spacing="-14">SC</text>
+    <!-- gold accent dot -->
+    <circle cx="196" cy="58" r="16" fill="#FECC00"/>
+  </g>
+</svg>

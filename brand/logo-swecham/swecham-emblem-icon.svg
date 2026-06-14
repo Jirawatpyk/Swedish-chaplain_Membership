@@ -1,0 +1,6 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SweCham emblem icon">
+  <circle cx="120" cy="120" r="100" fill="#006AA7"/>
+  <circle cx="120" cy="120" r="84" fill="none" stroke="#FECC00" stroke-width="5"/>
+  <text x="120" y="150" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="96" font-weight="700" fill="#FFFFFF" letter-spacing="-4">SC</text>
+  <polygon points="120,163 122,169.2 128.6,169.2 123.3,173.1 125.3,179.3 120,175.4 114.7,179.3 116.7,173.1 111.4,169.2 118,169.2" fill="#FECC00"/>
+</svg>

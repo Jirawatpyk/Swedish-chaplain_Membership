@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 96" role="img" aria-label="SweCham bridge link mark (reversed)">
+  <title>SweCham interlocking link — reversed for dark backgrounds</title>
+  <defs>
+    <clipPath id="topCrossRv"><rect x="44" y="18" width="16" height="24"/></clipPath>
+  </defs>
+  <circle cx="42" cy="48" r="20" fill="none" stroke="#FFFFFF" stroke-width="11"/>
+  <circle cx="62" cy="48" r="20" fill="none" stroke="#F4C430" stroke-width="11"/>
+  <g clip-path="url(#topCrossRv)">
+    <circle cx="42" cy="48" r="20" fill="none" stroke="#FFFFFF" stroke-width="11"/>
+  </g>
+</svg>
