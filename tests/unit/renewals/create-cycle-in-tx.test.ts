@@ -31,6 +31,15 @@ const fakeTx = {} as TenantTx;
 function makeDeps(overrides?: {
   findActive?: RenewalCycle | null;
   planResult?: unknown;
+  /**
+   * 070 re-query coverage — a YEAR-AWARE plan-lookup. When supplied, the
+   * `loadPlanFrozenFields` mock returns the entry whose key matches the
+   * `fiscalYear` it was called with, so the provisional (raw-year) call and
+   * the definitive (anchored-year) call can return DISTINCT results. Any
+   * year absent from the map resolves to `{ status: 'not_found' }` (an
+   * unexpected year is a test-detectable miss, never a silent `found`).
+   */
+  planResultByYear?: Record<number, unknown>;
 }): {
   deps: CreateCycleInTxDeps;
   findActiveForMemberInTx: ReturnType<typeof vi.fn>;
@@ -58,17 +67,22 @@ function makeDeps(overrides?: {
         closedReason: null,
       }) as unknown as RenewalCycle,
   );
-  const loadPlanFrozenFields = vi.fn().mockResolvedValue(
-    overrides?.planResult ?? {
-      status: 'found',
-      plan: {
-        tierBucket: 'regular',
-        priceTHB: '15000.00',
-        termMonths: 12,
-        currency: 'THB',
-      },
-    },
-  );
+  const byYear = overrides?.planResultByYear;
+  const loadPlanFrozenFields = byYear
+    ? vi.fn().mockImplementation(async ({ fiscalYear }: { fiscalYear: number }) =>
+        byYear[fiscalYear] ?? { status: 'not_found' },
+      )
+    : vi.fn().mockResolvedValue(
+        overrides?.planResult ?? {
+          status: 'found',
+          plan: {
+            tierBucket: 'regular',
+            priceTHB: '15000.00',
+            termMonths: 12,
+            currency: 'THB',
+          },
+        },
+      );
   const emitInTx = vi.fn().mockResolvedValue(undefined);
 
   const deps: CreateCycleInTxDeps = {
@@ -168,6 +182,178 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
       anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
     });
 
+    expect(loadPlanFrozenFields).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2026,
+      requireActiveForYear: false,
+    });
+  });
+
+  it('070 §86/4 — RE-QUERIES the definitive year when anchoring crosses a year boundary (provisional 2020 → definitive 2026) and freezes from the DEFINITIVE call', async () => {
+    // The two-step freeze lookup: a provisional lookup keyed on the RAW input
+    // year (2020) supplies the term used to anchor periodFrom; once the cycle's
+    // REAL fiscal year is known (2026, post-anchoring) a DEFINITIVE re-lookup
+    // pins the frozen price/term/tier to that year. A YEAR-AWARE mock returns
+    // DISTINCT plans per year so we prove the cycle freezes from the 2026 call,
+    // not the 2020 provisional — a single-call refactor would fail this.
+    const { deps, loadPlanFrozenFields, insert } = makeDeps({
+      planResultByYear: {
+        2020: {
+          status: 'found',
+          plan: {
+            tierBucket: 'regular',
+            priceTHB: '9000.00', // stale provisional-year price
+            termMonths: 12,
+            currency: 'THB',
+          },
+        },
+        2026: {
+          status: 'found',
+          plan: {
+            tierBucket: 'premium', // definitive-year tier — distinct from provisional
+            priceTHB: '18000.00', // definitive-year price — distinct from provisional
+            termMonths: 12,
+            currency: 'THB',
+          },
+        },
+      },
+    });
+
+    const out = await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
+    });
+
+    // TWO distinct lookups fired: provisional (raw 2020) THEN definitive (2026).
+    expect(loadPlanFrozenFields).toHaveBeenCalledTimes(2);
+    expect(loadPlanFrozenFields).toHaveBeenNthCalledWith(1, {
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2020,
+      requireActiveForYear: false,
+    });
+    expect(loadPlanFrozenFields).toHaveBeenNthCalledWith(2, {
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2026,
+      requireActiveForYear: false,
+    });
+
+    // The cycle freezes the DEFINITIVE (2026) plan, NOT the provisional (2020).
+    expect(out.kind).toBe('created');
+    const [, , newCycle] = insert.mock.calls[0]!;
+    expect(newCycle).toMatchObject({
+      periodFrom: '2026-03-15T00:00:00.000Z',
+      periodTo: '2027-03-15T00:00:00.000Z',
+      tierAtCycleStart: 'premium',
+      frozenPlanPriceThb: '18000.00',
+    });
+  });
+
+  it('070 §86/4 — definitive re-lookup MISS (not_found) → throws PlanNotResolvableError, inserts no cycle', async () => {
+    // Provisional (raw 2020) resolves so anchoring proceeds; the definitive
+    // (anchored 2026) year is NOT in the catalogue → the re-lookup misses. The
+    // :256-262 throw path: refuse to create an unbillable cycle with no frozen
+    // §86/4 price, and roll back (no insert, no audit).
+    const { deps, insert, emitInTx, loadPlanFrozenFields } = makeDeps({
+      planResultByYear: {
+        2020: {
+          status: 'found',
+          plan: {
+            tierBucket: 'regular',
+            priceTHB: '9000.00',
+            termMonths: 12,
+            currency: 'THB',
+          },
+        },
+        // 2026 absent → year-aware mock returns { status: 'not_found' }.
+      },
+    });
+
+    const err = await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
+    }).then(
+      () => {
+        throw new Error('expected createCycleInTx to throw on definitive miss');
+      },
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(PlanNotResolvableError);
+    const typed = err as PlanNotResolvableError;
+    expect(typed.planStatus).toBe('not_found');
+    expect(typed.planId).toBe(baseInput.planId);
+    expect(typed.memberId).toBe(baseInput.memberId);
+    // The definitive (2026) lookup DID fire — the throw is from the re-query,
+    // not the provisional call (which resolved 'found').
+    expect(loadPlanFrozenFields).toHaveBeenCalledTimes(2);
+    expect(loadPlanFrozenFields).toHaveBeenNthCalledWith(2, {
+      tenantId: 'tenant-a',
+      planId: 'regular',
+      fiscalYear: 2026,
+      requireActiveForYear: false,
+    });
+    // Cycle is NOT inserted and no audit fires — the tx rolls back.
+    expect(insert).not.toHaveBeenCalled();
+    expect(emitInTx).not.toHaveBeenCalled();
+  });
+
+  it('070 §86/4 — definitive re-lookup MISS (plan_inactive) → throws PlanNotResolvableError, inserts no cycle', async () => {
+    // Same re-query throw path, but the anchored-year row exists and is
+    // inactive. A FREEZE caller (requireActiveForYear:false) treats an
+    // exact-year row as found regardless of is_active, so a port that returns
+    // plan_inactive for the definitive year is an explicit "no row" signal →
+    // the re-query throws plan_inactive (distinct from the not_found case).
+    const { deps, insert, emitInTx, loadPlanFrozenFields } = makeDeps({
+      planResultByYear: {
+        2020: {
+          status: 'found',
+          plan: {
+            tierBucket: 'regular',
+            priceTHB: '9000.00',
+            termMonths: 12,
+            currency: 'THB',
+          },
+        },
+        2026: { status: 'plan_inactive' },
+      },
+    });
+
+    const err = await createCycleInTx(deps, fakeTx, {
+      ...baseInput,
+      periodFrom: '2020-03-15T00:00:00.000Z',
+      anchorToCurrentPeriod: { nowIso: '2026-06-14T00:00:00.000Z' },
+    }).then(
+      () => {
+        throw new Error('expected createCycleInTx to throw on definitive miss');
+      },
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(PlanNotResolvableError);
+    expect((err as PlanNotResolvableError).planStatus).toBe('plan_inactive');
+    expect(loadPlanFrozenFields).toHaveBeenCalledTimes(2);
+    expect(insert).not.toHaveBeenCalled();
+    expect(emitInTx).not.toHaveBeenCalled();
+  });
+
+  it('070 §86/4 — SKIPS the re-query on the hot path: no anchoring (steady-state) → loadPlanFrozenFields called ONCE', async () => {
+    // The common on-paid / onboarding case: periodFrom is already at the
+    // current period (no anchorToCurrentPeriod, or anchoring within the same
+    // year). The provisional and definitive years coincide → the :249 guard is
+    // false → the definitive re-lookup is SKIPPED and the provisional result is
+    // reused. Proves the two-step path does NOT cost an extra query on the
+    // steady-state hot path.
+    const { deps, loadPlanFrozenFields } = makeDeps();
+
+    const out = await createCycleInTx(deps, fakeTx, baseInput);
+
+    expect(out.kind).toBe('created');
+    expect(loadPlanFrozenFields).toHaveBeenCalledTimes(1);
     expect(loadPlanFrozenFields).toHaveBeenCalledWith({
       tenantId: 'tenant-a',
       planId: 'regular',
