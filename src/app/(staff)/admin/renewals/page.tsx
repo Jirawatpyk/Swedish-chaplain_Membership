@@ -14,7 +14,7 @@
  */
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { AlertTriangle } from 'lucide-react';
@@ -27,12 +27,15 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   loadPipeline,
+  loadPendingReactivationReview,
   makeRenewalsDeps,
   TIER_BUCKETS,
   type TierBucket,
   type UrgencyBucket,
+  type LoadPendingReactivationReviewOutput,
 } from '@/modules/renewals';
 import { RenewalsEmptyState } from './_components/empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
@@ -41,6 +44,12 @@ import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from './_components/error-card-actions';
 import { AtRiskWidget } from './_components/at-risk-widget';
+import { RenewalsViewTabs } from './_components/renewals-view-tabs';
+import {
+  PendingReviewList,
+  type PendingReviewRow,
+} from './_components/pending-review-list';
+import { fetchMemberDisplay } from './[cycleId]/_lib/cycle-detail-fetchers';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -65,6 +74,8 @@ interface SearchParams {
   readonly tier?: string;
   readonly urgency?: string;
   readonly cursor?: string;
+  /** `'pending-review'` selects the reactivation-review discovery view. */
+  readonly view?: string;
 }
 
 export default async function RenewalsPipelinePage({
@@ -114,6 +125,32 @@ export default async function RenewalsPipelinePage({
       ? (query.urgency as UrgencyBucket)
       : DEFAULT_URGENCY;
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
+  const isPendingReviewView = query.view === 'pending-review';
+
+  const deps = makeRenewalsDeps(tenantCtx.slug);
+
+  // 070 F8 item #18 — "Pending review" discovery view. Loaded ONLY when
+  // active so the urgency-pipeline hot path (SC-003 p95<500ms) takes no
+  // extra query. The admin reaches it via the view-tabs toggle; the
+  // approve/reject actions live on the cycle-detail page.
+  if (isPendingReviewView) {
+    const locale = await getLocale();
+    return (
+      <TableContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <Card>
+          <CardContent className="flex flex-col gap-4">
+            <RenewalsViewTabs current="pending-review" pendingReviewCount={0} />
+            <PendingReviewSection
+              tenantSlug={tenantCtx.slug}
+              actorUserId={currentUser.id}
+              locale={locale}
+            />
+          </CardContent>
+        </Card>
+      </TableContainer>
+    );
+  }
 
   // W0-09: § 23.1.1 lapsed_tab_visit counter — emitted before the data
   // fetch so the visit is recorded even when loadPipeline errors.
@@ -121,7 +158,6 @@ export default async function RenewalsPipelinePage({
     renewalsMetrics.pipelineLapsedTabVisit(tenantCtx.slug);
   }
 
-  const deps = makeRenewalsDeps(tenantCtx.slug);
   const result = await loadPipeline(deps, {
     tenantId: tenantCtx.slug,
     ...(tier !== undefined ? { tier } : {}),
@@ -224,6 +260,12 @@ export default async function RenewalsPipelinePage({
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
+          {/* 070 F8 item #18 — view toggle reachable from the pipeline so
+              admins can navigate to the pending-review discovery list.
+              The count badge is loaded only on the pending-review view
+              (pipeline hot path takes no extra query), so it renders
+              without a badge here. */}
+          <RenewalsViewTabs current="pipeline" pendingReviewCount={0} />
           {showEmptyState ? (
             <RenewalsEmptyState />
           ) : (
@@ -272,5 +314,115 @@ export default async function RenewalsPipelinePage({
       </Card>
       <AtRiskWidget actorRole={widgetActorRole} />
     </TableContainer>
+  );
+}
+
+/**
+ * 070 F8 item #18 — server-rendered "Pending review" discovery section.
+ *
+ * Loads the cycles in `pending_admin_reactivation` via
+ * `loadPendingReactivationReview` then batch-enriches each row's member
+ * company name via F3's `fetchMemberDisplay` (cross-context read; falls
+ * back to the cycle's short id when the lookup fails so a single member
+ * lookup error never blanks the whole list). Dates are formatted
+ * day-grain, locale-/BE-aware, on the server so the client list component
+ * stays locale-agnostic.
+ *
+ * Best-effort error handling: an infrastructure throw from the use-case
+ * renders a "couldn't load" alert (the pipeline page itself never crashes).
+ */
+async function PendingReviewSection({
+  tenantSlug,
+  actorUserId,
+  locale,
+}: {
+  readonly tenantSlug: string;
+  readonly actorUserId: string;
+  readonly locale: string;
+}) {
+  const t = await getTranslations('admin.renewals.pendingReview');
+  const deps = makeRenewalsDeps(tenantSlug);
+
+  let cycles: LoadPendingReactivationReviewOutput['cycles'];
+  try {
+    const result = await loadPendingReactivationReview(deps, {
+      tenantId: tenantSlug,
+    });
+    // Result error channel is `never`; `ok` is always true at runtime, but
+    // the discriminant narrows `.value` for the type checker.
+    if (!result.ok) {
+      cycles = [];
+    } else {
+      cycles = result.value.cycles;
+    }
+  } catch (e) {
+    logger.error(
+      {
+        errorId: 'F8.ADMIN.PENDING_REVIEW_LOAD',
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenantSlug,
+      },
+      '[admin/renewals] pending-review load failed',
+    );
+    return (
+      <Card>
+        <CardContent
+          role="alert"
+          aria-live="assertive"
+          className="flex flex-col items-center gap-4 py-12 text-center"
+        >
+          <AlertTriangle
+            aria-hidden="true"
+            className="h-10 w-10 text-destructive"
+          />
+          <div className="text-base font-medium text-destructive">
+            {t('loadFailed')}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+    dateStyle: 'long',
+  });
+  const fmtDateOnly = (s: string | null | undefined): string =>
+    s ? dtFmtDay.format(new Date(s)) : '—';
+
+  // Enrich company names — best-effort per row (a single lookup failure
+  // degrades to the cycle short-id, never blanks the whole list).
+  const enriched = await Promise.allSettled(
+    cycles.map((c) =>
+      fetchMemberDisplay({
+        tenantSlug,
+        memberId: c.memberId,
+        actorUserId,
+        requestId: randomUUID(),
+      }),
+    ),
+  );
+
+  const rows: PendingReviewRow[] = cycles.map((c, i) => {
+    const lookup = enriched[i];
+    const companyName =
+      lookup?.status === 'fulfilled' && lookup.value
+        ? lookup.value.companyName
+        : c.cycleId.slice(0, 8);
+    return {
+      cycleId: c.cycleId,
+      companyName,
+      pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
+      expiryLabel: fmtDateOnly(c.expiresAt),
+    };
+  });
+
+  return (
+    <>
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">{t('sectionTitle')}</h2>
+        <p className="text-sm text-muted-foreground">{t('sectionSubtitle')}</p>
+      </div>
+      <PendingReviewList rows={rows} />
+    </>
   );
 }

@@ -591,6 +591,15 @@ export {
   type ReconcilePendingReactivationsError,
 } from './application/use-cases/reconcile-pending-reactivations';
 
+// 070 F8 item #18 — read-only "Pending review" discovery list for the
+// `/admin/renewals` dashboard.
+export {
+  loadPendingReactivationReview,
+  PENDING_REVIEW_DEFAULT_PAGE_SIZE,
+  type LoadPendingReactivationReviewInput,
+  type LoadPendingReactivationReviewOutput,
+} from './application/use-cases/load-pending-reactivation-review';
+
 // --- T115a Phase 5 wave K24 — lapseCyclesOnGraceExpiry --------------------
 export {
   lapseCyclesOnGraceExpiry,

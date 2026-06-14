@@ -35,6 +35,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleStatusBadge } from './_components/cycle-status-badge';
+import { PendingReactivationActions } from './_components/pending-reactivation-actions';
 // Phase 6 review-round 2 A2 — display-data fetchers extracted to a
 // testable module so unit tests can drive the C4 error semantics
 // (null-vs-throw) + TD1 zod parse without booting Drizzle.
@@ -360,6 +361,18 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           <AlertDescription>{t('pendingNoticeBody')}</AlertDescription>
         </Alert>
       )}
+
+      {/* 070 F8 item #18 — admin approve / reject-with-refund actions.
+          The client component renders nothing unless the cycle is in
+          `pending_admin_reactivation`, so it's safe to mount
+          unconditionally; gating here keeps the actions adjacent to the
+          notice Alert above. Only admins act (the page already lets
+          managers view this read-only surface; the route handlers reject
+          a manager POST with 403 + f8_role_violation_blocked audit). */}
+      {c.status === 'pending_admin_reactivation' &&
+        currentUser.role === 'admin' && (
+          <PendingReactivationActions cycleId={c.cycleId} status={c.status} />
+        )}
 
       {/* Staff-Review-2026-05-09 SUG-5 fix: surface F2/F3 lookup
           failures via <Alert variant="warning"> instead of inline
