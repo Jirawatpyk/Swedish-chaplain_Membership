@@ -30,6 +30,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { parseThbDecimalToSatang } from '@/lib/money';
 import {
   createInvoiceDraft,
   issueInvoice,
@@ -47,6 +48,19 @@ export interface IssueAndMarkPaidInput {
   readonly memberId: string;
   readonly planId: string;
   readonly planYear: number;
+  /**
+   * FR-022 — the cycle's FROZEN membership price as a `decimal(12,2)` THB
+   * string (e.g. `'50000.50'`), server-sourced from the renewal cycle row.
+   * NEVER a request body — a renewal §86/4 (ใบกำกับภาษี) is a price-
+   * tampering surface on a tax document. The bridge converts it to
+   * VAT-exclusive satang via the shared integer-only `parseThbDecimalToSatang`
+   * (NO `parseFloat` — float drift charges the wrong amount) and threads it
+   * as `renewalSignal` into `createInvoiceDraft` so the membership line bills
+   * the frozen price, not the live F2 catalogue price, AND the one-off
+   * `registration_fee` re-bill is suppressed. Mirrors the online path
+   * (`f4-invoicing-for-renewal-bridge-drizzle.ts`).
+   */
+  readonly frozenPlanPriceThb: string;
   readonly paymentMethod: F4OfflinePaymentMethod;
   readonly paymentReference: string;
   /** YYYY-MM-DD Bangkok-local. */
@@ -101,6 +115,16 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
     input: IssueAndMarkPaidInput,
   ): Promise<Result<IssueAndMarkPaidResult, F4BridgeError>> {
     // --- Step 1: Create draft invoice (own tx) ---------------------------
+    // FR-022 — convert the cycle's frozen `decimal(12,2)` THB string to
+    // VAT-EXCLUSIVE satang via the shared integer-only parser (NO
+    // `parseFloat` — float drift charges the wrong amount on a tax
+    // document) and pass it as the renewal signal so the membership line
+    // bills the FROZEN price, not the live F2 catalogue price, AND the
+    // one-off registration_fee is NOT re-billed. Mirrors the online
+    // confirm-renewal path (f4-invoicing-for-renewal-bridge-drizzle.ts).
+    const frozenUnitPriceSatang = parseThbDecimalToSatang(
+      input.frozenPlanPriceThb,
+    );
     const createDeps = makeCreateInvoiceDraftDeps(input.tenantId);
     const created = await createInvoiceDraft(createDeps, {
       tenantId: input.tenantId,
@@ -112,6 +136,7 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
       // F8 path is admin offline — auto-email is unwanted (admin already
       // has a printed receipt or out-of-band acknowledgement).
       autoEmailOnIssue: false,
+      renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
     });
     if (!created.ok) {
       return err({

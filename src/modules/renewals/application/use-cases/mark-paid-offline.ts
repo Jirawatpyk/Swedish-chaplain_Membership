@@ -324,6 +324,15 @@ export async function markPaidOffline(
         memberId,
         planId,
         planYear,
+        // FR-022 — bill the cycle's FROZEN price on the offline §86/4, NOT
+        // the live F2 catalogue price (which may have been bumped since the
+        // cycle was created). Server-sourced from the LOCKED cycle row (the
+        // same snapshot the period anchors + completion flip ride), never a
+        // request body — a renewal §86/4 is a price-tampering surface on a
+        // tax document. The bridge converts to VAT-exclusive satang +
+        // suppresses the reg-fee re-bill. Mirrors the online confirm-renewal
+        // path. (cluster A, 068 code-review fix.)
+        frozenPlanPriceThb: lockedCycle.frozenPlanPriceThb,
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
         paymentDate: input.paymentDate,
