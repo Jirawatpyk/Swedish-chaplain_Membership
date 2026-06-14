@@ -25,6 +25,7 @@ const TENANT_ID = process.env.E2E_TENANT_SLUG ?? 'swecham';
 const DUMMY_MEMBER_ID = '00000000-0000-4000-8000-0000f8c0de03';
 const DUMMY_CONTACT_ID = '00000000-0000-4000-8000-0000f8c0de13';
 const DUMMY_COMPANY = 'Lapsed Comeback Co (E2E)';
+const DUMMY_PLAN_ID = 'e2e-lapsed-comeback-plan';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -61,7 +62,6 @@ export async function seedLapsedMemberForComeback(): Promise<LapsedMemberSeed | 
     // dummy plan row (cloned from a real active plan to satisfy every NOT
     // NULL column) under a unique `plan_id` so its single row IS the
     // highest-year active row the lookup resolves. Idempotent.
-    const DUMMY_PLAN_ID = 'e2e-lapsed-comeback-plan';
     // Use the CURRENT calendar year so it matches the `plan_year` the UI
     // posts for the renewal invoice (`new Date().getUTCFullYear()`); the
     // F4 createInvoiceDraft looks up the plan fee by (plan_id, plan_year)
@@ -174,6 +174,61 @@ export async function seedLapsedMemberForComeback(): Promise<LapsedMemberSeed | 
       `[e2e seed lapsed-member] OK member=${DUMMY_MEMBER_ID} (${DUMMY_COMPANY}) lapsed-only in tenant ${TENANT_ID}`,
     );
     return { memberId: DUMMY_MEMBER_ID, companyName: DUMMY_COMPANY };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * Tear down everything the lapsed-comeback E2E left in the shared `swecham`
+ * tenant — the dummy member (high `member_number`), its contacts, its
+ * renewal cycles (the seeded `lapsed` one + the fresh `awaiting_payment`
+ * one the admin-renew action created), the §86/4 invoice that action
+ * issued, and the dummy plan row. MUST run in the spec's `afterAll`: the
+ * dummy `member_number` (990_000+) is non-contiguous and would otherwise
+ * break the `migration-0209-post-apply` member-number contiguity check on
+ * the next members-integration run against this shared dev Neon.
+ *
+ * Deletes by the DETERMINISTIC dummy ids in FK order. The §87 sequence
+ * number consumed by the issued invoice is intentionally NOT reset (the
+ * allocator is forward-only; a small gap in the dev tenant's tax stream is
+ * the accepted cost of an E2E that exercises the real issuance path, same
+ * as the other renewal E2E specs). Audit rows are append-only and left as-is.
+ */
+export async function cleanupLapsedMemberComeback(): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    // FK order: invoice_lines → invoices, but renewal_cycles.linked_invoice_id
+    // → invoices too, so the cycles must go BEFORE the invoices they link.
+    await sql`
+      DELETE FROM invoice_lines
+      WHERE invoice_id IN (
+        SELECT invoice_id FROM invoices
+        WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+      )
+    `;
+    await sql`
+      DELETE FROM renewal_cycles
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM invoices
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM contacts
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM members
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM membership_plans
+      WHERE tenant_id = ${TENANT_ID} AND plan_id = ${DUMMY_PLAN_ID}
+    `;
   } finally {
     await sql.end({ timeout: 5 });
   }

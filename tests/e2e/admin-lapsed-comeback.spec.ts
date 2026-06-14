@@ -20,6 +20,7 @@ import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import {
   seedLapsedMemberForComeback,
+  cleanupLapsedMemberComeback,
   type LapsedMemberSeed,
 } from './helpers/lapsed-member-seed';
 
@@ -38,6 +39,14 @@ test.describe('F8 — admin lapsed-comeback (Slice 3 / Task 3.2)', () => {
       return;
     }
     seeded = await seedLapsedMemberForComeback();
+  });
+
+  test.afterAll(async () => {
+    // Tear down the dummy member (+ its cycles, the issued §86/4, the dummy
+    // plan) from the shared `swecham` tenant. The high dummy member_number
+    // is non-contiguous and would otherwise fail the migration-0209
+    // member-number-contiguity check on the next members-integration run.
+    await cleanupLapsedMemberComeback();
   });
 
   test('admin renews a lapsed member — Renew action → confirm → cycle becomes awaiting_payment', async ({

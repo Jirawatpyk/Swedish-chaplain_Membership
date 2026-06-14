@@ -78,7 +78,17 @@ describe('migration 0209 — post-apply verification', () => {
     expect(r.total).toBeGreaterThan(0);
   });
 
-  it('member_numbers are contiguous 1..N per tenant with no duplicates', async () => {
+  it('member_numbers are contiguous 1..N per REAL tenant with no duplicates', async () => {
+    // Scope to REAL (migrated) tenants. Throwaway INTEGRATION tenants
+    // (`test-…` / `__test…`) are created post-migration by other suites'
+    // raw `members` inserts using `nextSeedMemberNumber()` (a HIGH 900_000+
+    // value, intentionally non-contiguous — it bypasses the allocator so a
+    // fixture and a real createMember can share a throwaway tenant without
+    // colliding; see tests/.../seed-member-number.ts). Those tenants are NOT
+    // what migration 0209 backfilled, and a leaked one (an interrupted run's
+    // afterAll that didn't fire) would false-fail this all-tenant invariant
+    // on the shared dev Neon. The migration-verification assertion is about
+    // the real backfill, so exclude the throwaway test tenants.
     const rows = await db.execute(sql`
       SELECT tenant_id,
              COUNT(*)::int                     AS cnt,
@@ -86,6 +96,8 @@ describe('migration 0209 — post-apply verification', () => {
              MAX(member_number)::int           AS maxn,
              COUNT(DISTINCT member_number)::int AS distinctn
       FROM members
+      WHERE tenant_id NOT LIKE 'test-%'
+        AND LEFT(tenant_id, 2) <> '__'
       GROUP BY tenant_id
     `);
     expect(rows.length).toBeGreaterThan(0);
