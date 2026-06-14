@@ -138,6 +138,10 @@ function fakeDeps(
     planLookupForRenewal: {
       loadPlanFrozenFields: loadPlanFrozenFieldsMock,
     } as unknown as RenewalsDeps['planLookupForRenewal'],
+    // 068 speckit-review DRY (simplify #1) — the use-case now reads the
+    // cycle-id generator from `deps.cycleIdFactory` (was an inline literal).
+    // Provide a deterministic generator so the next-cycle insert resolves.
+    cycleIdFactory: { cycleId: () => asCycleId(VALID_UUID) },
   } as unknown as RenewalsDeps;
   return {
     deps,

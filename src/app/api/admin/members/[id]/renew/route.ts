@@ -40,7 +40,32 @@ import {
   successResponse,
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
+import {
+  RENEW_LAPSED_ERROR_CODES,
+  type RenewLapsedErrorCode,
+} from '@/components/members/renew-lapsed-error-codes';
 import { adminRenewLapsedMember, makeRenewalsDeps } from '@/modules/renewals';
+
+/**
+ * Thin wrapper over the shared `errorResponse` that PINS the `code` to the
+ * closed `RenewLapsedErrorCode` union (the i18n-coverage set in
+ * `renew-lapsed-error-codes.ts`). Emitting a code not in that union is a
+ * COMPILE error here, so the route's error surface and the
+ * `RenewLapsedMemberDialog` toast set / EN keys stay provably in sync. The
+ * shared `errorResponse` keeps its generic `code: string` for the other
+ * renewals routes. `void RENEW_LAPSED_ERROR_CODES` references the runtime
+ * tuple so the i18n test's single source remains coupled to this route.
+ */
+void RENEW_LAPSED_ERROR_CODES;
+function renewLapsedError(opts: {
+  readonly status: number;
+  readonly code: RenewLapsedErrorCode;
+  readonly correlationId: string;
+  readonly details?: Record<string, unknown>;
+  readonly headers?: Record<string, string>;
+}) {
+  return errorResponse(opts);
+}
 
 /**
  * L3 — 30 requests per 5 minutes per (tenant, admin). Generous headroom
@@ -57,7 +82,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   if (!env.features.f8Renewals) {
-    return errorResponse({
+    return renewLapsedError({
       status: 503,
       code: 'feature_disabled',
       correlationId: randomUUID(),
@@ -78,7 +103,7 @@ export async function POST(
     RL_WINDOW_SECONDS,
   );
   if (!rl.success) {
-    return errorResponse({
+    return renewLapsedError({
       status: 429,
       code: 'rate_limited',
       correlationId: ctx.correlationId,
@@ -95,7 +120,7 @@ export async function POST(
   try {
     await request.json();
   } catch {
-    return errorResponse({
+    return renewLapsedError({
       status: 400,
       code: 'invalid_body',
       correlationId: ctx.correlationId,
@@ -116,14 +141,14 @@ export async function POST(
     if (!result.ok) {
       switch (result.error.kind) {
         case 'invalid_input':
-          return errorResponse({
+          return renewLapsedError({
             status: 400,
             code: 'invalid_input',
             correlationId: ctx.correlationId,
             details: { message: result.error.message },
           });
         case 'member_not_found':
-          return errorResponse({
+          return renewLapsedError({
             status: 404,
             code: 'member_not_found',
             correlationId: ctx.correlationId,
@@ -132,32 +157,32 @@ export async function POST(
           // 068 cluster C — the member exists but is archived. 409 (conflict
           // with current state): the admin must un-archive the member before
           // renewing. Rejected before any cycle is created (no orphan).
-          return errorResponse({
+          return renewLapsedError({
             status: 409,
             code: 'member_archived',
             correlationId: ctx.correlationId,
           });
         case 'member_has_active_cycle':
-          return errorResponse({
+          return renewLapsedError({
             status: 409,
             code: 'member_has_active_cycle',
             correlationId: ctx.correlationId,
           });
         case 'plan_not_found':
-          return errorResponse({
+          return renewLapsedError({
             status: 422,
             code: 'plan_not_found',
             correlationId: ctx.correlationId,
           });
         case 'invoice_issue_failed':
-          return errorResponse({
+          return renewLapsedError({
             status: 502,
             code: 'invoice_issue_failed',
             correlationId: ctx.correlationId,
             details: { stage: result.error.stage },
           });
         case 'server_error':
-          return errorResponse({
+          return renewLapsedError({
             status: 500,
             code: 'server_error',
             correlationId: ctx.correlationId,
@@ -165,7 +190,7 @@ export async function POST(
         default: {
           const _exhaustive: never = result.error;
           void _exhaustive;
-          return errorResponse({
+          return renewLapsedError({
             status: 500,
             code: 'server_error',
             correlationId: ctx.correlationId,
@@ -191,7 +216,7 @@ export async function POST(
       },
       'admin-renew-lapsed-member route unexpected error',
     );
-    return errorResponse({
+    return renewLapsedError({
       status: 500,
       code: 'server_error',
       correlationId: ctx.correlationId,

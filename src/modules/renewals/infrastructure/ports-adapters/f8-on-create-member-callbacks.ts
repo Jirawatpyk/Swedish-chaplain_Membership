@@ -33,13 +33,12 @@
  * safe no-op.
  *
  * Pure Infrastructure — only `@/lib/db` (runInTenant) + `createCycleInTx`
- * + `makeRenewalsDeps` + `node:crypto` + the cycle-id brand imports.
+ * + `makeRenewalsDeps` (the cycle-id generator comes from the deps'
+ * `cycleIdFactory`).
  */
-import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import type { CreateMemberListener } from '@/modules/members';
 import { createCycleInTx } from '../../application/use-cases/create-cycle-in-tx';
-import { asCycleId } from '../../domain/renewal-cycle';
 import { makeRenewalsDeps } from '../renewals-deps';
 
 /**
@@ -62,7 +61,7 @@ export function f8OnCreateMemberCallbacks(
             cyclesRepo: deps.cyclesRepo,
             planLookup: deps.planLookupForRenewal,
             auditEmitter: deps.auditEmitter,
-            idFactory: { cycleId: () => asCycleId(randomUUID()) },
+            idFactory: deps.cycleIdFactory,
           },
           tx,
           {

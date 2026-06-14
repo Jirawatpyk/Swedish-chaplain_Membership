@@ -18,7 +18,7 @@
  * (`src/app/api/admin/members/[id]/renew/route.ts`). A new emittable code
  * there must be added here + given copy in en/th/sv.
  */
-export const RENEW_LAPSED_ERROR_CODES: readonly string[] = [
+export const RENEW_LAPSED_ERROR_CODES = [
   'feature_disabled',
   'rate_limited',
   'invalid_body',
@@ -29,4 +29,25 @@ export const RENEW_LAPSED_ERROR_CODES: readonly string[] = [
   'plan_not_found',
   'invoice_issue_failed',
   'server_error',
-];
+] as const;
+
+/**
+ * The closed union of codes the renew route may emit. The route's
+ * `errorResponse({ code })` calls are typed against this union (see
+ * `renew/route.ts`), so emitting a code NOT in this list is a COMPILE error
+ * — keeping the route's switch and this i18n-pinned set provably in sync.
+ */
+export type RenewLapsedErrorCode = (typeof RENEW_LAPSED_ERROR_CODES)[number];
+
+/**
+ * Compile-time count pin (mirrors `_AssertCycleStatusCount` in
+ * `cycle-status.ts`) — accidentally adding/dropping a code from the tuple
+ * without updating this expected count is a build error, a second guard
+ * alongside the route's typed switch + the i18n-coverage unit test.
+ */
+type _AssertRenewLapsedErrorCodeCount =
+  (typeof RENEW_LAPSED_ERROR_CODES)['length'] extends 10
+    ? true
+    : 'RENEW_LAPSED_ERROR_CODES count mismatch — expected 10';
+const _assertRenewLapsedErrorCodeCount: _AssertRenewLapsedErrorCodeCount = true;
+void _assertRenewLapsedErrorCodeCount;

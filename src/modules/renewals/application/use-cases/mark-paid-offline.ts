@@ -27,18 +27,13 @@
  *     loud-fails in production. Their pgEnum migration ships in
  *     Phase 4 alongside the dispatcher cron emit sites.
  */
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
-import {
-  asCycleId,
-  parseCycleId,
-  type CycleId,
-} from '../../domain/renewal-cycle';
+import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 // Type-only imports keep Application layer free of cross-module runtime
 // coupling (Constitution Principle III). Brands are compile-time no-op
@@ -304,7 +299,7 @@ export async function markPaidOffline(
             cyclesRepo: deps.cyclesRepo,
             planLookup: deps.planLookupForRenewal,
             auditEmitter: deps.auditEmitter,
-            idFactory: { cycleId: () => asCycleId(randomUUID()) },
+            idFactory: deps.cycleIdFactory,
           },
           evt,
           tx,

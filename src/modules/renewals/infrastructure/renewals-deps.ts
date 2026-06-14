@@ -707,7 +707,7 @@ export function f8OnPaidCallbacks(
           cyclesRepo: deps.cyclesRepo,
           planLookup: deps.planLookupForRenewal,
           auditEmitter: deps.auditEmitter,
-          idFactory: { cycleId: () => asCycleId(randomUUID()) },
+          idFactory: deps.cycleIdFactory,
         },
         evt,
         txUnknown,
