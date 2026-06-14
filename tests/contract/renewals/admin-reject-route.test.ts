@@ -59,7 +59,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@/lib/auth-deps', () => ({
-  rateLimiter: { check: (...args: unknown[]) => rateLimiterCheckMock() },
+  rateLimiter: { check: () => rateLimiterCheckMock() },
 }));
 vi.mock('@/lib/rate-limit-helpers', () => ({
   retryAfterSecondsFromRl: vi.fn(() => 42),
