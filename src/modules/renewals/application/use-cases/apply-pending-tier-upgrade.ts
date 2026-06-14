@@ -42,6 +42,28 @@ import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion
 import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import type { MemberId, PlanId } from '@/modules/members';
 import { parseInvoiceId, type InvoiceId } from '@/modules/invoicing';
+import type { RenewalActorRole } from '../ports/renewal-audit-emitter';
+
+/**
+ * Actor context for the `tier_upgrade_applied_at_renewal` audit emitted
+ * by `applyPendingTierUpgradeInTx`. The default (online F4 invoice-paid
+ * paths — Stripe webhook + record-payment) is the canonical
+ * `{ actorUserId: null, actorRole: 'webhook' }`. The OFFLINE admin
+ * mark-paid path (070 Item D) overrides with the admin's user id +
+ * `'admin'` role, since that path is an admin-initiated out-of-band
+ * settlement, not a webhook delivery — the admin is the accurate actor
+ * for the cascade. `RenewalActorRole` already includes `'admin'`, so no
+ * enum change is required.
+ */
+export interface ApplyTierUpgradeActor {
+  readonly actorUserId: string | null;
+  readonly actorRole: RenewalActorRole;
+}
+
+const DEFAULT_APPLY_ACTOR: ApplyTierUpgradeActor = {
+  actorUserId: null,
+  actorRole: 'webhook',
+};
 
 export const applyPendingTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -77,8 +99,17 @@ export async function applyPendingTierUpgradeInTx(
     readonly invoiceId: InvoiceId;
     readonly correlationId: string;
     readonly requestId: string | null;
+    /**
+     * 070 Item D — optional actor override for the apply audit. Defaults
+     * to the online `{ actorUserId: null, actorRole: 'webhook' }` so the
+     * Stripe-webhook + record-payment callers are unchanged; the OFFLINE
+     * admin mark-paid path passes `{ actorUserId: <admin>, actorRole:
+     * 'admin' }` so the cascade audit reflects the real admin actor.
+     */
+    readonly actor?: ApplyTierUpgradeActor;
   },
 ): Promise<ReadonlyArray<SuggestionId>> {
+  const actor = args.actor ?? DEFAULT_APPLY_ACTOR;
   const pending = await deps.tierUpgradeRepo.findPendingForCycle(
     args.tenantId,
     args.cycleId,
@@ -134,15 +165,15 @@ export async function applyPendingTierUpgradeInTx(
       },
       {
         tenantId: args.tenantId,
-        actorUserId: null,
-        // F8 RenewalActorRole: 'webhook' is the canonical label when
-        // the F4 onPaidCallback fires from the Stripe-webhook path
-        // (markPaidFromProcessor); mark-paid-offline path also runs
-        // through the same callback array and is admin-driven, but
-        // the actor for the *cascade* (cycle complete + tier-upgrade
-        // apply) is the F4 webhook contract, not the original admin.
-        // Mirrors `markCycleCompleteFromInvoicePaid` actorRole choice.
-        actorRole: 'webhook',
+        // 070 Item D — actor is parameterised. The online F4 invoice-paid
+        // paths (Stripe webhook via markPaidFromProcessor + record-payment)
+        // keep the canonical `{ actorUserId: null, actorRole: 'webhook' }`
+        // default; the OFFLINE admin mark-paid path passes the admin's
+        // user id + `'admin'` role, since that path is an admin-initiated
+        // out-of-band settlement (the admin is the accurate actor for the
+        // cascade), not a webhook delivery.
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
         correlationId: args.correlationId,
         requestId: args.requestId,
       },

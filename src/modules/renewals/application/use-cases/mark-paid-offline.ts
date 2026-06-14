@@ -35,6 +35,8 @@ import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
+import { applyPendingTierUpgradeInTx } from './apply-pending-tier-upgrade';
+import { finaliseF2PlanChangeOnPaid } from './finalise-f2-plan-change-on-paid';
 // Type-only imports keep Application layer free of cross-module runtime
 // coupling (Constitution Principle III). Brands are compile-time no-op
 // casts; the upstream `memberId` (bare string in domain) and `invoiceId`
@@ -185,10 +187,16 @@ export async function markPaidOffline(
   const planId = preLoad.planIdAtCycleStart;
   const memberId = preLoad.memberId;
 
+  // 070 Item D — hoisted to the use-case scope so the POST-commit F2
+  // scheduled-plan-change finalise can read the F4 paid event after the
+  // outer `runInTenant` tx commits. Set inside the in-tx `onPaid` closure
+  // below; remains null on any path that never reaches the cycle flip.
+  let paidEventForFinalise: F4InvoicePaidEvent | null = null;
+
   // Outer atomic boundary — F4 chain step 3 (recordPayment) reuses
   // this tx; cycle flip + audit emit ride along.
   try {
-    return await runInTenant(deps.tenant, async (tx) => {
+    const result = await runInTenant(deps.tenant, async (tx) => {
       // Per-(tenant, cycle) advisory lock — race-protects two admins.
       // Lock acquisition delegated to Infrastructure (Constitution
       // Principle III — Application has no SQL/ORM dependency).
@@ -232,6 +240,12 @@ export async function markPaidOffline(
       let onPaidFired = false;
       const onPaid = async (evt: F4InvoicePaidEvent): Promise<void> => {
         onPaidFired = true;
+        // 070 Item D — capture the paid event so the POST-commit F2
+        // scheduled-plan-change finalise (mirroring the online callback[1]
+        // post-tx half) can run after the outer tx commits. The F2 row flip
+        // MUST happen outside the tx (its repo opens its own runInTenant) so
+        // a finalise failure cannot roll back the now-durable payment.
+        paidEventForFinalise = evt;
         // Flip cycle inside same tx — closedReason='completed_offline'.
         await deps.cyclesRepo.transitionStatus(
           tx,
@@ -268,6 +282,38 @@ export async function markPaidOffline(
             summary: `Admin marked cycle ${cycleId} paid offline (${input.paymentMethod} ref=${input.paymentReference})`,
           },
         );
+
+        // 070 Item D — apply any pending tier-upgrade on the OFFLINE path,
+        // mirroring the online `f8OnPaidCallbacks[1]` IN-TX half EXACTLY.
+        // The online chain orders [0] complete → [1] apply-tier-upgrade →
+        // [2] create-next-cycle; this call sits between the completion flip
+        // above and `createNextCycleOnPaidInTx` below so the offline path
+        // matches that ordering. A member who had an `accepted_pending_apply`
+        // tier-upgrade now has the F8 suggestion transitioned → `applied`
+        // (+ `tier_upgrade_applied_at_renewal` audit) atomically with the
+        // offline-mark tx — previously it was left pending forever (the
+        // 070 Item-D gap).
+        //
+        // ACTOR: this path is admin-driven (the admin records the offline
+        // settlement + already emits the `renewal_cycle_completed_offline`
+        // audit as themselves above), so the apply audit carries the ADMIN
+        // actor — NOT `'webhook'` (the online default). `RenewalActorRole`
+        // already includes `'admin'`, so no enum change is needed.
+        //
+        // THROWS on failure (same in-tx discipline as the online path's
+        // threaded callback[1]): a throw rolls the whole offline-mark tx
+        // back; the admin's "mark paid" returns an error + retries. The
+        // CAS guard inside `applyPendingTierUpgradeInTx` makes retry safe
+        // (idempotent on already-applied). NEVER swallowed: a swallow would
+        // complete the payment while the tier-upgrade silently strands.
+        await applyPendingTierUpgradeInTx(deps, tx, {
+          tenantId: input.tenantId,
+          cycleId,
+          invoiceId: evt.invoiceId as unknown as InvoiceId,
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+          actor: { actorUserId: input.actorUserId, actorRole: input.actorRole },
+        });
 
         // 068-f8-completion (slice 1) — renewal-loop closer on the OFFLINE
         // path. The online/record-payment paths run the full
@@ -365,6 +411,48 @@ export async function markPaidOffline(
         newExpiresAt,
       });
     });
+
+    // 070 Item D — POST-commit F2 scheduled-plan-change finalise. Mirrors
+    // the online callback[1] post-tx half EXACTLY: the F2 row flip pending
+    // → applied (+ `plan_change_applied` audit) MUST run OUTSIDE the state
+    // tx (the F2 repo opens its OWN `runInTenant`), so it can only run
+    // after the outer tx has committed. It is best-effort + non-rollback:
+    // the payment + cycle flip + in-tx suggestion apply are already durable;
+    // a finalise failure is logged + swallowed (the F2 row stays `pending`
+    // for a retry to heal — never re-bills). Only runs on the success path
+    // where `onPaid` actually fired (so a real paid event was captured).
+    //
+    // ACTOR: the admin (offline settlement) — the F2 `plan_change_applied`
+    // audit carries the admin's user id, matching the in-tx F8 apply audit
+    // above + the post-tx F2 emit pattern in `accept-tier-upgrade.ts`.
+    if (result.ok && paidEventForFinalise !== null) {
+      // Defensive own try/catch: the payment + cycle flip are already
+      // committed, so a finalise throw must NEVER downgrade the use-case
+      // to `server_error` (the outer catch would do exactly that — see the
+      // post-commit-listener pitfall). The helper is internally swallow-
+      // only; this is belt-and-braces against a future regression.
+      try {
+        await finaliseF2PlanChangeOnPaid(deps, paidEventForFinalise, cycleId, {
+          actorUserId: input.actorUserId,
+          requestId: input.requestId ?? `mark-paid-offline:${cycleId}`,
+        });
+      } catch (finaliseErr) {
+        logger.error(
+          {
+            err:
+              finaliseErr instanceof Error
+                ? finaliseErr
+                : new Error(String(finaliseErr)),
+            cycleId,
+            tenantId: input.tenantId,
+            errorId: 'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
+          },
+          'markPaidOffline: post-commit F2 finalise threw — payment already committed; F2 row left pending for retry',
+        );
+      }
+    }
+
+    return result;
   } catch (e) {
     logger.error(
       {

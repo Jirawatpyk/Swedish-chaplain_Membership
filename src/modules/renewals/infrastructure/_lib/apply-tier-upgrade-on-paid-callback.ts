@@ -25,207 +25,36 @@ import { renewalsMetrics } from '@/lib/metrics';
 import type { TenantTx } from '@/lib/db';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId as MemberIdBrand } from '@/modules/members';
-// 065 Fix A precision — parse the F2 pending row's `reason` back to its
-// originating tier-upgrade suggestion id so the finaliser can gate on THAT
-// row's own suggestion status (re-accept precision), not a coarse
-// cycle-wide superseded-existence probe. Domain helper — Infrastructure
-// importing renewals Domain is Principle-III clean.
-import { parseSuggestionIdFromReason } from '../../domain/tier-upgrade-suggestion';
+// 070 Item D — the F2 scheduled-plan-change finalisation logic was
+// EXTRACTED to a shared Application use-case so both the online F4
+// invoice-paid callback (here) and the OFFLINE admin mark-paid path
+// (`mark-paid-offline.ts`) finalise the F2 row through a single source of
+// truth (Clean Architecture: Application use-case calls another Application
+// use-case; the offline path could not value-import this Infrastructure
+// helper). This thin wrapper delegates to it with the ONLINE webhook actor,
+// preserving the `_internal` test seam.
+import {
+  finaliseF2PlanChangeOnPaid,
+  defaultOnlineF2Actor,
+} from '../../application/use-cases/finalise-f2-plan-change-on-paid';
 import type { RenewalsDeps } from '../renewals-deps';
 
 // F2 scheduled-plan-change finalisation + audit emit. Runs POST-tx;
 // failures are logged + non-rollback (mirrors the post-tx F2 emit
 // pattern in `accept-tier-upgrade.ts` where F4 has already committed
-// by the time we reach this code).
+// by the time we reach this code). Delegates to the shared Application
+// helper with the ONLINE `'system:f8-on-paid-webhook'` actor.
 async function finaliseF2ScheduledPlanChangeForCycle(
   deps: RenewalsDeps,
   evt: F4InvoicePaidEvent,
   cycleId: string,
 ): Promise<void> {
-  const memberId = evt.memberId as unknown as string;
-
-  let pending;
-  try {
-    pending = await deps.scheduledPlanChangeRepo.findPendingForCycle(
-      deps.tenant,
-      memberId,
-      cycleId,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: evt.tenantId,
-        memberId,
-        cycleId,
-        invoiceId: evt.invoiceId,
-        errorId: 'F2.PLAN_CHANGE.FIND_PENDING_FAILED',
-      },
-      '[f8-onPaid] F2 scheduled-plan-change findPendingForCycle failed — F4 already committed; manual replay needed',
-    );
-    return;
-  }
-
-  // Cycles without a pending F2 scheduled-plan-change row (the common
-  // case — same-tier renewal, no plan switch scheduled) are a no-op.
-  // Idempotent on re-fire: already-applied rows return null from
-  // `findPendingForCycle` (terminal-state semantics, partial-unique
-  // guarantee).
-  if (pending === null) return;
-
-  // 065 Fix A precision — gate on the PENDING row's OWN linked suggestion
-  // status, NOT a coarse cycle-wide superseded-existence probe. The prior
-  // cycle-wide gate (`hasSupersededSuggestionForCycle`) was too coarse: a
-  // member can have TWO suggestions targeting the same active cycle (an
-  // upgrade accepted → manually overridden [superseded, retains the cycle
-  // target] → re-suggested + re-accepted). The cycle-wide gate matched the
-  // SUPERSEDED suggestion1 and wrongly skipped the finaliser, stranding
-  // suggestion2's VALID pending plan-change forever.
-  //
-  // The pending F2 row carries a `reason` of `tier_upgrade_accepted:<id>`
-  // (written by `acceptTierUpgrade`); we resolve THAT suggestion and skip
-  // ONLY when it is `superseded` (the cancelled-upgrade orphan that must
-  // NOT be re-billed — the original S6 money bug). Standalone schedules
-  // (reason not matching the prefix → null id) and applied / pending
-  // suggestions proceed.
-  const linkedSuggestionId = parseSuggestionIdFromReason(pending.reason);
-  if (linkedSuggestionId !== null) {
-    let linkedSuggestion;
-    try {
-      linkedSuggestion = await deps.tierUpgradeRepo.findById(
-        evt.tenantId,
-        linkedSuggestionId,
-      );
-    } catch (e) {
-      // Money-safe default — when we cannot determine the linked
-      // suggestion status (transient read failure), SKIP rather than risk
-      // flipping a row whose upgrade may have been cancelled. The next
-      // Stripe at-least-once webhook retry re-attempts once the read
-      // recovers (the F2 row stays `pending` — strand, never over-bill).
-      logger.error(
-        {
-          err: e instanceof Error ? e.message : String(e),
-          tenantId: evt.tenantId,
-          memberId,
-          cycleId,
-          scheduledChangeId: pending.scheduledChangeId,
-          suggestionId: linkedSuggestionId,
-          invoiceId: evt.invoiceId,
-          errorId: 'F2.PLAN_CHANGE.SUGGESTION_STATUS_LOOKUP_FAILED',
-        },
-        '[f8-onPaid] F2 finaliser suggestion-status lookup failed — skipping finalise (money-safe); webhook retry will heal',
-      );
-      return;
-    }
-    if (linkedSuggestion?.status === 'superseded') {
-      // The upgrade this F2 row belongs to was cancelled by a manual
-      // override. Flipping it pending → applied would re-bill the
-      // cancelled upgrade — the S6 money bug. Skip (no transition, no
-      // counter, no audit). The F2 row stays `pending` (terminal-orphan;
-      // a future reconcile may cancel it).
-      return;
-    }
-  }
-
-  // The finaliser is about to flip the pending row → applied. Bump the SRE
-  // signal HERE (it previously lived in the caller before the cycle-wide
-  // gate; co-located with the actual transition now that the skip decision
-  // is per-row + needs the pending row in hand).
-  renewalsMetrics.f2FinaliseBeforeF4Commit(evt.tenantId);
-
-  let transitioned;
-  try {
-    transitioned = await deps.scheduledPlanChangeRepo.transitionStatus(
-      deps.tenant,
-      pending.scheduledChangeId,
-      'applied',
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: evt.tenantId,
-        memberId,
-        cycleId,
-        scheduledChangeId: pending.scheduledChangeId,
-        invoiceId: evt.invoiceId,
-        errorId: 'F2.PLAN_CHANGE.TRANSITION_APPLIED_FAILED',
-      },
-      '[f8-onPaid] F2 scheduled-plan-change transitionStatus("applied") failed — F4 already committed; manual replay needed',
-    );
-    return;
-  }
-
-  // Emit `plan_change_applied` on the F2 emitter. Same Result-typed
-  // pattern as accept-tier-upgrade.ts:358-414 — log the typed error
-  // but DO NOT roll back; the F2 row is already in `applied` terminal
-  // state. Operator can backfill the audit row from the structured
-  // log.
-  try {
-    const auditResult = await deps.f2AuditEmitter.record(
-      {
-        tenant: deps.tenant,
-        // F4 onPaid callbacks fire from webhook OR admin-offline-mark
-        // paths; the actor for the F2 cascade is the F4 contract, not
-        // the original admin. F2 `AuditContext.actorUserId` is a
-        // required `string`, so we use the canonical system sentinel
-        // (mirrors F1 audit pattern: `'system:webhook'` /
-        // `'system:cron'` actors).
-        actorUserId: 'system:f8-on-paid-webhook',
-        requestId: `f8-onPaid:${evt.invoiceId}`,
-        sourceIp: null,
-      },
-      {
-        event_type: 'plan_change_applied',
-        payload: {
-          member_id: memberId,
-          scheduled_change_id: pending.scheduledChangeId,
-          effective_at_cycle_id: cycleId,
-          from_plan_id: pending.fromPlanId,
-          to_plan_id: pending.toPlanId,
-          applied_at_invoice_id: evt.invoiceId as unknown as string,
-        },
-      },
-    );
-    if (!auditResult.ok) {
-      // errorId for alert-routing parity with the threw-branch
-      // (F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW) + the find/transition
-      // errorIds above. Sentry/Grafana alert rules built against
-      // `errorId: 'F2.PLAN_CHANGE.*'` now catch the persist_failed
-      // path too.
-      logger.error(
-        {
-          errorId: 'F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_FAILED',
-          event: 'f8_onPaid.f2_audit_emit_failed',
-          audit_event: 'plan_change_applied',
-          err: auditResult.error,
-          tenantId: evt.tenantId,
-          memberId,
-          cycleId,
-          scheduledChangeId: transitioned.scheduledChangeId,
-          invoiceId: evt.invoiceId,
-        },
-        '[f8-onPaid] F2 plan_change_applied audit emit failed — F2+F8+F4 state committed; operator backfill needed',
-      );
-    }
-  } catch (auditErr) {
-    // Defence-in-depth — F2 emitter should not throw (wraps in
-    // try/catch + returns Result.err), but if it does, log critically
-    // so the audit gap can be reconstructed from the structured log.
-    logger.error(
-      {
-        event: 'f8_onPaid.f2_audit_emit_threw',
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        tenantId: evt.tenantId,
-        memberId,
-        cycleId,
-        scheduledChangeId: transitioned.scheduledChangeId,
-        invoiceId: evt.invoiceId,
-        errorId: 'F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW',
-      },
-      '[f8-onPaid] F2 plan_change_applied audit emit threw — manual replay needed',
-    );
-  }
+  await finaliseF2PlanChangeOnPaid(
+    deps,
+    evt,
+    cycleId,
+    defaultOnlineF2Actor(evt),
+  );
 }
 
 // Re-export for unit testing of the F2 finalisation helper in

@@ -650,7 +650,17 @@ export {
   type ApplyPendingTierUpgradeInput,
   type ApplyPendingTierUpgradeOutput,
   type ApplyPendingTierUpgradeError,
+  type ApplyTierUpgradeActor,
 } from './application/use-cases/apply-pending-tier-upgrade';
+
+// 070 Item D — shared F2 scheduled-plan-change finaliser (post-commit
+// half of the tier-upgrade-apply cascade), reused by the online F4
+// invoice-paid callback + the offline admin mark-paid path.
+export {
+  finaliseF2PlanChangeOnPaid,
+  defaultOnlineF2Actor,
+  type FinaliseF2Actor,
+} from './application/use-cases/finalise-f2-plan-change-on-paid';
 
 export {
   supersedePendingTierUpgrade,

@@ -39,22 +39,27 @@
  * wired here.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * WHAT THIS FILE DOES
+ * WHAT THIS FILE DOES (070 Item D — WIRING LANDED)
  * ─────────────────────────────────────────────────────────────────────────
- *   1. An ACTIVE characterization test that REPRODUCES the gap on live Neon
- *      (offline-mark leaves the suggestion `accepted_pending_apply` + the
- *      F2 row `pending`). It locks the current behaviour so the future fix
- *      provably changes it, and gives the reviewer runnable evidence.
- *   2. A `.skip`-ed acceptance test that pins the DESIRED end-state (the
- *      offline path applies the pending tier-upgrade BEFORE creating the
- *      next cycle, mirroring the online path). Un-skip + green it when the
- *      Item-D wiring lands. (`it.skip` in `tests/integration/` is permitted
- *      — `check:fixme` only blocks fixme/bare-skip in tests/e2e + contract.)
+ * The Item-D fix wires the offline `onPaid` to mirror the online callback[1]:
+ *   - in-tx: `applyPendingTierUpgradeInTx` transitions the pending suggestion
+ *     `accepted_pending_apply` → `applied` (BEFORE create-next-cycle), and
+ *   - post-tx: the offline use-case finalises the F2 `scheduled_plan_changes`
+ *     row pending → applied + emits `plan_change_applied`.
+ * The admin (offline actor) is the actor for both the F8 apply audit
+ * (`tier_upgrade_applied_at_renewal`) and the F2 `plan_change_applied` audit —
+ * an admin-initiated offline settlement, not a webhook (see the use-case +
+ * apply-pending-tier-upgrade.ts actor decision).
+ *
+ *   1. An ACTIVE acceptance test that asserts the FIXED behaviour on live Neon:
+ *      offline-mark applies the pending tier-upgrade (suggestion→applied, F2
+ *      row→applied, both audits emitted) AND still completes the cycle + creates
+ *      the next cycle.
  *
  * NOTE: the next cycle inherits the prior cycle's `planIdAtCycleStart`
  * regardless of the tier-upgrade (apply does NOT flip the cycle's plan nor
  * `members.plan_id` — see `apply-pending-tier-upgrade.ts` docstring). So the
- * end-state pinned here is the SUGGESTION + F2 plan-change lifecycle, NOT a
+ * end-state asserted here is the SUGGESTION + F2 plan-change lifecycle, NOT a
  * "next cycle at upgraded tier" — the original brief's phrasing.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -377,13 +382,17 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
   });
 
   // ───────────────────────────────────────────────────────────────────────
-  // ACTIVE characterization test — REPRODUCES the gap on live Neon.
+  // ACCEPTANCE test (070 Item D) — the offline onPaid now mirrors the online
+  // callback[1]: applies the pending tier-upgrade (suggestion→applied) in-tx
+  // BEFORE creating the next cycle, then finalises the F2 scheduled-plan-
+  // change (pending→applied) post-tx. Both apply audits land under the ADMIN
+  // (offline) actor.
   // ───────────────────────────────────────────────────────────────────────
-  it('CURRENT BEHAVIOUR (gap pinned): offline mark-paid completes the cycle + creates the next cycle but does NOT apply the pending tier-upgrade', async () => {
+  it('offline mark-paid applies the pending tier-upgrade BEFORE creating the next cycle (suggestion→applied, F2→applied, both audits emitted)', async () => {
     const scenario = await seedAcceptedPendingUpgrade();
 
     // Sanity: post-accept, the suggestion is accepted_pending_apply + the F2
-    // row is pending (the precondition the online callback[1] would apply).
+    // row is pending (the precondition the offline callback[1] now applies).
     const [beforeSuggestion] = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select()
@@ -417,71 +426,9 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
     );
     expect(next).toBeDefined();
 
-    // THE GAP: the tier-upgrade was NOT applied — callback[1] never ran.
-    // The suggestion is STILL accepted_pending_apply (not `applied`).
-    const [afterSuggestion] = await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .select()
-        .from(tierUpgradeSuggestions)
-        .where(eq(tierUpgradeSuggestions.suggestionId, scenario.suggestionId)),
-    );
-    expect(afterSuggestion?.status).toBe('accepted_pending_apply');
-    expect(afterSuggestion?.appliedAtInvoiceId).toBeNull();
-
-    // The F2 scheduled-plan-change is STILL pending (not `applied`).
-    const [afterScheduled] = await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .select()
-        .from(scheduledPlanChanges)
-        .where(eq(scheduledPlanChanges.memberId, scenario.memberId)),
-    );
-    expect(afterScheduled?.status).toBe('pending');
-
-    // Neither the F8 apply audit nor the F2 plan-change-applied audit landed.
-    const applyAudits = await db
-      .select()
-      .from(auditLog)
-      .where(
-        and(
-          eq(auditLog.tenantId, tenant.ctx.slug),
-          eq(
-            auditLog.eventType,
-            'tier_upgrade_applied_at_renewal' as never,
-          ),
-        ),
-      );
-    expect(applyAudits).toHaveLength(0);
-    const planChangeApplied = await db
-      .select()
-      .from(auditLog)
-      .where(
-        and(
-          eq(auditLog.tenantId, tenant.ctx.slug),
-          eq(auditLog.eventType, 'plan_change_applied' as never),
-        ),
-      );
-    expect(planChangeApplied).toHaveLength(0);
-  }, 90_000);
-
-  // ───────────────────────────────────────────────────────────────────────
-  // SKIPPED acceptance test — the DESIRED end-state once the Item-D wiring
-  // lands. Un-skip + green it when the offline onPaid bridge applies the
-  // pending tier-upgrade (callback[1]) BEFORE creating the next cycle.
-  //
-  // BLOCKED on the Item-D wiring decision (DONE_WITH_CONCERNS): wiring the
-  // offline onPaid to apply the pending upgrade touches billing/tax-document-
-  // adjacent semantics (tier upgrades change what a member is billed) AND the
-  // F2 post-tx finaliser, so it is deferred for human/tax review rather than
-  // shipped blind. `it.skip` in tests/integration/ is allowed (check:fixme
-  // only blocks fixme/bare-skip in tests/e2e + tests/contract).
-  // ───────────────────────────────────────────────────────────────────────
-  it.skip('DESIRED (Item-D wiring): offline mark-paid applies the pending tier-upgrade BEFORE creating the next cycle (suggestion→applied, F2→applied, audits emitted)', async () => {
-    const scenario = await seedAcceptedPendingUpgrade();
-
-    await markScenarioPaidOffline(scenario);
-
-    // Suggestion transitioned accepted_pending_apply → applied, stamped with
-    // the paid invoice id (mirrors the online apply-at-renewal contract).
+    // THE FIX: the tier-upgrade WAS applied — callback[1]-equivalent ran in-tx.
+    // The suggestion is now `applied`, stamped with the paid invoice id
+    // (mirrors the online apply-at-renewal contract).
     const [afterSuggestion] = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select()
@@ -491,7 +438,7 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
     expect(afterSuggestion?.status).toBe('applied');
     expect(afterSuggestion?.appliedAtInvoiceId).toBe(scenario.invoiceId);
 
-    // F2 scheduled-plan-change flipped pending → applied.
+    // The F2 scheduled-plan-change flipped pending → applied (post-tx finalise).
     const [afterScheduled] = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select()
@@ -500,7 +447,7 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
     );
     expect(afterScheduled?.status).toBe('applied');
 
-    // Both apply audits landed.
+    // Both apply audits landed (F8 + F2).
     const applyAudits = await db
       .select()
       .from(auditLog)
@@ -514,6 +461,10 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         ),
       );
     expect(applyAudits.length).toBeGreaterThanOrEqual(1);
+    // The offline path is admin-driven — the F8 apply audit carries the admin
+    // actor (NOT a webhook), since the admin initiated the offline settlement.
+    expect(applyAudits[0]?.actorUserId).toBe(admin.userId);
+
     const planChangeApplied = await db
       .select()
       .from(auditLog)
@@ -524,21 +475,7 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         ),
       );
     expect(planChangeApplied.length).toBeGreaterThanOrEqual(1);
-
-    // The cycle still completed + the next cycle was still created.
-    const cycles = await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .select()
-        .from(renewalCycles)
-        .where(eq(renewalCycles.memberId, scenario.memberId)),
-    );
-    expect(
-      cycles.find((c) => c.cycleId === scenario.cycleId)?.status,
-    ).toBe('completed');
-    expect(
-      cycles.some(
-        (c) => c.cycleId !== scenario.cycleId && c.status === 'upcoming',
-      ),
-    ).toBe(true);
+    // The F2 plan-change-applied audit also carries the admin actor.
+    expect(planChangeApplied[0]?.actorUserId).toBe(admin.userId);
   }, 90_000);
 });
