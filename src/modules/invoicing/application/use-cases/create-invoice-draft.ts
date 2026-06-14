@@ -179,12 +179,19 @@ export async function createInvoiceDraft(
     // fee-year could still issue at the frozen `renewalSignal` price. That
     // is INFEASIBLE: the `invoices_plan_fk` constraint (migration 0019)
     // requires `(tenant_id, plan_id, plan_year)` to exist in
-    // `membership_plans`, and `getAnnualFeeSatang` returns null EXACTLY when
-    // that row is absent (the fee column is NOT NULL; the adapter applies no
-    // active/status filter). So `planFee === null` ⟺ the FK would fail —
-    // removing the gate would only convert a clean early `plan_not_found`
-    // into a raw FK 23503 deeper in the insert, with no improvement to the
-    // orphan-cycle outcome. The gate stays on both paths.
+    // `membership_plans`, and `getAnnualFeeSatang` returns null when that
+    // row is absent (the fee column is NOT NULL; the adapter applies no
+    // active/status filter). So for an ABSENT row `planFee === null` ⟺ the
+    // FK would fail — removing the gate would only convert a clean early
+    // `plan_not_found` into a raw FK 23503 deeper in the insert, with no
+    // improvement to the orphan-cycle outcome.
+    //
+    // 070 §86/4 advisory — the adapter ALSO returns null for a SOFT-DELETED
+    // plan-year row (`deleted_at IS NOT NULL`), harmonising with the F8
+    // frozen-plan adapter. The FK alone would NOT catch that case (the
+    // soft-deleted row physically exists, so `invoices_plan_fk` is
+    // satisfied), so this gate is the only thing that stops a §86/4 being
+    // issued against a soft-deleted plan. The gate stays on both paths.
     if (planFee === null) return err({ code: 'plan_not_found' });
 
     // The membership unit price is the FROZEN signal price on a renewal,
