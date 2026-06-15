@@ -277,11 +277,14 @@ export const broadcasts = pgTable(
       sql`${table.estimatedRecipientCount} BETWEEN 0 AND 50000`,
     ),
 
-    // FR-007: quota_year_consumed only set on `sent`
+    // FR-007: quota is consumed on `sent` AND — F7.1a US1 (H-1, FR-008c) —
+    // on `partial_delivery_accepted` (accepting a partial send consumes the
+    // member's annual quota slot exactly like a full send). Name preserved
+    // for stability even though it now covers two terminal states.
     check(
       'broadcasts_quota_year_only_on_sent',
-      sql`(status = 'sent' AND quota_year_consumed IS NOT NULL AND quota_consumed_at IS NOT NULL)
-       OR (status != 'sent' AND quota_year_consumed IS NULL AND quota_consumed_at IS NULL)`,
+      sql`(status IN ('sent', 'partial_delivery_accepted') AND quota_year_consumed IS NOT NULL AND quota_consumed_at IS NOT NULL)
+       OR (status NOT IN ('sent', 'partial_delivery_accepted') AND quota_year_consumed IS NULL AND quota_consumed_at IS NULL)`,
     ),
 
     // Constitution v1.4.0: retention default 5y for non-tax-document events
