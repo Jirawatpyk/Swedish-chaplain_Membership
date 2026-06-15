@@ -54,6 +54,17 @@ export interface SweepableJob {
   readonly blobKey: string | null;
 }
 
+/**
+ * A stuck `processing` job surfaced by the reclaim sweep. Carries the `kind` so
+ * the cron can emit the correct terminal audit event when it reclaims the job to
+ * `failed` (a `gdpr_member_archive` reclaim must emit `data_export_failed` —
+ * FR-037 no silent failure; the directory kinds have no failed event).
+ */
+export interface StuckJob {
+  readonly jobId: string;
+  readonly kind: ExportKind;
+}
+
 export interface ExportJobRepo {
   /**
    * Idempotent create: returns the existing job for a duplicate
@@ -107,6 +118,14 @@ export interface ExportJobRepo {
     patch: { readonly blobKey: string; readonly expiresAt: Date },
   ): Promise<boolean>;
 
+  /**
+   * Heartbeat: refresh a still-`processing` job's `updated_at` so a concurrent
+   * cron tick's stuck-reclaim does not false-fail a healthy in-flight build.
+   * Guarded (`WHERE status = 'processing'`) — a no-op (returns false) once the
+   * job has left `processing` (already ready/reclaimed). Never advances state.
+   */
+  touchProcessingInTx(tx: TenantTx, jobId: string): Promise<boolean>;
+
   /** Guarded `requested|processing → failed` (records the error code). */
   markFailedInTx(tx: TenantTx, jobId: string, errorCode: string): Promise<boolean>;
 
@@ -132,11 +151,15 @@ export interface ExportJobRepo {
   listSweepable(ctx: TenantContext): Promise<readonly SweepableJob[]>;
   markExpiredInTx(tx: TenantTx, jobId: string): Promise<boolean>;
 
-  /** `processing` jobs whose claim is older than the timeout (crashed worker). */
+  /**
+   * `processing` jobs whose claim is older than the timeout (crashed worker).
+   * Returns each job's `kind` (not just its id) so the cron can emit the correct
+   * terminal audit event on reclaim (mirrors `listSweepable`'s shape).
+   */
   listStuckProcessing(
     ctx: TenantContext,
     timeoutMs: number,
-  ): Promise<readonly string[]>;
+  ): Promise<readonly StuckJob[]>;
   reclaimStuckInTx(tx: TenantTx, jobId: string, errorCode: string): Promise<boolean>;
 
   /**

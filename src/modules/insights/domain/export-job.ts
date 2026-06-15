@@ -52,6 +52,15 @@ export type ExportKind = (typeof EXPORT_KINDS)[number];
  */
 export const STUCK_PROCESSING_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * Cadence at which the worker refreshes a `processing` job's `updated_at` while
+ * a long build runs (heartbeat), so a concurrent cron tick's stuck-reclaim does
+ * not false-fail a healthy in-flight job. Sized at a third of the stuck window
+ * so ≥2 beats land before the reclaim cutoff. Only material when the worker's
+ * `maxDuration` can exceed `STUCK_PROCESSING_TIMEOUT_MS` (latent otherwise).
+ */
+export const EXPORT_HEARTBEAT_INTERVAL_MS = Math.floor(STUCK_PROCESSING_TIMEOUT_MS / 3);
+
 /** Default artefact + signed-link TTL (FR-030). 1 hour — short blast radius. */
 export const DEFAULT_EXPORT_TTL_MS = 60 * 60_000;
 

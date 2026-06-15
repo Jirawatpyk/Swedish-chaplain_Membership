@@ -13,7 +13,7 @@
  * (cron-job.org retry-OFF; failures are logged + metered). Node runtime.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { processExportJob, STUCK_PROCESSING_TIMEOUT_MS } from '@/modules/insights';
+import { f9RetentionFor, processExportJob, STUCK_PROCESSING_TIMEOUT_MS } from '@/modules/insights';
 import { makeProcessExportJobDeps } from '@/modules/insights/infrastructure/process-export-job-deps';
 import { makeDrizzleExportJobRepo } from '@/modules/insights/infrastructure/repos/drizzle-export-job-repo';
 import { env } from '@/lib/env';
@@ -71,13 +71,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // 2) Reclaim stuck `processing` jobs (crashed worker).
     const stuck = await repo.listStuckProcessing(tenant, STUCK_PROCESSING_TIMEOUT_MS);
-    for (const jobId of stuck) {
+    for (const { jobId, kind } of stuck) {
       const did = await runInTenant(tenant, (tx) =>
         repo.reclaimStuckInTx(tx, jobId, 'worker_timeout'),
       );
       if (did) {
         reclaimed += 1;
         insightsMetrics.exportJobReclaimed(tenant.slug);
+        // FR-037 (no silent failure): a stuck `gdpr_member_archive` reclaimed to
+        // terminal `failed` must emit `data_export_failed` so the member's GDPR
+        // request lifecycle has a terminal audit row — parity with
+        // processExportJob's own failure branches (the directory kinds have no
+        // failed event). Best-effort; never fails the tick.
+        if (kind === 'gdpr_member_archive') {
+          await deps.audit
+            .record({
+              tenantId: tenant.slug,
+              requestId: null,
+              eventType: 'data_export_failed',
+              actorUserId: 'system:cron',
+              retentionYears: f9RetentionFor('data_export_failed'),
+              summary: `GDPR data export failed (job ${jobId}): worker_timeout`,
+              payload: { job_id: jobId, error_code: 'worker_timeout' },
+            })
+            .catch(() => {});
+        }
       }
     }
 
@@ -108,7 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             requestId: null,
             eventType: 'data_export_expired',
             actorUserId: 'system:cron',
-            retentionYears: 5,
+            retentionYears: f9RetentionFor('data_export_expired'),
             summary: `Data export artefact expired + swept (job ${jobId})`,
             payload: { job_id: jobId },
           })

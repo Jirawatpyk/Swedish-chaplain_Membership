@@ -229,12 +229,58 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
       .where(eq(exportJobs.id, jobId));
 
     const stuck = await repo().listStuckProcessing(tenant.ctx, STUCK_PROCESSING_TIMEOUT_MS);
-    expect(stuck).toContain(jobId);
+    // Returns {jobId, kind} (mirrors listSweepable) so the cron can emit the
+    // correct terminal audit event on reclaim (data_export_failed for gdpr).
+    const stuckEntry = stuck.find((s) => s.jobId === jobId);
+    expect(stuckEntry).toBeDefined();
+    expect(stuckEntry?.kind).toBe('directory_ebook');
     expect(
       await runInTenant(tenant.ctx, (tx) => repo().reclaimStuckInTx(tx, jobId, 'worker_timeout')),
     ).toBe(true);
     const row = await repo().findById(tenant.ctx, jobId);
     expect(row?.status).toBe('failed');
+  });
+
+  it('touchProcessingInTx: heartbeat refreshes updated_at to keep a healthy build out of the stuck sweep; no-op when not processing', async () => {
+    const created = await runInTenant(tenant.ctx, (tx) =>
+      repo().createOrGetInTx(tx, {
+        kind: 'directory_ebook',
+        subjectMemberId: null,
+        requestedBy: requester,
+        requestedForPeriod: 'heartbeat-2026',
+        requesterLocale: null,
+        idempotencyKey: idem('heartbeat-2026'),
+      }),
+    );
+    const jobId = created.job.id;
+
+    // Before claim (still `requested`) → guarded no-op.
+    expect(
+      await runInTenant(tenant.ctx, (tx) => repo().touchProcessingInTx(tx, jobId)),
+    ).toBe(false);
+
+    await runInTenant(tenant.ctx, (tx) => repo().claimInTx(tx, jobId));
+    // Backdate updated_at into the stuck window (owner bypasses RLS).
+    await db
+      .update(exportJobs)
+      .set({ updatedAt: new Date(Date.now() - STUCK_PROCESSING_TIMEOUT_MS - 60_000) })
+      .where(eq(exportJobs.id, jobId));
+    expect(
+      (await repo().listStuckProcessing(tenant.ctx, STUCK_PROCESSING_TIMEOUT_MS)).some(
+        (s) => s.jobId === jobId,
+      ),
+    ).toBe(true);
+
+    // Heartbeat refreshes updated_at → no longer stuck, status unchanged.
+    expect(
+      await runInTenant(tenant.ctx, (tx) => repo().touchProcessingInTx(tx, jobId)),
+    ).toBe(true);
+    expect(
+      (await repo().listStuckProcessing(tenant.ctx, STUCK_PROCESSING_TIMEOUT_MS)).some(
+        (s) => s.jobId === jobId,
+      ),
+    ).toBe(false);
+    expect((await repo().findById(tenant.ctx, jobId))?.status).toBe('processing');
   });
 
   it('listRequestedIds returns only requested jobs', async () => {
