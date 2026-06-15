@@ -2276,7 +2276,12 @@
         "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
         "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
         "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
-        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
+        "acceptPartialServerError": "Failed to accept partial delivery. Please try again.",
+        "approved": "Broadcast approved.",
+        "rejected": "Broadcast rejected. The member has been notified.",
+        "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
+        "clearHalted": "Broadcast halt cleared for this member.",
+        "error": "Something went wrong. Please try again."
       },
       "deliverySummary": {
         "heading": "Delivery summary",

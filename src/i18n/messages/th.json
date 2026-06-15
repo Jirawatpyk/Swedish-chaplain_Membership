@@ -2276,7 +2276,12 @@
         "acceptPartialSuccess": "ยอมรับการส่งบางส่วนเรียบร้อยแล้ว E-Blast นี้ถูกปิดแล้ว",
         "acceptPartialInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ยอมรับการส่งบางส่วน",
         "acceptPartialReasonTooLong": "เหตุผลต้องมีไม่เกิน 500 ตัวอักษร",
-        "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง"
+        "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง",
+        "approved": "อนุมัติ E-Blast แล้ว",
+        "rejected": "ปฏิเสธ E-Blast แล้ว และแจ้งสมาชิกทางอีเมลแล้ว",
+        "concurrentRace": "E-Blast นี้ถูกดำเนินการโดยผู้ดูแลคนอื่นไปแล้ว ระบบได้รีเฟรชหน้าให้แล้ว",
+        "clearHalted": "ยกเลิกการระงับ E-Blast ของสมาชิกรายนี้แล้ว",
+        "error": "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง"
       },
       "deliverySummary": {
         "heading": "สรุปการส่ง",
