@@ -73,7 +73,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
           </header>
           <BreadcrumbProvider>
             <BreadcrumbNav />
-            <main className="flex-1" id="main-content">
+            <main className="flex-1" id="main-content" tabIndex={-1}>
               {children}
             </main>
           </BreadcrumbProvider>

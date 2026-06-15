@@ -15,7 +15,7 @@ import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator
 import { emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
 import { plansBridge } from './plans-bridge';
-import { eventAttendeesStub } from './event-attendees-stub';
+import { eventAttendeesBridge } from './event-attendees-bridge';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
 import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
@@ -29,6 +29,7 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 import type { ClockPort } from '../application/ports/clock-port';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
+import type { RollUpBatchBroadcastDeps } from '../application/use-cases/roll-up-batch-broadcast';
 import type { UnsubscribeRecipientDeps } from '../application/use-cases/unsubscribe-recipient';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
 import type { SubmitBroadcastDeps } from '../application/use-cases/submit-broadcast';
@@ -102,7 +103,7 @@ export function makeSubmitBroadcastDeps(
     membersBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,
-    eventAttendees: eventAttendeesStub,
+    eventAttendees: eventAttendeesBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
@@ -283,7 +284,7 @@ export async function makeDispatchScheduledBroadcastDeps(
     broadcastsGateway: resendBroadcastsGateway,
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
-    eventAttendees: eventAttendeesStub,
+    eventAttendees: eventAttendeesBridge,
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
@@ -420,6 +421,22 @@ export function makeReconcileStuckSendingDeps(
       emailTransactional: emailTransactionalBridge,
       deliveriesRepo: makeDrizzleBroadcastDeliveriesRepo(tenantId),
     },
+  };
+}
+
+/**
+ * Ship-blocker A — composition root for the batch-completion roll-up
+ * sweep run by the reconcile-stuck-sending cron.
+ */
+export function makeRollUpBatchBroadcastDeps(
+  tenantId: string,
+): RollUpBatchBroadcastDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
   };
 }
 

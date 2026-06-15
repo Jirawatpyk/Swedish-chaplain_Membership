@@ -12,7 +12,7 @@
  *   - Submit disabled while reason is empty / whitespace-only / too long
  *   - Live counter "n / 2000"
  */
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -36,12 +36,25 @@ export interface RejectDialogProps {
   readonly broadcastId: string;
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
+  /**
+   * F7-A11Y-1 — ref to the Reject trigger button so focus returns to it
+   * on close (Cancel / ESC paths where the trigger survives).
+   */
+  readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  /**
+   * F7-A11Y-1 — optional fallback focus target when the trigger has been
+   * unmounted (the success path unmounts ReviewActions). Defaults to the
+   * layout's #main-content landmark when omitted.
+   */
+  readonly fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function RejectDialog({
   broadcastId,
   open,
   onOpenChange,
+  triggerRef,
+  fallbackFocusRef,
 }: RejectDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.rejectDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
@@ -106,9 +119,26 @@ export function RejectDialog({
     });
   }
 
+  // F7-A11Y-1 — focus return on close. The Reject trigger Button lives in
+  // <ReviewActions>, which UNMOUNTS after a successful reject
+  // (router.refresh flips the row out of 'submitted'), so Base UI's
+  // default trigger-return would drop focus to <body>. finalFocus chains
+  // triggerRef → fallbackFocusRef → the layout's #main-content landmark
+  // (focusable via tabIndex=-1). WCAG 2.1 AA SC 2.4.3. See approve-dialog
+  // for the full rationale.
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      triggerRef?.current ??
+      fallbackFocusRef?.current ??
+      (typeof document !== 'undefined'
+        ? document.getElementById('main-content')
+        : null),
+    [triggerRef, fallbackFocusRef],
+  );
+
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="max-w-lg">
+      <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('description')}</AlertDialogDescription>

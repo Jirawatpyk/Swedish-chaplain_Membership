@@ -2276,32 +2276,12 @@
         "acceptPartialSuccess": "ยอมรับการส่งบางส่วนเรียบร้อยแล้ว E-Blast นี้ถูกปิดแล้ว",
         "acceptPartialInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ยอมรับการส่งบางส่วน",
         "acceptPartialReasonTooLong": "เหตุผลต้องมีไม่เกิน 500 ตัวอักษร",
-        "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง"
-      },
-      "deliverySummary": {
-        "heading": "สรุปการส่ง",
-        "description": "เหตุการณ์การส่งต่อผู้รับแต่ละราย บันทึกจาก Resend",
-        "totalRecipients": "ผู้รับ: {count}",
-        "delivered": "ส่งถึงแล้ว: {count}",
-        "bounced": "ตีกลับ: {count}",
-        "softBounced": "ตีกลับชั่วคราว: {count}",
-        "complained": "รายงานสแปม: {count}",
-        "sent": "ส่งออก (Resend รับแล้ว): {count}",
-        "deliveryRate": "อัตราส่งสำเร็จ: {rate}%",
-        "complaintRate": "อัตรารายงานสแปม: {rate}%",
-        "stillSending": "กำลังส่ง — ได้รับเหตุการณ์ปลายทางแล้ว {received} จาก {expected}",
-        "completed": "เสร็จสิ้นเมื่อ {sentAt}",
-        "reconciledNote": "เสร็จสิ้นผ่านการตรวจสอบใน 24 ชม. (ไม่ได้รับเหตุการณ์ผู้รับจาก Resend แต่ทรัพยากรยืนยันว่ายังอยู่)",
-        "reconcileFailedNote": "ทำเครื่องหมายว่า failed_to_dispatch เมื่อตรวจสอบใน 24 ชม. — ทรัพยากร Resend หายไป"
-      },
-      "complaintRateBreach": {
-        "bannerTitle": "ตรวจพบอัตรารายงานสแปมเกินเกณฑ์",
-        "bannerBody": "E-Blast {broadcastSubject} จาก {memberName} เกินเกณฑ์รายงานสแปมต่อ broadcast 5% ระบบล็อกการส่งของสมาชิกอัตโนมัติ รอผู้ดูแลตรวจสอบ",
-        "complaintRateLabel": "อัตรารายงานสแปม: {rate}%",
-        "thresholdLabel": "เกณฑ์: 5%",
-        "viewBroadcast": "ดู E-Blast",
-        "viewHaltedMembers": "ดูสมาชิกที่ถูกล็อก",
-        "ackHelp": "การปลดล็อกเป็นการดำเนินการของผู้ดูแลโดยเจตนา ตรวจสอบเนื้อหาและการตีกลับก่อนปลดล็อก"
+        "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง",
+        "approved": "อนุมัติ E-Blast แล้ว",
+        "rejected": "ปฏิเสธ E-Blast แล้ว และแจ้งสมาชิกทางอีเมลแล้ว",
+        "concurrentRace": "E-Blast นี้ถูกดำเนินการโดยผู้ดูแลคนอื่นไปแล้ว ระบบได้รีเฟรชหน้าให้แล้ว",
+        "clearHalted": "ยกเลิกการระงับ E-Blast ของสมาชิกรายนี้แล้ว",
+        "error": "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง"
       },
       "batches": {
         "title": "รายละเอียดการส่งแบบแบ่งกลุ่ม",
@@ -4279,7 +4259,6 @@
           "event_attendees_last_90d": "ผู้เข้าร่วมงาน (90 วันล่าสุด)",
           "custom": "รายชื่ออีเมลกำหนดเอง"
         },
-        "comingSoon": "(เร็ว ๆ นี้)",
         "tierLabel": "รหัสระดับ",
         "editor": {
           "bracketHint": "คลิกที่ [ข้อความในวงเล็บ] เพื่อแทนที่ด้วยเนื้อหาของคุณ",
@@ -4313,7 +4292,6 @@
           "submitted": "ส่งให้ผู้ดูแลตรวจสอบแล้ว",
           "submittedSlaHint": "เป้าหมายตรวจสอบโดยผู้ดูแล: 48 ชั่วโมง",
           "sanitiserStripped": "รูปแบบที่ไม่รองรับถูกลบออกอัตโนมัติ",
-          "savingDraft": "กำลังบันทึกฉบับร่าง…",
           "submitting": "กำลังส่ง…",
           "takingLonger": "ใช้เวลานานกว่าที่คาด กรุณารอสักครู่"
         },

@@ -36,6 +36,7 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
@@ -212,26 +213,69 @@ export async function sweepAutoRetryFailedBatches(
   let errorCount = 0;
 
   for (const batch of eligible) {
-    const result = await autoRetryFailedBatch(deps, {
-      tenantId: input.tenantId,
-      batch,
-      requestId: input.requestId ?? null,
-    });
-    if (result.ok) {
-      retriedCount++;
-      outcomes.push({
-        batchManifestId: batch.id,
-        batchIndex: batch.batchIndex,
-        broadcastId: batch.broadcastId,
-        outcome: { status: 'retried', newRetryCount: result.value.newRetryCount },
+    try {
+      const result = await autoRetryFailedBatch(deps, {
+        tenantId: input.tenantId,
+        batch,
+        requestId: input.requestId ?? null,
       });
-    } else {
+      if (result.ok) {
+        retriedCount++;
+        outcomes.push({
+          batchManifestId: batch.id,
+          batchIndex: batch.batchIndex,
+          broadcastId: batch.broadcastId,
+          outcome: {
+            status: 'retried',
+            newRetryCount: result.value.newRetryCount,
+          },
+        });
+      } else {
+        errorCount++;
+        outcomes.push({
+          batchManifestId: batch.id,
+          batchIndex: batch.batchIndex,
+          broadcastId: batch.broadcastId,
+          outcome: { status: 'failed', error: result.error },
+        });
+      }
+    } catch (e) {
+      // F7-SF-2 — a THROW from autoRetryFailedBatch (e.g. updateStatus's
+      // tx-open / connection-drop / serialization failure, which surfaces
+      // as an exception rather than a Result-err) must NOT abort the whole
+      // sweep. Convert it to a failed outcome so the remaining eligible
+      // batches are still retried this tick. The batch stays 'failed' (the
+      // status flip never committed) and findFailedRetryEligible re-picks
+      // it on the next reconcile tick (idempotent self-heal). Mock-only
+      // unit tests hide this because a mocked updateStatus returns a Result
+      // and never throws.
+      // Per-batch forensics so on-call sees WHICH batch threw + WHY (the
+      // route only logs the aggregate errorCount>0). Mirrors the reconcile
+      // per-row logger.error in reconcile-stuck-sending/route.ts.
+      logger.error(
+        {
+          tenantId: input.tenantId.slug,
+          broadcastId: batch.broadcastId as unknown as string,
+          batchManifestId: batch.id,
+          batchIndex: batch.batchIndex,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        'broadcasts.auto_retry.batch_threw',
+      );
       errorCount++;
       outcomes.push({
         batchManifestId: batch.id,
         batchIndex: batch.batchIndex,
         broadcastId: batch.broadcastId,
-        outcome: { status: 'failed', error: result.error },
+        outcome: {
+          status: 'failed',
+          error: {
+            kind: 'auto_retry_failed_batches.server_error',
+            message: `autoRetryFailedBatch threw: ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          },
+        },
       });
     }
   }

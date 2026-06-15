@@ -82,7 +82,7 @@ const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
   },
   unmatched: {
     Icon: AlertTriangle,
-    badgeClass: 'bg-destructive/10 text-destructive border-destructive',
+    badgeClass: 'bg-destructive-surface text-destructive border-destructive',
   },
 };
 

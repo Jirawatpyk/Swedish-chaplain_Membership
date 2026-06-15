@@ -15,9 +15,11 @@
  *   - `broadcast_cross_tenant_probe` — when memberId is null (admin-side
  *     probe across tenants)
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { enforceTenantContext } from '@/modules/broadcasts';
 import { asTenantContext } from '@/modules/tenants';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 import type {
   AuditEmitInput,
   AuditPort,
@@ -127,6 +129,62 @@ describe('enforce-tenant-context — Wave 6b', () => {
     }
     // emits remain empty because the throwing port never appended
     expect(audit.emits).toHaveLength(0);
+  });
+
+  it('audit emit failure is logged + increments broadcasts_audit_emit_failed_total (F7-SF-3)', async () => {
+    const metricSpy = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    try {
+      const audit = makeAudit(true);
+      const result = await enforceTenantContext(
+        { tenant: callerTenant, audit: audit.port },
+        {
+          observedTenantId: 'tenant-b',
+          broadcastId: 'b-x',
+          actorUserId: 'u-1',
+          memberId: 'm-1',
+          requestId: null,
+        },
+      );
+      // Security effect preserved (404 path) — never 5xx.
+      expect(result.ok).toBe(false);
+      // F7-SF-3: the probe-audit loss must NOT be a silent bare-catch — it
+      // increments the SLO alarm counter so SIEM/on-call sees the drop.
+      expect(metricSpy).toHaveBeenCalledWith(
+        'broadcast_cross_member_probe',
+        callerTenant.slug,
+      );
+    } finally {
+      metricSpy.mockRestore();
+    }
+  });
+
+  it('re-throws a genuine AuditPortInvariantError — a wiring bug must surface, not be swallowed (F7-SF-3 defence-in-depth)', async () => {
+    const port: AuditPort = {
+      async emit() {
+        throw new AuditPortInvariantError(
+          'broadcast_cross_member_probe',
+          'simulated wiring bug',
+        );
+      },
+      async emitTyped() {
+        throw new AuditPortInvariantError(
+          'broadcast_cross_member_probe',
+          'simulated wiring bug',
+        );
+      },
+    };
+    await expect(
+      enforceTenantContext(
+        { tenant: callerTenant, audit: port },
+        {
+          observedTenantId: 'tenant-b',
+          broadcastId: 'b-x',
+          actorUserId: 'u-1',
+          memberId: 'm-1',
+          requestId: null,
+        },
+      ),
+    ).rejects.toBeInstanceOf(AuditPortInvariantError);
   });
 
   // ---- requestId passthrough ----------------------------------------

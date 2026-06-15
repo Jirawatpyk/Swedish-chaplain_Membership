@@ -4,6 +4,8 @@
 **Severity**: alarm (broadcast delivery may be stuck; member quota slot may be inappropriately consumed)
 **Source signal**: `broadcasts.stuck_sending_count` gauge (≥ 1 broadcast in `status='sending'` for > 24h triggers alarm) · audit `broadcast_resend_resource_missing` (R2-NEW-3 — emit lands Phase 3+ T161 reconciliation cron)
 **Audit events**: `broadcast_resend_resource_missing` · `broadcast_send_timeout_completed` · `broadcast_failed_to_dispatch`
+
+> **Single-audience vs batched**: this runbook covers SINGLE-AUDIENCE (≤10k) broadcasts stuck in `sending`. A `broadcast_send_timeout_completed` event is the 24h single-audience reconcile giving up on lost webhooks — a genuine timeout incident. A BATCHED (>10k) broadcast that rolls up to `partially_sent` emits the dedicated **`broadcast_partially_sent`** event (NOT `broadcast_send_timeout_completed`) — that is a NORMAL completion (≥1 batch failed or, at the 24h batched backstop, never confirmed), handled by the batch roll-up sweep (`reconcile-stuck-sending` cron → `sweepBatchCompletion`), not this single-audience path. Do not page on `broadcast_partially_sent` as a stuck-sending incident.
 **Last reviewed**: 2026-04-29 (Batch D T032 spec scaffolding)
 **Status**: SPEC — emit sites + reconciliation cron land Phase 3+ (T161); operational triage assumes the cron + audit events exist.
 

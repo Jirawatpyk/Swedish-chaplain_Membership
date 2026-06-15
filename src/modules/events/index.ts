@@ -413,6 +413,14 @@ export {
   drizzleEventAttendeesAdapter,
 } from './infrastructure/drizzle-event-attendees-by-member';
 
+// Email-centric recent-attendee query for the F7 broadcasts
+// event_attendees_last_90d segment (cross-module: broadcasts → events).
+export {
+  getRecentEventAttendees,
+  getRecentEventAttendeeByEmail,
+  type RecentEventAttendee,
+} from './infrastructure/drizzle-recent-event-attendees';
+
 // --- 6e. Phase 10 T113+T115 — Retention sweeps -----------------------
 
 export {

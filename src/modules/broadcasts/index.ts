@@ -363,10 +363,25 @@ export {
   type ReconcileStuckSendingOutcome,
 } from './application/use-cases/reconcile-stuck-sending';
 
+// --- Ship-blocker A — batch completion roll-up --------------------------
+export {
+  rollUpBatchBroadcast,
+  sweepBatchCompletion,
+  evaluateBatchCompletion,
+  type RollUpBatchBroadcastDeps,
+  type RollUpBatchBroadcastInput,
+  type RollUpOutcome,
+  type RollUpError,
+  type BatchCompletion,
+  type SweepBatchCompletionInput,
+  type SweepBatchCompletionOutput,
+} from './application/use-cases/roll-up-batch-broadcast';
+
 // --- Composition root factories (Phase 7 US5) ----------------------------
 export {
   makeProcessWebhookEventDeps,
   makeReconcileStuckSendingDeps,
+  makeRollUpBatchBroadcastDeps,
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
 } from './infrastructure/broadcasts-deps';
@@ -450,6 +465,10 @@ export { makeDrizzleBatchManifestsRepo } from './infrastructure/drizzle-batch-ma
 export { makeDrizzleBroadcastsRepo } from './infrastructure/db/drizzle-broadcasts-repo';
 export { makeDrizzleMarketingUnsubscribesRepo } from './infrastructure/db/drizzle-marketing-unsubscribes-repo';
 export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
+// F6 → F7 production bridge for the event_attendees_last_90d segment
+// (replaces eventAttendeesStub in the live composition roots now that F6
+// EventCreate has shipped). Stub export retained for empty-segment tests.
+export { eventAttendeesBridge } from './infrastructure/event-attendees-bridge';
 export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
 export { noOpAdvisoryLock } from './infrastructure/noop-advisory-lock';
 export { dispatchAllPendingBatches } from './application/services/batch-dispatcher';

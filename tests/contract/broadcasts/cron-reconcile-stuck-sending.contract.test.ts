@@ -19,6 +19,25 @@ import { ok, err } from '@/lib/result';
 
 const reconcileStuckSendingMock = vi.fn();
 const runInTenantMock = vi.fn();
+// speckit-review I-1 — the route also runs the two batch sweeps after the
+// single-audience reconcile loop; mock them so their wiring + best-effort
+// "200 even if the sweep throws" escalation can be asserted at the route.
+const sweepBatchCompletionMock = vi.fn();
+const sweepAutoRetryFailedBatchesMock = vi.fn();
+
+const ZEROED_ROLLUP = {
+  scanned: 0,
+  sentCount: 0,
+  partialCount: 0,
+  inProgressCount: 0,
+  errorCount: 0,
+};
+const ZEROED_AUTO_RETRY = {
+  eligibleCount: 0,
+  retriedCount: 0,
+  errorCount: 0,
+  outcomes: [],
+};
 
 const envMock = {
   features: { f7Broadcasts: true },
@@ -46,6 +65,15 @@ vi.mock('@/modules/broadcasts', () => ({
   reconcileStuckSending: (...args: unknown[]) =>
     reconcileStuckSendingMock(...args),
   makeReconcileStuckSendingDeps: () => ({}),
+  // speckit-review I-1 — batch sweep arms (previously absent from the mock,
+  // so they threw `undefined is not a function` and were swallowed; now
+  // mockable so the wiring + 200-on-throw behavior is asserted explicitly).
+  sweepAutoRetryFailedBatches: (...args: unknown[]) =>
+    sweepAutoRetryFailedBatchesMock(...args),
+  makeAutoRetryFailedBatchesDeps: () => ({}),
+  sweepBatchCompletion: (...args: unknown[]) =>
+    sweepBatchCompletionMock(...args),
+  makeRollUpBatchBroadcastDeps: () => ({}),
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {
@@ -66,6 +94,12 @@ beforeEach(() => {
   envMock.features.f7Broadcasts = true;
   reconcileStuckSendingMock.mockReset();
   runInTenantMock.mockReset();
+  // Default: both batch sweeps succeed with a zeroed summary so the
+  // single-audience reconcile assertions in the other tests are unaffected.
+  sweepBatchCompletionMock.mockReset();
+  sweepBatchCompletionMock.mockResolvedValue({ ...ZEROED_ROLLUP });
+  sweepAutoRetryFailedBatchesMock.mockReset();
+  sweepAutoRetryFailedBatchesMock.mockResolvedValue({ ...ZEROED_AUTO_RETRY });
 });
 
 afterEach(() => {
@@ -234,5 +268,46 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
     expect(body.server_error).toBe(1);
     expect(body.gateway_error).toBe(0);
     expect(body.uncaught_error).toBe(0);
+  });
+
+  // speckit-review I-1 — the batch-completion roll-up sweep (Ship-blocker A's
+  // only production entry point) + the auto-retry sweep are wired into this
+  // route AFTER the single-audience loop, each in a best-effort try/catch.
+  // A sweep throw must NOT 500 the tick (the next 15-min tick re-picks it);
+  // these pin both the wiring and that 200-on-throw escalation choice.
+
+  it('valid bearer + sweepBatchCompletion throws → still 200 (best-effort, not 500) (speckit-review I-1)', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [] }),
+    );
+    sweepBatchCompletionMock.mockRejectedValueOnce(new Error('rollup boom'));
+    const { POST } = await import(
+      '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'
+    );
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    // Wiring proof — the roll-up sweep was actually invoked by the route,
+    // and the auto-retry sweep ran first (independent arms; the roll-up
+    // throwing doesn't unwind the already-completed auto-retry arm).
+    expect(sweepAutoRetryFailedBatchesMock).toHaveBeenCalledTimes(1);
+    expect(sweepBatchCompletionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('valid bearer + sweepAutoRetryFailedBatches throws → still 200 (best-effort, not 500) (speckit-review I-1)', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [] }),
+    );
+    sweepAutoRetryFailedBatchesMock.mockRejectedValueOnce(
+      new Error('auto-retry boom'),
+    );
+    const { POST } = await import(
+      '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'
+    );
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(sweepAutoRetryFailedBatchesMock).toHaveBeenCalledTimes(1);
+    // The roll-up sweep still runs even after the auto-retry sweep threw
+    // (independent try/catch blocks — one failing arm doesn't skip the next).
+    expect(sweepBatchCompletionMock).toHaveBeenCalledTimes(1);
   });
 });

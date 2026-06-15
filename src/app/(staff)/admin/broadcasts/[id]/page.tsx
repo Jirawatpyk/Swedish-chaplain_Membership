@@ -188,7 +188,7 @@ export default async function AdminBroadcastDetailPage({
           {t('fields.body')}
         </h3>
         {sanitisedBody.error ? (
-          <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <div role="alert" className="rounded-md border border-destructive/40 bg-destructive-surface p-3 text-sm text-destructive">
             <p className="font-medium">{t('bodyRenderFailedTitle')}</p>
             <p className="text-xs">{t('bodyRenderFailedHint')}</p>
           </div>
@@ -221,7 +221,7 @@ export default async function AdminBroadcastDetailPage({
         // for TH/SV admins.
         <section
           role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+          className="rounded-md border border-destructive/40 bg-destructive-surface p-4 text-sm text-destructive"
         >
           <p className="font-semibold">{t('batchLoadFailedTitle')}</p>
           <p className="mt-1 text-destructive/80">{t('batchLoadFailedHint')}</p>

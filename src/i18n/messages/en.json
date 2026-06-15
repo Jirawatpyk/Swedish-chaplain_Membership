@@ -2276,32 +2276,12 @@
         "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
         "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
         "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
-        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
-      },
-      "deliverySummary": {
-        "heading": "Delivery summary",
-        "description": "Per-recipient delivery events recorded from Resend.",
-        "totalRecipients": "Recipients: {count}",
-        "delivered": "Delivered: {count}",
-        "bounced": "Bounced: {count}",
-        "softBounced": "Soft-bounced: {count}",
-        "complained": "Complaints: {count}",
-        "sent": "Sent (acknowledged by Resend): {count}",
-        "deliveryRate": "Delivery rate: {rate}%",
-        "complaintRate": "Complaint rate: {rate}%",
-        "stillSending": "Still sending — {received} of {expected} terminal events received.",
-        "completed": "Completed at {sentAt}.",
-        "reconciledNote": "Completed via 24h reconciliation (no recipient events received from Resend; resource verified present).",
-        "reconcileFailedNote": "Marked failed_to_dispatch at 24h reconciliation — Resend resource missing."
-      },
-      "complaintRateBreach": {
-        "bannerTitle": "Complaint rate breach detected",
-        "bannerBody": "Broadcast {broadcastSubject} from {memberName} exceeded the 5% per-broadcast complaint threshold. The member has been auto-halted from sending new broadcasts pending your review.",
-        "complaintRateLabel": "Complaint rate: {rate}%",
-        "thresholdLabel": "Threshold: 5%",
-        "viewBroadcast": "View broadcast",
-        "viewHaltedMembers": "View halted members",
-        "ackHelp": "Clearing the halt is a deliberate admin action. Investigate the broadcast content + bounces before clearing."
+        "acceptPartialServerError": "Failed to accept partial delivery. Please try again.",
+        "approved": "Broadcast approved.",
+        "rejected": "Broadcast rejected. The member has been notified.",
+        "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
+        "clearHalted": "Broadcast halt cleared for this member.",
+        "error": "Something went wrong. Please try again."
       },
       "batches": {
         "title": "Per-batch dispatch breakdown",
@@ -4279,7 +4259,6 @@
           "event_attendees_last_90d": "Event attendees (last 90 days)",
           "custom": "Custom email list"
         },
-        "comingSoon": "(coming soon)",
         "tierLabel": "Tier code",
         "editor": {
           "bracketHint": "Click any [bracketed text] to replace with your content.",
@@ -4313,7 +4292,6 @@
           "submitted": "Submitted for admin review.",
           "submittedSlaHint": "Admin review target: 48 hours.",
           "sanitiserStripped": "Some unsupported formatting was removed automatically.",
-          "savingDraft": "Saving draft…",
           "submitting": "Submitting…",
           "takingLonger": "Taking longer than expected — please wait."
         },

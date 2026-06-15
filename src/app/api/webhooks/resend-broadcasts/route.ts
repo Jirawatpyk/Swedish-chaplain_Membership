@@ -429,6 +429,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         requestId,
       });
       if (!r.ok) {
+        // speckit-review I-1 — branch on the error kind. A real
+        // `storage_error` (Neon blip / serialization failure on the
+        // counter UPDATE) MUST return 500 so Svix retries: the increment
+        // is idempotent on `resend_event_id` (the broadcast_batch_
+        // delivery_events ledger), so a retry recovers the lost counter
+        // bump. Swallowing it to 200 makes Resend never retry → the batch
+        // counter is permanently short → the broadcast strands in
+        // `sending` until the 24h backstop rolls it to a FALSE
+        // `partially_sent` + consumes the member's quota.
+        if (r.error.kind === 'apply_batch_webhook.server_error') {
+          logger.error(
+            {
+              err: r.error.kind,
+              message: r.error.message,
+              eventType: verified.type,
+              batchManifestId: batchRoutingContext.batchManifestId,
+              tenantId,
+              correlationId,
+              requestId,
+            },
+            'broadcasts.webhook.batch_counter_apply_failed',
+          );
+          return jsonInternalError('dispatch_failed', correlationId);
+        }
+        // BATCH_NOT_FOUND only — benign (the batch row was deleted by a
+        // manual ops action mid-flight; the use case already emitted a
+        // forensic audit row). 200 so Resend doesn't retry-storm against
+        // a row that no longer exists.
         logger.warn(
           {
             err: r.error.kind,
@@ -440,10 +468,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           },
           'broadcasts.webhook.batch_counter_apply_failed',
         );
-        // 200 OK regardless — failed counter increment is observable
-        // via the warn log + (eventually) F71A reconcile sweep; we
-        // don't want Resend to retry-storm if the batch row was
-        // just deleted by a manual ops action.
       }
       return jsonOk(correlationId);
     } catch (e) {

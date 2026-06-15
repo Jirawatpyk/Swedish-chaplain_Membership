@@ -9,7 +9,7 @@
  * Pipeline:
  *   1. Dispatch by segment kind →
  *      - all_members / tier → membersBridge.getMembersBySegment
- *      - event_attendees_last_90d → eventAttendees.getLastNinetyDayAttendees (F6 stub returns [])
+ *      - event_attendees_last_90d → eventAttendees.getLastNinetyDayAttendees (F6 bridge — distinct attendees of events in the last 90 days)
  *      - custom → use input emails (already validated by validate-custom-recipients)
  *   2. Filter halted members (already done by F3 use-case)
  *   3. Filter self (Q16 — exclude requesting member's primary contact email)

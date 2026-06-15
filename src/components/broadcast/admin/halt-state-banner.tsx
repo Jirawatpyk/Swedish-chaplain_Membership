@@ -44,7 +44,7 @@ export async function HaltStateBanner({
     <div
       role="region"
       aria-label={t('title', { count: halted.length })}
-      className="rounded-md border border-destructive/40 bg-destructive/10 p-4 dark:bg-destructive/20"
+      className="rounded-md border border-destructive/40 bg-destructive-surface p-4"
     >
       <div className="flex items-start gap-3">
         <ShieldAlert

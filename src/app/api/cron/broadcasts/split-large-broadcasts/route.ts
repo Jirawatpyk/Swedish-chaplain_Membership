@@ -43,7 +43,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   asBroadcastId,
   BroadcastConcurrentMutationError,
-  eventAttendeesStub,
+  eventAttendeesBridge,
   f71aUs1DisabledReason,
   isF71aUs1Enabled,
   makeDrizzleBroadcastsRepo,
@@ -195,7 +195,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         {
           tenant,
           membersBridge,
-          eventAttendees: eventAttendeesStub,
+          eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
         },
         {

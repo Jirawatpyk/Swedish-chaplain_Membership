@@ -2276,32 +2276,12 @@
         "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
         "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
         "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
-        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
-      },
-      "deliverySummary": {
-        "heading": "Leveranssammanfattning",
-        "description": "Per-mottagar-händelser registrerade från Resend.",
-        "totalRecipients": "Mottagare: {count}",
-        "delivered": "Levererade: {count}",
-        "bounced": "Studsade: {count}",
-        "softBounced": "Tillfälligt studsade: {count}",
-        "complained": "Spam-anmälningar: {count}",
-        "sent": "Skickade (bekräftade av Resend): {count}",
-        "deliveryRate": "Leveransfrekvens: {rate}%",
-        "complaintRate": "Spam-anmälningsfrekvens: {rate}%",
-        "stillSending": "Skickar fortfarande — {received} av {expected} slutgiltiga händelser mottagna.",
-        "completed": "Slutförd {sentAt}.",
-        "reconciledNote": "Slutförd via 24h-avstämning (inga mottagar-händelser från Resend, men resursen är verifierad).",
-        "reconcileFailedNote": "Markerad som failed_to_dispatch vid 24h-avstämning — Resend-resurs saknas."
-      },
-      "complaintRateBreach": {
-        "bannerTitle": "Spam-anmälningsfrekvens överskriden",
-        "bannerBody": "Utskick {broadcastSubject} från {memberName} överskred 5%-tröskeln för spam-anmälningar per utskick. Medlemmen är automatiskt spärrad i väntan på din granskning.",
-        "complaintRateLabel": "Spam-anmälningsfrekvens: {rate}%",
-        "thresholdLabel": "Tröskel: 5%",
-        "viewBroadcast": "Visa utskick",
-        "viewHaltedMembers": "Visa spärrade medlemmar",
-        "ackHelp": "Att häva spärren är en avsiktlig administratörsåtgärd. Granska utskickets innehåll och studsar innan du häver."
+        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen.",
+        "approved": "Utskicket har godkänts.",
+        "rejected": "Utskicket har avvisats. Medlemmen har meddelats.",
+        "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
+        "clearHalted": "Utskicksspärren har hävts för medlemmen.",
+        "error": "Något gick fel. Försök igen."
       },
       "batches": {
         "title": "Leveransdetaljer per batch",
@@ -4279,7 +4259,6 @@
           "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
           "custom": "Anpassad e-postlista"
         },
-        "comingSoon": "(kommer snart)",
         "tierLabel": "Nivåkod",
         "editor": {
           "bracketHint": "Klicka på [text inom hakparenteser] för att ersätta med ditt innehåll.",
@@ -4313,7 +4292,6 @@
           "submitted": "Inskickad för administratörsgranskning.",
           "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
           "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
-          "savingDraft": "Sparar utkast…",
           "submitting": "Skickar in…",
           "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
         },

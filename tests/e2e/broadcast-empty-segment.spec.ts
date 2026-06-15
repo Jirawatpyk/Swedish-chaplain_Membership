@@ -127,9 +127,16 @@ test.describe('Broadcast empty segment (T055 — US1 AS4)', () => {
     expect(r.status).toBe(400);
   });
 
-  test('event_attendees_last_90d (F6 stub returns []) → 422 broadcast_empty_segment_blocked', async ({
+  test('event_attendees_last_90d (F6 bridge live) → accepted or empty-segment-blocked', async ({
     page,
   }) => {
+    // F6 EventAttendees bridge is now live (the T062 stub that always
+    // returned [] has been replaced). Outcome is seed-dependent:
+    //   • no event attendees in the last 90 days → segment resolves
+    //     empty → 422 broadcast_empty_segment_blocked
+    //   • ≥1 recent attendee → segment resolves populated → 200 (or
+    //     422 broadcast_quota_blocked if the member's quota is spent).
+    // Either way the endpoint must NOT crash on the event segment.
     await signIn(page);
     const probe = await page.request.get('/portal/broadcasts/new');
     test.skip(probe.status() === 503, 'F7 ship-dark');
@@ -150,7 +157,10 @@ test.describe('Broadcast empty segment (T055 — US1 AS4)', () => {
       });
       return { status: res.status, body: await res.json().catch(() => null) };
     });
-    expect([400, 422, 500]).toContain(r.status);
+    // The F6 bridge is live + fail-loud — a 500 here would be a real crash
+    // (the masked-zero class we explicitly avoid), so it is NOT accepted:
+    // a bridge regression must surface, not pass silently (speckit-review S-1).
+    expect([200, 400, 422]).toContain(r.status);
     if (r.status === 422) {
       expect(r.body?.error?.code).toMatch(
         /broadcast_empty_segment_blocked|broadcast_quota_blocked/,

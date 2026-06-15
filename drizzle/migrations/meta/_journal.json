@@ -1520,6 +1520,34 @@
 			"when": 1798534500000,
 			"tag": "0216_f8_renewal_entered_awaiting_payment",
 			"breakpoints": true
+		},
+		{
+			"idx": 217,
+			"version": "7",
+			"when": 1798534600000,
+			"tag": "0217_f71a_state_machine_partially_sent",
+			"breakpoints": true
+		},
+		{
+			"idx": 218,
+			"version": "7",
+			"when": 1798534700000,
+			"tag": "0218_f71a_batch_webhook_dedup",
+			"breakpoints": true
+		},
+		{
+			"idx": 219,
+			"version": "7",
+			"when": 1798534800000,
+			"tag": "0219_f71a_batch_dedup_grant",
+			"breakpoints": true
+		},
+		{
+			"idx": 220,
+			"version": "7",
+			"when": 1798534900000,
+			"tag": "0220_f71a_broadcast_partially_sent_audit",
+			"breakpoints": true
 		}
 	]
 }

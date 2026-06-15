@@ -26,7 +26,7 @@ const SEVERITY_STYLES: Record<SlaStats['bannerSeverity'], string> = {
     'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100',
   amber:
     'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100',
-  red: 'border-destructive/40 bg-destructive/10 text-destructive dark:border-destructive/50 dark:bg-destructive/20',
+  red: 'border-destructive/40 bg-destructive-surface text-destructive dark:border-destructive/50',
 };
 
 export interface SlaBannerProps {
@@ -72,7 +72,10 @@ export async function SlaBanner({
           'ml-auto rounded-full px-2 py-0.5 text-xs font-semibold',
           stats.bannerSeverity === 'green' && 'bg-emerald-200/60 dark:bg-emerald-900/40',
           stats.bannerSeverity === 'amber' && 'bg-amber-200/60 dark:bg-amber-900/40',
-          stats.bannerSeverity === 'red' && 'bg-destructive/20',
+          // WCAG AA: dark-on-light (mirrors green/amber pills) — the inherited
+          // medium `text-destructive` on a bg-destructive/20 tint was ~4.3:1.
+          stats.bannerSeverity === 'red' &&
+            'bg-red-200/60 text-red-900 dark:bg-red-900/40 dark:text-red-200',
         )}
       >
         {stats.bannerSeverity === 'red' ? t('breachWarning') : t('withinBudget')}

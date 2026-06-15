@@ -150,7 +150,7 @@ export function QueueTableClient({
                   className={cn(
                     'inline-flex items-center gap-1 self-start text-xs',
                     row.ageBadge.variant === 'red'
-                      ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                      ? 'border-destructive/40 bg-destructive-surface text-destructive'
                       : 'border-amber-400/40 bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
                   )}
                 >
