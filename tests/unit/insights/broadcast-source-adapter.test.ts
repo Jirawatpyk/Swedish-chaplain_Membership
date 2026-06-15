@@ -46,6 +46,33 @@ describe('broadcastSourceAdapter.getEblastConsumption — fail-loud (C-1)', () =
     expect(listMemberBroadcastsMock).not.toHaveBeenCalled();
   });
 
+  it('over-subscription (used+reserved>cap, e.g. plan downgrade) → renders the real used, no throw', async () => {
+    // The real member b317dece case: 0 sent, 2 reserved, cap 1. Must render the
+    // benefit view (used 0 of 1), not break it with a throw (insights bug-fix).
+    computeQuotaMock.mockResolvedValueOnce(
+      err({
+        kind: 'quota.invariant_violation',
+        cause: { code: 'quota_counter.over_subscription', used: 0, reserved: 2, cap: 1 },
+      }),
+    );
+    const r = await broadcastSourceAdapter.getEblastConsumption(CTX, 'm1', 2026);
+    expect(r).toEqual({ used: 0, lastUsedAt: null });
+    expect(listMemberBroadcastsMock).not.toHaveBeenCalled();
+  });
+
+  it('over-subscription surfaces the cause’s real sent count (used>0) and never throws', async () => {
+    computeQuotaMock.mockResolvedValueOnce(
+      err({
+        kind: 'quota.invariant_violation',
+        cause: { code: 'quota_counter.over_subscription', used: 2, reserved: 1, cap: 1 },
+      }),
+    );
+    const r = await broadcastSourceAdapter.getEblastConsumption(CTX, 'm1', 2026);
+    expect(r).toEqual({ used: 2, lastUsedAt: null });
+    // The over-subscription read returns directly (no last-sent scan).
+    expect(listMemberBroadcastsMock).not.toHaveBeenCalled();
+  });
+
   it('reports the newest sent broadcast date when used>0', async () => {
     computeQuotaMock.mockResolvedValueOnce(ok({ counter: { used: 2 } }));
     listMemberBroadcastsMock.mockResolvedValueOnce({
