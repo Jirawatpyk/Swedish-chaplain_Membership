@@ -15,7 +15,9 @@ import {
   listInvoices,
   makeListInvoicesDeps,
   computeIsOverdue,
+  drizzleTenantSettingsRepo,
 } from '@/modules/invoicing';
+import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
 import type { TenantContext } from '@/modules/tenants';
 import type { InvoiceSource } from '../../application/ports/source-ports';
 import { monthKeyOf } from '../../domain/trend-window';
@@ -23,7 +25,17 @@ import { monthKeyOf } from '../../domain/trend-window';
 const PAGE = 100;
 
 export const invoiceSourceAdapter: InvoiceSource = {
-  async getYtdPaidRevenueSatang(ctx: TenantContext, year: number): Promise<bigint> {
+  async getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint> {
+    // Resolve the CURRENT fiscal year the way F4 tags invoices at issue time
+    // (deriveFiscalYear + the tenant's fiscalYearStartMonth) so the KPI windows
+    // by the same value stored on invoices.fiscalYear. The calendar year would
+    // mis-window revenue for any non-January fiscal-year tenant (F9 #4). Falls
+    // back to January-start (FY == CE year) when no settings row exists yet.
+    const settings = await drizzleTenantSettingsRepo.getForIssue(ctx.slug);
+    const rawStart = settings?.fiscalYearStartMonth ?? 1;
+    const startMonth = (rawStart >= 1 && rawStart <= 12 ? rawStart : 1) as FiscalYearStartMonth;
+    const fiscalYear: number = deriveFiscalYear(nowIso, startMonth);
+
     const deps = makeListInvoicesDeps(ctx.slug);
     let cursor: string | null = null;
     let total = 0n;
@@ -31,7 +43,7 @@ export const invoiceSourceAdapter: InvoiceSource = {
       const result = await listInvoices(deps, {
         tenantId: ctx.slug,
         status: 'paid',
-        fiscalYear: year,
+        fiscalYear,
         pageSize: PAGE,
         cursor,
         includeDrafts: false,

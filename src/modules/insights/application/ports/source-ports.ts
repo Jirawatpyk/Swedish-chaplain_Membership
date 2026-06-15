@@ -188,8 +188,14 @@ export interface BenefitConsumptionAggregateSource {
 }
 
 export interface InvoiceSource {
-  /** Year-to-date PAID revenue in satang for the tenant's calendar year (FR-001). */
-  getYtdPaidRevenueSatang(ctx: TenantContext, year: number): Promise<bigint>;
+  /**
+   * Fiscal-year-to-date PAID revenue in satang (FR-001). The adapter derives the
+   * fiscal year from `nowIso` + the tenant's `fiscalYearStartMonth` — the SAME
+   * way invoices.fiscalYear is tagged at issue time — so the KPI windows by the
+   * stored fiscal year. The calendar year would silently mis-window revenue for
+   * any non-January fiscal-year tenant (F9 #4).
+   */
+  getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint>;
   /** Count of overdue invoices for the tenant (FR-002 needs-attention). */
   countOverdue(ctx: TenantContext): Promise<number>;
   /**
