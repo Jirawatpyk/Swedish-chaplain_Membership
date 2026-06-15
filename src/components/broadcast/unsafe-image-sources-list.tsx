@@ -33,7 +33,7 @@ export function UnsafeImageSourcesList({
     <div
       role="alert"
       aria-labelledby={headingId}
-      className="space-y-2 p-3 border border-destructive rounded bg-destructive/10"
+      className="space-y-2 p-3 border border-destructive rounded bg-destructive-surface"
     >
       <p id={headingId} className="text-body font-medium text-destructive">
         {t('disallowedSourcesHeading')}

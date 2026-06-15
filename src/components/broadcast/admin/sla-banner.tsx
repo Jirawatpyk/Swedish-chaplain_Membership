@@ -26,7 +26,7 @@ const SEVERITY_STYLES: Record<SlaStats['bannerSeverity'], string> = {
     'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100',
   amber:
     'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100',
-  red: 'border-destructive/40 bg-destructive/10 text-destructive dark:border-destructive/50 dark:bg-destructive/20',
+  red: 'border-destructive/40 bg-destructive-surface text-destructive dark:border-destructive/50',
 };
 
 export interface SlaBannerProps {

@@ -127,11 +127,15 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
       page.locator('[role="status"][aria-live="polite"].sr-only'),
     ).toContainText(/15/);
 
-    // Filter to Admin-authored — count drops to 0 for fresh tenant
+    // Filter to Admin-authored — no admin-authored templates exist for a
+    // fresh tenant, so the table renders a SINGLE empty-state row: a
+    // colSpan placeholder showing `filterEmpty` (added 2026-05-22 in
+    // template-library.tsx so a filtered-empty table doesn't look broken),
+    // NOT zero rows. Assert the empty-state, not a 0 count.
     await page.getByRole('button', { name: /Admin-authored/ }).click();
-    // Header row still shown but data rows = 0
     const dataRows = page.locator('tbody tr');
-    await expect(dataRows).toHaveCount(0);
+    await expect(dataRows).toHaveCount(1);
+    await expect(dataRows).toContainText(/No templates match this filter/i);
 
     // a11y baseline scan (WCAG 2.1 AA) — uses shared helper.
     await runAxeScan(page, test.info());

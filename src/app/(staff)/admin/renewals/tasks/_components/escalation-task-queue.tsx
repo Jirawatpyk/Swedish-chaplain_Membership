@@ -657,7 +657,7 @@ export function EscalationTaskQueue({
                           {formatShortDate(task.dueAt)}
                         </time>
                         {isOverdue && (
-                          <span className="ml-2 rounded-full bg-destructive/20 px-1.5 py-0.5 text-xs font-medium text-destructive">
+                          <span className="ml-2 rounded-full bg-destructive-surface px-1.5 py-0.5 text-xs font-medium text-destructive">
                             {t('overdue_badge')}
                           </span>
                         )}
