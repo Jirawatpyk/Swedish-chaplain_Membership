@@ -142,7 +142,36 @@ export async function eraseMember(
       if (!scrubContacts.ok)
         throw new Error(`contact_scrub_failed:${scrubContacts.error.code}`);
 
-      // ── Task 5 slots the session-revocation + invitation cascade HERE. ──
+      // Cascade — read linked users inside the same tx snapshot so we revoke
+      // exactly the sessions of the users linked at erasure time (mirrors
+      // archive-member.ts). Dedupe so the same user linked to two contacts
+      // yields exactly one user_sessions_revoked audit.
+      const linkedUserIds = await deps.contactRepo.listLinkedUserIdsForMemberInTx(tx, memberId);
+      const uniqueLinkedUserIds = Array.from(new Set(linkedUserIds));
+
+      for (const userId of uniqueLinkedUserIds) {
+        const revoked = await deps.sessions.revokeAllForInTx(tx, userId, 'admin_force');
+        if (!revoked.ok) throw new Error(`session_revoke_failed:${revoked.error.code}`);
+
+        const sessionAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'user_sessions_revoked',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `sessions revoked for user ${userId} — member erased`,
+          payload: {
+            user_id: userId,
+            member_id: memberId,
+            revoked_count: revoked.value.revokedCount,
+            reason: 'admin_force_erase',
+          },
+        });
+        if (!sessionAudit.ok) throw new Error('audit_failed');
+      }
+
+      // Soft-consume any pending/unredeemed invitations for the linked users so
+      // the invite links become dead (defense-in-depth). Cross-module boundary
+      // via InvitationCascadePort (Principle III).
+      await deps.invitations.softConsumePendingForUsersInTx(tx, uniqueLinkedUserIds, now);
     });
   } catch (e) {
     if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });

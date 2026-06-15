@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { eraseMember } from '@/modules/members/application/use-cases/erase-member';
 import { asMemberId } from '@/modules/members';
+import { ok } from '@/lib/result';
 import { buildEraseDeps } from './erase-member.fixtures';
 
 vi.mock('@/lib/db', () => ({
@@ -128,5 +129,25 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.type).toBe('server_error');
+  });
+
+  it('revokes sessions + emits user_sessions_revoked for each linked user, then soft-consumes invitations', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1', 'u-1', 'u-2']);
+    deps.sessions.revokeAllForInTx = vi.fn(async () => ok({ revokedCount: 2 }));
+
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'pdpa_deletion_request' }, META, deps);
+    expect(res.ok).toBe(true);
+
+    // deduped to 2 unique users → 2 revoke calls, 2 user_sessions_revoked audits
+    expect(deps.sessions.revokeAllForInTx).toHaveBeenCalledTimes(2);
+    const sessionAudits = deps.audit.recordInTx.mock.calls.filter((c: any) => c[2].type === 'user_sessions_revoked');
+    expect(sessionAudits).toHaveLength(2);
+    // invitations soft-consumed for the DEDUPED user set
+    expect(deps.invitations.softConsumePendingForUsersInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      ['u-1', 'u-2'],
+      expect.any(Date),
+    );
   });
 });
