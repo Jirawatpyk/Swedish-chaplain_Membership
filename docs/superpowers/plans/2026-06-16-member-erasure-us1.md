@@ -716,6 +716,15 @@ export async function eraseMember(
         throw new Error(`lookup_failed:${current.error.code}`);
       }
 
+      // ⚠️ Read linked users BEFORE the contacts scrub. The contacts scrub
+      // below sets `removed_at` on every contact, and
+      // `listLinkedUserIdsForMemberInTx` filters `removed_at IS NULL` — so
+      // reading AFTER the scrub yields [] and silently skips the entire
+      // session/invitation revocation (the Art.17 cascade). (Bug I-1, caught
+      // in the Task 5 reliability review, 2026-06-16.)
+      const linkedUserIds = await deps.contactRepo.listLinkedUserIdsForMemberInTx(tx, memberId);
+      const uniqueLinkedUserIds = Array.from(new Set(linkedUserIds));
+
       const scrubMember = await deps.memberRepo.scrubPiiInTx(tx, memberId, { erasedAt: now });
       if (!scrubMember.ok) {
         if (scrubMember.error.code === 'repo.not_found') throw new EraseNotFoundError();
@@ -725,7 +734,8 @@ export async function eraseMember(
       const scrubContacts = await deps.contactRepo.scrubPiiForMemberInTx(tx, memberId, { erasedAt: now });
       if (!scrubContacts.ok) throw new Error(`contact_scrub_failed:${scrubContacts.error.code}`);
 
-      // (Task 5 wires session/invitation cascade here.)
+      // (Task 5 wires the session-revoke loop + invitation soft-consume here,
+      //  using uniqueLinkedUserIds read above.)
     });
   } catch (e) {
     if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });
@@ -759,6 +769,8 @@ git commit -m "feat(members): eraseMember skeleton — requested audit + atomic 
 - Test: `tests/unit/members/application/erase-member.test.ts`
 
 Mirror `archiveMember`'s in-tx cascade (lines ~149–202): read `contacts.linked_user_id` for the member, dedupe, revoke each user's sessions with reason `admin_force`, emit one `user_sessions_revoked` per user, then soft-consume pending invitations. The only difference from archive is the audit payload reason string (`admin_force_erase`).
+
+> ⚠️ **Ordering (Bug I-1):** the `listLinkedUserIdsForMemberInTx` READ + dedupe must happen **before** the contacts scrub (it is shown in Task 4's skeleton, right after `findByIdInTx`). The contacts scrub sets `removed_at` on every contact and the read filters `removed_at IS NULL`, so reading after the scrub returns `[]` and the cascade silently no-ops. Unit mocks can't catch this (they decouple the two methods) — a **live-Neon integration test** (`tests/integration/members/erase-member-cascade.test.ts`: seed member + contact + linked user + active session, erase, assert the session is revoked + `user_sessions_revoked` emitted + invitation consumed) is the regression net. Author that integration test RED-first.
 
 - [ ] **Step 1: Add the failing assertion (RED)**
 
@@ -794,12 +806,9 @@ Expected: FAIL — `revokeAllForInTx` called 0 times (cascade not wired).
 
 - [ ] **Step 3: Wire the cascade into the atomic tx**
 
-In `erase-member.ts`, replace the `// (Task 5 wires …)` comment inside the atomic tx with:
+In `erase-member.ts`, the `linkedUserIds` + `uniqueLinkedUserIds` read was already placed BEFORE the scrubs in Task 4's skeleton (Bug I-1 ordering). Replace the `// (Task 5 wires the session-revoke loop …)` comment AFTER the contacts scrub with the loop + soft-consume (reusing `uniqueLinkedUserIds` from above):
 
 ```ts
-      const linkedUserIds = await deps.contactRepo.listLinkedUserIdsForMemberInTx(tx, memberId);
-      const uniqueLinkedUserIds = Array.from(new Set(linkedUserIds));
-
       for (const userId of uniqueLinkedUserIds) {
         const revoked = await deps.sessions.revokeAllForInTx(tx, userId, 'admin_force');
         if (!revoked.ok) throw new Error(`session_revoke_failed:${revoked.error.code}`);
