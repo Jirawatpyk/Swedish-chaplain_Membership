@@ -49,7 +49,7 @@ import {
   PendingReviewList,
   type PendingReviewRow,
 } from './_components/pending-review-list';
-import { fetchMemberDisplay } from './[cycleId]/_lib/cycle-detail-fetchers';
+import { fetchPendingReviewCompanyNames } from './_lib/pending-review-enrichment';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -143,7 +143,6 @@ export default async function RenewalsPipelinePage({
             <RenewalsViewTabs current="pending-review" />
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
-              actorUserId={currentUser.id}
               locale={locale}
             />
           </CardContent>
@@ -322,39 +321,49 @@ export default async function RenewalsPipelinePage({
  *
  * Loads the cycles in `pending_admin_reactivation` via
  * `loadPendingReactivationReview` then batch-enriches each row's member
- * company name via F3's `fetchMemberDisplay` (cross-context read; falls
- * back to the cycle's short id when the lookup fails so a single member
- * lookup error never blanks the whole list). Dates are formatted
- * day-grain, locale-/BE-aware, on the server so the client list component
- * stays locale-agnostic.
+ * company name via F3's `findManyByIdsInTx` in a SINGLE tenant-scoped read
+ * (`fetchPendingReviewCompanyNames`). This is the pattern the use-case
+ * doc-header prescribes; it replaces the prior per-row `fetchMemberDisplay`
+ * N+1 (two sequential `runInTenant` queries per cycle whose primary-contact
+ * half was fetched then discarded — this list only renders the company
+ * name). A member absent from the batch map falls back to the cycle's short
+ * id, so a single missing member never blanks the whole list. Dates are
+ * formatted day-grain, locale-/BE-aware, on the server so the client list
+ * component stays locale-agnostic.
  *
- * Best-effort error handling: an infrastructure throw from the use-case
- * renders a "couldn't load" alert (the pipeline page itself never crashes).
+ * Best-effort error handling: an infrastructure throw from the use-case OR
+ * the batch enrichment renders a "couldn't load" alert (the pipeline page
+ * itself never crashes).
  */
 async function PendingReviewSection({
   tenantSlug,
-  actorUserId,
   locale,
 }: {
   readonly tenantSlug: string;
-  readonly actorUserId: string;
   readonly locale: string;
 }) {
   const t = await getTranslations('admin.renewals.pendingReview');
   const deps = makeRenewalsDeps(tenantSlug);
 
   let cycles: LoadPendingReactivationReviewOutput['cycles'];
+  // memberId → companyName, resolved in ONE batched member read (no N+1).
+  let companyNames: ReadonlyMap<string, string>;
   try {
     const result = await loadPendingReactivationReview(deps, {
       tenantId: tenantSlug,
     });
     // Result error channel is `never`; `ok` is always true at runtime, but
     // the discriminant narrows `.value` for the type checker.
-    if (!result.ok) {
-      cycles = [];
-    } else {
-      cycles = result.value.cycles;
-    }
+    cycles = result.ok ? result.value.cycles : [];
+
+    // Batch-enrich company names in a SINGLE tenant-scoped read. A throw
+    // here (RLS reject / connection / timeout) is caught below and renders
+    // the same "couldn't load" alert as a cycle-load failure — never a
+    // silently blank list.
+    companyNames = await fetchPendingReviewCompanyNames({
+      tenantSlug,
+      memberIds: cycles.map((c) => c.memberId),
+    });
   } catch (e) {
     logger.error(
       {
@@ -389,32 +398,15 @@ async function PendingReviewSection({
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';
 
-  // Enrich company names — best-effort per row (a single lookup failure
-  // degrades to the cycle short-id, never blanks the whole list).
-  const enriched = await Promise.allSettled(
-    cycles.map((c) =>
-      fetchMemberDisplay({
-        tenantSlug,
-        memberId: c.memberId,
-        actorUserId,
-        requestId: randomUUID(),
-      }),
-    ),
-  );
-
-  const rows: PendingReviewRow[] = cycles.map((c, i) => {
-    const lookup = enriched[i];
-    const companyName =
-      lookup?.status === 'fulfilled' && lookup.value
-        ? lookup.value.companyName
-        : c.cycleId.slice(0, 8);
-    return {
-      cycleId: c.cycleId,
-      companyName,
-      pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
-      expiryLabel: fmtDateOnly(c.expiresAt),
-    };
-  });
+  // A member absent from the batch map (archived / cross-tenant-hidden)
+  // degrades to the cycle short-id — same graceful fallback as before, now
+  // without a per-row query.
+  const rows: PendingReviewRow[] = cycles.map((c) => ({
+    cycleId: c.cycleId,
+    companyName: companyNames.get(c.memberId) ?? c.cycleId.slice(0, 8),
+    pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
+    expiryLabel: fmtDateOnly(c.expiresAt),
+  }));
 
   return (
     <>
