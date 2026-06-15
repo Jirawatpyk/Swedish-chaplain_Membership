@@ -2283,31 +2283,6 @@
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."
       },
-      "deliverySummary": {
-        "heading": "Delivery summary",
-        "description": "Per-recipient delivery events recorded from Resend.",
-        "totalRecipients": "Recipients: {count}",
-        "delivered": "Delivered: {count}",
-        "bounced": "Bounced: {count}",
-        "softBounced": "Soft-bounced: {count}",
-        "complained": "Complaints: {count}",
-        "sent": "Sent (acknowledged by Resend): {count}",
-        "deliveryRate": "Delivery rate: {rate}%",
-        "complaintRate": "Complaint rate: {rate}%",
-        "stillSending": "Still sending — {received} of {expected} terminal events received.",
-        "completed": "Completed at {sentAt}.",
-        "reconciledNote": "Completed via 24h reconciliation (no recipient events received from Resend; resource verified present).",
-        "reconcileFailedNote": "Marked failed_to_dispatch at 24h reconciliation — Resend resource missing."
-      },
-      "complaintRateBreach": {
-        "bannerTitle": "Complaint rate breach detected",
-        "bannerBody": "Broadcast {broadcastSubject} from {memberName} exceeded the 5% per-broadcast complaint threshold. The member has been auto-halted from sending new broadcasts pending your review.",
-        "complaintRateLabel": "Complaint rate: {rate}%",
-        "thresholdLabel": "Threshold: 5%",
-        "viewBroadcast": "View broadcast",
-        "viewHaltedMembers": "View halted members",
-        "ackHelp": "Clearing the halt is a deliberate admin action. Investigate the broadcast content + bounces before clearing."
-      },
       "batches": {
         "title": "Per-batch dispatch breakdown",
         "description": "This broadcast was split into {count} batches because the recipient list exceeded Resend's 10,000-per-audience cap. Each batch is dispatched independently.",
@@ -4318,7 +4293,6 @@
           "submitted": "Submitted for admin review.",
           "submittedSlaHint": "Admin review target: 48 hours.",
           "sanitiserStripped": "Some unsupported formatting was removed automatically.",
-          "savingDraft": "Saving draft…",
           "submitting": "Submitting…",
           "takingLonger": "Taking longer than expected — please wait."
         },

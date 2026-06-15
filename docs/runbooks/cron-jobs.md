@@ -70,7 +70,7 @@ should look but harness MUST NOT retry":
 | 500 + `uncaught_error > 0` | Programmer bug or transient DB blip | Harness MAY retry; investigate next morning if persistent |
 | 500 + `server_error > 0` | Use-case Result.err (transition guard, RLS probe, etc.) | Harness MAY retry; investigate stack trace in logs |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
-| 503 | `FEATURE_F7_BROADCASTS=false` | Expected during dark-launch; do nothing |
+| 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing. The route deliberately returns 200 + skips (NOT 503) so cron-job.org does not retry-storm. |
 
 **Why disable failure-retry**: cron-job.org's default retry storm
 (every 30s for 1 hour) on a 500 response would hammer the endpoint
@@ -229,7 +229,7 @@ recipients per broadcast (FR-016a) × N broadcasts due in the window.
 |--------|---------|--------|
 | 200 | Normal dispatch tick (zero or more broadcasts handled) | None — expected |
 | 202 | Tick in progress (advisory lock held by overlapping run) | None — next tick will catch up |
-| 503 | `FEATURE_F7_BROADCASTS=false` (kill-switch active) | If intentional, suppress alerting; otherwise escalate to feature owner |
+| 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch active) | If intentional, suppress alerting; otherwise escalate to feature owner |
 | 401 | `Authorization` header missing/invalid | Check cron-job.org headers UI; rotate secret if leaked |
 | 5xx | Internal error (DB outage, Resend down, app crash) | Inspect Vercel logs; consult [broadcasts-dispatch-failure.md](./broadcasts-dispatch-failure.md) |
 
@@ -297,7 +297,7 @@ polish iteration but is intentionally not part of F7 MVP.
 | 200 + `prunedCount: 0` | Healthy steady state | None |
 | 200 + `prunedCount > 100` | Unusual draft churn — investigate which member is creating drafts that age out | Query `SELECT requested_by_member_id, COUNT(*) FROM broadcasts WHERE status='draft' GROUP BY 1 ORDER BY 2 DESC LIMIT 10` for outliers |
 | 500 + body contains `prune.server_error` | DB outage or RLS misconfiguration. Drafts NOT pruned this tick. | Investigate next morning; harness will retry on next daily tick — no action needed within 24h |
-| 503 | `FEATURE_F7_BROADCASTS=false` | Expected during dark-launch; do nothing |
+| 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing. The route deliberately returns 200 + skips (NOT 503) so cron-job.org does not retry-storm. |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
 
 ## Secret rotation
@@ -401,11 +401,13 @@ For EACH of the two jobs, in the cron-job.org dashboard:
 | 200 | Normal tick (zero or more broadcasts handled) | None |
 | 202 | Overlapping run holds the advisory lock | None — next tick catches up |
 | 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure headers |
-| 503 | `FEATURE_F71A_BROADCAST_ADVANCED=false` or `FEATURE_F71A_US1_PAGINATION=false` | Expected while US1 is dark; do nothing |
+| 200 + `{ skipped: true }` | `FEATURE_F71A_BROADCAST_ADVANCED=false` or `FEATURE_F71A_US1_PAGINATION=false` | Expected while US1 is dark; do nothing |
 
 > **Dark-launch note**: until US1 is flipped on (ship-day T146) both
-> routes return `503` (kill-switch). Configure the jobs at T141 but
-> expect 503 until the flag flip — that is correct, not an incident.
+> routes return `200 + { skipped: true }` (kill-switch — NOT 503, so
+> cron-job.org does not retry-storm). Configure the jobs at T141 but
+> expect the skipped-200 until the flag flip — that is correct, not an
+> incident.
 
 ## F8 — renewals/dispatch-coordinator (NEW — F8 Phase 4)
 
