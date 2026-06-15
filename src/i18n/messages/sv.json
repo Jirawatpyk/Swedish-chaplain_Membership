@@ -2280,7 +2280,7 @@
         "approved": "Utskicket har godkänts.",
         "rejected": "Utskicket har avvisats. Medlemmen har meddelats.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
-        "clearHalted": "Spärren för utskick har hävts för medlemmen.",
+        "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
       },
       "deliverySummary": {
