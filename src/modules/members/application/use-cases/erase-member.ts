@@ -125,6 +125,17 @@ export async function eraseMember(
         throw new Error(`lookup_failed:${current.error.code}`);
       }
 
+      // Read linked users FIRST — the contacts scrub below sets removed_at on
+      // every contact, and listLinkedUserIdsForMemberInTx filters
+      // removed_at IS NULL, so reading after the scrub would yield an empty
+      // list and silently skip the session/invitation revocation (the Art.17
+      // cascade). Stays in the SAME atomic tx as the scrubs, so this is still
+      // a consistent "linked at erasure time" snapshot. (Bug I-1, 2026-06-16.)
+      // Dedupe so the same user linked to two contacts yields exactly one
+      // user_sessions_revoked audit (mirrors archive-member.ts).
+      const linkedUserIds = await deps.contactRepo.listLinkedUserIdsForMemberInTx(tx, memberId);
+      const uniqueLinkedUserIds = Array.from(new Set(linkedUserIds));
+
       const scrubMember = await deps.memberRepo.scrubPiiInTx(tx, memberId, {
         erasedAt: now,
       });
@@ -142,13 +153,8 @@ export async function eraseMember(
       if (!scrubContacts.ok)
         throw new Error(`contact_scrub_failed:${scrubContacts.error.code}`);
 
-      // Cascade — read linked users inside the same tx snapshot so we revoke
-      // exactly the sessions of the users linked at erasure time (mirrors
-      // archive-member.ts). Dedupe so the same user linked to two contacts
-      // yields exactly one user_sessions_revoked audit.
-      const linkedUserIds = await deps.contactRepo.listLinkedUserIdsForMemberInTx(tx, memberId);
-      const uniqueLinkedUserIds = Array.from(new Set(linkedUserIds));
-
+      // Cascade — revoke the sessions of the users linked at erasure time
+      // (snapshot read above, before the scrubs shadowed removed_at).
       for (const userId of uniqueLinkedUserIds) {
         const revoked = await deps.sessions.revokeAllForInTx(tx, userId, 'admin_force');
         if (!revoked.ok) throw new Error(`session_revoke_failed:${revoked.error.code}`);
