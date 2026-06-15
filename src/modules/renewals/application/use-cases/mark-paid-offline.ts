@@ -38,11 +38,13 @@ import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 import { applyPendingTierUpgradeInTx } from './apply-pending-tier-upgrade';
 import { finaliseF2PlanChangeOnPaid } from './finalise-f2-plan-change-on-paid';
-// `asInvoiceId` is the F4 brand constructor (validates + brands at the
-// boundary) — used for the `applyPendingTierUpgradeInTx` invoiceId arg so a
-// future tightening of `F4InvoicePaidEvent.invoiceId` cannot pass through
-// silently (a bare `as unknown as` cast would). Same public-barrel import
-// as the sibling `admin-reject-reactivation.ts`. The remaining audit-payload
+// `asInvoiceId` is the F4 brand constructor — a TYPE-CHECKED cast (takes a
+// `string`, returns the `InvoiceId` brand; no runtime validation). It's used
+// for the `applyPendingTierUpgradeInTx` invoiceId arg so that if
+// `F4InvoicePaidEvent.invoiceId` is ever tightened away from a plain string
+// the call errors at compile time — unlike a bare `as unknown as` cast, which
+// silences everything. Same public-barrel import as the sibling
+// `admin-reject-reactivation.ts`. The remaining audit-payload
 // `invoiceId`/`memberId` stay inline-cast at the emit site (typed payload
 // shapes); type-only for the rest keeps cross-module coupling minimal
 // (Constitution Principle III).
