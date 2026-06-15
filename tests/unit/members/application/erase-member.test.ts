@@ -198,4 +198,39 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     expect(types).not.toContain('member_erased');
   });
+
+  // Distinct from the prior case (a non-ok OUTCOME): here the cascade adapter
+  // THROWS. The post-commit cascade try/catch must catch it, flip
+  // allCascadesClean=false, and suppress member_erased — never let a best-effort
+  // cascade throw escape and never report completed:true on an incomplete run.
+  it('a cascade THROW (not just non-ok outcome) → completed:false + no member_erased', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
+  // The member_erased emit happens AFTER every cascade reports clean — but it
+  // can still fail. Its catch must flip completed back to false so the result
+  // never claims completion without the durable proof record (the US2
+  // reconciler re-drives + re-emits later).
+  it('member_erased emit failure flips completed back to false', async () => {
+    const deps = buildEraseDeps();
+    // Cascades are clean, but the member_erased audit write fails. Fail ONLY the
+    // member_erased recordInTx call; member_erasure_requested (and any session
+    // audits) must still succeed or the flow short-circuits earlier.
+    deps.audit.recordInTx = vi.fn(async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+      ev.type === 'member_erased'
+        ? ({ ok: false, error: { code: 'repo.unexpected' } })
+        : ok(undefined),
+    ) as never;
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(false);
+  });
 });
