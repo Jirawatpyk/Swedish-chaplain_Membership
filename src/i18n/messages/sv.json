@@ -4744,7 +4744,7 @@
           "upcoming": "Kommande",
           "reminded": "Påminnelse skickad",
           "awaiting_payment": "Väntar på betalning",
-          "completed": "Aktivt",
+          "completed": "Slutförd",
           "lapsed": "Utgånget",
           "cancelled": "Avbruten",
           "pending_admin_reactivation": "Väntar på granskning"

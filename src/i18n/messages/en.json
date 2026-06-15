@@ -4744,7 +4744,7 @@
           "upcoming": "Upcoming",
           "reminded": "Reminded",
           "awaiting_payment": "Awaiting payment",
-          "completed": "Active",
+          "completed": "Completed",
           "lapsed": "Lapsed",
           "cancelled": "Cancelled",
           "pending_admin_reactivation": "Pending review"
