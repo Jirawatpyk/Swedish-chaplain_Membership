@@ -141,7 +141,9 @@ describe('eraseMember — requested audit + atomic scrub', () => {
 
     // deduped to 2 unique users → 2 revoke calls, 2 user_sessions_revoked audits
     expect(deps.sessions.revokeAllForInTx).toHaveBeenCalledTimes(2);
-    const sessionAudits = deps.audit.recordInTx.mock.calls.filter((c: any) => c[2].type === 'user_sessions_revoked');
+    const sessionAudits = deps.audit.recordInTx.mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'user_sessions_revoked',
+    );
     expect(sessionAudits).toHaveLength(2);
     // invitations soft-consumed for the DEDUPED user set
     expect(deps.invitations.softConsumePendingForUsersInTx).toHaveBeenCalledWith(
@@ -149,5 +151,51 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       ['u-1', 'u-2'],
       expect.any(Date),
     );
+  });
+
+  it('passes the erasure reason to both cascades and emits member_erased on full success', async () => {
+    const deps = buildEraseDeps();
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(true);
+
+    expect(deps.broadcastsCascade.cancelInFlightForMember).toHaveBeenCalledWith(
+      deps.tenant,
+      asMemberId('m-1'),
+      expect.objectContaining({ cancellationReason: 'gdpr_erasure_request' }),
+    );
+    expect(deps.renewalsCascade.cancelInFlightForMember).toHaveBeenCalledWith(
+      deps.tenant,
+      asMemberId('m-1'),
+      expect.objectContaining({ cancellationReason: 'gdpr_erasure_request' }),
+    );
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).toContain('member_erased');
+  });
+
+  it('does NOT emit member_erased when a cascade fails (left for the reconciler)', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () => ({ outcome: 'cascade_failed' }) as const,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
   });
 });

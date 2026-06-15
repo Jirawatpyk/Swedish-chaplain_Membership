@@ -116,8 +116,15 @@ export async function eraseMember(
   }
 
   // 2. ATOMIC scrub tx — members + contacts (+ Task 5 linked-user cascade).
+  //    M1: cascade counts captured inside the tx, surfaced to outer scope for
+  //    the post-commit `member_erased` payload (DPO-log observability).
+  let sessionsRevokedTotal = 0;
+  let invitationsRevokedCount = 0;
   try {
     await runInTenant(deps.tenant, async (tx) => {
+      // findByIdInTx takes a SELECT … FOR UPDATE row lock (mirrors
+      // archive-member.ts) — keep it so a concurrent plan-change /
+      // inline-edit cannot clobber the row between this read and the scrub.
       const current = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
@@ -158,6 +165,7 @@ export async function eraseMember(
       for (const userId of uniqueLinkedUserIds) {
         const revoked = await deps.sessions.revokeAllForInTx(tx, userId, 'admin_force');
         if (!revoked.ok) throw new Error(`session_revoke_failed:${revoked.error.code}`);
+        sessionsRevokedTotal += revoked.value.revokedCount;
 
         const sessionAudit = await deps.audit.recordInTx(tx, deps.tenant, {
           type: 'user_sessions_revoked',
@@ -177,7 +185,12 @@ export async function eraseMember(
       // Soft-consume any pending/unredeemed invitations for the linked users so
       // the invite links become dead (defense-in-depth). Cross-module boundary
       // via InvitationCascadePort (Principle III).
-      await deps.invitations.softConsumePendingForUsersInTx(tx, uniqueLinkedUserIds, now);
+      const inv = await deps.invitations.softConsumePendingForUsersInTx(
+        tx,
+        uniqueLinkedUserIds,
+        now,
+      );
+      invitationsRevokedCount = inv.revokedCount;
     });
   } catch (e) {
     if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });
@@ -188,6 +201,101 @@ export async function eraseMember(
     return err({ type: 'server_error', message: 'erase scrub failed' });
   }
 
-  // ── Task 6 slots the post-commit F7/F8 cascades + member_erased proof HERE. ──
-  return ok({ memberId, erasedAt: now, completed: false });
+  // 3. POST-COMMIT best-effort cascades. Each opens its own tx (in the adapter)
+  //    and must NOT roll back the committed scrub. Track whether every cascade
+  //    reported a clean outcome — only then is the erasure "complete".
+  let allCascadesClean = true;
+
+  try {
+    const r = await deps.broadcastsCascade.cancelInFlightForMember(deps.tenant, memberId, {
+      cancellationReason: reason,
+      initiatedByUserId: meta.actorUserId,
+      requestId: meta.requestId,
+    });
+    if (r.outcome !== 'ok') {
+      allCascadesClean = false;
+      logger.error(
+        {
+          memberId,
+          requestId: meta.requestId,
+          outcome: r.outcome,
+          cascade: 'f7_in_flight_broadcast_cancel',
+        },
+        'erase-member: broadcasts cascade not clean',
+      );
+    }
+  } catch (cascadeErr) {
+    allCascadesClean = false;
+    logger.error(
+      {
+        err: cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+        memberId,
+        requestId: meta.requestId,
+        cascade: 'f7_in_flight_broadcast_cancel',
+      },
+      'erase-member: broadcasts cascade threw',
+    );
+  }
+
+  try {
+    const r = await deps.renewalsCascade.cancelInFlightForMember(deps.tenant, memberId, {
+      cancellationReason: reason,
+      initiatedByUserId: meta.actorUserId,
+      requestId: meta.requestId,
+    });
+    if (r.outcome !== 'ok') {
+      allCascadesClean = false;
+      logger.error(
+        {
+          memberId,
+          requestId: meta.requestId,
+          outcome: r.outcome,
+          cascade: 'f8_in_flight_cycle_cancel',
+        },
+        'erase-member: renewals cascade not clean',
+      );
+    }
+  } catch (cascadeErr) {
+    allCascadesClean = false;
+    logger.error(
+      {
+        err: cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+        memberId,
+        requestId: meta.requestId,
+        cascade: 'f8_in_flight_cycle_cancel',
+      },
+      'erase-member: renewals cascade threw',
+    );
+  }
+
+  // 4. Completion proof — emit member_erased ONLY when every cascade is clean.
+  //    A partial run leaves erased_at set with NO member_erased; the US2
+  //    reconciliation sweep re-drives the remainder and emits it then.
+  if (allCascadesClean) {
+    try {
+      await runInTenant(deps.tenant, async (tx) => {
+        const done = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_erased',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `member_erased ${memberId}`,
+          payload: {
+            member_id: memberId,
+            reason,
+            sessions_revoked_total: sessionsRevokedTotal,
+            invitations_revoked_count: invitationsRevokedCount,
+          },
+        });
+        if (!done.ok) throw new Error('audit_failed');
+      });
+    } catch (e) {
+      allCascadesClean = false;
+      logger.error(
+        { err: e, memberId, requestId: meta.requestId },
+        'erase-member: member_erased audit failed',
+      );
+    }
+  }
+
+  return ok({ memberId, erasedAt: now, completed: allCascadesClean });
 }
