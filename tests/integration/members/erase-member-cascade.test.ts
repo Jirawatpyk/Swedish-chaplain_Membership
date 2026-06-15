@@ -60,9 +60,11 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 const PLAN_ID = 'test-erase-plan';
 
-/** Build real EraseMemberDeps inline (the Task-8 composition root isn't wired
- *  yet). No-op F7/F8 cascade adapters so this test exercises ONLY the in-tx
- *  member/contact scrub + the F1 session/invitation cascade. */
+/** Build real EraseMemberDeps inline. Deliberately NOT the production
+ *  `buildEraseMemberDeps` composition root (which wires the REAL F7/F8
+ *  cascades) — this test injects the no-op F7/F8 cascade adapters so it
+ *  exercises ONLY the in-tx member/contact scrub + the F1 session/invitation
+ *  cascade (Bug I-1), without dragging F7 broadcast / F8 renewal state in. */
 function buildEraseMemberDeps(tenant: TestTenant): EraseMemberDeps {
   return {
     tenant: tenant.ctx,

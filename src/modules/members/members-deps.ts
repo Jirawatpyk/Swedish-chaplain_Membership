@@ -43,6 +43,7 @@ import type { EmailChangeTokenPort } from './application/ports/email-change-toke
 import type { InvitationCascadePort } from './application/ports/invitation-cascade-port';
 import type { ReissueInvitationPort } from './application/ports/reissue-invitation-port';
 import type { CreateUserPort, DeleteInvitedUserPort } from './application/use-cases/invite-portal';
+import type { EraseMemberDeps } from './application/use-cases/erase-member';
 import type { BroadcastsCascadePort } from './application/ports/broadcasts-cascade-port';
 import type { RenewalsCascadePort } from './application/ports/renewals-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
@@ -161,6 +162,33 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     memberNumberAllocator: drizzleMemberNumberAllocator,
     memberSettings: drizzleMemberSettingsRepo,
     idFactory: systemIdFactory,
+  };
+}
+
+/**
+ * COMP-1 US1 — production composition root for the `eraseMember` use case
+ * (GDPR Art. 17 / PDPA §33). `eraseMember` adds NO new ports in US1 — it
+ * re-drives the SAME archive cascades, so this wires the exact adapters
+ * `buildMembersDeps` already uses for the nine fields `EraseMemberDeps`
+ * needs (mirrors the archive composition root). Production uses the REAL
+ * F7/F8 cascade adapters (the no-op variants are test-only).
+ *
+ * Wired directly (rather than projecting `buildMembersDeps`) so the erase
+ * route doesn't allocate the adapters eraseMember never touches (resend
+ * email, argon2 token hashing, timeline repo, member-number allocator) —
+ * same cold-start-lean rationale as `buildMemberProbeDeps` below.
+ */
+export function buildEraseMemberDeps(tenant: TenantContext): EraseMemberDeps {
+  return {
+    tenant,
+    memberRepo: drizzleMemberRepo,
+    contactRepo: drizzleContactRepo,
+    invitations: drizzleInvitationCascadePort,
+    sessions: authSessionRevocationPort,
+    broadcastsCascade: f7BroadcastsCascadeAdapter,
+    renewalsCascade: f8RenewalsCascadeAdapter,
+    audit: drizzleAuditAdapter,
+    clock: systemClock,
   };
 }
 
