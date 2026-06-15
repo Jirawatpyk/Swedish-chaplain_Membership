@@ -724,6 +724,56 @@ if (raw.FEATURE_F9_DASHBOARD && !raw.EXPORT_DOWNLOAD_TOKEN_SECRET) {
   );
 }
 
+// F9 (#13): EXPORT_DOWNLOAD_TOKEN_SECRET MUST be DISTINCT from the other
+// token-signing secrets (per its schema docstring) so a leak/rotation of one
+// secret never compromises another surface's tokens. The schema only enforces
+// length (≥32); this is the cross-field distinctness gate. Checked whenever the
+// secret is set (F9 on).
+if (raw.EXPORT_DOWNLOAD_TOKEN_SECRET) {
+  const collisions = (
+    [
+      ['AUTH_COOKIE_SIGNING_SECRET', raw.AUTH_COOKIE_SIGNING_SECRET],
+      ['UNSUBSCRIBE_TOKEN_SECRET', raw.UNSUBSCRIBE_TOKEN_SECRET],
+      ['RENEWAL_LINK_TOKEN_SECRET_PRIMARY', raw.RENEWAL_LINK_TOKEN_SECRET_PRIMARY],
+      ['RENEWAL_LINK_TOKEN_SECRET_FALLBACK', raw.RENEWAL_LINK_TOKEN_SECRET_FALLBACK],
+    ] as const
+  ).filter(([, value]) => value === raw.EXPORT_DOWNLOAD_TOKEN_SECRET);
+  if (collisions.length > 0) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        `  - EXPORT_DOWNLOAD_TOKEN_SECRET must be DISTINCT from ${collisions
+          .map(([name]) => name)
+          .join(', ')}. Reusing one secret across surfaces means a leak or ` +
+        'rotation of one compromises the other. Generate a separate value: ' +
+        'openssl rand -base64 48.',
+    );
+  }
+}
+
+// F9 (#8): in PRODUCTION the private-export Blob store MUST be a dedicated
+// PRIVATE store — never the public BLOB_READ_WRITE_TOKEN store (which backs F4
+// invoice PDFs + F9 logos). GDPR export archives + Directory E-Books carry full
+// member PII; routing them to a public-access store would expose them outside the
+// authenticated download proxy. The `?? raw.BLOB_READ_WRITE_TOKEN` fallback (in
+// the `env.blob` object below) stays for dev/test/dark-launch ergonomics, but
+// production fails loud the moment F9 is enabled without a dedicated private
+// store — surfacing the misconfiguration at boot, not after PII has been written
+// to the wrong store. Bypass in non-production is intentional (mirrors the F6 DPA
+// + pseudonym-salt prod-only guards above).
+if (
+  raw.NODE_ENV === 'production' &&
+  raw.FEATURE_F9_DASHBOARD &&
+  !raw.BLOB_PRIVATE_READ_WRITE_TOKEN
+) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - BLOB_PRIVATE_READ_WRITE_TOKEN must be set to a dedicated PRIVATE ' +
+      'Vercel Blob store token when FEATURE_F9_DASHBOARD=true in production. ' +
+      'GDPR export archives + Directory E-Books carry member PII and must never ' +
+      'fall back to the public BLOB_READ_WRITE_TOKEN store (T101a ship-day gate).',
+  );
+}
+
 // --- Public, typed env object -------------------------------------------------
 
 export const env = {
@@ -812,9 +862,11 @@ export const env = {
   blob: {
     readWriteToken: raw.BLOB_READ_WRITE_TOKEN,
     // F9 private-export store token. Falls back to the public read/write token
-    // when no dedicated private store is provisioned (dev/test/dark-launch);
-    // ship-day operator sets BLOB_PRIVATE_READ_WRITE_TOKEN to the private store
-    // before enabling exports (T101a). Only `private-blob-adapter.ts` reads it.
+    // ONLY in dev/test/dark-launch — the cross-field guard above (F9 #8) makes
+    // this fallback a hard boot error in production when F9 is enabled, so PII
+    // export archives can never be written to the public store. Ship-day operator
+    // sets BLOB_PRIVATE_READ_WRITE_TOKEN to the private store before enabling
+    // exports (T101a). Only `private-blob-adapter.ts` reads it.
     privateReadWriteToken:
       raw.BLOB_PRIVATE_READ_WRITE_TOKEN ?? raw.BLOB_READ_WRITE_TOKEN,
   },
