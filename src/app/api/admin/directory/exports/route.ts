@@ -13,6 +13,8 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   exportDirectoryJson,
@@ -52,6 +54,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const tenant = resolveTenantFromRequest(request);
+
+  // Rate-limit per staff actor (F9 #5): each accepted request enqueues a job
+  // that renders a full react-pdf E-Book / JSON over the ENTIRE published
+  // directory on the cron worker, and generateDirectoryExport keys idempotency
+  // on the generation instant so every call creates a FRESH job — without a cap
+  // a staff actor (admin OR the read-only manager) could queue unbounded heavy
+  // builds (resource-exhaustion). 10/hour is ample for legitimate regeneration;
+  // mirrors the GDPR admin export limiter (W0-18).
+  const rl = await rateLimiter.check(
+    `directory-export:${tenant.slug}:${current.user.id as string}`,
+    10,
+    3600,
+  );
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: { code: 'rate_limited' }, correlationId },
+      {
+        status: 429,
+        headers: { 'Retry-After': retryAfterSecondsFromRl({ reset: rl.reset }).toString() },
+      },
+    );
+  }
+
   const meta = {
     actorUserId: current.user.id as string,
     actorRole: current.user.role,

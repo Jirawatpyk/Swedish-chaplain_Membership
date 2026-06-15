@@ -12,6 +12,8 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession, type CurrentSession } from '@/lib/auth-session';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { setDirectoryLogo, removeDirectoryLogo, MAX_LOGO_UPLOAD_BYTES } from '@/modules/insights';
 import {
@@ -75,6 +77,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const gated = await gate(request, correlationId);
   if (gated instanceof NextResponse) return gated;
   const { tenant, memberId, current } = gated;
+
+  // Rate-limit per member (F9 #2): each accepted upload runs the sharp decode +
+  // re-encode pipeline (CPU/heap-expensive on attacker-controlled pixels). The
+  // content-length pre-check below bounds SIZE but not FREQUENCY, so without this
+  // a member could loop ~2 MB images and saturate the Node worker, starving
+  // other tenants. Mirrors the F4 tenant-invoice-settings logo limiter. Runs
+  // AFTER own-member resolution so the key is the data subject.
+  const rl = await rateLimiter.check(`directory-logo:${tenant.slug}:${memberId}`, 15, 60);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: { code: 'rate_limited' }, correlationId },
+      {
+        status: 429,
+        headers: { 'Retry-After': retryAfterSecondsFromRl({ reset: rl.reset }).toString() },
+      },
+    );
+  }
 
   // Reject oversize before buffering the whole body (defence-in-depth; the
   // use-case re-checks the actual byte length too).
