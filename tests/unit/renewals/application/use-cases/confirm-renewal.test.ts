@@ -257,12 +257,12 @@ describe('confirmRenewal (T122) — happy paths', () => {
     expect(planLookupMock).toHaveBeenCalledOnce();
     // 070 §86/4 — the plan-change resolves the NEW plan by THIS cycle's
     // fiscal year (period_from 2026-06-01 → FY 2026) with
-    // requireActiveForYear:true (a plan-OFFER check, not a freeze).
+    // mode 'offer' (a plan-OFFER check, not a freeze).
     expect(planLookupMock).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
       planId: NEW_PLAN_ID,
       fiscalYear: 2026,
-      requireActiveForYear: true,
+      mode: 'offer',
     });
     expect(updateFrozenPlanMock).toHaveBeenCalledOnce();
     expect(updateFrozenPlanMock.mock.calls[0]?.[3]).toMatchObject({

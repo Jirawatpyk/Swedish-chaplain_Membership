@@ -9,10 +9,10 @@
  * to the FUTURE-year row → wrong tax amount, no error.
  *
  * The fix makes resolution exact-year-FIRST: the caller threads the
- * relevant cycle's fiscal year + a `requireActiveForYear` flag.
+ * relevant cycle's fiscal year + a resolution `mode` (`'freeze'`/`'offer'`).
  *
  * Live Neon — proves the real composite-PK exact-year SELECT + the
- * `is_active`/`requireActiveForYear` branch + the exact-year-MISS
+ * `is_active`/`mode 'offer'` branch + the exact-year-MISS
  * fallback against the actual `membership_plans` schema, not a mock.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -115,7 +115,7 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
       tenantId: tenant.ctx.slug,
       planId: bothActivePlanId,
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
 
     expect(result.status).toBe('found');
@@ -134,7 +134,7 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
       tenantId: tenant.ctx.slug,
       planId: bothActivePlanId,
       fiscalYear: 2027,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
 
     expect(result.status).toBe('found');
@@ -147,13 +147,13 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
     });
   });
 
-  it('FREEZE (requireActiveForYear:false): a seeded-INACTIVE 2027 row IS the correct 2027 frozen price', async () => {
+  it('FREEZE (mode \'freeze\'): a seeded-INACTIVE 2027 row IS the correct 2027 frozen price', async () => {
     const adapter = makeDrizzlePlanLookupForRenewal(tenant.ctx);
     const result = await adapter.loadPlanFrozenFields({
       tenantId: tenant.ctx.slug,
       planId: inactiveNextYearPlanId,
       fiscalYear: 2027,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
 
     expect(result.status).toBe('found');
@@ -162,13 +162,13 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
     expect(result.plan.tierBucket).toBe('premium');
   });
 
-  it('PLAN-CHANGE (requireActiveForYear:true): the INACTIVE 2027 row → plan_inactive (cannot switch to a plan not offered that year; NO fall-through to 2026)', async () => {
+  it('PLAN-CHANGE (mode \'offer\'): the INACTIVE 2027 row → plan_inactive (cannot switch to a plan not offered that year; NO fall-through to 2026)', async () => {
     const adapter = makeDrizzlePlanLookupForRenewal(tenant.ctx);
     const result = await adapter.loadPlanFrozenFields({
       tenantId: tenant.ctx.slug,
       planId: inactiveNextYearPlanId,
       fiscalYear: 2027,
-      requireActiveForYear: true,
+      mode: 'offer',
     });
     expect(result.status).toBe('plan_inactive');
   });
@@ -179,7 +179,7 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
       tenantId: tenant.ctx.slug,
       planId: bothActivePlanId,
       fiscalYear: 2099,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     // No 2099 row → fallback picks the most-recent ACTIVE (2027 @ 60k).
     expect(result.status).toBe('found');
@@ -193,7 +193,7 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
       tenantId: tenant.ctx.slug,
       planId: `f8-missing-${randomUUID().slice(0, 8)}`,
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result.status).toBe('not_found');
   });

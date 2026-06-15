@@ -123,8 +123,8 @@ export async function rescheduleOnPlanChangeInTx(
   // there is no active cycle (the bucket-resolution-failure forensic path
   // still emits a `reschedule_skipped` audit), fall back to the current
   // fiscal year (server clock) — this caller only reads `tierBucket`
-  // (`requireActiveForYear:false`), and a plan's bucket is stable across
-  // its catalogue years, so the clock-year fallback is safe.
+  // (`mode: 'freeze'`), and a plan's bucket is stable across its catalogue
+  // years, so the clock-year fallback is safe.
   const activeCycle = await deps.cyclesRepo.findActiveForMember(
     args.tenantId,
     args.memberId,
@@ -134,19 +134,19 @@ export async function rescheduleOnPlanChangeInTx(
   );
 
   // Resolve OLD + NEW tier buckets via plan lookup (070 — exact-year-first
-  // via `fiscalYear`; `requireActiveForYear:false` because this is a
-  // bucket read, not a plan-offer check).
+  // via `fiscalYear`; `mode: 'freeze'` because this is a bucket read, not
+  // a plan-offer check).
   const oldPlan = await deps.planLookupForRenewal.loadPlanFrozenFields({
     tenantId: args.tenantId,
     planId: args.oldPlanId,
     fiscalYear,
-    requireActiveForYear: false,
+    mode: 'freeze',
   });
   const newPlan = await deps.planLookupForRenewal.loadPlanFrozenFields({
     tenantId: args.tenantId,
     planId: args.newPlanId,
     fiscalYear,
-    requireActiveForYear: false,
+    mode: 'freeze',
   });
 
   const oldBucket =
@@ -390,6 +390,21 @@ export async function rescheduleOnPlanChange(
     );
     return ok(result);
   } catch (e) {
+    // S-3 (070 speckit-review): a throw from the in-tx body (cycle/bucket
+    // repo read, plan lookup, RLS reject) surfaces as `server_error` to the
+    // caller — but this is a fire-and-forget post-commit listener off the F3
+    // plan-change, so without a log here the failure is invisible to SRE
+    // (the caller may swallow the `server_error`). Log loudly so a non-audit
+    // infra fault is observable independent of caller behaviour.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        memberId: input.memberId,
+        errorId: 'F8.RESCHEDULE.WRAPPER_THREW',
+      },
+      '[reschedule-on-plan-change] unexpected error in reschedule wrapper — F3 plan-flip already committed; reschedule skipped',
+    );
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',

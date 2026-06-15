@@ -297,9 +297,10 @@ export async function confirmRenewal(
       }
     } else if (cycle.status !== 'awaiting_payment') {
       // Terminal (completed/lapsed/cancelled) or pending_admin_reactivation
-      // — not self-renewable here. The pending_admin_reactivation
-      // money-hold path is deferred post-launch (spec §C); it stays a
-      // server-side reject until that path is built.
+      // — not self-renewable here. A `pending_admin_reactivation` cycle is
+      // resolved only by the admin reactivate/reject routes (070 #18),
+      // never by member confirm — so this stays a server-side reject by
+      // design.
       return err({
         kind: 'cycle_not_payable' as const,
         currentStatus: cycle.status,
@@ -313,16 +314,16 @@ export async function confirmRenewal(
     let resolvedCycle: RenewalCycle = cycle;
     if (input.newPlanId && input.newPlanId !== cycle.planIdAtCycleStart) {
       // 070 §86/4 — resolve the new plan by THIS cycle's fiscal year
-      // (`requireActiveForYear:true` — a plan-change is an offer check: the
-      // member cannot switch to a plan not offered for this cycle's year,
-      // and an inactive exact-year row must NOT fall through to a different
-      // year's price). The year is the cycle's `period_from`, the SAME
+      // (`mode: 'offer'` — a plan-change is an offer check: the member
+      // cannot switch to a plan not offered for this cycle's year, and an
+      // inactive exact-year row must NOT fall through to a different year's
+      // price). The year is the cycle's `period_from`, the SAME
       // `deriveFiscalYear` anchor the §86/4 numbering uses below (line ~414).
       const planResult = await deps.planLookupForRenewal.loadPlanFrozenFields({
         tenantId: input.tenantId,
         planId: input.newPlanId,
         fiscalYear: deriveFiscalYear(cycle.periodFrom),
-        requireActiveForYear: true,
+        mode: 'offer',
       });
       if (planResult.status === 'not_found') {
         return err({ kind: 'plan_not_found' as const });

@@ -15,12 +15,15 @@
  * resolver — pending `scheduled_plan_changes` rows DRIVE the invoice
  * price even though `members.plan_id` itself is not flipped here. The
  * F2 `scheduled_plan_changes.status` transition from `pending` →
- * `applied` (atomic with this F8 suggestion transition's commit) lives
- * in `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-
- * paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`.
- * The audit chain `tier_upgrade_applied_at_renewal` is the F8 canonical apply
- * event; the F2 audit chain (`plan_change_applied`) lands post-tx
- * alongside it. `members.plan_id` flip remains a future feature.
+ * `applied` lives in the shared
+ * `application/use-cases/finalise-f2-plan-change-on-paid.ts` use-case,
+ * called POST-commit by BOTH the online F4 invoice-paid callback and the
+ * offline admin mark-paid path (070 Item D); the `_lib`
+ * `_internal.finaliseF2ScheduledPlanChangeForCycle` is now a thin
+ * online-actor wrapper over it. The audit chain
+ * `tier_upgrade_applied_at_renewal` is the F8 canonical apply event; the F2
+ * audit chain (`plan_change_applied`) lands post-tx alongside it.
+ * `members.plan_id` flip remains a future feature.
  *
  * Audit: emits `tier_upgrade_applied_at_renewal` (atomic with the
  * suggestion transition).

@@ -2830,7 +2830,6 @@
             "successNoRefundToast": "Reactivation rejected. There was no payment to refund.",
             "error": {
               "cycle_not_pending": "This cycle is no longer awaiting review — it may have already been handled.",
-              "cycle_missing_invoice": "No invoice is linked to this cycle, so it can't be refunded here.",
               "refund_failed": "The refund could not be processed. The cycle was left as-is — please retry.",
               "rate_limited": "Too many attempts. Please wait a moment and try again.",
               "server_error": "Something went wrong. Please try again."

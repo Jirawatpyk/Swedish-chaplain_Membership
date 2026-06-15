@@ -97,7 +97,7 @@ export function makeDrizzlePlanLookupForRenewal(
       readonly tenantId: string;
       readonly planId: string;
       readonly fiscalYear: number;
-      readonly requireActiveForYear: boolean;
+      readonly mode: 'freeze' | 'offer';
     }): Promise<PlanLookupForRenewalResult> {
       return runInTenant(tenant, async (tx) => {
         // A `plan_id` is shared across `plan_year`s — the composite PK is
@@ -131,12 +131,12 @@ export function makeDrizzlePlanLookupForRenewal(
         const exactRow = exactRows[0];
         if (exactRow) {
           // A row EXISTS for this exact year — the case the bug got wrong.
-          if (input.requireActiveForYear && !exactRow.isActive) {
+          if (input.mode === 'offer' && !exactRow.isActive) {
             // PLAN-CHANGE: cannot switch to a plan not offered for that
             // year. Do NOT fall through to a different year's active row.
             return { status: 'plan_inactive' };
           }
-          // FREEZE (requireActiveForYear:false) → use this year's price
+          // FREEZE (mode 'freeze') → use this year's price
           // regardless of is_active (a seeded-but-not-yet-active next-year
           // row is the correct frozen price for that year). PLAN-CHANGE
           // with an active exact-year row also lands here.
@@ -146,16 +146,16 @@ export function makeDrizzlePlanLookupForRenewal(
         // 070 §86/4 — EXACT-YEAR MISS: there is NO row (active OR inactive)
         // for this planId+fiscalYear.
         //
-        // PLAN-CHANGE (requireActiveForYear:true) MUST NOT fall through to a
-        // DIFFERENT year's active row — switching to a plan not offered for
-        // THIS cycle's fiscal year would freeze the wrong year's price/tier
+        // PLAN-CHANGE (mode 'offer') MUST NOT fall through to a DIFFERENT
+        // year's active row — switching to a plan not offered for THIS
+        // cycle's fiscal year would freeze the wrong year's price/tier
         // onto the §86/4 (and `getAnnualFeeSatang` would then reject the
         // mismatched (plan,year) at issue time anyway). Distinguish "planId
         // unknown" from "exists for other years only" via the probe so
         // confirm-renewal still maps not_found→plan_not_found vs
         // plan_inactive→plan_inactive. The cross-year fallback below is for
         // the FREEZE path ONLY.
-        if (input.requireActiveForYear) {
+        if (input.mode === 'offer') {
           const offerProbe = await tx
             .select({ one: sql<number>`1` })
             .from(membershipPlans)

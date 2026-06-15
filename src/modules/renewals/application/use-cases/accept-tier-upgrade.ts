@@ -585,16 +585,16 @@ export async function acceptTierUpgrade(
       // lookup is used ONLY to derive a display `planName` (the
       // tier-bucket label) for the approval email — it does NOT freeze a
       // price (the actual upgrade freeze happens later at apply-on-paid
-      // time via the F4 → F8 bridge). `requireActiveForYear:false` (a
-      // resolve, not an offer check) so the label still renders even if
-      // the target year's catalogue row is not yet active. The target
-      // cycle is `txResult.value.targetApplyAtCycleId === activeCycle.cycleId`,
+      // time via the F4 → F8 bridge). `mode: 'freeze'` (a resolve, not an
+      // offer check) so the label still renders even if the target year's
+      // catalogue row is not yet active. The target cycle is
+      // `txResult.value.targetApplyAtCycleId === activeCycle.cycleId`,
       // so its year is `activeCycle.period_from`.
       const planFrozen = await deps.planLookupForRenewal.loadPlanFrozenFields({
         tenantId: input.tenantId,
         planId: suggestion.toPlanId,
         fiscalYear: deriveFiscalYear(activeCycle.periodFrom),
-        requireActiveForYear: false,
+        mode: 'freeze',
       });
       planName =
         planFrozen.status === 'found'

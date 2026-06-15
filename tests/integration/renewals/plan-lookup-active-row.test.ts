@@ -144,7 +144,7 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
       tenantId: tenant.ctx.slug,
       planId: strayRowPlanId,
       fiscalYear: FALLBACK_FISCAL_YEAR,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
 
     // Before the fix DESC picks the 2068 inactive row → plan_inactive.
@@ -165,7 +165,7 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
       tenantId: tenant.ctx.slug,
       planId: allInactivePlanId,
       fiscalYear: FALLBACK_FISCAL_YEAR,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result.status).toBe('plan_inactive');
   });
@@ -176,7 +176,7 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
       tenantId: tenant.ctx.slug,
       planId: `f8-missing-${randomUUID().slice(0, 8)}`,
       fiscalYear: FALLBACK_FISCAL_YEAR,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result.status).toBe('not_found');
   });
@@ -187,7 +187,7 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
       tenantId: tenant.ctx.slug,
       planId: singleActivePlanId,
       fiscalYear: FALLBACK_FISCAL_YEAR,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result.status).toBe('found');
     if (result.status !== 'found') return; // narrow for TS

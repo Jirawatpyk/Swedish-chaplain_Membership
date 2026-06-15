@@ -2830,7 +2830,6 @@
             "successNoRefundToast": "Återaktivering avslagen. Det fanns ingen betalning att återbetala.",
             "error": {
               "cycle_not_pending": "Den här cykeln väntar inte längre på granskning – den kan redan ha hanterats.",
-              "cycle_missing_invoice": "Ingen faktura är kopplad till den här cykeln, så den kan inte återbetalas här.",
               "refund_failed": "Återbetalningen kunde inte genomföras. Cykeln lämnades oförändrad – försök igen.",
               "rate_limited": "För många försök. Vänta en stund och försök igen.",
               "server_error": "Något gick fel. Försök igen."

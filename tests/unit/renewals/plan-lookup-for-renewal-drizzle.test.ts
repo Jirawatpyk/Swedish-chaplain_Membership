@@ -9,7 +9,7 @@
  * silently resolve to the FUTURE-year row — wrong tax amount, no error.
  *
  * The fix makes resolution exact-year-FIRST: the caller threads the
- * relevant cycle's fiscal year + a `requireActiveForYear` flag. This
+ * relevant cycle's fiscal year + a resolution `mode`. This
  * test locks the branch logic against a controllable fake `tx` query
  * builder (the SQL itself is proven on live Neon in the integration
  * test `tests/integration/renewals/plan-lookup-by-fiscal-year.test.ts`).
@@ -57,9 +57,9 @@ function queueRows(...batches: unknown[][]): void {
   txQueue.push(...batches);
 }
 
-// The exact-year primary SELECT also reads `isActive` (the
-// requireActiveForYear branch); the fallback SELECT does not. Both
-// fixtures carry it so they serve either query slot.
+// The exact-year primary SELECT also reads `isActive` (the mode 'offer'
+// active-check branch); the fallback SELECT does not. Both fixtures carry
+// it so they serve either query slot.
 const ACTIVE_2026 = {
   isActive: true,
   renewalTierBucket: 'regular',
@@ -72,7 +72,7 @@ const INACTIVE_2026 = {
 };
 
 describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)', () => {
-  it('exact-year row present → returns THAT year price (requireActiveForYear:false, active row)', async () => {
+  it('exact-year row present → returns THAT year price (mode freeze, active row)', async () => {
     // Primary SELECT returns the 2026 row; no fallback query runs.
     queueRows([ACTIVE_2026]);
     const adapter = makeDrizzlePlanLookupForRenewal(tenant);
@@ -80,7 +80,7 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result).toEqual({
       status: 'found',
@@ -93,14 +93,14 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
     });
   });
 
-  it('requireActiveForYear:false + INACTIVE exact-year row → found (a seeded next-year price is a valid freeze)', async () => {
+  it('mode freeze + INACTIVE exact-year row → found (a seeded next-year price is a valid freeze)', async () => {
     queueRows([INACTIVE_2026]);
     const adapter = makeDrizzlePlanLookupForRenewal(tenant);
     const result = await adapter.loadPlanFrozenFields({
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result.status).toBe('found');
     if (result.status !== 'found') return;
@@ -108,19 +108,19 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
     expect(result.plan.tierBucket).toBe('premium');
   });
 
-  it('requireActiveForYear:true + ACTIVE exact-year row → found', async () => {
+  it('mode offer + ACTIVE exact-year row → found', async () => {
     queueRows([ACTIVE_2026]);
     const adapter = makeDrizzlePlanLookupForRenewal(tenant);
     const result = await adapter.loadPlanFrozenFields({
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: true,
+      mode: 'offer',
     });
     expect(result.status).toBe('found');
   });
 
-  it('requireActiveForYear:true + INACTIVE exact-year row → plan_inactive (cannot switch to a plan not offered that year; NO fall-through)', async () => {
+  it('mode offer + INACTIVE exact-year row → plan_inactive (cannot switch to a plan not offered that year; NO fall-through)', async () => {
     // Only the primary SELECT runs; an inactive exact-year row under the
     // plan-change contract is `plan_inactive` — it must NOT fall through
     // to a different year's active row.
@@ -130,12 +130,12 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: true,
+      mode: 'offer',
     });
     expect(result.status).toBe('plan_inactive');
   });
 
-  it('requireActiveForYear:true + exact-year MISS + planId exists for OTHER years → plan_inactive, NOT a cross-year found (070 code-review fix)', async () => {
+  it('mode offer + exact-year MISS + planId exists for OTHER years → plan_inactive, NOT a cross-year found (070 code-review fix)', async () => {
     // No row for the cycle's fiscal year, but the planId has a row for a
     // DIFFERENT year (the offer-probe finds it). PLAN-CHANGE must NOT fall
     // through to that other year's active price — that would freeze the
@@ -148,7 +148,7 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: true,
+      mode: 'offer',
     });
     expect(result.status).toBe('plan_inactive');
   });
@@ -162,7 +162,7 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2099,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result).toEqual({
       status: 'found',
@@ -183,7 +183,7 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2099,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(result.status).toBe('plan_inactive');
   });
@@ -195,7 +195,7 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
       tenantId: 'tenant-a',
       planId: 'missing',
       fiscalYear: 2099,
-      requireActiveForYear: true,
+      mode: 'offer',
     });
     expect(result.status).toBe('not_found');
   });

@@ -18,7 +18,6 @@ export const PENDING_REACTIVATION_REJECT_ERROR_CODES = [
   // still return them. They reuse server_error copy via the t.has fallback,
   // so they are intentionally NOT required keys (see the test).
   'cycle_not_pending',
-  'cycle_missing_invoice',
   'refund_failed',
   'rate_limited',
   'server_error',

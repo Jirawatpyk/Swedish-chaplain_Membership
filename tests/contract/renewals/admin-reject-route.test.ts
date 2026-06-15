@@ -16,7 +16,7 @@
  *   - rate-limit keyed by (tenant, admin)
  *   - 400 invalid_body (malformed JSON / missing reason / reason >500)
  *   - 200 happy path (refund issued) + no-payment variant (null credit-note)
- *   - cycle_not_found 404 / cycle_not_pending 409 / cycle_missing_invoice 409
+ *   - cycle_not_found 404 / cycle_not_pending 409
  *   - refund_failed 502 (+errorCode/detail) / server_error 500
  */
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
@@ -273,17 +273,6 @@ describe('POST /api/admin/renewals/[cycleId]/reject — contract', () => {
     const body = await res.json();
     expect(body.error.code).toBe('cycle_not_pending');
     expect(body.error.current_status).toBe('lapsed');
-  });
-
-  it('409 cycle_missing_invoice', async () => {
-    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
-    adminRejectReactivationMock.mockResolvedValueOnce(
-      err({ kind: 'cycle_missing_invoice' }),
-    );
-    const POST = await loadHandler();
-    const res = await POST(makeReq(), makeCtx());
-    expect(res.status).toBe(409);
-    expect((await res.json()).error.code).toBe('cycle_missing_invoice');
   });
 
   it('502 refund_failed with errorCode + detail', async () => {

@@ -38,11 +38,15 @@ import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 import { applyPendingTierUpgradeInTx } from './apply-pending-tier-upgrade';
 import { finaliseF2PlanChangeOnPaid } from './finalise-f2-plan-change-on-paid';
-// Type-only imports keep Application layer free of cross-module runtime
-// coupling (Constitution Principle III). Brands are compile-time no-op
-// casts; the upstream `memberId` (bare string in domain) and `invoiceId`
-// (returned by F4 bridge as bare string) are inline-cast at the emit
-// site.
+// `asInvoiceId` is the F4 brand constructor (validates + brands at the
+// boundary) — used for the `applyPendingTierUpgradeInTx` invoiceId arg so a
+// future tightening of `F4InvoicePaidEvent.invoiceId` cannot pass through
+// silently (a bare `as unknown as` cast would). Same public-barrel import
+// as the sibling `admin-reject-reactivation.ts`. The remaining audit-payload
+// `invoiceId`/`memberId` stay inline-cast at the emit site (typed payload
+// shapes); type-only for the rest keeps cross-module coupling minimal
+// (Constitution Principle III).
+import { asInvoiceId } from '@/modules/invoicing';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 
@@ -277,7 +281,9 @@ export async function markPaidOffline(
         );
 
         // 070 Item D — apply any pending tier-upgrade on the OFFLINE path,
-        // mirroring the online `f8OnPaidCallbacks[1]` IN-TX half EXACTLY.
+        // mirroring the online `f8OnPaidCallbacks[1]` IN-TX half (same
+        // ordering + throw-on-failure rollback discipline; the actor +
+        // post-commit retry semantics differ — see below).
         // The online chain orders [0] complete → [1] apply-tier-upgrade →
         // [2] create-next-cycle; this call sits between the completion flip
         // above and `createNextCycleOnPaidInTx` below so the offline path
@@ -302,7 +308,7 @@ export async function markPaidOffline(
         await applyPendingTierUpgradeInTx(deps, tx, {
           tenantId: input.tenantId,
           cycleId,
-          invoiceId: evt.invoiceId as unknown as InvoiceId,
+          invoiceId: asInvoiceId(evt.invoiceId),
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
           actor: { actorUserId: input.actorUserId, actorRole: input.actorRole },
@@ -406,14 +412,23 @@ export async function markPaidOffline(
     });
 
     // 070 Item D — POST-commit F2 scheduled-plan-change finalise. Mirrors
-    // the online callback[1] post-tx half EXACTLY: the F2 row flip pending
-    // → applied (+ `plan_change_applied` audit) MUST run OUTSIDE the state
+    // the online callback[1] post-tx half: the F2 row flip pending →
+    // applied (+ `plan_change_applied` audit) MUST run OUTSIDE the state
     // tx (the F2 repo opens its OWN `runInTenant`), so it can only run
     // after the outer tx has committed. It is best-effort + non-rollback:
     // the payment + cycle flip + in-tx suggestion apply are already durable;
-    // a finalise failure is logged + swallowed (the F2 row stays `pending`
-    // for a retry to heal — never re-bills). Only runs on the success path
-    // where `onPaid` actually fired (so a real paid event was captured).
+    // a finalise failure is logged + swallowed (the F2 row stays `pending`,
+    // never re-bills). Only runs on the success path where `onPaid` actually
+    // fired (so a real paid event was captured).
+    //
+    // RETRY-HEAL DIFFERS FROM THE ONLINE PATH: the online callback self-
+    // heals because the Stripe webhook is at-least-once — a redelivery re-
+    // fires the whole onPaid chain incl. this finalise. The OFFLINE rail has
+    // NO such trigger: mark-paid is a one-shot synchronous admin click, the
+    // cycle is now `completed` (a re-click returns `cycle_not_payable`), and
+    // no reconcile cron sweeps `scheduled_plan_changes`. A stranded offline
+    // F2 row needs MANUAL operator replay (grep errorId
+    // `F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW`).
     //
     // ACTOR: the admin (offline settlement) — the F2 `plan_change_applied`
     // audit carries the admin's user id, matching the in-tx F8 apply audit
@@ -438,9 +453,11 @@ export async function markPaidOffline(
                 : new Error(String(finaliseErr)),
             cycleId,
             tenantId: input.tenantId,
+            invoiceId: result.value.invoiceId,
+            memberId,
             errorId: 'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
           },
-          'markPaidOffline: post-commit F2 finalise threw — payment already committed; F2 row left pending for retry',
+          'markPaidOffline: post-commit F2 finalise threw — payment already committed; F2 row left pending — MANUAL replay required (no offline retry path)',
         );
       }
     }

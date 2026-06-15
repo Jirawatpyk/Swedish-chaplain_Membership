@@ -111,6 +111,34 @@ function unwrap<T>(result: unknown): T[] {
   return [];
 }
 
+// Strict variant for the DESTRUCTIVE DELETE path: a `db.execute` whose
+// RETURNING result is neither an array nor `{ rows: [...] }` means the driver
+// envelope changed — the lenient `unwrap` would silently return `[]` and the
+// report would claim "DELETED 0" while rows were actually removed (070
+// speckit-review errors I-1). An EMPTY result (0 deleted — e.g. every
+// candidate was concurrently flipped active and skipped by the DELETE's
+// `is_active = false` guard) is still LEGITIMATE and returns `[]`; only an
+// UNRECOGNIZED shape throws. (This is why we don't assert
+// `result.length === deletable.length` — a smaller count is a valid
+// concurrent-flip outcome, not a driver fault.)
+function unwrapStrict<T>(result: unknown, context: string): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (
+    result &&
+    typeof result === 'object' &&
+    'rows' in result &&
+    Array.isArray((result as { rows: unknown }).rows)
+  ) {
+    return (result as { rows: T[] }).rows;
+  }
+  throw new Error(
+    `check-stray-plan-years: ${context} returned an unrecognized db.execute ` +
+      `result shape (neither array nor { rows: [] }); aborting before reporting ` +
+      `a misleading deletion count — a postgres-js/Drizzle upgrade may have ` +
+      `changed the result envelope.`,
+  );
+}
+
 interface RawStrayRow {
   readonly tenant_id: string;
   readonly plan_id: string;
@@ -205,7 +233,7 @@ export async function checkStrayPlanYears(options?: {
       ),
       sql`, `,
     );
-    const result = unwrap<{ tenant_id: string; plan_id: string; plan_year: number }>(
+    const result = unwrapStrict<{ tenant_id: string; plan_id: string; plan_year: number }>(
       await db.execute(sql`
         DELETE FROM membership_plans
         WHERE (tenant_id, plan_id, plan_year) IN (${pkTuples})
@@ -213,6 +241,7 @@ export async function checkStrayPlanYears(options?: {
           AND (plan_year > ${maxPlausible} OR plan_year < ${MIN_PLAUSIBLE_YEAR})
         RETURNING tenant_id, plan_id, plan_year
       `),
+      'stray-plan DELETE RETURNING',
     );
     const deletedKeys = new Set(
       result.map((r) => `${r.tenant_id}::${r.plan_id}::${r.plan_year}`),

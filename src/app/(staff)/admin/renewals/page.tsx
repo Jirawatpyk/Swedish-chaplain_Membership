@@ -13,6 +13,7 @@
  * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -93,8 +94,7 @@ export default async function RenewalsPipelinePage({
 
   if (!env.features.f8Renewals) {
     return (
-      <TableContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
           <CardContent
             role="status"
@@ -104,7 +104,7 @@ export default async function RenewalsPipelinePage({
             {t('error.featureDisabled')}
           </CardContent>
         </Card>
-      </TableContainer>
+      </RenewalsPageShell>
     );
   }
 
@@ -136,8 +136,7 @@ export default async function RenewalsPipelinePage({
   if (isPendingReviewView) {
     const locale = await getLocale();
     return (
-      <TableContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
           <CardContent className="flex flex-col gap-4">
             <RenewalsViewTabs current="pending-review" />
@@ -147,7 +146,7 @@ export default async function RenewalsPipelinePage({
             />
           </CardContent>
         </Card>
-      </TableContainer>
+      </RenewalsPageShell>
     );
   }
 
@@ -176,42 +175,28 @@ export default async function RenewalsPipelinePage({
       'renewals pipeline page: load-pipeline failed',
     );
     return (
-      <TableContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <Card>
-          <CardContent
-            role="alert"
-            aria-live="assertive"
-            className="flex flex-col items-center gap-4 py-12 text-center"
-          >
-            <AlertTriangle
-              aria-hidden="true"
-              className="h-10 w-10 text-destructive"
-            />
-            <div className="text-base font-medium text-destructive">
-              {t('error.loadFailed')}
-            </div>
-            {/*
-              K12-1 (UX-K-3): Retry was a `<Link>` with `?_retry=${id}`
-              query-string cache-bust which (a) read as "navigation" to
-              AT (WCAG SC 4.1.2) and (b) polluted browser history with
-              accumulating retry IDs. ErrorCardActions runs
-              `router.refresh()` inside `useTransition` — semantic
-              button, no URL mutation, pending state for the in-flight
-              RSC re-fetch.
-            */}
-            <ErrorCardActions
-              correlationId={correlationId}
-              goBackHref="/admin"
-              retryLabel={t('error.retry')}
-              pendingLabel={t('error.retrying')}
-              retryFailedLabel={t('error.retryFailed')}
-              goBackLabel={t('error.goBack')}
-              referenceLabel={t('error.referenceLabel')}
-            />
-          </CardContent>
-        </Card>
-      </TableContainer>
+      <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
+        <LoadErrorCard message={t('error.loadFailed')}>
+          {/*
+            K12-1 (UX-K-3): Retry was a `<Link>` with `?_retry=${id}`
+            query-string cache-bust which (a) read as "navigation" to
+            AT (WCAG SC 4.1.2) and (b) polluted browser history with
+            accumulating retry IDs. ErrorCardActions runs
+            `router.refresh()` inside `useTransition` — semantic
+            button, no URL mutation, pending state for the in-flight
+            RSC re-fetch.
+          */}
+          <ErrorCardActions
+            correlationId={correlationId}
+            goBackHref="/admin"
+            retryLabel={t('error.retry')}
+            pendingLabel={t('error.retrying')}
+            retryFailedLabel={t('error.retryFailed')}
+            goBackLabel={t('error.goBack')}
+            referenceLabel={t('error.referenceLabel')}
+          />
+        </LoadErrorCard>
+      </RenewalsPageShell>
     );
   }
 
@@ -255,8 +240,7 @@ export default async function RenewalsPipelinePage({
     currentUser.role === 'manager' ? 'manager' : 'admin';
 
   return (
-    <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+    <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 070 F8 item #18 — view toggle reachable from the pipeline so
@@ -312,7 +296,7 @@ export default async function RenewalsPipelinePage({
         </CardContent>
       </Card>
       <AtRiskWidget actorRole={widgetActorRole} />
-    </TableContainer>
+    </RenewalsPageShell>
   );
 }
 
@@ -352,9 +336,17 @@ async function PendingReviewSection({
     const result = await loadPendingReactivationReview(deps, {
       tenantId: tenantSlug,
     });
-    // Result error channel is `never`; `ok` is always true at runtime, but
-    // the discriminant narrows `.value` for the type checker.
-    cycles = result.ok ? result.value.cycles : [];
+    // The use-case's error channel is `never` today, so `ok` is always true.
+    // If a real error variant is ever added, THROW so the catch below renders
+    // the "couldn't load" alert instead of silently showing an EMPTY review
+    // list (070 speckit-review errors S-2 — preserve the "never a blank list
+    // on error" invariant even if the error channel is later widened).
+    if (!result.ok) {
+      throw new Error(
+        'loadPendingReactivationReview returned an unexpected error',
+      );
+    }
+    cycles = result.value.cycles;
 
     // Batch-enrich company names in a SINGLE tenant-scoped read. A throw
     // here (RLS reject / connection / timeout) is caught below and renders
@@ -373,23 +365,7 @@ async function PendingReviewSection({
       },
       '[admin/renewals] pending-review load failed',
     );
-    return (
-      <Card>
-        <CardContent
-          role="alert"
-          aria-live="assertive"
-          className="flex flex-col items-center gap-4 py-12 text-center"
-        >
-          <AlertTriangle
-            aria-hidden="true"
-            className="h-10 w-10 text-destructive"
-          />
-          <div className="text-base font-medium text-destructive">
-            {t('loadFailed')}
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return <LoadErrorCard message={t('loadFailed')} />;
   }
 
   const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
@@ -416,5 +392,59 @@ async function PendingReviewSection({
       </div>
       <PendingReviewList rows={rows} />
     </>
+  );
+}
+
+/**
+ * Shared page chrome for every `/admin/renewals` return path — the
+ * `TableContainer` + `PageHeader` envelope that previously repeated across the
+ * feature-disabled, pending-review, load-failed, and main returns (070
+ * speckit-review simplify S-2). Children render below the header.
+ */
+function RenewalsPageShell({
+  title,
+  subtitle,
+  children,
+}: {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <TableContainer>
+      <PageHeader title={title} subtitle={subtitle} />
+      {children}
+    </TableContainer>
+  );
+}
+
+/**
+ * Centered destructive "couldn't load" alert card — shared by the pipeline
+ * load-failure and the pending-review load-failure (070 speckit-review
+ * simplify S-2). `children` slots optional actions (e.g. retry / go-back)
+ * below the message.
+ */
+function LoadErrorCard({
+  message,
+  children,
+}: {
+  readonly message: string;
+  readonly children?: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent
+        role="alert"
+        aria-live="assertive"
+        className="flex flex-col items-center gap-4 py-12 text-center"
+      >
+        <AlertTriangle
+          aria-hidden="true"
+          className="h-10 w-10 text-destructive"
+        />
+        <div className="text-base font-medium text-destructive">{message}</div>
+        {children}
+      </CardContent>
+    </Card>
   );
 }

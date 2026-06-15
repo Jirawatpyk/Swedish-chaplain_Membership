@@ -9,9 +9,11 @@
  * fresh cycle `→completed` and callback[2] creates the next `upcoming`
  * cycle — the member is active again.
  *
- * This is the common-case reachable path only. The `pending_admin_reactivation`
- * money-hold reactivate/reject routes are DEFERRED post-launch (spec §C
- * + Resolved #6) and are NOT built here.
+ * This is the common-case reachable path only. The
+ * `pending_admin_reactivation` money-hold reactivate/reject flow now ships
+ * separately (070 item #18 — `/api/admin/renewals/[cycleId]/reactivate|reject`);
+ * it is simply not part of THIS use-case, which only handles the reachable
+ * lapsed-comeback create→issue→link.
  *
  * Flow (mirrors `confirm-renewal`'s create→issue→link structure so the
  * issue↔link orphan window is no wider than the proven member path):

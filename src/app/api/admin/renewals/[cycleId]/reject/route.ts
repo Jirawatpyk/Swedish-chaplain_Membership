@@ -18,7 +18,6 @@
  *   - invalid_input        → 400
  *   - cycle_not_found      → 404
  *   - cycle_not_pending    → 409 (+ current_status)
- *   - cycle_missing_invoice→ 409
  *   - refund_failed        → 502 (+ error_code, detail)
  *   - server_error         → 500
  * Success 200 `{ cycle_status, closed_reason, closed_at, refund_credit_note_id }`.
@@ -139,12 +138,6 @@ export async function POST(
             code: 'cycle_not_pending',
             correlationId: ctx.correlationId,
             details: { current_status: result.error.currentStatus },
-          });
-        case 'cycle_missing_invoice':
-          return errorResponse({
-            status: 409,
-            code: 'cycle_missing_invoice',
-            correlationId: ctx.correlationId,
           });
         case 'refund_failed':
           // 502 Bad Gateway: the downstream payment processor (Stripe via

@@ -10,8 +10,14 @@
  * (suggestion → applied + cycle flipped + next cycle created), so this
  * F2 flip is eventual-consistent + non-rollback: any failure here is
  * logged + swallowed (the caller's state is durable; the F2 row stays
- * `pending` for a retry to heal). Mirrors the post-tx F2 emit pattern
- * in `accept-tier-upgrade.ts`.
+ * `pending`). Self-healing depends on the CALLER: the ONLINE F4
+ * invoice-paid webhook re-fires this whole cascade via Stripe at-least-
+ * once redelivery, so a transient failure heals on retry; the OFFLINE
+ * admin mark-paid path has NO automatic retry (one-shot synchronous
+ * click — no webhook, no reconcile cron over `scheduled_plan_changes`),
+ * so a stranded F2 row there needs MANUAL operator replay (grep the
+ * `F2.PLAN_CHANGE.*` errorIds in the structured logs). Mirrors the
+ * post-tx F2 emit pattern in `accept-tier-upgrade.ts`.
  *
  * Two-phase money-safety gate (065 Fix A precision — preserved verbatim
  * from the Infrastructure helper this extraction replaces):
@@ -63,7 +69,7 @@ export async function finaliseF2PlanChangeOnPaid(
   cycleId: string,
   actor: FinaliseF2Actor,
 ): Promise<void> {
-  const memberId = evt.memberId as unknown as string;
+  const memberId = evt.memberId;
 
   let pending;
   try {
@@ -133,7 +139,7 @@ export async function finaliseF2PlanChangeOnPaid(
           invoiceId: evt.invoiceId,
           errorId: 'F2.PLAN_CHANGE.SUGGESTION_STATUS_LOOKUP_FAILED',
         },
-        '[on-paid] F2 finaliser suggestion-status lookup failed — skipping finalise (money-safe); retry will heal',
+        '[on-paid] F2 finaliser suggestion-status lookup failed — skipping finalise (money-safe); online path self-heals on webhook redelivery, offline path needs manual replay',
       );
       return;
     }
@@ -198,7 +204,7 @@ export async function finaliseF2PlanChangeOnPaid(
           effective_at_cycle_id: cycleId,
           from_plan_id: pending.fromPlanId,
           to_plan_id: pending.toPlanId,
-          applied_at_invoice_id: evt.invoiceId as unknown as string,
+          applied_at_invoice_id: evt.invoiceId,
         },
       },
     );

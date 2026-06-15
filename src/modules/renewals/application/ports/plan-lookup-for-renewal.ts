@@ -54,23 +54,30 @@ export interface PlanLookupForRenewalPort {
      */
     readonly fiscalYear: number;
     /**
-     * Whether the exact-year row MUST be active to resolve.
+     * Resolution MODE — which of the two distinct plan-resolution
+     * contracts this lookup follows. Replaces the prior
+     * `requireActiveForYear` boolean, which named one mechanical sub-effect
+     * (the exact-year active check) of a two-part policy that ALSO governs
+     * the exact-year-MISS fallback; `mode` names the INTENT, so the call
+     * site reads as the contract rather than a bare `true`/`false`.
      *
-     *   - `false` (FREEZE callers — `createCycleInTx`, the
+     *   - `'freeze'` (FREEZE callers — `createCycleInTx`, the
      *     `accept-tier-upgrade` email display-name lookup, the
-     *     `reschedule-on-plan-change` tier-bucket lookup): an exact-year
-     *     row resolves to `found` REGARDLESS of `is_active`. A seeded-but-
-     *     not-yet-active next-year row is the correct frozen price for that
-     *     year.
-     *   - `true` (PLAN-CHANGE callers — `confirm-renewal`): an exact-year
-     *     row resolves only when `is_active`; an inactive exact-year row →
-     *     `plan_inactive` (the member cannot switch to a plan not offered
-     *     for that year — it must NOT fall through to a different year).
-     *
-     * The exact-year-MISS fallback (most-recent ACTIVE row by `plan_year
-     * DESC`) is unchanged by this flag — it preserves the prior behaviour
-     * for every year that has no exact-year row.
+     *     `reschedule-on-plan-change` tier-bucket lookup): snapshot a price/
+     *     tier for billing or display. An exact-year row resolves to `found`
+     *     REGARDLESS of `is_active` (a seeded-but-not-yet-active next-year
+     *     row is the correct frozen price for that year); an exact-year MISS
+     *     falls back to the most-recent ACTIVE row by `plan_year DESC`,
+     *     preserving the prior behaviour for not-yet-seeded years.
+     *   - `'offer'` (PLAN-CHANGE callers — `confirm-renewal`): validate the
+     *     member may switch TO this plan FOR this year. An exact-year row
+     *     resolves only when `is_active` (an inactive exact-year row →
+     *     `plan_inactive`); an exact-year MISS does NOT fall through to a
+     *     different year — it probes existence and returns `plan_inactive`
+     *     (the planId exists for other years) or `not_found`. Switching to a
+     *     plan not offered for THIS cycle's year would freeze the wrong
+     *     year's §86/4 price.
      */
-    readonly requireActiveForYear: boolean;
+    readonly mode: 'freeze' | 'offer';
   }): Promise<PlanLookupForRenewalResult>;
 }

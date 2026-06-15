@@ -150,13 +150,13 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
     });
   });
 
-  it('070 §86/4 — freezes by the RESOLVED periodFrom fiscal-year with requireActiveForYear:false (FREEZE caller)', async () => {
+  it('070 §86/4 — freezes by the RESOLVED periodFrom fiscal-year with mode \'freeze\' (FREEZE caller)', async () => {
     // Regression guard for the latent multi-active-year footgun: the
     // frozen price MUST resolve by the cycle's own fiscal year, not the
     // "most-recent active" row. createCycleInTx derives the year from the
     // RESOLVED periodFrom (post current-period anchoring) and asks the
-    // port for that exact year with requireActiveForYear:false (a freeze,
-    // not a plan-offer check). A regular 2026-01-01 period → FY 2026.
+    // port for that exact year with mode 'freeze' (a freeze, not a
+    // plan-offer check). A regular 2026-01-01 period → FY 2026.
     const { deps, loadPlanFrozenFields } = makeDeps();
 
     await createCycleInTx(deps, fakeTx, baseInput);
@@ -166,7 +166,7 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
   });
 
@@ -186,7 +186,7 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
   });
 
@@ -232,13 +232,13 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2020,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     expect(loadPlanFrozenFields).toHaveBeenNthCalledWith(2, {
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
 
     // The cycle freezes the DEFINITIVE (2026) plan, NOT the provisional (2020).
@@ -295,7 +295,7 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
     // Cycle is NOT inserted and no audit fires — the tx rolls back.
     expect(insert).not.toHaveBeenCalled();
@@ -304,7 +304,7 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
 
   it('070 §86/4 — definitive re-lookup MISS (plan_inactive) → throws PlanNotResolvableError, inserts no cycle', async () => {
     // Same re-query throw path, but the anchored-year row exists and is
-    // inactive. A FREEZE caller (requireActiveForYear:false) treats an
+    // inactive. A FREEZE caller (mode 'freeze') treats an
     // exact-year row as found regardless of is_active, so a port that returns
     // plan_inactive for the definitive year is an explicit "no row" signal →
     // the re-query throws plan_inactive (distinct from the not_found case).
@@ -358,7 +358,7 @@ describe('createCycleInTx — Slice 1 / Task 1.2', () => {
       tenantId: 'tenant-a',
       planId: 'regular',
       fiscalYear: 2026,
-      requireActiveForYear: false,
+      mode: 'freeze',
     });
   });
 

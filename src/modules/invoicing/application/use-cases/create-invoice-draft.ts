@@ -75,12 +75,10 @@ export type CreateInvoiceDraftError =
   | { code: 'member_archived' }
   | { code: 'plan_not_found' }
   | { code: 'invalid_line'; reason: string };
-// NOTE: `plan_mismatch` was previously declared but never emitted —
-// the member/plan parity guard is handled by the F3 UI (Plan field
-// is read-only on the invoice form, bound to the member's plan). A
-// future iteration will add the server-side guard when
-// MemberIdentityView exposes planId + planYear, at which point the
-// error variant will be re-introduced alongside its emitter.
+// NOTE: a `plan_mismatch` variant is intentionally ABSENT — the
+// member/plan parity guard is UI-enforced today (the invoice form's Plan
+// field is read-only, bound to the member's plan). See the parity-guard
+// TODO in `createInvoiceDraft` for the deferred server-side follow-up.
 
 export interface CreateInvoiceDraftDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -145,20 +143,12 @@ export async function createInvoiceDraft(
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });
 
-    // Pattern C / spec-correct guard (US1 header — "confirm the
-    // membership tier"): invoice plan MUST match the member's current
-    // plan. Admin must run F3 changePlan first to upgrade a member.
-    // The UI keeps Plan read-only so this is a defensive
-    // belt-and-suspenders check for crafted API calls.
-    // We look up member's plan from the FULL member row — the view's
-    // identity snapshot doesn't expose planId, but the F3 record does
-    // via a companion repo read. For MVP we inline a cheap assertion
-    // by comparing the plan looked up for (tenant, planId, planYear)
-    // against the live member's plan_id stored on the member row.
-    // Defer strict equality check to a future iteration once we
-    // expose planId on the MemberIdentityView — today the API schema
-    // accepts any plan and the UI prevents mismatch. TODO: extend
-    // MemberIdentityView with planId + planYear and enforce here.
+    // TODO (server-side plan-parity guard): invoice plan MUST match the
+    // member's current plan (US1 "confirm the membership tier"). Enforced
+    // by the UI today (Plan field read-only, bound to the member's plan);
+    // the server-side check is deferred until `MemberIdentityView` exposes
+    // planId + planYear, at which point re-introduce the `plan_mismatch`
+    // error variant + its emitter here.
 
     // F8-completion Slice 1 (FR-022) — RENEWAL path. When a renewal
     // signal is present, the membership line is billed at the cycle's
