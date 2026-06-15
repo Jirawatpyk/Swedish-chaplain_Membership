@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  buildEraseMemberDeps,
   buildMemberProbeDeps,
   buildMembersDeps,
 } from '@/modules/members/members-deps';
@@ -38,6 +39,46 @@ describe('buildMemberProbeDeps', () => {
 
   it('passes through the tenant argument verbatim', () => {
     const deps = buildMemberProbeDeps(tenant);
+    expect(deps.tenant).toBe(tenant);
+  });
+});
+
+describe('buildEraseMemberDeps', () => {
+  it('returns exactly the EraseMemberDeps nine fields — the archive cascade subset', () => {
+    const deps = buildEraseMemberDeps(tenant);
+    expect(Object.keys(deps).sort()).toEqual([
+      'audit',
+      'broadcastsCascade',
+      'clock',
+      'contactRepo',
+      'invitations',
+      'memberRepo',
+      'renewalsCascade',
+      'sessions',
+      'tenant',
+    ]);
+  });
+
+  it('reuses the same adapter instances as the full deps bag', () => {
+    const full = buildMembersDeps(tenant);
+    const erase = buildEraseMemberDeps(tenant);
+    // Compliance-critical wiring: a type-compatible but WRONG adapter for
+    // `audit` would silently break the GDPR Art.17 / PDPA §33
+    // member_erasure_requested / member_erased DPO audit, and a wrong
+    // cascade adapter would skip the F7/F8 in-flight cancels. Reference
+    // equality is what catches that — TypeScript can't.
+    expect(erase.audit).toBe(full.audit);
+    expect(erase.broadcastsCascade).toBe(full.broadcastsCascade);
+    expect(erase.renewalsCascade).toBe(full.renewalsCascade);
+    expect(erase.sessions).toBe(full.sessions);
+    expect(erase.memberRepo).toBe(full.memberRepo);
+    expect(erase.contactRepo).toBe(full.contactRepo);
+    expect(erase.invitations).toBe(full.invitations);
+    expect(erase.clock).toBe(full.clock);
+  });
+
+  it('passes through the tenant argument verbatim', () => {
+    const deps = buildEraseMemberDeps(tenant);
     expect(deps.tenant).toBe(tenant);
   });
 });
