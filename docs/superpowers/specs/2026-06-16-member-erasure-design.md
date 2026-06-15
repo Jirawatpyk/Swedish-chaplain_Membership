@@ -25,7 +25,7 @@ A chamber member may exercise their statutory right to have their personal data 
 |---|---|
 | **FK web** — `invoices`, `payments`, `event_registrations`, `broadcasts`, `renewal_cycles` FK to `members(tenant_id, member_id)` | Cannot hard-delete the member row. → anonymise **in place** (tombstone). |
 | **Thai RD §87/3** (retain tax docs 10y) + **§86/4** (buyer name+tax_id on the doc **only for VAT-registrant buyers**; 46/131 SweCham members have no tax_id) | Tax-document buyer identity is held only where §86/4 pinned it, only **within** the 10y window, then redacted (DB snapshot **and** PDF blob bytes). Redaction is lawful **only after** the 10y obligation elapses. |
-| **`invoices_enforce_immutability`** (mig 0019/0205/0206) + **`broadcasts_immutable_after_submit_fn`** (0064/0075) BEFORE UPDATE triggers | The scrub UPDATEs on issued invoices / submitted broadcasts will **RAISE** unless run under a **GUC-gated redaction exemption** (see §4/§5). |
+| **`invoices_enforce_immutability`** (mig 0019/0205/0206) + **`broadcasts_immutable_after_submit_fn`** (0064/0075) BEFORE UPDATE triggers | The scrub UPDATEs on issued invoices / submitted broadcasts will **RAISE** unless run under a **GUC-gated redaction exemption** (see §5 matrix + §9 US2). |
 | **audit_log append-only** (mig 0001 — BEFORE UPDATE **and** BEFORE DELETE both RAISE; T-13) | Audit rows are **never modified or deleted**. → forward-fix (don't write PII into payloads) + documented residual for legacy payloads (see §6). |
 | **GDPR Art. 21 / PDPA §32** — `marketing_unsubscribes` indefinite | The suppression list is **never erased** (its `email_lower` is intentionally retained plaintext so the suppression match keeps working). |
 | **Irreversibility** | Admin-mediated + typed-phrase confirm. |
