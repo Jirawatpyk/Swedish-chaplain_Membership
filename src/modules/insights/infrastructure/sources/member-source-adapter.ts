@@ -112,7 +112,13 @@ export const memberSourceAdapter: MemberSource = {
         throw new Error(`MemberSource: join distribution failed (${result.error.type})`);
       }
       for (const row of result.value.items) {
-        const key = monthKeyOf(row.member.createdAt, timeZone);
+        // FR-001a member-growth keys off the true JOIN date (`registrationDate`),
+        // NOT `createdAt` (the row-insertion instant). For a bulk-imported tenant
+        // every `createdAt` clusters in the import month while `registrationDate`
+        // spans years — keying off createdAt collapses the whole chart into one
+        // import-month spike (F9 #1). registrationDate is the join anchor used by
+        // the startup-duration policy + the GDPR export too.
+        const key = monthKeyOf(row.member.registrationDate, timeZone);
         // `YYYY-MM` sorts lexicographically == chronologically, so `< firstKey`
         // correctly means "joined before the window" → baseline.
         if (key < firstKey) baseline += 1;
