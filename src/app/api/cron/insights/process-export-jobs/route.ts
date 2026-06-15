@@ -26,6 +26,25 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+/**
+ * Explicit function ceiling for the heaviest tick work — a GDPR archive build
+ * (up to ~1000 invoice-PDF fetches) — so a long build is not silently 504'd by a
+ * lower plan default. 300s matches the other heavy retention crons
+ * (pseudonymise-eventcreate, redact-expired-event-buyers).
+ *
+ * INVARIANT (F9 #15): `maxDuration` (300s) is deliberately BELOW
+ * `STUCK_PROCESSING_TIMEOUT_MS` (600s). A single invocation therefore cannot run
+ * past the stuck window, so a job still `processing` after 600s genuinely means
+ * its worker DIED — the stuck-reclaim → `failed` is always correct (never a
+ * false reclaim of a healthy in-flight build). The build heartbeat
+ * (`touchProcessingInTx`, every `EXPORT_HEARTBEAT_INTERVAL_MS` ≈ 200s) is thus a
+ * no-op safety net on this plan; it only becomes load-bearing if a future plan
+ * raises `maxDuration` ABOVE `STUCK_PROCESSING_TIMEOUT_MS` (then it keeps a
+ * legitimately-slow build's `updated_at` fresh so a concurrent tick can't
+ * false-reclaim it). Keep `maxDuration < STUCK_PROCESSING_TIMEOUT_MS` unless you
+ * also wire the heartbeat into the operational expectation.
+ */
+export const maxDuration = 300;
 
 const CLAIM_BATCH = 25;
 /**
