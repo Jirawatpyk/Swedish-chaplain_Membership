@@ -51,6 +51,7 @@ import {
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
+import type { CycleStatus } from '../../domain/value-objects/cycle-status';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -91,10 +92,7 @@ export type AdminRejectReactivationError =
   | { readonly kind: 'cycle_not_found' }
   | {
       readonly kind: 'cycle_not_pending';
-      readonly currentStatus: string;
-    }
-  | {
-      readonly kind: 'cycle_missing_invoice';
+      readonly currentStatus: CycleStatus;
     }
   | {
       readonly kind: 'refund_failed';

@@ -129,15 +129,26 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
     await tenant.cleanup().catch(() => {});
   }, 120_000);
 
+  // 070 — these tests exercise the EXACT-YEAR-MISS fallback path (the
+  // pre-070 "most-recent ACTIVE row by plan_year DESC" behaviour, which is
+  // preserved UNCHANGED when no row exists for the requested fiscal year).
+  // Each call passes `fiscalYear: 2099` (no seeded row at that year) so
+  // Step-1 misses and Step-2 fallback runs — the exact behaviour these
+  // assertions lock. The new exact-year-FIRST resolution is covered by
+  // `plan-lookup-by-fiscal-year.test.ts`.
+  const FALLBACK_FISCAL_YEAR = 2099;
+
   it('stray inactive future-year row: returns the ACTIVE 2026 price, NOT plan_inactive', async () => {
     const adapter = makeDrizzlePlanLookupForRenewal(tenant.ctx);
     const result = await adapter.loadPlanFrozenFields({
       tenantId: tenant.ctx.slug,
       planId: strayRowPlanId,
+      fiscalYear: FALLBACK_FISCAL_YEAR,
+      mode: 'freeze',
     });
 
     // Before the fix DESC picks the 2068 inactive row → plan_inactive.
-    // After the fix the active-first lookup returns the 2026 row.
+    // After the fix the active-first fallback returns the 2026 row.
     expect(result.status).toBe('found');
     if (result.status !== 'found') return; // narrow for TS
     expect(result.plan).toEqual({
@@ -153,6 +164,8 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
     const result = await adapter.loadPlanFrozenFields({
       tenantId: tenant.ctx.slug,
       planId: allInactivePlanId,
+      fiscalYear: FALLBACK_FISCAL_YEAR,
+      mode: 'freeze',
     });
     expect(result.status).toBe('plan_inactive');
   });
@@ -162,6 +175,8 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
     const result = await adapter.loadPlanFrozenFields({
       tenantId: tenant.ctx.slug,
       planId: `f8-missing-${randomUUID().slice(0, 8)}`,
+      fiscalYear: FALLBACK_FISCAL_YEAR,
+      mode: 'freeze',
     });
     expect(result.status).toBe('not_found');
   });
@@ -171,6 +186,8 @@ describe('F8 plan-lookup adapter — most-recent-ACTIVE-row (slice 3)', () => {
     const result = await adapter.loadPlanFrozenFields({
       tenantId: tenant.ctx.slug,
       planId: singleActivePlanId,
+      fiscalYear: FALLBACK_FISCAL_YEAR,
+      mode: 'freeze',
     });
     expect(result.status).toBe('found');
     if (result.status !== 'found') return; // narrow for TS

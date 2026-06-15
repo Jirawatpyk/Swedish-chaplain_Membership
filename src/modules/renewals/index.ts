@@ -591,6 +591,15 @@ export {
   type ReconcilePendingReactivationsError,
 } from './application/use-cases/reconcile-pending-reactivations';
 
+// 070 F8 item #18 — read-only "Pending review" discovery list for the
+// `/admin/renewals` dashboard.
+export {
+  loadPendingReactivationReview,
+  PENDING_REVIEW_DEFAULT_PAGE_SIZE,
+  type LoadPendingReactivationReviewInput,
+  type LoadPendingReactivationReviewOutput,
+} from './application/use-cases/load-pending-reactivation-review';
+
 // --- T115a Phase 5 wave K24 — lapseCyclesOnGraceExpiry --------------------
 export {
   lapseCyclesOnGraceExpiry,
@@ -650,7 +659,17 @@ export {
   type ApplyPendingTierUpgradeInput,
   type ApplyPendingTierUpgradeOutput,
   type ApplyPendingTierUpgradeError,
+  type ApplyTierUpgradeActor,
 } from './application/use-cases/apply-pending-tier-upgrade';
+
+// 070 Item D — shared F2 scheduled-plan-change finaliser (post-commit
+// half of the tier-upgrade-apply cascade), reused by the online F4
+// invoice-paid callback + the offline admin mark-paid path.
+export {
+  finaliseF2PlanChangeOnPaid,
+  defaultOnlineF2Actor,
+  type FinaliseF2Actor,
+} from './application/use-cases/finalise-f2-plan-change-on-paid';
 
 export {
   supersedePendingTierUpgrade,

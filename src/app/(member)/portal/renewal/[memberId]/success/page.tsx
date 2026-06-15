@@ -65,7 +65,16 @@ export default async function RenewalSuccessPage({
   }
 
   const renewalsDeps = makeRenewalsDeps(tenant.slug);
-  const activeCycle = await renewalsDeps.cyclesRepo.findActiveForMember(tenant.slug, urlMemberId);
+  // 070 — this is the post-payment landing page; the renewed cycle is (or is
+  // about to be) `completed`. Use `findMostRecentForMember` (INCLUDES a
+  // just-completed cycle) rather than `findActiveForMember` (excludes
+  // `completed` per the L135 active invariant) so the "Renewal complete"
+  // status row below can actually render once the cycle transitions. Null →
+  // the async-processing branch when the member has no displayable cycle.
+  const activeCycle = await renewalsDeps.cyclesRepo.findMostRecentForMember(
+    tenant.slug,
+    urlMemberId,
+  );
 
   // R7-M6 — fetch the invoice so we can (a) display the real document
   // number (instead of the UUID from the query param) on the download

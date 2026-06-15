@@ -28,6 +28,7 @@
  *     Phase 4 alongside the dispatcher cron emit sites.
  */
 import { z } from 'zod';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
@@ -35,11 +36,19 @@ import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
-// Type-only imports keep Application layer free of cross-module runtime
-// coupling (Constitution Principle III). Brands are compile-time no-op
-// casts; the upstream `memberId` (bare string in domain) and `invoiceId`
-// (returned by F4 bridge as bare string) are inline-cast at the emit
-// site.
+import { applyPendingTierUpgradeInTx } from './apply-pending-tier-upgrade';
+import { finaliseF2PlanChangeOnPaid } from './finalise-f2-plan-change-on-paid';
+// `asInvoiceId` is the F4 brand constructor — a TYPE-CHECKED cast (takes a
+// `string`, returns the `InvoiceId` brand; no runtime validation). It's used
+// for the `applyPendingTierUpgradeInTx` invoiceId arg so that if
+// `F4InvoicePaidEvent.invoiceId` is ever tightened away from a plain string
+// the call errors at compile time — unlike a bare `as unknown as` cast, which
+// silences everything. Same public-barrel import as the sibling
+// `admin-reject-reactivation.ts`. The remaining audit-payload
+// `invoiceId`/`memberId` stay inline-cast at the emit site (typed payload
+// shapes); type-only for the rest keeps cross-module coupling minimal
+// (Constitution Principle III).
+import { asInvoiceId } from '@/modules/invoicing';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 
@@ -96,17 +105,6 @@ export type MarkPaidOfflineError =
 // the tenant's grace_period_days. Admins marking those paid use the
 // same `awaiting_payment` codepath; the urgency derivation is read-only.
 const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
-
-/**
- * Round 5 S-04 — Bangkok fiscal year extraction. Asia/Bangkok is UTC+7
- * with no DST so a fixed +7h offset converts a UTC instant to the
- * corresponding BKK calendar year. Required because the F4 sequential
- * -number allocator buckets per fiscal year and a UTC-year mismatch
- * would burn a sequence in the wrong bucket at BKK midnight boundaries.
- */
-function bangkokFiscalYearOf(utcIso: string): number {
-  return new Date(Date.parse(utcIso) + 7 * 3600_000).getUTCFullYear();
-}
 
 export async function markPaidOffline(
   deps: RenewalsDeps,
@@ -176,19 +174,28 @@ export async function markPaidOffline(
   // document off the price-tampering surface. The cycle-vs-invoice price
   // assertion lives in the offline mark-paid integration test.
   //
-  // Round 5 S-04 — Bangkok-local fiscal year. UTC `getUTCFullYear()` is
-  // wrong at BKK boundaries: a period_from of 2026-12-31T17:00:00Z =
-  // 2027-01-01 00:00 BKK belongs to fiscal year 2027, but UTC reads
-  // 2026. Add +7h offset before extracting the year so the F4 sequential
-  // -number allocator buckets the invoice in the correct fiscal year.
-  const planYear = bangkokFiscalYearOf(preLoad.periodFrom);
+  // Round 5 S-04 / 070 code-review — Bangkok-local fiscal year via the
+  // SHARED `deriveFiscalYear` (js-joda Asia/Bangkok, honours the tenant's
+  // fiscal-year start-month) — the identical helper confirm-renewal,
+  // admin-renew and the §87 sequential-number allocator use. UTC
+  // `getUTCFullYear()` is wrong at BKK boundaries; the prior local +7h
+  // helper also hardcoded a January start, so it would diverge from every
+  // other billing path for a non-January-start tenant. One source of truth
+  // for the §86/4 fiscal year across the online + offline rails.
+  const planYear = deriveFiscalYear(preLoad.periodFrom);
   const planId = preLoad.planIdAtCycleStart;
   const memberId = preLoad.memberId;
+
+  // 070 Item D — hoisted to the use-case scope so the POST-commit F2
+  // scheduled-plan-change finalise can read the F4 paid event after the
+  // outer `runInTenant` tx commits. Set inside the in-tx `onPaid` closure
+  // below; remains null on any path that never reaches the cycle flip.
+  let paidEventForFinalise: F4InvoicePaidEvent | null = null;
 
   // Outer atomic boundary — F4 chain step 3 (recordPayment) reuses
   // this tx; cycle flip + audit emit ride along.
   try {
-    return await runInTenant(deps.tenant, async (tx) => {
+    const result = await runInTenant(deps.tenant, async (tx) => {
       // Per-(tenant, cycle) advisory lock — race-protects two admins.
       // Lock acquisition delegated to Infrastructure (Constitution
       // Principle III — Application has no SQL/ORM dependency).
@@ -232,6 +239,12 @@ export async function markPaidOffline(
       let onPaidFired = false;
       const onPaid = async (evt: F4InvoicePaidEvent): Promise<void> => {
         onPaidFired = true;
+        // 070 Item D — capture the paid event so the POST-commit F2
+        // scheduled-plan-change finalise (mirroring the online callback[1]
+        // post-tx half) can run after the outer tx commits. The F2 row flip
+        // MUST happen outside the tx (its repo opens its own runInTenant) so
+        // a finalise failure cannot roll back the now-durable payment.
+        paidEventForFinalise = evt;
         // Flip cycle inside same tx — closedReason='completed_offline'.
         await deps.cyclesRepo.transitionStatus(
           tx,
@@ -268,6 +281,40 @@ export async function markPaidOffline(
             summary: `Admin marked cycle ${cycleId} paid offline (${input.paymentMethod} ref=${input.paymentReference})`,
           },
         );
+
+        // 070 Item D — apply any pending tier-upgrade on the OFFLINE path,
+        // mirroring the online `f8OnPaidCallbacks[1]` IN-TX half (same
+        // ordering + throw-on-failure rollback discipline; the actor +
+        // post-commit retry semantics differ — see below).
+        // The online chain orders [0] complete → [1] apply-tier-upgrade →
+        // [2] create-next-cycle; this call sits between the completion flip
+        // above and `createNextCycleOnPaidInTx` below so the offline path
+        // matches that ordering. A member who had an `accepted_pending_apply`
+        // tier-upgrade now has the F8 suggestion transitioned → `applied`
+        // (+ `tier_upgrade_applied_at_renewal` audit) atomically with the
+        // offline-mark tx — previously it was left pending forever (the
+        // 070 Item-D gap).
+        //
+        // ACTOR: this path is admin-driven (the admin records the offline
+        // settlement + already emits the `renewal_cycle_completed_offline`
+        // audit as themselves above), so the apply audit carries the ADMIN
+        // actor — NOT `'webhook'` (the online default). `RenewalActorRole`
+        // already includes `'admin'`, so no enum change is needed.
+        //
+        // THROWS on failure (same in-tx discipline as the online path's
+        // threaded callback[1]): a throw rolls the whole offline-mark tx
+        // back; the admin's "mark paid" returns an error + retries. The
+        // CAS guard inside `applyPendingTierUpgradeInTx` makes retry safe
+        // (idempotent on already-applied). NEVER swallowed: a swallow would
+        // complete the payment while the tier-upgrade silently strands.
+        await applyPendingTierUpgradeInTx(deps, tx, {
+          tenantId: input.tenantId,
+          cycleId,
+          invoiceId: asInvoiceId(evt.invoiceId),
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+          actor: { actorUserId: input.actorUserId, actorRole: input.actorRole },
+        });
 
         // 068-f8-completion (slice 1) — renewal-loop closer on the OFFLINE
         // path. The online/record-payment paths run the full
@@ -365,6 +412,59 @@ export async function markPaidOffline(
         newExpiresAt,
       });
     });
+
+    // 070 Item D — POST-commit F2 scheduled-plan-change finalise. Mirrors
+    // the online callback[1] post-tx half: the F2 row flip pending →
+    // applied (+ `plan_change_applied` audit) MUST run OUTSIDE the state
+    // tx (the F2 repo opens its OWN `runInTenant`), so it can only run
+    // after the outer tx has committed. It is best-effort + non-rollback:
+    // the payment + cycle flip + in-tx suggestion apply are already durable;
+    // a finalise failure is logged + swallowed (the F2 row stays `pending`,
+    // never re-bills). Only runs on the success path where `onPaid` actually
+    // fired (so a real paid event was captured).
+    //
+    // RETRY-HEAL DIFFERS FROM THE ONLINE PATH: the online callback self-
+    // heals because the Stripe webhook is at-least-once — a redelivery re-
+    // fires the whole onPaid chain incl. this finalise. The OFFLINE rail has
+    // NO such trigger: mark-paid is a one-shot synchronous admin click, the
+    // cycle is now `completed` (a re-click returns `cycle_not_payable`), and
+    // no reconcile cron sweeps `scheduled_plan_changes`. A stranded offline
+    // F2 row needs MANUAL operator replay (grep errorId
+    // `F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW`).
+    //
+    // ACTOR: the admin (offline settlement) — the F2 `plan_change_applied`
+    // audit carries the admin's user id, matching the in-tx F8 apply audit
+    // above + the post-tx F2 emit pattern in `accept-tier-upgrade.ts`.
+    if (result.ok && paidEventForFinalise !== null) {
+      // Defensive own try/catch: the payment + cycle flip are already
+      // committed, so a finalise throw must NEVER downgrade the use-case
+      // to `server_error` (the outer catch would do exactly that — see the
+      // post-commit-listener pitfall). The helper is internally swallow-
+      // only; this is belt-and-braces against a future regression.
+      try {
+        await finaliseF2PlanChangeOnPaid(deps, paidEventForFinalise, cycleId, {
+          actorUserId: input.actorUserId,
+          requestId: input.requestId ?? `mark-paid-offline:${cycleId}`,
+        });
+      } catch (finaliseErr) {
+        logger.error(
+          {
+            err:
+              finaliseErr instanceof Error
+                ? finaliseErr
+                : new Error(String(finaliseErr)),
+            cycleId,
+            tenantId: input.tenantId,
+            invoiceId: result.value.invoiceId,
+            memberId,
+            errorId: 'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
+          },
+          'markPaidOffline: post-commit F2 finalise threw — payment already committed; F2 row left pending — MANUAL replay required (no offline retry path)',
+        );
+      }
+    }
+
+    return result;
   } catch (e) {
     logger.error(
       {

@@ -179,15 +179,35 @@ function fakeDeps(args: {
   };
 }
 
+// 070 — `planYear` is NO LONGER part of ConfirmRenewalInput (the §86/4
+// fiscal year is server-derived from the cycle). The base input carries no
+// year; tests that want to prove the server IGNORES a client-supplied year
+// inject it via `withClientPlanYear` (a cast that simulates an over-the-wire
+// field the schema drops).
 const baseInput = {
   tenantId: TENANT_ID,
   cycleId: CYCLE_UUID,
   memberId: MEMBER_UUID,
-  planYear: 2026,
   actorUserId: 'user-1',
   actorRole: 'member' as const,
   correlationId: 'corr-1',
 };
+
+/**
+ * Simulate a malicious/stale client smuggling a `planYear` into the input.
+ * `ConfirmRenewalInput` no longer declares the field, so we cast through
+ * `unknown` — the production route's non-strict zod schema would drop such a
+ * key entirely; here we hand it straight to the use-case to prove the
+ * use-case itself never reads it (it derives the year from the cycle).
+ */
+function withClientPlanYear(
+  input: typeof baseInput & { newPlanId?: string },
+  planYear: number,
+): Parameters<typeof confirmRenewal>[1] {
+  return { ...input, planYear } as unknown as Parameters<
+    typeof confirmRenewal
+  >[1];
+}
 
 describe('confirmRenewal (T122) — happy paths', () => {
   it('happy path no plan-change — issues invoice + links + emits invoice_created', async () => {
@@ -235,6 +255,15 @@ describe('confirmRenewal (T122) — happy paths', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.planChanged).toBe(true);
     expect(planLookupMock).toHaveBeenCalledOnce();
+    // 070 §86/4 — the plan-change resolves the NEW plan by THIS cycle's
+    // fiscal year (period_from 2026-06-01 → FY 2026) with
+    // mode 'offer' (a plan-OFFER check, not a freeze).
+    expect(planLookupMock).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      planId: NEW_PLAN_ID,
+      fiscalYear: 2026,
+      mode: 'offer',
+    });
     expect(updateFrozenPlanMock).toHaveBeenCalledOnce();
     expect(updateFrozenPlanMock.mock.calls[0]?.[3]).toMatchObject({
       planIdAtCycleStart: NEW_PLAN_ID,
@@ -269,6 +298,78 @@ describe('confirmRenewal (T122) — happy paths', () => {
     if (r.ok) expect(r.value.planChanged).toBe(false);
     expect(planLookupMock).not.toHaveBeenCalled();
     expect(updateFrozenPlanMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirmRenewal (070 FR-022) — plan_year is server-derived, NOT client-supplied', () => {
+  // 070 security fix — the §86/4 fiscal year (the "Membership {year}" label
+  // + the §87 numbering bucket) MUST be derived SERVER-SIDE from the
+  // authoritative cycle the use-case re-reads, never the request body.
+  // Mirrors admin-renew-lapsed-member's `deriveFiscalYear(cycle.periodFrom)`.
+  // The canonical value is the fiscal year of the cycle's `periodFrom`
+  // (Asia/Bangkok), the SAME convention the F4 §87 allocator + the admin
+  // renew path use — so a renewal invoice buckets identically regardless
+  // of which portal/admin path issued it.
+
+  it('issues with the cycle-derived year (periodFrom fiscal year), ignoring a WRONG client planYear', async () => {
+    // Cycle period 2026-06-01 → 2027-06-01 (the shared buildCycle default).
+    // deriveFiscalYear('2026-06-01') = 2026 (Bangkok, Jan-start FY == CE).
+    // A malicious/stale client posts 2099 — the server must ignore it.
+    const cycle = buildCycle({
+      periodFrom: '2026-06-01T00:00:00Z',
+      periodTo: '2027-06-01T00:00:00Z',
+      expiresAt: '2027-06-01T00:00:00Z',
+    });
+    const { deps, invoiceBridgeMock } = fakeDeps({ cycle });
+    const r = await confirmRenewal(deps, withClientPlanYear(baseInput, 2099));
+    expect(r.ok).toBe(true);
+    // The bridge receives the server-derived 2026 — NOT the client's 2099,
+    // and NOT the period-END year (2027). This is the off-by-one the portal
+    // page's `expiresAt`-based derivation previously sent.
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      planYear: 2026,
+      planId: 'plan-regular-2026',
+    });
+  });
+
+  it('derives the periodFrom fiscal year even when it differs from the period-END year', async () => {
+    // Period END (2027) ≠ period START (2026). The page used to send 2027
+    // (period-END getUTCFullYear). The membership the catalogue prices is the
+    // 2026 one — the §86/4 must say Membership 2026, keyed on (planId, 2026).
+    const cycle = buildCycle({
+      periodFrom: '2026-12-15T00:00:00Z',
+      periodTo: '2027-12-15T00:00:00Z',
+      expiresAt: '2027-12-15T00:00:00Z',
+    });
+    const { deps, invoiceBridgeMock } = fakeDeps({ cycle });
+    // Client sends the (old, wrong) period-END year — server overrides it.
+    const r = await confirmRenewal(deps, withClientPlanYear(baseInput, 2027));
+    expect(r.ok).toBe(true);
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      planYear: 2026,
+    });
+  });
+
+  it('after a plan-change, the year still derives from the re-snapshotted cycle period', async () => {
+    // The plan-change branch re-snapshots frozen-plan fields but does NOT
+    // move periodFrom — so the derived year tracks the cycle period, and the
+    // §86/4 year is independent of the client value.
+    const cycle = buildCycle({
+      periodFrom: '2026-03-01T00:00:00Z',
+      periodTo: '2027-03-01T00:00:00Z',
+      expiresAt: '2027-03-01T00:00:00Z',
+    });
+    const { deps, invoiceBridgeMock } = fakeDeps({ cycle });
+    const r = await confirmRenewal(
+      deps,
+      withClientPlanYear({ ...baseInput, newPlanId: NEW_PLAN_ID }, 2050),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.planChanged).toBe(true);
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      planYear: 2026,
+      planId: NEW_PLAN_ID,
+    });
   });
 });
 
@@ -622,14 +723,23 @@ describe('confirmRenewal (T122) — input validation', () => {
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
   });
 
-  it('invalid_input on out-of-range planYear', async () => {
-    const { deps } = fakeDeps({ cycle: buildCycle() });
-    const r = await confirmRenewal(deps, {
-      ...baseInput,
-      planYear: 1999,
+  it('070 — a smuggled out-of-range client planYear is IGNORED (not validated), server derives a valid year from the cycle', async () => {
+    // Before 070 this returned `invalid_input` (the schema validated a
+    // client `planYear`). Now the field is server-derived, so an
+    // over-the-wire 1999 is simply dropped — the use-case proceeds and
+    // issues with the cycle-derived year. This pins that removing the
+    // client field did NOT open a path to an out-of-range §86/4 year.
+    const cycle = buildCycle({
+      periodFrom: '2026-06-01T00:00:00Z',
+      periodTo: '2027-06-01T00:00:00Z',
+      expiresAt: '2027-06-01T00:00:00Z',
     });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+    const { deps, invoiceBridgeMock } = fakeDeps({ cycle });
+    const r = await confirmRenewal(deps, withClientPlanYear(baseInput, 1999));
+    expect(r.ok).toBe(true);
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      planYear: 2026,
+    });
   });
 });
 

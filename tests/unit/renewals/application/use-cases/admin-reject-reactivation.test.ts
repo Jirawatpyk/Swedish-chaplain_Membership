@@ -4,7 +4,7 @@
  * Critical-path coverage: state validation, F5 refund bridge, atomic
  * tx for cycle transition + audit, post-refund reconciliation edge.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { adminRejectReactivation } from '@/modules/renewals/application/use-cases/admin-reject-reactivation';
 import type { AdminRejectReactivationDeps } from '@/modules/renewals/application/use-cases/admin-reject-reactivation';
 import { CycleTransitionConflictError } from '@/modules/renewals/application/ports/renewal-cycle-repo';
@@ -27,6 +27,18 @@ vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
     fn({} as unknown),
 }));
+
+// 070 speckit-review I2/I3 — capture `logger.error` so the reverse-direction
+// (Principle VIII) rollback tests can assert the orphan-refund reconciliation
+// log fired (refundIssuedRequiresReconciliation: true + refundCreditNoteId).
+const { loggerErrorMock } = vi.hoisted(() => ({ loggerErrorMock: vi.fn() }));
+vi.mock('@/lib/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/logger')>();
+  return {
+    ...actual,
+    logger: { ...actual.logger, error: loggerErrorMock, warn: vi.fn() },
+  };
+});
 
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
   return buildCycleShared({
@@ -137,6 +149,12 @@ const baseInput = {
 };
 
 describe('adminRejectReactivation (T137)', () => {
+  beforeEach(() => {
+    // 070 I2/I3 — reset the hoisted logger spy between tests so the
+    // reconciliation-log assertions don't see prior tests' calls.
+    vi.clearAllMocks();
+  });
+
   it('happy path with refund — refunds + transitions + emits audit with credit_note_id', async () => {
     const cycle = buildCycle();
     const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
@@ -260,6 +278,141 @@ describe('adminRejectReactivation (T137)', () => {
     await expect(adminRejectReactivation(deps, baseInput)).rejects.toThrow(
       /audit_log: insert failed/,
     );
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // 070 speckit-review I2 — reverse-direction Principle VIII rollbacks AFTER
+  // the F5 refund issued. These are the highest-stakes uncovered failure
+  // modes: money MOVED (refund + F4 credit-note are durable), then the F8
+  // state tx rolls back, so the refund is orphaned and needs manual
+  // reconciliation. Each path MUST (a) re-throw so the cycle transition rolls
+  // back, and (b) log `refundIssuedRequiresReconciliation: true` with the
+  // refundCreditNoteId so SRE can filter for refund-orphan rollbacks.
+  // ───────────────────────────────────────────────────────────────────────
+
+  it('I2a: audit emit (lapsed_member) throw AFTER refund → re-throws + logs refundIssuedRequiresReconciliation w/ credit-note id', async () => {
+    const cycle = buildCycle(); // linkedInvoiceId set → a real refund issues
+    const { deps, refundMock } = fakeDeps({
+      cycle,
+      emitImpl: async () => {
+        throw new Error('audit_log: lapsed-member insert failed');
+      },
+    });
+
+    await expect(adminRejectReactivation(deps, baseInput)).rejects.toThrow(
+      /audit_log: lapsed-member insert failed/,
+    );
+    // The refund DID issue (credit-note 'cn-1' from the default refund mock).
+    expect(refundMock).toHaveBeenCalledOnce();
+
+    const reconcileLog = loggerErrorMock.mock.calls.find(
+      (c) =>
+        (c[0] as { refundIssuedRequiresReconciliation?: boolean } | undefined)
+          ?.refundIssuedRequiresReconciliation === true,
+    );
+    expect(reconcileLog).toBeDefined();
+    expect(reconcileLog![0]).toMatchObject({
+      refundCreditNoteId: 'cn-1',
+      refundIssuedRequiresReconciliation: true,
+    });
+  });
+
+  it('I2b: escalation-task insert throw AFTER refund → re-throws + logs refundIssuedRequiresReconciliation (refund stays issued)', async () => {
+    const cycle = buildCycle();
+    const { deps, insertTaskMock } = fakeDeps({ cycle });
+    // The lapsed-member audit succeeds (default emit), then the
+    // post_refund_review escalation-task insert throws — the use-case
+    // RE-THROWS so the whole F8 state tx (cycle transition + lapsed-member
+    // audit) rolls back; the F5 refund is already durable.
+    insertTaskMock.mockRejectedValueOnce(
+      new Error('renewal_escalation_tasks: insert failed'),
+    );
+
+    await expect(adminRejectReactivation(deps, baseInput)).rejects.toThrow(
+      /renewal_escalation_tasks: insert failed/,
+    );
+
+    const reconcileLog = loggerErrorMock.mock.calls.find(
+      (c) =>
+        (c[0] as { refundIssuedRequiresReconciliation?: boolean } | undefined)
+          ?.refundIssuedRequiresReconciliation === true,
+    );
+    expect(reconcileLog).toBeDefined();
+    expect(reconcileLog![0]).toMatchObject({
+      refundCreditNoteId: 'cn-1',
+      refundIssuedRequiresReconciliation: true,
+    });
+  });
+
+  it('I2c: escalation-task audit (escalation_task_created) throw AFTER refund → re-throws + reconciliation log', async () => {
+    const cycle = buildCycle();
+    const { deps, emitInTxMock } = fakeDeps({ cycle });
+    // First emit = lapsed_member audit (succeeds). Second emit =
+    // escalation_task_created audit (throws) → reverse-direction rollback.
+    emitInTxMock
+      .mockImplementationOnce(async () => {})
+      .mockImplementationOnce(async () => {
+        throw new Error('audit_log: escalation_task_created insert failed');
+      });
+
+    await expect(adminRejectReactivation(deps, baseInput)).rejects.toThrow(
+      /escalation_task_created insert failed/,
+    );
+
+    const reconcileLog = loggerErrorMock.mock.calls.find(
+      (c) =>
+        (c[0] as { refundIssuedRequiresReconciliation?: boolean } | undefined)
+          ?.refundIssuedRequiresReconciliation === true,
+    );
+    expect(reconcileLog).toBeDefined();
+    expect(reconcileLog![0]).toMatchObject({
+      refundCreditNoteId: 'cn-1',
+      refundIssuedRequiresReconciliation: true,
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // 070 speckit-review I3 — adminReject conflict-AFTER-refund maps to EXACTLY
+  // `{ kind: 'server_error' }` (deterministic). The existing concurrent-double
+  // -reject INTEGRATION test accepts any of server_error|cycle_not_pending|
+  // refund_failed (timing-dependent), so the mapping is not deterministically
+  // pinned anywhere. This unit test forces the transition to throw a
+  // CycleTransitionConflictError AFTER a successful refund and asserts the
+  // exact server_error result + the orphan-refund reconciliation log.
+  // ───────────────────────────────────────────────────────────────────────
+
+  it('I3: transition CycleTransitionConflictError AFTER refund → exactly { kind: server_error } + orphan-refund log', async () => {
+    const cycle = buildCycle();
+    const { deps, refundMock } = fakeDeps({
+      cycle,
+      transitionImpl: async () => {
+        throw new CycleTransitionConflictError(
+          CYCLE_UUID,
+          'pending_admin_reactivation',
+          'cancelled',
+        );
+      },
+    });
+
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(false);
+    // EXACT mapping — `kind` is deterministically `server_error`, NOT
+    // refund_failed / cycle_not_pending (the integration test's timing-
+    // tolerant set). The use-case attaches a redacted `message`; pin the
+    // discriminant, not the human-readable copy.
+    if (!r.ok) expect(r.error.kind).toBe('server_error');
+    // The refund DID issue before the conflict (it is now orphaned).
+    expect(refundMock).toHaveBeenCalledOnce();
+
+    // Orphan-refund forensic log fired with the credit-note id so SRE can
+    // reconcile the irreversible refund against the lost-race cycle.
+    const orphanLog = loggerErrorMock.mock.calls.find(
+      (c) =>
+        typeof c[1] === 'string' &&
+        (c[1] as string).includes('cycle transition lost race'),
+    );
+    expect(orphanLog).toBeDefined();
+    expect(orphanLog![0]).toMatchObject({ refundCreditNoteId: 'cn-1' });
   });
 
   it('invalid_input on malformed cycleId', async () => {

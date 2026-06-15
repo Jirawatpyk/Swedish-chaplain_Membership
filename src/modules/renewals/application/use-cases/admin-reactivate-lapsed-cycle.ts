@@ -39,6 +39,7 @@ import {
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
+import type { CycleStatus } from '../../domain/value-objects/cycle-status';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -68,7 +69,7 @@ export type AdminReactivateLapsedCycleError =
   | { readonly kind: 'cycle_not_found' }
   | {
       readonly kind: 'cycle_not_pending';
-      readonly currentStatus: string;
+      readonly currentStatus: CycleStatus | 'unknown';
     }
   | { readonly kind: 'server_error'; readonly message: string };
 

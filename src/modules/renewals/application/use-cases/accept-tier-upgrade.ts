@@ -58,6 +58,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 // Phase 7 review-fix S-static-import: pull the Domain hash helper as a
@@ -580,9 +581,20 @@ export async function acceptTierUpgrade(
         input.tenantId,
         txResult.value.targetApplyAtCycleId,
       );
+      // 070 §86/4 — resolve by the target cycle's fiscal year. This
+      // lookup is used ONLY to derive a display `planName` (the
+      // tier-bucket label) for the approval email — it does NOT freeze a
+      // price (the actual upgrade freeze happens later at apply-on-paid
+      // time via the F4 → F8 bridge). `mode: 'freeze'` (a resolve, not an
+      // offer check) so the label still renders even if the target year's
+      // catalogue row is not yet active. The target cycle is
+      // `txResult.value.targetApplyAtCycleId === activeCycle.cycleId`,
+      // so its year is `activeCycle.period_from`.
       const planFrozen = await deps.planLookupForRenewal.loadPlanFrozenFields({
         tenantId: input.tenantId,
         planId: suggestion.toPlanId,
+        fiscalYear: deriveFiscalYear(activeCycle.periodFrom),
+        mode: 'freeze',
       });
       planName =
         planFrozen.status === 'found'

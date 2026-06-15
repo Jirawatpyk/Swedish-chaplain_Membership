@@ -2474,6 +2474,22 @@
     "renewals": {
       "title": "Renewal pipeline",
       "subtitle": "Active members by renewal date and tier.",
+      "pendingReview": {
+        "tab": "Pending review",
+        "sectionTitle": "Reactivations awaiting your decision",
+        "sectionSubtitle": "These members paid to reactivate a lapsed membership but auto-reactivation is blocked. Open each one to approve or reject with a refund.",
+        "emptyTitle": "Nothing awaiting review",
+        "emptyDescription": "No reactivations are currently pending an admin decision.",
+        "backToPipeline": "Back to pipeline",
+        "columns": {
+          "member": "Member",
+          "pendingSince": "Pending since",
+          "expiry": "Expiry",
+          "action": "Action"
+        },
+        "openAction": "Review",
+        "loadFailed": "Couldn't load the pending-review list. Please try again."
+      },
       "tierBadge": {
         "thai_alumni": "Thai alumni",
         "start_up": "Start-up",
@@ -2788,7 +2804,38 @@
         "noLinkedInvoice": "No invoice linked to this cycle yet.",
         "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
         "pendingNoticeTitle": "Awaiting your decision",
-        "pendingNoticeBody": "This member's reactivation is pending review. To approve or reject, return to the renewal pipeline and use the row actions menu.",
+        "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
+        "pendingReactivation": {
+          "reactivate": {
+            "button": "Approve reactivation",
+            "dialogTitle": "Approve this reactivation?",
+            "dialogBody": "The renewal cycle will be completed and the membership reactivated. The payment that was held will be kept.",
+            "confirm": "Approve",
+            "cancel": "Cancel",
+            "submitting": "Approving…",
+            "successToast": "Reactivation approved — the membership is now active.",
+            "errorToast": "Couldn't approve the reactivation. Please try again."
+          },
+          "reject": {
+            "button": "Reject & refund",
+            "dialogTitle": "Reject and refund this reactivation?",
+            "dialogBody": "This cancels the renewal cycle and refunds the member's payment. This action cannot be undone.",
+            "reasonLabel": "Reason for rejection",
+            "reasonPlaceholder": "Explain why this reactivation is being rejected (e.g. duplicate payment, member request).",
+            "reasonRequired": "Please enter a reason (1–500 characters).",
+            "confirm": "Reject & refund",
+            "cancel": "Cancel",
+            "submitting": "Rejecting…",
+            "successRefundedToast": "Reactivation rejected and the payment was refunded.",
+            "successNoRefundToast": "Reactivation rejected. There was no payment to refund.",
+            "error": {
+              "cycle_not_pending": "This cycle is no longer awaiting review — it may have already been handled.",
+              "refund_failed": "The refund could not be processed. The cycle was left as-is — please retry.",
+              "rate_limited": "Too many attempts. Please wait a moment and try again.",
+              "server_error": "Something went wrong. Please try again."
+            }
+          }
+        },
         "lookupFailedTitle": "Some related data couldn't be loaded",
         "lookupFailedBoth": "We couldn't load the linked member or plan record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
         "lookupFailedMember": "We couldn't load the linked member record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",

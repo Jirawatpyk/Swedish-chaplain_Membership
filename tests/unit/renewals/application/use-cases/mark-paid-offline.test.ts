@@ -25,6 +25,43 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 
+// 070 speckit-review C1 — capture `logger.error` so the OFFLINE outer-catch
+// belt-and-braces test can assert the `OFFLINE_FINALISE_THREW` log fired with
+// the cycleId/invoiceId/memberId replay context. The rest of the logger is
+// preserved (warn/info/debug) so unrelated paths stay silent.
+const { loggerErrorMock } = vi.hoisted(() => ({ loggerErrorMock: vi.fn() }));
+vi.mock('@/lib/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/logger')>();
+  return {
+    ...actual,
+    logger: { ...actual.logger, error: loggerErrorMock },
+  };
+});
+
+// 070 speckit-review C1 — mock `finaliseF2PlanChangeOnPaid` ITSELF so a test
+// can drive the POST-commit OUTER belt-and-braces catch in `mark-paid-offline`
+// (errorId `F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW`). By default it delegates to
+// the real helper (the 070 Item-D finalise tests below exercise the genuine
+// internal-swallow behaviour). A single test re-points it at a throwing impl.
+// (The helper's OWN swallow-only internals are covered directly in
+// `finalise-f2-plan-change-on-paid.test.ts`.)
+const { finaliseF2Mock } = vi.hoisted(() => ({ finaliseF2Mock: vi.fn() }));
+vi.mock(
+  '@/modules/renewals/application/use-cases/finalise-f2-plan-change-on-paid',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('@/modules/renewals/application/use-cases/finalise-f2-plan-change-on-paid')
+      >();
+    finaliseF2Mock.mockImplementation(actual.finaliseF2PlanChangeOnPaid);
+    return {
+      ...actual,
+      finaliseF2PlanChangeOnPaid: (...args: unknown[]) =>
+        finaliseF2Mock(...args),
+    };
+  },
+);
+
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
   return buildCycleShared({
     tenantId: TENANT_ID,
@@ -50,6 +87,16 @@ interface FakeDepsResult {
   findByInvoiceIdInTxMock: ReturnType<typeof vi.fn>;
   findActiveForMemberInTxMock: ReturnType<typeof vi.fn>;
   loadPlanFrozenFieldsMock: ReturnType<typeof vi.fn>;
+  // 070 Item D — tier-upgrade apply (in-tx, callback[1]-equivalent) +
+  // post-commit F2 scheduled-plan-change finalise wiring. These mocks
+  // expose those seams so the tests can assert the upgrade is applied
+  // BEFORE the next-cycle insert and the F2 finalise runs post-commit.
+  findPendingForCycleSuggestionMock: ReturnType<typeof vi.fn>;
+  suggestionTransitionStatusMock: ReturnType<typeof vi.fn>;
+  f2FindPendingForCycleMock: ReturnType<typeof vi.fn>;
+  f2TransitionStatusMock: ReturnType<typeof vi.fn>;
+  f2RecordMock: ReturnType<typeof vi.fn>;
+  tierUpgradeFindByIdMock: ReturnType<typeof vi.fn>;
 }
 
 function fakeDeps(
@@ -120,8 +167,26 @@ function fakeDeps(
       currency: 'THB' as const,
     },
   }));
+  // 070 Item D — tier-upgrade apply (in-tx) seam. Default: no pending
+  // suggestion for the cycle, so the apply is a clean no-op (the existing
+  // happy-path / error-path tests stay green). A targeted test overrides
+  // `findPendingForCycleSuggestionMock` to drive the apply.
+  const findPendingForCycleSuggestionMock = vi.fn(
+    async () => [] as ReadonlyArray<unknown>,
+  );
+  const suggestionTransitionStatusMock = vi.fn(async () => {});
+  const tierUpgradeFindByIdMock = vi.fn(async () => null);
+  // 070 Item D — post-commit F2 scheduled-plan-change finalise seam.
+  // Default: no pending F2 row, so the finalise is a clean no-op.
+  const f2FindPendingForCycleMock = vi.fn(async () => null);
+  const f2TransitionStatusMock = vi.fn(async (_t, scheduledChangeId) => ({
+    scheduledChangeId,
+    status: 'applied' as const,
+  }));
+  const f2RecordMock = vi.fn(async () => ({ ok: true as const, value: undefined }));
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
+    clock: { now: () => new Date('2026-05-15T10:00:00.000Z') },
     cyclesRepo: {
       findById: vi.fn(async () => cycle),
       findByIdInTx: vi.fn(async () => cycle),
@@ -138,6 +203,21 @@ function fakeDeps(
     planLookupForRenewal: {
       loadPlanFrozenFields: loadPlanFrozenFieldsMock,
     } as unknown as RenewalsDeps['planLookupForRenewal'],
+    // 070 Item D — tier-upgrade suggestion repo (apply-pending-tier-upgrade)
+    // + F2 scheduled-plan-change repo + F2 audit emitter (post-commit
+    // finalise). Defaults make both a no-op so untouched tests stay green.
+    tierUpgradeRepo: {
+      findPendingForCycle: findPendingForCycleSuggestionMock,
+      transitionStatus: suggestionTransitionStatusMock,
+      findById: tierUpgradeFindByIdMock,
+    } as unknown as RenewalsDeps['tierUpgradeRepo'],
+    scheduledPlanChangeRepo: {
+      findPendingForCycle: f2FindPendingForCycleMock,
+      transitionStatus: f2TransitionStatusMock,
+    } as unknown as RenewalsDeps['scheduledPlanChangeRepo'],
+    f2AuditEmitter: {
+      record: f2RecordMock,
+    } as unknown as RenewalsDeps['f2AuditEmitter'],
     // 068 speckit-review DRY (simplify #1) — the use-case now reads the
     // cycle-id generator from `deps.cycleIdFactory` (was an inline literal).
     // Provide a deterministic generator so the next-cycle insert resolves.
@@ -153,6 +233,12 @@ function fakeDeps(
     findByInvoiceIdInTxMock,
     findActiveForMemberInTxMock,
     loadPlanFrozenFieldsMock,
+    findPendingForCycleSuggestionMock,
+    suggestionTransitionStatusMock,
+    f2FindPendingForCycleMock,
+    f2TransitionStatusMock,
+    f2RecordMock,
+    tierUpgradeFindByIdMock,
   };
 }
 
@@ -238,6 +324,179 @@ describe('markPaidOffline (T059) — happy path', () => {
     const r = await markPaidOffline(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('server_error');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// 070 Item D — tier-upgrade apply on the OFFLINE path. The offline `onPaid`
+// now mirrors the online `f8OnPaidCallbacks[1]`: it applies any pending
+// tier-upgrade IN-TX (callback[1]-equivalent) BEFORE the next-cycle insert
+// (callback[2]-equivalent), then finalises the F2 scheduled-plan-change row
+// POST-commit. The actor for both is the ADMIN (offline settlement), not a
+// webhook.
+// ───────────────────────────────────────────────────────────────────────
+describe('markPaidOffline (070 Item D) — pending tier-upgrade apply', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const PENDING_SUGGESTION = {
+    suggestionId: '99999999-9999-9999-9999-999999999999',
+    memberId: 'mem-1',
+    fromPlanId: 'regular',
+    toPlanId: 'premium',
+    status: 'accepted_pending_apply' as const,
+  };
+
+  it('applies the pending tier-upgrade IN-TX before the next-cycle insert (suggestion→applied)', async () => {
+    const cycle = buildCycle({ memberId: 'mem-1' });
+    const {
+      deps,
+      findPendingForCycleSuggestionMock,
+      suggestionTransitionStatusMock,
+      insertMock,
+    } = fakeDeps(cycle);
+    findPendingForCycleSuggestionMock.mockResolvedValueOnce([
+      PENDING_SUGGESTION,
+    ]);
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+
+    // The suggestion was transitioned → applied exactly once.
+    expect(suggestionTransitionStatusMock).toHaveBeenCalledTimes(1);
+    const transitionArgs = suggestionTransitionStatusMock.mock.calls[0]!;
+    // args: (tx, tenantId, suggestionId, { to, expectedFrom, ... })
+    expect(transitionArgs[3]).toEqual(
+      expect.objectContaining({
+        to: 'applied',
+        expectedFrom: 'accepted_pending_apply',
+        appliedAtInvoiceId: 'inv-1',
+      }),
+    );
+
+    // Ordering: the apply transition fires BEFORE the next-cycle insert
+    // (callback[1] before callback[2]).
+    const applyOrder =
+      suggestionTransitionStatusMock.mock.invocationCallOrder[0]!;
+    const insertOrder = insertMock.mock.invocationCallOrder[0]!;
+    expect(applyOrder).toBeLessThan(insertOrder);
+  });
+
+  it('emits tier_upgrade_applied_at_renewal under the ADMIN actor (not webhook)', async () => {
+    const cycle = buildCycle({ memberId: 'mem-1' });
+    const { deps, emitInTxMock, findPendingForCycleSuggestionMock } =
+      fakeDeps(cycle);
+    findPendingForCycleSuggestionMock.mockResolvedValueOnce([
+      PENDING_SUGGESTION,
+    ]);
+
+    await markPaidOffline(deps, baseInput);
+
+    const applyAuditCall = emitInTxMock.mock.calls.find(
+      (c) =>
+        (c[1] as { type?: string })?.type === 'tier_upgrade_applied_at_renewal',
+    );
+    expect(applyAuditCall).toBeDefined();
+    // ctx is the 3rd arg — the offline path carries the admin actor.
+    expect(applyAuditCall![2]).toEqual(
+      expect.objectContaining({
+        actorUserId: 'admin-1',
+        actorRole: 'admin',
+      }),
+    );
+  });
+
+  it('finalises the F2 scheduled-plan-change POST-commit under the ADMIN actor', async () => {
+    const cycle = buildCycle({ memberId: 'mem-1' });
+    const {
+      deps,
+      findPendingForCycleSuggestionMock,
+      f2FindPendingForCycleMock,
+      f2TransitionStatusMock,
+      f2RecordMock,
+    } = fakeDeps(cycle);
+    findPendingForCycleSuggestionMock.mockResolvedValueOnce([
+      PENDING_SUGGESTION,
+    ]);
+    // A pending F2 row whose `reason` links to no suggestion (standalone)
+    // so the finaliser proceeds without a findById gate.
+    f2FindPendingForCycleMock.mockResolvedValueOnce({
+      scheduledChangeId: 'sched-1',
+      memberId: 'mem-1',
+      reason: 'admin_manual_schedule',
+      fromPlanId: 'regular',
+      toPlanId: 'premium',
+    });
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+
+    // F2 row flipped pending → applied.
+    expect(f2TransitionStatusMock).toHaveBeenCalledTimes(1);
+    expect(f2TransitionStatusMock.mock.calls[0]![2]).toBe('applied');
+    // plan_change_applied audit recorded under the admin actor.
+    expect(f2RecordMock).toHaveBeenCalledTimes(1);
+    const f2Ctx = f2RecordMock.mock.calls[0]![0] as { actorUserId?: string };
+    expect(f2Ctx.actorUserId).toBe('admin-1');
+    const f2Event = f2RecordMock.mock.calls[0]![1] as { event_type?: string };
+    expect(f2Event.event_type).toBe('plan_change_applied');
+  });
+
+  it('rolls back to server_error when the in-tx tier-upgrade apply throws (no silent strand)', async () => {
+    const cycle = buildCycle({ memberId: 'mem-1' });
+    const { deps, findPendingForCycleSuggestionMock, suggestionTransitionStatusMock } =
+      fakeDeps(cycle);
+    findPendingForCycleSuggestionMock.mockResolvedValueOnce([
+      PENDING_SUGGESTION,
+    ]);
+    // A real (non-CAS) error inside the apply rolls the offline-mark tx back.
+    suggestionTransitionStatusMock.mockRejectedValueOnce(
+      new Error('db connection lost mid-apply'),
+    );
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('server_error');
+  });
+
+  it('does NOT fail the use-case when the post-commit F2 finalise THROWS to the OUTER catch (payment already durable; OFFLINE_FINALISE_THREW logged)', async () => {
+    // 070 speckit-review C1 — exercise the use-case's OUTER belt-and-braces
+    // catch around `finaliseF2PlanChangeOnPaid` (mark-paid-offline.ts errorId
+    // `F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW`). The PRIOR version rejected the
+    // helper's INTERNAL `findPendingForCycle` mock, but that rejection is
+    // swallowed INSIDE the (swallow-only) helper and never reaches this outer
+    // catch — so the catch arm was untested. Mock the WHOLE helper to throw so
+    // the throw actually propagates to the use-case's own try/catch.
+    const cycle = buildCycle({ memberId: 'mem-1' });
+    const { deps } = fakeDeps(cycle);
+    // The helper itself throws (a future regression that breaks its internal
+    // swallow-only discipline, or a synchronous throw before its own try/catch).
+    finaliseF2Mock.mockRejectedValueOnce(
+      new Error('finalise threw past its internal swallow'),
+    );
+
+    const r = await markPaidOffline(deps, baseInput);
+    // (a) The payment is already committed — the use-case must NOT downgrade to
+    // server_error; it returns ok.
+    expect(r.ok).toBe(true);
+
+    // (b) The OFFLINE_FINALISE_THREW error log fired with the replay context
+    // (cycleId + invoiceId + memberId) so an operator can grep + manually
+    // replay the stranded F2 row (the offline rail has no webhook retry).
+    const offlineFinaliseLog = loggerErrorMock.mock.calls.find(
+      (c) =>
+        (c[0] as { errorId?: string } | undefined)?.errorId ===
+        'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
+    );
+    expect(offlineFinaliseLog).toBeDefined();
+    expect(offlineFinaliseLog![0]).toMatchObject({
+      errorId: 'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
+      cycleId: VALID_UUID,
+      invoiceId: 'inv-1',
+      memberId: 'mem-1',
+      tenantId: TENANT_ID,
+    });
   });
 });
 

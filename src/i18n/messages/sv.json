@@ -2474,6 +2474,22 @@
     "renewals": {
       "title": "Förnyelsepipeline",
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "pendingReview": {
+        "tab": "Väntar på granskning",
+        "sectionTitle": "Återaktiveringar som väntar på ditt beslut",
+        "sectionSubtitle": "Dessa medlemmar betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Öppna varje post för att godkänna eller avslå med återbetalning.",
+        "emptyTitle": "Inget väntar på granskning",
+        "emptyDescription": "Inga återaktiveringar väntar för närvarande på ett administratörsbeslut.",
+        "backToPipeline": "Tillbaka till pipelinen",
+        "columns": {
+          "member": "Medlem",
+          "pendingSince": "Väntande sedan",
+          "expiry": "Förfallodatum",
+          "action": "Åtgärd"
+        },
+        "openAction": "Granska",
+        "loadFailed": "Det gick inte att läsa in listan över väntande granskningar. Försök igen."
+      },
       "tierBadge": {
         "thai_alumni": "Thai-alumner",
         "start_up": "Start-up",
@@ -2788,7 +2804,38 @@
         "noLinkedInvoice": "Ingen faktura är länkad till denna cykel än.",
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
-        "pendingNoticeBody": "Den här medlemmens återaktivering väntar på granskning. För att godkänna eller avslå, gå tillbaka till förnyelsepipelinen och använd rad-åtgärdsmenyn.",
+        "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
+        "pendingReactivation": {
+          "reactivate": {
+            "button": "Godkänn återaktivering",
+            "dialogTitle": "Godkänna den här återaktiveringen?",
+            "dialogBody": "Förnyelsecykeln slutförs och medlemskapet återaktiveras. Betalningen som hölls inne behålls.",
+            "confirm": "Godkänn",
+            "cancel": "Avbryt",
+            "submitting": "Godkänner…",
+            "successToast": "Återaktivering godkänd – medlemskapet är nu aktivt.",
+            "errorToast": "Det gick inte att godkänna återaktiveringen. Försök igen."
+          },
+          "reject": {
+            "button": "Avslå och återbetala",
+            "dialogTitle": "Avslå och återbetala den här återaktiveringen?",
+            "dialogBody": "Detta avbryter förnyelsecykeln och återbetalar medlemmens betalning. Åtgärden kan inte ångras.",
+            "reasonLabel": "Skäl för avslag",
+            "reasonPlaceholder": "Förklara varför återaktiveringen avslås (t.ex. dubbelbetalning, medlemmens begäran).",
+            "reasonRequired": "Ange ett skäl (1–500 tecken).",
+            "confirm": "Avslå och återbetala",
+            "cancel": "Avbryt",
+            "submitting": "Avslår…",
+            "successRefundedToast": "Återaktivering avslagen och betalningen återbetalades.",
+            "successNoRefundToast": "Återaktivering avslagen. Det fanns ingen betalning att återbetala.",
+            "error": {
+              "cycle_not_pending": "Den här cykeln väntar inte längre på granskning – den kan redan ha hanterats.",
+              "refund_failed": "Återbetalningen kunde inte genomföras. Cykeln lämnades oförändrad – försök igen.",
+              "rate_limited": "För många försök. Vänta en stund och försök igen.",
+              "server_error": "Något gick fel. Försök igen."
+            }
+          }
+        },
         "lookupFailedTitle": "Viss kopplad data kunde inte läsas in",
         "lookupFailedBoth": "Vi kunde inte läsa in den kopplade medlems- eller planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
         "lookupFailedMember": "Vi kunde inte läsa in den kopplade medlemsuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",

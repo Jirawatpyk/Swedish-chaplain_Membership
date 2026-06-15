@@ -260,7 +260,10 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
       cycleId,
       memberId,
       newPlanId, // member upgrades during confirm
-      planYear: 2026,
+      // 070 — planYear server-derived from the cycle's period_from
+      // (2026-06-01 → 2026), matching the seeded new-plan row (plan_year
+      // 2026). The plan-change branch re-snapshots frozen fields but does
+      // not move period_from, so the derived year is unaffected.
       actorUserId: user.userId,
       actorRole: 'member',
       correlationId: `pc-${cycleId}`,

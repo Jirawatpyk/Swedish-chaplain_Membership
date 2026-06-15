@@ -225,7 +225,7 @@ describe.skipIf(!RUN_PERF)(
           tenantId: tenant.ctx.slug,
           cycleId: t.cycleId,
           memberId: t.memberId,
-          planYear: 2026,
+          // 070 — planYear server-derived from the cycle (period_from).
           actorUserId: user.userId,
           actorRole: 'member',
           correlationId: randomUUID(),
@@ -241,7 +241,7 @@ describe.skipIf(!RUN_PERF)(
           tenantId: tenant.ctx.slug,
           cycleId: t.cycleId,
           memberId: t.memberId,
-          planYear: 2026,
+          // 070 — planYear server-derived from the cycle (period_from).
           actorUserId: user.userId,
           actorRole: 'member',
           correlationId: randomUUID(),

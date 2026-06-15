@@ -396,6 +396,82 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // Callback[2] — create-next-cycle-on-paid dispatcher INVALID_TX.
+  //
+  // 070 Item C — closes the test gap: callback[0] has an INVALID_TX
+  // re-throw test (above) but callback[2] (createNextCycle) had NONE.
+  //
+  // UNLIKE callback[0] (which falls back to a connection-fresh
+  // runInTenant on a non-TenantTx and continues in degraded mode),
+  // callback[2] MUST THROW: a fallback runInTenant opens its OWN
+  // connection and CANNOT see callback[0]'s uncommitted prior-cycle
+  // →completed flip (READ COMMITTED), so the idempotency guard would
+  // still see the prior cycle as active → no-op → the next cycle would
+  // NEVER be created on first delivery (the happy-path-DEAD bug).
+  // Throwing rolls the F4 tx back so the Stripe at-least-once retry
+  // re-runs the chain, which heals idempotently. This test pins that
+  // contract: bumps the SAME `onPaidInvalidTx` counter, logs
+  // `errorId: 'F8.ONPAID.CREATE_NEXT.INVALID_TX'`, and re-throws.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('070 Item C: callback[2] non-TenantTx → onPaidInvalidTx bumped + logger.error (CREATE_NEXT errorId) + RE-THROWS (F4 tx must roll back)', async () => {
+    // Object missing select/insert/etc. — fails the isTenantTx 6-method
+    // duck-type check, simulating F4 threading a non-TenantTx value.
+    const notATx = { execute: vi.fn() }; // 1/6 methods present
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    expect(callbacks).toHaveLength(3);
+
+    // Callback[2] MUST throw (does NOT swallow) — the F4 tx must roll back
+    // so the at-least-once webhook retry re-runs the chain.
+    await expect(
+      callbacks[2]!(buildEvent(), notATx),
+    ).rejects.toThrow(/non-TenantTx/);
+
+    // Same invalid-tx counter as callback[0] — Vercel alert rules attach
+    // here, not to log strings.
+    expect(onPaidInvalidTxAdd).toHaveBeenCalledTimes(1);
+    expect(onPaidInvalidTxAdd).toHaveBeenCalledWith(1, {
+      tenant_id: 'test-tenant',
+    });
+
+    // Structured log carries the callback[2]-specific errorId so SRE can
+    // distinguish the create-next-cycle drift from the callback[0] one.
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    const [payload, message] = loggerErrorMock.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      errorId: 'F8.ONPAID.CREATE_NEXT.INVALID_TX',
+      tenantId: 'test-tenant',
+      invoiceId: expect.any(String),
+      memberId: expect.any(String),
+    });
+    expect(message).toContain('non-TenantTx');
+
+    // The unknown-outcome-kind counter (callback[0]'s switch) must NOT
+    // have bumped — this is a tx-shape failure, not an outcome variant.
+    expect(onPaidUnknownOutcomeKindAdd).not.toHaveBeenCalled();
+  });
+
+  it('070 Item C: callback[2] undefined tx → same INVALID_TX re-throw path (defends the F4-threaded-undefined contract)', async () => {
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+
+    // F4 threading `undefined` is the other shape the brand-check rejects.
+    // (The callback's second param is typed `unknown`, so `undefined` is a
+    // legal argument — no ts-expect-error needed; the guard rejects it at
+    // runtime via the `txUnknown === undefined` branch.)
+    await expect(
+      callbacks[2]!(buildEvent(), undefined),
+    ).rejects.toThrow(/non-TenantTx/);
+
+    expect(onPaidInvalidTxAdd).toHaveBeenCalledTimes(1);
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    const [payload] = loggerErrorMock.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      errorId: 'F8.ONPAID.CREATE_NEXT.INVALID_TX',
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // Callback[1] — apply-pending-tier-upgrade dispatcher (R4-IMP-6)
   // ─────────────────────────────────────────────────────────────────
 

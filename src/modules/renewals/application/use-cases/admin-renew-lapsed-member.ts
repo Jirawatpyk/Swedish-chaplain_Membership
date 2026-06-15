@@ -9,9 +9,11 @@
  * fresh cycle `→completed` and callback[2] creates the next `upcoming`
  * cycle — the member is active again.
  *
- * This is the common-case reachable path only. The `pending_admin_reactivation`
- * money-hold reactivate/reject routes are DEFERRED post-launch (spec §C
- * + Resolved #6) and are NOT built here.
+ * This is the common-case reachable path only. The
+ * `pending_admin_reactivation` money-hold reactivate/reject flow now ships
+ * separately (070 item #18 — `/api/admin/renewals/[cycleId]/reactivate|reject`);
+ * it is simply not part of THIS use-case, which only handles the reachable
+ * lapsed-comeback create→issue→link.
  *
  * Flow (mirrors `confirm-renewal`'s create→issue→link structure so the
  * issue↔link orphan window is no wider than the proven member path):
@@ -75,6 +77,7 @@ import type { PlanLookupForRenewalPort } from '../ports/plan-lookup-for-renewal'
 import type { MemberPlanLookupPort } from '../ports/member-plan-lookup-port';
 import {
   createCycleInTx,
+  PlanNotResolvableError,
   type CreateCycleInTxDeps,
 } from './create-cycle-in-tx';
 import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
@@ -234,13 +237,16 @@ export async function adminRenewLapsedMember(
       return err({ kind: 'member_has_active_cycle' });
     }
 
-    // createCycleInTx throws ONLY when the plan is unresolvable (it
-    // refuses to create a cycle without a frozen price). Any other throw
+    // createCycleInTx throws the typed `PlanNotResolvableError` ONLY when the
+    // plan is unresolvable (it refuses to create a cycle without a frozen
+    // price). 070 Item B — narrow on the type, NOT a brittle
+    // `message.includes('not resolvable')` string-match (which mis-classified
+    // any coincidentally-worded infra throw as a plan error). Any other throw
     // is a genuine infrastructure error.
-    const message = e instanceof Error ? e.message : String(e);
-    if (message.includes('not resolvable')) {
+    if (e instanceof PlanNotResolvableError) {
       return err({ kind: 'plan_not_found' });
     }
+    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         err: e instanceof Error ? e : new Error(message),

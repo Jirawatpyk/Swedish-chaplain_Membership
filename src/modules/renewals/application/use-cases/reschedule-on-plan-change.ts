@@ -45,6 +45,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 // Type-only — runtime no-op brand cast (Constitution Principle III).
@@ -115,14 +116,37 @@ export async function rescheduleOnPlanChangeInTx(
     readonly requestId: string | null;
   },
 ): Promise<RescheduleOnPlanChangeOutput> {
-  // Resolve OLD + NEW tier buckets via plan lookup.
+  // Resolve the member's active cycle UP-FRONT (was loaded later, after
+  // the bucket lookups). 070 §86/4 — its `period_from` supplies the
+  // fiscal year for the plan lookups below so the tier buckets resolve
+  // against the cycle's OWN catalogue year, not "most-recent active". When
+  // there is no active cycle (the bucket-resolution-failure forensic path
+  // still emits a `reschedule_skipped` audit), fall back to the current
+  // fiscal year (server clock) — this caller only reads `tierBucket`
+  // (`mode: 'freeze'`), and a plan's bucket is stable across its catalogue
+  // years, so the clock-year fallback is safe.
+  const activeCycle = await deps.cyclesRepo.findActiveForMember(
+    args.tenantId,
+    args.memberId,
+  );
+  const fiscalYear = deriveFiscalYear(
+    activeCycle?.periodFrom ?? deps.clock.now().toISOString(),
+  );
+
+  // Resolve OLD + NEW tier buckets via plan lookup (070 — exact-year-first
+  // via `fiscalYear`; `mode: 'freeze'` because this is a bucket read, not
+  // a plan-offer check).
   const oldPlan = await deps.planLookupForRenewal.loadPlanFrozenFields({
     tenantId: args.tenantId,
     planId: args.oldPlanId,
+    fiscalYear,
+    mode: 'freeze',
   });
   const newPlan = await deps.planLookupForRenewal.loadPlanFrozenFields({
     tenantId: args.tenantId,
     planId: args.newPlanId,
+    fiscalYear,
+    mode: 'freeze',
   });
 
   const oldBucket =
@@ -218,12 +242,9 @@ export async function rescheduleOnPlanChangeInTx(
     };
   }
 
-  // Resolve the member's active cycle to determine which schedule
-  // steps are "not yet fired" (offset window after now → expires_at).
-  const activeCycle = await deps.cyclesRepo.findActiveForMember(
-    args.tenantId,
-    args.memberId,
-  );
+  // `activeCycle` was already resolved up-front (above) — it determines
+  // which schedule steps are "not yet fired" (offset window after now →
+  // expires_at). No active cycle → nothing to reschedule.
   if (activeCycle === null) {
     return {
       cancelledStepIds: [],
@@ -369,6 +390,21 @@ export async function rescheduleOnPlanChange(
     );
     return ok(result);
   } catch (e) {
+    // S-3 (070 speckit-review): a throw from the in-tx body (cycle/bucket
+    // repo read, plan lookup, RLS reject) surfaces as `server_error` to the
+    // caller — but this is a fire-and-forget post-commit listener off the F3
+    // plan-change, so without a log here the failure is invisible to SRE
+    // (the caller may swallow the `server_error`). Log loudly so a non-audit
+    // infra fault is observable independent of caller behaviour.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        memberId: input.memberId,
+        errorId: 'F8.RESCHEDULE.WRAPPER_THREW',
+      },
+      '[reschedule-on-plan-change] unexpected error in reschedule wrapper — F3 plan-flip already committed; reschedule skipped',
+    );
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',
