@@ -86,4 +86,47 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.type).toBe('not_found');
   });
+
+  // Load-bearing invariant (design §6 step 1): the durable
+  // `member_erasure_requested` emit MUST commit before any destructive work,
+  // so a failed request-audit aborts the flow with NO scrub attempted. This
+  // guards the Art. 12 clock-start ordering — without it a scrub could run
+  // with no DPO record of the request.
+  it('does NOT attempt any scrub when the requested-audit emit fails', async () => {
+    const deps = buildEraseDeps();
+    // First (and only) audit call in the skeleton is the durable
+    // member_erasure_requested emit — force it to fail. The use-case only
+    // inspects `.ok`; the error shape is the real `RepoError` union.
+    deps.audit.recordInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    // Invariant: no destructive work before a confirmed request record.
+    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+    expect(deps.contactRepo.scrubPiiForMemberInTx).not.toHaveBeenCalled();
+  });
+
+  // Contacts-side atomicity (design §6 step 2): a contact-scrub failure throws
+  // inside the atomic scrub tx, rolling it back, and maps to `server_error`.
+  it('returns server_error when the contact scrub fails (scrub tx rolls back)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.scrubPiiForMemberInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+  });
 });
