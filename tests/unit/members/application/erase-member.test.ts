@@ -233,4 +233,41 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.completed).toBe(false);
   });
+
+  // Idempotency / resumability contract (design §6). These pin the behavior the
+  // reliability reviewer confirmed: the scrub is repeatable (stable sentinels),
+  // the cascades are individually idempotent, and member_erased is emitted ONLY
+  // on a fully-clean run — so a partial run is completed by a later call (or the
+  // US2 reconciler) and an incomplete run is never marked done.
+  it('is idempotent at the scrub layer — a second run scrubs again without error', async () => {
+    const deps = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    const res2 = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res2.ok).toBe(true);
+    // The scrub ran on BOTH invocations — stable sentinels make it safe to repeat.
+    expect(deps.memberRepo.scrubPiiInTx).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-drives a previously-failed F7 cascade on re-run and emits member_erased exactly once', async () => {
+    const deps = buildEraseDeps();
+    // First run: F7 cascade fails → not complete, no member_erased.
+    // Second run: F7 cascade clean → completes, member_erased emitted.
+    deps.broadcastsCascade.cancelInFlightForMember = vi
+      .fn()
+      .mockResolvedValueOnce({ outcome: 'cascade_failed', cancelledCount: 0 })
+      .mockResolvedValueOnce({ outcome: 'ok', cancelledCount: 0 });
+
+    const r1 = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(r1.ok).toBe(true);
+    if (r1.ok) expect(r1.value.completed).toBe(false);
+
+    const r2 = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(r2.ok).toBe(true);
+    if (r2.ok) expect(r2.value.completed).toBe(true);
+
+    const erasedEmits = deps.audit.recordInTx.mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect(erasedEmits).toHaveLength(1); // emitted only on the run that completed
+  });
 });

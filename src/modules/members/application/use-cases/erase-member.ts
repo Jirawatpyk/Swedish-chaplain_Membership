@@ -201,6 +201,13 @@ export async function eraseMember(
     return err({ type: 'server_error', message: 'erase scrub failed' });
   }
 
+  // Idempotency / resumability (design §6): the scrub is repeatable (stable
+  // sentinels), the cascades are individually idempotent, and member_erased is
+  // emitted ONLY on a fully-clean run — so a partial erasure is completed by a
+  // later call (or the US2 reconciliation sweep), and an incomplete run is never
+  // marked done. A redundant erase of an already-complete member re-emits
+  // member_erased (append-only, same payload) — benign and acceptable.
+  //
   // 3. POST-COMMIT best-effort cascades. Each opens its own tx (in the adapter)
   //    and must NOT roll back the committed scrub. Track whether every cascade
   //    reported a clean outcome — only then is the erasure "complete".
