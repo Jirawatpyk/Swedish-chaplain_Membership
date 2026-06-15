@@ -50,10 +50,12 @@ vi.mock('@/modules/insights', () => ({
   f9RetentionFor: () => 5,
 }));
 
-const auditRecordMock = vi.hoisted(() => vi.fn(async () => undefined));
+const auditRecordMock = vi.hoisted(() => vi.fn(async (_event?: unknown) => undefined));
 const repoMock = vi.hoisted(() => ({
   listRequestedIds: vi.fn(async () => []),
-  listStuckProcessing: vi.fn(async () => []),
+  listStuckProcessing: vi.fn(
+    async (): Promise<Array<{ jobId: string; kind: string }>> => [],
+  ),
   listSweepable: vi.fn(async () => [{ jobId: 'job-expired-1', blobKey: null }]),
   markExpiredInTx: vi.fn(async () => true),
   reclaimStuckInTx: vi.fn(async () => false),

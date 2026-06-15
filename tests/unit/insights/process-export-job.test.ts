@@ -334,7 +334,7 @@ describe('processExportJob — build/ready paths', () => {
       const gate = new Promise<void>((res) => {
         releaseBuild = res;
       });
-      artefact.buildJson.mockReturnValue(
+      artefact.buildJson!.mockReturnValue(
         gate.then(() => ({ bytes: new Uint8Array([1, 2, 3]), contentType: 'application/json' })),
       );
 
@@ -350,9 +350,9 @@ describe('processExportJob — build/ready paths', () => {
       expect(r.ok).toBe(true);
 
       // After completion, advancing time fires NO further beats (timer cleared).
-      const afterCompletion = exportJobRepo.touchProcessingInTx.mock.calls.length;
+      const afterCompletion = exportJobRepo.touchProcessingInTx!.mock.calls.length;
       await vi.advanceTimersByTimeAsync(EXPORT_HEARTBEAT_INTERVAL_MS * 3);
-      expect(exportJobRepo.touchProcessingInTx.mock.calls.length).toBe(afterCompletion);
+      expect(exportJobRepo.touchProcessingInTx!.mock.calls.length).toBe(afterCompletion);
     } finally {
       vi.useRealTimers();
     }
