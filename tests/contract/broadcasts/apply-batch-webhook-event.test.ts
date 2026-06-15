@@ -19,7 +19,12 @@ interface StubDeps {
   readonly deps: unknown;
 }
 
-function makeStubDeps(opts: { incrementFails?: 'not_found' | 'storage_error' } = {}): StubDeps {
+function makeStubDeps(
+  opts: {
+    incrementFails?: 'not_found' | 'storage_error';
+    duplicate?: boolean;
+  } = {},
+): StubDeps {
   const emits: Array<{ eventType: string; payload?: Record<string, unknown> }> = [];
   const increments: Array<{ field: string }> = [];
 
@@ -28,7 +33,12 @@ function makeStubDeps(opts: { incrementFails?: 'not_found' | 'storage_error' } =
     increments,
     deps: {
       batchManifests: {
-        async incrementCounter(_t: unknown, _id: unknown, field: string) {
+        async incrementCounter(
+          _t: unknown,
+          _id: unknown,
+          field: string,
+          _resendEventId: string,
+        ) {
           increments.push({ field });
           if (opts.incrementFails === 'not_found') {
             return { ok: false, error: { kind: 'not_found' as const } };
@@ -39,7 +49,7 @@ function makeStubDeps(opts: { incrementFails?: 'not_found' | 'storage_error' } =
               error: { kind: 'storage_error' as const, detail: 'simulated' },
             };
           }
-          return { ok: true, value: undefined };
+          return { ok: true, value: { duplicate: opts.duplicate ?? false } };
         },
       },
       audit: {
@@ -137,6 +147,20 @@ describe('applyBatchWebhookEvent contract (Phase 3F.5)', () => {
       expect(auditEvent?.payload?.['resendEventType']).toBe(eventType);
     },
   );
+
+  it('duplicate (Resend redelivery) short-circuits — ok, no second audit (F7-SF-1)', async () => {
+    const { deps, emits } = makeStubDeps({ duplicate: true });
+    const result = await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'delivered',
+    });
+    expect(result.ok).toBe(true);
+    // The replay must NOT emit a second broadcast_delivery_recorded row —
+    // the counter was already bumped + audited on the first delivery.
+    expect(
+      emits.some((e) => e.eventType === 'broadcast_delivery_recorded'),
+    ).toBe(false);
+  });
 
   it('incrementCounter storage_error → server_error (no double-emit)', async () => {
     const { deps, emits } = makeStubDeps({ incrementFails: 'storage_error' });

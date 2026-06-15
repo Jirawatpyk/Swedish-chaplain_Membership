@@ -336,7 +336,10 @@ export function makeDrizzleBatchManifestsRepo(
       _tenantId: TenantSlug,
       batchManifestId: string,
       field: BatchCounterField,
-    ): Promise<Result<void, BatchCounterIncrementError>> {
+      resendEventId: string,
+    ): Promise<
+      Result<{ readonly duplicate: boolean }, BatchCounterIncrementError>
+    > {
       // Map TypeScript camelCase → DB column. Fixed mapping keeps the
       // raw SQL safe from injection (no user-controlled column names).
       const columnMap: Record<BatchCounterField, string> = {
@@ -348,6 +351,24 @@ export function makeDrizzleBatchManifestsRepo(
       const dbColumn = columnMap[field];
       try {
         return await runInTenant(ctx, async (tx) => {
+          // F7-SF-1 — idempotency gate. Record the Resend event id FIRST;
+          // ON CONFLICT means a Svix/Resend redelivery → the counter was
+          // already bumped for this event, so skip the increment. Same tx
+          // as the UPDATE so the ledger row + counter move atomically (a
+          // crash between them rolls back both). The FK to
+          // broadcast_batch_manifests means a missing batch surfaces here
+          // as an FK violation (mapped to not_found below) — the same race
+          // the bare UPDATE-0-rows path caught before.
+          const dedup = (await tx.execute(sql`
+            INSERT INTO broadcast_batch_delivery_events
+              (tenant_id, resend_event_id, batch_manifest_id, counter_field)
+            VALUES (${ctx.slug}, ${resendEventId}, ${batchManifestId}::uuid, ${dbColumn})
+            ON CONFLICT (tenant_id, resend_event_id) DO NOTHING
+            RETURNING resend_event_id
+          `)) as unknown as Array<{ resend_event_id: string }>;
+          if (dedup.length === 0) {
+            return ok({ duplicate: true });
+          }
           const result = (await tx.execute(sql`
             UPDATE broadcast_batch_manifests
             SET ${sql.raw(dbColumn)} = ${sql.raw(dbColumn)} + 1,
@@ -357,14 +378,27 @@ export function makeDrizzleBatchManifestsRepo(
             RETURNING id
           `)) as unknown as Array<{ id: string }>;
           if (result.length === 0) {
-            return err({ kind: 'not_found' });
+            // Defensive: the FK already validated the batch at INSERT, so
+            // within this tx the UPDATE finds it. Throw to roll back the
+            // ledger row so a later legitimate retry is not blocked.
+            throw new Error('F7SF1_BATCH_GONE');
           }
-          return ok(undefined);
+          return ok({ duplicate: false });
         });
       } catch (e) {
+        const chain = errorChainMessage(e);
+        // Batch deleted between the BYPASSRLS lookup and now → FK violation
+        // on the ledger INSERT (or the defensive throw). Map to not_found
+        // so the webhook handler keeps its forensic-audit + 200-OK path.
+        if (
+          chain.includes('broadcast_batch_delivery_events_batch_fkey') ||
+          chain.includes('F7SF1_BATCH_GONE')
+        ) {
+          return err({ kind: 'not_found' });
+        }
         return err({
           kind: 'storage_error',
-          detail: errorChainMessage(e),
+          detail: chain,
         });
       }
     },

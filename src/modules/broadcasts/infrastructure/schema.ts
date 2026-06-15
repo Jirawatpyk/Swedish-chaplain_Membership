@@ -702,6 +702,46 @@ export type NewBroadcastBatchManifestRow =
   typeof broadcastBatchManifests.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// 6b. broadcast_batch_delivery_events (F7-SF-1 — batch webhook idempotency)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-event idempotency ledger for the F7.1a batch webhook counter path.
+ *
+ * F7 MVP dedups per-recipient delivery events via
+ * `broadcast_deliveries.upsertByResendEventId`; the batch path increments
+ * per-batch counters but had NO dedup, so a Resend/Svix redelivery of the
+ * SAME event id double-counted delivered/bounced/complained/unsubscribed
+ * (F7-SF-1). This table records each applied event id (PK =
+ * `(tenant_id, resend_event_id)`); the repo INSERTs ON CONFLICT DO NOTHING
+ * in the SAME tx as the counter increment, so a replay finds the row
+ * already present and skips the increment. FK to the batch manifest
+ * (migration-only, matching broadcast_batch_manifests) cascades on delete.
+ */
+export const broadcastBatchDeliveryEvents = pgTable(
+  'broadcast_batch_delivery_events',
+  {
+    tenantId: text('tenant_id').notNull(),
+    resendEventId: text('resend_event_id').notNull(),
+    batchManifestId: uuid('batch_manifest_id').notNull(),
+    counterField: text('counter_field').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'broadcast_batch_delivery_events_pkey',
+      columns: [table.tenantId, table.resendEventId],
+    }),
+    index('broadcast_batch_delivery_events_batch_idx').on(table.batchManifestId),
+  ],
+);
+
+export type BroadcastBatchDeliveryEventRow =
+  typeof broadcastBatchDeliveryEvents.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // 7. tenant_image_source_allowlist (NEW — F7.1a US2, FR-010 / data-model § 2.3)
 // ---------------------------------------------------------------------------
 

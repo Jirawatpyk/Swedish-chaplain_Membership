@@ -99,6 +99,7 @@ export async function applyBatchWebhookEvent(
     input.tenantId as never, // TenantSlug brand — caller-validated
     input.batchManifestId,
     counterField,
+    input.resendEventId,
   );
 
   if (!result.ok) {
@@ -164,23 +165,28 @@ export async function applyBatchWebhookEvent(
     });
   }
 
+  // F7-SF-1 — a Svix/Resend redelivery of an already-applied event id is a
+  // no-op: the counter was bumped (and the delivery audited) on the FIRST
+  // delivery. Short-circuit so the replay does not emit a duplicate
+  // broadcast_delivery_recorded audit row; the webhook route still 200s.
+  if (result.value.duplicate) {
+    return ok(undefined);
+  }
+
   // Audit emit — reuse `broadcast_delivery_recorded` event (added in
   // F7 MVP R6 staff-review) with `batchIndex` in payload for the
   // F71A surface. Same event type so the F9 audit-viewer doesn't
   // need a new filter; payload distinguishes broadcast-level vs
   // batch-level via presence/absence of `batchManifestId`.
-  // Phase 3F.4 (F-6 silent-fail fix) — wrap audit emit in try/catch
-  // so an audit-port outage AFTER the counter increment doesn't
-  // propagate to the webhook route's 500 path. A 500 → Svix retries
-  // the webhook → the idempotent `incrementCounter` would increment
-  // AGAIN → double-counted delivered/bounced/etc. The counter
-  // increment is the truth-of-record; the audit is observability.
-  // Log on failure (operator alerts on the rate) + return ok so the
-  // webhook returns 200 + Svix moves on.
-  // simplifier H2 migration 2026-05-21: post-commit best-effort emit via
-  // `safeAuditEmit`. Counter increment is the truth-of-record (already
-  // committed); audit failure post-commit MUST return ok so the webhook
-  // returns 200 + Svix moves on (otherwise replay re-increments counters).
+  // Post-commit best-effort audit emit via `safeAuditEmit`. The counter
+  // increment is the truth-of-record (committed in its own tx); an
+  // audit-port outage AFTER it MUST NOT propagate to the webhook route as
+  // a 500 (a 500 makes Svix retry the webhook). F7-SF-1 — that retry is
+  // now SAFE: incrementCounter is idempotent on resendEventId, so a replay
+  // returns { duplicate: true } and short-circuits ABOVE without
+  // re-incrementing. The audit is observability; safeAuditEmit logs +
+  // increments broadcasts_audit_emit_failed_total on failure and the
+  // webhook still 200s.
   await safeAuditEmit(deps.audit, null, {
     tenantId: input.tenantId,
     eventType: 'broadcast_delivery_recorded',

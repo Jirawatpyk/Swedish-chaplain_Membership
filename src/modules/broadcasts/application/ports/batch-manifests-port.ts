@@ -254,12 +254,21 @@ export interface BatchManifestsPort {
    *
    * Returns `not_found` if 0 rows updated (cross-tenant lookup race;
    * webhook handler logs + 200-OKs so Resend doesn't retry).
+   *
+   * F7-SF-1 — IDEMPOTENT on `resendEventId`. The adapter INSERTs the
+   * event id into `broadcast_batch_delivery_events` ON CONFLICT DO
+   * NOTHING in the SAME tx as the increment, so a Resend/Svix redelivery
+   * of the same event returns `{ duplicate: true }` WITHOUT bumping the
+   * counter again (mirrors the F7 MVP `upsertByResendEventId` dedup).
    */
   incrementCounter(
     tenantId: TenantSlug,
     batchManifestId: string,
     field: BatchCounterField,
-  ): Promise<Result<void, BatchCounterIncrementError>>;
+    resendEventId: string,
+  ): Promise<
+    Result<{ readonly duplicate: boolean }, BatchCounterIncrementError>
+  >;
 
   /**
    * Cross-broadcast scan for `auto-retry-failed-batches` use case
