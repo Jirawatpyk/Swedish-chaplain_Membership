@@ -8,6 +8,7 @@
  */
 
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
@@ -47,6 +48,9 @@ export default async function PortalTimelinePage({
   searchParams: Promise<SearchParams>;
 }) {
   const { user } = await requireSession('member');
+  // F9 kill-switch (F9 #11): the member timeline is an F9 US3 surface, so it
+  // goes dark with the rest of F9 when the flag is off (matches the audit page).
+  if (!env.features.f9Dashboard) notFound();
   const t = await getTranslations('timeline.page');
   const tenant = resolveTenantFromRequest();
   const h = await headers();

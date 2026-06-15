@@ -65,6 +65,8 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   if (!UUID_RE.test(memberId)) notFound();
 
   const session = await requireSession('staff');
+  // F9 kill-switch (F9 #11): gate with the rest of F9 (matches the audit page).
+  if (!env.features.f9Dashboard) notFound();
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);

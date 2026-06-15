@@ -14,6 +14,8 @@ import { ok, err } from '@/lib/result';
 const requireSessionMock = vi.fn();
 const findByLinkedUserIdMock = vi.fn();
 const timelineListMock = vi.fn();
+// Mutable so a test can flip the F9 kill-switch (env.features is read at call time).
+const envFeatures = vi.hoisted(() => ({ f9Dashboard: true }));
 
 vi.mock('@/lib/auth-session', () => ({
   requireSession: (...a: unknown[]) => requireSessionMock(...a),
@@ -22,7 +24,9 @@ vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham' }),
 }));
 vi.mock('@/lib/request-id', () => ({ requestIdFromHeaders: () => 'req-portal-timeline-1' }));
-vi.mock('@/lib/env', () => ({ env: { tenant: { timezone: 'Asia/Bangkok' } } }));
+vi.mock('@/lib/env', () => ({
+  env: { tenant: { timezone: 'Asia/Bangkok' }, features: envFeatures },
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
@@ -49,11 +53,23 @@ async function callRoute(qs: string): Promise<Response> {
 describe('GET /api/portal/timeline — route contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    envFeatures.f9Dashboard = true;
     requireSessionMock.mockResolvedValue(MEMBER_SESSION);
     findByLinkedUserIdMock.mockResolvedValue(ok({ memberId: OWN_MEMBER_ID }));
     timelineListMock.mockResolvedValue(ok({ events: [], nextCursor: null, total: 0 }));
   });
   afterEach(() => vi.resetModules());
+
+  it('F9 kill-switch (F9 #11): FEATURE_F9_DASHBOARD off → 503 feature_disabled, before auth', async () => {
+    envFeatures.f9Dashboard = false;
+    const res = await callRoute('');
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('feature_disabled');
+    // Flag-first: never touches the session or the use-case when dark.
+    expect(requireSessionMock).not.toHaveBeenCalled();
+    expect(timelineListMock).not.toHaveBeenCalled();
+  });
 
   it('FR-017 — always queries the SESSION-derived member, never a URL-supplied id', async () => {
     // Even if the caller injects ?memberId=<someone-else>, the route must

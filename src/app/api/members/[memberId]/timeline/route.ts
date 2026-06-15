@@ -45,6 +45,15 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
+  // F9 kill-switch (F9 #11): the staff timeline is an F9 US3 surface (it emits
+  // member_timeline_viewed) and must go dark with the rest of F9 when the flag
+  // is off — flag-first to match the other F9 routes.
+  if (!env.features.f9Dashboard) {
+    return NextResponse.json(
+      { error: { code: 'feature_disabled', message: 'Timeline is not available.' } },
+      { status: 503 },
+    );
+  }
   const ctx = await requireAdminContext(request, {
     resource: 'members',
     action: 'read',
