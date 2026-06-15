@@ -403,6 +403,25 @@ export function makeDrizzleBatchManifestsRepo(
       }
     },
 
+    async findSendingBroadcastIdsWithBatches(
+      _tenantId: TenantSlug,
+      limit: number,
+    ): Promise<readonly BroadcastId[]> {
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT DISTINCT bm.broadcast_id AS broadcast_id
+          FROM broadcast_batch_manifests bm
+          JOIN broadcasts b
+            ON b.tenant_id = bm.tenant_id
+           AND b.broadcast_id = bm.broadcast_id
+          WHERE bm.tenant_id = ${ctx.slug}
+            AND b.status = 'sending'
+          LIMIT ${limit}
+        `)) as unknown as Array<{ broadcast_id: string }>;
+        return rows.map((r) => asBroadcastId(r.broadcast_id));
+      });
+    },
+
     async findFailedRetryEligible(
       _tenantId: TenantSlug,
       opts: {

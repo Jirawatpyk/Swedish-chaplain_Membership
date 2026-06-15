@@ -28,6 +28,9 @@ import {
   // F7.1a Phase 3 T056 — per-batch auto-retry sweep (FR-005 / 5-attempt budget)
   makeAutoRetryFailedBatchesDeps,
   sweepAutoRetryFailedBatches,
+  // Ship-blocker A — batch-completion roll-up sweep
+  makeRollUpBatchBroadcastDeps,
+  sweepBatchCompletion,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -83,6 +86,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'sending'
           AND sending_started_at IS NOT NULL
           AND sending_started_at < now() - interval '24 hours'
+          -- H-1 review — batched broadcasts carry NULL resend_broadcast_id
+          -- on the parent row (each batch holds its own provider id), so the
+          -- single-audience reconcile would wrongly mark a fully-dispatched
+          -- batched broadcast failed_to_dispatch (+ lose quota). Exclude
+          -- them; their completion is the batch-completion roll-up below.
+          AND NOT EXISTS (
+            SELECT 1 FROM broadcast_batch_manifests bm
+            WHERE bm.tenant_id = broadcasts.tenant_id
+              AND bm.broadcast_id = broadcasts.broadcast_id
+          )
         ORDER BY sending_started_at ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED
@@ -242,6 +255,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         tenantId: tenant.slug,
       },
       'cron.broadcasts.reconcile.batch_auto_retry_threw',
+    );
+  }
+
+  // Ship-blocker A — batch-completion roll-up. Finds `sending` broadcasts
+  // split into batches and, for the ones whose batches are all done,
+  // transitions sending → sent (+ quota) or → partially_sent (≥1 failed
+  // batch). Runs AFTER the auto-retry sweep so a just-re-queued batch is
+  // re-evaluated as in-progress (no premature roll-up). Best-effort +
+  // per-item guarded inside the sweep.
+  let rollUp: Awaited<ReturnType<typeof sweepBatchCompletion>> = {
+    scanned: 0,
+    sentCount: 0,
+    partialCount: 0,
+    inProgressCount: 0,
+    errorCount: 0,
+  };
+  try {
+    rollUp = await sweepBatchCompletion(
+      makeRollUpBatchBroadcastDeps(tenant.slug),
+      { requestId: null },
+    );
+    if (
+      rollUp.sentCount > 0 ||
+      rollUp.partialCount > 0 ||
+      rollUp.errorCount > 0
+    ) {
+      logger.info(
+        { tenantId: tenant.slug, rollUp },
+        'cron.broadcasts.reconcile.batch_completion_rollup',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      { err: e instanceof Error ? e.message : String(e), tenantId: tenant.slug },
+      'cron.broadcasts.reconcile.batch_rollup_threw',
     );
   }
 

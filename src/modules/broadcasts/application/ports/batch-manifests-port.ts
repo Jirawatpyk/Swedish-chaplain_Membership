@@ -290,6 +290,16 @@ export interface BatchManifestsPort {
   ): Promise<readonly BatchManifest[]>;
 
   /**
+   * Ship-blocker A — distinct broadcast_ids in `sending` that were split
+   * into batches, for the reconcile-cron completion roll-up sweep
+   * (rollUpBatchBroadcast). Bounded by `limit`.
+   */
+  findSendingBroadcastIdsWithBatches(
+    tenantId: TenantSlug,
+    limit: number,
+  ): Promise<readonly BroadcastId[]>;
+
+  /**
    * Cross-tenant lookup for T057 Resend webhook routing. Reads with
    * the schema-owner role (BYPASSRLS) — webhook arrives BEFORE
    * `app.current_tenant` is bound. Returns `null` for unknown ids

@@ -363,10 +363,25 @@ export {
   type ReconcileStuckSendingOutcome,
 } from './application/use-cases/reconcile-stuck-sending';
 
+// --- Ship-blocker A — batch completion roll-up --------------------------
+export {
+  rollUpBatchBroadcast,
+  sweepBatchCompletion,
+  evaluateBatchCompletion,
+  type RollUpBatchBroadcastDeps,
+  type RollUpBatchBroadcastInput,
+  type RollUpOutcome,
+  type RollUpError,
+  type BatchCompletion,
+  type SweepBatchCompletionInput,
+  type SweepBatchCompletionOutput,
+} from './application/use-cases/roll-up-batch-broadcast';
+
 // --- Composition root factories (Phase 7 US5) ----------------------------
 export {
   makeProcessWebhookEventDeps,
   makeReconcileStuckSendingDeps,
+  makeRollUpBatchBroadcastDeps,
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
 } from './infrastructure/broadcasts-deps';
