@@ -24,6 +24,7 @@ import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import {
   seedPendingReactivationCycle,
+  cleanupPendingReactivationSeeds,
   type PendingSeedResult,
 } from './helpers/pending-reactivation-seed';
 
@@ -42,6 +43,11 @@ test.describe('F8 — admin pending-reactivation actions (070)', () => {
   );
 
   let seeded: PendingSeedResult | null = null;
+  // 070 speckit-review I4 — track EVERY pair this suite seeds (beforeEach runs
+  // per-test + re-seeds, so `seeded` only holds the last one) so afterAll can
+  // delete them all. Without this the suite leaves terminal completed/cancelled
+  // cycles + orphan draft invoices on the shared live-Neon e2e-member each run.
+  const seededRows: PendingSeedResult[] = [];
 
   test.beforeEach(async () => {
     // Re-seed a fresh pending cycle before EACH test — both approve and
@@ -51,6 +57,14 @@ test.describe('F8 — admin pending-reactivation actions (070)', () => {
       seeded === null,
       'seedPendingReactivationCycle returned null — DATABASE_URL / e2e fixtures unavailable',
     );
+    if (seeded !== null) seededRows.push(seeded);
+  });
+
+  test.afterAll(async () => {
+    // Delete the exact cycle/invoice pairs this suite seeded (best-effort,
+    // never fails the run). Keeps the shared e2e-member free of stale terminal
+    // cycles + orphan draft invoices between CI runs.
+    await cleanupPendingReactivationSeeds(seededRows);
   });
 
   test('approve: confirm dialog → success toast → cycle completed', async ({

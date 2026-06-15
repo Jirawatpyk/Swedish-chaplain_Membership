@@ -222,3 +222,149 @@ describe('checkStrayPlanYears script', () => {
     expect(second.deleted.filter((r) => r.tenantId === slug)).toHaveLength(0);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// 070 speckit-review S1/S2/S3 — boundary + catalogue-clean coverage.
+//
+// The primary suite uses STRAY_YEAR=2099 (far above currentYear+1), so it
+// never exercises:
+//   - S1: the "catalogue clean" branch — a tenant whose ONLY rows are plausible
+//     (currentYear / currentYear+1) → strayRows empty, deletable empty.
+//   - S2/S3: the implausibility predicate AT the boundary. `currentYear+1` is
+//     the legitimate clone-to-next-year row and MUST NOT be flagged stray;
+//     `currentYear+2` is the first stray. A helper-vs-SQL off-by-one (e.g. the
+//     SQL using `>= maxPlausible` while the helper uses `> currentYear+1`, or
+//     vice-versa) would silently mis-classify the boundary — invisible at
+//     STRAY_YEAR=2099. We inject a FIXED `currentYear` so the boundary is
+//     deterministic regardless of wall-clock.
+// ───────────────────────────────────────────────────────────────────────────
+describe('checkStrayPlanYears — boundary + clean-catalogue (S1/S2/S3)', () => {
+  // Fixed reference year so currentYear+1 / currentYear+2 land on known plan
+  // years independent of the wall-clock the test runs under.
+  const REF_YEAR = 2040;
+  const bSlug = `test-stray-bnd-${randomUUID().slice(0, 8)}`;
+  const bCtx = asTenantContext(bSlug);
+  const bSeedEmail = `test-${Date.now()}-stray-bnd@swecham.test`;
+  let bUserId: string;
+
+  beforeAll(async () => {
+    const hash = await argon2Hasher.hash('Test-Password-Stray-Bnd-2026!');
+    const rows = await db
+      .insert(users)
+      .values({
+        email: bSeedEmail,
+        role: 'admin',
+        status: 'active',
+        passwordHash: hash,
+        lastPasswordChangedAt: new Date(),
+      })
+      .returning();
+    bUserId = rows[0]!.id;
+
+    await runInTenant(bCtx, async (tx) => {
+      // PLAUSIBLE current-year row — must NEVER be flagged stray.
+      await tx.insert(membershipPlans).values({
+        tenantId: bSlug,
+        planId: 'plausible-current',
+        planYear: REF_YEAR,
+        planName: { en: 'Plausible Current' },
+        description: { en: 'd' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: bUserId,
+        updatedBy: bUserId,
+      });
+      // BOUNDARY: currentYear+1 — the legitimate clone-to-next-year row.
+      // Inactive (clone-plans seeds Y+1 inactive) but its YEAR is plausible,
+      // so it must NOT be reported as a stray row.
+      await tx.insert(membershipPlans).values({
+        tenantId: bSlug,
+        planId: 'boundary-next-year',
+        planYear: REF_YEAR + 1,
+        planName: { en: 'Boundary Next Year' },
+        description: { en: 'd' },
+        sortOrder: 20,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        benefitMatrix: MATRIX,
+        isActive: false,
+        createdBy: bUserId,
+        updatedBy: bUserId,
+      });
+      // FIRST STRAY: currentYear+2 — one past the boundary, inactive +
+      // unreferenced → the first row that IS stray (and deletable).
+      await tx.insert(membershipPlans).values({
+        tenantId: bSlug,
+        planId: 'first-stray',
+        planYear: REF_YEAR + 2,
+        planName: { en: 'First Stray' },
+        description: { en: 'd' },
+        sortOrder: 30,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        benefitMatrix: MATRIX,
+        isActive: false,
+        createdBy: bUserId,
+        updatedBy: bUserId,
+      });
+    });
+  });
+
+  afterAll(async () => {
+    await db.execute(
+      sql`DELETE FROM membership_plans WHERE tenant_id = ${bSlug}`,
+    );
+    await db.execute(sql`DELETE FROM users WHERE email = ${bSeedEmail}`);
+  });
+
+  it('S2/S3: currentYear+1 is NOT stray; currentYear+2 IS the first stray (helper ⟺ SQL boundary parity)', async () => {
+    // Pure helper boundary — pins the predicate independently of the SQL.
+    expect(isImplausiblePlanYear(REF_YEAR + 1, REF_YEAR)).toBe(false);
+    expect(isImplausiblePlanYear(REF_YEAR + 2, REF_YEAR)).toBe(true);
+
+    // SQL boundary — the report (which uses the `plan_year > currentYear+1`
+    // SQL predicate) must agree with the helper: only `first-stray` shows up.
+    const report = await checkStrayPlanYears({
+      fix: false,
+      currentYear: REF_YEAR,
+    });
+    const mine = report.strayRows.filter((r) => r.tenantId === bSlug);
+    // EXACTLY one stray — the currentYear+1 boundary row is excluded.
+    expect(mine.map((r) => r.planId)).toEqual(['first-stray']);
+    expect(mine[0]!.planYear).toBe(REF_YEAR + 2);
+
+    // The boundary (currentYear+1) row is provably NOT in the stray set.
+    expect(mine.some((r) => r.planId === 'boundary-next-year')).toBe(false);
+
+    // first-stray is inactive + unreferenced → deletable; nothing else.
+    const deletableMine = report.deletable.filter((r) => r.tenantId === bSlug);
+    expect(deletableMine.map((r) => r.planId)).toEqual(['first-stray']);
+  });
+
+  it('S1: a tenant with only plausible rows (currentYear + currentYear+1) yields zero strays / empty deletable (clean branch)', async () => {
+    // Choose a reference year where BOTH this tenant's plan years
+    // (REF_YEAR + REF_YEAR+1) are plausible and the REF_YEAR+2 stray sits
+    // ABOVE the boundary — i.e. evaluate the catalogue as-of REF_YEAR+1 so
+    // REF_YEAR+1 is "current" and REF_YEAR+2 is "current+1" (still plausible),
+    // leaving the tenant entirely clean.
+    const report = await checkStrayPlanYears({
+      fix: false,
+      currentYear: REF_YEAR + 1,
+    });
+    const mine = report.strayRows.filter((r) => r.tenantId === bSlug);
+    // As-of REF_YEAR+1: years REF_YEAR, REF_YEAR+1, REF_YEAR+2 are all
+    // <= currentYear+1 and >= the floor → NONE are stray. Clean catalogue.
+    expect(mine).toHaveLength(0);
+    expect(report.deletable.filter((r) => r.tenantId === bSlug)).toHaveLength(
+      0,
+    );
+    // Dry-run never deletes regardless.
+    expect(report.deleted.filter((r) => r.tenantId === bSlug)).toHaveLength(0);
+  });
+});

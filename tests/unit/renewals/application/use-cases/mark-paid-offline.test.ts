@@ -25,6 +25,43 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 
+// 070 speckit-review C1 — capture `logger.error` so the OFFLINE outer-catch
+// belt-and-braces test can assert the `OFFLINE_FINALISE_THREW` log fired with
+// the cycleId/invoiceId/memberId replay context. The rest of the logger is
+// preserved (warn/info/debug) so unrelated paths stay silent.
+const { loggerErrorMock } = vi.hoisted(() => ({ loggerErrorMock: vi.fn() }));
+vi.mock('@/lib/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/logger')>();
+  return {
+    ...actual,
+    logger: { ...actual.logger, error: loggerErrorMock },
+  };
+});
+
+// 070 speckit-review C1 — mock `finaliseF2PlanChangeOnPaid` ITSELF so a test
+// can drive the POST-commit OUTER belt-and-braces catch in `mark-paid-offline`
+// (errorId `F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW`). By default it delegates to
+// the real helper (the 070 Item-D finalise tests below exercise the genuine
+// internal-swallow behaviour). A single test re-points it at a throwing impl.
+// (The helper's OWN swallow-only internals are covered directly in
+// `finalise-f2-plan-change-on-paid.test.ts`.)
+const { finaliseF2Mock } = vi.hoisted(() => ({ finaliseF2Mock: vi.fn() }));
+vi.mock(
+  '@/modules/renewals/application/use-cases/finalise-f2-plan-change-on-paid',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('@/modules/renewals/application/use-cases/finalise-f2-plan-change-on-paid')
+      >();
+    finaliseF2Mock.mockImplementation(actual.finaliseF2PlanChangeOnPaid);
+    return {
+      ...actual,
+      finaliseF2PlanChangeOnPaid: (...args: unknown[]) =>
+        finaliseF2Mock(...args),
+    };
+  },
+);
+
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
   return buildCycleShared({
     tenantId: TENANT_ID,
@@ -423,18 +460,43 @@ describe('markPaidOffline (070 Item D) — pending tier-upgrade apply', () => {
     if (!r.ok) expect(r.error.kind).toBe('server_error');
   });
 
-  it('does NOT fail the use-case when the post-commit F2 finalise throws (payment already durable)', async () => {
+  it('does NOT fail the use-case when the post-commit F2 finalise THROWS to the OUTER catch (payment already durable; OFFLINE_FINALISE_THREW logged)', async () => {
+    // 070 speckit-review C1 — exercise the use-case's OUTER belt-and-braces
+    // catch around `finaliseF2PlanChangeOnPaid` (mark-paid-offline.ts errorId
+    // `F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW`). The PRIOR version rejected the
+    // helper's INTERNAL `findPendingForCycle` mock, but that rejection is
+    // swallowed INSIDE the (swallow-only) helper and never reaches this outer
+    // catch — so the catch arm was untested. Mock the WHOLE helper to throw so
+    // the throw actually propagates to the use-case's own try/catch.
     const cycle = buildCycle({ memberId: 'mem-1' });
-    const { deps, f2FindPendingForCycleMock } = fakeDeps(cycle);
-    // Force the post-commit finalise lookup to throw — it must be swallowed
-    // (the payment + cycle flip already committed).
-    f2FindPendingForCycleMock.mockRejectedValueOnce(
-      new Error('f2 read failed post-commit'),
+    const { deps } = fakeDeps(cycle);
+    // The helper itself throws (a future regression that breaks its internal
+    // swallow-only discipline, or a synchronous throw before its own try/catch).
+    finaliseF2Mock.mockRejectedValueOnce(
+      new Error('finalise threw past its internal swallow'),
     );
 
     const r = await markPaidOffline(deps, baseInput);
-    // The use-case still succeeds — the F2 finalise is best-effort.
+    // (a) The payment is already committed — the use-case must NOT downgrade to
+    // server_error; it returns ok.
     expect(r.ok).toBe(true);
+
+    // (b) The OFFLINE_FINALISE_THREW error log fired with the replay context
+    // (cycleId + invoiceId + memberId) so an operator can grep + manually
+    // replay the stranded F2 row (the offline rail has no webhook retry).
+    const offlineFinaliseLog = loggerErrorMock.mock.calls.find(
+      (c) =>
+        (c[0] as { errorId?: string } | undefined)?.errorId ===
+        'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
+    );
+    expect(offlineFinaliseLog).toBeDefined();
+    expect(offlineFinaliseLog![0]).toMatchObject({
+      errorId: 'F2.PLAN_CHANGE.OFFLINE_FINALISE_THREW',
+      cycleId: VALID_UUID,
+      invoiceId: 'inv-1',
+      memberId: 'mem-1',
+      tenantId: TENANT_ID,
+    });
   });
 });
 

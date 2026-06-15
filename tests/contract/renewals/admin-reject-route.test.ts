@@ -252,6 +252,29 @@ describe('POST /api/admin/renewals/[cycleId]/reject — contract', () => {
     expect(adminRejectReactivationMock).not.toHaveBeenCalled();
   });
 
+  // 070 speckit-review S5 — the four existing 400 cases all exercise the
+  // zod-BODY path (`invalid_body`, use-case never called). The route ALSO
+  // maps the use-case's own `invalid_input` arm → 400 (`invalid_input` code),
+  // which had NO coverage. The reactivate route already tests this arm; mirror
+  // it here so a regression that drops the `case 'invalid_input'` switch arm
+  // (or remaps it) is caught.
+  it('400 invalid_input from the use-case arm (distinct from invalid_body)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRejectReactivationMock.mockResolvedValueOnce(
+      err({ kind: 'invalid_input', message: 'invalid cycle id' }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    // The use-case arm surfaces `invalid_input` (NOT the body-parse
+    // `invalid_body`) so the UI can distinguish a malformed body from a
+    // use-case-level rejection.
+    expect(body.error.code).toBe('invalid_input');
+    // The use-case WAS reached (unlike the zod-body 400s).
+    expect(adminRejectReactivationMock).toHaveBeenCalledOnce();
+  });
+
   it('404 cycle_not_found', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRejectReactivationMock.mockResolvedValueOnce(

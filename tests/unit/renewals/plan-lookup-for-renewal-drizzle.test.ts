@@ -189,7 +189,13 @@ describe('makeDrizzlePlanLookupForRenewal — cycle-fiscal-year resolution (070)
   });
 
   it('exact-year MISS + no rows at all → not_found (distinction preserved)', async () => {
-    queueRows([], [], []);
+    // 070 speckit-review S8 — the OFFER path issues exactly 2 SELECTs on an
+    // exact-year miss (exact-year primary + offer-probe), then returns. The
+    // prior fixture queued 3 result batches `[], [], []`; the 3rd was never
+    // consumed (no SELECT reads it) — a misleading fixture that implied a
+    // query count the offer path never makes. Two empty batches mirror the
+    // real query count: exact-year empty → offer-probe empty → not_found.
+    queueRows([], []);
     const adapter = makeDrizzlePlanLookupForRenewal(tenant);
     const result = await adapter.loadPlanFrozenFields({
       tenantId: 'tenant-a',

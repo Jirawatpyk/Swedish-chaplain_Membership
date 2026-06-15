@@ -332,4 +332,80 @@ describe('Integration — clone-plans-to-next-year', () => {
     );
     expect(auditsAfter).toHaveLength(2);
   }, 60_000);
+
+  // 070 speckit-review S4 — pin the idempotency-guard intent: the guard
+  // SELECT deliberately OMITS a `deleted_at IS NULL` filter (see the script's
+  // step-1 comment). A SOFT-DELETED Y+1 row still occupies the
+  // (tenant, plan_id, plan_year) composite PK, so a re-insert would collide.
+  // Reporting "already seeded" (skip) is the safe outcome. A future refactor
+  // that "tidied up" the guard by adding `deleted_at IS NULL` would silently
+  // re-enable a PK-collision crash on the next clone run — this test catches
+  // that regression.
+  it('S4: a SOFT-DELETED target-year row still blocks the clone (idempotency guard omits the deleted_at filter — PK collision safety)', async () => {
+    const tenant = await createTestTenant('test-swecham');
+    cleanups.push(tenant.cleanup);
+
+    const owner = await createActiveTestUser();
+    cleanups.push(() => deleteTestUser(owner));
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      // One ACTIVE source-year plan (a clone candidate)...
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId: 'regular',
+        planYear: SOURCE_YEAR,
+        planName: { en: 'Regular Corporate' },
+        description: { en: 'Regular tier' },
+        sortOrder: 30,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_600_000,
+        benefitMatrix: REGULAR_MATRIX,
+        renewalTierBucket: 'regular',
+        isActive: true,
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      });
+      // ...and a SOFT-DELETED row already occupying the TARGET_YEAR PK slot
+      // for the SAME plan_id (e.g. a prior clone that was later soft-deleted).
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId: 'regular',
+        planYear: TARGET_YEAR,
+        planName: { en: 'Regular Corporate (soft-deleted)' },
+        description: { en: 'Regular tier' },
+        sortOrder: 30,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_600_000,
+        benefitMatrix: REGULAR_MATRIX,
+        renewalTierBucket: 'regular',
+        isActive: false,
+        deletedAt: new Date(),
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      });
+    });
+
+    // The clone MUST skip (the soft-deleted Y+1 row counts as "already
+    // seeded") and insert NOTHING — never a PK-collision crash.
+    const report = await clonePlansToNextYear(tenant.ctx, owner.userId, {
+      sourceYear: SOURCE_YEAR,
+      targetYear: TARGET_YEAR,
+      apply: true,
+    });
+    expect(report.skippedAlreadySeeded).toBe(true);
+    expect(report.cloned).toHaveLength(0);
+
+    // Still exactly ONE target-year row (the soft-deleted one) — no
+    // double-insert, no second live row.
+    const targetRows = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select({ planId: membershipPlans.planId, deletedAt: membershipPlans.deletedAt })
+        .from(membershipPlans)
+        .where(eq(membershipPlans.planYear, TARGET_YEAR)),
+    );
+    expect(targetRows).toHaveLength(1);
+    expect(targetRows[0]!.deletedAt).not.toBeNull();
+  }, 60_000);
 });

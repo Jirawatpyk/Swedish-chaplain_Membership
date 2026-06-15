@@ -145,3 +145,56 @@ export async function seedPendingReactivationCycle(): Promise<PendingSeedResult 
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * Teardown for the rows {@link seedPendingReactivationCycle} leaves behind.
+ *
+ * Each seed run inserts ONE draft invoice + ONE renewal cycle for the shared
+ * live-Neon `e2e-member`. The approve/reject tests transition the cycle to a
+ * TERMINAL state (`completed`/`cancelled`) but never delete it, and the draft
+ * invoice is always orphaned — so a suite with no teardown accretes stale rows
+ * on the shared member every run. This deletes the EXACT cycleId/invoiceId
+ * pairs the suite seeded (FK order: reminder events → cycle → invoice), so it
+ * touches nothing else the member owns.
+ *
+ * No-op when DATABASE_URL is missing (the suite was gated off + nothing
+ * seeded). Best-effort: a failure here only logs — it must never fail the run.
+ */
+export async function cleanupPendingReactivationSeeds(
+  seeds: readonly PendingSeedResult[],
+): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl || seeds.length === 0) return;
+  const cycleIds = seeds.map((s) => s.cycleId);
+  const invoiceIds = seeds.map((s) => s.invoiceId);
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    // Reminder events FK-cascade off the cycle, but delete explicitly first
+    // in case the FK is not ON DELETE CASCADE for every seeded row.
+    await sql`
+      DELETE FROM renewal_reminder_events
+      WHERE tenant_id = ${TENANT_ID}
+        AND cycle_id = ANY(${cycleIds}::uuid[])
+    `;
+    await sql`
+      DELETE FROM renewal_cycles
+      WHERE tenant_id = ${TENANT_ID}
+        AND cycle_id = ANY(${cycleIds}::uuid[])
+    `;
+    await sql`
+      DELETE FROM invoices
+      WHERE tenant_id = ${TENANT_ID}
+        AND invoice_id = ANY(${invoiceIds}::uuid[])
+    `;
+    console.log(
+      `[e2e seed pending-reactivation] cleaned up ${cycleIds.length} seeded cycle/invoice pair(s)`,
+    );
+  } catch (e) {
+    console.warn(
+      '[e2e seed pending-reactivation] cleanup failed (non-fatal):',
+      e instanceof Error ? e.message : String(e),
+    );
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
