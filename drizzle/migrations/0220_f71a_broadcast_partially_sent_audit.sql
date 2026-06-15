@@ -1,0 +1,27 @@
+-- ---------------------------------------------------------------------------
+-- F7.1a (review-fix F) — 1 new audit_event_type enum value.
+--
+-- `broadcast_partially_sent` — emitted by the batch-completion roll-up
+-- (`roll-up-batch-broadcast.ts`) when a >10k batched broadcast rolls
+-- `sending → partially_sent` because ≥1 batch failed or (under the 24h
+-- backstop) never confirmed delivery.
+--
+-- Previously the roll-up REUSED `broadcast_send_timeout_completed` (the
+-- 24h single-audience stuck-sending reconcile event) with a payload
+-- discriminator. That made any name-keyed alert / the stuck-sending
+-- runbook (docs/runbooks/broadcasts-stuck-sending.md) misfire on a
+-- NORMAL (non-timeout) partial roll-up. This dedicated event removes the
+-- ambiguity so on-call can key on the event name (review finding F).
+-- The single-audience 24h reconcile KEEPS `broadcast_send_timeout_completed`
+-- (it is a genuine timeout).
+--
+-- Postgres requirement: `ALTER TYPE ... ADD VALUE` cannot run inside a
+-- transaction that also USES the new value; it only ADDS here, so the
+-- drizzle statement-breakpoint isolates it. Pattern matches migration 0167.
+--
+-- 5-year retention via the Constitution v1.4.0 `audit_log.retention_years`
+-- trigger (F7 has no tax-document touchpoint). Application-layer source of
+-- truth: `audit-port.ts` F7_AUDIT_EVENT_TYPES tuple (count bumped 58 → 59).
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_partially_sent';

@@ -18,7 +18,10 @@
  *
  * The 90-day window is measured against the EVENT date (`e.start_date`),
  * not the registration date — this is the "re-engage people who showed
- * up to a recent event" segment (per `docs/email-broadcast-analysis.md`).
+ * up to a recent event" segment (per `docs/email-broadcast-analysis.md`),
+ * so the window is bounded on BOTH sides: `now() - 90d <= start_date <=
+ * now()`. Future-dated events (EventCreate fires registration webhooks
+ * before the event date) are NOT "recent attendees" and are excluded.
  * It uses the DB clock (`now()`) deliberately: a fixed rolling window
  * needs no caller-supplied timestamp, unlike the F8/F9 by-member adapter
  * (`drizzle-event-attendees-by-member.ts`) which takes `input.since` for
@@ -84,7 +87,8 @@ export async function getRecentEventAttendees(
         AND er.pii_pseudonymised_at IS NULL
         AND e.archived_at IS NULL
         AND e.start_date >= now() - interval '90 days'
-      ORDER BY er.attendee_email_lower, e.start_date DESC
+        AND e.start_date <= now()
+      ORDER BY er.attendee_email_lower, e.start_date DESC, e.event_id DESC
     `)) as unknown as RecentAttendeeRow[];
     return rows.map(mapRow);
   });
@@ -116,7 +120,8 @@ export async function getRecentEventAttendeeByEmail(
         AND er.pii_pseudonymised_at IS NULL
         AND e.archived_at IS NULL
         AND e.start_date >= now() - interval '90 days'
-      ORDER BY e.start_date DESC
+        AND e.start_date <= now()
+      ORDER BY e.start_date DESC, e.event_id DESC
       LIMIT 1
     `)) as unknown as RecentAttendeeRow[];
     const first = rows[0];

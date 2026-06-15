@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 58 audit event types as a const tuple + discriminated union for
+ * 59 audit event types as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -33,7 +33,9 @@
  *   - R1.1 CRIT-4 snapshot moment: 1 event
  *   - R2.1 M-test-2 seed skip: 1 event
  *   - R3.1 C-3 snapshot refusal: 1 event
- *   = 58 total. Static-assert at line ~170 (`extends 58`) is the
+ *   - review-fix F batch partial roll-up: 1 event
+ *     (`broadcast_partially_sent`, migration 0220)
+ *   = 59 total. Static-assert at line ~170 (`extends 59`) is the
  *   source of truth; the header summary is informational only and
  *   should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
@@ -125,6 +127,11 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_retry_initiated',
   'broadcast_retry_completed',
   'broadcast_partial_delivery_accepted',
+  // review-fix F (migration 0220) — system roll-up of a batched broadcast
+  // to `partially_sent`. Distinct from the 24h single-audience
+  // `broadcast_send_timeout_completed` so name-keyed alerts / the
+  // stuck-sending runbook do not misfire on a normal partial roll-up.
+  'broadcast_partially_sent',
 
   // --- F7.1a US2 (Image embedding + allowlist + scan) — 4 events ----
   'broadcast_body_image_source_unsafe',
@@ -159,17 +166,18 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: count matches the declared 58 (= 43 F7 MVP + 11
+ * Static assertion: count matches the declared 59 (= 43 F7 MVP + 11
  * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
  * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
  * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted` +
  * 1 R2.1 M-test-2 `broadcast_template_seed_skipped_existing_name` +
- * 1 R3.1 C-3 `broadcast_template_snapshot_refused_deleted`).
+ * 1 R3.1 C-3 `broadcast_template_snapshot_refused_deleted` +
+ * 1 review-fix F `broadcast_partially_sent` (migration 0220)).
  * Catches drift if a spec amendment adds an event without updating this
  * file. The check lives at type level; if the count is wrong, TypeScript
- * errors here with "Type '59' is not assignable to type '58'" (or similar).
+ * errors here with "Type '60' is not assignable to type '59'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 58
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 59
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -423,7 +431,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 58 events) to `keyof F7AuditPayloadShapes` (12 typed events).
+   * (all 59 events) to `keyof F7AuditPayloadShapes` (12 typed events).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired

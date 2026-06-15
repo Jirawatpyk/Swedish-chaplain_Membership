@@ -61,20 +61,33 @@ export interface BatchCompletion {
  * expected), and did any END such that the broadcast can't be a clean
  * `sent`?
  *
- * A batch is "done" when:
+ * A batch is "cleanly sent" (counts toward a clean broadcast `sent`):
  *   - status === 'sent', OR
- *   - it ended non-clean (`notSent` below), OR
- *   - its terminal counters (delivered+bounced+complained+unsubscribed)
- *     reached recipient_count, OR
- *   - `forceComplete` (24h backstop) AND it was dispatched (status='sending'
- *     with missing webhooks → give up waiting).
+ *   - status === 'sending' AND its terminal counters reached recipient_count.
+ *     `counterComplete` mirrors the single-audience formula
+ *     (delivered+bounced+complained, see process-webhook-event.ts) — it
+ *     EXCLUDES unsubscribed (a post-delivery event additive to delivered, so
+ *     summing it double-counts one recipient — review A) and requires
+ *     recipient_count > 0 (a 0-recipient batch must never silently roll the
+ *     broadcast to sent + burn quota — review C, mirrors the MVP zero-guard).
+ *     A `failed`/`pending`/`cancelled` batch is NEVER "cleanly sent" via its
+ *     counters — status semantics win over the counter sum (review B/E).
  *
- * `notSent` (counts toward `partially_sent`, NOT a clean sent):
+ * A batch is "notSent" (done, but counts toward `partially_sent`, NOT a clean
+ * sent):
  *   - a `failed` batch that has EXHAUSTED its auto-retry budget (FR-008a —
  *     a cooling-off failure with retry_count < budget is still
  *     retry-eligible, so the broadcast must stay in_progress until the
  *     budget is truly spent; `forceComplete` gives up at 24h), OR
- *   - a `cancelled` batch (never rolls a broadcast to sent+quota).
+ *   - a `cancelled` batch (never rolls a broadcast to sent+quota), OR
+ *   - `forceComplete` (24h backstop) AND the batch is still `pending` or
+ *     `sending` but never confirmed delivery (`!counterComplete`) — we give
+ *     up waiting, but an un-dispatched (`pending`) or un-confirmed (`sending`)
+ *     batch did NOT cleanly send, so it must surface as partial, never as a
+ *     clean sent (review D — a `pending` batch was previously never forced
+ *     done → broadcast stuck in `sending` forever; review E — a 0-counter
+ *     `sending` batch was previously forced to a clean `sent`, masking a
+ *     batch that delivered to nobody).
  *
  * "failed" here means the BATCH dispatch failed (status), NOT individual
  * recipient bounces.
@@ -86,21 +99,32 @@ export function evaluateBatchCompletion(
   if (batches.length === 0) {
     return { allDone: false, anyFailed: false, failedBatchIds: [] };
   }
+  const force = opts.forceComplete === true;
   const failedBatchIds: string[] = [];
   let allDone = true;
   for (const b of batches) {
     const terminalCount =
-      b.deliveredCount + b.bouncedCount + b.complainedCount + b.unsubscribedCount;
-    const counterComplete = terminalCount >= b.recipientCount;
+      b.deliveredCount + b.bouncedCount + b.complainedCount;
+    const counterComplete =
+      b.recipientCount > 0 && terminalCount >= b.recipientCount;
+    const cleanlySent =
+      b.status === 'sent' || (b.status === 'sending' && counterComplete);
     const terminallyFailed =
-      b.status === 'failed' &&
-      (opts.forceComplete === true || b.retryCount >= AUTO_RETRY_BUDGET);
-    const notSent = terminallyFailed || b.status === 'cancelled';
-    const done =
-      b.status === 'sent' ||
-      notSent ||
-      counterComplete ||
-      (opts.forceComplete === true && b.status === 'sending');
+      b.status === 'failed' && (force || b.retryCount >= AUTO_RETRY_BUDGET);
+    // Under the 24h backstop we give up waiting. A `pending` batch is "not
+    // currently dispatched" — it carries no live send, and any counters it
+    // holds are STALE from a prior attempt (auto-retry re-queues
+    // failed→pending without zeroing counters), so it must terminalize as
+    // partial regardless of `counterComplete` (else a pending batch with
+    // stale full counters stays stuck forever — Low-1). A `sending` batch
+    // that confirmed all its recipients (`counterComplete`) is instead
+    // `cleanlySent` above; only an UNconfirmed `sending` batch gives up here.
+    const forceGaveUp =
+      force &&
+      (b.status === 'pending' ||
+        (b.status === 'sending' && !counterComplete));
+    const notSent = terminallyFailed || b.status === 'cancelled' || forceGaveUp;
+    const done = cleanlySent || notSent;
     if (!done) {
       allDone = false;
     }
@@ -198,14 +222,14 @@ export async function rollUpBatchBroadcast(
           {},
           'sending',
         );
-        // NOTE (M-3) — reuses broadcast_send_timeout_completed (no new
-        // audit-event type → no ALTER TYPE migration) with an
-        // `outcome: 'partially_sent'` + `viaBatchRollup: true` payload
-        // discriminator. The event NAME says "timeout" but this also fires
-        // on a normal (non-24h) partial roll-up; audit-viewer / alerting
-        // must key on the payload, not the event name alone.
+        // review-fix F (migration 0220) — dedicated `broadcast_partially_sent`
+        // event. Previously this reused `broadcast_send_timeout_completed`
+        // (the 24h single-audience reconcile event) which made name-keyed
+        // alerts / the stuck-sending runbook misfire on a NORMAL (non-24h)
+        // partial roll-up. On-call can now key on the event name directly;
+        // the payload still carries `outcome` + `viaBatchRollup` for pivots.
         await deps.audit.emit(tx, {
-          eventType: 'broadcast_send_timeout_completed',
+          eventType: 'broadcast_partially_sent',
           tenantId,
           actorUserId: 'system:batch-rollup',
           summary: `Broadcast ${broadcast.broadcastId} rolled up to partially_sent (${completion.failedBatchIds.length} batch(es) failed)`,

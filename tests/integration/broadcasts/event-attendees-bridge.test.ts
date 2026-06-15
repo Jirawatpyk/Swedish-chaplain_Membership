@@ -35,6 +35,10 @@ function daysAgo(n: number): Date {
   return new Date(new Date().getTime() - n * 24 * 60 * 60 * 1000);
 }
 
+function daysFromNow(n: number): Date {
+  return new Date(new Date().getTime() + n * 24 * 60 * 60 * 1000);
+}
+
 interface SeedEventArgs {
   readonly tenantSlug: string;
   readonly eventId: string;
@@ -243,6 +247,89 @@ describe('F6 → F7 eventAttendees bridge (event_attendees_last_90d)', () => {
       );
       expect(one).not.toBeNull();
       expect(String(one!.emailLower)).toBe('recent@bridge.example');
+    });
+  });
+
+  describe('window upper bound + deterministic tie-break (review G/H)', () => {
+    let tenant: TestTenant;
+    const pastEventId = randomUUID();
+    const futureEventId = randomUUID();
+    // Two events that share an identical start_date — used to pin the
+    // DISTINCT ON tie-break (H). event_id DESC → the higher uuid wins.
+    const tieLowId = '00000000-0000-0000-0000-000000000001';
+    const tieHighId = '00000000-0000-0000-0000-0000000000ff';
+
+    beforeAll(async () => {
+      tenant = await createTestTenant('test-swecham');
+      await runInTenant(tenant.ctx, async (tx) => {
+        const tieDate = daysAgo(5);
+        await tx.insert(events).values([
+          eventValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: futureEventId,
+            name: 'Future Event',
+            startDate: daysFromNow(10), // not attended yet
+          }),
+          eventValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: tieLowId,
+            name: 'Tie Low',
+            startDate: tieDate,
+          }),
+          eventValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: tieHighId,
+            name: 'Tie High',
+            startDate: tieDate,
+          }),
+        ]);
+        void pastEventId;
+        await tx.insert(eventRegistrations).values([
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: futureEventId,
+            email: 'future@gtest.example',
+          }),
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: tieLowId,
+            email: 'tie@gtest.example',
+          }),
+          registrationValues({
+            tenantSlug: tenant.ctx.slug,
+            eventId: tieHighId,
+            email: 'tie@gtest.example',
+          }),
+        ]);
+      });
+    });
+
+    afterAll(async () => {
+      await tenant.cleanup();
+    });
+
+    it('G — a future-dated event is excluded from the 90-day attendee window', async () => {
+      const rows = await getRecentEventAttendees(tenant.ctx.slug);
+      expect(rows.some((r) => r.emailLower === 'future@gtest.example')).toBe(
+        false,
+      );
+      await expect(
+        getRecentEventAttendeeByEmail(tenant.ctx.slug, 'future@gtest.example'),
+      ).resolves.toBeNull();
+    });
+
+    it('H — equal start_date dedups deterministically to the higher event_id', async () => {
+      const byEmail = await getRecentEventAttendeeByEmail(
+        tenant.ctx.slug,
+        'tie@gtest.example',
+      );
+      expect(byEmail).not.toBeNull();
+      expect(byEmail!.mostRecentEventTitle).toBe('Tie High');
+
+      const all = await getRecentEventAttendees(tenant.ctx.slug);
+      const tie = all.find((r) => r.emailLower === 'tie@gtest.example');
+      expect(tie).toBeDefined();
+      expect(tie!.mostRecentEventTitle).toBe('Tie High');
     });
   });
 
