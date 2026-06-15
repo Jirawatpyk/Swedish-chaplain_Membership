@@ -49,6 +49,9 @@ const F3_AUDIT_EVENTS: readonly F3AuditEventType[] = [
   'contact_linked_to_user',
   'member_preferred_locale_changed',
   'member_number_assigned',
+  // COMP-1 Member Erasure (migration 0221) — F3 events, 5y retention.
+  'member_erasure_requested',
+  'member_erased',
 ] as const;
 
 // Compile-time proof that the tuple covers the full union.
@@ -65,9 +68,9 @@ type _AssertF3Coverage = typeof F3_AUDIT_EVENTS extends
 const _: _AssertF3Coverage = true;
 
 describe('F3AuditEventType count guard', () => {
-  it('F3 audit event type count is 29 (28 prior + member_number_assigned)', () => {
+  it('F3 audit event type count is 31 (29 prior + erasure_requested + erased)', () => {
     // Reference `_` so the compile-time proof is not tree-shaken / unused.
     expect(_).toBe(true);
-    expect(F3_AUDIT_EVENTS.length).toBe(29);
+    expect(F3_AUDIT_EVENTS.length).toBe(31);
   });
 });

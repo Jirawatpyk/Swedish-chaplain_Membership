@@ -172,6 +172,12 @@ export const members = pgTable(
     // and carries a positive CHECK + per-tenant UNIQUE index.
     // See design doc §6 and migration 0094 idempotency comment.
     memberNumber: integer('member_number').notNull(),
+
+    // COMP-1 Member Erasure — set by `eraseMember` inside the atomic scrub tx.
+    // NULL = never erased. Presence marks the row anonymised; the
+    // reconciliation sweep (US2) re-selects on `erased_at IS NOT NULL` with an
+    // incomplete cascade. Status is intentionally NOT changed by erasure.
+    erasedAt: timestamp('erased_at', { withTimezone: true }),
   },
   (table) => [
     primaryKey({

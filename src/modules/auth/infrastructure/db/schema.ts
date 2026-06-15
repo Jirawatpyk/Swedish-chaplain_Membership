@@ -328,6 +328,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     Payload: { member_number }. NOT an F1 event — `AUDIT_EVENT_TYPES`
   //     in domain/audit-event.ts stays at 32. See design doc §9. ---
   'member_number_assigned',
+  // COMP-1 Member Erasure (migration 0221) — F3 events, 5y retention.
+  'member_erasure_requested',
+  'member_erased',
 ]);
 
 /**
