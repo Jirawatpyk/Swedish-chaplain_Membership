@@ -13,7 +13,15 @@ const badgeVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
         destructive:
-          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
+          // WCAG 2.1 AA fix: use the OPAQUE design-system surface token
+          // (`--destructive-surface`, intended for alert/badge backgrounds)
+          // instead of the translucent `bg-destructive/10`+`dark:bg-destructive/20`
+          // tint. The translucent tint composited with a non-white parent
+          // (muted/zebra row, nested card) darkened the effective bg and
+          // dropped text-destructive contrast to ~4.83:1 (light) / ~4.63:1
+          // (dark) — below 4.5:1 once axe measures against the real ancestor.
+          // Solid surface is parent-independent: 6.07:1 light, 5.36:1 dark.
+          "bg-destructive-surface text-destructive focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
         outline:
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:
