@@ -126,6 +126,16 @@ describe('evaluateBatchCompletion (Ship-blocker A)', () => {
     expect(r.anyFailed).toBe(false);
   });
 
+  it('counter sum reaches recipient_count via bounced + complained (not just delivered) → clean done', () => {
+    // Pins the terminalCount = delivered+bounced+complained formula across
+    // all three legs, not only the delivered leg.
+    const r = evaluateBatchCompletion([
+      batch({ deliveredCount: 50, bouncedCount: 30, complainedCount: 20 }),
+    ]);
+    expect(r.allDone).toBe(true);
+    expect(r.anyFailed).toBe(false);
+  });
+
   it('A — unsubscribed is a post-delivery event and must NOT count toward completion (no over-count)', () => {
     // 60 recipients delivered; 40 of those 60 later unsubscribe. One recipient
     // can bump two counters, so summing unsubscribed would falsely reach 100.

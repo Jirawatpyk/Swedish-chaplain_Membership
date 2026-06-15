@@ -436,6 +436,15 @@ export type BroadcastStateError =
  * Returns the mutated broadcast snapshot. Caller persists via repo
  * inside the same `runInTenant` transaction that touched the
  * batch_manifest rows.
+ *
+ * NOTE (speckit-review): the live batch roll-up (`roll-up-batch-
+ * broadcast.ts`) does NOT call this — it uses
+ * `broadcastsRepo.applyTransition(…, 'partially_sent', {}, 'sending')`
+ * directly, which enforces the same `sending → partially_sent` validity
+ * via the DB state-machine trigger + a CAS on `expectedFromStatus`,
+ * atomically with the audit emit. This pure domain transition is retained
+ * for a future webhook-driven caller; it currently has no production
+ * callers (the roll-up deliberately bypasses it).
  */
 export function recordPartialSend(
   broadcast: Broadcast,

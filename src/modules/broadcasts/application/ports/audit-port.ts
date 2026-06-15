@@ -166,16 +166,17 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: count matches the declared 59 (= 43 F7 MVP + 11
- * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
- * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
- * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted` +
- * 1 R2.1 M-test-2 `broadcast_template_seed_skipped_existing_name` +
- * 1 R3.1 C-3 `broadcast_template_snapshot_refused_deleted` +
- * 1 review-fix F `broadcast_partially_sent` (migration 0220)).
- * Catches drift if a spec amendment adds an event without updating this
- * file. The check lives at type level; if the count is wrong, TypeScript
- * errors here with "Type '60' is not assignable to type '59'" (or similar).
+ * Static assertion: the tuple length is 59. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it sums to 59); this assert
+ * is the enforced source of truth. If a spec amendment adds/removes an
+ * event, update the tuple, this literal, and the header taxonomy —
+ * TypeScript errors here ("Type '60' is not assignable to type '59'") if
+ * the count drifts.
+ *
+ * (The previous inline arithmetic here was dropped — it double-counted
+ * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
+ * additions", so it summed to 60 while the real count was 59. Don't
+ * re-introduce a hand-summed breakdown next to a self-checking assert.)
  */
 type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 59
   ? true

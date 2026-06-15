@@ -51,6 +51,16 @@ interface RecentAttendeeRow {
 }
 
 function mapRow(r: RecentAttendeeRow): RecentEventAttendee {
+  // Fail-loud (matches this module's masked-zero philosophy): the WHERE
+  // clause guarantees `attendee_email_lower IS NOT NULL`, but the raw-SQL
+  // boundary cast can't enforce that at the type level. If a future query
+  // edit ever lets a NULL through, throw rather than emit a
+  // `null as string` recipient that would silently corrupt a broadcast.
+  if (r.email_lower == null) {
+    throw new Error(
+      'recent-event-attendees: attendee_email_lower was NULL — query invariant violated',
+    );
+  }
   return {
     emailLower: r.email_lower,
     displayName: r.display_name,

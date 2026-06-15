@@ -7,8 +7,8 @@
  * `eventAttendeesBridge` (`infrastructure/event-attendees-bridge.ts`) —
  * a Drizzle-backed adapter over F6's `event_registrations`/`events`
  * tables, reached through the `@/modules/events` barrel (Principle III).
- * The `event-attendees-stub.ts` is retained only for the empty-segment
- * integration tests.
+ * The `event-attendees-stub.ts` is retained only for tests (empty-segment
+ * integration + cron contract fixtures) — never wired in production.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */

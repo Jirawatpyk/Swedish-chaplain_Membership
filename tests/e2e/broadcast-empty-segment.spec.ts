@@ -157,7 +157,10 @@ test.describe('Broadcast empty segment (T055 — US1 AS4)', () => {
       });
       return { status: res.status, body: await res.json().catch(() => null) };
     });
-    expect([200, 400, 422, 500]).toContain(r.status);
+    // The F6 bridge is live + fail-loud — a 500 here would be a real crash
+    // (the masked-zero class we explicitly avoid), so it is NOT accepted:
+    // a bridge regression must surface, not pass silently (speckit-review S-1).
+    expect([200, 400, 422]).toContain(r.status);
     if (r.status === 422) {
       expect(r.body?.error?.code).toMatch(
         /broadcast_empty_segment_blocked|broadcast_quota_blocked/,

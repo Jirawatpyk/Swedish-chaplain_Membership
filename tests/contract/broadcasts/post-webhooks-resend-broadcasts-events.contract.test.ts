@@ -313,6 +313,48 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
       expect(input.tenantId).toBe('test-tenant');
     });
 
+    it('F71A hit + BATCH_NOT_FOUND → 200 OK (benign; batch deleted, already audited) — no Svix retry (speckit-review I-1)', async () => {
+      constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
+      resolveTenantByResendBroadcastIdMock.mockResolvedValue(null);
+      resolveTenantByBatchProviderBroadcastIdMock.mockResolvedValue({
+        tenantId: 'test-tenant',
+        broadcastId: '11111111-1111-1111-1111-111111111111',
+        batchManifestId: 'batch-id-1',
+        batchIndex: 0,
+        recipientCount: 100,
+      });
+      applyBatchWebhookEventMock.mockResolvedValue(
+        err({ kind: 'BATCH_NOT_FOUND', batchManifestId: 'batch-id-1' }),
+      );
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+      expect(res.status).toBe(200);
+    });
+
+    it('F71A hit + storage_error → 500 dispatch_failed so Svix retries the idempotent increment (speckit-review I-1)', async () => {
+      constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
+      resolveTenantByResendBroadcastIdMock.mockResolvedValue(null);
+      resolveTenantByBatchProviderBroadcastIdMock.mockResolvedValue({
+        tenantId: 'test-tenant',
+        broadcastId: '11111111-1111-1111-1111-111111111111',
+        batchManifestId: 'batch-id-1',
+        batchIndex: 0,
+        recipientCount: 100,
+      });
+      applyBatchWebhookEventMock.mockResolvedValue(
+        err({
+          kind: 'apply_batch_webhook.server_error',
+          message: 'neon connection reset',
+        }),
+      );
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+      // A swallowed 200 here would make Resend NOT retry → the batch
+      // counter is permanently short → the broadcast strands in `sending`
+      // until the 24h backstop rolls it to a FALSE partially_sent.
+      expect(res.status).toBe(500);
+    });
+
     it('F7 MVP miss + F71A miss → 200 OK + unknown-resend audit (no use case calls)', async () => {
       constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
       resolveTenantByResendBroadcastIdMock.mockResolvedValue(null);

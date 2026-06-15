@@ -22,18 +22,22 @@
  *   email.unsubscribed → batch_manifests.unsubscribed_count++
  *
  * Status transitions:
- *   - Phase 3 Cluster 3C.4b MVP does NOT auto-transition the batch
- *     to 'sent' on terminal counter sum. That requires summing
- *     (delivered + bounced + complained + unsubscribed) ==
- *     recipient_count AND a sweep to update the parent broadcast
- *     aggregate status — deferred to Phase 3 Cluster 3D / Phase 3
- *     Cluster D advisory-lock-hardening.
+ *   - This use case does NOT itself transition the batch to 'sent'. The
+ *     parent broadcast's `sending → sent | partially_sent` roll-up is now
+ *     built — `roll-up-batch-broadcast.ts` (`evaluateBatchCompletion` keys
+ *     "cleanly sent" on delivered+bounced+complained >= recipient_count),
+ *     driven by the reconcile-stuck-sending cron sweep
+ *     (`sweepBatchCompletion`). This use case only increments the per-batch
+ *     counters that roll-up reads.
  *
- * Idempotency: the webhook route already de-duplicates via
- * `email_delivery_events.svix_id UNIQUE` (F1 email infrastructure,
- * migration 0106); duplicate events would increment counters twice
- * if reached here. Caller MUST gate via the svix-id idempotency
- * check upstream.
+ * Idempotency: dedup is OWNED HERE, at the repo layer — `incrementCounter`
+ * inserts the event into the `broadcast_batch_delivery_events` ledger
+ * (PK `(tenant_id, resend_event_id)`, ON CONFLICT DO NOTHING) in the same
+ * tx as the counter UPDATE and returns `{ duplicate }`; a Resend/Svix
+ * redelivery of the same `resend_event_id` is a no-op (F7-SF-1, migration
+ * 0218). The earlier claim that `email_delivery_events.svix_id` dedups the
+ * batch path was FALSE — that table is F1 transactional and is never
+ * written on the batch path (see migration 0218 header).
  *
  * Pure orchestration — no framework imports (Constitution Principle III).
  */

@@ -33,6 +33,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
 import type { BroadcastId } from '../../domain/broadcast';
+import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type {
   BatchManifest,
   BatchManifestsPort,
@@ -141,7 +142,7 @@ export function evaluateBatchCompletion(
 
 export type RollUpOutcome =
   | { readonly kind: 'broadcast_not_found' }
-  | { readonly kind: 'skipped'; readonly observedStatus: string }
+  | { readonly kind: 'skipped'; readonly observedStatus: BroadcastStatus }
   | { readonly kind: 'skipped_no_batches' }
   | { readonly kind: 'in_progress' }
   | { readonly kind: 'rolled_up_sent'; readonly quotaYear: number }
@@ -211,6 +212,16 @@ export async function rollUpBatchBroadcast(
       return ok({ kind: 'in_progress' as const });
     }
 
+    // Audit-emit altitude (speckit-review I-2): both roll-up transitions
+    // below emit the audit row INSIDE `withTx` (atomic with applyTransition),
+    // NOT post-commit via `safeAuditEmit`. This is deliberate — the roll-up
+    // consumes the member's annual quota (FR-007), so the quota-consumption
+    // audit MUST co-commit with the state change (no "sent with no audit"
+    // window). The trade-off is that an audit-adapter fault rolls the tx back
+    // and returns roll_up.server_error; that's safe because the sweep is
+    // idempotent (CAS on expectedFromStatus='sending') and re-attempts the
+    // whole roll-up on the next tick. The dispatch path uses post-commit
+    // safeAuditEmit instead because there audit loss must NOT block the send.
     if (completion.anyFailed) {
       // FR-008a — ≥1 batch failed after exhausting its retry budget.
       return await deps.broadcastsRepo.withTx(async (tx) => {
