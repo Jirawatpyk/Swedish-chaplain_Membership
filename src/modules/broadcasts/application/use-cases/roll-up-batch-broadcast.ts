@@ -58,40 +58,87 @@ export interface BatchCompletion {
 }
 
 /**
- * Pure predicate: are ALL batches of a broadcast done (no further progress
- * expected), and did any END such that the broadcast can't be a clean
- * `sent`?
+ * Per-batch disposition — EXACTLY ONE per batch.
  *
- * A batch is "cleanly sent" (counts toward a clean broadcast `sent`):
- *   - status === 'sent', OR
- *   - status === 'sending' AND its terminal counters reached recipient_count.
- *     `counterComplete` mirrors the single-audience formula
- *     (delivered+bounced+complained, see process-webhook-event.ts) — it
- *     EXCLUDES unsubscribed (a post-delivery event additive to delivered, so
- *     summing it double-counts one recipient — review A) and requires
- *     recipient_count > 0 (a 0-recipient batch must never silently roll the
- *     broadcast to sent + burn quota — review C, mirrors the MVP zero-guard).
- *     A `failed`/`pending`/`cancelled` batch is NEVER "cleanly sent" via its
- *     counters — status semantics win over the counter sum (review B/E).
- *
- * A batch is "notSent" (done, but counts toward `partially_sent`, NOT a clean
- * sent):
- *   - a `failed` batch that has EXHAUSTED its auto-retry budget (FR-008a —
- *     a cooling-off failure with retry_count < budget is still
- *     retry-eligible, so the broadcast must stay in_progress until the
- *     budget is truly spent; `forceComplete` gives up at 24h), OR
- *   - a `cancelled` batch (never rolls a broadcast to sent+quota), OR
- *   - `forceComplete` (24h backstop) AND the batch is still `pending` or
- *     `sending` but never confirmed delivery (`!counterComplete`) — we give
- *     up waiting, but an un-dispatched (`pending`) or un-confirmed (`sending`)
- *     batch did NOT cleanly send, so it must surface as partial, never as a
- *     clean sent (review D — a `pending` batch was previously never forced
- *     done → broadcast stuck in `sending` forever; review E — a 0-counter
- *     `sending` batch was previously forced to a clean `sent`, masking a
- *     batch that delivered to nobody).
+ * Modelling each batch as a single classified disposition (rather than two
+ * independently-computed `cleanlySent` / `notSent` booleans) makes the
+ * review-A–E bug class UNREPRESENTABLE: "neither done" (the stuck-forever
+ * pending bug, review D) and "both clean and failed" (the failed-masked-as-
+ * clean bug, review B/E) cannot occur because a batch resolves to one and
+ * only one of these. `classifyBatch` is TOTAL over `BatchStatus` — the
+ * `default: never` arm is the compile-time exhaustiveness proof, so adding a
+ * new batch status fails to build until it is handled here.
+ */
+type BatchDisposition =
+  /** Not done — keeps the broadcast in `sending` (blocks `allDone`). */
+  | { readonly kind: 'in_flight' }
+  /** Counts toward a clean broadcast `sent`. */
+  | { readonly kind: 'clean_sent' }
+  /** Dispatch failed, retry budget spent (or forced at 24h) → partial. */
+  | { readonly kind: 'failed_terminal'; readonly batchId: string }
+  /** Admin-cancelled mid-dispatch → partial. */
+  | { readonly kind: 'cancelled'; readonly batchId: string }
+  /** 24h backstop gave up on an un-confirmed/un-dispatched batch → partial. */
+  | { readonly kind: 'abandoned'; readonly batchId: string };
+
+/**
+ * Classify one batch. `force` is the 24h-backstop give-up flag.
  *
  * "failed" here means the BATCH dispatch failed (status), NOT individual
  * recipient bounces.
+ */
+function classifyBatch(b: BatchManifest, force: boolean): BatchDisposition {
+  // `counterComplete` mirrors the single-audience completion formula
+  // (delivered+bounced+complained, see process-webhook-event.ts): it
+  // EXCLUDES unsubscribed (a post-delivery event additive to delivered →
+  // summing it double-counts one recipient, review A) and requires
+  // recipient_count > 0 (a 0-recipient batch must never silently roll the
+  // broadcast to sent + burn quota, review C — mirrors the MVP zero-guard).
+  const terminalCount = b.deliveredCount + b.bouncedCount + b.complainedCount;
+  const counterComplete =
+    b.recipientCount > 0 && terminalCount >= b.recipientCount;
+  switch (b.status) {
+    case 'sent':
+      return { kind: 'clean_sent' };
+    case 'sending':
+      // Cleanly sent only once every recipient reached a terminal delivery
+      // event. Under the backstop an UNconfirmed sending batch is abandoned
+      // (partial) — never a clean sent that masks zero-delivery (review E).
+      if (counterComplete) return { kind: 'clean_sent' };
+      if (force) return { kind: 'abandoned', batchId: b.id };
+      return { kind: 'in_flight' };
+    case 'pending':
+      // "Not currently dispatched" — any counters it holds are STALE from a
+      // prior attempt (auto-retry re-queues failed→pending without zeroing
+      // counters), so under the backstop it abandons regardless of the
+      // counter sum (review D + Low-1: a pending batch must never stay stuck
+      // forever, and never count as a clean sent).
+      if (force) return { kind: 'abandoned', batchId: b.id };
+      return { kind: 'in_flight' };
+    case 'failed':
+      // A cooling-off failure with retry_count < budget is still
+      // retry-eligible → stay in_flight until the budget is truly spent;
+      // forceComplete gives up at 24h (review B — counters never override
+      // failed status into a clean sent).
+      if (force || b.retryCount >= AUTO_RETRY_BUDGET)
+        return { kind: 'failed_terminal', batchId: b.id };
+      return { kind: 'in_flight' };
+    case 'cancelled':
+      return { kind: 'cancelled', batchId: b.id };
+    default: {
+      // Exhaustiveness proof — a new BatchStatus must be handled above.
+      const _exhaustive: never = b.status;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Fold per-batch dispositions into the broadcast-level completion summary:
+ * are ALL batches done (no further progress expected), and did any END such
+ * that the broadcast can't be a clean `sent`? `anyFailed`/`failedBatchIds`
+ * are a derived view of the dispositions (computed once at the single
+ * construction site below — they cannot disagree).
  */
 export function evaluateBatchCompletion(
   batches: readonly BatchManifest[],
@@ -104,33 +151,23 @@ export function evaluateBatchCompletion(
   const failedBatchIds: string[] = [];
   let allDone = true;
   for (const b of batches) {
-    const terminalCount =
-      b.deliveredCount + b.bouncedCount + b.complainedCount;
-    const counterComplete =
-      b.recipientCount > 0 && terminalCount >= b.recipientCount;
-    const cleanlySent =
-      b.status === 'sent' || (b.status === 'sending' && counterComplete);
-    const terminallyFailed =
-      b.status === 'failed' && (force || b.retryCount >= AUTO_RETRY_BUDGET);
-    // Under the 24h backstop we give up waiting. A `pending` batch is "not
-    // currently dispatched" — it carries no live send, and any counters it
-    // holds are STALE from a prior attempt (auto-retry re-queues
-    // failed→pending without zeroing counters), so it must terminalize as
-    // partial regardless of `counterComplete` (else a pending batch with
-    // stale full counters stays stuck forever — Low-1). A `sending` batch
-    // that confirmed all its recipients (`counterComplete`) is instead
-    // `cleanlySent` above; only an UNconfirmed `sending` batch gives up here.
-    const forceGaveUp =
-      force &&
-      (b.status === 'pending' ||
-        (b.status === 'sending' && !counterComplete));
-    const notSent = terminallyFailed || b.status === 'cancelled' || forceGaveUp;
-    const done = cleanlySent || notSent;
-    if (!done) {
-      allDone = false;
-    }
-    if (notSent) {
-      failedBatchIds.push(b.id);
+    const disposition = classifyBatch(b, force);
+    switch (disposition.kind) {
+      case 'in_flight':
+        allDone = false;
+        break;
+      case 'clean_sent':
+        break;
+      case 'failed_terminal':
+      case 'cancelled':
+      case 'abandoned':
+        failedBatchIds.push(disposition.batchId);
+        break;
+      default: {
+        const _exhaustive: never = disposition;
+        void _exhaustive;
+        break;
+      }
     }
   }
   return {

@@ -67,6 +67,18 @@ describe('evaluateBatchCompletion (Ship-blocker A)', () => {
     expect(r.anyFailed).toBe(false);
   });
 
+  it('status === sent → clean done on STATUS alone, independent of counters', () => {
+    // Pins the terminal `sent`-status classifier arm (clean_sent) separately
+    // from the sending+counterComplete path — a `sent` batch is clean even
+    // with zero counters (e.g. a future email.sent flip lost its delivery
+    // webhooks). Without this, every clean-done test routes through `sending`.
+    const r = evaluateBatchCompletion([
+      batch({ status: 'sent', deliveredCount: 0 }),
+    ]);
+    expect(r.allDone).toBe(true);
+    expect(r.anyFailed).toBe(false);
+  });
+
   it('one batch short of recipient_count → not allDone', () => {
     const r = evaluateBatchCompletion([
       batch({ id: 'b-1', deliveredCount: 100 }),
