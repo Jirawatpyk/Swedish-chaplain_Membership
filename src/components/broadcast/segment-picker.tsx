@@ -41,13 +41,6 @@ const OPTIONS: readonly SegmentKind[] = [
   'custom',
 ];
 
-// Smart-5 — F6 EventAttendees stub returns []. Mark the option as
-// "coming soon" until F6 ships its real adapter so members don't
-// silently submit zero-recipient broadcasts.
-const COMING_SOON_SEGMENTS: ReadonlySet<SegmentKind> = new Set([
-  'event_attendees_last_90d',
-]);
-
 export function SegmentPicker({
   value,
   onChange,
@@ -62,7 +55,6 @@ export function SegmentPicker({
       <RadioGroup
         value={value.kind}
         onValueChange={(next: string) => {
-          if (COMING_SOON_SEGMENTS.has(next as SegmentKind)) return;
           onChange({
             kind: next as SegmentKind,
             tierCodes: next === 'tier' ? value.tierCodes : [],
@@ -72,7 +64,6 @@ export function SegmentPicker({
         className="space-y-2"
       >
         {OPTIONS.map((opt) => {
-          const comingSoon = COMING_SOON_SEGMENTS.has(opt);
           return (
             <div key={opt} className="flex items-center gap-2">
               {/* E5 UX hardening — removed redundant `aria-disabled`.
@@ -83,26 +74,14 @@ export function SegmentPicker({
               <RadioGroupItem
                 id={`segment-${opt}`}
                 value={opt}
-                disabled={comingSoon || disabled}
+                disabled={disabled}
                 // base-ui Radio.Root renders its own internal id, so the
                 // sibling <Label htmlFor> can't name it — set the accessible
                 // name directly (fixes axe aria-toggle-field-name).
                 aria-label={tOption(opt)}
               />
-              <Label
-                htmlFor={`segment-${opt}`}
-                className={
-                  comingSoon
-                    ? 'text-muted-foreground cursor-not-allowed'
-                    : 'cursor-pointer'
-                }
-              >
+              <Label htmlFor={`segment-${opt}`} className="cursor-pointer">
                 {tOption(opt)}
-                {comingSoon ? (
-                  <span className="ml-2 text-xs italic text-muted-foreground">
-                    {t('comingSoon')}
-                  </span>
-                ) : null}
               </Label>
             </div>
           );

@@ -46,7 +46,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   asBroadcastId,
   dispatchAllPendingBatches,
-  eventAttendeesStub,
+  eventAttendeesBridge,
   f71aUs1DisabledReason,
   f7AuditAdapter,
   isF71aUs1Enabled,
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         {
           tenant,
           membersBridge,
-          eventAttendees: eventAttendeesStub,
+          eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
         },
         {

@@ -4259,7 +4259,6 @@
           "event_attendees_last_90d": "Event attendees (last 90 days)",
           "custom": "Custom email list"
         },
-        "comingSoon": "(coming soon)",
         "tierLabel": "Tier code",
         "editor": {
           "bracketHint": "Click any [bracketed text] to replace with your content.",

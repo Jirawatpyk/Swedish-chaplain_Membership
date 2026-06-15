@@ -4259,7 +4259,6 @@
           "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
           "custom": "Anpassad e-postlista"
         },
-        "comingSoon": "(kommer snart)",
         "tierLabel": "Nivåkod",
         "editor": {
           "bracketHint": "Klicka på [text inom hakparenteser] för att ersätta med ditt innehåll.",

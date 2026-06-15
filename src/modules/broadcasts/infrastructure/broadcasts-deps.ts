@@ -15,7 +15,7 @@ import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator
 import { emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
 import { plansBridge } from './plans-bridge';
-import { eventAttendeesStub } from './event-attendees-stub';
+import { eventAttendeesBridge } from './event-attendees-bridge';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
 import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
@@ -103,7 +103,7 @@ export function makeSubmitBroadcastDeps(
     membersBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,
-    eventAttendees: eventAttendeesStub,
+    eventAttendees: eventAttendeesBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
@@ -284,7 +284,7 @@ export async function makeDispatchScheduledBroadcastDeps(
     broadcastsGateway: resendBroadcastsGateway,
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
-    eventAttendees: eventAttendeesStub,
+    eventAttendees: eventAttendeesBridge,
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
