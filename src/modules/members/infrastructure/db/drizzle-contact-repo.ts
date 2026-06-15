@@ -275,6 +275,42 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async scrubPiiForMemberInTx(tx, memberId, opts) {
+    try {
+      // COMP-1 member erasure (GDPR Art.17 / PDPA §33). One UPDATE over every
+      // contact of the member. Identity columns are NOT NULL so they take
+      // non-PII SENTINELS, not NULL: first/last → '[erased]', email → a per-row
+      // value built at the DB layer from the row's own contact_id so two erased
+      // members never produce the same sentinel email. `removed_at` is stamped
+      // so the row leaves the `contacts_tenant_email_uniq` partial index
+      // (`lower(email) WHERE removed_at IS NULL`) — without it, the sentinel
+      // emails would have to stay collision-free on a LIVE index. `is_primary`
+      // is forced FALSE so the row also leaves `contacts_one_primary_per_member`
+      // and respects the `contacts_primary_not_removed` CHECK. Tenant-scoped via
+      // the caller's runInTenant tx (RLS); no manual tenant_id filter needed.
+      // Idempotent: re-running yields the same stable sentinels per contact_id.
+      const updated = await tx
+        .update(contacts)
+        .set({
+          firstName: '[erased]',
+          lastName: '[erased]',
+          email: sql`'erased+' || ${contacts.contactId} || '@erased.invalid'`,
+          phone: null,
+          dateOfBirth: null,
+          roleTitle: null,
+          preferredLanguage: 'en',
+          isPrimary: false,
+          removedAt: opts.erasedAt,
+          updatedAt: opts.erasedAt,
+        })
+        .where(eq(contacts.memberId, memberId))
+        .returning({ contactId: contacts.contactId });
+      return ok({ scrubbedCount: updated.length });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async updateEmailInTx(tx, _ctx, contactId, newEmail) {
     try {
       // SELECT the current email first — Postgres RETURNING on UPDATE

@@ -168,4 +168,20 @@ export interface ContactRepo {
     tx: TenantTx,
     contactId: ContactId,
   ): Promise<Result<{ affected: number }, RepoError>>;
+
+  /**
+   * COMP-1 — anonymise every contact of a member in place. NOT NULL identity
+   * columns (`first_name`/`last_name`/`email`) get non-PII sentinels; the
+   * per-row email sentinel embeds `contact_id` so it is unique and cannot
+   * collide with another erased member's sentinel. `phone`/`date_of_birth`/
+   * `role_title` → NULL. `removed_at` is set (and `is_primary` forced FALSE) so
+   * the row leaves the `lower(email) WHERE removed_at IS NULL` partial unique
+   * index. Idempotent: re-running on already-scrubbed rows is a no-op-equivalent
+   * (sentinels are stable per contact_id).
+   */
+  scrubPiiForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    opts: { readonly erasedAt: Date },
+  ): Promise<Result<{ readonly scrubbedCount: number }, RepoError>>;
 }

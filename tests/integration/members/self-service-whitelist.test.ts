@@ -127,6 +127,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     listLinkedUserIdsForMemberInTx: async () => [],
     markInviteBouncedInTx: async () => ok({ affected: 0 }),
     clearInviteBouncedInTx: async () => ok({ affected: 0 }),
+    scrubPiiForMemberInTx: async () => ok({ scrubbedCount: 0 }),
   };
 
   const audit: AuditPort = {
