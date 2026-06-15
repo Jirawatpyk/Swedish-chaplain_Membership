@@ -169,6 +169,22 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * 070 — find the member's MOST-RECENT NON-ABANDONED cycle (status NOT IN
+   * lapsed/cancelled), newest `period_from` first. UNLIKE
+   * `findActiveForMember`, this INCLUDES a `completed` cycle. It backs the
+   * post-payment `/portal/renewal/[memberId]/success` page, which must be
+   * able to display the just-completed cycle's status row — that row was
+   * unreachable while the page used `findActiveForMember` (which excludes
+   * `completed` per the L135 active invariant), so the success page could
+   * never confirm completion. Returns null when the member has only
+   * abandoned cycles (or none).
+   */
+  findMostRecentForMember(
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * F8-completion Slice 1 — same as `findActiveForMember` but accepts
    * the caller's tx handle so the read participates in the surrounding
    * transaction. It can therefore see an uncommitted prior-cycle

@@ -494,6 +494,30 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async findMostRecentForMember(
+      _tenantId: string,
+      memberId: string,
+    ): Promise<RenewalCycle | null> {
+      // Same tenant/RLS scoping as `findActiveForMember`, but INCLUDES a
+      // `completed` cycle (only `lapsed`/`cancelled` are excluded) and orders
+      // by newest `period_from` so the post-payment success page can display
+      // the just-completed cycle. See the port doc (070).
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.memberId, memberId),
+              sql`${renewalCycles.status} NOT IN ('lapsed','cancelled')`,
+            ),
+          )
+          .orderBy(desc(renewalCycles.periodFrom))
+          .limit(1);
+        return rows[0] ? rowToDomain(rows[0]) : null;
+      });
+    },
+
     /**
      * F8-completion Slice 1 — tx-bound variant of `findActiveForMember`.
      * Uses the caller's tx handle so the read participates in the
