@@ -1,0 +1,158 @@
+/**
+ * `erase-member` use case (COMP-1 — GDPR Art. 17 / PDPA §33).
+ *
+ * Anonymises a member + its contacts IN PLACE (the FK web forbids hard-delete)
+ * and re-drives the existing archive cascades with the erasure reason.
+ *
+ * Flow (design §6):
+ *   1. emit `member_erasure_requested` durably (its own committed tx) — starts
+ *      the Art. 12 one-month clock and survives a later scrub failure.
+ *   2. ATOMIC tx (runInTenant): scrub members + contacts (+ erased_at) and
+ *      (Task 5) revoke sessions / soft-consume invitations for linked users.
+ *   3. (Task 6) POST-COMMIT best-effort: cancel in-flight F7 broadcasts + F8
+ *      renewal cycles with the erasure reason.
+ *   4. (Task 6) emit `member_erased` ONLY when every cascade reports complete.
+ *
+ * Idempotent: re-running re-drives incomplete cascades; member_erased is the
+ * completion proof. Per-module scrub of F1/F6/F7-content/F8 + the reconciler
+ * are US2; the 10y tax-redaction cron is US3.
+ */
+import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { err, ok, type Result } from '@/lib/result';
+import type { TenantContext } from '@/modules/tenants';
+import type { MemberId } from '../../domain/member';
+import type { MemberRepo } from '../ports/member-repo';
+import type { ContactRepo } from '../ports/contact-repo';
+import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastsCascadePort } from '../ports/broadcasts-cascade-port';
+import type { RenewalsCascadePort } from '../ports/renewals-cascade-port';
+import type { ClockPort } from '../ports/clock-port';
+import type { InvitationCascadePort } from '../ports/invitation-cascade-port';
+import type { SessionRevocationPort } from '../ports/session-revocation-port';
+
+export const eraseMemberSchema = z
+  .object({
+    reason: z.enum(['gdpr_erasure_request', 'pdpa_deletion_request']),
+  })
+  .strict();
+
+export type EraseMemberInput = z.infer<typeof eraseMemberSchema>;
+
+export type EraseMemberError =
+  | {
+      type: 'invalid_body';
+      issues: ReadonlyArray<{ path: string; message: string }>;
+    }
+  | { type: 'not_found' }
+  | { type: 'server_error'; message: string };
+
+export type EraseMemberResult = {
+  readonly memberId: MemberId;
+  readonly erasedAt: Date;
+  /** true when every cascade reported complete and member_erased was emitted. */
+  readonly completed: boolean;
+};
+
+export type EraseMemberDeps = {
+  tenant: TenantContext;
+  memberRepo: MemberRepo;
+  contactRepo: ContactRepo;
+  invitations: InvitationCascadePort;
+  sessions: SessionRevocationPort;
+  broadcastsCascade: BroadcastsCascadePort;
+  renewalsCascade: RenewalsCascadePort;
+  audit: AuditPort;
+  clock: ClockPort;
+};
+
+export type EraseMemberMeta = { actorUserId: string; requestId: string };
+
+class EraseNotFoundError extends Error {
+  constructor() {
+    super('not_found');
+  }
+}
+
+export async function eraseMember(
+  memberId: MemberId,
+  input: unknown,
+  meta: EraseMemberMeta,
+  deps: EraseMemberDeps,
+): Promise<Result<EraseMemberResult, EraseMemberError>> {
+  const parsed = eraseMemberSchema.safeParse(input);
+  if (!parsed.success) {
+    return err({
+      type: 'invalid_body',
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      })),
+    });
+  }
+  const reason = parsed.data.reason;
+  const now = deps.clock.now();
+
+  // 1. Durable request audit — its OWN committed tx so the DPO log records the
+  //    request even if the scrub below fails (Art. 12 clock start).
+  try {
+    await runInTenant(deps.tenant, async (tx) => {
+      const requested = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_erasure_requested',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_erasure_requested ${memberId}`,
+        payload: { member_id: memberId, reason },
+      });
+      if (!requested.ok) throw new Error('audit_failed');
+    });
+  } catch (e) {
+    logger.error(
+      { err: e, memberId, requestId: meta.requestId },
+      'erase-member: requested-audit failed',
+    );
+    return err({ type: 'server_error', message: 'erase request audit failed' });
+  }
+
+  // 2. ATOMIC scrub tx — members + contacts (+ Task 5 linked-user cascade).
+  try {
+    await runInTenant(deps.tenant, async (tx) => {
+      const current = await deps.memberRepo.findByIdInTx(tx, memberId);
+      if (!current.ok) {
+        if (current.error.code === 'repo.not_found')
+          throw new EraseNotFoundError();
+        throw new Error(`lookup_failed:${current.error.code}`);
+      }
+
+      const scrubMember = await deps.memberRepo.scrubPiiInTx(tx, memberId, {
+        erasedAt: now,
+      });
+      if (!scrubMember.ok) {
+        if (scrubMember.error.code === 'repo.not_found')
+          throw new EraseNotFoundError();
+        throw new Error(`member_scrub_failed:${scrubMember.error.code}`);
+      }
+
+      const scrubContacts = await deps.contactRepo.scrubPiiForMemberInTx(
+        tx,
+        memberId,
+        { erasedAt: now },
+      );
+      if (!scrubContacts.ok)
+        throw new Error(`contact_scrub_failed:${scrubContacts.error.code}`);
+
+      // ── Task 5 slots the session-revocation + invitation cascade HERE. ──
+    });
+  } catch (e) {
+    if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });
+    logger.error(
+      { err: e, memberId, requestId: meta.requestId },
+      'erase-member: scrub tx failed',
+    );
+    return err({ type: 'server_error', message: 'erase scrub failed' });
+  }
+
+  // ── Task 6 slots the post-commit F7/F8 cascades + member_erased proof HERE. ──
+  return ok({ memberId, erasedAt: now, completed: false });
+}
