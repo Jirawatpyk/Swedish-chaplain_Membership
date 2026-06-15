@@ -49,6 +49,8 @@ function makeBatch(overrides: Partial<BatchManifest> = {}): BatchManifest {
 function makeStubDeps(opts: {
   eligibleBatches?: BatchManifest[];
   updateFails?: boolean;
+  /** Make updateStatus THROW (not return Result-err) for this batch id. */
+  updateThrowsOnId?: string;
 } = {}): {
   emits: Array<{ eventType: string; payload?: unknown }>;
   updates: Array<{ status: string; retryCount?: number; idempotencyKey?: string }>;
@@ -65,8 +67,17 @@ function makeStubDeps(opts: {
         async findFailedRetryEligible() {
           return opts.eligibleBatches ?? [];
         },
-        async updateStatus(_t: unknown, _id: unknown, update: { status: string; retryCount?: number; idempotencyKey?: string }) {
+        async updateStatus(_t: unknown, id: unknown, update: { status: string; retryCount?: number; idempotencyKey?: string }) {
           updates.push(update);
+          if (
+            opts.updateThrowsOnId !== undefined &&
+            id === opts.updateThrowsOnId
+          ) {
+            // Simulate the uncaught throw path: updateStatus's outer
+            // withTxOr/runInTenant scope can throw (tx-open / connection
+            // drop / serialization error) rather than return a Result-err.
+            throw new Error('simulated tx-open failure (connection drop)');
+          }
           if (opts.updateFails) {
             return {
               ok: false,
@@ -152,5 +163,32 @@ describe('autoRetryFailedBatch + sweepAutoRetryFailedBatches contract (Phase 3F.
     expect(result.retriedCount).toBe(3);
     expect(result.outcomes).toHaveLength(3);
     expect(result.outcomes.every((o) => o.outcome.status === 'retried')).toBe(true);
+  });
+
+  it('sweep: a THROW from one batch does NOT abort the sweep — remaining batches still retried (F7-SF-2)', async () => {
+    const eligible = [
+      makeBatch({ id: 'b-1', retryCount: 0 }),
+      makeBatch({ id: 'b-2', retryCount: 0 }), // updateStatus throws here
+      makeBatch({ id: 'b-3', retryCount: 0 }),
+    ];
+    const { deps, updates } = makeStubDeps({
+      eligibleBatches: eligible,
+      updateThrowsOnId: 'b-2',
+    });
+    // Pre-fix this REJECTS (the throw propagates out of the loop) and b-3
+    // is never reached. Post-fix the sweep resolves and processes all 3.
+    const result = await sweepAutoRetryFailedBatches(deps as never, {
+      tenantId: tenant,
+    });
+    expect(result.eligibleCount).toBe(3);
+    expect(result.retriedCount).toBe(2); // b-1 + b-3
+    expect(result.errorCount).toBe(1); // b-2 throw → failed outcome
+    expect(result.outcomes).toHaveLength(3);
+    const b2 = result.outcomes.find((o) => o.batchManifestId === 'b-2');
+    expect(b2?.outcome.status).toBe('failed');
+    const b3 = result.outcomes.find((o) => o.batchManifestId === 'b-3');
+    expect(b3?.outcome.status).toBe('retried'); // reached despite b-2 throw
+    // updateStatus was attempted for all 3 — proves the loop did not abort.
+    expect(updates).toHaveLength(3);
   });
 });
