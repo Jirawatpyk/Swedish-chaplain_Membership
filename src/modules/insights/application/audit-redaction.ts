@@ -117,13 +117,15 @@ const SUMMARY_EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/g;
 
 /**
  * Conservative international-phone matcher (F9 #9): a leading `+`, a country
- * digit, then ≥8 more phone chars (digits / spaces / parens / dots / dashes)
- * ending in a digit. The mandatory `+` keeps this from over-redacting plain
- * numbers that legitimately appear in summaries — years, counts, ids, amounts,
- * Thai tax IDs — none of which carry a `+` prefix. `+66 81 234 5678` →
- * `[phone redacted]`; `+5 items`, `+10.5%`, `1,234,567` are untouched.
+ * digit, then ≥8 more phone chars (digits / single spaces / parens / dots /
+ * dashes) ending in a digit. The class uses a literal space (not `\s`) so a
+ * match can never span a line break in a multi-line summary. The mandatory `+`
+ * keeps this from over-redacting plain numbers that legitimately appear in
+ * summaries — years, counts, ids, amounts, Thai tax IDs — none of which carry a
+ * `+` prefix. `+66 81 234 5678` → `[phone redacted]`; `+5 items`, `+10.5%`,
+ * `1,234,567` are untouched.
  */
-const SUMMARY_PHONE_RE = /\+\d[\d\s().-]{7,}\d/g;
+const SUMMARY_PHONE_RE = /\+\d[\d ().-]{7,}\d/g;
 
 /**
  * Redact a free-text audit `summary` for the viewing role (staff-review R001 +

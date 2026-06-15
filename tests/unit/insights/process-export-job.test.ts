@@ -361,6 +361,39 @@ describe('processExportJob — build/ready paths', () => {
     }
   });
 
+  it('F9 #15: a REJECTING heartbeat beat is swallowed+logged; the build still completes (throw-path)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { deps, exportJobRepo, artefact } = makeMocks({ jobRecord: job('directory_json') });
+      // The heartbeat write rejects (DB blip). It must NOT escape the timer or
+      // fail the build — best-effort, logged as heartbeat_failed.
+      exportJobRepo.touchProcessingInTx!.mockRejectedValue(new Error('neon blip'));
+      let releaseBuild!: () => void;
+      const gate = new Promise<void>((res) => {
+        releaseBuild = res;
+      });
+      artefact.buildJson!.mockReturnValue(
+        gate.then(() => ({ bytes: new Uint8Array([1, 2, 3]), contentType: 'application/json' })),
+      );
+
+      const pending = processExportJob(JOB_ID, ctx, deps);
+      await vi.advanceTimersByTimeAsync(EXPORT_HEARTBEAT_INTERVAL_MS + 50);
+      expect(exportJobRepo.touchProcessingInTx).toHaveBeenCalled();
+      // Rejection swallowed + logged (never an unhandled rejection out of setInterval).
+      expect(loggerMock.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: JOB_ID }),
+        'insights.export_job.heartbeat_failed',
+      );
+
+      releaseBuild();
+      await vi.runAllTimersAsync();
+      const r = await pending;
+      expect(r.ok).toBe(true); // build unaffected by the heartbeat failure
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('C1: markReady matches 0 rows (lost race) → NOT ok, blob deleted, no audit', async () => {
     const { deps, blob, audit } = makeMocks({ jobRecord: job('directory_json'), markReady: false });
     const r = await processExportJob(JOB_ID, ctx, deps);

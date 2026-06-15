@@ -98,6 +98,18 @@ describe('redactPayloadForRole', () => {
     expect(out?.when).toBeInstanceOf(Date);
   });
 
+  it('F9 review: preserves a Date nested inside an array (array.map → non-plain passthrough)', () => {
+    const when = new Date('2026-05-01T00:00:00.000Z');
+    const out = redactPayloadForRole(
+      'some_event',
+      { items: [{ when, email: 'x@y.z', n: 1 }] },
+      'manager',
+    );
+    // email stripped at depth; the Date survives (not collapsed to {}); n kept.
+    expect(out).toEqual({ items: [{ when, n: 1 }] });
+    expect((out?.items as Array<{ when: Date }>)[0]?.when).toBeInstanceOf(Date);
+  });
+
   it('F9 review: a `__proto__` payload key does not reparent the output (no prototype pollution)', () => {
     const payload = JSON.parse('{"__proto__":{"polluted":true},"x":1}') as Record<string, unknown>;
     const out = redactPayloadForRole('some_event', payload, 'manager');

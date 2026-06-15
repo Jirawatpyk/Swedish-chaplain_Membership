@@ -97,6 +97,15 @@ describe('admin/directory/exports POST — per-actor rate limit (F9 #5)', () => 
     expect(rlCheckMock).toHaveBeenCalledWith(`directory-export:${TENANT_SLUG}:u-adm`, 10, 3600);
   });
 
+  it('429 also gates the directory_json arm (same per-actor limiter)', async () => {
+    sessionMock.mockResolvedValue({ user: { id: 'u-adm', role: 'admin' } });
+    rlCheckMock.mockResolvedValue({ success: false, reset: 1_000 });
+
+    const res = await exportsPost(req({ kind: 'directory_json' }));
+    expect(res.status).toBe(429);
+    expect(jsonExportMock).not.toHaveBeenCalled();
+  });
+
   it('proceeds to enqueue when under the limit', async () => {
     sessionMock.mockResolvedValue({ user: { id: 'u-adm', role: 'admin' } });
     rlCheckMock.mockResolvedValue({ success: true, reset: 0 });

@@ -284,6 +284,19 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
       ),
     ).toBe(false);
     expect((await repo().findById(tenant.ctx, jobId))?.status).toBe('processing');
+
+    // Once the job leaves `processing` (→ ready), the heartbeat is a guarded
+    // no-op — it can never resurrect/advance a job that already completed.
+    await runInTenant(tenant.ctx, (tx) =>
+      repo().markReadyInTx(tx, jobId, {
+        blobKey: `exports/${tenant.ctx.slug}/${jobId}.json`,
+        expiresAt: new Date(Date.now() + 3_600_000),
+      }),
+    );
+    expect(
+      await runInTenant(tenant.ctx, (tx) => repo().touchProcessingInTx(tx, jobId)),
+    ).toBe(false);
+    expect((await repo().findById(tenant.ctx, jobId))?.status).toBe('ready');
   });
 
   it('listRequestedIds returns only requested jobs', async () => {
