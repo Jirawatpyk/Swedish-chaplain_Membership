@@ -91,6 +91,22 @@ describe('redactPayloadForRole', () => {
     expect(payload.actor.email).toBe('x@y.z');
   });
 
+  it('F9 review: preserves a non-plain object value (Date) instead of collapsing it to {}', () => {
+    const when = new Date('2026-05-01T00:00:00.000Z');
+    const out = redactPayloadForRole('some_event', { when, keep: 1 }, 'manager');
+    expect(out).toEqual({ when, keep: 1 });
+    expect(out?.when).toBeInstanceOf(Date);
+  });
+
+  it('F9 review: a `__proto__` payload key does not reparent the output (no prototype pollution)', () => {
+    const payload = JSON.parse('{"__proto__":{"polluted":true},"x":1}') as Record<string, unknown>;
+    const out = redactPayloadForRole('some_event', payload, 'manager');
+    expect(out).toEqual({ x: 1 });
+    expect((out as Record<string, unknown>).polluted).toBeUndefined();
+    // The global Object prototype is untouched.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('F9 #14: dead member email/invitation event keys removed; global deny-list still covers their fields', () => {
     // The nonexistent event-type keys are gone from the per-event map …
     expect(SENSITIVE_PAYLOAD_FIELDS).not.toHaveProperty('member_invitation_sent');

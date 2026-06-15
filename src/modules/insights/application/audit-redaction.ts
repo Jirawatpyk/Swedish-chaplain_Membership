@@ -153,14 +153,28 @@ export function redactSummaryForRole(summary: string, role: AuditViewerRole): st
  * the input). Audit payloads are bounded JSON (no cycles); recursion depth =
  * the JSON nesting depth.
  */
+/** A plain (JSON-shaped) object — not a Date/Map/Set/class instance. */
+function isPlainObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 function redactValueForDeny(value: unknown, deny: ReadonlySet<string>): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => redactValueForDeny(item, deny));
   }
-  if (value !== null && typeof value === 'object') {
+  // Only recurse into PLAIN (JSON-shaped) objects. A non-plain object value —
+  // Date / Map / Set / class instance — has no own enumerable JSON props, so
+  // rebuilding it via Object.entries() would silently collapse it to `{}`; pass
+  // it through untouched. Audit payloads are JSONB (plain) today; this hardens
+  // the helper for any future in-memory caller (F9 review).
+  if (value !== null && typeof value === 'object' && isPlainObject(value)) {
     const out: Record<string, unknown> = {};
     for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
-      if (deny.has(key)) continue;
+      // Skip denied keys AND `__proto__` — JSON.parse makes `__proto__` an OWN
+      // enumerable prop, and `out[key] = …` on it would reparent `out` instead
+      // of adding a field (prototype-pollution hardening, F9 review).
+      if (key === '__proto__' || deny.has(key)) continue;
       out[key] = redactValueForDeny(inner, deny);
     }
     return out;

@@ -22,7 +22,7 @@ import type {
   MemberSource,
   MemberStatusCounts,
 } from '../../application/ports/source-ports';
-import { monthKeyOf } from '../../domain/trend-window';
+import { monthKeyOfDateOnly } from '../../domain/trend-window';
 
 /** Risk bands that count as "at-risk needing follow-up" (FR-002/004). */
 const AT_RISK_BANDS = ['critical', 'at-risk', 'warning'] as const;
@@ -88,7 +88,6 @@ export const memberSourceAdapter: MemberSource = {
   async joinDistribution(
     ctx: TenantContext,
     monthKeys: readonly string[],
-    timeZone: string,
   ): Promise<MemberJoinDistribution> {
     const firstKey = monthKeys[0] ?? '';
     const windowSet = new Set(monthKeys);
@@ -117,8 +116,11 @@ export const memberSourceAdapter: MemberSource = {
         // every `createdAt` clusters in the import month while `registrationDate`
         // spans years — keying off createdAt collapses the whole chart into one
         // import-month spike (F9 #1). registrationDate is the join anchor used by
-        // the startup-duration policy + the GDPR export too.
-        const key = monthKeyOf(row.member.registrationDate, timeZone);
+        // the startup-duration policy + the GDPR export too. It is a calendar
+        // `date`, so bucket by its own month (UTC components) — re-zoning the
+        // widened midnight-UTC instant would shift months for negative-offset
+        // tenant timezones (F9 review).
+        const key = monthKeyOfDateOnly(row.member.registrationDate);
         // `YYYY-MM` sorts lexicographically == chronologically, so `< firstKey`
         // correctly means "joined before the window" → baseline.
         if (key < firstKey) baseline += 1;

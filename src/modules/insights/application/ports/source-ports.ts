@@ -60,11 +60,14 @@ export interface MemberSource {
   countAtRisk(ctx: TenantContext): Promise<number>;
   /** Bounded list of at-risk members for the `at_risk_followup` insight (FR-004). */
   listAtRisk(ctx: TenantContext, limit: number): Promise<readonly AtRiskMemberRef[]>;
-  /** Member-join distribution for the growth trend (FR-001a), tenant-tz months. */
+  /**
+   * Member-join distribution for the growth trend (FR-001a). Buckets by each
+   * member's `registration_date` CALENDAR month (timezone-independent — a `date`
+   * has no time-of-day), matched against the supplied tenant-tz `monthKeys`.
+   */
   joinDistribution(
     ctx: TenantContext,
     monthKeys: readonly string[],
-    timeZone: string,
   ): Promise<MemberJoinDistribution>;
 }
 

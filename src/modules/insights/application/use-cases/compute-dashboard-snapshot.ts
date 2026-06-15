@@ -112,7 +112,7 @@ export async function computeDashboardSnapshot(
       deps.invoiceSource.countOverdue(ctx),
       deps.broadcastSource.countAwaitingApproval(ctx),
       deps.invoiceSource.getMonthlyPaidRevenueSatang(ctx, monthKeys, deps.tenantTimezone),
-      deps.memberSource.joinDistribution(ctx, monthKeys, deps.tenantTimezone),
+      deps.memberSource.joinDistribution(ctx, monthKeys),
       // P1-4 / FR-004 — cross-member quota roll-up inputs. The two consumption
       // aggregates are ONE GROUP BY each (no N+1); entitlements are resolved
       // below (memoized per distinct plan).

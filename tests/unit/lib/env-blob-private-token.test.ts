@@ -95,6 +95,23 @@ describe('env.ts — BLOB_PRIVATE_READ_WRITE_TOKEN (F9 T101a)', () => {
     await expect(import('@/lib/env')).rejects.toThrow(/BLOB_PRIVATE_READ_WRITE_TOKEN/);
   });
 
+  it('F9 review: production + F9 enabled + private token EQUAL to the public token → fail-loud', async () => {
+    const sameToken = 'vercel_blob_rw_shared_store';
+    stubEnv({
+      NODE_ENV: 'production',
+      FEATURE_F9_DASHBOARD: 'true',
+      FEATURE_F6_EVENTCREATE: 'false',
+      EXPORT_DOWNLOAD_TOKEN_SECRET: 'e'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      BLOB_READ_WRITE_TOKEN: sameToken,
+      BLOB_PRIVATE_READ_WRITE_TOKEN: sameToken,
+    });
+    vi.stubEnv('DEBUG_RLS_STATE', undefined);
+    vi.stubEnv('E2E_X_TENANT_HEADER_ENABLED', undefined);
+    await expect(import('@/lib/env')).rejects.toThrow(/BLOB_PRIVATE_READ_WRITE_TOKEN/);
+  });
+
   it('F9 #8: production + F9 enabled + a dedicated private store token → boots clean', async () => {
     stubEnv({
       NODE_ENV: 'production',

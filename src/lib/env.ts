@@ -763,14 +763,19 @@ if (raw.EXPORT_DOWNLOAD_TOKEN_SECRET) {
 if (
   raw.NODE_ENV === 'production' &&
   raw.FEATURE_F9_DASHBOARD &&
-  !raw.BLOB_PRIVATE_READ_WRITE_TOKEN
+  (!raw.BLOB_PRIVATE_READ_WRITE_TOKEN ||
+    // Absence is not enough — a copy-pasted token EQUAL to the public store
+    // token resolves env.blob.privateReadWriteToken to the public store too, the
+    // exact leak this guard prevents (F9 review). Reject equality as well.
+    raw.BLOB_PRIVATE_READ_WRITE_TOKEN === raw.BLOB_READ_WRITE_TOKEN)
 ) {
   throw new Error(
     'Environment validation failed (src/lib/env.ts):\n' +
-      '  - BLOB_PRIVATE_READ_WRITE_TOKEN must be set to a dedicated PRIVATE ' +
-      'Vercel Blob store token when FEATURE_F9_DASHBOARD=true in production. ' +
-      'GDPR export archives + Directory E-Books carry member PII and must never ' +
-      'fall back to the public BLOB_READ_WRITE_TOKEN store (T101a ship-day gate).',
+      '  - BLOB_PRIVATE_READ_WRITE_TOKEN must be set to a DEDICATED PRIVATE ' +
+      'Vercel Blob store token — DISTINCT from the public BLOB_READ_WRITE_TOKEN ' +
+      '— when FEATURE_F9_DASHBOARD=true in production. GDPR export archives + ' +
+      'Directory E-Books carry member PII and must never resolve to the public ' +
+      'store (T101a ship-day gate).',
   );
 }
 
