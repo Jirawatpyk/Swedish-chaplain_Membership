@@ -22,7 +22,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { asMemberId, type MemberId } from '@/modules/members';
 import { eraseMember } from '@/modules/members/application/use-cases/erase-member';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
@@ -86,9 +86,10 @@ async function seedPlan(tenant: TestTenant, userId: string) {
 
 async function seedVictimMember(
   tenant: TestTenant,
-): Promise<{ memberId: string; companyName: string }> {
+): Promise<{ memberId: string; companyName: string; contactFirstName: string }> {
   const memberId = randomUUID();
   const companyName = `Victim Co ${randomUUID().slice(0, 8)}`;
+  const contactFirstName = 'Bjorn';
   await runInTenant(tenant.ctx, async (tx) => {
     await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
@@ -105,7 +106,7 @@ async function seedVictimMember(
       tenantId: tenant.ctx.slug,
       contactId: randomUUID(),
       memberId,
-      firstName: 'Bjorn',
+      firstName: contactFirstName,
       lastName: 'Borg',
       email: `victim-${randomUUID().slice(0, 8)}@example.com`,
       phone: '+66898765432',
@@ -114,7 +115,22 @@ async function seedVictimMember(
       isPrimary: true,
     });
   });
-  return { memberId, companyName };
+  return { memberId, companyName, contactFirstName };
+}
+
+/**
+ * BYPASSRLS raw select (bare `db` singleton, owner role) of tenant B's
+ * contacts — proves the cross-tenant erase left B's contact rows untouched
+ * regardless of RLS scoping (design §5 contacts row + §10 isolation oracle).
+ */
+async function rawSelectContacts(memberId: string) {
+  return db
+    .select({
+      first_name: contacts.firstName,
+      removed_at: contacts.removedAt,
+    })
+    .from(contacts)
+    .where(eq(contacts.memberId, memberId));
 }
 
 /** Raw select of tenant B's member under tenant B context (RLS-scoped). */
@@ -155,7 +171,8 @@ describe('eraseMember — cross-tenant isolation (Principle I)', () => {
   });
 
   it('erasing tenant B\'s member from tenant A returns not_found and leaves B intact', async () => {
-    const { memberId, companyName } = await seedVictimMember(tenantB);
+    const { memberId, companyName, contactFirstName } =
+      await seedVictimMember(tenantB);
 
     // Sanity: the victim row is visible under tenant B before the attempt.
     const before = await selectMemberUnderTenant(tenantB, memberId);
@@ -177,12 +194,20 @@ describe('eraseMember — cross-tenant isolation (Principle I)', () => {
     if (result.ok) return;
     expect(result.error.type).toBe('not_found');
 
-    // FIRM assertion: tenant B's data is fully intact (not scrubbed).
+    // FIRM assertion: tenant B's member data is fully intact (not scrubbed).
     const after = await selectMemberUnderTenant(tenantB, memberId);
     expect(after).toHaveLength(1);
     expect(after[0]?.company_name).toBe(companyName);
     expect(after[0]?.company_name).not.toBe('[erased]');
     expect(after[0]?.tax_id).toBe('0105536000123');
     expect(after[0]?.erased_at).toBeNull();
+
+    // FIRM assertion: tenant B's CONTACT is also untouched (no sentinel scrub,
+    // not soft-removed) — the cascade never reached B's contacts.
+    const afterContacts = await rawSelectContacts(memberId);
+    expect(afterContacts).toHaveLength(1);
+    expect(afterContacts[0]?.first_name).toBe(contactFirstName);
+    expect(afterContacts[0]?.first_name).not.toBe('[erased]');
+    expect(afterContacts[0]?.removed_at).toBeNull();
   }, 30_000);
 });

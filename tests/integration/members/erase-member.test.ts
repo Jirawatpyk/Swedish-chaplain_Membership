@@ -200,8 +200,10 @@ async function rawSelectContacts(memberId: string) {
     .select({
       contact_id: contacts.contactId,
       first_name: contacts.firstName,
+      last_name: contacts.lastName,
       email: contacts.email,
       phone: contacts.phone,
+      role_title: contacts.roleTitle,
       date_of_birth: contacts.dateOfBirth,
       removed_at: contacts.removedAt,
     })
@@ -291,8 +293,10 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
     expect(cs).toHaveLength(2);
     for (const c of cs) {
       expect(c.first_name).toBe('[erased]');
+      expect(c.last_name).toBe('[erased]');
       expect(c.email).toMatch(/^erased\+.*@erased\.invalid$/);
       expect(c.phone).toBeNull();
+      expect(c.role_title).toBeNull();
       expect(c.date_of_birth).toBeNull();
       expect(c.removed_at).not.toBeNull();
     }
