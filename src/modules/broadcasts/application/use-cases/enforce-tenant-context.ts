@@ -26,6 +26,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
+import { safeAuditEmit } from './_safe-audit-emit';
 
 export type CrossTenantProbeError = {
   readonly kind: 'broadcast_cross_tenant_probe';
@@ -57,25 +58,30 @@ export async function enforceTenantContext(
   // Belt-and-suspenders: emit cross-tenant probe audit, return error so
   // the route maps to 404 (avoid existence leak).
   const isMemberProbe = input.memberId !== null;
-  try {
-    await deps.audit.emit(null, {
-      tenantId: deps.tenant.slug,
-      eventType: isMemberProbe
-        ? 'broadcast_cross_member_probe'
-        : 'broadcast_cross_tenant_probe',
-      actorUserId: input.actorUserId,
-      summary: `Cross-${isMemberProbe ? 'member' : 'tenant'} probe on broadcast ${input.broadcastId}`,
-      payload: {
-        broadcastId: input.broadcastId,
-        observedTenantId: input.observedTenantId,
-        expectedTenantId: deps.tenant.slug,
-        memberId: input.memberId,
-      },
-      requestId: input.requestId,
-    });
-  } catch {
-    // best-effort — never 5xx the request because audit failed
-  }
+  // F7-SF-3 — route the best-effort probe-audit through safeAuditEmit so a
+  // transient audit-storage failure is LOGGED ('broadcasts.audit.emit_failed')
+  // AND increments broadcasts_audit_emit_failed_total (the SLO alarm source)
+  // instead of being swallowed by a bare catch{}. safeAuditEmit still
+  // preserves the security effect (caller's err() → 404, never 5xx) and
+  // re-throws genuine adapter-invariant programmer bugs. This is the most
+  // security-relevant audit in the module — Constitution v1.4.0 Principle I
+  // sub-clause 4 requires failed tenant-isolation attempts to leave a
+  // forensic trail, so it must not have the weakest failure path.
+  await safeAuditEmit(deps.audit, null, {
+    eventType: isMemberProbe
+      ? 'broadcast_cross_member_probe'
+      : 'broadcast_cross_tenant_probe',
+    actorUserId: input.actorUserId,
+    tenantId: deps.tenant.slug,
+    summary: `Cross-${isMemberProbe ? 'member' : 'tenant'} probe on broadcast ${input.broadcastId}`,
+    payload: {
+      broadcastId: input.broadcastId,
+      observedTenantId: input.observedTenantId,
+      expectedTenantId: deps.tenant.slug,
+      memberId: input.memberId,
+    },
+    requestId: input.requestId,
+  });
 
   return err({
     kind: 'broadcast_cross_tenant_probe',
