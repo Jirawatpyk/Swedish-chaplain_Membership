@@ -43,11 +43,27 @@ export async function setCycleStatusForSuccessE2E(
   const sql = getSql();
   try {
     if (status === 'completed') {
+      // The F8-completion state machine enforces a CHECK
+      // (`renewal_cycles_completed_requires_invoice_check`): a `completed`
+      // cycle MUST carry a non-null `linked_invoice_id` (FK → invoices). The
+      // seed cycle has none, so link the persistent E2E issued-invoice
+      // fixture (`E2E_ISSUED_INVOICE_ID`) — it's the SAME e2e-member's invoice
+      // in swecham (reset to `issued` each run by global-setup), so the FK +
+      // check are both satisfied. The success page's receipt link is driven
+      // by the `?invoice=` query param, NOT this column, so the linked
+      // invoice's content is irrelevant to the assertions.
+      const invoiceId = process.env.E2E_ISSUED_INVOICE_ID;
+      if (!invoiceId) {
+        throw new Error(
+          '[renewal-success-state] E2E_ISSUED_INVOICE_ID missing — required to satisfy the renewal_cycles completed-requires-invoice CHECK.',
+        );
+      }
       await sql`
         UPDATE renewal_cycles
            SET status = 'completed',
                closed_at = NOW(),
-               closed_reason = 'paid'
+               closed_reason = 'paid',
+               linked_invoice_id = ${invoiceId}::uuid
          WHERE tenant_id = ${TENANT_ID}
            AND cycle_id = ${cycleId}::uuid
       `;

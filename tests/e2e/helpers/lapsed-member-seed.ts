@@ -83,6 +83,38 @@ export async function seedLapsedMemberForComeback(): Promise<LapsedMemberSeed | 
       );
       return null;
     }
+    // Idempotent teardown of ANY leftover dummy data from a prior run, in
+    // full FK order. Test 1 (renew) issues a §86/4 invoice referencing the
+    // dummy plan + member and mints a fresh `awaiting_payment` cycle; if a
+    // prior run's afterAll didn't fully clean (e.g. it errored after a nav
+    // flake), those rows strand and block the plan/member re-create with
+    // `invoices_plan_fk` / `renewal_cycles_member_fk`. Clear invoice_lines →
+    // cycles → invoices → contacts → members → plan BEFORE re-inserting. (The
+    // prior reset deleted the plan first — before the referencing invoices —
+    // which is the FK violation this fixes.)
+    await sql`
+      DELETE FROM invoice_lines
+      WHERE invoice_id IN (
+        SELECT invoice_id FROM invoices
+        WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+      )
+    `;
+    await sql`
+      DELETE FROM renewal_cycles
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM invoices
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM contacts
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
+    await sql`
+      DELETE FROM members
+      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
+    `;
     await sql`
       DELETE FROM membership_plans
       WHERE tenant_id = ${TENANT_ID} AND plan_id = ${DUMMY_PLAN_ID}
@@ -105,20 +137,6 @@ export async function seedLapsedMemberForComeback(): Promise<LapsedMemberSeed | 
     `;
     const planId = DUMMY_PLAN_ID;
     const planYear = DUMMY_PLAN_YEAR;
-
-    // Idempotency: clear any prior cycles + the dummy rows, then re-insert.
-    await sql`
-      DELETE FROM renewal_cycles
-      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
-    `;
-    await sql`
-      DELETE FROM contacts
-      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
-    `;
-    await sql`
-      DELETE FROM members
-      WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
-    `;
 
     const now = new Date();
     // `members.member_number` is a per-tenant-UNIQUE positive INTEGER (the

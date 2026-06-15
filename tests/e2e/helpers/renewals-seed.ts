@@ -86,6 +86,52 @@ export async function seedF8Renewals(): Promise<SeedResult | null> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * MS_PER_DAY);
     const periodFrom = new Date(now.getTime() - 335 * MS_PER_DAY);
+
+    // 070 e2e fix — the member-self-service renewal page scopes its
+    // plan-change selector to `listPlans(deriveFiscalYear(cycle.period_from),
+    // activeOnly: true)` — the cycle's OWN fiscal year (the 070 L2 §86/4 fix
+    // that replaced the period-END year). This seed mints a realistic
+    // ~12-month cycle whose `period_from` lands in the PRIOR calendar year,
+    // but the swecham dev catalogue is seeded only for the current year — so
+    // that year would have 0 active plans and the picker renders nothing
+    // (`hasAlternatives = availablePlans.length > 1`). Make the seed
+    // self-sufficient: ensure the catalogue covers the cycle's fiscal year by
+    // cloning the most-recent active year's active plans into it (idempotent
+    // via ON CONFLICT — mirrors what a real catalogue spanning members' cycle
+    // years would carry). SweCham fiscal-year start month = 1, so FY = the
+    // Bangkok-wall (UTC+7) calendar year of `period_from`.
+    const cycleFiscalYear = new Date(
+      periodFrom.getTime() + 7 * 60 * 60 * 1000,
+    ).getUTCFullYear();
+    await sql`
+      INSERT INTO membership_plans (
+        tenant_id, plan_id, plan_year, plan_name, description, sort_order,
+        plan_category, member_type_scope, annual_fee_minor_units,
+        includes_corporate_plan_id, min_turnover_minor_units,
+        max_turnover_minor_units, max_duration_years, max_member_age,
+        benefit_matrix, renewal_tier_bucket, is_active, deleted_at,
+        created_at, updated_at, created_by, updated_by
+      )
+      SELECT
+        tenant_id, plan_id, ${cycleFiscalYear}, plan_name, description, sort_order,
+        plan_category, member_type_scope, annual_fee_minor_units,
+        includes_corporate_plan_id, min_turnover_minor_units,
+        max_turnover_minor_units, max_duration_years, max_member_age,
+        benefit_matrix, renewal_tier_bucket, true, NULL,
+        now(), now(), created_by, updated_by
+      FROM membership_plans
+      WHERE tenant_id = ${TENANT_ID}
+        AND is_active = true
+        AND deleted_at IS NULL
+        AND plan_year = (
+          SELECT max(plan_year) FROM membership_plans
+          WHERE tenant_id = ${TENANT_ID}
+            AND is_active = true
+            AND deleted_at IS NULL
+        )
+      ON CONFLICT (tenant_id, plan_id, plan_year) DO NOTHING
+    `;
+
     await sql`
       INSERT INTO renewal_cycles (
         tenant_id, cycle_id, member_id, status,
