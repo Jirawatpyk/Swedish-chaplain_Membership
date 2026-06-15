@@ -60,11 +60,14 @@ export interface MemberSource {
   countAtRisk(ctx: TenantContext): Promise<number>;
   /** Bounded list of at-risk members for the `at_risk_followup` insight (FR-004). */
   listAtRisk(ctx: TenantContext, limit: number): Promise<readonly AtRiskMemberRef[]>;
-  /** Member-join distribution for the growth trend (FR-001a), tenant-tz months. */
+  /**
+   * Member-join distribution for the growth trend (FR-001a). Buckets by each
+   * member's `registration_date` CALENDAR month (timezone-independent — a `date`
+   * has no time-of-day), matched against the supplied tenant-tz `monthKeys`.
+   */
   joinDistribution(
     ctx: TenantContext,
     monthKeys: readonly string[],
-    timeZone: string,
   ): Promise<MemberJoinDistribution>;
 }
 
@@ -188,8 +191,14 @@ export interface BenefitConsumptionAggregateSource {
 }
 
 export interface InvoiceSource {
-  /** Year-to-date PAID revenue in satang for the tenant's calendar year (FR-001). */
-  getYtdPaidRevenueSatang(ctx: TenantContext, year: number): Promise<bigint>;
+  /**
+   * Fiscal-year-to-date PAID revenue in satang (FR-001). The adapter derives the
+   * fiscal year from `nowIso` + the tenant's `fiscalYearStartMonth` — the SAME
+   * way invoices.fiscalYear is tagged at issue time — so the KPI windows by the
+   * stored fiscal year. The calendar year would silently mis-window revenue for
+   * any non-January fiscal-year tenant (F9 #4).
+   */
+  getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint>;
   /** Count of overdue invoices for the tenant (FR-002 needs-attention). */
   countOverdue(ctx: TenantContext): Promise<number>;
   /**

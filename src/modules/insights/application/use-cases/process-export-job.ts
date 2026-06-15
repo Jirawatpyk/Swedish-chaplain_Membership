@@ -29,7 +29,12 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Locale } from '@/i18n/config';
-import { DEFAULT_EXPORT_TTL_MS, isClaimable, type ExportKind } from '../../domain/export-job';
+import {
+  DEFAULT_EXPORT_TTL_MS,
+  EXPORT_HEARTBEAT_INTERVAL_MS,
+  isClaimable,
+  type ExportKind,
+} from '../../domain/export-job';
 import {
   projectPublishedListing,
   type DirectoryRecord,
@@ -153,7 +158,11 @@ export async function processExportJob(
         actorUserId: 'system:cron',
         retentionYears: f9RetentionFor('data_export_failed'),
         summary: `GDPR data export failed (job ${jobId}): ${errorCode}`,
-        payload: { job_id: jobId, error_code: errorCode },
+        payload: {
+          job_id: jobId,
+          error_code: errorCode,
+          subject_member_id: claim.subjectMemberId ?? '',
+        },
       })
       .catch(() => {});
   };
@@ -176,6 +185,23 @@ export async function processExportJob(
   // upload partially succeeded (C2 — the TTL sweep only reaps ready|delivered,
   // so a `failed` job's blob would otherwise be orphaned PII forever).
   const blobKey = `exports/${ctx.slug}/${jobId}.${EXTENSION_BY_KIND[kind]}`;
+
+  // Heartbeat: while the (possibly slow) build runs, periodically refresh the
+  // job's `updated_at` so a concurrent cron tick's stuck-reclaim does not
+  // false-fail this healthy in-flight job (only material when the worker's
+  // maxDuration can exceed STUCK_PROCESSING_TIMEOUT_MS — latent otherwise).
+  // Best-effort: a failed beat is logged, never thrown; `clearInterval` always
+  // runs in `finally` so the timer cannot outlive the build.
+  const heartbeat = setInterval((): void => {
+    void runInTenant(ctx, (tx) => deps.exportJobRepo.touchProcessingInTx(tx, jobId)).catch(
+      (hbErr: unknown) => {
+        logger.warn(
+          { errKind: errKind(hbErr), kind, jobId, route: 'insights.process-export-job' },
+          'insights.export_job.heartbeat_failed',
+        );
+      },
+    );
+  }, EXPORT_HEARTBEAT_INTERVAL_MS);
 
   try {
     let built: { readonly bytes: Uint8Array; readonly contentType: string };
@@ -315,5 +341,9 @@ export async function processExportJob(
     await failJob('build_failed');
     await emitGdprFailed('build_failed');
     return err('build_failed');
+  } finally {
+    // Stop the heartbeat on every exit path (ready / lost-race / failure) so the
+    // interval never outlives the build (no leaked timer / connection churn).
+    clearInterval(heartbeat);
   }
 }

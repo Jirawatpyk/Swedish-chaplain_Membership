@@ -52,6 +52,7 @@ const { asTenantContext } = await import('@/modules/tenants');
 const { processExportJob } = await import(
   '@/modules/insights/application/use-cases/process-export-job'
 );
+const { EXPORT_HEARTBEAT_INTERVAL_MS } = await import('@/modules/insights/domain/export-job');
 type ProcessExportJobDeps = import('@/modules/insights/application/use-cases/process-export-job').ProcessExportJobDeps;
 type ExportJobRecord = import('@/modules/insights/application/ports/export-job-repo').ExportJobRecord;
 type ExportKind = import('@/modules/insights/domain/export-job').ExportKind;
@@ -105,6 +106,7 @@ function makeMocks(opts: {
     markFailedInTx: opts.markFailedThrows
       ? vi.fn().mockRejectedValue(new Error('neon down'))
       : vi.fn().mockResolvedValue(!opts.markFailedReturnsFalse),
+    touchProcessingInTx: vi.fn().mockResolvedValue(true),
   };
   const blob = {
     putPrivate: vi.fn().mockResolvedValue({ key: 'k' }),
@@ -296,6 +298,9 @@ describe('processExportJob — claim guards', () => {
       (c) => (c[0] as { eventType?: string }).eventType === 'data_export_failed',
     );
     expect(failedEvent).toBeDefined();
+    // M-1: the failed event carries the subject so it scopes into the member's
+    // own GDPR audit subset (Art. 15) — parity with the success event.
+    expect((failedEvent![0] as { payload: { subject_member_id: string } }).payload.subject_member_id).toBe('mem-1');
     expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
       'gdpr_member_archive',
       'failed',
@@ -321,6 +326,72 @@ describe('processExportJob — build/ready paths', () => {
       'test-tenant',
     );
     expect(metricsMock.exportJobDurationMs).toHaveBeenCalledOnce();
+  });
+
+  it('F9 #15: heartbeats updated_at while a slow build runs, then clears the timer on completion', async () => {
+    vi.useFakeTimers();
+    try {
+      const { deps, exportJobRepo, artefact } = makeMocks({ jobRecord: job('directory_json') });
+      // Make the build hang until released so the heartbeat interval can fire.
+      let releaseBuild!: () => void;
+      const gate = new Promise<void>((res) => {
+        releaseBuild = res;
+      });
+      artefact.buildJson!.mockReturnValue(
+        gate.then(() => ({ bytes: new Uint8Array([1, 2, 3]), contentType: 'application/json' })),
+      );
+
+      const pending = processExportJob(JOB_ID, ctx, deps);
+      // Advance past two heartbeat intervals → touchProcessingInTx fires.
+      await vi.advanceTimersByTimeAsync(EXPORT_HEARTBEAT_INTERVAL_MS * 2 + 100);
+      expect(exportJobRepo.touchProcessingInTx).toHaveBeenCalled();
+
+      // Release the build → completes ready; finally clears the heartbeat timer.
+      releaseBuild();
+      await vi.runAllTimersAsync();
+      const r = await pending;
+      expect(r.ok).toBe(true);
+
+      // After completion, advancing time fires NO further beats (timer cleared).
+      const afterCompletion = exportJobRepo.touchProcessingInTx!.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(EXPORT_HEARTBEAT_INTERVAL_MS * 3);
+      expect(exportJobRepo.touchProcessingInTx!.mock.calls.length).toBe(afterCompletion);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('F9 #15: a REJECTING heartbeat beat is swallowed+logged; the build still completes (throw-path)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { deps, exportJobRepo, artefact } = makeMocks({ jobRecord: job('directory_json') });
+      // The heartbeat write rejects (DB blip). It must NOT escape the timer or
+      // fail the build — best-effort, logged as heartbeat_failed.
+      exportJobRepo.touchProcessingInTx!.mockRejectedValue(new Error('neon blip'));
+      let releaseBuild!: () => void;
+      const gate = new Promise<void>((res) => {
+        releaseBuild = res;
+      });
+      artefact.buildJson!.mockReturnValue(
+        gate.then(() => ({ bytes: new Uint8Array([1, 2, 3]), contentType: 'application/json' })),
+      );
+
+      const pending = processExportJob(JOB_ID, ctx, deps);
+      await vi.advanceTimersByTimeAsync(EXPORT_HEARTBEAT_INTERVAL_MS + 50);
+      expect(exportJobRepo.touchProcessingInTx).toHaveBeenCalled();
+      // Rejection swallowed + logged (never an unhandled rejection out of setInterval).
+      expect(loggerMock.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: JOB_ID }),
+        'insights.export_job.heartbeat_failed',
+      );
+
+      releaseBuild();
+      await vi.runAllTimersAsync();
+      const r = await pending;
+      expect(r.ok).toBe(true); // build unaffected by the heartbeat failure
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('C1: markReady matches 0 rows (lost race) → NOT ok, blob deleted, no audit', async () => {

@@ -77,4 +77,124 @@ describe('env.ts — BLOB_PRIVATE_READ_WRITE_TOKEN (F9 T101a)', () => {
     stubEnv({ BLOB_PRIVATE_READ_WRITE_TOKEN: 'short' });
     await expect(import('@/lib/env')).rejects.toThrow();
   });
+
+  it('F9 #8: production + F9 enabled + no private blob token → fail-loud at boot', async () => {
+    stubEnv({
+      NODE_ENV: 'production',
+      FEATURE_F9_DASHBOARD: 'true',
+      // Isolate from the unrelated F6-DPA prod guard.
+      FEATURE_F6_EVENTCREATE: 'false',
+      EXPORT_DOWNLOAD_TOKEN_SECRET: 'e'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+    });
+    // No private store provisioned + ensure the other prod-only guards stay quiet.
+    vi.stubEnv('BLOB_PRIVATE_READ_WRITE_TOKEN', undefined);
+    vi.stubEnv('DEBUG_RLS_STATE', undefined);
+    vi.stubEnv('E2E_X_TENANT_HEADER_ENABLED', undefined);
+    await expect(import('@/lib/env')).rejects.toThrow(/BLOB_PRIVATE_READ_WRITE_TOKEN/);
+  });
+
+  it('F9 review: production + F9 enabled + private token EQUAL to the public token → fail-loud', async () => {
+    const sameToken = 'vercel_blob_rw_shared_store';
+    stubEnv({
+      NODE_ENV: 'production',
+      FEATURE_F9_DASHBOARD: 'true',
+      FEATURE_F6_EVENTCREATE: 'false',
+      EXPORT_DOWNLOAD_TOKEN_SECRET: 'e'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      BLOB_READ_WRITE_TOKEN: sameToken,
+      BLOB_PRIVATE_READ_WRITE_TOKEN: sameToken,
+    });
+    vi.stubEnv('DEBUG_RLS_STATE', undefined);
+    vi.stubEnv('E2E_X_TENANT_HEADER_ENABLED', undefined);
+    await expect(import('@/lib/env')).rejects.toThrow(/BLOB_PRIVATE_READ_WRITE_TOKEN/);
+  });
+
+  it('F9 #8: production + F9 enabled + a dedicated private store token → boots clean', async () => {
+    stubEnv({
+      NODE_ENV: 'production',
+      FEATURE_F9_DASHBOARD: 'true',
+      FEATURE_F6_EVENTCREATE: 'false',
+      EXPORT_DOWNLOAD_TOKEN_SECRET: 'e'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      BLOB_PRIVATE_READ_WRITE_TOKEN: 'vercel_blob_rw_private_store',
+    });
+    vi.stubEnv('DEBUG_RLS_STATE', undefined);
+    vi.stubEnv('E2E_X_TENANT_HEADER_ENABLED', undefined);
+    const mod = await import('@/lib/env');
+    expect(mod.env.blob.privateReadWriteToken).toBe('vercel_blob_rw_private_store');
+  });
+});
+
+describe('env.ts — EXPORT_DOWNLOAD_TOKEN_SECRET distinctness (F9 #13)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('rejects EXPORT_DOWNLOAD_TOKEN_SECRET that collides with AUTH_COOKIE_SIGNING_SECRET', async () => {
+    const shared = 'z'.repeat(48);
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: shared,
+      EXPORT_DOWNLOAD_TOKEN_SECRET: shared,
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('rejects EXPORT_DOWNLOAD_TOKEN_SECRET that collides with UNSUBSCRIBE_TOKEN_SECRET', async () => {
+    const shared = 'q'.repeat(48);
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: shared,
+      EXPORT_DOWNLOAD_TOKEN_SECRET: shared,
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('rejects EXPORT_DOWNLOAD_TOKEN_SECRET that collides with RENEWAL_LINK_TOKEN_SECRET_PRIMARY', async () => {
+    const shared = 'p'.repeat(48);
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: shared,
+      EXPORT_DOWNLOAD_TOKEN_SECRET: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('rejects EXPORT_DOWNLOAD_TOKEN_SECRET that collides with RENEWAL_LINK_TOKEN_SECRET_FALLBACK', async () => {
+    const shared = 'f'.repeat(48);
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_FALLBACK: shared,
+      EXPORT_DOWNLOAD_TOKEN_SECRET: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('accepts a distinct EXPORT_DOWNLOAD_TOKEN_SECRET (all secrets unique)', async () => {
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      EXPORT_DOWNLOAD_TOKEN_SECRET: 'e'.repeat(48),
+      BLOB_PRIVATE_READ_WRITE_TOKEN: 'vercel_blob_rw_private_store',
+    });
+    await expect(import('@/lib/env')).resolves.toBeDefined();
+  });
 });

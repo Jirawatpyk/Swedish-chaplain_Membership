@@ -15,6 +15,7 @@ import type {
   CreateExportJobInput,
   ExportJobRecord,
   ExportJobRepo,
+  StuckJob,
   SweepableJob,
 } from '../../application/ports/export-job-repo';
 
@@ -222,6 +223,24 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       return updated.length > 0;
     },
 
+    async touchProcessingInTx(tx, jobId) {
+      // Heartbeat: bump updated_at on a still-`processing` row so the stuck
+      // sweep (which keys on updated_at) does not reclaim a healthy in-flight
+      // build. Guarded — once the job leaves `processing` this matches 0 rows.
+      const updated = await tx
+        .update(exportJobs)
+        .set({ updatedAt: new Date() })
+        .where(
+          and(
+            eq(exportJobs.tenantId, tenantId),
+            eq(exportJobs.id, jobId),
+            eq(exportJobs.status, 'processing'),
+          ),
+        )
+        .returning({ id: exportJobs.id });
+      return updated.length > 0;
+    },
+
     async setDownloadTokenInTx(tx, jobId, tokenHash) {
       const updated = await tx
         .update(exportJobs)
@@ -317,11 +336,18 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       return deleted.length;
     },
 
-    async listStuckProcessing(ctx: TenantContext, timeoutMs: number) {
+    async listStuckProcessing(
+      ctx: TenantContext,
+      timeoutMs: number,
+    ): Promise<readonly StuckJob[]> {
       const cutoff = new Date(Date.now() - timeoutMs);
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
-          .select({ id: exportJobs.id })
+          .select({
+            id: exportJobs.id,
+            kind: exportJobs.kind,
+            subjectMemberId: exportJobs.subjectMemberId,
+          })
           .from(exportJobs)
           .where(
             and(
@@ -330,7 +356,11 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
               lt(exportJobs.updatedAt, cutoff),
             ),
           );
-        return rows.map((r) => r.id);
+        return rows.map((r) => ({
+          jobId: r.id,
+          kind: r.kind,
+          subjectMemberId: r.subjectMemberId,
+        }));
       });
     },
 

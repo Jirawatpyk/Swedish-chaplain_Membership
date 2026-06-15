@@ -402,12 +402,17 @@ describe('F9 computeDashboardSnapshot — 12-month trend distribution (G2/G3)', 
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         createdBy: admin.userId,
       });
-      // Members: 1 before the window (baseline) + 1 each in keys[3], keys[7], keys[11].
+      // Members: 1 before the window (baseline) + 1 each in keys[3], keys[7],
+      // keys[11]. The TRUE join month is `registration_date` (FR-001a). All rows
+      // share one in-window `created_at` (a "bulk import" day) so the growth
+      // series MUST key off registration_date, not created_at (F9 #1 regression
+      // guard — if the code reverts to created_at all 4 collapse into one month).
+      const IMPORT_DAY = midMonth(keys[10]!);
       const memberRows = [
-        { memberId: ownerMemberId, createdAt: BEFORE_WINDOW },
-        { memberId: randomUUID(), createdAt: midMonth(keys[3]!) },
-        { memberId: randomUUID(), createdAt: midMonth(keys[7]!) },
-        { memberId: randomUUID(), createdAt: midMonth(keys[11]!) },
+        { memberId: ownerMemberId, registrationDate: BEFORE_WINDOW },
+        { memberId: randomUUID(), registrationDate: midMonth(keys[3]!) },
+        { memberId: randomUUID(), registrationDate: midMonth(keys[7]!) },
+        { memberId: randomUUID(), registrationDate: midMonth(keys[11]!) },
       ].map((m, i) => ({
         tenantId: tenant.ctx.slug,
         memberId: m.memberId,
@@ -420,7 +425,9 @@ describe('F9 computeDashboardSnapshot — 12-month trend distribution (G2/G3)', 
         status: 'active' as const,
         riskScore: null,
         riskScoreBand: null,
-        createdAt: m.createdAt,
+        // `date` column → 'YYYY-MM-DD' string (mirrors issueDate above).
+        registrationDate: m.registrationDate.toISOString().slice(0, 10),
+        createdAt: IMPORT_DAY,
       }));
       await tx.insert(members).values(memberRows);
       // Paid invoices: 2 in distinct in-window months + 1 before the window

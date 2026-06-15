@@ -33,6 +33,8 @@ export interface SeedTenantFiscalInput {
   readonly taxId?: string;
   readonly registeredAddressTh?: string;
   readonly registeredAddressEn?: string;
+  /** Fiscal-year start month (1-12). Omitted → column default (1 = Jan, FY==CE). */
+  readonly fiscalYearStartMonth?: number;
 }
 
 /**
@@ -62,6 +64,9 @@ export async function seedTenantFiscal(input: SeedTenantFiscalInput): Promise<vo
       creditNoteNumberPrefix: input.creditNoteNumberPrefix ?? 'CN',
       ...(input.receiptNumberPrefix !== undefined
         ? { receiptNumberPrefix: input.receiptNumberPrefix }
+        : {}),
+      ...(input.fiscalYearStartMonth !== undefined
+        ? { fiscalYearStartMonth: input.fiscalYearStartMonth }
         : {}),
     }),
   );

@@ -76,7 +76,11 @@ export async function computeDashboardSnapshot(
 ): Promise<Result<DashboardSnapshot, SnapshotError>> {
   try {
     const now = deps.clock.now();
-    // Calendar year in the tenant timezone (FR-023 / membership-year convention).
+    // Calendar / membership year in the tenant timezone (FR-023). Used for the
+    // benefit-quota roll-up (eblast/cultural usage is tracked per membership
+    // year). NOT for the revenue KPI — that windows by the tenant FISCAL year,
+    // derived inside the invoice adapter from `now` + fiscalYearStartMonth (F9
+    // #4); the two coincide only for a January-start tenant.
     const year = Number(
       new Intl.DateTimeFormat('en-CA', {
         timeZone: deps.tenantTimezone,
@@ -102,11 +106,13 @@ export async function computeDashboardSnapshot(
     ] = await Promise.all([
       deps.memberSource.countByStatus(ctx),
       deps.memberSource.countAtRisk(ctx),
-      deps.invoiceSource.getYtdPaidRevenueSatang(ctx, year),
+      // Revenue KPI windows by the tenant FISCAL year (derived in the adapter
+      // from this instant + fiscalYearStartMonth), not the calendar `year`.
+      deps.invoiceSource.getYtdPaidRevenueSatang(ctx, now.toISOString()),
       deps.invoiceSource.countOverdue(ctx),
       deps.broadcastSource.countAwaitingApproval(ctx),
       deps.invoiceSource.getMonthlyPaidRevenueSatang(ctx, monthKeys, deps.tenantTimezone),
-      deps.memberSource.joinDistribution(ctx, monthKeys, deps.tenantTimezone),
+      deps.memberSource.joinDistribution(ctx, monthKeys),
       // P1-4 / FR-004 — cross-member quota roll-up inputs. The two consumption
       // aggregates are ONE GROUP BY each (no N+1); entitlements are resolved
       // below (memoized per distinct plan).

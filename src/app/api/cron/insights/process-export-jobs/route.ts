@@ -13,7 +13,7 @@
  * (cron-job.org retry-OFF; failures are logged + metered). Node runtime.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { processExportJob, STUCK_PROCESSING_TIMEOUT_MS } from '@/modules/insights';
+import { f9RetentionFor, processExportJob, STUCK_PROCESSING_TIMEOUT_MS } from '@/modules/insights';
 import { makeProcessExportJobDeps } from '@/modules/insights/infrastructure/process-export-job-deps';
 import { makeDrizzleExportJobRepo } from '@/modules/insights/infrastructure/repos/drizzle-export-job-repo';
 import { env } from '@/lib/env';
@@ -26,6 +26,25 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+/**
+ * Explicit function ceiling for the heaviest tick work — a GDPR archive build
+ * (up to ~1000 invoice-PDF fetches) — so a long build is not silently 504'd by a
+ * lower plan default. 300s matches the other heavy retention crons
+ * (pseudonymise-eventcreate, redact-expired-event-buyers).
+ *
+ * INVARIANT (F9 #15): `maxDuration` (300s) is deliberately BELOW
+ * `STUCK_PROCESSING_TIMEOUT_MS` (600s). A single invocation therefore cannot run
+ * past the stuck window, so a job still `processing` after 600s genuinely means
+ * its worker DIED — the stuck-reclaim → `failed` is always correct (never a
+ * false reclaim of a healthy in-flight build). The build heartbeat
+ * (`touchProcessingInTx`, every `EXPORT_HEARTBEAT_INTERVAL_MS` ≈ 200s) is thus a
+ * no-op safety net on this plan; it only becomes load-bearing if a future plan
+ * raises `maxDuration` ABOVE `STUCK_PROCESSING_TIMEOUT_MS` (then it keeps a
+ * legitimately-slow build's `updated_at` fresh so a concurrent tick can't
+ * false-reclaim it). Keep `maxDuration < STUCK_PROCESSING_TIMEOUT_MS` unless you
+ * also wire the heartbeat into the operational expectation.
+ */
+export const maxDuration = 300;
 
 const CLAIM_BATCH = 25;
 /**
@@ -71,13 +90,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // 2) Reclaim stuck `processing` jobs (crashed worker).
     const stuck = await repo.listStuckProcessing(tenant, STUCK_PROCESSING_TIMEOUT_MS);
-    for (const jobId of stuck) {
+    for (const { jobId, kind, subjectMemberId } of stuck) {
       const did = await runInTenant(tenant, (tx) =>
         repo.reclaimStuckInTx(tx, jobId, 'worker_timeout'),
       );
       if (did) {
         reclaimed += 1;
         insightsMetrics.exportJobReclaimed(tenant.slug);
+        // FR-037 (no silent failure): a stuck `gdpr_member_archive` reclaimed to
+        // terminal `failed` must emit `data_export_failed` so the member's GDPR
+        // request lifecycle has a terminal audit row — parity with
+        // processExportJob's own failure branches (the directory kinds have no
+        // failed event). Best-effort; never fails the tick.
+        if (kind === 'gdpr_member_archive') {
+          await deps.audit
+            .record({
+              tenantId: tenant.slug,
+              requestId: null,
+              eventType: 'data_export_failed',
+              actorUserId: 'system:cron',
+              retentionYears: f9RetentionFor('data_export_failed'),
+              summary: `GDPR data export failed (job ${jobId}): worker_timeout`,
+              payload: {
+                job_id: jobId,
+                error_code: 'worker_timeout',
+                subject_member_id: subjectMemberId ?? '',
+              },
+            })
+            .catch(() => {});
+        }
       }
     }
 
@@ -108,7 +149,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             requestId: null,
             eventType: 'data_export_expired',
             actorUserId: 'system:cron',
-            retentionYears: 5,
+            retentionYears: f9RetentionFor('data_export_expired'),
             summary: `Data export artefact expired + swept (job ${jobId})`,
             payload: { job_id: jobId },
           })

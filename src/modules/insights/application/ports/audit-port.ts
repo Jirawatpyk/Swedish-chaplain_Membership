@@ -128,6 +128,10 @@ export interface F9AuditPayloadByType {
   data_export_failed: {
     readonly job_id: string;
     readonly error_code: string;
+    // Carry the subject so a member's FAILED export scopes into their own
+    // GDPR audit subset (Art. 15) — parity with data_export_requested/_generated.
+    // '' for a malformed null-subject enqueue (mirrors the success event).
+    readonly subject_member_id: string;
   };
   data_export_expired: {
     readonly job_id: string;

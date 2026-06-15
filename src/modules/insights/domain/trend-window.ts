@@ -8,6 +8,20 @@
  * locale-independent prefix to slice.
  */
 
+/**
+ * The `YYYY-MM` of a calendar DATE value (a Postgres `date`, e.g.
+ * `registration_date`) read from its UTC components. A `date` column widens to a
+ * midnight-UTC `Date`; re-zoning that instant via `monthKeyOf` would shift the
+ * month for negative-offset tenant timezones (a member who joined on the 1st
+ * → previous month). A calendar date has no time-of-day, so its month is just
+ * the date's own month — read it directly, timezone-independent (F9 review).
+ */
+export function monthKeyOfDateOnly(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
 /** The tenant-local `YYYY-MM` month key for an instant. */
 export function monthKeyOf(at: Date, timeZone: string): string {
   // en-CA → `YYYY-MM-DD`; slice the year-month prefix.

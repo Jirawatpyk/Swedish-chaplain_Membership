@@ -71,6 +71,7 @@ function stubRepo(jobRecord: ExportJobRecord | null): ExportJobRepo {
     listRequestedIds: vi.fn(),
     claimInTx: vi.fn(),
     markReadyInTx: vi.fn(),
+    touchProcessingInTx: vi.fn(),
     markFailedInTx: vi.fn(),
     setDownloadTokenInTx: vi.fn().mockResolvedValue(true),
     consumeForDownloadInTx: vi.fn().mockResolvedValue(true),

@@ -1006,12 +1006,7 @@ export default async function MemberDetailPage({
                 only (requireSession('staff') already excludes 'member').
                 Own Suspense boundary so the benefit read never blocks paint. */}
             <Suspense fallback={<MemberBenefitsPreviewSkeleton />}>
-              <MemberBenefitsPreviewSection
-                tenant={tenant}
-                memberId={member.memberId}
-                actorUserId={session.user.id}
-                actorRole={session.user.role}
-              />
+              <MemberBenefitsPreviewSection tenant={tenant} memberId={member.memberId} />
             </Suspense>
           </div>
         ) : (

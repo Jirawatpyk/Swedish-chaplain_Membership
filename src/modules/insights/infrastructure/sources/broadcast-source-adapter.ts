@@ -57,9 +57,21 @@ export const broadcastSourceAdapter: BroadcastConsumptionSource = {
       memberId: mid,
     });
     if (!quota.ok) {
-      // Fail loud — do NOT mask as `used: 0` (would fire a false under-use
-      // warning). The member was already resolved upstream, so this is a real
-      // source error, not "member sent 0".
+      // An over-subscription (used + reserved > cap — e.g. a plan downgrade or
+      // extra pending broadcasts left more reserved than the new cap) is a REAL,
+      // DISPLAYABLE state, not a source fault: the cause carries the true `used`
+      // (this year's sent count), so render it (used / cap) rather than breaking
+      // the whole benefit view. NOTE: F7's `computeQuotaCounter` is intentionally
+      // strict here (it also backs the submit precheck); the leniency belongs on
+      // this F9 read path. Every OTHER quota error is a genuine fault → still
+      // fail loud (a masked `used: 0` would fire a false under-use warning; here
+      // we use the cause's real `used`, never a fake zero).
+      if (
+        quota.error.kind === 'quota.invariant_violation' &&
+        quota.error.cause.code === 'quota_counter.over_subscription'
+      ) {
+        return { used: quota.error.cause.used, lastUsedAt: null };
+      }
       throw new Error(`eblast consumption lookup failed: ${quota.error.kind}`);
     }
     // `used` is the count for computeQuotaCounter's internally-derived quota

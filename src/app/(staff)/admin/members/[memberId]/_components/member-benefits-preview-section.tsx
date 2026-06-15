@@ -13,22 +13,22 @@
  * threads the tenant slug into its Drizzle deps which wrap queries in
  * `runInTenant` (never the raw `db` singleton).
  *
- * PII-read trail (FR-036): emits `member_benefit_viewed` best-effort via
- * `recordStaffBenefitView` — the same staff-view audit the dedicated page
- * writes — since the inline preview exposes the same benefit data. The emit
- * logs+meters+swallows on failure, so the read never blocks the page.
+ * PII-read trail (FR-036): this inline PREVIEW does NOT emit
+ * `member_benefit_viewed` — consistent with the timeline-preview snippet's
+ * no-re-emit model. The canonical staff benefit-view audit is written once by
+ * the dedicated benefits page (`/admin/members/[id]/benefits`); emitting here on
+ * every member-detail render would double-count one logical view (detail open +
+ * click-through) and inflate the audit log on the most-trafficked staff surface
+ * (F9 #10).
  *
  * F9-gated at the call site (the benefits feature ships behind the F9 flag).
  * A read failure renders nothing rather than crashing the parent page.
  */
 import { getLocale } from 'next-intl/server';
-import { headers } from 'next/headers';
 import {
   computeBenefitUsage,
   makeComputeBenefitUsageDeps,
-  recordStaffBenefitView,
 } from '@/modules/insights';
-import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -42,17 +42,11 @@ import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 export async function MemberBenefitsPreviewSection({
   tenant,
   memberId,
-  actorUserId,
-  actorRole,
 }: {
   readonly tenant: TenantContext;
   readonly memberId: string;
-  readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager';
 }): Promise<React.JSX.Element | null> {
   const locale = await getLocale();
-  const h = await headers();
-  const requestId = requestIdFromHeaders(h);
 
   const result = await computeBenefitUsage(
     tenant,
@@ -68,16 +62,8 @@ export async function MemberBenefitsPreviewSection({
   }
   const usage = result.value;
 
-  // Same staff PII-read audit the dedicated benefits page emits (FR-036).
-  // Best-effort: logs+meters+swallows on failure, never blocks the read.
-  await recordStaffBenefitView({
-    tenantId: tenant.slug,
-    requestId,
-    actorUserId,
-    actorRole,
-    subjectMemberId: memberId,
-    membershipYear: usage.membershipYear,
-  });
+  // No `member_benefit_viewed` emit here — the dedicated benefits page owns the
+  // canonical one-per-view audit (F9 #10). This preview only reads.
 
   return (
     <section aria-labelledby="member-benefits-preview-heading" className="h-full">

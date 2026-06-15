@@ -63,7 +63,9 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     await expect(page.getByText('Needs attention')).toBeVisible();
     const overdueLink = page.getByRole('link', { name: /overdue invoices/i });
     if ((await overdueLink.count()) > 0) {
-      await expect(overdueLink).toHaveAttribute('href', '/admin/invoices?status=issued');
+      // The dashboard intentionally deep-links to the `overdue` filter (issued +
+      // past due), not the broader `issued` list — see admin/(home)/page.tsx:198.
+      await expect(overdueLink).toHaveAttribute('href', '/admin/invoices?status=overdue');
     }
     const atRiskLink = page.getByRole('link', { name: /at-risk members/i });
     if ((await atRiskLink.count()) > 0) {
