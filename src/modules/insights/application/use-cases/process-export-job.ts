@@ -158,7 +158,11 @@ export async function processExportJob(
         actorUserId: 'system:cron',
         retentionYears: f9RetentionFor('data_export_failed'),
         summary: `GDPR data export failed (job ${jobId}): ${errorCode}`,
-        payload: { job_id: jobId, error_code: errorCode },
+        payload: {
+          job_id: jobId,
+          error_code: errorCode,
+          subject_member_id: claim.subjectMemberId ?? '',
+        },
       })
       .catch(() => {});
   };

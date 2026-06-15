@@ -71,7 +71,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // 2) Reclaim stuck `processing` jobs (crashed worker).
     const stuck = await repo.listStuckProcessing(tenant, STUCK_PROCESSING_TIMEOUT_MS);
-    for (const { jobId, kind } of stuck) {
+    for (const { jobId, kind, subjectMemberId } of stuck) {
       const did = await runInTenant(tenant, (tx) =>
         repo.reclaimStuckInTx(tx, jobId, 'worker_timeout'),
       );
@@ -92,7 +92,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               actorUserId: 'system:cron',
               retentionYears: f9RetentionFor('data_export_failed'),
               summary: `GDPR data export failed (job ${jobId}): worker_timeout`,
-              payload: { job_id: jobId, error_code: 'worker_timeout' },
+              payload: {
+                job_id: jobId,
+                error_code: 'worker_timeout',
+                subject_member_id: subjectMemberId ?? '',
+              },
             })
             .catch(() => {});
         }

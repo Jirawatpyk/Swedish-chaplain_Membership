@@ -54,7 +54,9 @@ const auditRecordMock = vi.hoisted(() => vi.fn(async (_event?: unknown) => undef
 const repoMock = vi.hoisted(() => ({
   listRequestedIds: vi.fn(async () => []),
   listStuckProcessing: vi.fn(
-    async (): Promise<Array<{ jobId: string; kind: string }>> => [],
+    async (): Promise<
+      Array<{ jobId: string; kind: string; subjectMemberId: string | null }>
+    > => [],
   ),
   listSweepable: vi.fn(async () => [{ jobId: 'job-expired-1', blobKey: null }]),
   markExpiredInTx: vi.fn(async () => true),
@@ -110,9 +112,9 @@ describe('process-export-jobs cron — stuck-reclaim emits data_export_failed fo
     repoMock.reclaimStuckInTx.mockResolvedValue(false);
   });
 
-  it('emits data_export_failed when a stuck gdpr_member_archive is reclaimed to failed', async () => {
+  it('emits data_export_failed (with subject_member_id) when a stuck gdpr_member_archive is reclaimed', async () => {
     repoMock.listStuckProcessing.mockResolvedValueOnce([
-      { jobId: 'stuck-gdpr-1', kind: 'gdpr_member_archive' },
+      { jobId: 'stuck-gdpr-1', kind: 'gdpr_member_archive', subjectMemberId: 'mem-9' },
     ]);
     repoMock.reclaimStuckInTx.mockResolvedValueOnce(true);
 
@@ -123,14 +125,15 @@ describe('process-export-jobs cron — stuck-reclaim emits data_export_failed fo
         eventType: 'data_export_failed',
         actorUserId: 'system:cron',
         retentionYears: 5,
-        payload: { job_id: 'stuck-gdpr-1', error_code: 'worker_timeout' },
+        // M-1: subject scoped so the member's failed export joins their Art.15 subset.
+        payload: { job_id: 'stuck-gdpr-1', error_code: 'worker_timeout', subject_member_id: 'mem-9' },
       }),
     );
   });
 
   it('does NOT emit data_export_failed for a non-GDPR (directory) reclaim', async () => {
     repoMock.listStuckProcessing.mockResolvedValueOnce([
-      { jobId: 'stuck-ebook-1', kind: 'directory_ebook' },
+      { jobId: 'stuck-ebook-1', kind: 'directory_ebook', subjectMemberId: null },
     ]);
     repoMock.reclaimStuckInTx.mockResolvedValueOnce(true);
 
@@ -143,7 +146,7 @@ describe('process-export-jobs cron — stuck-reclaim emits data_export_failed fo
 
   it('does NOT emit when the reclaim loses the race (reclaimStuckInTx → false)', async () => {
     repoMock.listStuckProcessing.mockResolvedValueOnce([
-      { jobId: 'stuck-gdpr-2', kind: 'gdpr_member_archive' },
+      { jobId: 'stuck-gdpr-2', kind: 'gdpr_member_archive', subjectMemberId: 'mem-2' },
     ]);
     repoMock.reclaimStuckInTx.mockResolvedValueOnce(false);
 

@@ -343,7 +343,11 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       const cutoff = new Date(Date.now() - timeoutMs);
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
-          .select({ id: exportJobs.id, kind: exportJobs.kind })
+          .select({
+            id: exportJobs.id,
+            kind: exportJobs.kind,
+            subjectMemberId: exportJobs.subjectMemberId,
+          })
           .from(exportJobs)
           .where(
             and(
@@ -352,7 +356,11 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
               lt(exportJobs.updatedAt, cutoff),
             ),
           );
-        return rows.map((r) => ({ jobId: r.id, kind: r.kind }));
+        return rows.map((r) => ({
+          jobId: r.id,
+          kind: r.kind,
+          subjectMemberId: r.subjectMemberId,
+        }));
       });
     },
 

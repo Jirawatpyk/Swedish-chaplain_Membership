@@ -63,6 +63,9 @@ export interface SweepableJob {
 export interface StuckJob {
   readonly jobId: string;
   readonly kind: ExportKind;
+  /** Subject member — so the reclaim's `data_export_failed` row scopes into the
+   *  member's GDPR audit subset (Art. 15). Null for non-GDPR/subject-less jobs. */
+  readonly subjectMemberId: string | null;
 }
 
 export interface ExportJobRepo {

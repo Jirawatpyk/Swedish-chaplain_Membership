@@ -234,6 +234,9 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
     const stuckEntry = stuck.find((s) => s.jobId === jobId);
     expect(stuckEntry).toBeDefined();
     expect(stuckEntry?.kind).toBe('directory_ebook');
+    // M-1: subject carried (null here — directory job) so the cron reclaim can
+    // scope a gdpr failed-export row into the member's GDPR subset.
+    expect(stuckEntry?.subjectMemberId).toBeNull();
     expect(
       await runInTenant(tenant.ctx, (tx) => repo().reclaimStuckInTx(tx, jobId, 'worker_timeout')),
     ).toBe(true);

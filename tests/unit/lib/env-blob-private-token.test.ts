@@ -144,6 +144,31 @@ describe('env.ts — EXPORT_DOWNLOAD_TOKEN_SECRET distinctness (F9 #13)', () => 
     await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
   });
 
+  it('rejects EXPORT_DOWNLOAD_TOKEN_SECRET that collides with RENEWAL_LINK_TOKEN_SECRET_PRIMARY', async () => {
+    const shared = 'p'.repeat(48);
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: shared,
+      EXPORT_DOWNLOAD_TOKEN_SECRET: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('rejects EXPORT_DOWNLOAD_TOKEN_SECRET that collides with RENEWAL_LINK_TOKEN_SECRET_FALLBACK', async () => {
+    const shared = 'f'.repeat(48);
+    stubEnv({
+      FEATURE_F9_DASHBOARD: 'true',
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_FALLBACK: shared,
+      EXPORT_DOWNLOAD_TOKEN_SECRET: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
   it('accepts a distinct EXPORT_DOWNLOAD_TOKEN_SECRET (all secrets unique)', async () => {
     stubEnv({
       FEATURE_F9_DASHBOARD: 'true',

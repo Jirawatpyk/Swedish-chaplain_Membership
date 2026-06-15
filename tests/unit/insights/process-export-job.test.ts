@@ -298,6 +298,9 @@ describe('processExportJob — claim guards', () => {
       (c) => (c[0] as { eventType?: string }).eventType === 'data_export_failed',
     );
     expect(failedEvent).toBeDefined();
+    // M-1: the failed event carries the subject so it scopes into the member's
+    // own GDPR audit subset (Art. 15) — parity with the success event.
+    expect((failedEvent![0] as { payload: { subject_member_id: string } }).payload.subject_member_id).toBe('mem-1');
     expect(metricsMock.exportJobProcessed).toHaveBeenCalledWith(
       'gdpr_member_archive',
       'failed',
