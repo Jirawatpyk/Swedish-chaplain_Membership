@@ -217,8 +217,22 @@ describe('projectPublishedListing (FR-028 / SC-007 zero-leakage)', () => {
     expect(out).not.toHaveProperty('contact');
   });
 
-  it('empty visibility map → listed member with no exposed fields (SC-007 default-deny)', () => {
-    const out = projectPublishedListing({ ...baseRecord, fieldVisibility: {} });
-    expect(out).toEqual({});
+  it('empty visibility map → null (a listed member exposing no field is dropped, not {}) (F9 #6)', () => {
+    // A listed member who toggled every field hidden projects to no fields — it
+    // must be DROPPED (null), never emitted as a `{}` entry that would inflate
+    // the published count + render a blank E-Book card (SC-007 default-deny).
+    expect(projectPublishedListing({ ...baseRecord, fieldVisibility: {} })).toBeNull();
+  });
+
+  it('a listed member whose only visible fields are all empty → null (no {} artefact) (F9 #6)', () => {
+    // name + industry toggled visible, but the underlying values are empty/null →
+    // nothing projects → dropped (not a `{}` card).
+    const out = projectPublishedListing({
+      ...baseRecord,
+      fieldVisibility: { name: true, industry: true },
+      identity: { ...identity, memberName: '' },
+      metadata: { ...metadata, industry: null },
+    });
+    expect(out).toBeNull();
   });
 });

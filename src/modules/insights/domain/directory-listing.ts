@@ -193,8 +193,11 @@ function projectLocation(
 
 /**
  * The SC-007 zero-leakage projection. Returns `null` for an un-listed member
- * (excluded from every published output) or a `PublishedListing` containing
- * **only** the fields toggled visible whose underlying value is present.
+ * (excluded from every published output) OR for a listed member who exposes no
+ * field at all (every toggle hidden / every visible value empty) — the latter
+ * must not emit a `{}` entry that inflates the published count + renders a blank
+ * E-Book card (F9 #6). Otherwise a `PublishedListing` containing **only** the
+ * fields toggled visible whose underlying value is present.
  */
 export function projectPublishedListing(
   record: DirectoryRecord,
@@ -237,6 +240,12 @@ export function projectPublishedListing(
 
   const contact = projectContact(v, identity);
   if (contact !== undefined) out.contact = contact;
+
+  // SC-007 (F9 #6): a listed member who exposes no field at all projects to an
+  // empty object — drop it (null) so the published artefact never carries a `{}`
+  // entry (inflated count + blank E-Book card / leaks that the member is listed
+  // while showing nothing). The caller's `.filter(l => l !== null)` excludes it.
+  if (Object.keys(out).length === 0) return null;
 
   return out;
 }
