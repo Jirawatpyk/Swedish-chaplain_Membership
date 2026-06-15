@@ -18,6 +18,10 @@ import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
 import { contactPrimacy, type Contact, type ContactId } from '../../domain/contact';
+import {
+  ERASED_EMAIL_DOMAIN,
+  ERASED_SENTINEL,
+} from '../../domain/erasure-sentinels';
 import type { MemberId, TenantId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
@@ -292,9 +296,9 @@ export const drizzleContactRepo: ContactRepo = {
       const updated = await tx
         .update(contacts)
         .set({
-          firstName: '[erased]',
-          lastName: '[erased]',
-          email: sql`'erased+' || ${contacts.contactId} || '@erased.invalid'`,
+          firstName: ERASED_SENTINEL,
+          lastName: ERASED_SENTINEL,
+          email: sql`'erased+' || ${contacts.contactId} || '@' || ${ERASED_EMAIL_DOMAIN}`,
           phone: null,
           dateOfBirth: null,
           roleTitle: null,

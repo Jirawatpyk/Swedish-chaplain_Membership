@@ -47,6 +47,7 @@ import {
   type PlanId,
 } from '../../domain/member';
 import type { ContactId } from '../../domain/contact';
+import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
@@ -508,6 +509,47 @@ export const drizzleMemberRepo: MemberRepo = {
       const rows = await applyMemberPatch(tx, memberId, patch);
       if (rows.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToMember(rows[0]!));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async scrubPiiInTx(tx, memberId, opts) {
+    try {
+      // COMP-1 member erasure (GDPR Art.17 / PDPA §33). Anonymise the member
+      // row in place. `company_name` is NOT NULL so it takes the non-PII
+      // SENTINEL `[erased]`; every other PII-bearing column is NULLed —
+      // including the business quasi-identifiers `turnover_thb` + `founded_year`
+      // (GDPR Recital 26: at small-chamber scale these are re-identifying). The
+      // 2-letter ISO `country` (NOT NULL, low re-identification, useful
+      // aggregate) and `preferred_locale` (a UX setting) are intentionally
+      // kept, as are identity (`member_id`, `member_number`, `plan_*`),
+      // registration/created dates, and `status` (erasure is orthogonal to
+      // archive). Tenant-scoped via the caller's runInTenant tx (RLS); no manual
+      // tenant_id filter needed. Idempotent: re-running yields the same row.
+      const updated = await tx
+        .update(members)
+        .set({
+          companyName: ERASED_SENTINEL,
+          legalEntityType: null,
+          taxId: null,
+          website: null,
+          description: null,
+          notes: null,
+          foundedYear: null,
+          turnoverThb: null,
+          addressLine1: null,
+          addressLine2: null,
+          city: null,
+          province: null,
+          postalCode: null,
+          erasedAt: opts.erasedAt,
+          updatedAt: opts.erasedAt,
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok({ erasedAt: opts.erasedAt });
     } catch (e) {
       return err(unexpected(e));
     }

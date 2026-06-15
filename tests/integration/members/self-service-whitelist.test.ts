@@ -109,6 +109,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
     findLastPlanChangedAt: async () => ok(null),
     findPendingInvitationsForMember: async () => ok([]),
+    // COMP-1 (Task 3) — interface compliance stub.
+    scrubPiiInTx: async () => ok({ erasedAt: new Date(0) }),
   };
 
   const contactRepo: ContactRepo = {

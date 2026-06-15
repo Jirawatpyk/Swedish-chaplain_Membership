@@ -478,6 +478,21 @@ export interface MemberRepo {
     ctx: TenantContext,
     memberId: MemberId,
   ): Promise<Result<Date | null, RepoError>>;
+
+  /**
+   * COMP-1 — anonymise the member row in place (Art. 17 / §33). `company_name`
+   * (NOT NULL) → ERASED_SENTINEL; `tax_id`, `website`, `description`, `notes`,
+   * `legal_entity_type`, address parts, AND the business quasi-identifiers
+   * `turnover_thb` + `founded_year` → NULL (re-identification). Sets `erased_at`.
+   * Preserves `member_id`, `member_number`, `plan_*`, registration/created
+   * dates, and `status` (erasure is orthogonal to archive). Idempotent.
+   * `repo.not_found` when the member is absent / cross-tenant.
+   */
+  scrubPiiInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    opts: { readonly erasedAt: Date },
+  ): Promise<Result<{ readonly erasedAt: Date }, RepoError>>;
 }
 
 // ---------------------------------------------------------------------------
