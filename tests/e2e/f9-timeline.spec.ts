@@ -84,9 +84,12 @@ test.describe('F9 — unified multi-source timeline (US3) @f9', () => {
     // Filter bar present; the member can only ever see their own history.
     await expect(page.getByRole('combobox', { name: /source/i })).toBeVisible();
     // Either an entry stream or a friendly empty state — both are valid.
+    // Scope to the timeline list by its accessible name ("Activity timeline",
+    // = the page's t('title')) — a bare getByRole('list') also matches the
+    // mobile bottom-nav <ul> (strict-mode clash on mobile viewports).
     await expect(
       page
-        .getByRole('list')
+        .getByRole('list', { name: 'Activity timeline' })
         .or(page.getByText(/no activity recorded yet/i))
         .or(page.getByText(/no activity matches/i)),
     ).toBeVisible();
