@@ -22,7 +22,10 @@ const buttonVariants = cva(
         ghost:
           "border-transparent hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
-          "border-transparent bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          // WCAG AA: opaque --destructive-surface for the resting state
+          // (parent-independent; mirrors the Badge fix). Hover stays a
+          // translucent darken — a transient state, not axe-measured.
+          "border-transparent bg-destructive-surface text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         // Destructive outline — same chrome as `outline` but carries a
         // destructive-coloured border + text + hover + focus ring. Use
         // for IRREVERSIBLE but secondary actions (Void, Delete draft)

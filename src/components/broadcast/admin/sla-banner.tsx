@@ -72,7 +72,10 @@ export async function SlaBanner({
           'ml-auto rounded-full px-2 py-0.5 text-xs font-semibold',
           stats.bannerSeverity === 'green' && 'bg-emerald-200/60 dark:bg-emerald-900/40',
           stats.bannerSeverity === 'amber' && 'bg-amber-200/60 dark:bg-amber-900/40',
-          stats.bannerSeverity === 'red' && 'bg-destructive/20',
+          // WCAG AA: dark-on-light (mirrors green/amber pills) — the inherited
+          // medium `text-destructive` on a bg-destructive/20 tint was ~4.3:1.
+          stats.bannerSeverity === 'red' &&
+            'bg-red-200/60 text-red-900 dark:bg-red-900/40 dark:text-red-200',
         )}
       >
         {stats.bannerSeverity === 'red' ? t('breachWarning') : t('withinBudget')}
