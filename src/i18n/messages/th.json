@@ -4744,7 +4744,7 @@
           "upcoming": "ใกล้ครบกำหนด",
           "reminded": "ส่งการแจ้งเตือนแล้ว",
           "awaiting_payment": "รอการชำระเงิน",
-          "completed": "ใช้งานอยู่",
+          "completed": "เสร็จสมบูรณ์",
           "lapsed": "หมดอายุ",
           "cancelled": "ยกเลิก",
           "pending_admin_reactivation": "รอเจ้าหน้าที่ตรวจสอบ"
