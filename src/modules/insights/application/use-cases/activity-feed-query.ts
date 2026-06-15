@@ -45,9 +45,12 @@ export async function activityFeedQuery(
   if (meta.actorRole === 'member') return err('forbidden');
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
   const items = await deps.activitySource.recent(ctx, limit);
-  // Redact third-party email from the free-text summary for the manager
-  // projection (staff-review R001) — consistent with the US2 audit viewer; F1
-  // user-management events embed the target email in `summary`. Admin: full.
+  // Redact third-party email/phone from the free-text summary for the manager
+  // projection (staff-review R001 + F9 #9) — shares redactSummaryForRole with
+  // the US2 audit viewer; F1 user-management events embed the target email in
+  // `summary`. Member company names are intentionally NOT redacted (a manager
+  // has member-directory read scope, so they are not out-of-scope PII). Admin:
+  // full feed.
   if (meta.actorRole === 'manager') {
     return ok(items.map((it) => ({ ...it, summary: redactSummaryForRole(it.summary, 'manager') })));
   }

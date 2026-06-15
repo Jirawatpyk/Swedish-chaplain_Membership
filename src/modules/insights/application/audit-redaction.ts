@@ -9,9 +9,9 @@
  * "Sensitive payload fields" per FR-011 are: (a) **internal-only annotations** —
  * override reason codes/notes, staff notes; and (b) **third-party member PII
  * values** carried in operational-event payloads (e.g. a member's email in
- * `member_invitation_sent` / `member_email_change_*`). Both are stripped from
- * the manager projection via the global deny-list below. (The member-role
- * timeline projection — US3/US6 — reuses F3's existing logic, not this map.)
+ * `member_portal_invite_queued` / `member_contact_email_changed`). Both are
+ * stripped from the manager projection via the global deny-list below. (The
+ * member-role timeline projection — US3/US6 — reuses F3's existing logic.)
  *
  * **Actor identity is NOT redacted** — `actorUserId` is a top-level audit-row
  * field (the staff member who acted), explicitly visible to admins AND managers
@@ -58,22 +58,29 @@ export const GLOBAL_SENSITIVE_PAYLOAD_FIELDS: readonly string[] = [
 ];
 
 /**
- * Event types that carry per-event sensitive payload fields beyond the global
+ * Event types that carry per-event sensitive payload fields BEYOND the global
  * deny-list. A closed union (rather than a bare `string` key) so a typo or a
  * renamed event is a COMPILE error in the map below, not a silently-disabled
  * redaction. Spans F1 (`role_changed`/`account_*`) + F2 (`fee_config_updated`)
- * + F3 (`member_*`) taxonomies — no single audit-event-type enum covers all, so
- * this union is the authoritative key space for the map.
+ * + F3 (`member_updated`) taxonomies — no single audit-event-type enum covers
+ * all, so this union is the authoritative key space for the map.
+ *
+ * NOTE (F9 #14): only fields NOT already in GLOBAL_SENSITIVE_PAYLOAD_FIELDS
+ * belong here. The member email-change / invitation events are intentionally
+ * ABSENT: the prior entries keyed event-type names that the F3 taxonomy never
+ * emits (`member_invitation_sent` / `member_email_change_requested|confirmed`
+ * — the live names are `member_portal_invite_queued` /
+ * `member_contact_email_changed` / `member_email_change_reverted`), and their
+ * fields (`invitee_email`/`old_email`/`new_email`) are already covered by the
+ * global deny-list while the live events carry only pseudonymous email HASHES.
+ * `member_updated` stays — its `diff` (raw old/new field VALUES) is the one
+ * sensitive field the global list does not cover.
  */
 export type AuditRedactableEvent =
   | 'role_changed'
   | 'account_disabled'
   | 'account_reenabled'
   | 'fee_config_updated'
-  | 'member_invitation_sent'
-  | 'member_email_change_requested'
-  | 'member_email_change_confirmed'
-  | 'member_email_change_reverted'
   | 'member_updated';
 
 /**
@@ -92,15 +99,12 @@ export const SENSITIVE_PAYLOAD_FIELDS: Readonly<
   account_reenabled: ['reason'],
   // F2 fiscal-config change annotations.
   fee_config_updated: ['note', 'notes'],
-  // F3 member invitation / email-change events carry a third party's email.
-  member_invitation_sent: ['invitee_email'],
-  member_email_change_requested: ['old_email', 'new_email'],
-  member_email_change_confirmed: ['old_email', 'new_email'],
-  member_email_change_reverted: ['old_email', 'new_email'],
   // `member_updated` carries a free-form `diff` object with old/new VALUES of
   // arbitrary member fields (taxId, notes, turnoverThb, description, …) — strip
   // the whole diff for managers (schema-agnostic: cannot drift as MemberPatch
   // grows). The `fields_changed` list + member id remain for accountability.
+  // This is the only member event needing a per-event entry: its `diff` is the
+  // sole sensitive field NOT already covered by the global deny-list above.
   member_updated: ['diff'],
 };
 
@@ -112,23 +116,63 @@ export const SENSITIVE_PAYLOAD_FIELDS: Readonly<
 const SUMMARY_EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/g;
 
 /**
- * Redact a free-text audit `summary` for the viewing role (staff-review R001).
- * `payload` redaction (above) does not cover `summary`, but F1
- * disable/create/enable-user events embed the target's **email** in the
- * summary string (`"disabled manager user@x"`). The structured
- * actorUserId/targetUserId already give a manager accountability, so the email
- * is third-party PII a manager need not see (PDPA §19 / GDPR Art. 5(1)(c)).
- * `admin` → full summary; `manager` → emails replaced with `[email redacted]`.
+ * Conservative international-phone matcher (F9 #9): a leading `+`, a country
+ * digit, then ≥8 more phone chars (digits / spaces / parens / dots / dashes)
+ * ending in a digit. The mandatory `+` keeps this from over-redacting plain
+ * numbers that legitimately appear in summaries — years, counts, ids, amounts,
+ * Thai tax IDs — none of which carry a `+` prefix. `+66 81 234 5678` →
+ * `[phone redacted]`; `+5 items`, `+10.5%`, `1,234,567` are untouched.
+ */
+const SUMMARY_PHONE_RE = /\+\d[\d\s().-]{7,}\d/g;
+
+/**
+ * Redact a free-text audit `summary` for the viewing role (staff-review R001 +
+ * F9 #9). `payload` redaction (above) does not cover `summary`, but F1
+ * disable/create/enable-user events embed the target's **email** in the summary
+ * string (`"disabled manager user@x"`), and an operational summary could embed a
+ * phone number. The structured actorUserId/targetUserId already give a manager
+ * accountability, so a third party's email/phone is PII a manager need not see
+ * (PDPA §19 / GDPR Art. 5(1)(c)). Shared by the US2 audit viewer AND the US1
+ * dashboard activity feed. `admin` → full summary; `manager` → email/phone
+ * tokens replaced. (Member company names are NOT redacted here — they are within
+ * a manager's member-directory read scope, so the activity feed shows them.)
  */
 export function redactSummaryForRole(summary: string, role: AuditViewerRole): string {
   if (role === 'admin') return summary;
-  return summary.replace(SUMMARY_EMAIL_RE, '[email redacted]');
+  return summary
+    .replace(SUMMARY_EMAIL_RE, '[email redacted]')
+    .replace(SUMMARY_PHONE_RE, '[phone redacted]');
+}
+
+/**
+ * Recursively strip denied field NAMES from a payload value at ANY depth (F9 #7
+ * defence-in-depth). The top-level-only projection let a nested object/array
+ * carrying a denied key — e.g. `{ actor: { email: '…' } }` — leak a third
+ * party's PII to the manager view AND into a member's GDPR archive. Now a denied
+ * key is dropped wherever it appears. Builds fresh objects/arrays (never mutates
+ * the input). Audit payloads are bounded JSON (no cycles); recursion depth =
+ * the JSON nesting depth.
+ */
+function redactValueForDeny(value: unknown, deny: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValueForDeny(item, deny));
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      if (deny.has(key)) continue;
+      out[key] = redactValueForDeny(inner, deny);
+    }
+    return out;
+  }
+  return value;
 }
 
 /**
  * Project a single audit row's `payload` for the viewing role. Returns a fresh
  * object (never mutates the input). `admin` → full payload; `manager` → payload
- * minus the global + per-event-type sensitive field names; `null` → `null`.
+ * minus the global + per-event-type sensitive field names, stripped at ANY
+ * nesting depth (F9 #7); `null` → `null`.
  */
 export function redactPayloadForRole(
   eventType: string,
@@ -146,9 +190,5 @@ export function redactPayloadForRole(
       eventType
     ] ?? [];
   const deny = new Set<string>([...GLOBAL_SENSITIVE_PAYLOAD_FIELDS, ...perEvent]);
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(payload)) {
-    if (!deny.has(key)) out[key] = value;
-  }
-  return out;
+  return redactValueForDeny(payload, deny) as Record<string, unknown>;
 }
