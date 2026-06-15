@@ -40,15 +40,6 @@ const querySchema = z.object({
 const EMPTY = { items: [], next_cursor: null, total: 0 } as const;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // F9 kill-switch (F9 #11): the timeline is an F9 US3 surface, so it must go
-  // dark with the rest of F9 when the flag is off — flag-first (before auth) to
-  // match the other F9 routes (data-export / dismiss / directory).
-  if (!env.features.f9Dashboard) {
-    return NextResponse.json(
-      { error: { code: 'feature_disabled', message: 'Timeline is not available.' } },
-      { status: 503 },
-    );
-  }
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);

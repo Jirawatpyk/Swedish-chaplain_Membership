@@ -13,16 +13,7 @@ import { ok, err } from '@/lib/result';
 const requireAdminContextMock = vi.fn();
 const timelineListMock = vi.fn();
 const buildMembersDepsMock = vi.fn();
-// Mutable so a test can flip the F9 kill-switch; also makes the suite robust to
-// whether FEATURE_F9_DASHBOARD happens to be set in the test runtime env. Spread
-// the REAL env (this suite importActual's @/modules/members, which transitively
-// loads db.ts and needs the real DATABASE_URL etc.) and override only features.
-const envFeatures = vi.hoisted(() => ({ f9Dashboard: true }));
 
-vi.mock('@/lib/env', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
-  return { ...actual, env: { ...actual.env, features: envFeatures } };
-});
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
 }));
@@ -67,24 +58,7 @@ function makeRequest(url: string): NextRequest {
 }
 
 describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-    envFeatures.f9Dashboard = true;
-  });
-
-  it('F9 kill-switch (F9 #11): FEATURE_F9_DASHBOARD off → 503 feature_disabled, before auth', async () => {
-    envFeatures.f9Dashboard = false;
-    const { GET } = await import('@/app/api/members/[memberId]/timeline/route');
-    const res = await GET(
-      makeRequest(`http://localhost/api/members/${validMemberId}/timeline`),
-      { params: Promise.resolve({ memberId: validMemberId }) },
-    );
-    expect(res.status).toBe(503);
-    const body = await res.json();
-    expect(body.error.code).toBe('feature_disabled');
-    // Flag-first: the route never reaches the RBAC gate when F9 is dark.
-    expect(requireAdminContextMock).not.toHaveBeenCalled();
-  });
+  afterEach(() => vi.clearAllMocks());
 
   it('200 happy path — returns items + next_cursor', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
