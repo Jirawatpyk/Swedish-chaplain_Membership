@@ -55,9 +55,11 @@
 
 ## การลงนามรับรองรวม (Go/No-Go)
 
-| บทบาท | ชื่อ | ผ่านทุกชุด? | วันที่ | ลายเซ็น |
+| บทบาท | ชื่อ (กรอกก่อน Stage 5) | ผ่านทุกชุด? | วันที่ | ลายเซ็น |
 |---|---|---|---|---|
-| ผู้รับรอง UAT (SweCham) | 🟡 **ยังไม่ได้กำหนดตัว** (open operator item) | ☐ | | |
-| ผู้ดูแลระบบ | | ☐ | | |
+| ผู้รับรอง UAT — เจ้าของอำนาจ (SweCham) | _[General Manager / Executive Director — TBD]_ | ☐ | | |
+| ผู้เดินทดสอบ (hands-on) | _[Office / Membership Manager — TBD]_ | ☐ | | |
+| ผู้ยืนยันชุด F4 ภาษี | _[ผู้ทำบัญชี / Bookkeeper — TBD]_ | ☐ | | |
+| ผู้ดูแลระบบ (technical) | _[TBD]_ | ☐ | | |
 
-> 🟡 **ต้องทำก่อน Stage 5:** กำหนดตัว **ผู้รับรอง UAT ฝั่ง SweCham** (อ้างอิง `go-live-readiness.md` §8 — ยัง OPEN)
+> 🟡 **PLACEHOLDER — ต้องกำหนดตัวจริงก่อน Stage 5:** แทนที่ `[… — TBD]` ด้วยชื่อจริงของเจ้าหน้าที่ SweCham (อ้างอิง `go-live-readiness.md` §8 — ยัง OPEN). รูปแบบแนะนำ: GM/Exec Director เซ็นรับแทนองค์กร · Office/Membership Manager เดินทุก TC · ผู้ทำบัญชี cosign เฉพาะชุด F4 (ใบกำกับภาษี/§87/VAT)
