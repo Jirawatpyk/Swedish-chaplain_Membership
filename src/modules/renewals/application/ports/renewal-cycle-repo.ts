@@ -62,6 +62,20 @@ export interface ListRenewalCyclesOpts {
   readonly excludeCycleId?: string;
   /** Optional T-N urgency bucket (data-model.md § 2.1 pipeline_idx hot-path). */
   readonly maxDaysUntilExpiry?: number;
+  /**
+   * COMP-1 H4 — when `true`, drop cycles whose owning member was
+   * GDPR-erased (`members.erased_at IS NOT NULL`). Erasure keeps
+   * `members.status` + the cycle and stamps only `erased_at`, so a status
+   * filter alone does NOT hide an erased member's cycle. Set ONLY by the
+   * OPERATIONAL `loadPendingReactivationReview` admin queue — the cron
+   * (`reconcilePendingReactivations`) and the per-member detail reads
+   * (`loadMemberRenewalStatus`, `loadRenewalSummary`) leave it `false`/unset
+   * (they are internal-processing or by-member reads that must still see
+   * the erased member's own cycles). Implemented as a correlated
+   * `NOT EXISTS` anti-join so `list` keeps reading only `renewal_cycles`
+   * (no member join added).
+   */
+  readonly excludeErasedMembers?: boolean;
   readonly sort?:
     | 'expires_at_asc'
     | 'expires_at_desc'

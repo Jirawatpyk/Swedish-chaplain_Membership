@@ -352,6 +352,26 @@ function buildNextCursor(
  *   grace: expires_at >= NOW() - 30 days     (post-expiry, in grace window)
  *   lapsed: status='lapsed' OR > 30 days past expiry
  */
+/**
+ * COMP-1 H4 — correlated "member is NOT GDPR-erased" predicate for the
+ * cycle-only aggregate queries (pipeline summary + lapsed count) that do
+ * NOT join `members`. Erasure keeps `members.status` + the cycle and stamps
+ * only `erased_at`, so a cycle whose owning member was erased must be
+ * dropped from every OPERATIONAL admin enumeration. Expressed as
+ * `NOT EXISTS (... erased_at IS NOT NULL)` so it can be AND-ed into a
+ * `GROUP BY` aggregate WITHOUT adding a join (which would otherwise force
+ * the joined member columns into the GROUP BY). LEFT-JOIN-safe by
+ * construction: a cycle with no member row at all has no erased member →
+ * the NOT EXISTS passes → the cycle is kept (same semantics as the
+ * `isNull(members.erasedAt)` filter used on the member-joined page query).
+ */
+const MEMBER_NOT_ERASED_SQL = sql`NOT EXISTS (
+  SELECT 1 FROM ${members} m
+  WHERE m.tenant_id = ${renewalCycles.tenantId}
+    AND m.member_id = ${renewalCycles.memberId}
+    AND m.erased_at IS NOT NULL
+)`;
+
 const URGENCY_CASE_SQL = sql<UrgencyBucket>`
   CASE
     WHEN ${renewalCycles.status} = 'lapsed' THEN 'lapsed'
@@ -594,6 +614,14 @@ export function makeDrizzleRenewalCycleRepo(
           filters.push(
             sql`${renewalCycles.expiresAt} <= NOW() + (${opts.maxDaysUntilExpiry} || ' days')::interval`,
           );
+        }
+        if (opts.excludeErasedMembers === true) {
+          // COMP-1 H4 — drop cycles whose member is GDPR-erased. Opt-in so
+          // ONLY the operational pending-reactivation-review queue filters;
+          // the reconcile cron + per-member detail callers keep reading the
+          // erased member's own cycles. Correlated NOT EXISTS keeps `list`
+          // join-free (see `MEMBER_NOT_ERASED_SQL`).
+          filters.push(MEMBER_NOT_ERASED_SQL);
         }
         const whereClause = filters.length > 0 ? and(...filters) : undefined;
 
@@ -965,7 +993,16 @@ export function makeDrizzleRenewalCycleRepo(
         // Window definition: active cycles only EXCEPT lapsed tab which
         // explicitly returns lapsed cycles. The window is "next 90 days"
         // for non-lapsed urgency buckets.
-        const baseFilters: SQL[] = [];
+        const baseFilters: SQL[] = [
+          // COMP-1 H4 — exclude GDPR-erased members from the pipeline
+          // window. Drives BOTH the summary aggregate below AND the page
+          // query (via `pageFilters = baseFilters.slice()`), so the badge
+          // counts always agree with the rows shown. `markCycleComplete-
+          // FromInvoicePaid` routes a paid erased member's cycle to the
+          // NON-terminal `pending_admin_reactivation`, so erased members
+          // are actively pushed into this window without this filter.
+          MEMBER_NOT_ERASED_SQL,
+        ];
         if (opts.urgency === 'lapsed') {
           baseFilters.push(eq(renewalCycles.status, 'lapsed'));
         } else {
@@ -1004,7 +1041,13 @@ export function makeDrizzleRenewalCycleRepo(
         // badge reflects the SAME slice the user is viewing. Without
         // this, the badge silently shows whole-tenant lapsed total
         // even when the user filtered by tier.
-        const lapsedFilters: SQL[] = [eq(renewalCycles.status, 'lapsed')];
+        const lapsedFilters: SQL[] = [
+          eq(renewalCycles.status, 'lapsed'),
+          // COMP-1 H4 — keep the lapsed badge count in lock-step with the
+          // pipeline rows: an erased member's lapsed cycle must not inflate
+          // the badge.
+          MEMBER_NOT_ERASED_SQL,
+        ];
         if (opts.tier) {
           lapsedFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
         }
@@ -1149,6 +1192,3 @@ export function makeDrizzleRenewalCycleRepo(
     },
   };
 }
-
-// Suppress unused import warning for `isNull` (kept for future deletion-aware joins)
-void isNull;

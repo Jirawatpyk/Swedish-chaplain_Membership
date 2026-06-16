@@ -385,6 +385,20 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         if (baseWhere !== undefined) {
           whereParts.push(baseWhere as ReturnType<typeof eq>);
         }
+        // COMP-1 H4 — exclude GDPR-erased members from this OPERATIONAL
+        // admin task queue. Erasure keeps `members.status` + the task and
+        // stamps only `erased_at` (scrubbing company_name to '[erased]'),
+        // so the LEFT-JOINed task row would still surface unless we drop it
+        // here. AND-ed at the TOP-LEVEL WHERE (not inside the LEFT JOIN ON)
+        // so it removes the row rather than null-blanking member columns;
+        // LEFT-JOIN-safe because a genuinely-absent member left-extends to
+        // `erased_at = NULL`, which `isNull` correctly KEEPS (a cycle-less /
+        // member-less task is not an erased member). by-id `findById` +
+        // `listForCycle` + cycle-id reads are left unfiltered (they need the
+        // tombstone for the cycle-detail timeline).
+        whereParts.push(
+          isNull(members.erasedAt) as unknown as ReturnType<typeof eq>,
+        );
         // Cursor: opaque "<dueAtIso>|<taskId>" — keyset paginate by
         // (due_at, task_id). Newer cursor format keeps deterministic
         // ordering when many tasks share the same due_at minute.
