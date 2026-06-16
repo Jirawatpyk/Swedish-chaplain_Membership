@@ -520,12 +520,37 @@ export const drizzleMemberRepo: MemberRepo = {
       // row in place. `company_name` is NOT NULL so it takes the non-PII
       // SENTINEL `[erased]`; every other PII-bearing column is NULLed —
       // including the business quasi-identifiers `turnover_thb` + `founded_year`
-      // (GDPR Recital 26: at small-chamber scale these are re-identifying). The
-      // 2-letter ISO `country` (NOT NULL, low re-identification, useful
-      // aggregate) and `preferred_locale` (a UX setting) are intentionally
-      // kept, as are identity (`member_id`, `member_number`, `plan_*`),
-      // registration/created dates, and `status` (erasure is orthogonal to
-      // archive). Tenant-scoped via the caller's runInTenant tx (RLS); no manual
+      // (GDPR Recital 26: at small-chamber scale these are re-identifying) and
+      // the F8-era admin free-text + risk cluster: the
+      // `blocked_from_auto_reactivation_reason` (admin free-text, same PII class
+      // as `notes` — it can name/email the member), the admin who set the block
+      // (`..._set_by_user_id`), and the derived behavioural/financial risk
+      // signals (`risk_score`/`risk_score_band`/`risk_score_factors` +
+      // their computed/snooze timestamps, moot once the score is gone).
+      //
+      // The blocked-reactivation cluster is erased AS A UNIT. We cannot keep
+      // `blocked_from_auto_reactivation = TRUE` after nulling its provenance:
+      // the `members_blocked_from_auto_reactivation_consistency_check` CHECK
+      // (migration 0094) requires that when the flag is TRUE both `..._at` AND
+      // `..._set_by_user_id` are NOT NULL. Erasing the actor (`set_by_user_id`)
+      // therefore forces the whole cluster back to the FALSE/NULL branch — the
+      // "blocked because admin X said Y" record cannot persist without its
+      // provenance, and the flag/`at` carry no value once the reason+actor are
+      // gone. So `blocked_from_auto_reactivation` → FALSE and `..._at` → NULL.
+      //
+      // KEPT: the 2-letter ISO `country` (NOT NULL, low re-identification,
+      // useful aggregate), `preferred_locale` (a UX setting), identity
+      // (`member_id`, `member_number`, `plan_*`), registration/created dates,
+      // `status` (erasure is orthogonal to archive), and the non-identifying
+      // state flags + their consent/record-keeping timestamps
+      // (renewal-opt-out, email-unverified, broadcasts-halt/ack).
+      //
+      // The full SCRUBBED ∪ KEPT partition is enforced as an allowlist by
+      // `tests/unit/members/infrastructure/scrub-pii-column-coverage.test.ts`,
+      // which fails the build if a future column is left unclassified — keep
+      // this `.set({...})` in lock-step with that test's SCRUBBED set.
+      //
+      // Tenant-scoped via the caller's runInTenant tx (RLS); no manual
       // tenant_id filter needed. Idempotent: re-running yields the same row.
       const updated = await tx
         .update(members)
@@ -543,6 +568,18 @@ export const drizzleMemberRepo: MemberRepo = {
           city: null,
           province: null,
           postalCode: null,
+          // H1 — F8-era admin free-text + derived risk cluster. The blocked-
+          // reactivation flag + `..._at` collapse to FALSE/NULL alongside their
+          // provenance to satisfy the 0094 consistency CHECK (see comment above).
+          blockedFromAutoReactivation: false,
+          blockedFromAutoReactivationAt: null,
+          blockedFromAutoReactivationReason: null,
+          blockedFromAutoReactivationSetByUserId: null,
+          riskScore: null,
+          riskScoreBand: null,
+          riskScoreFactors: null,
+          riskScoreLastComputedAt: null,
+          riskSnoozedUntil: null,
           erasedAt: opts.erasedAt,
           updatedAt: opts.erasedAt,
         })

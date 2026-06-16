@@ -19,6 +19,7 @@ import type {
 import { contactPrimacy, type Contact, type ContactId } from '../../domain/contact';
 import {
   ERASED_EMAIL_DOMAIN,
+  ERASED_EMAIL_LOCAL_PREFIX,
   ERASED_SENTINEL,
 } from '../../domain/erasure-sentinels';
 import type { MemberId, TenantId } from '../../domain/member';
@@ -287,7 +288,7 @@ export const drizzleContactRepo: ContactRepo = {
         .set({
           firstName: ERASED_SENTINEL,
           lastName: ERASED_SENTINEL,
-          email: sql`'erased+' || ${contacts.contactId} || '@' || ${ERASED_EMAIL_DOMAIN}`,
+          email: sql`${ERASED_EMAIL_LOCAL_PREFIX} || ${contacts.contactId} || '@' || ${ERASED_EMAIL_DOMAIN}`,
           phone: null,
           dateOfBirth: null,
           roleTitle: null,

@@ -49,9 +49,14 @@ async function seedMember(
     city: string;
     province: string;
     postalCode: string;
+    blockedReason: string;
+    riskScore: number;
+    riskScoreBand: string;
+    riskScoreFactors: Record<string, unknown>;
   },
 ): Promise<SeededMember> {
   const memberId = randomUUID();
+  const blockedByUserId = randomUUID();
 
   await runInTenant(tenant.ctx, async (tx) => {
     await tx.insert(members).values({
@@ -76,6 +81,16 @@ async function seedMember(
       planId: 'test-plan',
       planYear: 2026,
       status: 'active',
+      // H1 additions — F8-era admin free-text + risk cluster must scrub too.
+      blockedFromAutoReactivation: true,
+      blockedFromAutoReactivationAt: new Date('2026-05-01T00:00:00.000Z'),
+      blockedFromAutoReactivationSetByUserId: blockedByUserId,
+      blockedFromAutoReactivationReason: fields.blockedReason,
+      riskScore: fields.riskScore,
+      riskScoreBand: fields.riskScoreBand,
+      riskScoreFactors: fields.riskScoreFactors,
+      riskScoreLastComputedAt: new Date('2026-05-02T00:00:00.000Z'),
+      riskSnoozedUntil: new Date('2026-07-01T00:00:00.000Z'),
     });
   });
 
@@ -105,6 +120,17 @@ async function rawSelectMember(memberId: string) {
       postal_code: members.postalCode,
       country: members.country,
       preferred_locale: members.preferredLocale,
+      // H1 — F8-era admin free-text + risk cluster (scrubbed) and the two
+      // non-PII flags/timestamps (kept).
+      blocked_reason: members.blockedFromAutoReactivationReason,
+      blocked_set_by_user_id: members.blockedFromAutoReactivationSetByUserId,
+      risk_score: members.riskScore,
+      risk_score_band: members.riskScoreBand,
+      risk_score_factors: members.riskScoreFactors,
+      risk_score_last_computed_at: members.riskScoreLastComputedAt,
+      risk_snoozed_until: members.riskSnoozedUntil,
+      blocked_from_auto_reactivation: members.blockedFromAutoReactivation,
+      blocked_at: members.blockedFromAutoReactivationAt,
       erased_at: members.erasedAt,
     })
     .from(members)
@@ -185,6 +211,11 @@ describe('MemberRepo.scrubPiiInTx', () => {
       city: 'Bangkok',
       province: 'Bangkok',
       postalCode: '10500',
+      // Free-text admin reason that can name / email the member (PII class of `notes`).
+      blockedReason: 'BLOCKED: repeated chargebacks — contact john@example.com',
+      riskScore: 87,
+      riskScoreBand: 'critical',
+      riskScoreFactors: { late_payments: 3, lapsed_renewals: 1, complaint_count: 2 },
     });
     const erasedAt = new Date('2026-06-16T00:00:00.000Z');
 
@@ -208,6 +239,18 @@ describe('MemberRepo.scrubPiiInTx', () => {
     expect(row.postal_code).toBeNull();
     expect(row.legal_entity_type).toBeNull();
     expect(row.erased_at).not.toBeNull();
+    // H1 — F8-era admin free-text + risk cluster scrubbed to NULL. The blocked-
+    // reactivation cluster collapses AS A UNIT (the 0094 consistency CHECK
+    // forbids flag=TRUE without provenance): flag→FALSE, all four cols cleared.
+    expect(row.blocked_reason).toBeNull();
+    expect(row.blocked_set_by_user_id).toBeNull();
+    expect(row.blocked_from_auto_reactivation).toBe(false);
+    expect(row.blocked_at).toBeNull();
+    expect(row.risk_score).toBeNull();
+    expect(row.risk_score_band).toBeNull();
+    expect(row.risk_score_factors).toBeNull();
+    expect(row.risk_score_last_computed_at).toBeNull();
+    expect(row.risk_snoozed_until).toBeNull();
     // Identity + non-PII quasi-aggregate columns preserved.
     expect(row.member_id).toBe(memberId);
     expect(row.member_number).toBeGreaterThan(0);
