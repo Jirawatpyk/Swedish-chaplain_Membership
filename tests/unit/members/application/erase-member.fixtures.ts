@@ -20,6 +20,7 @@ import type { EraseMemberDeps } from '@/modules/members/application/use-cases/er
  */
 export type StubbedEraseDeps = EraseMemberDeps & {
   memberRepo: {
+    findErasedAtById: ReturnType<typeof vi.fn>;
     findByIdInTx: ReturnType<typeof vi.fn>;
     scrubPiiInTx: ReturnType<typeof vi.fn>;
   };
@@ -41,6 +42,11 @@ export function buildEraseDeps(): StubbedEraseDeps {
   return {
     tenant: { slug: 't-1' },
     memberRepo: {
+      // Pre-flight existence+state read (COMP-1 LOW/M2 fix). Happy-path
+      // default: member EXISTS and is NOT yet erased (erasedAt: null) — so the
+      // requested-audit emits as before. Tests override this to report
+      // not_found or an already-erased (erasedAt set) member.
+      findErasedAtById: vi.fn(async () => ok({ erasedAt: null as Date | null })),
       findByIdInTx: vi.fn(async () => ok(FAKE_MEMBER)),
       scrubPiiInTx: vi.fn(async () => ok({ erasedAt: new Date() })),
     },

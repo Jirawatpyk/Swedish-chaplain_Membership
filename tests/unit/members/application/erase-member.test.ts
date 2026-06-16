@@ -60,6 +60,9 @@ describe('eraseMember — requested audit + atomic scrub', () => {
 
   it('returns not_found when the member does not exist', async () => {
     const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.not_found' } }) as const,
+    );
     deps.memberRepo.findByIdInTx = vi.fn(
       async () => ({ ok: false, error: { code: 'repo.not_found' } }) as const,
     );
@@ -71,6 +74,63 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.type).toBe('not_found');
+  });
+
+  // LOW (existence oracle / audit pollution): the durable
+  // `member_erasure_requested` row must NOT be written for a bogus or
+  // cross-tenant memberId. The pre-flight existence read short-circuits with
+  // `not_found` BEFORE the requested-audit emit, so the append-only DPO log is
+  // never polluted with a clock-start for a non-existent subject (and the audit
+  // row can't act as a cross-tenant existence oracle).
+  it('does NOT emit member_erasure_requested when the member does not exist', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.not_found' } }) as never,
+    );
+    const res = await eraseMember(
+      MISSING_ID,
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('not_found');
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erasure_requested');
+    // No destructive work either — short-circuit is before the scrub tx.
+    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+  });
+
+  // MEDIUM (M2 re-emit flood): the use-case is re-driven (idempotent scrub +
+  // US2 reconciler). A re-run over an ALREADY-erased member (erased_at set) must
+  // NOT re-emit `member_erasure_requested` — that would append a fresh
+  // `requested` row and conceptually restart the Art.12 one-month clock on every
+  // reconciler pass. It still completes the scrub + cascades and re-emits
+  // `member_erased` (the completion proof) — the request was already logged on
+  // the first run.
+  it('does NOT re-emit member_erasure_requested when the member is already erased (re-drive)', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(
+      async () => ({ ok: true, value: { erasedAt: new Date('2026-06-15T00:00:00.000Z') } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    const requestedEmits = deps.audit.recordInTx.mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'member_erasure_requested',
+    );
+    expect(requestedEmits).toHaveLength(0);
+    // But it still completes (scrub idempotent + cascades) → member_erased.
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).toContain('member_erased');
   });
 
   it('returns not_found when scrubPiiInTx reports the member vanished mid-tx', async () => {
