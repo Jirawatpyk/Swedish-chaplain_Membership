@@ -377,6 +377,44 @@ describe('archiveMember use case (R009)', () => {
     }
   });
 
+  // L1 (archive-side coverage for the H3 fail-loud change, COMP-1): the SHARED
+  // `listLinkedUserIdsForMemberInTx` adapter was made fail-loud (the swallow-to-[]
+  // try/catch was removed) so an erasure read error rolls back the erasure. That
+  // ALSO changed archiveMember: a transient read error during archive now ROLLS
+  // BACK the whole archive (previously it swallowed → archive completed with a
+  // skipped session-revoke). This test locks in the now-intended fail-closed
+  // behavior so a future "restore the swallow" regression is caught — the linked
+  // -user read throws, the archive tx must roll back, and the member is NOT
+  // archived (server_error). Mirrors the integration coverage at
+  // tests/integration/members/erase-member-cascade.test.ts on the erasure side.
+  it('rolls back the archive (server_error) when listLinkedUserIdsForMemberInTx throws', async () => {
+    // A linked user exists, but the in-tx read fails loud (H3): the adapter no
+    // longer swallows the error to []. The throw propagates out of the scrub tx.
+    stubTxContacts.linkedUserIds = ['user-1'];
+    const deps = makeDeps();
+    deps.contactRepo.listLinkedUserIdsForMemberInTx = vi.fn(async () => {
+      throw new Error('transient read failure');
+    });
+    const result = await archiveMember(
+      memberId,
+      { reason: 'read fails loud' },
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      deps,
+    );
+    // Fail-closed: a read error must NOT let the archive complete.
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('server_error');
+    // The error is generic (server_error), not a not_found / state_error
+    // mis-map — the linked-user read threw a bare Error, caught by the outer
+    // catch. No session was revoked and no member_archived audit was emitted
+    // (the tx rolled back before either could persist).
+    expect(deps.sessions.revokeAllForInTx).not.toHaveBeenCalled();
+    const archivedAudits = deps.audit.recordInTx.mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'member_archived',
+    );
+    expect(archivedAudits).toHaveLength(0);
+  });
+
   it('returns server_error when session revocation fails', async () => {
     stubTxContacts.linkedUserIds = ['user-1'];
     const deps = makeDeps({

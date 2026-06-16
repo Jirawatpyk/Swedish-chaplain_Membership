@@ -19,7 +19,7 @@
  *
  * Pure Infrastructure — only `@/lib/db` + sibling-module barrel reads.
  */
-import { and, eq, sql, asc, gt, exists } from 'drizzle-orm';
+import { and, eq, sql, asc, gt, exists, isNull } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -85,6 +85,9 @@ export function makeDrizzleTierUpgradeEvalCandidateRepo(
           .where(
             and(
               eq(members.status, 'active'),
+              // COMP-1 H4 — exclude GDPR-erased members from tier-upgrade
+              // evaluation (erasure keeps `status`, stamps `erased_at`).
+              isNull(members.erasedAt),
               cursor.length > 0
                 ? gt(members.memberId, cursor)
                 : sql`TRUE`,

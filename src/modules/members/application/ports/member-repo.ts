@@ -478,6 +478,47 @@ export interface MemberRepo {
     ctx: TenantContext,
     memberId: MemberId,
   ): Promise<Result<Date | null, RepoError>>;
+
+  /**
+   * COMP-1 — anonymise the member row in place (Art. 17 / §33). Scrubs every
+   * PII / quasi-identifier column on `members`: `company_name` (NOT NULL) →
+   * ERASED_SENTINEL, the rest → NULL; then stamps `erased_at` + `updated_at`.
+   * The authoritative SCRUBBED column set is enumerated in
+   * `tests/unit/members/infrastructure/scrub-pii-column-coverage.test.ts` — a
+   * build-failing partition guard that fails on any NEW unclassified `members`
+   * column, so the set stays in sync without re-listing the columns here (which
+   * silently rots — the H1 F8-era cluster was missing from the old enumeration).
+   * Preserves `member_id`, `member_number`, `plan_*`, registration/created
+   * dates, and `status` (erasure is orthogonal to archive). Idempotent.
+   * `repo.not_found` when the member is absent / cross-tenant.
+   */
+  scrubPiiInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    opts: { readonly erasedAt: Date },
+  ): Promise<Result<void, RepoError>>;
+
+  /**
+   * COMP-1 — narrow read of the member's `erased_at` (the erasure pre-flight).
+   * `erased_at` is NOT carried on the `Member` aggregate (only the scrub sets
+   * it on the row), so the erase use-case resolves erasure state via this
+   * dedicated read rather than widening `Member` — mirrors `findRiskById`.
+   *
+   * Serves a dual purpose for `eraseMember`'s pre-flight:
+   *   - `repo.not_found` ⇒ the member is absent / cross-tenant: the use-case
+   *     short-circuits with `not_found` BEFORE emitting `member_erasure_requested`
+   *     (no DPO-log pollution / existence oracle).
+   *   - `{ erasedAt: <Date> }` ⇒ already erased: skip the `member_erasure_requested`
+   *     re-emit (do NOT restart the Art.12 clock); still re-drive the scrub +
+   *     cascades.
+   *   - `{ erasedAt: null }` ⇒ first request: emit `member_erasure_requested`.
+   *
+   * Tenant-scoped via ctx/RLS; threads the runInTenant tx, never the global db.
+   */
+  findErasedAtById(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 }
 
 // ---------------------------------------------------------------------------

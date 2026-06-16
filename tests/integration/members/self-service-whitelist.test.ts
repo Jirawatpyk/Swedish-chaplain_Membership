@@ -109,6 +109,10 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
     findLastPlanChangedAt: async () => ok(null),
     findPendingInvitationsForMember: async () => ok([]),
+    // COMP-1 (Task 3) — interface compliance stub.
+    scrubPiiInTx: async () => ok(undefined),
+    // COMP-1 (erase pre-flight) — interface compliance stub.
+    findErasedAtById: async () => ok({ erasedAt: null }),
   };
 
   const contactRepo: ContactRepo = {
@@ -127,6 +131,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     listLinkedUserIdsForMemberInTx: async () => [],
     markInviteBouncedInTx: async () => ok({ affected: 0 }),
     clearInviteBouncedInTx: async () => ok({ affected: 0 }),
+    scrubPiiForMemberInTx: async () => ok({ scrubbedCount: 0 }),
   };
 
   const audit: AuditPort = {

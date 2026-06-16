@@ -160,6 +160,31 @@ export interface MemberRenewalFlagsRepo {
   ): Promise<boolean | null>;
 
   /**
+   * COMP-1 L3 — combined single-round-trip read of BOTH reactivation guards
+   * on the F4 invoice-paid hot path: the admin `blocked_from_auto_reactivation`
+   * flag AND the GDPR-erased state (`erased_at IS NOT NULL`). Folds what were
+   * two separate SELECTs against the SAME `members` row into one.
+   *
+   * Both guards route a paid lapsed cycle to the admin-hold path instead of
+   * auto-reactivating:
+   *   - `blocked` — an admin explicitly blocked auto-reactivation (FR-005b).
+   *   - `erased` — erasure forces `blocked_from_auto_reactivation = FALSE` (the
+   *     0094 CHECK forbids the flag staying TRUE once its provenance is
+   *     scrubbed) and keeps `status`, so the block flag alone no longer fences
+   *     an erased member; the F4 onPaidCallback must HOLD an erased member's
+   *     paid lapsed cycle for admin review rather than silently reactivating an
+   *     anonymised tombstone.
+   *
+   * Returns `null` when the member row is RLS-hidden or non-existent (the
+   * caller treats this the same as both-guards-false → auto-complete).
+   */
+  readReactivationGuardsInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<{ readonly blocked: boolean; readonly erased: boolean } | null>;
+
+  /**
    * C7 review-fix (Phase 5 Wave I): SSR-seed the preferences toggle
    * on `/portal/preferences/renewals`. Reads `renewal_reminders_opted_out`
    * directly so members already opted out see the toggle in the
@@ -236,13 +261,24 @@ export interface MemberRenewalFlagsRepo {
    *
    * `computedAt` is the cron-pass-wide single timestamp (so all rows
    * share `risk_score_last_computed_at` for that pass).
+   *
+   * COMP-1 (companion to R3) — the WHERE carries `erased_at IS NULL`, so a
+   * member erased between candidate-listing and this write is SILENTLY
+   * SKIPPED (TOCTOU re-leak guard). `writtenMemberIds` returns the member
+   * ids the UPDATE actually touched (via `RETURNING`) so the caller can gate
+   * its per-member `at_risk_score_recomputed` audit on the ACTUAL write set —
+   * without it, the batch emits a spurious "recompute succeeded" audit for an
+   * erased member that was write-skipped. `affectedRows === writtenMemberIds.length`.
    */
   bulkSetRiskScores(
     tx: TenantTx,
     tenantId: string,
     rows: ReadonlyArray<BulkSetRiskScoreRow>,
     computedAt: Date,
-  ): Promise<{ readonly affectedRows: number }>;
+  ): Promise<{
+    readonly affectedRows: number;
+    readonly writtenMemberIds: ReadonlyArray<string>;
+  }>;
 
   /**
    * Phase 6 Wave G T159b — bulk gather factor inputs for the at-risk

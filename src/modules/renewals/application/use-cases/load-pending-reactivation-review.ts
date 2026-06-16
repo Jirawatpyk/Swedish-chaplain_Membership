@@ -51,6 +51,12 @@ export async function loadPendingReactivationReview(
     // Oldest pending first — those closest to the 30-day auto-timeout
     // boundary need attention first (matches the reconcile cron order).
     sort: 'expires_at_asc',
+    // COMP-1 H4 — this is an OPERATIONAL admin discovery queue, so drop
+    // cycles whose member was GDPR-erased. `markCycleCompleteFromInvoice-
+    // Paid` routes a paid erased member's cycle to
+    // `pending_admin_reactivation`, so without this flag the erased
+    // (anonymised '[erased]') member surfaces in the review list.
+    excludeErasedMembers: true,
   });
   return ok({ cycles: page.items });
 }

@@ -47,6 +47,7 @@ import {
   type PlanId,
 } from '../../domain/member';
 import type { ContactId } from '../../domain/contact';
+import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
@@ -295,6 +296,27 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findErasedAtById(ctx, memberId) {
+    try {
+      // COMP-1 narrow 1-column read (erasure pre-flight). Threads the
+      // runInTenant tx (RLS gotcha) — never the global db. Cross-tenant /
+      // absent → not_found via RLS. `erased_at` is nullable: a non-erased
+      // member returns `{ erasedAt: null }`.
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select({ erasedAt: members.erasedAt })
+          .from(members)
+          .where(eq(members.memberId, memberId))
+          .limit(1),
+      );
+      const row = rows[0];
+      if (row === undefined) return err({ code: 'repo.not_found' });
+      return ok({ erasedAt: row.erasedAt ?? null });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findManyByIdsInTx(tx, memberIds) {
     try {
       if (memberIds.length === 0) {
@@ -365,6 +387,9 @@ export const drizzleMemberRepo: MemberRepo = {
           .from(members)
           .where(
             and(
+              // COMP-1 H4 — an erased tombstone must not block a legitimate
+              // re-registration under the same name.
+              isNull(members.erasedAt),
               ilike(members.companyName, companyName),
               eq(members.country, country),
               or(
@@ -513,6 +538,84 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async scrubPiiInTx(tx, memberId, opts) {
+    try {
+      // COMP-1 member erasure (GDPR Art.17 / PDPA §33). Anonymise the member
+      // row in place. `company_name` is NOT NULL so it takes the non-PII
+      // SENTINEL `[erased]`; every other PII-bearing column is NULLed —
+      // including the business quasi-identifiers `turnover_thb` + `founded_year`
+      // (GDPR Recital 26: at small-chamber scale these are re-identifying) and
+      // the F8-era admin free-text + risk cluster: the
+      // `blocked_from_auto_reactivation_reason` (admin free-text, same PII class
+      // as `notes` — it can name/email the member), the admin who set the block
+      // (`..._set_by_user_id`), and the derived behavioural/financial risk
+      // signals (`risk_score`/`risk_score_band`/`risk_score_factors` +
+      // their computed/snooze timestamps, moot once the score is gone).
+      //
+      // The blocked-reactivation cluster is erased AS A UNIT. We cannot keep
+      // `blocked_from_auto_reactivation = TRUE` after nulling its provenance:
+      // the `members_blocked_from_auto_reactivation_consistency_check` CHECK
+      // (migration 0094) requires that when the flag is TRUE both `..._at` AND
+      // `..._set_by_user_id` are NOT NULL. Erasing the actor (`set_by_user_id`)
+      // therefore forces the whole cluster back to the FALSE/NULL branch — the
+      // "blocked because admin X said Y" record cannot persist without its
+      // provenance, and the flag/`at` carry no value once the reason+actor are
+      // gone. So `blocked_from_auto_reactivation` → FALSE and `..._at` → NULL.
+      //
+      // KEPT: the 2-letter ISO `country` (NOT NULL, low re-identification,
+      // useful aggregate), `preferred_locale` (a UX setting), identity
+      // (`member_id`, `member_number`, `plan_*`), registration/created dates,
+      // `status` (erasure is orthogonal to archive), and the non-identifying
+      // state flags + their consent/record-keeping timestamps
+      // (renewal-opt-out, email-unverified, broadcasts-halt/ack).
+      //
+      // The full SCRUBBED ∪ KEPT partition is enforced as an allowlist by
+      // `tests/unit/members/infrastructure/scrub-pii-column-coverage.test.ts`,
+      // which fails the build if a future column is left unclassified — keep
+      // this `.set({...})` in lock-step with that test's SCRUBBED set.
+      //
+      // Tenant-scoped via the caller's runInTenant tx (RLS); no manual
+      // tenant_id filter needed. Idempotent: re-running yields the same row.
+      const updated = await tx
+        .update(members)
+        .set({
+          companyName: ERASED_SENTINEL,
+          legalEntityType: null,
+          taxId: null,
+          website: null,
+          description: null,
+          notes: null,
+          foundedYear: null,
+          turnoverThb: null,
+          addressLine1: null,
+          addressLine2: null,
+          city: null,
+          province: null,
+          postalCode: null,
+          // H1 — F8-era admin free-text + derived risk cluster. The blocked-
+          // reactivation flag + `..._at` collapse to FALSE/NULL alongside their
+          // provenance to satisfy the 0094 consistency CHECK (see comment above).
+          blockedFromAutoReactivation: false,
+          blockedFromAutoReactivationAt: null,
+          blockedFromAutoReactivationReason: null,
+          blockedFromAutoReactivationSetByUserId: null,
+          riskScore: null,
+          riskScoreBand: null,
+          riskScoreFactors: null,
+          riskScoreLastComputedAt: null,
+          riskSnoozedUntil: null,
+          erasedAt: opts.erasedAt,
+          updatedAt: opts.erasedAt,
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok(undefined);
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   // --- Directory search (US2) ------------------------------------------------
   // Substring q across company_name + primary contact name + email.
   // Uses pg_trgm GIN indexes for p95 < 500 ms on ≤5k rows.
@@ -564,6 +667,10 @@ export const drizzleMemberRepo: MemberRepo = {
       }
 
       const whereClause = and(
+        // COMP-1 H4 — exclude GDPR-erased tombstones from the directory.
+        // Erasure keeps `status` (orthogonal to archive) and stamps only
+        // `erased_at`, so the status OR-set above does NOT hide an erased row.
+        isNull(members.erasedAt),
         or(...statuses.map((s) => eq(members.status, s)))!,
         ...(filter.q ? [directoryQFilter(filter.q)] : []),
         ...conds,
@@ -641,6 +748,10 @@ export const drizzleMemberRepo: MemberRepo = {
         const conds = buildDirectoryConds(filter);
 
         const whereClause = and(
+          // COMP-1 H4 — exclude GDPR-erased tombstones (keeps `status`,
+          // stamps only `erased_at`). Applied to BOTH the count and the page
+          // so the total stays consistent with the rows shown.
+          isNull(members.erasedAt),
           or(...statuses.map((s) => eq(members.status, s)))!,
           ...(filter.q ? [directoryQFilter(filter.q)] : []),
           ...conds,
@@ -771,12 +882,13 @@ export const drizzleMemberRepo: MemberRepo = {
             ),
           )
           .where(
-            tierFilter
-              ? and(
-                  eq(members.broadcastsHaltedUntilAdminReview, false),
-                  tierFilter,
-                )
-              : eq(members.broadcastsHaltedUntilAdminReview, false),
+            and(
+              // COMP-1 H4 — an erased member must never be a broadcast
+              // recipient (erasure keeps `status`, stamps only `erased_at`).
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, false),
+              ...(tierFilter ? [tierFilter] : []),
+            ),
           )
           .limit(5000);
       });
@@ -805,7 +917,13 @@ export const drizzleMemberRepo: MemberRepo = {
             updatedAt: members.updatedAt,
           })
           .from(members)
-          .where(eq(members.broadcastsHaltedUntilAdminReview, true)),
+          .where(
+            and(
+              // COMP-1 H4 — drop erased tombstones from the admin halt queue.
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, true),
+            ),
+          ),
       );
       return ok(
         rows.map((r) => ({

@@ -240,6 +240,41 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       return rows[0]?.blocked ?? null;
     },
 
+    /**
+     * COMP-1 L3 — single-round-trip read of BOTH reactivation guards
+     * (`blocked_from_auto_reactivation` + GDPR-erased state) for the F4
+     * invoice-paid hot path. Folds two separate SELECTs against the SAME
+     * `members` row into one, so the payment-confirmation callback issues one
+     * read instead of two.
+     *
+     * Why both guards are needed: the scrub nulls the block reason / provenance
+     * (`set_by_user_id`), and the 0094 consistency CHECK forbids `blocked=TRUE`
+     * once that provenance is gone, so erasure forces the flag back to FALSE. A
+     * paid lapsed cycle for an erased member must therefore be detected via
+     * `erased_at` and routed to the admin-hold path instead of silently auto-
+     * reactivating an anonymised tombstone. `null` ⇒ the member row is not
+     * visible (RLS-hidden / absent). Threads the caller's `tx` (tenant-scoped)
+     * — never the global db.
+     */
+    async readReactivationGuardsInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<{ readonly blocked: boolean; readonly erased: boolean } | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          blocked: members.blockedFromAutoReactivation,
+          erasedAt: members.erasedAt,
+        })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const row = rows[0];
+      if (row === undefined) return null;
+      return { blocked: row.blocked, erased: row.erasedAt !== null };
+    },
+
     async readRenewalRemindersOptedOut(
       tx: unknown,
       _tenantId: string,
@@ -308,6 +343,13 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         return { previousBand: null, affectedRows: 0 };
       }
       const previousBand = (prior.band as RiskBand | null) ?? null;
+      // COMP-1 R3 — re-check `erased_at IS NULL` at WRITE time (not just at
+      // the candidate-LIST queries). A member erased AFTER candidate-listing
+      // but BEFORE this write would otherwise get the scrubbed risk columns
+      // re-populated, re-leaking the quasi-identifiers `scrubPiiInTx` NULLed.
+      // The guard makes the UPDATE a no-op (affectedRows 0) on a tombstone —
+      // the same shape the caller already tolerates for an absent/RLS-hidden
+      // member (`previousBand: null, affectedRows: 0`).
       const updated = await txDb
         .update(members)
         .set({
@@ -316,7 +358,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           riskScoreFactors: input.factors,
           riskScoreLastComputedAt: new Date(input.computedAt),
         })
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.memberId, memberId), isNull(members.erasedAt)))
         .returning({ memberId: members.memberId });
       return { previousBand, affectedRows: updated.length };
     },
@@ -344,6 +386,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         .where(
           and(
             eq(members.status, 'active'),
+            // COMP-1 H4 — never re-score a GDPR-erased member (erasure keeps
+            // `status` + NULLs risk_score, stamps `erased_at`).
+            isNull(members.erasedAt),
             exists(
               txDb
                 .select({ one: sql`1` })
@@ -374,8 +419,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       _tenantId: string,
       rows: ReadonlyArray<BulkSetRiskScoreRow>,
       computedAt: Date,
-    ): Promise<{ readonly affectedRows: number }> {
-      if (rows.length === 0) return { affectedRows: 0 };
+    ): Promise<{
+      readonly affectedRows: number;
+      readonly writtenMemberIds: ReadonlyArray<string>;
+    }> {
+      if (rows.length === 0) return { affectedRows: 0, writtenMemberIds: [] };
       const txDb = tx as typeof db;
       const payload = rows.map((r) => ({
         member_id: r.memberId,
@@ -384,7 +432,14 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         factors: r.factors,
       }));
       // postgres-js driver only accepts string/Buffer params (unlike node-postgres).
-      const result = await txDb.execute(sql`
+      //
+      // COMP-1 (companion to R3) — `RETURNING m.member_id` surfaces exactly
+      // which member rows the UPDATE actually touched. The `erased_at IS NULL`
+      // guard below silently skips a member erased between candidate-listing
+      // and this write; returning the written ids lets the use-case gate its
+      // per-member `at_risk_score_recomputed` audit on the ACTUAL write set
+      // (no spurious "recompute succeeded" audit for a write-skipped tombstone).
+      const result = await txDb.execute<{ member_id: string }>(sql`
         UPDATE members AS m
         SET
           risk_score = src.score,
@@ -394,8 +449,22 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
           AS src(member_id uuid, score smallint, band text, factors jsonb)
         WHERE m.member_id = src.member_id
+          -- COMP-1 R3 — per-row WRITE-time guard: never re-populate the
+          -- scrubbed risk columns on a member erased between candidate-
+          -- listing and this bulk write (TOCTOU re-leak of the quasi-
+          -- identifiers scrubPiiInTx NULLed). An erased member in the batch
+          -- is silently skipped; the RETURNING set reflects only live rows.
+          AND m.erased_at IS NULL
+        RETURNING m.member_id
       `);
-      return { affectedRows: (result as { count?: number }).count ?? rows.length };
+      // postgres-js returns the RETURNING rows as an iterable result set; map
+      // to the written member ids. The count is derived from the returned rows
+      // so it cannot drift from `writtenMemberIds.length`.
+      const writtenMemberIds = Array.from(result).map((r) => r.member_id);
+      return {
+        affectedRows: writtenMemberIds.length,
+        writtenMemberIds,
+      };
     },
 
     /**
@@ -545,6 +614,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true
         WHERE m.status = 'active'
+          -- COMP-1 H4 — exclude GDPR-erased members from the at-risk batch
+          -- recompute (erasure keeps status, stamps erased_at).
+          AND m.erased_at IS NULL
           AND EXISTS (
             SELECT 1 FROM renewal_cycles c
             WHERE c.member_id = m.member_id
@@ -619,6 +691,10 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         // would still surface in the widget — admin would click Snooze
         // on a phantom row.
         eq(members.status, 'active'),
+        // COMP-1 H4 — also exclude GDPR-erased members. Erasure NULLs
+        // risk_score (so `>= 50` already drops them), but keep this filter
+        // explicit + consistent with the page/summary pair below.
+        isNull(members.erasedAt),
         gte(members.riskScore, 50),
         or(
           isNull(members.riskSnoozedUntil),
@@ -693,6 +769,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           count(*) FILTER (WHERE risk_score_band = 'critical') AS critical
         FROM members
         WHERE status = 'active'  -- Phase 6 review I6 (archive cascade)
+          AND erased_at IS NULL  -- COMP-1 H4 (GDPR-erased excluded)
           AND risk_score >= 50
           AND (risk_snoozed_until IS NULL OR risk_snoozed_until < NOW())
       `);

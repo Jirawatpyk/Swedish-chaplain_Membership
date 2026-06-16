@@ -76,6 +76,8 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
     findPendingInvitationsForMember: vi.fn(),
+    scrubPiiInTx: vi.fn(),
+    findErasedAtById: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

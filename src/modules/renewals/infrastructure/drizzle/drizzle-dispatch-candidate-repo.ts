@@ -262,6 +262,9 @@ export function makeDrizzleDispatchCandidateRepo(
           sql`${renewalCycles.status} IN ('upcoming','reminded','awaiting_payment')`,
           sql`${renewalCycles.expiresAt} <= ${args.cutoffExpiresAt}`,
           sql`${renewalCycles.expiresAt} >= NOW() - (${args.maxOffsetDays}::int * INTERVAL '1 day')`,
+          // COMP-1 H4 — never dispatch a renewal reminder to a GDPR-erased
+          // member (erasure keeps `status` + the cycle, stamps `erased_at`).
+          sql`${members.erasedAt} IS NULL`,
         ];
         if (cursor) {
           filters.push(

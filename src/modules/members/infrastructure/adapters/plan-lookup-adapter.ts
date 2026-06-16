@@ -19,7 +19,7 @@
  *     schema (same module → internal import allowed).
  */
 
-import { count, eq, and, or } from 'drizzle-orm';
+import { count, eq, and, isNull, or } from 'drizzle-orm';
 import { ok, err } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { members } from '../db/schema-members';
@@ -94,6 +94,8 @@ export const plansBarrelAdapter: PlanLookupPort = {
                 eq(members.status, 'active'),
                 eq(members.status, 'inactive'),
               ),
+              // COMP-1 H4 — exclude erased tombstones from the FR-010 plan-soft-delete guard
+              isNull(members.erasedAt),
             ),
           ),
       );

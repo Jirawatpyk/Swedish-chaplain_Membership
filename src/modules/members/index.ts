@@ -342,6 +342,18 @@ export {
   type UndeleteMemberMeta,
 } from './application/use-cases/undelete-member';
 
+// --- COMP-1 US1 — GDPR Art. 17 / PDPA §33 member erasure --------------------
+
+export {
+  eraseMember,
+  eraseMemberSchema,
+  type EraseMemberInput,
+  type EraseMemberError,
+  type EraseMemberResult,
+  type EraseMemberDeps,
+  type EraseMemberMeta,
+} from './application/use-cases/erase-member';
+
 export { archiveWindowStatus } from './domain/policies/archive-window-policy';
 export type { ArchiveWindowStatus } from './domain/policies/archive-window-policy';
 

@@ -362,15 +362,36 @@ export function makeDrizzleRenewalEscalationTaskRepo(
       >,
     ): Promise<number> {
       return runInTenant(tenant, async (tx) => {
-        const whereExpr = buildListWhereExpr(opts);
-        const rows = whereExpr
-          ? await tx
-              .select({ value: count() })
-              .from(renewalEscalationTasks)
-              .where(whereExpr)
-          : await tx
-              .select({ value: count() })
-              .from(renewalEscalationTasks);
+        // COMP-1 (companion to H4) — `countMatching` is the BADGE-COUNT
+        // companion of `listForAdminQueue`; the two are called as a pair
+        // (page.tsx renders the rows, route.ts / the queue banner renders the
+        // count) and MUST describe the SAME set. `listForAdminQueue` LEFT-JOINs
+        // `members` and drops GDPR-erased members via `erased_at IS NULL`; this
+        // count MUST mirror that filter or the badge over-counts an erased
+        // member's open overdue task whose ROW is hidden — the count > rows
+        // divergence (the "5 overdue but 2 red rows" class fixed at R10 W4).
+        //
+        // LEFT-JOIN-safe: a genuinely-absent member (cycle-less / member-less
+        // task) left-extends to `erased_at = NULL`, which `isNull` KEEPS — only
+        // an actually-erased member (tombstone with a non-null `erased_at`) is
+        // excluded. AND-ed at the top-level WHERE (not inside the JOIN ON) so it
+        // removes the row from the count rather than null-blanking columns.
+        const baseWhere = buildListWhereExpr(opts);
+        const whereExpr =
+          baseWhere !== undefined
+            ? and(baseWhere, isNull(members.erasedAt))
+            : isNull(members.erasedAt);
+        const rows = await tx
+          .select({ value: count() })
+          .from(renewalEscalationTasks)
+          .leftJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalEscalationTasks.tenantId),
+              eq(members.memberId, renewalEscalationTasks.memberId),
+            ),
+          )
+          .where(whereExpr);
         return Number(rows[0]?.value ?? 0);
       });
     },
@@ -385,6 +406,20 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         if (baseWhere !== undefined) {
           whereParts.push(baseWhere as ReturnType<typeof eq>);
         }
+        // COMP-1 H4 — exclude GDPR-erased members from this OPERATIONAL
+        // admin task queue. Erasure keeps `members.status` + the task and
+        // stamps only `erased_at` (scrubbing company_name to '[erased]'),
+        // so the LEFT-JOINed task row would still surface unless we drop it
+        // here. AND-ed at the TOP-LEVEL WHERE (not inside the LEFT JOIN ON)
+        // so it removes the row rather than null-blanking member columns;
+        // LEFT-JOIN-safe because a genuinely-absent member left-extends to
+        // `erased_at = NULL`, which `isNull` correctly KEEPS (a cycle-less /
+        // member-less task is not an erased member). by-id `findById` +
+        // `listForCycle` + cycle-id reads are left unfiltered (they need the
+        // tombstone for the cycle-detail timeline).
+        whereParts.push(
+          isNull(members.erasedAt) as unknown as ReturnType<typeof eq>,
+        );
         // Cursor: opaque "<dueAtIso>|<taskId>" — keyset paginate by
         // (due_at, task_id). Newer cursor format keeps deterministic
         // ordering when many tasks share the same due_at minute.

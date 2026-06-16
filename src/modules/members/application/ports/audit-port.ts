@@ -60,7 +60,13 @@ export type F3AuditEventType =
   // immediately after the allocation INSERT returns. Payload:
   // { member_number: number }. 5y retention (F3 default).
   // See design doc §9 audit wiring.
-  | 'member_number_assigned';
+  | 'member_number_assigned'
+  // COMP-1 Member Erasure (migration 0221). 5y retention (F3 default).
+  // `member_erasure_requested` is emitted durably BEFORE destructive work;
+  // `member_erased` is the completion proof emitted ONLY after every cascade
+  // reports complete. Neither payload may carry erased PII (append-only log).
+  | 'member_erasure_requested'
+  | 'member_erased';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

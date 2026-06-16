@@ -136,6 +136,11 @@ export interface ContactRepo {
    * Returns a de-duplication-friendly list (may contain duplicates if
    * the same F1 user is linked to multiple contacts on the same
    * member); callers dedupe via `new Set(...)` before iterating.
+   *
+   * An empty array means "genuinely no linked users". A read failure
+   * (statement timeout / connection blip) THROWS rather than returning
+   * `[]`, so the caller's atomic tx rolls back instead of silently
+   * skipping the session/invitation revocation cascade (Bug I-1).
    */
   listLinkedUserIdsForMemberInTx(
     tx: TenantTx,
@@ -168,4 +173,20 @@ export interface ContactRepo {
     tx: TenantTx,
     contactId: ContactId,
   ): Promise<Result<{ affected: number }, RepoError>>;
+
+  /**
+   * COMP-1 — anonymise every contact of a member in place. NOT NULL identity
+   * columns (`first_name`/`last_name`/`email`) get non-PII sentinels; the
+   * per-row email sentinel embeds `contact_id` so it is unique and cannot
+   * collide with another erased member's sentinel. `phone`/`date_of_birth`/
+   * `role_title` → NULL. `removed_at` is set (and `is_primary` forced FALSE) so
+   * the row leaves the `lower(email) WHERE removed_at IS NULL` partial unique
+   * index. Idempotent: re-running on already-scrubbed rows is a no-op-equivalent
+   * (sentinels are stable per contact_id).
+   */
+  scrubPiiForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    opts: { readonly erasedAt: Date },
+  ): Promise<Result<{ readonly scrubbedCount: number }, RepoError>>;
 }

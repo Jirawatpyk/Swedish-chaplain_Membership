@@ -89,7 +89,15 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
 
 function fakeDeps(args: {
   cycle?: RenewalCycle | null;
+  /**
+   * COMP-1 L3 — `blocked` and `erased` now resolve through ONE combined
+   * read (`readReactivationGuardsInTx`). `blocked: null` models a missing /
+   * RLS-hidden member (the combined read returns `null` for the whole row),
+   * so BOTH guards are unknown and the use-case auto-completes defensively.
+   */
   blocked?: boolean | null;
+  /** COMP-1 H4 — member erased state (erased_at IS NOT NULL). Defaults false. */
+  erased?: boolean | null;
   transitionImpl?: () => Promise<RenewalCycle>;
   emitInTxImpl?: () => Promise<void>;
 }): {
@@ -97,7 +105,7 @@ function fakeDeps(args: {
   findByInvoiceMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
-  readBlockedMock: ReturnType<typeof vi.fn>;
+  readGuardsMock: ReturnType<typeof vi.fn>;
 } {
   const findByInvoiceMock = vi.fn(async () => args.cycle ?? null);
   const transitionMock = vi.fn(
@@ -105,8 +113,16 @@ function fakeDeps(args: {
       (async () => ({ ...args.cycle!, status: 'completed' as const })),
   );
   const emitInTxMock = vi.fn(args.emitInTxImpl ?? (async () => {}));
-  const readBlockedMock = vi.fn(async () =>
-    args.blocked === undefined ? false : args.blocked,
+  // `blocked: null` ⇒ the combined read returns `null` (member absent /
+  // RLS-hidden) — neither guard is known, so the use-case auto-completes.
+  // Otherwise resolve both guards (defaulting each to false).
+  const readGuardsMock = vi.fn(async () =>
+    args.blocked === null
+      ? null
+      : {
+          blocked: args.blocked ?? false,
+          erased: args.erased === undefined ? false : (args.erased ?? false),
+        },
   );
   const deps: MarkCycleCompleteDeps = {
     tenant: { slug: TENANT_ID } as MarkCycleCompleteDeps['tenant'],
@@ -119,7 +135,7 @@ function fakeDeps(args: {
       emitInTx: emitInTxMock,
     } as unknown as MarkCycleCompleteDeps['auditEmitter'],
     memberRenewalFlagsRepo: {
-      readBlockedFromAutoReactivation: readBlockedMock,
+      readReactivationGuardsInTx: readGuardsMock,
     } as unknown as MarkCycleCompleteDeps['memberRenewalFlagsRepo'],
   };
   return {
@@ -127,18 +143,22 @@ function fakeDeps(args: {
     findByInvoiceMock,
     transitionMock,
     emitInTxMock,
-    readBlockedMock,
+    readGuardsMock,
   };
 }
 
 describe('markCycleCompleteFromInvoicePaid (T123) — auto-complete branch', () => {
   it('happy path — transitions to completed + emits renewal_completed audit', async () => {
     const cycle = buildCycle();
-    const { deps, transitionMock, emitInTxMock } = fakeDeps({ cycle });
+    const { deps, transitionMock, emitInTxMock, readGuardsMock } = fakeDeps({
+      cycle,
+    });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
     // Round 2 (S-10): use-case returns MarkCycleCompleteOutcome
     // directly (no Result wrapper). Discriminate via `kind`.
     expect(r.kind).toBe('completed');
+    // COMP-1 L3 — the auto-complete branch issues exactly ONE guards read.
+    expect(readGuardsMock).toHaveBeenCalledTimes(1);
     expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
       from: 'awaiting_payment',
       to: 'completed',
@@ -181,6 +201,36 @@ describe('markCycleCompleteFromInvoicePaid (T123) — FR-005b admin-block branch
       type: 'renewal_completed_post_lapse',
       payload: { held_for_admin_review: true },
     });
+  });
+
+  it('COMP-1 H4: erased member (block flag FALSE) — held, never auto-completed', async () => {
+    // Erasure forces blocked=FALSE; without the erased_at guard this member
+    // would auto-complete. Assert the erased read routes to the hold path.
+    const cycle = buildCycle();
+    const { deps, transitionMock, readGuardsMock } = fakeDeps({
+      cycle,
+      blocked: false,
+      erased: true,
+      transitionImpl: async () =>
+        ({
+          ...cycle,
+          status: 'pending_admin_reactivation' as const,
+          enteredPendingAt: '2026-05-07T10:00:00Z',
+        }) as never,
+    });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('held_pending_admin');
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'awaiting_payment',
+      to: 'pending_admin_reactivation',
+    });
+    // COMP-1 L3 — both guards resolve through ONE combined read, not two.
+    expect(readGuardsMock).toHaveBeenCalledTimes(1);
+    expect(readGuardsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      MEMBER_ID,
+    );
   });
 });
 

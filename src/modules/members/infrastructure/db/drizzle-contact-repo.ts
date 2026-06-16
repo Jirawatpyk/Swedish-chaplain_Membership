@@ -12,12 +12,16 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
-import { logger } from '@/lib/logger';
 import { contacts } from './schema-contacts';
 import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
 import { contactPrimacy, type Contact, type ContactId } from '../../domain/contact';
+import {
+  ERASED_EMAIL_DOMAIN,
+  ERASED_EMAIL_LOCAL_PREFIX,
+  ERASED_SENTINEL,
+} from '../../domain/erasure-sentinels';
 import type { MemberId, TenantId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
@@ -205,34 +209,24 @@ export const drizzleContactRepo: ContactRepo = {
   },
 
   async listLinkedUserIdsForMemberInTx(tx, memberId) {
-    try {
-      const rows = await tx
-        .select({ linkedUserId: contacts.linkedUserId })
-        .from(contacts)
-        .where(
-          and(
-            eq(contacts.memberId, memberId),
-            isNull(contacts.removedAt),
-          ),
-        );
-      return rows
-        .map((r) => r.linkedUserId)
-        .filter((uid): uid is string => uid !== null);
-    } catch (e) {
-      // Contract: return empty array on infra failure rather than
-      // throw — callers use this to cascade-revoke F1 sessions on
-      // member archive, and a partial failure must not block the
-      // archive tx. Ops observe the failure via the error log below.
-      const msg = e instanceof Error ? e.message : String(e);
-      // Use pino logger (not console) so the failure joins the
-      // structured log stream with requestId correlation + CI
-      // forbidden-field lint, per docs/observability.md.
-      logger.error(
-        { cause: msg },
-        'drizzle-contact-repo.listLinkedUserIdsForMemberInTx_failed',
-      );
-      return [];
-    }
+    // NO try/catch: a thrown DB error (statement timeout / connection blip)
+    // MUST propagate so the caller's runInTenant tx ROLLS BACK. An empty
+    // array means "genuinely no linked users", never "a read failed".
+    // This read drives the Art.17/PDPA §33 cascade that revokes the erased
+    // member's F1 sessions + pending invitations (erase-member.ts / Bug I-1)
+    // and the equivalent archive cascade (archive-member.ts / US7). If a
+    // transient read error were swallowed to [], the cascade would silently
+    // no-op while the scrub/status-flip still committed — leaving the erased
+    // member's login alive AND emitting member_erased as "complete" so the
+    // US2 reconciler (keyed on member_erased) never re-drives it. Failing
+    // loud rolls the whole tx back: no partial scrub, no false completion.
+    const rows = await tx
+      .select({ linkedUserId: contacts.linkedUserId })
+      .from(contacts)
+      .where(and(eq(contacts.memberId, memberId), isNull(contacts.removedAt)));
+    return rows
+      .map((r) => r.linkedUserId)
+      .filter((uid): uid is string => uid !== null);
   },
 
   async markInviteBouncedInTx(tx, contactId, bouncedAt) {
@@ -270,6 +264,42 @@ export const drizzleContactRepo: ContactRepo = {
         .where(eq(contacts.contactId, contactId))
         .returning({ contactId: contacts.contactId });
       return ok({ affected: updated.length });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async scrubPiiForMemberInTx(tx, memberId, opts) {
+    try {
+      // COMP-1 member erasure (GDPR Art.17 / PDPA §33). One UPDATE over every
+      // contact of the member. Identity columns are NOT NULL so they take
+      // non-PII SENTINELS, not NULL: first/last → '[erased]', email → a per-row
+      // value built at the DB layer from the row's own contact_id so two erased
+      // members never produce the same sentinel email. `removed_at` is stamped
+      // so the row leaves the `contacts_tenant_email_uniq` partial index
+      // (`lower(email) WHERE removed_at IS NULL`) — without it, the sentinel
+      // emails would have to stay collision-free on a LIVE index. `is_primary`
+      // is forced FALSE so the row also leaves `contacts_one_primary_per_member`
+      // and respects the `contacts_primary_not_removed` CHECK. Tenant-scoped via
+      // the caller's runInTenant tx (RLS); no manual tenant_id filter needed.
+      // Idempotent: re-running yields the same stable sentinels per contact_id.
+      const updated = await tx
+        .update(contacts)
+        .set({
+          firstName: ERASED_SENTINEL,
+          lastName: ERASED_SENTINEL,
+          email: sql`${ERASED_EMAIL_LOCAL_PREFIX} || ${contacts.contactId} || '@' || ${ERASED_EMAIL_DOMAIN}`,
+          phone: null,
+          dateOfBirth: null,
+          roleTitle: null,
+          preferredLanguage: 'en',
+          isPrimary: false,
+          removedAt: opts.erasedAt,
+          updatedAt: opts.erasedAt,
+        })
+        .where(eq(contacts.memberId, memberId))
+        .returning({ contactId: contacts.contactId });
+      return ok({ scrubbedCount: updated.length });
     } catch (e) {
       return err(unexpected(e));
     }
