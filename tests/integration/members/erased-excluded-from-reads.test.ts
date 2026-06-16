@@ -24,6 +24,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import {
   createMember,
@@ -37,6 +38,7 @@ import {
   buildEraseMemberDeps,
 } from '@/modules/members/members-deps';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -120,6 +122,10 @@ describe('erased members excluded from operational reads (members module)', () =
   let planId: string;
   let keptId: MemberId;
   let erasedId: MemberId;
+  // A member that was halted-for-broadcast-review BEFORE erasure. Erasure KEEPS
+  // the halt flag (it's a non-identifying state flag) and only stamps
+  // `erased_at`, so the halt queue must rely on `erased_at IS NULL` to drop it.
+  let haltedErasedId: MemberId;
 
   // KEPT_COMPANY is unique so the directory `q` filter isolates exactly the
   // two seeded rows regardless of any other rows in the shared tenant.
@@ -144,6 +150,32 @@ describe('erased members excluded from operational reads (members module)', () =
     );
     if (!res.ok) {
       throw new Error(`erase seed failed: ${JSON.stringify(res.error)}`);
+    }
+
+    // Seed a THIRD member, mark it halted-for-broadcast-review, THEN erase it.
+    // Set the halt column directly (raw update) — the production helper needs a
+    // tx + audit emit we don't care about here; the column write is what the
+    // halt-queue read keys on.
+    haltedErasedId = await seedMember(
+      tenant,
+      user,
+      planId,
+      `ErasedReadsHalted-${randomUUID().slice(0, 8)}`,
+    );
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(members)
+        .set({ broadcastsHaltedUntilAdminReview: true })
+        .where(eq(members.memberId, haltedErasedId));
+    });
+    const haltRes = await eraseMember(
+      haltedErasedId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: user.userId, requestId: 'erased-reads-halted-seed' },
+      eraseDeps,
+    );
+    if (!haltRes.ok) {
+      throw new Error(`halted erase seed failed: ${JSON.stringify(haltRes.error)}`);
     }
   }, 120_000);
 
@@ -198,6 +230,18 @@ describe('erased members excluded from operational reads (members module)', () =
     const ids = r.value.map((m) => m.memberId);
     expect(ids).toContain(keptId);
     expect(ids).not.toContain(erasedId);
+  });
+
+  it('findMembersHaltedForBroadcast excludes the erased member (halt flag kept, erased_at filters it)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const r = await deps.memberRepo.findMembersHaltedForBroadcast(tenant.ctx);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ids = r.value.map((m) => m.memberId);
+    // The halted member was erased → it must NOT surface in the admin halt
+    // queue even though its broadcasts_halted_until_admin_review flag is still
+    // TRUE (erasure keeps the flag; only `erased_at IS NULL` drops the row).
+    expect(ids).not.toContain(haltedErasedId);
   });
 
   it('findSoftDuplicate ignores the erased tombstone (re-create not blocked)', async () => {

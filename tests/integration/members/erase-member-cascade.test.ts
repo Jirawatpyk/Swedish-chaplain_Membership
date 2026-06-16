@@ -300,6 +300,78 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
   }, 30_000);
 
   /**
+   * M1 accumulators — the `member_erased` completion-proof payload must report
+   * the REAL cascade counts (`sessions_revoked_total`,
+   * `invitations_revoked_count`), not 0/0. The use-case captures these inside
+   * the scrub tx (the `+=` accumulators) and surfaces them to the post-commit
+   * `member_erased` emit (DPO-log observability — Important #2 speckit-review).
+   *
+   * Seeds a member + linked user with BOTH an active session AND a pending
+   * invitation, then asserts the persisted audit payload reflects ≥1 of each.
+   * A regression that drops the `+=` (or reads counts after a reset) would
+   * surface 0/0 here while every other assertion still passes — so this locks
+   * the accumulators specifically. (No F7/F8 cascades run — the no-op adapters
+   * keep this run "clean" so `member_erased` is emitted with the real counts.)
+   */
+  it('member_erased payload reports the real sessions_revoked_total + invitations_revoked_count', async () => {
+    const { memberId } = await seedMemberWithLinkedContact(
+      tenant,
+      linkedUser.userId,
+    );
+    await seedActiveSession(linkedUser.userId);
+
+    // Exactly one pending (unredeemed) invitation for the linked user.
+    const PENDING_INVITE_COUNT = 1;
+    const invitationId = `inv-${randomUUID().replace(/-/g, '')}`;
+    await db.insert(invitations).values({
+      id: invitationId,
+      userId: linkedUser.userId,
+      invitedByUserId: admin.userId,
+      intendedRole: 'member',
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 7 * 86_400_000),
+      consumedAt: null,
+    });
+
+    const requestId = `rq-erase-counts-${Date.now()}`;
+    const deps = buildEraseMemberDeps(tenant);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId },
+      deps,
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (result.ok) {
+      // Cascades were no-ops → the run is clean → member_erased emitted.
+      expect(result.value.cascadesComplete).toBe(true);
+    }
+
+    // Pull THIS run's member_erased row (scope by requestId so a concurrent
+    // erase in the shared tenant can't bleed in) and assert the M1 counts.
+    const erasedRows = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'member_erased'),
+          eq(auditLog.requestId, requestId),
+        ),
+      );
+    expect(erasedRows, 'expected exactly one member_erased row for this run').toHaveLength(1);
+    const payload = erasedRows[0]!.payload as {
+      member_id?: string;
+      sessions_revoked_total?: number;
+      invitations_revoked_count?: number;
+    };
+    expect(payload.member_id).toBe(memberId);
+    // Accumulators must reflect the real cascade work, not 0/0.
+    expect(payload.sessions_revoked_total).toBeGreaterThanOrEqual(1);
+    expect(payload.invitations_revoked_count).toBe(PENDING_INVITE_COUNT);
+  }, 30_000);
+
+  /**
    * H3 (code-review), part 1 — APPLICATION-LAYER invariant: if the
    * linked-user read throws, `eraseMember`'s atomic scrub tx rolls back.
    *

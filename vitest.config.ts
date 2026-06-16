@@ -507,6 +507,18 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // COMP-1 US1 — eraseMember is a GDPR Art.17 / PDPA §33 PII-erasure
+        // surface whose error/throw arms GATE the `member_erased` completion
+        // proof. 100% branch is fully reachable from unit tests (the throw paths
+        // are exercised by erase-member.test.ts), so pin 100% L/B/F/S to catch a
+        // regression that swallows a repo/cascade failure and emits
+        // `member_erased` over an incomplete erasure (speckit-review Important #1).
+        'src/modules/members/application/use-cases/erase-member.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // F8: Renewals Domain layer — 100% line coverage per
         // Constitution Principle II. Pure entities (RenewalCycle 7-state
         // machine, TierUpgradeSuggestion 6-status DU, EscalationTask

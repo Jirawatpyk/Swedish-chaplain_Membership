@@ -100,6 +100,7 @@ function fakeDeps(args: {
   transitionMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   readBlockedMock: ReturnType<typeof vi.fn>;
+  readIsErasedMock: ReturnType<typeof vi.fn>;
 } {
   const findByInvoiceMock = vi.fn(async () => args.cycle ?? null);
   const transitionMock = vi.fn(
@@ -134,6 +135,7 @@ function fakeDeps(args: {
     transitionMock,
     emitInTxMock,
     readBlockedMock,
+    readIsErasedMock,
   };
 }
 

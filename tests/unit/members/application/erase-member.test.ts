@@ -405,4 +405,229 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     expect(erasedEmits).toHaveLength(1); // emitted only on the run that completed
   });
+
+  // ---------------------------------------------------------------------------
+  // Throw-path branch coverage (speckit-review Important #1). The arms below
+  // are the error/throw branches that GATE the `member_erased` completion proof
+  // on this GDPR PII surface. Each maps to one uncovered branch in the
+  // pre-flight read, the scrub tx, the linked-user cascade, and the post-commit
+  // cascades — so a regression that swallows a repo/cascade failure (and emits
+  // `member_erased` over an incomplete erasure) now fails the suite.
+  // ---------------------------------------------------------------------------
+
+  // Pre-flight read returns a NON-not_found repo error (timeout / connection
+  // blip). Distinct from the `not_found` short-circuit (which returns not_found
+  // emitting no audit): an unexpected read failure must map to `server_error`
+  // and STILL emit no `member_erasure_requested` — the durable clock-start must
+  // not be written when we couldn't even confirm the subject exists.
+  it('returns server_error when the pre-flight read fails with a non-not_found error', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erasure_requested');
+    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+  });
+
+  // findByIdInTx (the FOR UPDATE row lock inside the scrub tx) returns a
+  // NON-not_found error. Distinct from the not_found arm (which maps to
+  // not_found via EraseNotFoundError): a generic lookup failure throws
+  // `lookup_failed:<code>`, rolls the scrub tx back, and maps to server_error.
+  it('returns server_error when findByIdInTx fails with a non-not_found error', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findByIdInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    // The scrub never ran — the row-lock lookup failed first.
+    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+  });
+
+  // TOCTOU: the member passes the pre-flight read (exists, not erased) but
+  // findByIdInTx (the FOR UPDATE lock) reports not_found — a concurrent
+  // hard-delete won the race between the pre-flight and the scrub tx. The
+  // not_found arm of findByIdInTx throws EraseNotFoundError → not_found (NOT
+  // server_error). Distinct from the prior case where findByIdInTx fails with a
+  // generic error; here the pre-flight succeeds so we reach the tx's row lock.
+  it('returns not_found when findByIdInTx reports the member vanished after pre-flight (TOCTOU)', async () => {
+    const deps = buildEraseDeps();
+    // pre-flight default: member exists + not erased. Only the in-tx lock 404s.
+    deps.memberRepo.findByIdInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.not_found' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('not_found');
+    // Pre-flight succeeded → the durable requested-audit WAS emitted (clock
+    // started) before the TOCTOU vanish; the scrub then aborted cleanly.
+    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+  });
+
+  // scrubPiiInTx returns a NON-not_found error. Distinct from the not_found arm
+  // (member vanished mid-tx → not_found): a generic scrub failure throws
+  // `member_scrub_failed:<code>`, rolls the tx back, and maps to server_error.
+  it('returns server_error when scrubPiiInTx fails with a non-not_found error', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.scrubPiiInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+  });
+
+  // Session revocation for a linked user returns not-ok → throws
+  // `session_revoke_failed:<code>`, rolling the scrub tx back (server_error).
+  // The Art.17 cascade must not partially succeed: a failed revoke aborts the
+  // whole erasure so the US2 reconciler re-drives it (member_erased never set).
+  it('returns server_error when a linked-user session revoke fails', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+    deps.sessions.revokeAllForInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+  });
+
+  // The `user_sessions_revoked` audit emit (after a successful revoke) returns
+  // not-ok → throws 'audit_failed', rolling the scrub tx back (server_error).
+  // Fail ONLY the session audit so it's distinguishable from the durable
+  // member_erasure_requested emit (which must still succeed to reach the loop).
+  it('returns server_error when the user_sessions_revoked audit emit fails', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+    deps.sessions.revokeAllForInTx = vi.fn(async () => ok({ revokedCount: 1 }));
+    deps.audit.recordInTx = vi.fn(
+      async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+        ev.type === 'user_sessions_revoked'
+          ? ({ ok: false, error: { code: 'repo.unexpected' } })
+          : ok(undefined),
+    ) as never;
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+  });
+
+  // Renewals cascade returns a bare `cascade_failed` outcome (NOT
+  // cascade_partial_failure / ok). The `r.outcome !== 'ok'` else-if arm flips
+  // allCascadesClean=false so member_erased is withheld — the broadcasts
+  // cascade succeeded but the renewals one is genuinely incomplete, left for
+  // the US2 reconciler.
+  it('renewals bare cascade_failed blocks member_erased (cascadesComplete:false)', async () => {
+    const deps = buildEraseDeps();
+    deps.renewalsCascade.cancelInFlightForMember = vi.fn(
+      async () => ({ outcome: 'cascade_failed', cancelledCount: 0 }) as const,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+  });
+
+  // Renewals cascade THROWS (vs the non-ok outcome above). The post-commit
+  // try/catch must catch it, flip allCascadesClean=false, and withhold
+  // member_erased — never let a best-effort cascade throw escape. Throws an
+  // Error so the `cascadeErr instanceof Error` true-arm of the catch's
+  // String(cascadeErr) ternary is exercised.
+  it('renewals cascade THROW → cascadesComplete:false + no member_erased', async () => {
+    const deps = buildEraseDeps();
+    deps.renewalsCascade.cancelInFlightForMember = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+  });
+
+  // Defensive ternary arm: a cascade can throw a NON-Error value (e.g. a bare
+  // string). The catch logs `String(cascadeErr)` (the false arm of the
+  // `cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr)`
+  // ternary). Thrown from BOTH cascades so the false arm of each catch's
+  // ternary is covered; still must withhold member_erased.
+  it('a cascade throwing a NON-Error value is handled (String(cascadeErr) arm)', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(async () => {
+      throw 'broadcasts-string-failure';
+    });
+    deps.renewalsCascade.cancelInFlightForMember = vi.fn(async () => {
+      throw 'renewals-string-failure';
+    });
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+  });
 });
