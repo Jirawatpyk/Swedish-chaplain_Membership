@@ -300,26 +300,50 @@ export async function eraseMember(
       initiatedByUserId: meta.actorUserId,
       requestId: meta.requestId,
     });
-    // H2: the F8 `cascade_partial_failure` outcome is BENIGN — it means a
-    // concurrent admin cancel won the race and the cycle already reached
-    // terminal `cancelled` by a different actor (the cycle IS cancelled). It
-    // must NOT block `member_erased`, otherwise the US2 reconciler re-runs
-    // forever and the erasure is stuck "incomplete" even though everything is
-    // done. Only `cascade_failed` (the F8 use-case itself errored before it
-    // could iterate) or a throw is genuinely not-clean. Mirrors
-    // `archive-member.ts` which classifies the same outcome as a
-    // concurrent_skip (warn, not fail).
+    // H2 (refined): the F8 adapter maps TWO distinct situations to the SAME
+    // `cascade_partial_failure` outcome, so the bare label is NOT enough to
+    // decide benign-ness — `skippedConcurrentCount` is the discriminator:
+    //   (1) `skippedConcurrentCount > 0` → a concurrent admin cancel won the
+    //       race and the cycle already reached terminal `cancelled` by a
+    //       different actor (the cycle IS cancelled). BENIGN — must NOT block
+    //       `member_erased`, else the US2 reconciler re-runs forever on an
+    //       erasure that is actually done. Mirrors `archive-member.ts` which
+    //       classifies this as a concurrent_skip (warn, not fail).
+    //   (2) `skippedConcurrentCount === 0` → a generic infra failure
+    //       (deadlock 40P01 / statement-timeout 57014 / connection-blip 08006 /
+    //       repo bug) OR an audit-emit failure rolled back the per-cycle cancel
+    //       tx, so the cycle is STILL in-flight. This is a REAL failure that
+    //       also surfaces as `cascade_partial_failure`. Treat it as NOT clean —
+    //       mirroring how the broadcasts partial above is handled — so the US2
+    //       reconciler re-drives the stuck cycle. (Without this, `member_erased`
+    //       could be emitted while a renewal cycle is genuinely in-flight and
+    //       the reconciler, which keys on `member_erased`, would never retry.)
     if (r.outcome === 'cascade_partial_failure') {
-      logger.warn(
-        {
-          memberId,
-          requestId: meta.requestId,
-          cancelledCount: r.cancelledCount,
-          skippedConcurrentCount: r.skippedConcurrentCount,
-          cascade: 'f8_in_flight_cycle_cancel',
-        },
-        'erase-member: renewals cascade partial — concurrent admin cancel won race, cycle already terminal',
-      );
+      if (r.skippedConcurrentCount > 0) {
+        logger.warn(
+          {
+            memberId,
+            requestId: meta.requestId,
+            cancelledCount: r.cancelledCount,
+            skippedConcurrentCount: r.skippedConcurrentCount,
+            cascade: 'f8_in_flight_cycle_cancel',
+          },
+          'erase-member: renewals cascade partial — concurrent admin cancel won race, cycle already terminal',
+        );
+      } else {
+        allCascadesClean = false;
+        logger.error(
+          {
+            memberId,
+            requestId: meta.requestId,
+            outcome: r.outcome,
+            cancelledCount: r.cancelledCount,
+            skippedConcurrentCount: r.skippedConcurrentCount,
+            cascade: 'f8_in_flight_cycle_cancel',
+          },
+          'erase-member: renewals cascade partial without concurrent skip — cycle remains in flight (generic tx / audit-emit failure)',
+        );
+      }
     } else if (r.outcome !== 'ok') {
       allCascadesClean = false;
       logger.error(

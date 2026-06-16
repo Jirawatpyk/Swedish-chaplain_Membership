@@ -299,6 +299,34 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).toContain('member_erased');
   });
 
+  // H2 refinement (Important): the renewals adapter maps TWO distinct situations
+  // to the SAME `cascade_partial_failure` outcome — (1) a genuine concurrent
+  // cancel (`skippedConcurrentCount > 0`, cycle IS terminal → benign, prior
+  // test) and (2) a generic infra failure / audit-emit failure inside the
+  // per-cycle cancel tx (`skippedConcurrentCount === 0` → the cycle is STILL
+  // in-flight). The over-broad H2 fix treated BOTH as clean, so `member_erased`
+  // could be emitted while a cycle is genuinely still in-flight, and the US2
+  // reconciler (which keys on member_erased) would never re-drive it. The
+  // refined rule keys benign-ness on `skippedConcurrentCount > 0`; a generic
+  // failure (count 0) must keep blocking member_erased, mirroring how the
+  // broadcasts partial is handled.
+  it('renewals cascade_partial_failure from a genuine infra failure (no concurrent skip) DOES block member_erased', async () => {
+    const deps = buildEraseDeps();
+    deps.renewalsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'cascade_partial_failure',
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
   // Counterpart to the renewals case: the broadcasts `cascade_partial_failure`
   // outcome means `unexpectedErrorCount > 0` — some broadcasts genuinely remain
   // in-flight (not a benign race). It MUST keep blocking `member_erased` so the
