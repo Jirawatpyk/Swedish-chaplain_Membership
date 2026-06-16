@@ -261,13 +261,24 @@ export interface MemberRenewalFlagsRepo {
    *
    * `computedAt` is the cron-pass-wide single timestamp (so all rows
    * share `risk_score_last_computed_at` for that pass).
+   *
+   * COMP-1 (companion to R3) — the WHERE carries `erased_at IS NULL`, so a
+   * member erased between candidate-listing and this write is SILENTLY
+   * SKIPPED (TOCTOU re-leak guard). `writtenMemberIds` returns the member
+   * ids the UPDATE actually touched (via `RETURNING`) so the caller can gate
+   * its per-member `at_risk_score_recomputed` audit on the ACTUAL write set —
+   * without it, the batch emits a spurious "recompute succeeded" audit for an
+   * erased member that was write-skipped. `affectedRows === writtenMemberIds.length`.
    */
   bulkSetRiskScores(
     tx: TenantTx,
     tenantId: string,
     rows: ReadonlyArray<BulkSetRiskScoreRow>,
     computedAt: Date,
-  ): Promise<{ readonly affectedRows: number }>;
+  ): Promise<{
+    readonly affectedRows: number;
+    readonly writtenMemberIds: ReadonlyArray<string>;
+  }>;
 
   /**
    * Phase 6 Wave G T159b — bulk gather factor inputs for the at-risk

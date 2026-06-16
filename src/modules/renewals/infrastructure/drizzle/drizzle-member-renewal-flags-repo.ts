@@ -419,8 +419,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       _tenantId: string,
       rows: ReadonlyArray<BulkSetRiskScoreRow>,
       computedAt: Date,
-    ): Promise<{ readonly affectedRows: number }> {
-      if (rows.length === 0) return { affectedRows: 0 };
+    ): Promise<{
+      readonly affectedRows: number;
+      readonly writtenMemberIds: ReadonlyArray<string>;
+    }> {
+      if (rows.length === 0) return { affectedRows: 0, writtenMemberIds: [] };
       const txDb = tx as typeof db;
       const payload = rows.map((r) => ({
         member_id: r.memberId,
@@ -429,7 +432,14 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         factors: r.factors,
       }));
       // postgres-js driver only accepts string/Buffer params (unlike node-postgres).
-      const result = await txDb.execute(sql`
+      //
+      // COMP-1 (companion to R3) — `RETURNING m.member_id` surfaces exactly
+      // which member rows the UPDATE actually touched. The `erased_at IS NULL`
+      // guard below silently skips a member erased between candidate-listing
+      // and this write; returning the written ids lets the use-case gate its
+      // per-member `at_risk_score_recomputed` audit on the ACTUAL write set
+      // (no spurious "recompute succeeded" audit for a write-skipped tombstone).
+      const result = await txDb.execute<{ member_id: string }>(sql`
         UPDATE members AS m
         SET
           risk_score = src.score,
@@ -443,16 +453,18 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           -- scrubbed risk columns on a member erased between candidate-
           -- listing and this bulk write (TOCTOU re-leak of the quasi-
           -- identifiers scrubPiiInTx NULLed). An erased member in the batch
-          -- is silently skipped; the count reflects only live rows written.
+          -- is silently skipped; the RETURNING set reflects only live rows.
           AND m.erased_at IS NULL
+        RETURNING m.member_id
       `);
-      // The driver's `count` now reflects only the live rows actually
-      // UPDATEd, so the `?? rows.length` fallback is no longer a correct
-      // proxy when the batch contains erased members. postgres-js always
-      // returns a numeric `count` for an UPDATE, so the fallback is dead
-      // defensive code — kept for the pathological "no count" driver case
-      // (where 0 erased members is the safe assumption: rows.length).
-      return { affectedRows: (result as { count?: number }).count ?? rows.length };
+      // postgres-js returns the RETURNING rows as an iterable result set; map
+      // to the written member ids. The count is derived from the returned rows
+      // so it cannot drift from `writtenMemberIds.length`.
+      const writtenMemberIds = Array.from(result).map((r) => r.member_id);
+      return {
+        affectedRows: writtenMemberIds.length,
+        writtenMemberIds,
+      };
     },
 
     /**

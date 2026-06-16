@@ -250,6 +250,16 @@ export async function recomputeAtRiskScoresBatch(
       }
 
       // 4. Bulk UPDATE members.risk_score_* via the port.
+      //
+      // COMP-1 (companion to R3) — `bulkSetRiskScores` silently SKIPS a member
+      // erased between candidate-listing (gatherAtRiskFactorsForTenant, which
+      // already excludes erased members) and this write — the `erased_at IS
+      // NULL` write-guard makes that row a no-op without re-leaking the scrubbed
+      // quasi-identifiers. It RETURNS the member ids it actually wrote, so the
+      // audit loop below can emit only for the real write set. Without this, a
+      // member erased mid-batch would still get a spurious "recompute succeeded"
+      // audit even though its row was never touched.
+      const writtenMemberIds = new Set<string>();
       if (computed.length > 0) {
         const updateRows: ReadonlyArray<BulkSetRiskScoreRow> = computed.map(
           (c) => ({
@@ -261,12 +271,14 @@ export async function recomputeAtRiskScoresBatch(
             ),
           }),
         );
-        await deps.memberRenewalFlagsRepo.bulkSetRiskScores(
-          tx,
-          input.tenantId,
-          updateRows,
-          computedAt,
-        );
+        const writeResult =
+          await deps.memberRenewalFlagsRepo.bulkSetRiskScores(
+            tx,
+            input.tenantId,
+            updateRows,
+            computedAt,
+          );
+        for (const id of writeResult.writtenMemberIds) writtenMemberIds.add(id);
       }
 
       // 5. Bulk INSERT audit_log via the port. Build the events list
@@ -293,6 +305,14 @@ export async function recomputeAtRiskScoresBatch(
       }
 
       for (const c of computed) {
+        // COMP-1 (companion to R3) — gate the per-member audit on the ACTUAL
+        // write. A member erased between candidate-listing and the bulk write
+        // is write-skipped (erased_at IS NULL guard); emitting its
+        // `at_risk_score_recomputed` (and the linked threshold_crossed) here
+        // would record a "recompute succeeded" event for a row that was never
+        // touched. In the normal (non-race) path every computed member is in
+        // the write set, so this skip is inert.
+        if (!writtenMemberIds.has(c.memberId)) continue;
         const factorsMap = Object.fromEntries(
           c.result.contributions.map((f) => [f.factor, f.points]),
         );
@@ -365,7 +385,12 @@ export async function recomputeAtRiskScoresBatch(
 
       return ok({
         membersTotal: factorRows.length,
-        membersRecomputed: computed.length,
+        // COMP-1 (companion to R3) — report the ACTUAL write set, not the
+        // in-memory computed length. They diverge only in the rare TOCTOU
+        // race where a member is erased between candidate-listing and the
+        // bulk write (that member is write-skipped + audit-skipped + must not
+        // be counted as recomputed). In the normal path the two are equal.
+        membersRecomputed: writtenMemberIds.size,
         membersSkippedBelowTenure: skippedBelowTenure.length,
         membersFailed,
         durationMs: Date.now() - startedAt,

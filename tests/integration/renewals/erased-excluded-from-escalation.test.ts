@@ -140,4 +140,34 @@ describe('F8 escalation-task admin queue excludes erased members (COMP-1 H4)', (
     expect(memberIds).toContain(keptId);
     expect(memberIds).not.toContain(erasedId);
   });
+
+  // COMP-1 (companion to H4) — `countMatching` is the badge-count companion
+  // of `listForAdminQueue` (both are called as a pair: page.tsx renders the
+  // rows via the queue list; route.ts / the banner renders the count via
+  // countMatching). H4 added `erased_at IS NULL` to the LIST so erased
+  // members' tasks don't appear as ROWS, but the COUNT companion still
+  // tallied them → count > rows divergence (the "5 overdue but 2 red rows"
+  // class the codebase fixed before at R10 W4). The count and the filtered
+  // row set MUST agree.
+  it('countMatching agrees with listForAdminQueue row count (excludes erased)', async () => {
+    const repo = makeDrizzleRenewalEscalationTaskRepo(tenant.ctx);
+    // Same (empty) filter on both reads so they describe the same set: all
+    // open tasks for non-erased members in this tenant.
+    const count = await repo.countMatching(tenant.ctx.slug, {});
+    const page = await repo.listForAdminQueue(tenant.ctx.slug, {
+      pageSize: 100,
+      sort: 'due_at_asc',
+    });
+
+    // The kept member's task must surface in BOTH the rows and the count;
+    // the erased member's task must surface in NEITHER. The two seeded tasks
+    // (kept + erased) therefore collapse to exactly 1 visible task — and
+    // count === rows is the load-bearing assertion (the divergence the badge
+    // count had before this fix).
+    const memberIds = page.items.map((t) => t.memberId);
+    expect(memberIds).toContain(keptId);
+    expect(memberIds).not.toContain(erasedId);
+    expect(page.items.length).toBe(1);
+    expect(count).toBe(page.items.length);
+  });
 });
