@@ -241,33 +241,38 @@ export function makeDrizzleMemberRenewalFlagsRepo(
     },
 
     /**
-     * COMP-1 H4 — probe whether the member is GDPR-erased (`erased_at IS NOT
-     * NULL`). A dedicated read is needed because the `blocked_from_auto_
-     * reactivation` flag alone no longer fences an erased member: the scrub
-     * nulls the block reason / provenance (`set_by_user_id`), and the 0094
-     * consistency CHECK forbids `blocked=TRUE` once that provenance is gone, so
-     * erasure forces the flag back to FALSE. A paid lapsed cycle for an erased
-     * member must therefore be detected via `erased_at` and routed to the
-     * admin-hold path instead of silently auto-reactivating an anonymised
-     * tombstone. `null` ⇒ the member row is not visible (RLS-hidden / absent).
-     * Threads the caller's `tx` (tenant-scoped) — never the global db. The call
-     * site (`mark-cycle-complete-from-invoice-paid`) short-circuits this read
-     * when `blocked === true` (an explicit block already fences reactivation).
+     * COMP-1 L3 — single-round-trip read of BOTH reactivation guards
+     * (`blocked_from_auto_reactivation` + GDPR-erased state) for the F4
+     * invoice-paid hot path. Folds two separate SELECTs against the SAME
+     * `members` row into one, so the payment-confirmation callback issues one
+     * read instead of two.
+     *
+     * Why both guards are needed: the scrub nulls the block reason / provenance
+     * (`set_by_user_id`), and the 0094 consistency CHECK forbids `blocked=TRUE`
+     * once that provenance is gone, so erasure forces the flag back to FALSE. A
+     * paid lapsed cycle for an erased member must therefore be detected via
+     * `erased_at` and routed to the admin-hold path instead of silently auto-
+     * reactivating an anonymised tombstone. `null` ⇒ the member row is not
+     * visible (RLS-hidden / absent). Threads the caller's `tx` (tenant-scoped)
+     * — never the global db.
      */
-    async readIsErasedInTx(
+    async readReactivationGuardsInTx(
       tx: unknown,
       _tenantId: string,
       memberId: string,
-    ): Promise<boolean | null> {
+    ): Promise<{ readonly blocked: boolean; readonly erased: boolean } | null> {
       const txDb = tx as typeof db;
       const rows = await txDb
-        .select({ erasedAt: members.erasedAt })
+        .select({
+          blocked: members.blockedFromAutoReactivation,
+          erasedAt: members.erasedAt,
+        })
         .from(members)
         .where(eq(members.memberId, memberId))
         .limit(1);
       const row = rows[0];
       if (row === undefined) return null;
-      return row.erasedAt !== null;
+      return { blocked: row.blocked, erased: row.erasedAt !== null };
     },
 
     async readRenewalRemindersOptedOut(

@@ -148,32 +148,26 @@ export async function markCycleCompleteInTx(
     };
   }
 
-  // FR-005b branch — read admin override flag.
-  const blocked =
-    await deps.memberRenewalFlagsRepo.readBlockedFromAutoReactivation(
-      tx,
-      event.tenantId,
-      cycle.memberId,
-    );
-
-  // COMP-1 H4 — an erased member must never AUTO-reactivate. Erasure keeps
-  // `status` + forces `blocked_from_auto_reactivation = FALSE` (the 0094 CHECK
-  // forbids the flag staying TRUE once its provenance is scrubbed), so the
-  // block flag alone no longer fences an erased member. Read `erased_at` in the
-  // same tx and route to the admin-hold path so a payment that lands against a
-  // GDPR-anonymised tombstone surfaces to an admin instead of silently
-  // reactivating it. Short-circuit the extra read when already blocked.
-  const isErased =
-    blocked === true
-      ? true
-      : (await deps.memberRenewalFlagsRepo.readIsErasedInTx(
-          tx,
-          event.tenantId,
-          cycle.memberId,
-        )) === true;
+  // FR-005b + COMP-1 — read BOTH reactivation guards in ONE round-trip
+  // (COMP-1 L3 fold): the admin `blocked_from_auto_reactivation` override AND
+  // the GDPR-erased state. An erased member must never AUTO-reactivate:
+  // erasure keeps `status` + forces `blocked_from_auto_reactivation = FALSE`
+  // (the 0094 CHECK forbids the flag staying TRUE once its provenance is
+  // scrubbed), so the block flag alone no longer fences an erased member.
+  // Routing a payment that lands against a GDPR-anonymised tombstone to the
+  // admin-hold path surfaces it to an admin instead of silently reactivating
+  // it. `null` (member RLS-hidden / absent) → both guards treated as false →
+  // auto-complete (defensive — preserves the prior null-read behaviour).
+  const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+    tx,
+    event.tenantId,
+    cycle.memberId,
+  );
+  const blocked = guards?.blocked === true;
+  const isErased = guards?.erased === true;
 
   const closedAt = event.paidAt;
-  if (blocked === true || isErased) {
+  if (blocked || isErased) {
     // Hold for admin review — NOT a terminal state. cycle moves to
     // pending_admin_reactivation; T136 / T137 / T138 govern exit.
     return holdForAdminReview(deps, tx, cycle, event, closedAt);

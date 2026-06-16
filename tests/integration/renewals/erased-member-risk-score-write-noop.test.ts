@@ -42,7 +42,7 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 const SCORE_INPUT: SetRiskScoreInput = {
   score: 88,
   band: 'critical',
-  factors: { invoicesOverdueCount: 25 },
+  factors: { invoices_overdue_count_gt_zero: 25 },
   computedAt: '2026-06-16T00:00:00.000Z',
 };
 
@@ -177,8 +177,8 @@ describe('COMP-1 R3 — risk-score write no-ops on an erased member', () => {
         tx,
         tenant.ctx.slug,
         [
-          { memberId: erasedId, score: 90, band: 'critical', factors: { invoicesOverdueCount: 25 } },
-          { memberId: liveId, score: 60, band: 'at-risk', factors: { invoicesOverdueCount: 25 } },
+          { memberId: erasedId, score: 90, band: 'critical', factors: { invoices_overdue_count_gt_zero: 25 } },
+          { memberId: liveId, score: 60, band: 'at-risk', factors: { invoices_overdue_count_gt_zero: 25 } },
         ],
         new Date('2026-06-16T00:00:00.000Z'),
       ),
