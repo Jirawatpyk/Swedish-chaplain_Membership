@@ -298,4 +298,74 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
       .where(eq(invitations.id, invitationId));
     expect(rows[0]?.consumedAt).not.toBeNull();
   }, 30_000);
+
+  /**
+   * H3 (code-review), part 1 — APPLICATION-LAYER invariant: if the
+   * linked-user read throws, `eraseMember`'s atomic scrub tx rolls back.
+   *
+   * The linked-user read drives the Art.17/PDPA §33 cascade. A read failure
+   * (statement timeout / connection blip) must FAIL LOUD: if it were
+   * swallowed to `[]`, the cascade would silently no-op (no sessions
+   * revoked, no invites consumed) while the scrub still committed and
+   * `member_erased` was emitted as complete — leaving the erased member's
+   * F1 login alive with the US2 reconciler (keyed on member_erased) never
+   * re-driving it.
+   *
+   * This test injects a ContactRepo whose `listLinkedUserIdsForMemberInTx`
+   * throws (a stand-in for a real read failure), then asserts the erasure
+   * errors (`server_error`) AND the member/contact rows are untouched —
+   * proving the throw rolls the whole runInTenant scrub tx back. Because the
+   * injected stub REPLACES the adapter method, this part is independent of
+   * the adapter's swallow/throw behaviour (the ADAPTER's own error path is
+   * locked in by part 2 below).
+   */
+  it('rolls the scrub tx back (server_error, no scrub) when the linked-user read throws', async () => {
+    const { memberId, contactId } = await seedMemberWithLinkedContact(
+      tenant,
+      linkedUser.userId,
+    );
+
+    // Override ONLY the linked-user read with a throwing stub — stand-in for
+    // a statement timeout / connection blip on that SELECT inside the tx.
+    const throwingContactRepo: EraseMemberDeps['contactRepo'] = {
+      ...drizzleContactRepo,
+      listLinkedUserIdsForMemberInTx: async () => {
+        throw new Error('simulated statement timeout');
+      },
+    };
+    const deps: EraseMemberDeps = {
+      ...buildEraseMemberDeps(tenant),
+      contactRepo: throwingContactRepo,
+    };
+
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-erase-throw-${Date.now()}` },
+      deps,
+    );
+
+    // 1. The erasure fails loud — no false "complete".
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('server_error');
+    }
+
+    // 2. The member row is UNTOUCHED — the throw rolled the scrub tx back.
+    //    (Against a swallow-to-[] adapter the scrub would have committed.)
+    const memberRows = await db
+      .select({ erasedAt: members.erasedAt, companyName: members.companyName })
+      .from(members)
+      .where(eq(members.memberId, memberId));
+    expect(memberRows[0]?.erasedAt).toBeNull();
+    expect(memberRows[0]?.companyName).not.toBe('[erased]');
+
+    // 3. The contact row is likewise un-scrubbed (still PII, not removed).
+    const contactRows = await db
+      .select({ removedAt: contacts.removedAt, firstName: contacts.firstName })
+      .from(contacts)
+      .where(eq(contacts.contactId, contactId));
+    expect(contactRows[0]?.removedAt).toBeNull();
+    expect(contactRows[0]?.firstName).not.toBe('[erased]');
+  }, 30_000);
 });

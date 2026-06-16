@@ -12,7 +12,6 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
-import { logger } from '@/lib/logger';
 import { contacts } from './schema-contacts';
 import type {
   ContactRepo,
@@ -209,34 +208,24 @@ export const drizzleContactRepo: ContactRepo = {
   },
 
   async listLinkedUserIdsForMemberInTx(tx, memberId) {
-    try {
-      const rows = await tx
-        .select({ linkedUserId: contacts.linkedUserId })
-        .from(contacts)
-        .where(
-          and(
-            eq(contacts.memberId, memberId),
-            isNull(contacts.removedAt),
-          ),
-        );
-      return rows
-        .map((r) => r.linkedUserId)
-        .filter((uid): uid is string => uid !== null);
-    } catch (e) {
-      // Contract: return empty array on infra failure rather than
-      // throw — callers use this to cascade-revoke F1 sessions on
-      // member archive, and a partial failure must not block the
-      // archive tx. Ops observe the failure via the error log below.
-      const msg = e instanceof Error ? e.message : String(e);
-      // Use pino logger (not console) so the failure joins the
-      // structured log stream with requestId correlation + CI
-      // forbidden-field lint, per docs/observability.md.
-      logger.error(
-        { cause: msg },
-        'drizzle-contact-repo.listLinkedUserIdsForMemberInTx_failed',
-      );
-      return [];
-    }
+    // NO try/catch: a thrown DB error (statement timeout / connection blip)
+    // MUST propagate so the caller's runInTenant tx ROLLS BACK. An empty
+    // array means "genuinely no linked users", never "a read failed".
+    // This read drives the Art.17/PDPA §33 cascade that revokes the erased
+    // member's F1 sessions + pending invitations (erase-member.ts / Bug I-1)
+    // and the equivalent archive cascade (archive-member.ts / US7). If a
+    // transient read error were swallowed to [], the cascade would silently
+    // no-op while the scrub/status-flip still committed — leaving the erased
+    // member's login alive AND emitting member_erased as "complete" so the
+    // US2 reconciler (keyed on member_erased) never re-drives it. Failing
+    // loud rolls the whole tx back: no partial scrub, no false completion.
+    const rows = await tx
+      .select({ linkedUserId: contacts.linkedUserId })
+      .from(contacts)
+      .where(and(eq(contacts.memberId, memberId), isNull(contacts.removedAt)));
+    return rows
+      .map((r) => r.linkedUserId)
+      .filter((uid): uid is string => uid !== null);
   },
 
   async markInviteBouncedInTx(tx, contactId, bouncedAt) {

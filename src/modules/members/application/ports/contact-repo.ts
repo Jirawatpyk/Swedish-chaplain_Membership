@@ -136,6 +136,11 @@ export interface ContactRepo {
    * Returns a de-duplication-friendly list (may contain duplicates if
    * the same F1 user is linked to multiple contacts on the same
    * member); callers dedupe via `new Set(...)` before iterating.
+   *
+   * An empty array means "genuinely no linked users". A read failure
+   * (statement timeout / connection blip) THROWS rather than returning
+   * `[]`, so the caller's atomic tx rolls back instead of silently
+   * skipping the session/invitation revocation cascade (Bug I-1).
    */
   listLinkedUserIdsForMemberInTx(
     tx: TenantTx,
