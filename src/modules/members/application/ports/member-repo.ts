@@ -493,6 +493,28 @@ export interface MemberRepo {
     memberId: MemberId,
     opts: { readonly erasedAt: Date },
   ): Promise<Result<{ readonly erasedAt: Date }, RepoError>>;
+
+  /**
+   * COMP-1 — narrow read of the member's `erased_at` (the erasure pre-flight).
+   * `erased_at` is NOT carried on the `Member` aggregate (only the scrub sets
+   * it on the row), so the erase use-case resolves erasure state via this
+   * dedicated read rather than widening `Member` — mirrors `findRiskById`.
+   *
+   * Serves a dual purpose for `eraseMember`'s pre-flight:
+   *   - `repo.not_found` ⇒ the member is absent / cross-tenant: the use-case
+   *     short-circuits with `not_found` BEFORE emitting `member_erasure_requested`
+   *     (no DPO-log pollution / existence oracle).
+   *   - `{ erasedAt: <Date> }` ⇒ already erased: skip the `member_erasure_requested`
+   *     re-emit (do NOT restart the Art.12 clock); still re-drive the scrub +
+   *     cascades.
+   *   - `{ erasedAt: null }` ⇒ first request: emit `member_erasure_requested`.
+   *
+   * Tenant-scoped via ctx/RLS; threads the runInTenant tx, never the global db.
+   */
+  findErasedAtById(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 }
 
 // ---------------------------------------------------------------------------

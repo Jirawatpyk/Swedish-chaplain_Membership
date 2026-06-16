@@ -296,6 +296,27 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findErasedAtById(ctx, memberId) {
+    try {
+      // COMP-1 narrow 1-column read (erasure pre-flight). Threads the
+      // runInTenant tx (RLS gotcha) — never the global db. Cross-tenant /
+      // absent → not_found via RLS. `erased_at` is nullable: a non-erased
+      // member returns `{ erasedAt: null }`.
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select({ erasedAt: members.erasedAt })
+          .from(members)
+          .where(eq(members.memberId, memberId))
+          .limit(1),
+      );
+      const row = rows[0];
+      if (row === undefined) return err({ code: 'repo.not_found' });
+      return ok({ erasedAt: row.erasedAt ?? null });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findManyByIdsInTx(tx, memberIds) {
     try {
       if (memberIds.length === 0) {

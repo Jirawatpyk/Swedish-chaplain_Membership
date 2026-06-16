@@ -94,25 +94,54 @@ export async function eraseMember(
   const reason = parsed.data.reason;
   const now = deps.clock.now();
 
-  // 1. Durable request audit — its OWN committed tx so the DPO log records the
-  //    request even if the scrub below fails (Art. 12 clock start).
-  try {
-    await runInTenant(deps.tenant, async (tx) => {
-      const requested = await deps.audit.recordInTx(tx, deps.tenant, {
-        type: 'member_erasure_requested',
-        actorUserId: meta.actorUserId,
-        requestId: meta.requestId,
-        summary: `member_erasure_requested ${memberId}`,
-        payload: { member_id: memberId, reason },
-      });
-      if (!requested.ok) throw new Error('audit_failed');
-    });
-  } catch (e) {
+  // 0. PRE-FLIGHT existence + state read (BEFORE the requested-audit emit).
+  //    `erased_at` is NOT carried on the Member aggregate, so resolve it via the
+  //    narrow `findErasedAtById` read (mirrors `findRiskById`).
+  //    - not_found ⇒ bogus / cross-tenant id: short-circuit with `not_found`
+  //      emitting NO audit. Without this, the durable `member_erasure_requested`
+  //      emit below would write a clock-start for a non-existent subject —
+  //      polluting the append-only DPO log and acting as a cross-tenant
+  //      member-existence oracle. (LOW finding.)
+  //    - already erased (erased_at set) ⇒ a re-drive (idempotent scrub / US2
+  //      reconciler): SKIP the requested emit so we do NOT re-log the request and
+  //      conceptually restart the Art.12 one-month clock on every pass. (M2.)
+  //    The scrub tx's findByIdInTx (FOR UPDATE) below STILL re-checks existence —
+  //    it guards the TOCTOU window between this read and the tx.
+  const preflight = await deps.memberRepo.findErasedAtById(deps.tenant, memberId);
+  if (!preflight.ok) {
+    if (preflight.error.code === 'repo.not_found')
+      return err({ type: 'not_found' });
     logger.error(
-      { err: e, memberId, requestId: meta.requestId },
-      'erase-member: requested-audit failed',
+      { err: preflight.error, memberId, requestId: meta.requestId },
+      'erase-member: pre-flight existence read failed',
     );
-    return err({ type: 'server_error', message: 'erase request audit failed' });
+    return err({ type: 'server_error', message: 'erase pre-flight read failed' });
+  }
+  const alreadyErased = preflight.value.erasedAt !== null;
+
+  // 1. Durable request audit — its OWN committed tx so the DPO log records the
+  //    request even if the scrub below fails (Art. 12 clock start). Emitted ONLY
+  //    on a FIRST request (member exists + not yet erased); a re-drive over an
+  //    already-erased member skips this so the Art.12 clock is not restarted.
+  if (!alreadyErased) {
+    try {
+      await runInTenant(deps.tenant, async (tx) => {
+        const requested = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_erasure_requested',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `member_erasure_requested ${memberId}`,
+          payload: { member_id: memberId, reason },
+        });
+        if (!requested.ok) throw new Error('audit_failed');
+      });
+    } catch (e) {
+      logger.error(
+        { err: e, memberId, requestId: meta.requestId },
+        'erase-member: requested-audit failed',
+      );
+      return err({ type: 'server_error', message: 'erase request audit failed' });
+    }
   }
 
   // 2. ATOMIC scrub tx — members + contacts (+ Task 5 linked-user cascade).
@@ -205,8 +234,9 @@ export async function eraseMember(
   // sentinels), the cascades are individually idempotent, and member_erased is
   // emitted ONLY on a fully-clean run — so a partial erasure is completed by a
   // later call (or the US2 reconciliation sweep), and an incomplete run is never
-  // marked done. A redundant erase of an already-complete member re-emits
-  // member_erased (append-only, same payload) — benign and acceptable.
+  // marked done. A re-drive of an already-erased member re-emits member_erased
+  // with 0/0 counts (sessions/invitations already revoked on the first pass) —
+  // benign, append-only.
   //
   // 3. POST-COMMIT best-effort cascades. Each opens its own tx (in the adapter)
   //    and must NOT roll back the committed scrub. Track whether every cascade

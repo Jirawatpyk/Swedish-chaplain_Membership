@@ -74,6 +74,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     findLastPlanChangedAt: vi.fn(),
     findPendingInvitationsForMember: vi.fn(),
     scrubPiiInTx: vi.fn(),
+    findErasedAtById: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),
