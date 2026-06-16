@@ -160,6 +160,22 @@ export interface MemberRenewalFlagsRepo {
   ): Promise<boolean | null>;
 
   /**
+   * COMP-1 H4 — read whether the member is GDPR-erased (`erased_at IS NOT
+   * NULL`) in the same tx as the cycle transition. Erasure forces
+   * `blocked_from_auto_reactivation = FALSE` (the 0094 CHECK forbids the flag
+   * staying TRUE once its provenance is scrubbed) and keeps `status`, so the
+   * block flag alone no longer prevents reactivating an erased member. The F4
+   * onPaidCallback uses this to HOLD an erased member's paid lapsed cycle for
+   * admin review instead of silently auto-reactivating an anonymised tombstone.
+   * Returns `null` when the member row is RLS-hidden or non-existent.
+   */
+  readIsErasedInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<boolean | null>;
+
+  /**
    * C7 review-fix (Phase 5 Wave I): SSR-seed the preferences toggle
    * on `/portal/preferences/renewals`. Reads `renewal_reminders_opted_out`
    * directly so members already opted out see the toggle in the

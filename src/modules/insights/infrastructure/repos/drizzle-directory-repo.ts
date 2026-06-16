@@ -223,8 +223,12 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       filter: DirectorySearchFilter,
     ): Promise<{ readonly rows: readonly DirectorySearchRow[]; readonly total: number }> {
       return runInTenant(ctx, async (tx) => {
-        // Exclude archived members from the directory management view.
-        const conds: SQL[] = [sql`m.status <> 'archived'`];
+        // Exclude archived members + COMP-1 H4 GDPR-erased tombstones from the
+        // directory management view (erasure keeps `status`, stamps `erased_at`).
+        const conds: SQL[] = [
+          sql`m.status <> 'archived'`,
+          sql`m.erased_at IS NULL`,
+        ];
         if (filter.q !== undefined && filter.q !== '') {
           const like = likeTerm(filter.q);
           conds.push(
@@ -317,6 +321,10 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
         JOIN members m
           ON m.tenant_id = dl.tenant_id AND m.member_id = dl.member_id
              AND m.status <> 'archived'
+             -- COMP-1 H4 — never publish a GDPR-erased tombstone to the
+             -- public directory / E-Book / JSON export (erasure keeps status,
+             -- stamps erased_at).
+             AND m.erased_at IS NULL
         LEFT JOIN membership_plans mp
           ON mp.tenant_id = m.tenant_id AND mp.plan_id = m.plan_id AND mp.plan_year = m.plan_year
         LEFT JOIN contacts c

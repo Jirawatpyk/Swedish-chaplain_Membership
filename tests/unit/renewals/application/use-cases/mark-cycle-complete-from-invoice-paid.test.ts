@@ -90,6 +90,8 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
 function fakeDeps(args: {
   cycle?: RenewalCycle | null;
   blocked?: boolean | null;
+  /** COMP-1 H4 — member erased state (erased_at IS NOT NULL). Defaults false. */
+  erased?: boolean | null;
   transitionImpl?: () => Promise<RenewalCycle>;
   emitInTxImpl?: () => Promise<void>;
 }): {
@@ -108,6 +110,9 @@ function fakeDeps(args: {
   const readBlockedMock = vi.fn(async () =>
     args.blocked === undefined ? false : args.blocked,
   );
+  const readIsErasedMock = vi.fn(async () =>
+    args.erased === undefined ? false : args.erased,
+  );
   const deps: MarkCycleCompleteDeps = {
     tenant: { slug: TENANT_ID } as MarkCycleCompleteDeps['tenant'],
     cyclesRepo: {
@@ -120,6 +125,7 @@ function fakeDeps(args: {
     } as unknown as MarkCycleCompleteDeps['auditEmitter'],
     memberRenewalFlagsRepo: {
       readBlockedFromAutoReactivation: readBlockedMock,
+      readIsErasedInTx: readIsErasedMock,
     } as unknown as MarkCycleCompleteDeps['memberRenewalFlagsRepo'],
   };
   return {
@@ -180,6 +186,29 @@ describe('markCycleCompleteFromInvoicePaid (T123) — FR-005b admin-block branch
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
       type: 'renewal_completed_post_lapse',
       payload: { held_for_admin_review: true },
+    });
+  });
+
+  it('COMP-1 H4: erased member (block flag FALSE) — held, never auto-completed', async () => {
+    // Erasure forces blocked=FALSE; without the erased_at guard this member
+    // would auto-complete. Assert the erased read routes to the hold path.
+    const cycle = buildCycle();
+    const { deps, transitionMock } = fakeDeps({
+      cycle,
+      blocked: false,
+      erased: true,
+      transitionImpl: async () =>
+        ({
+          ...cycle,
+          status: 'pending_admin_reactivation' as const,
+          enteredPendingAt: '2026-05-07T10:00:00Z',
+        }) as never,
+    });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('held_pending_admin');
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'awaiting_payment',
+      to: 'pending_admin_reactivation',
     });
   });
 });

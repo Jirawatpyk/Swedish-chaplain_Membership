@@ -240,6 +240,22 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       return rows[0]?.blocked ?? null;
     },
 
+    async readIsErasedInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<boolean | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ erasedAt: members.erasedAt })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const row = rows[0];
+      if (row === undefined) return null;
+      return row.erasedAt !== null;
+    },
+
     async readRenewalRemindersOptedOut(
       tx: unknown,
       _tenantId: string,
@@ -344,6 +360,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         .where(
           and(
             eq(members.status, 'active'),
+            // COMP-1 H4 — never re-score a GDPR-erased member (erasure keeps
+            // `status` + NULLs risk_score, stamps `erased_at`).
+            isNull(members.erasedAt),
             exists(
               txDb
                 .select({ one: sql`1` })
@@ -545,6 +564,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true
         WHERE m.status = 'active'
+          -- COMP-1 H4 — exclude GDPR-erased members from the at-risk batch
+          -- recompute (erasure keeps status, stamps erased_at).
+          AND m.erased_at IS NULL
           AND EXISTS (
             SELECT 1 FROM renewal_cycles c
             WHERE c.member_id = m.member_id
@@ -619,6 +641,10 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         // would still surface in the widget — admin would click Snooze
         // on a phantom row.
         eq(members.status, 'active'),
+        // COMP-1 H4 — also exclude GDPR-erased members. Erasure NULLs
+        // risk_score (so `>= 50` already drops them), but keep this filter
+        // explicit + consistent with the page/summary pair below.
+        isNull(members.erasedAt),
         gte(members.riskScore, 50),
         or(
           isNull(members.riskSnoozedUntil),
@@ -693,6 +719,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           count(*) FILTER (WHERE risk_score_band = 'critical') AS critical
         FROM members
         WHERE status = 'active'  -- Phase 6 review I6 (archive cascade)
+          AND erased_at IS NULL  -- COMP-1 H4 (GDPR-erased excluded)
           AND risk_score >= 50
           AND (risk_snoozed_until IS NULL OR risk_snoozed_until < NOW())
       `);

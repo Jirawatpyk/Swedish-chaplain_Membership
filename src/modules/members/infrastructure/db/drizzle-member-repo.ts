@@ -366,6 +366,9 @@ export const drizzleMemberRepo: MemberRepo = {
           .from(members)
           .where(
             and(
+              // COMP-1 H4 — an erased tombstone must not block a legitimate
+              // re-registration under the same name.
+              isNull(members.erasedAt),
               ilike(members.companyName, companyName),
               eq(members.country, country),
               or(
@@ -643,6 +646,10 @@ export const drizzleMemberRepo: MemberRepo = {
       }
 
       const whereClause = and(
+        // COMP-1 H4 — exclude GDPR-erased tombstones from the directory.
+        // Erasure keeps `status` (orthogonal to archive) and stamps only
+        // `erased_at`, so the status OR-set above does NOT hide an erased row.
+        isNull(members.erasedAt),
         or(...statuses.map((s) => eq(members.status, s)))!,
         ...(filter.q ? [directoryQFilter(filter.q)] : []),
         ...conds,
@@ -720,6 +727,10 @@ export const drizzleMemberRepo: MemberRepo = {
         const conds = buildDirectoryConds(filter);
 
         const whereClause = and(
+          // COMP-1 H4 — exclude GDPR-erased tombstones (keeps `status`,
+          // stamps only `erased_at`). Applied to BOTH the count and the page
+          // so the total stays consistent with the rows shown.
+          isNull(members.erasedAt),
           or(...statuses.map((s) => eq(members.status, s)))!,
           ...(filter.q ? [directoryQFilter(filter.q)] : []),
           ...conds,
@@ -850,12 +861,13 @@ export const drizzleMemberRepo: MemberRepo = {
             ),
           )
           .where(
-            tierFilter
-              ? and(
-                  eq(members.broadcastsHaltedUntilAdminReview, false),
-                  tierFilter,
-                )
-              : eq(members.broadcastsHaltedUntilAdminReview, false),
+            and(
+              // COMP-1 H4 — an erased member must never be a broadcast
+              // recipient (erasure keeps `status`, stamps only `erased_at`).
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, false),
+              ...(tierFilter ? [tierFilter] : []),
+            ),
           )
           .limit(5000);
       });
@@ -884,7 +896,13 @@ export const drizzleMemberRepo: MemberRepo = {
             updatedAt: members.updatedAt,
           })
           .from(members)
-          .where(eq(members.broadcastsHaltedUntilAdminReview, true)),
+          .where(
+            and(
+              // COMP-1 H4 — drop erased tombstones from the admin halt queue.
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, true),
+            ),
+          ),
       );
       return ok(
         rows.map((r) => ({

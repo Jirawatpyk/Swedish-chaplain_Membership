@@ -156,8 +156,24 @@ export async function markCycleCompleteInTx(
       cycle.memberId,
     );
 
+  // COMP-1 H4 — an erased member must never AUTO-reactivate. Erasure keeps
+  // `status` + forces `blocked_from_auto_reactivation = FALSE` (the 0094 CHECK
+  // forbids the flag staying TRUE once its provenance is scrubbed), so the
+  // block flag alone no longer fences an erased member. Read `erased_at` in the
+  // same tx and route to the admin-hold path so a payment that lands against a
+  // GDPR-anonymised tombstone surfaces to an admin instead of silently
+  // reactivating it. Short-circuit the extra read when already blocked.
+  const isErased =
+    blocked === true
+      ? true
+      : (await deps.memberRenewalFlagsRepo.readIsErasedInTx(
+          tx,
+          event.tenantId,
+          cycle.memberId,
+        )) === true;
+
   const closedAt = event.paidAt;
-  if (blocked === true) {
+  if (blocked === true || isErased) {
     // Hold for admin review — NOT a terminal state. cycle moves to
     // pending_admin_reactivation; T136 / T137 / T138 govern exit.
     return holdForAdminReview(deps, tx, cycle, event, closedAt);
