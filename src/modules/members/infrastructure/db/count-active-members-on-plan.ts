@@ -25,7 +25,7 @@
  * VALUES. It is genuinely an Infrastructure query (no domain logic), so it
  * moved here and is re-exported through the members barrel unchanged.
  */
-import { and, count, eq, or } from 'drizzle-orm';
+import { and, count, eq, isNull, or } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
@@ -56,6 +56,8 @@ export async function countActiveMembersOnPlan(
           eq(members.planId, planId),
           eq(members.planYear, planYear),
           or(eq(members.status, 'active'), eq(members.status, 'inactive')),
+          // COMP-1 H4 — exclude erased tombstones from the FR-010 plan-soft-delete guard
+          isNull(members.erasedAt),
         ),
       ),
   );
@@ -92,6 +94,8 @@ export async function countActiveMembersOnPlanInTx(
         eq(members.planId, planId),
         eq(members.planYear, planYear),
         or(eq(members.status, 'active'), eq(members.status, 'inactive')),
+        // COMP-1 H4 — exclude erased tombstones from the FR-010 plan-soft-delete guard
+        isNull(members.erasedAt),
       ),
     );
   return Number(rows[0]?.value ?? 0);
