@@ -127,6 +127,21 @@ export async function eraseMember(
   //    request even if the scrub below fails (Art. 12 clock start). Emitted ONLY
   //    on a FIRST request (member exists + not yet erased); a re-drive over an
   //    already-erased member skips this so the Art.12 clock is not restarted.
+  //
+  // L2 (known, ACCEPTED, benign edge — NOT an oversight): the pre-flight
+  // `findErasedAtById` above runs in its OWN tx, separate from this
+  // requested-audit tx. So two CONCURRENT first-erasure requests for the same
+  // member can both read `alreadyErased=false` and both emit a durable
+  // `member_erasure_requested` (double-starting the Art.12 one-month clock in
+  // the append-only DPO log). We DELIBERATELY do not lock here:
+  //   - it is benign — the log is append-only (no corruption), the scrub below
+  //     serializes via `findByIdInTx FOR UPDATE` (no double-scrub), and a
+  //     duplicate `requested` row only means the earliest timestamp wins the
+  //     Art.12 clock (the conservative direction);
+  //   - erasure is admin-initiated at ~0-2/year, so two concurrent FIRST
+  //     requests for the SAME member are vanishingly rare;
+  //   - a lock would be disproportionate and would complicate the
+  //     durable-requested-before-scrub ordering this design depends on.
   if (!alreadyErased) {
     try {
       await runInTenant(deps.tenant, async (tx) => {
@@ -418,6 +433,13 @@ export async function eraseMember(
             reason,
             sessions_revoked_total: sessionsRevokedTotal,
             invitations_revoked_count: invitationsRevokedCount,
+            // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
+            // first pass already stamped contacts.removed_at, so this pass's
+            // linked-user read is [] and the two counts above are 0/0. The flag
+            // tells a DPO/auditor the counts reflect ONLY this completing run —
+            // the authoritative session-revocation record is the
+            // user_sessions_revoked rows emitted on the FIRST pass.
+            re_drive: alreadyErased,
           },
         });
         if (!done.ok)

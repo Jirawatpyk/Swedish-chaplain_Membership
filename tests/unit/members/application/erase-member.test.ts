@@ -133,6 +133,57 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).toContain('member_erased');
   });
 
+  // L4 (DPO-log honesty): on a re-drive that COMPLETES the erasure (first pass
+  // scrubbed + revoked sessions/invitations but a cascade failed → no
+  // member_erased; this later call finishes it), the linked-user read returns []
+  // (the first pass already stamped contacts.removed_at), so this pass's
+  // sessions_revoked_total / invitations_revoked_count are 0/0. A DPO reading
+  // the final member_erased would wrongly conclude no sessions were terminated.
+  // The `re_drive` flag (= the M2 `alreadyErased` pre-flight) makes the 0/0
+  // honest: a reader sees re_drive:true and knows the authoritative revocation
+  // record is the user_sessions_revoked rows from the FIRST pass.
+  it('member_erased payload carries re_drive:true on a re-drive completion', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(
+      async () =>
+        ({ ok: true, value: { erasedAt: new Date('2026-06-15T00:00:00.000Z') } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    const erasedCall = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    const payload = (erasedCall?.[2] as { payload: { re_drive: boolean } })
+      ?.payload;
+    expect(payload.re_drive).toBe(true);
+  });
+
+  // Counterpart: a FIRST-pass completion (member not yet erased) must report
+  // re_drive:false — the 0/0-when-already-revoked caveat does not apply because
+  // this pass IS the pass that revoked them (the counts are authoritative here).
+  it('member_erased payload carries re_drive:false on a first-pass completion', async () => {
+    const deps = buildEraseDeps();
+    // fixture default: findErasedAtById → erasedAt:null (first request).
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    const erasedCall = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    const payload = (erasedCall?.[2] as { payload: { re_drive: boolean } })
+      ?.payload;
+    expect(payload.re_drive).toBe(false);
+  });
+
   it('returns not_found when scrubPiiInTx reports the member vanished mid-tx', async () => {
     const deps = buildEraseDeps();
     deps.memberRepo.scrubPiiInTx = vi.fn(
