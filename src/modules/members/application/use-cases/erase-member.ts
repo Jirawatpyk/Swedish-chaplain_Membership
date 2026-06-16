@@ -219,7 +219,27 @@ export async function eraseMember(
       initiatedByUserId: meta.actorUserId,
       requestId: meta.requestId,
     });
-    if (r.outcome !== 'ok') {
+    // Broadcasts `cascade_partial_failure` is NOT benign (unlike F8 renewals
+    // below): it means `unexpectedErrorCount > 0` — one or more broadcasts hit
+    // unexpected errors and genuinely remain in-flight. Keep it not-clean so the
+    // US2 reconciler retries the stuck rows. LOW finding: log the per-row counts
+    // (mirrors archive-member.ts) so the cleanup runbook can grep which
+    // broadcasts are stuck, not just the bare outcome label.
+    if (r.outcome === 'cascade_partial_failure') {
+      allCascadesClean = false;
+      logger.error(
+        {
+          memberId,
+          requestId: meta.requestId,
+          outcome: r.outcome,
+          cancelledCount: r.cancelledCount,
+          skippedConcurrentCount: r.skippedConcurrentCount,
+          unexpectedErrorCount: r.unexpectedErrorCount,
+          cascade: 'f7_in_flight_broadcast_cancel',
+        },
+        'erase-member: broadcasts cascade partial — some broadcasts remain in flight',
+      );
+    } else if (r.outcome !== 'ok') {
       allCascadesClean = false;
       logger.error(
         {
@@ -250,7 +270,27 @@ export async function eraseMember(
       initiatedByUserId: meta.actorUserId,
       requestId: meta.requestId,
     });
-    if (r.outcome !== 'ok') {
+    // H2: the F8 `cascade_partial_failure` outcome is BENIGN — it means a
+    // concurrent admin cancel won the race and the cycle already reached
+    // terminal `cancelled` by a different actor (the cycle IS cancelled). It
+    // must NOT block `member_erased`, otherwise the US2 reconciler re-runs
+    // forever and the erasure is stuck "incomplete" even though everything is
+    // done. Only `cascade_failed` (the F8 use-case itself errored before it
+    // could iterate) or a throw is genuinely not-clean. Mirrors
+    // `archive-member.ts` which classifies the same outcome as a
+    // concurrent_skip (warn, not fail).
+    if (r.outcome === 'cascade_partial_failure') {
+      logger.warn(
+        {
+          memberId,
+          requestId: meta.requestId,
+          cancelledCount: r.cancelledCount,
+          skippedConcurrentCount: r.skippedConcurrentCount,
+          cascade: 'f8_in_flight_cycle_cancel',
+        },
+        'erase-member: renewals cascade partial — concurrent admin cancel won race, cycle already terminal',
+      );
+    } else if (r.outcome !== 'ok') {
       allCascadesClean = false;
       logger.error(
         {

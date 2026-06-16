@@ -215,6 +215,53 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).not.toContain('member_erased');
   });
 
+  // H2 (code-review HIGH): the renewals `cascade_partial_failure` outcome means
+  // "a concurrent admin cancel won the race — the cycle reached terminal
+  // `cancelled` by a different actor" (BENIGN — the cycle IS cancelled). It must
+  // NOT block `member_erased`, otherwise the US2 reconciler re-runs forever and
+  // the erasure is stuck "incomplete" even though everything is done. Mirrors
+  // `archive-member.ts` which classifies the same outcome as a concurrent_skip
+  // (warn, not fail).
+  it('renewals cascade_partial_failure (concurrent cancel) does NOT block member_erased', async () => {
+    const deps = buildEraseDeps();
+    deps.renewalsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'cascade_partial_failure',
+          cancelledCount: 0,
+          skippedConcurrentCount: 1,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(true);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).toContain('member_erased');
+  });
+
+  // Counterpart to the renewals case: the broadcasts `cascade_partial_failure`
+  // outcome means `unexpectedErrorCount > 0` — some broadcasts genuinely remain
+  // in-flight (not a benign race). It MUST keep blocking `member_erased` so the
+  // US2 reconciler retries the stuck rows. (Asymmetry is deliberate: the two
+  // ports give the same outcome label different meanings — see the port JSDocs.)
+  it('broadcasts cascade_partial_failure still blocks member_erased (genuinely stuck)', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'cascade_partial_failure',
+          cancelledCount: 2,
+          skippedConcurrentCount: 0,
+          unexpectedErrorCount: 1,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.completed).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
   // The member_erased emit happens AFTER every cascade reports clean — but it
   // can still fail. Its catch must flip completed back to false so the result
   // never claims completion without the durable proof record (the US2
