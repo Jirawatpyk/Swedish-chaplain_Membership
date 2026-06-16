@@ -48,7 +48,7 @@ export function buildEraseDeps(): StubbedEraseDeps {
       // not_found or an already-erased (erasedAt set) member.
       findErasedAtById: vi.fn(async () => ok({ erasedAt: null as Date | null })),
       findByIdInTx: vi.fn(async () => ok(FAKE_MEMBER)),
-      scrubPiiInTx: vi.fn(async () => ok({ erasedAt: new Date() })),
+      scrubPiiInTx: vi.fn(async () => ok(undefined)),
     },
     contactRepo: {
       listLinkedUserIdsForMemberInTx: vi.fn(async () => [] as string[]),

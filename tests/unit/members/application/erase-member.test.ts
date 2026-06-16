@@ -222,7 +222,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       deps,
     );
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(true);
 
     expect(deps.broadcastsCascade.cancelInFlightForMember).toHaveBeenCalledWith(
       deps.tenant,
@@ -252,7 +252,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       deps,
     );
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(false);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map(
       (c) => (c[2] as { type: string }).type,
     );
@@ -270,7 +270,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     });
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(false);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
   });
@@ -294,7 +294,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(true);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).toContain('member_erased');
   });
@@ -322,7 +322,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(false);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
   });
@@ -345,7 +345,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(false);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
   });
@@ -366,7 +366,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     ) as never;
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.completed).toBe(false);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
   });
 
   // Idempotency / resumability contract (design §6). These pin the behavior the
@@ -394,11 +394,11 @@ describe('eraseMember — requested audit + atomic scrub', () => {
 
     const r1 = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(r1.ok).toBe(true);
-    if (r1.ok) expect(r1.value.completed).toBe(false);
+    if (r1.ok) expect(r1.value.cascadesComplete).toBe(false);
 
     const r2 = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(r2.ok).toBe(true);
-    if (r2.ok) expect(r2.value.completed).toBe(true);
+    if (r2.ok) expect(r2.value.cascadesComplete).toBe(true);
 
     const erasedEmits = deps.audit.recordInTx.mock.calls.filter(
       (c) => (c[2] as { type: string }).type === 'member_erased',

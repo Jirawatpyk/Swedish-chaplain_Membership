@@ -9,7 +9,7 @@
  * builder the erase route wires, with the REAL F7/F8 cascade adapters — on a
  * freshly-seeded member that has NO in-flight broadcasts/renewals. For such a
  * member the real cascades return `outcome: 'ok'`, so `member_erased` is
- * emitted and `result.value.completed === true`.
+ * emitted and `result.value.cascadesComplete === true`.
  *
  * Asserts via BYPASSRLS raw selects (design §5 matrix rows for members +
  * contacts) that:
@@ -263,8 +263,8 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
     if (!result.ok) return;
 
     // Production deps → real F7/F8 cascades return ok for a no-in-flight
-    // member → member_erased emitted → completed true.
-    expect(result.value.completed).toBe(true);
+    // member → member_erased emitted → cascadesComplete true.
+    expect(result.value.cascadesComplete).toBe(true);
 
     // --- members row oracle (design §5 members row) ---
     const m = (await rawSelectMember(memberId))!;

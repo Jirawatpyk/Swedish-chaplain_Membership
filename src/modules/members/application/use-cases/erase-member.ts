@@ -51,8 +51,12 @@ export type EraseMemberError =
 export type EraseMemberResult = {
   readonly memberId: MemberId;
   readonly erasedAt: Date;
-  /** true when every cascade reported complete and member_erased was emitted. */
-  readonly completed: boolean;
+  /**
+   * true ⇒ every cascade reported clean AND member_erased was emitted.
+   * false ⇒ the scrub committed (row IS erased) but a cascade is pending —
+   * the US2 reconciler will finish it. NEVER means 'not erased'.
+   */
+  readonly cascadesComplete: boolean;
 };
 
 export type EraseMemberDeps = {
@@ -398,5 +402,5 @@ export async function eraseMember(
     }
   }
 
-  return ok({ memberId, erasedAt: now, completed: allCascadesClean });
+  return ok({ memberId, erasedAt: now, cascadesComplete: allCascadesClean });
 }

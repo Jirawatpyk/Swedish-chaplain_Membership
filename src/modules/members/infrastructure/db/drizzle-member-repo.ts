@@ -610,7 +610,7 @@ export const drizzleMemberRepo: MemberRepo = {
         .where(eq(members.memberId, memberId))
         .returning({ memberId: members.memberId });
       if (updated.length === 0) return err({ code: 'repo.not_found' });
-      return ok({ erasedAt: opts.erasedAt });
+      return ok(undefined);
     } catch (e) {
       return err(unexpected(e));
     }

@@ -25,7 +25,7 @@
  * `buildEraseMemberDeps(ctx.tenant)` (the same builder the erase route
  * wires, with the REAL F7/F8 cascade adapters), and asserts via BYPASSRLS
  * raw selects that:
- *   - `result.ok` and `result.value.completed === true` (both cascades
+ *   - `result.ok` and `result.value.cascadesComplete === true` (both cascades
  *     reported clean → `member_erased` emitted);
  *   - the F7 broadcast row is now `cancelled` with `cancellation_reason =
  *     'gdpr_erasure_request'` and `cancelled_by_user_id = NULL`
@@ -283,10 +283,10 @@ describe('eraseMember — live-Neon REAL F7/F8 cascade cancellation (production 
     if (!result.ok) return;
 
     // Both real cascades cancelled their in-flight row + reported clean →
-    // member_erased emitted → completed true. (Against a broken
+    // member_erased emitted → cascadesComplete true. (Against a broken
     // toF8Reason / cascade-adapter regression that returns a not-clean
-    // outcome, completed would be false.)
-    expect(result.value.completed).toBe(true);
+    // outcome, cascadesComplete would be false.)
+    expect(result.value.cascadesComplete).toBe(true);
 
     // --- F7 broadcast cancelled, attributable to the erasure ---
     const broadcastRows = await db

@@ -492,7 +492,7 @@ export interface MemberRepo {
     tx: TenantTx,
     memberId: MemberId,
     opts: { readonly erasedAt: Date },
-  ): Promise<Result<{ readonly erasedAt: Date }, RepoError>>;
+  ): Promise<Result<void, RepoError>>;
 
   /**
    * COMP-1 — narrow read of the member's `erased_at` (the erasure pre-flight).
