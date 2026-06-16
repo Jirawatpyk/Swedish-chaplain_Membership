@@ -480,10 +480,14 @@ export interface MemberRepo {
   ): Promise<Result<Date | null, RepoError>>;
 
   /**
-   * COMP-1 — anonymise the member row in place (Art. 17 / §33). `company_name`
-   * (NOT NULL) → ERASED_SENTINEL; `tax_id`, `website`, `description`, `notes`,
-   * `legal_entity_type`, address parts, AND the business quasi-identifiers
-   * `turnover_thb` + `founded_year` → NULL (re-identification). Sets `erased_at`.
+   * COMP-1 — anonymise the member row in place (Art. 17 / §33). Scrubs every
+   * PII / quasi-identifier column on `members`: `company_name` (NOT NULL) →
+   * ERASED_SENTINEL, the rest → NULL; then stamps `erased_at` + `updated_at`.
+   * The authoritative SCRUBBED column set is enumerated in
+   * `tests/unit/members/infrastructure/scrub-pii-column-coverage.test.ts` — a
+   * build-failing partition guard that fails on any NEW unclassified `members`
+   * column, so the set stays in sync without re-listing the columns here (which
+   * silently rots — the H1 F8-era cluster was missing from the old enumeration).
    * Preserves `member_id`, `member_number`, `plan_*`, registration/created
    * dates, and `status` (erasure is orthogonal to archive). Idempotent.
    * `repo.not_found` when the member is absent / cross-tenant.

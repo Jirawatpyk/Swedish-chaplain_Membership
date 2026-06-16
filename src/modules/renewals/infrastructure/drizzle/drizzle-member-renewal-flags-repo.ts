@@ -240,6 +240,20 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       return rows[0]?.blocked ?? null;
     },
 
+    /**
+     * COMP-1 H4 — probe whether the member is GDPR-erased (`erased_at IS NOT
+     * NULL`). A dedicated read is needed because the `blocked_from_auto_
+     * reactivation` flag alone no longer fences an erased member: the scrub
+     * nulls the block reason / provenance (`set_by_user_id`), and the 0094
+     * consistency CHECK forbids `blocked=TRUE` once that provenance is gone, so
+     * erasure forces the flag back to FALSE. A paid lapsed cycle for an erased
+     * member must therefore be detected via `erased_at` and routed to the
+     * admin-hold path instead of silently auto-reactivating an anonymised
+     * tombstone. `null` ⇒ the member row is not visible (RLS-hidden / absent).
+     * Threads the caller's `tx` (tenant-scoped) — never the global db. The call
+     * site (`mark-cycle-complete-from-invoice-paid`) short-circuits this read
+     * when `blocked === true` (an explicit block already fences reactivation).
+     */
     async readIsErasedInTx(
       tx: unknown,
       _tenantId: string,

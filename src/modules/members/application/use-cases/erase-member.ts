@@ -8,10 +8,10 @@
  *   1. emit `member_erasure_requested` durably (its own committed tx) — starts
  *      the Art. 12 one-month clock and survives a later scrub failure.
  *   2. ATOMIC tx (runInTenant): scrub members + contacts (+ erased_at) and
- *      (Task 5) revoke sessions / soft-consume invitations for linked users.
- *   3. (Task 6) POST-COMMIT best-effort: cancel in-flight F7 broadcasts + F8
+ *      revoke sessions / soft-consume invitations for linked users.
+ *   3. POST-COMMIT best-effort: cancel in-flight F7 broadcasts + F8
  *      renewal cycles with the erasure reason.
- *   4. (Task 6) emit `member_erased` ONLY when every cascade reports complete.
+ *   4. emit `member_erased` ONLY when every cascade reports complete.
  *
  * Idempotent: re-running re-drives incomplete cascades; member_erased is the
  * completion proof. Per-module scrub of F1/F6/F7-content/F8 + the reconciler
@@ -137,7 +137,10 @@ export async function eraseMember(
           summary: `member_erasure_requested ${memberId}`,
           payload: { member_id: memberId, reason },
         });
-        if (!requested.ok) throw new Error('audit_failed');
+        if (!requested.ok)
+          throw new Error('audit_failed', {
+            cause: 'cause' in requested.error ? requested.error.cause : undefined,
+          });
       });
     } catch (e) {
       logger.error(
@@ -148,7 +151,7 @@ export async function eraseMember(
     }
   }
 
-  // 2. ATOMIC scrub tx — members + contacts (+ Task 5 linked-user cascade).
+  // 2. ATOMIC scrub tx — members + contacts (+ linked-user cascade, below).
   //    M1: cascade counts captured inside the tx, surfaced to outer scope for
   //    the post-commit `member_erased` payload (DPO-log observability).
   let sessionsRevokedTotal = 0;
@@ -162,7 +165,13 @@ export async function eraseMember(
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
-        throw new Error(`lookup_failed:${current.error.code}`);
+        // Preserve the repo `cause` (SQLSTATE + Postgres message, present on the
+        // `repo.unexpected` variant) so the outer `catch (e)` logs the DB detail,
+        // not just the bare code string. (ES2022 Error cause; forensics-only —
+        // the operation still fails + rolls back identically.)
+        throw new Error(`lookup_failed:${current.error.code}`, {
+          cause: 'cause' in current.error ? current.error.cause : undefined,
+        });
       }
 
       // Read linked users FIRST — the contacts scrub below sets removed_at on
@@ -182,7 +191,11 @@ export async function eraseMember(
       if (!scrubMember.ok) {
         if (scrubMember.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
-        throw new Error(`member_scrub_failed:${scrubMember.error.code}`);
+        // Thread the repo `cause` (SQLSTATE + PG message) into the Error so the
+        // outer catch's `err: e` log carries the DB detail. Forensics-only.
+        throw new Error(`member_scrub_failed:${scrubMember.error.code}`, {
+          cause: 'cause' in scrubMember.error ? scrubMember.error.cause : undefined,
+        });
       }
 
       const scrubContacts = await deps.contactRepo.scrubPiiForMemberInTx(
@@ -191,13 +204,19 @@ export async function eraseMember(
         { erasedAt: now },
       );
       if (!scrubContacts.ok)
-        throw new Error(`contact_scrub_failed:${scrubContacts.error.code}`);
+        throw new Error(`contact_scrub_failed:${scrubContacts.error.code}`, {
+          cause:
+            'cause' in scrubContacts.error ? scrubContacts.error.cause : undefined,
+        });
 
       // Cascade — revoke the sessions of the users linked at erasure time
       // (snapshot read above, before the scrubs shadowed removed_at).
       for (const userId of uniqueLinkedUserIds) {
         const revoked = await deps.sessions.revokeAllForInTx(tx, userId, 'admin_force');
-        if (!revoked.ok) throw new Error(`session_revoke_failed:${revoked.error.code}`);
+        if (!revoked.ok)
+          throw new Error(`session_revoke_failed:${revoked.error.code}`, {
+            cause: 'cause' in revoked.error ? revoked.error.cause : undefined,
+          });
         sessionsRevokedTotal += revoked.value.revokedCount;
 
         const sessionAudit = await deps.audit.recordInTx(tx, deps.tenant, {
@@ -212,7 +231,11 @@ export async function eraseMember(
             reason: 'admin_force_erase',
           },
         });
-        if (!sessionAudit.ok) throw new Error('audit_failed');
+        if (!sessionAudit.ok)
+          throw new Error('audit_failed', {
+            cause:
+              'cause' in sessionAudit.error ? sessionAudit.error.cause : undefined,
+          });
       }
 
       // Soft-consume any pending/unredeemed invitations for the linked users so
@@ -306,13 +329,19 @@ export async function eraseMember(
     });
     // H2 (refined): the F8 adapter maps TWO distinct situations to the SAME
     // `cascade_partial_failure` outcome, so the bare label is NOT enough to
-    // decide benign-ness — `skippedConcurrentCount` is the discriminator:
+    // decide benign-ness — `skippedConcurrentCount` is the discriminator.
+    // erase-member INTENTIONALLY splits the bucket by `skippedConcurrentCount`;
+    // `archive-member.ts` does NOT — it warns for the WHOLE bucket (treats every
+    // `cascade_partial_failure` as a benign concurrent_skip, see ~347-367).
+    // Only the `> 0` WARN arm below mirrors archive; the `=== 0` not-clean arm is
+    // erasure-specific and MUST NOT be collapsed back into a warn (doing so
+    // reintroduces the H2 bug — `member_erased` emitted over an in-flight cycle).
     //   (1) `skippedConcurrentCount > 0` → a concurrent admin cancel won the
     //       race and the cycle already reached terminal `cancelled` by a
     //       different actor (the cycle IS cancelled). BENIGN — must NOT block
     //       `member_erased`, else the US2 reconciler re-runs forever on an
-    //       erasure that is actually done. Mirrors `archive-member.ts` which
-    //       classifies this as a concurrent_skip (warn, not fail).
+    //       erasure that is actually done. This WARN arm mirrors how
+    //       `archive-member.ts` handles the same outcome (warn, not fail).
     //   (2) `skippedConcurrentCount === 0` → a generic infra failure
     //       (deadlock 40P01 / statement-timeout 57014 / connection-blip 08006 /
     //       repo bug) OR an audit-emit failure rolled back the per-cycle cancel
@@ -391,7 +420,10 @@ export async function eraseMember(
             invitations_revoked_count: invitationsRevokedCount,
           },
         });
-        if (!done.ok) throw new Error('audit_failed');
+        if (!done.ok)
+          throw new Error('audit_failed', {
+            cause: 'cause' in done.error ? done.error.cause : undefined,
+          });
       });
     } catch (e) {
       allCascadesClean = false;
