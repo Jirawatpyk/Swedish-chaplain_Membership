@@ -338,6 +338,13 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         return { previousBand: null, affectedRows: 0 };
       }
       const previousBand = (prior.band as RiskBand | null) ?? null;
+      // COMP-1 R3 — re-check `erased_at IS NULL` at WRITE time (not just at
+      // the candidate-LIST queries). A member erased AFTER candidate-listing
+      // but BEFORE this write would otherwise get the scrubbed risk columns
+      // re-populated, re-leaking the quasi-identifiers `scrubPiiInTx` NULLed.
+      // The guard makes the UPDATE a no-op (affectedRows 0) on a tombstone —
+      // the same shape the caller already tolerates for an absent/RLS-hidden
+      // member (`previousBand: null, affectedRows: 0`).
       const updated = await txDb
         .update(members)
         .set({
@@ -346,7 +353,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           riskScoreFactors: input.factors,
           riskScoreLastComputedAt: new Date(input.computedAt),
         })
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.memberId, memberId), isNull(members.erasedAt)))
         .returning({ memberId: members.memberId });
       return { previousBand, affectedRows: updated.length };
     },
@@ -427,7 +434,19 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
           AS src(member_id uuid, score smallint, band text, factors jsonb)
         WHERE m.member_id = src.member_id
+          -- COMP-1 R3 — per-row WRITE-time guard: never re-populate the
+          -- scrubbed risk columns on a member erased between candidate-
+          -- listing and this bulk write (TOCTOU re-leak of the quasi-
+          -- identifiers scrubPiiInTx NULLed). An erased member in the batch
+          -- is silently skipped; the count reflects only live rows written.
+          AND m.erased_at IS NULL
       `);
+      // The driver's `count` now reflects only the live rows actually
+      // UPDATEd, so the `?? rows.length` fallback is no longer a correct
+      // proxy when the batch contains erased members. postgres-js always
+      // returns a numeric `count` for an UPDATE, so the fallback is dead
+      // defensive code — kept for the pathological "no count" driver case
+      // (where 0 erased members is the safe assumption: rows.length).
       return { affectedRows: (result as { count?: number }).count ?? rows.length };
     },
 
