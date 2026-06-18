@@ -180,4 +180,43 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
     const body = await res.json();
     expect(body.error).toBe('server_error');
   });
+
+  // FIX 3 (TDD RED → GREEN): memberId/contactId consistency guard.
+  // The route must pass memberId into the use-case input. The use-case
+  // must return not_found when the contact does not belong to that member,
+  // and the route must propagate it as 404 { error: 'not_found' }.
+  it('404 — use case returns not_found when memberId does not match contact owner', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    // Simulate the guard firing: the use-case sees a contactId that exists
+    // but belongs to a different member → returns not_found.
+    resendVerificationEmailMock.mockResolvedValueOnce(
+      err({ code: 'not_found' }),
+    );
+
+    // Use a request where the path memberId does NOT match the contact's owner.
+    const mismatchedMemberId = '99999999-9999-9999-9999-999999999999';
+    const req = new NextRequest(
+      `http://localhost:3100/api/members/${mismatchedMemberId}/contacts/${contactId}/resend-verification`,
+      { method: 'POST' },
+    );
+    const mismatchedParams = async () => ({
+      memberId: mismatchedMemberId,
+      contactId,
+    });
+
+    const { POST } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/resend-verification/route'
+    );
+    const res = await POST(req, { params: mismatchedParams() });
+
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('not_found');
+
+    // Confirm the route forwarded memberId to the use-case input.
+    expect(resendVerificationEmailMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ memberId: mismatchedMemberId }),
+    );
+  });
 });
