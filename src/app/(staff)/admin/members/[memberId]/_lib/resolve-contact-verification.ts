@@ -2,10 +2,17 @@
 /**
  * DV-11 — per-contact email-verification resolver (visible-gate for the
  * "Re-send verification email" button). Mirrors resolve-contact-subscriptions:
- * the page injects the F1 `isEmailVerified` callable so this stays unit-testable
+ * the page injects the `isVerifiedBatch` callable so this stays unit-testable
  * without a live read, and the page (presentation) never calls the port shape
- * directly. Best-effort: a read error for a contact omits it (button hidden on
- * unknown state — safer than offering a possibly no-op resend).
+ * directly.
+ *
+ * Replaces the previous per-user fan-out with a single batched read (code-review
+ * finding #7). Collects all live-contact userIds, calls isVerifiedBatch ONCE,
+ * then projects: contactId is pending ⟺ its linkedUserId is NOT in the
+ * returned verifiedSet.
+ *
+ * Best-effort: on err or throw → empty pending set (button hidden on unknown —
+ * safer than offering a possibly no-op resend) + one logger.warn.
  */
 import type { Result } from '@/lib/result';
 
@@ -19,12 +26,14 @@ export interface VerifiableContact {
   readonly removedAt: Date | null;
 }
 
-export type IsVerified = (userId: string) => Promise<Result<boolean, unknown>>;
+export type IsVerifiedBatch = (
+  userIds: readonly string[],
+) => Promise<Result<ReadonlySet<string>, unknown>>;
 
 export interface ResolveContactVerificationArgs {
   readonly contacts: ReadonlyArray<VerifiableContact>;
   readonly memberId: string;
-  readonly isVerified: IsVerified;
+  readonly isVerifiedBatch: IsVerifiedBatch;
   readonly logger: VerificationResolverLogger;
   readonly errKind: (e: unknown) => string;
 }
@@ -32,31 +41,39 @@ export interface ResolveContactVerificationArgs {
 export async function resolveContactVerification({
   contacts,
   memberId,
-  isVerified,
+  isVerifiedBatch,
   logger,
   errKind,
 }: ResolveContactVerificationArgs): Promise<{ pending: ReadonlySet<string> }> {
-  const pending = new Set<string>();
-  const live = contacts.filter((c) => c.removedAt === null && c.linkedUserId);
-  await Promise.all(
-    live.map(async (c) => {
-      try {
-        const res = await isVerified(c.linkedUserId as string);
-        if (res.ok) {
-          if (res.value === false) pending.add(c.contactId);
-        } else {
-          logger.warn(
-            { event: 'contact_verification_read_err', contactId: c.contactId, memberId },
-            '[DV-11] isEmailVerified returned err — contact treated as not-pending',
-          );
-        }
-      } catch (e) {
-        logger.warn(
-          { event: 'contact_verification_threw', errKind: errKind(e), contactId: c.contactId, memberId },
-          '[DV-11] isEmailVerified threw — contact treated as not-pending',
-        );
+  // Collect live contacts that have a linked user (the only ones we can query).
+  const live = contacts.filter((c) => c.removedAt === null && c.linkedUserId !== null);
+  if (live.length === 0) return { pending: new Set<string>() };
+
+  const userIds = live.map((c) => c.linkedUserId as string);
+
+  try {
+    const res = await isVerifiedBatch(userIds);
+    if (!res.ok) {
+      logger.warn(
+        { event: 'contact_verification_batch_read_err', memberId },
+        '[DV-11] isEmailVerifiedBatch returned err — all contacts treated as not-pending',
+      );
+      return { pending: new Set<string>() };
+    }
+    const verifiedSet = res.value;
+    // pending = contacts whose linkedUserId is NOT in verifiedSet
+    const pending = new Set<string>();
+    for (const c of live) {
+      if (!verifiedSet.has(c.linkedUserId as string)) {
+        pending.add(c.contactId);
       }
-    }),
-  );
-  return { pending };
+    }
+    return { pending };
+  } catch (e) {
+    logger.warn(
+      { event: 'contact_verification_batch_read_threw', errKind: errKind(e), memberId },
+      '[DV-11] isEmailVerifiedBatch threw — all contacts treated as not-pending',
+    );
+    return { pending: new Set<string>() };
+  }
 }

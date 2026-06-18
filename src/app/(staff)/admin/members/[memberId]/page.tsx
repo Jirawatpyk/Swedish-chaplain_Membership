@@ -23,7 +23,6 @@ import {
   PencilIcon,
   UserPlusIcon,
 } from 'lucide-react';
-import { ok } from '@/lib/result';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -666,21 +665,20 @@ export default async function MemberDetailPage({
         errKind,
       }),
       // DV-11 — per-contact email-verification state for the visible-gate on the
-      // "Re-send verification email" button. Injects the F1 isEmailVerified
-      // callable so the resolver stays unit-testable; best-effort (read error →
-      // contact omitted → button hidden).
-      resolveContactVerification({
-        contacts,
-        memberId,
-        // Skip DB verification reads for the read-only manager — the button is
-        // admin-only so they'll see an empty pending set and no button, with
-        // zero wasted round-trips to the user-emails store.
-        isVerified: canWrite
-          ? (userId) => deps.userEmails.isEmailVerified(userId)
-          : () => Promise.resolve(ok(true)),
-        logger,
-        errKind,
-      }),
+      // "Re-send verification email" button. Injects the batched isVerifiedBatch
+      // callable (one query for all live-contact userIds) so the resolver stays
+      // unit-testable; best-effort (read error → empty pending → button hidden).
+      // Skip the DB round-trip entirely for the read-only manager — the button
+      // is admin-only so they'll see an empty pending set with zero wasted RTTs.
+      canWrite
+        ? resolveContactVerification({
+            contacts,
+            memberId,
+            isVerifiedBatch: (ids) => deps.userEmails.isEmailVerifiedBatch(ids),
+            logger,
+            errKind,
+          })
+        : Promise.resolve({ pending: new Set<string>() }),
     ]);
 
   // S1 — derive each contact's tri-state subscription from the discriminated

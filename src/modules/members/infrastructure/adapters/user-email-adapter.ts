@@ -13,7 +13,7 @@
  *   - other → `repo.unexpected`
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
@@ -77,6 +77,29 @@ export const userEmailAdapter: UserEmailPort = {
         .limit(1);
       if (!row) return err({ code: 'repo.not_found' });
       return ok(row.emailVerified);
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
+  async isEmailVerifiedBatch(userIds) {
+    // Empty input: skip the query — nothing to look up.
+    if (userIds.length === 0) return ok(new Set<string>());
+    try {
+      // `users` is cross-tenant (no tenant_id column); use global db.
+      // Same BYPASSRLS / pool-level access as the single isEmailVerified above.
+      // SELECT id, email_verified WHERE id IN (...) — one round-trip regardless
+      // of how many userIds are provided. The caller (DV-11 loader) passes only
+      // the live-contact userIds for a single member (typically 1–5).
+      const rows = await db
+        .select({ id: users.id, emailVerified: users.emailVerified })
+        .from(users)
+        .where(inArray(users.id, [...userIds]));
+      const verifiedIds = new Set<string>();
+      for (const row of rows) {
+        if (row.emailVerified) verifiedIds.add(row.id);
+      }
+      return ok(verifiedIds);
     } catch (e) {
       return err({ code: 'repo.unexpected', cause: e });
     }
