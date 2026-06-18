@@ -7,7 +7,11 @@ import { toast } from 'sonner';
 import { ResendVerificationButton } from '@/components/members/resend-verification-button';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+// Fix 4 — hoist a stable refreshSpy at module scope (mirrors portal-sign-out-button.test.tsx).
+// A fresh vi.fn() per call (previous pattern) made router.refresh unobservable.
+const refreshSpy = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
 
 function renderButton() {
   return render(
@@ -21,6 +25,9 @@ beforeEach(() => {
   // Real timers required: global setup.ts enables fake timers (setTimeout faked);
   // waitFor() + Promise resolution needs real timers. Same pattern as portal-sign-out-button.test.tsx.
   vi.useRealTimers();
+  refreshSpy.mockClear();
+  (toast.success as ReturnType<typeof vi.fn>).mockClear();
+  (toast.error as ReturnType<typeof vi.fn>).mockClear();
 });
 
 afterEach(() => {
@@ -29,11 +36,16 @@ afterEach(() => {
 });
 
 describe('ResendVerificationButton', () => {
-  it('posts and toasts success', async () => {
+  it('posts and toasts success, calls router.refresh, and button stays disabled (Fix 4 + 5)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
     renderButton();
-    fireEvent.click(screen.getByRole('button', { name: /Re-send verification email/i }));
+    const btn = screen.getByRole('button', { name: /Re-send verification email/i });
+    fireEvent.click(btn);
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Verification email re-sent.'));
+    // Fix 4 — router.refresh must have been called
+    expect(refreshSpy).toHaveBeenCalled();
+    // Fix 5 — button stays disabled (submitting not reset on success path)
+    expect(btn).toBeDisabled();
   });
 
   it('toasts emailVerified on 409 not_eligible/email_verified', async () => {

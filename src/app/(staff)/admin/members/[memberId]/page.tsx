@@ -421,8 +421,11 @@ function ContactBlock({
               <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
             )}
             {/* DV-11 — re-send verification email when the linked contact's
-                email is still unverified (e.g. mid email-change). */}
-            {canWrite && contact.linkedUserId && verificationPending && (
+                email is still unverified (e.g. mid email-change).
+                Fix 6: outer {canWrite && (…)} block already guards this
+                section; redundant inner canWrite && removed for consistency
+                with the sibling ResendBouncedInviteButton. */}
+            {contact.linkedUserId && verificationPending && (
               <ResendVerificationButton memberId={memberId} contactId={contact.contactId} />
             )}
             <ContactActions
