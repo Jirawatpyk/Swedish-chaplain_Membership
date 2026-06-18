@@ -1011,6 +1011,20 @@
             "serverError": "Something went wrong. Please try again."
           }
         },
+        "resendVerification": {
+          "badge": "Email verification pending",
+          "badgeAria": "Contact email verification pending",
+          "resendLabel": "Re-send verification email",
+          "resendSubmitting": "Sending…",
+          "resendSuccess": "Verification email re-sent.",
+          "errors": {
+            "notFound": "Contact not found.",
+            "noLinkedUser": "No portal account is linked to this contact.",
+            "emailVerified": "This email has already been verified.",
+            "rateLimited": "Too many re-sends. Please wait a few minutes and try again.",
+            "serverError": "Something went wrong. Please try again."
+          }
+        },
         "sections": {
           "company": "Company",
           "organisation": "Organisation",
