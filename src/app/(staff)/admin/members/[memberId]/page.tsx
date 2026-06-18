@@ -44,6 +44,9 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts';
 // S1 — extracted resolver owns the parse + projection + degraded branching.
 import { resolveContactSubscriptions } from './_lib/resolve-contact-subscriptions';
+// DV-11 — per-contact email-verification resolver + button.
+import { resolveContactVerification } from './_lib/resolve-contact-verification';
+import { ResendVerificationButton } from '@/components/members/resend-verification-button';
 import {
   Card,
   CardContent,
@@ -287,6 +290,7 @@ function ContactBlock({
   pendingInvitation,
   subscribed,
   canWrite,
+  verificationPending,
   locale,
   t,
 }: {
@@ -304,6 +308,9 @@ function ContactBlock({
   subscribed: boolean | 'unknown';
   /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
   canWrite: boolean;
+  /** DV-11 — true when the linked user's email is unverified → show the
+   *  "Re-send verification email" button. */
+  verificationPending: boolean;
   /**
    * FIX 5 (056 polish) — active locale passed from the page-level
    * `getLocale()` call so the pending-invitation badge title renders
@@ -411,6 +418,11 @@ function ContactBlock({
                 the invitation email (owner role) then clears the bounce flag. */}
             {contact.inviteBouncedAt && contact.linkedUserId && (
               <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
+            )}
+            {/* DV-11 — re-send verification email when the linked contact's
+                email is still unverified (e.g. mid email-change). */}
+            {canWrite && contact.linkedUserId && verificationPending && (
+              <ResendVerificationButton memberId={memberId} contactId={contact.contactId} />
             )}
             <ContactActions
               memberId={memberId}
@@ -563,6 +575,7 @@ export default async function MemberDetailPage({
     planLookup,
     memberPrefix,
     subscriptionResult,
+    verificationResult,
   ] = await Promise.all([
       // C6 round-10 ui-design-specialist — fetch pending portal invitations
       // and project as a Map<contactId, invitation> so each ContactBlock can
@@ -648,6 +661,17 @@ export default async function MemberDetailPage({
         logger,
         errKind,
       }),
+      // DV-11 — per-contact email-verification state for the visible-gate on the
+      // "Re-send verification email" button. Injects the F1 isEmailVerified
+      // callable so the resolver stays unit-testable; best-effort (read error →
+      // contact omitted → button hidden).
+      resolveContactVerification({
+        contacts,
+        memberId,
+        isVerified: (userId) => deps.userEmails.isEmailVerified(userId),
+        logger,
+        errKind,
+      }),
     ]);
 
   // S1 — derive each contact's tri-state subscription from the discriminated
@@ -657,6 +681,11 @@ export default async function MemberDetailPage({
     subscriptionResult.degraded
       ? 'unknown'
       : !subscriptionResult.unsubscribed.has(contactId);
+
+  // DV-11 — per-contact verification-pending flag for the visible-gate on the
+  // "Re-send verification email" button.
+  const verificationPendingFor = (contactId: string): boolean =>
+    verificationResult.pending.has(contactId);
 
   const planDisplayName = planLookup.ok
     ? planLookup.value.planNameEn
@@ -1075,6 +1104,7 @@ export default async function MemberDetailPage({
                   )}
                   subscribed={subscriptionFor(primary.contactId)}
                   canWrite={canWrite}
+                  verificationPending={verificationPendingFor(primary.contactId)}
                   locale={locale}
                   t={t}
                 />
@@ -1097,6 +1127,7 @@ export default async function MemberDetailPage({
                         )}
                         subscribed={subscriptionFor(c.contactId)}
                         canWrite={canWrite}
+                        verificationPending={verificationPendingFor(c.contactId)}
                         locale={locale}
                         t={t}
                       />
