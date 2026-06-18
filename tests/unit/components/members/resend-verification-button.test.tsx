@@ -71,4 +71,13 @@ describe('ResendVerificationButton', () => {
     fireEvent.click(screen.getByRole('button'));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Something went wrong. Please try again.'));
   });
+
+  it('toasts noLinkedUser on 409 not_eligible/no_linked_user', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false, status: 409, json: async () => ({ error: 'not_eligible', reason: 'no_linked_user' }),
+    } as unknown as Response);
+    renderButton();
+    fireEvent.click(screen.getByRole('button'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(en.admin.members.detail.resendVerification.errors.noLinkedUser));
+  });
 });
