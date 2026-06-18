@@ -1,5 +1,5 @@
 // tests/unit/app/members/resolve-contact-verification.test.ts
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ok, err } from '@/lib/result';
 import { resolveContactVerification } from '@/app/(staff)/admin/members/[memberId]/_lib/resolve-contact-verification';
 
@@ -11,6 +11,8 @@ function contact(id: string, linkedUserId: string | null, removedAt: Date | null
 }
 
 describe('resolveContactVerification', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
   it('marks a linked contact whose email is unverified as pending', async () => {
     const isVerified = vi.fn().mockResolvedValue(ok(false));
     const res = await resolveContactVerification({
@@ -59,6 +61,22 @@ describe('resolveContactVerification', () => {
       errKind,
     });
     expect(res.pending.has('c1')).toBe(false);
-    expect(logger.warn).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ event: 'contact_verification_read_err', contactId: 'c1' }), expect.any(String));
+  });
+
+  it('defaults to not-pending when the callable throws (button hidden on unknown)', async () => {
+    const isVerified = vi.fn().mockRejectedValue(new Error('network down'));
+    const res = await resolveContactVerification({
+      contacts: [contact('c1', 'u1')],
+      memberId: 'm1',
+      isVerified,
+      logger,
+      errKind,
+    });
+    expect(res.pending.has('c1')).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'contact_verification_threw' }),
+      expect.any(String),
+    );
   });
 });
