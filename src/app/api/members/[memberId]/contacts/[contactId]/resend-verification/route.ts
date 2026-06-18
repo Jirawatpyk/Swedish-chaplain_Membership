@@ -15,6 +15,7 @@ import { z } from 'zod';
 import {
   resendVerificationEmail,
   type ContactId,
+  type MemberId,
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -42,23 +43,22 @@ export async function POST(
   const resolved = await params;
   const parsed = paramsSchema.safeParse(resolved);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: { code: 'not_found', message: 'Contact not found.' } },
-      { status: 404 },
-    );
+    // Flat shape matches the use-case 404 branch and the sibling
+    // resend-invite route. The client button discriminates on
+    // `body.error === 'not_found'`; the nested shape would silently
+    // fall through to the generic toast.
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
-  const { contactId } = parsed.data;
+  const { memberId, contactId } = parsed.data;
   const tenant = resolveTenantFromRequest(request);
 
-  // DV-11 (security) — throttle re-sends per (admin, contact) to prevent
-  // email-bombing a member's inbox. Fail-soft: rateLimiter falls back to
-  // an in-memory bucket during an Upstash outage (never blocks a legit
-  // resend). Key format `kind:slug:userId:contactId` matches the
-  // convention used by other admin routes; the tenant slug as the second
-  // segment keeps the actor userId out of the first-two-segment `keyKind`
-  // log emitted on an Upstash outage (no PII in the keyKind dimension).
+  // DV-11 (security) — throttle re-sends per contact (inbox protection).
+  // Key is per-(tenant, contact) NOT per-(admin, contact): including the
+  // admin userId gives each admin an independent bucket, allowing N admins
+  // to collectively mail-bomb a contact inbox N× the stated limit.
+  // Per-DOCUMENT pattern matches the F4 invoice resend route.
   const rl = await rateLimiter.check(
-    `resend-verify:${tenant.slug}:${current.user.id}:${contactId}`,
+    `resend-verify:${tenant.slug}:${contactId}`,
     3,
     3600, // 3 per hour
   );
@@ -86,6 +86,7 @@ export async function POST(
     },
     {
       contactId: contactId as ContactId,
+      memberId: memberId as MemberId,
       actorUserId: current.user.id,
       requestId,
       // Admin tenant doesn't carry a session locale on the request — we

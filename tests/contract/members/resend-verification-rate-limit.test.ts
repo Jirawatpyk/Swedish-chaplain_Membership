@@ -136,9 +136,10 @@ describe('contract: resend-verification rate limit', () => {
     const body = await res.json();
     expect(body.outbox_row_id).toBe('outbox-1');
     expect(body.invalidated_prior).toBe(0);
-    // Limiter was called with the correct key (slug:userId:contactId)
+    // Limiter was called with the correct per-contact key (no userId —
+    // per-DOCUMENT pattern prevents multi-admin inbox bombing).
     expect(checkRl).toHaveBeenCalledWith(
-      `resend-verify:test-swecham:admin-1:${contactId}`,
+      `resend-verify:test-swecham:${contactId}`,
       3,
       3600,
     );

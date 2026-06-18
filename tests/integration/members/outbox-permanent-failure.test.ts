@@ -101,6 +101,7 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
 
   async function seedContact(): Promise<{
     contactId: ContactId;
+    memberId: string;
     email: string;
     linkedUser: TestUser;
   }> {
@@ -131,7 +132,7 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
         linkedUserId: user.userId,
       });
     });
-    return { contactId, email: user.rawEmail, linkedUser: user };
+    return { contactId, memberId, email: user.rawEmail, linkedUser: user };
   }
 
   it('outbox row flips to permanently_failed on 5th attempt + audit row lands', async () => {
@@ -243,6 +244,7 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
       },
       {
         contactId: s.contactId,
+        memberId: s.memberId,
         actorUserId: admin.userId,
         requestId: `req-${randomUUID().slice(0, 8)}`,
         locale: 'en',
