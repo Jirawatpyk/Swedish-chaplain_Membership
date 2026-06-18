@@ -20,6 +20,8 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 
 const paramsSchema = z.object({
   memberId: z.string().uuid(),
@@ -47,6 +49,27 @@ export async function POST(
   }
   const { contactId } = parsed.data;
   const tenant = resolveTenantFromRequest(request);
+
+  // DV-11 (security) — throttle re-sends per (admin, contact) to prevent
+  // email-bombing a member's inbox. Fail-soft: rateLimiter falls back to
+  // an in-memory bucket during an Upstash outage (never blocks a legit
+  // resend). Key uses actorUserId + contactId so a compromised admin
+  // account is constrained per-target rather than blocking all contacts.
+  const rl = await rateLimiter.check(
+    `resend-verify:${current.user.id}:${contactId}`,
+    3,
+    3600, // 3 per hour
+  );
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'rate_limited' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+      },
+    );
+  }
+
   const deps = buildMembersDeps(tenant);
 
   const result = await resendVerificationEmail(

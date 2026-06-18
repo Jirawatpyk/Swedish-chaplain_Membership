@@ -29,6 +29,17 @@ vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: requireAdminContextMock,
 }));
 
+// DV-11: route now calls rateLimiter — mock it to always allow so the
+// existing non-rate-limit branches are tested against a clean path.
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: {
+    check: vi.fn(async (..._args: unknown[]) => ({
+      success: true,
+      reset: Date.now() + 3600_000,
+    })),
+  },
+}));
+
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: buildMembersDepsMock,
 }));
