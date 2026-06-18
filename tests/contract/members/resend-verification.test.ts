@@ -22,6 +22,8 @@ const buildMembersDepsMock = vi.fn(() => ({
   contactRepo: {},
   tokens: {},
   emails: {},
+  userEmails: {},
+  audit: {},
   clock: { now: () => new Date() },
 }));
 
@@ -31,14 +33,20 @@ vi.mock('@/lib/admin-context', () => ({
 
 // DV-11: route now calls rateLimiter — mock it to always allow so the
 // existing non-rate-limit branches are tested against a clean path.
-vi.mock('@/lib/auth-deps', () => ({
-  rateLimiter: {
-    check: vi.fn(async (..._args: unknown[]) => ({
-      success: true,
-      reset: Date.now() + 3600_000,
-    })),
-  },
-}));
+// Uses importActual + spread to avoid discarding other named exports
+// (partial-module mock convention per CLAUDE.md).
+vi.mock('@/lib/auth-deps', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/auth-deps')>('@/lib/auth-deps');
+  return {
+    ...actual,
+    rateLimiter: {
+      check: vi.fn(async (..._args: unknown[]) => ({
+        success: true,
+        reset: Date.now() + 3600_000,
+      })),
+    },
+  };
+});
 
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: buildMembersDepsMock,
