@@ -12,8 +12,14 @@
  * mocks). Additionally mocks `@/lib/auth-deps` to intercept `rateLimiter`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
 import { ok } from '@/lib/result';
+import {
+  adminContext,
+  contactId,
+  makeRequest,
+  routeParams,
+  makeBuildMembersDepsMockReturn,
+} from './_resend-verification-test-helpers';
 
 // ---------------------------------------------------------------------------
 // Hoist mocks — must be declared before any import that pulls the real impls
@@ -31,14 +37,7 @@ vi.mock('@/lib/auth-deps', async () => {
 
 const requireAdminContextMock = vi.fn();
 const resendVerificationEmailMock = vi.fn();
-const buildMembersDepsMock = vi.fn(() => ({
-  contactRepo: {},
-  tokens: {},
-  emails: {},
-  userEmails: {},
-  audit: {},
-  clock: { now: () => new Date() },
-}));
+const buildMembersDepsMock = vi.fn(() => makeBuildMembersDepsMockReturn());
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: requireAdminContextMock,
@@ -65,31 +64,6 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
-
-// ---------------------------------------------------------------------------
-// Shared fixtures
-// ---------------------------------------------------------------------------
-
-const adminContext = {
-  current: {
-    user: { id: 'admin-1', email: 'a@b.co', role: 'admin', status: 'active' },
-    session: { id: 's1' },
-  },
-  sourceIp: '203.0.113.5',
-  requestId: 'req-1',
-};
-
-const memberId = '11111111-1111-1111-1111-111111111111';
-const contactId = '22222222-2222-2222-2222-222222222222';
-
-function makeRequest(): NextRequest {
-  return new NextRequest(
-    `http://localhost:3100/api/members/${memberId}/contacts/${contactId}/resend-verification`,
-    { method: 'POST' },
-  );
-}
-
-const routeParams = async () => ({ memberId, contactId });
 
 // ---------------------------------------------------------------------------
 // Tests
