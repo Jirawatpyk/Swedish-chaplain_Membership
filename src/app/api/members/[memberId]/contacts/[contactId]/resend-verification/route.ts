@@ -53,10 +53,12 @@ export async function POST(
   // DV-11 (security) — throttle re-sends per (admin, contact) to prevent
   // email-bombing a member's inbox. Fail-soft: rateLimiter falls back to
   // an in-memory bucket during an Upstash outage (never blocks a legit
-  // resend). Key uses actorUserId + contactId so a compromised admin
-  // account is constrained per-target rather than blocking all contacts.
+  // resend). Key format `kind:slug:userId:contactId` matches the
+  // convention used by other admin routes; the tenant slug as the second
+  // segment keeps the actor userId out of the first-two-segment `keyKind`
+  // log emitted on an Upstash outage (no PII in the keyKind dimension).
   const rl = await rateLimiter.check(
-    `resend-verify:${current.user.id}:${contactId}`,
+    `resend-verify:${tenant.slug}:${current.user.id}:${contactId}`,
     3,
     3600, // 3 per hour
   );

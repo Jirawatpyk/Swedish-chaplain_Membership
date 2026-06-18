@@ -1012,8 +1012,6 @@
           }
         },
         "resendVerification": {
-          "badge": "Email verification pending",
-          "badgeAria": "Contact email verification pending",
           "resendLabel": "Re-send verification email",
           "resendSubmitting": "Sending…",
           "resendSuccess": "Verification email re-sent.",

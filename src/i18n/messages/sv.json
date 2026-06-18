@@ -1012,11 +1012,9 @@
           }
         },
         "resendVerification": {
-          "badge": "E-postverifiering väntar",
-          "badgeAria": "Kontaktens e-postverifiering väntar",
           "resendLabel": "Skicka verifieringsmejl igen",
           "resendSubmitting": "Skickar…",
-          "resendSuccess": "Verifieringsmejl skickat igen.",
+          "resendSuccess": "Verifieringsmejl skickat på nytt.",
           "errors": {
             "notFound": "Kontakten hittades inte.",
             "noLinkedUser": "Inget portalkonto är kopplat till denna kontakt.",

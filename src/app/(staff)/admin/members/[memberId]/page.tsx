@@ -23,6 +23,7 @@ import {
   PencilIcon,
   UserPlusIcon,
 } from 'lucide-react';
+import { ok } from '@/lib/result';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -668,7 +669,12 @@ export default async function MemberDetailPage({
       resolveContactVerification({
         contacts,
         memberId,
-        isVerified: (userId) => deps.userEmails.isEmailVerified(userId),
+        // Skip DB verification reads for the read-only manager — the button is
+        // admin-only so they'll see an empty pending set and no button, with
+        // zero wasted round-trips to the user-emails store.
+        isVerified: canWrite
+          ? (userId) => deps.userEmails.isEmailVerified(userId)
+          : () => Promise.resolve(ok(true)),
         logger,
         errKind,
       }),

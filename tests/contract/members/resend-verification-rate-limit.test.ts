@@ -12,7 +12,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { ok, err } from '@/lib/result';
+import { ok } from '@/lib/result';
 
 // ---------------------------------------------------------------------------
 // Hoist mocks — must be declared before any import that pulls the real impls
@@ -136,9 +136,9 @@ describe('contract: resend-verification rate limit', () => {
     const body = await res.json();
     expect(body.outbox_row_id).toBe('outbox-1');
     expect(body.invalidated_prior).toBe(0);
-    // Limiter was called with the correct key (actorUserId + contactId)
+    // Limiter was called with the correct key (slug:userId:contactId)
     expect(checkRl).toHaveBeenCalledWith(
-      `resend-verify:admin-1:${contactId}`,
+      `resend-verify:test-swecham:admin-1:${contactId}`,
       3,
       3600,
     );

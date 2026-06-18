@@ -10,7 +10,6 @@
 import type { Result } from '@/lib/result';
 
 export interface VerificationResolverLogger {
-  debug(obj: Record<string, unknown>, msg: string): void;
   warn(obj: Record<string, unknown>, msg: string): void;
 }
 
