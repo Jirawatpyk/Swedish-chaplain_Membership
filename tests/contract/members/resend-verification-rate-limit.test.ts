@@ -4,7 +4,8 @@
  *
  * Verifies that the route:
  *   - returns 429 `{ error: 'rate_limited' }` + `Retry-After` header when the
- *     per-(actorUserId, contactId) Upstash bucket is exhausted.
+ *     per-(tenant, contactId) Upstash bucket is exhausted (inbox-protection:
+ *     all admins share one bucket per contact, matching the resend-invite route).
  *   - returns 200 with the standard success body when the limiter allows.
  *
  * Mock strategy: mirrors resend-verification.test.ts (same admin-gate + deps
