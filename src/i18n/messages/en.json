@@ -2308,7 +2308,7 @@
         "cancelled": "Broadcast cancelled. The member has been notified.",
         "halted": "Sending halted. Pending batches were stopped; already-sent batches will still deliver.",
         "cancelError": "Could not cancel the broadcast. Please try again.",
-        "cancelTooLate": "This broadcast can no longer be cancelled — it has already finished sending or was completed.",
+        "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."

@@ -173,10 +173,14 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     messageThai: 'อดมินคนอื่นกำลังดำเนินการกับ E-Blast นี้พร้อมกัน กรุณารีเฟรชแล้วลองใหม่',
   },
   broadcast_cancel_too_late: {
+    // Neutral wording: accurate whether the broadcast already finished sending,
+    // is a non-split send already at Resend, or lost a mid-send halt race
+    // (last pending batch dispatched). Avoids claiming "started/finished sending"
+    // which contradicts the admin halt control surfaced for in-flight sends.
     message:
-      'This broadcast can no longer be cancelled — it has already started sending or completed.',
+      'This broadcast can no longer be cancelled — it is past the point where it can be stopped.',
     messageThai:
-      'ยกเลิก E-Blast นี้ไม่ได้แล้ว — ส่งไปแล้วหรือดำเนินการเสร็จสิ้น',
+      'ยกเลิก E-Blast นี้ไม่ได้แล้ว — เลยจุดที่หยุดได้แล้ว',
   },
   broadcast_schedule_too_soon: {
     message: 'Scheduled time must be at least 5 minutes in the future.',

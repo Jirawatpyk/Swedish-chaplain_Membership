@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
+import { canHaltSending } from '@/components/broadcast/admin/can-halt-sending';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import {
@@ -115,14 +116,14 @@ export default async function AdminBroadcastDetailPage({
     ? []
     : (batchManifests ?? []);
   // F7.1a US1 FR-004 — an in-flight (`sending`) broadcast is still haltable
-  // while it has PENDING (not-yet-dispatched) batches. A batch in `sending`
-  // state is already at Resend and cannot be recalled, so only `pending` rows
-  // count. Derived from the already-loaded `batches` (no extra query); a load
-  // failure → no halt control (fail-safe). Dormant for <10k tenants (never split).
-  const canHaltSending =
-    broadcast.status === 'sending' &&
-    !batchLoadFailed &&
-    batches.some((b) => b.status === 'pending');
+  // while it has PENDING (not-yet-dispatched) batches. Derived from the
+  // already-loaded `batches` (no extra query) via the unit-tested pure helper.
+  // Dormant for <10k tenants (never split → no pending batches → never true).
+  const haltAvailable = canHaltSending(
+    broadcast.status,
+    batchLoadFailed,
+    batches,
+  );
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -262,7 +263,7 @@ export default async function AdminBroadcastDetailPage({
           (broadcast write is denied for manager). Halt is dormant for SweCham
           (<10k recipients never split → no pending batches). */}
       {((broadcast.status === 'submitted' || broadcast.status === 'approved') ||
-        canHaltSending) &&
+        haltAvailable) &&
       !isReadOnlyManager ? (
         <div className="flex items-center justify-end gap-2">
           {broadcast.status === 'submitted' ||
@@ -272,7 +273,7 @@ export default async function AdminBroadcastDetailPage({
               surface="admin"
             />
           ) : null}
-          {canHaltSending ? (
+          {haltAvailable ? (
             <CancelBroadcastAction
               broadcastId={broadcast.broadcastId as string}
               surface="admin"

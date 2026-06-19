@@ -2308,7 +2308,7 @@
         "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
         "halted": "Sändningen stoppades. Väntande batchar stoppades; redan skickade batchar levereras ändå.",
         "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
-        "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan skickats färdigt eller slutförts.",
+        "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
