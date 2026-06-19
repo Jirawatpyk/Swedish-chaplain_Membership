@@ -19,8 +19,9 @@
  * threads `tx` from `runInTenant`, never the global `db`).
  *
  * RED before the port method exists (TS won't compile the call) → GREEN after
- * the adapter + use-case ship. Live Neon — the anti-join + COUNT(*) OVER()
- * shape needs real-DB validation (a mock can't catch a wrong NOT EXISTS).
+ * the adapter + use-case ship. Live Neon — the anti-join + separate `count(*)`
+ * aggregate shape needs real-DB validation (a mock can't catch a wrong NOT
+ * EXISTS).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';

@@ -92,29 +92,24 @@ interface MarkPaidSuccessBody {
 }
 
 /**
- * Read `error.code` (+ optional sibling fields) off a non-2xx JSON body. The
- * route envelope is `{ error: { code, ...details } }`, so `current_status` and
- * `orphan_invoice_id` live directly on the `error` object. Falls back to
+ * Read `error.code` (+ optional `orphan_invoice_id`) off a non-2xx JSON body.
+ * The route envelope is `{ error: { code, ...details } }`, so
+ * `orphan_invoice_id` lives directly on the `error` object. Falls back to
  * server_error on a malformed body.
  */
 async function readError(res: Response): Promise<{
   code: string;
-  current_status?: string;
   orphan_invoice_id?: string;
 }> {
   try {
     const body = (await res.json()) as {
       error?: {
         code?: string;
-        current_status?: string;
         orphan_invoice_id?: string;
       };
     };
     return {
       code: body.error?.code ?? 'server_error',
-      ...(body.error?.current_status !== undefined
-        ? { current_status: body.error.current_status }
-        : {}),
       ...(body.error?.orphan_invoice_id !== undefined
         ? { orphan_invoice_id: body.error.orphan_invoice_id }
         : {}),
@@ -158,9 +153,7 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
 
   const trimmedReference = paymentReference.trim();
   const markPaidIncomplete =
-    paymentMethod.length === 0 ||
-    trimmedReference.length === 0 ||
-    paymentDate.length === 0;
+    trimmedReference.length === 0 || paymentDate.length === 0;
 
   const onCancel = () => {
     if (reasonInvalid) return;

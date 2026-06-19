@@ -2630,6 +2630,7 @@
           "joinedAt": "Anslöt"
         },
         "count": "{count, plural, one {# medlem utan förnyelsecykel} other {# medlemmar utan förnyelsecykel}}",
+        "showingFirst": "Visar de första {shown}.",
         "empty": {
           "title": "Alla medlemmar har en förnyelsecykel",
           "description": "Varje aktiv medlem spåras i förnyelsepipelinen."
@@ -2877,6 +2878,8 @@
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
             "cycle_not_cancellable": "Denna cykel kan inte längre avbrytas i sitt nuvarande tillstånd.",
+            "no_session": "Din session har gått ut. Logga in igen.",
+            "forbidden": "Du har inte behörighet att utföra denna åtgärd.",
             "feature_disabled": "Förnyelseflödet är inte aktiverat för denna handelskammare.",
             "server_error": "Något gick fel. Försök igen."
           }
@@ -2905,6 +2908,8 @@
             "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
             "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
             "invalid_body": "Kontrollera betalningsuppgifterna och försök igen.",
+            "no_session": "Din session har gått ut. Logga in igen.",
+            "forbidden": "Du har inte behörighet att utföra denna åtgärd.",
             "feature_disabled": "Förnyelseflödet är inte aktiverat för denna handelskammare.",
             "server_error": "Något gick fel. Försök igen."
           }

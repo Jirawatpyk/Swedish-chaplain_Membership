@@ -120,6 +120,11 @@ export async function MembersWithoutCycleTray({
             <>
               <p className="text-sm text-muted-foreground" aria-live="polite">
                 {t('count', { count: result.totalCount })}
+                {result.totalCount > result.items.length ? (
+                  <span className="ml-1">
+                    {t('showingFirst', { shown: result.items.length })}
+                  </span>
+                ) : null}
               </p>
               <Table>
                 <TableHeader>

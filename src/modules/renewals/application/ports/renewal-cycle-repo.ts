@@ -94,8 +94,6 @@ export interface RenewalCyclePage {
 
 export interface ListMembersWithoutCycleOpts {
   readonly limit: number;
-  /** Opaque keyset cursor (base64 `(registration_date, member_id)`). */
-  readonly cursor?: string;
 }
 
 export interface MemberWithoutCycleRow {
@@ -108,7 +106,6 @@ export interface MemberWithoutCycleRow {
 export interface MembersWithoutCyclePage {
   readonly items: ReadonlyArray<MemberWithoutCycleRow>;
   readonly totalCount: number;
-  readonly nextCursor: string | null;
 }
 
 export interface RenewalCycleRepo {
@@ -375,9 +372,14 @@ export interface RenewalCycleRepo {
    * correlated `NOT EXISTS` against the cycle table, EXCLUDING
    * `status='archived'` AND `erased_at IS NOT NULL` (COMP-1 H4 — erasure
    * keeps status='active', so a status filter alone won't hide an erased
-   * member). Ordered `registration_date DESC, member_id ASC`. Returns a
-   * `totalCount` (whole-anti-join size, via `COUNT(*) OVER()`) so the tray
-   * can show "N members" without a second round-trip.
+   * member). Ordered `registration_date DESC, member_id ASC`.
+   *
+   * Single capped page (no pagination cursor — the tray is a best-effort
+   * visibility widget like the pending-reactivation section; a chamber has
+   * well under the 200-row cap of no-cycle members). Returns `totalCount`
+   * (the WHOLE anti-join size, via a separate `count(*)` aggregate run in
+   * parallel with the page query) so the tray can show "N members" and flag
+   * when the rendered page is truncated past the cap.
    *
    * Tenant isolation: RLS+FORCE on BOTH `members` and `renewal_cycles` —
    * the adapter threads `tx` from `runInTenant`, never the global `db`.

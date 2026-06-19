@@ -4,9 +4,9 @@
  * The anti-join SQL + archived/erased exclusion + ordering + totalCount are
  * proven against live Neon in
  * `tests/integration/renewals/load-members-without-cycle.test.ts`. This unit
- * suite pins the thin orchestration shape: Result wrapping, default limit,
- * cursor forwarding, and infra-throw propagation (the page wrapper degrades
- * it best-effort).
+ * suite pins the thin orchestration shape: Result wrapping, default + provided
+ * limit forwarding, and infra-throw propagation (the page wrapper degrades it
+ * best-effort).
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -27,13 +27,12 @@ function page(
       },
     ],
     totalCount: 1,
-    nextCursor: null,
     ...overrides,
   };
 }
 
 describe('loadMembersWithoutCycle (DV-18)', () => {
-  it('wraps the repo page in ok() with items + totalCount + nextCursor', async () => {
+  it('wraps the repo page in ok() with items + totalCount', async () => {
     const repo = {
       listMembersWithoutCycle: vi.fn().mockResolvedValue(page()),
     };
@@ -46,7 +45,6 @@ describe('loadMembersWithoutCycle (DV-18)', () => {
     expect(res.value.items).toHaveLength(1);
     expect(res.value.items[0]!.companyName).toBe('No Cycle Co');
     expect(res.value.totalCount).toBe(1);
-    expect(res.value.nextCursor).toBeNull();
   });
 
   it('forwards the default limit when none is given (no request body source)', async () => {
@@ -64,17 +62,16 @@ describe('loadMembersWithoutCycle (DV-18)', () => {
     });
   });
 
-  it('forwards a provided limit + cursor verbatim', async () => {
+  it('forwards a provided limit verbatim', async () => {
     const repo = {
       listMembersWithoutCycle: vi.fn().mockResolvedValue(page()),
     };
     await loadMembersWithoutCycle(
       { cyclesRepo: repo as never },
-      { tenantId: 't', limit: 25, cursor: 'opaque-cursor' },
+      { tenantId: 't', limit: 25 },
     );
     expect(repo.listMembersWithoutCycle).toHaveBeenCalledWith('t', {
       limit: 25,
-      cursor: 'opaque-cursor',
     });
   });
 

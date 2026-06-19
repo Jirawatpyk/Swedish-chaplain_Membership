@@ -38,13 +38,11 @@ export const MEMBERS_WITHOUT_CYCLE_DEFAULT_LIMIT = 200;
 export interface LoadMembersWithoutCycleInput {
   readonly tenantId: string;
   readonly limit?: number;
-  readonly cursor?: string;
 }
 
 export interface LoadMembersWithoutCycleOutput {
   readonly items: ReadonlyArray<MemberWithoutCycleRow>;
   readonly totalCount: number;
-  readonly nextCursor: string | null;
 }
 
 export async function loadMembersWithoutCycle(
@@ -53,11 +51,9 @@ export async function loadMembersWithoutCycle(
 ): Promise<Result<LoadMembersWithoutCycleOutput, never>> {
   const page = await deps.cyclesRepo.listMembersWithoutCycle(input.tenantId, {
     limit: input.limit ?? MEMBERS_WITHOUT_CYCLE_DEFAULT_LIMIT,
-    ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
   });
   return ok({
     items: page.items,
     totalCount: page.totalCount,
-    nextCursor: page.nextCursor,
   });
 }

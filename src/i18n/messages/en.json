@@ -2630,6 +2630,7 @@
           "joinedAt": "Joined"
         },
         "count": "{count, plural, one {# member without a renewal cycle} other {# members without a renewal cycle}}",
+        "showingFirst": "Showing the first {shown}.",
         "empty": {
           "title": "All members have a renewal cycle",
           "description": "Every active member is tracked in the renewal pipeline."
@@ -2877,6 +2878,8 @@
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
             "cycle_not_cancellable": "This cycle can no longer be cancelled in its current state.",
+            "no_session": "Your session has expired. Please sign in again.",
+            "forbidden": "You don't have permission to perform this action.",
             "feature_disabled": "The renewals workflow is not enabled for this chamber.",
             "server_error": "Something went wrong. Please try again."
           }
@@ -2905,6 +2908,8 @@
             "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
             "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
             "invalid_body": "Please check the payment details and try again.",
+            "no_session": "Your session has expired. Please sign in again.",
+            "forbidden": "You don't have permission to perform this action.",
             "feature_disabled": "The renewals workflow is not enabled for this chamber.",
             "server_error": "Something went wrong. Please try again."
           }

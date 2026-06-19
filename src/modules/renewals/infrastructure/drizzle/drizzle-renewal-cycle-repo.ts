@@ -326,70 +326,6 @@ function buildNextCursor(
 }
 
 // ---------------------------------------------------------------------------
-// DV-18 members-without-cycle cursor — HMAC-signed keyset on
-// (registration_date, member_id). Same tamper-detection rationale +
-// domain-separation prefix as the pipeline cursor above; a renewal-link
-// MAC can NEVER verify as a members-without-cycle MAC.
-// ---------------------------------------------------------------------------
-
-interface MembersWithoutCycleCursorPayload {
-  readonly registrationDate: string;
-  readonly memberId: string;
-}
-
-const MWC_CURSOR_MAC_DOMAIN_PREFIX = 'members-without-cycle-v1:';
-
-function mwcCursorMac(payloadB64: string): string {
-  const secret = env.renewals.linkTokenSecretPrimary;
-  return createHmac('sha256', secret)
-    .update(MWC_CURSOR_MAC_DOMAIN_PREFIX, 'utf8')
-    .update(payloadB64, 'utf8')
-    .digest()
-    .subarray(0, CURSOR_MAC_BYTES)
-    .toString('base64url');
-}
-
-function encodeMembersWithoutCycleCursor(
-  payload: MembersWithoutCycleCursorPayload,
-): string {
-  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString(
-    'base64url',
-  );
-  return `${payloadB64}.${mwcCursorMac(payloadB64)}`;
-}
-
-function decodeMembersWithoutCycleCursor(
-  cursor: string | null | undefined,
-): MembersWithoutCycleCursorPayload | null {
-  if (!cursor) return null;
-  try {
-    const dotIdx = cursor.lastIndexOf('.');
-    if (dotIdx <= 0) return null;
-    const payloadB64 = cursor.slice(0, dotIdx);
-    const macB64 = cursor.slice(dotIdx + 1);
-    const got = Buffer.from(macB64, 'base64url');
-    const want = Buffer.from(mwcCursorMac(payloadB64), 'base64url');
-    if (got.length !== want.length || !timingSafeEqual(got, want)) {
-      return null;
-    }
-    const json = Buffer.from(payloadB64, 'base64url').toString('utf8');
-    const parsed = JSON.parse(json) as Partial<MembersWithoutCycleCursorPayload>;
-    if (
-      typeof parsed.registrationDate !== 'string' ||
-      typeof parsed.memberId !== 'string'
-    ) {
-      return null;
-    }
-    return {
-      registrationDate: parsed.registrationDate,
-      memberId: parsed.memberId,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Urgency derivation SQL (DB-side per FR-046)
 // ---------------------------------------------------------------------------
 
@@ -1057,7 +993,6 @@ export function makeDrizzleRenewalCycleRepo(
       // runInTenant keeps the anti-join tenant-scoped (NO global db).
       return runInTenant(tenant, async (tx) => {
         const limit = Math.max(1, Math.min(opts.limit, 200));
-        const cursor = decodeMembersWithoutCycleCursor(opts.cursor);
 
         // Correlated NOT EXISTS: the member owns NO cycle. Reads only
         // `renewal_cycles` in the subquery (RLS-scoped) — no join widens
@@ -1068,12 +1003,7 @@ export function makeDrizzleRenewalCycleRepo(
             AND rc.member_id = ${members.memberId}
         )`;
 
-        // Base anti-join predicate — the WHOLE "members without cycle" set.
-        // The keyset cursor is applied ONLY to the page query below, NOT to
-        // the count, so `totalCount` stays the total across ALL pages (a
-        // `COUNT(*) OVER()` on a cursor-filtered page would degrade to a
-        // "remaining" count on page 2+).
-        const baseFilters: SQL[] = [
+        const filters: SQL[] = [
           noCycle,
           // Archived members are intentionally hidden — an archived row is
           // not an operational "renewal gap" the admin needs to act on.
@@ -1084,27 +1014,14 @@ export function makeDrizzleRenewalCycleRepo(
           isNull(members.erasedAt),
         ];
 
-        // Count query: whole anti-join size (no cursor). Runs in parallel
-        // with the page query (independent reads) to save a round-trip.
+        // `totalCount` is the WHOLE anti-join size via a separate `count(*)`
+        // aggregate, run in parallel with the (single, capped) page query to
+        // save a round-trip. The tray shows it as "N members" and flags when
+        // the rendered page is truncated past the cap.
         const countQueryPromise = tx
           .select({ count: sql<number>`count(*)::int` })
           .from(members)
-          .where(and(...baseFilters));
-
-        const pageFilters = baseFilters.slice();
-        if (cursor) {
-          // Keyset on the (registration_date DESC, member_id ASC) order:
-          // the next page is rows strictly "after" the cursor tuple.
-          pageFilters.push(
-            or(
-              sql`${members.registrationDate} < ${cursor.registrationDate}`,
-              and(
-                eq(members.registrationDate, cursor.registrationDate),
-                sql`${members.memberId} > ${cursor.memberId}`,
-              ),
-            )!,
-          );
-        }
+          .where(and(...filters));
 
         const pageQueryPromise = tx
           .select({
@@ -1113,36 +1030,22 @@ export function makeDrizzleRenewalCycleRepo(
             registrationDate: members.registrationDate,
           })
           .from(members)
-          .where(and(...pageFilters))
+          .where(and(...filters))
           .orderBy(desc(members.registrationDate), asc(members.memberId))
-          .limit(limit + 1);
+          .limit(limit);
 
         const [countRows, rows] = await Promise.all([
           countQueryPromise,
           pageQueryPromise,
         ]);
 
-        const hasNextPage = rows.length > limit;
-        const pageRows = hasNextPage ? rows.slice(0, limit) : rows;
-        const totalCount = countRows[0]?.count ?? 0;
-
-        const lastRow = pageRows[pageRows.length - 1];
-        const nextCursor =
-          hasNextPage && lastRow
-            ? encodeMembersWithoutCycleCursor({
-                registrationDate: lastRow.registrationDate,
-                memberId: lastRow.memberId,
-              })
-            : null;
-
         return {
-          items: pageRows.map((r) => ({
+          items: rows.map((r) => ({
             memberId: r.memberId,
             companyName: r.companyName,
             registrationDate: r.registrationDate,
           })),
-          totalCount,
-          nextCursor,
+          totalCount: countRows[0]?.count ?? 0,
         };
       });
     },
