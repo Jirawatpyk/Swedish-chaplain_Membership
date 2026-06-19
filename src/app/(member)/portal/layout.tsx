@@ -98,6 +98,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
       <main
         className="flex-1 pb-[calc(var(--bottom-tab-height)+env(safe-area-inset-bottom))] lg:pb-0"
         id="main-content"
+        tabIndex={-1}
       >
         {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
             Server component returns null when ineligible (member already
