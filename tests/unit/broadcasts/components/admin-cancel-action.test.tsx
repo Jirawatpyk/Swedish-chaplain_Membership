@@ -10,7 +10,7 @@
  * Real timers via vi.useRealTimers() (global setup fakes them).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import { fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
@@ -67,15 +67,12 @@ describe('AdminCancelAction', () => {
     );
     // Wait for dialog to open
     await screen.findByText(en.admin.broadcasts.cancelDialog.title);
-    // There will now be TWO buttons named "Cancel broadcast" — the trigger
-    // (still in DOM) + the dialog action button. The dialog action should be
-    // disabled because no reason has been typed.
-    const buttons = screen.getAllByRole('button', {
+    // Scope to the alertdialog to avoid ambiguity with the trigger button
+    // that shares the same label (robust alternative to brittle index-last).
+    const dialog = screen.getByRole('alertdialog');
+    const dialogActionBtn = within(dialog).getByRole('button', {
       name: en.admin.broadcasts.cancelDialog.confirm,
     });
-    // At least the dialog action button is disabled (the reason is empty)
-    const dialogActionBtn = buttons[buttons.length - 1];
-    expect(dialogActionBtn).not.toBeUndefined();
     expect(dialogActionBtn).toBeDisabled();
   });
 
