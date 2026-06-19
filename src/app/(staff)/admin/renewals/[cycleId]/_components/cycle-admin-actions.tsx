@@ -56,9 +56,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { CycleStatus } from '@/modules/renewals';
-
-const REASON_MIN = 1;
-const REASON_MAX = 500;
+import {
+  isCancelReasonInvalid,
+  isMarkPaidIncomplete,
+  REASON_MAX,
+} from './cycle-admin-validation';
 
 /** Statuses where the Cancel control is offered (matches the route guard). */
 const CANCELLABLE_STATUSES = new Set<CycleStatus>([
@@ -78,17 +80,6 @@ type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export interface CycleAdminActionsProps {
   readonly cycleId: string;
   readonly status: CycleStatus;
-}
-
-interface CancelSuccessBody {
-  readonly status: string;
-  readonly closed_at: string | null;
-}
-
-interface MarkPaidSuccessBody {
-  readonly cycle_status: string;
-  readonly invoice_id: string;
-  readonly new_expires_at: string;
 }
 
 /**
@@ -148,64 +139,81 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
   }
 
   const trimmedReason = reason.trim();
-  const reasonInvalid =
-    trimmedReason.length < REASON_MIN || trimmedReason.length > REASON_MAX;
+  const reasonInvalid = isCancelReasonInvalid(reason);
 
   const trimmedReference = paymentReference.trim();
-  const markPaidIncomplete =
-    trimmedReference.length === 0 || paymentDate.length === 0;
+  const markPaidIncomplete = isMarkPaidIncomplete(paymentReference, paymentDate);
+
+  // Shared POST runner — owns the fetch + non-2xx error-toast + catch
+  // envelope that is identical for both endpoints. `onSuccess` does the
+  // toast + field reset + refresh; the optional `onError` returns true when
+  // it fully handled a specific code (mark-paid's f4_orphan_invoice
+  // deep-link), suppressing the generic code→toast fallback.
+  const runAction = async (
+    endpoint: string,
+    body: Record<string, unknown>,
+    namespace: 'cancelCycle' | 'markPaidOffline',
+    onSuccess: () => void,
+    onError?: (err: { code: string; orphan_invoice_id?: string }) => boolean,
+  ): Promise<void> => {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await readError(res);
+        if (onError?.(err)) return;
+        const key = `${namespace}.error.${err.code}`;
+        toast.error(t.has(key) ? t(key) : t(`${namespace}.error.server_error`));
+        return;
+      }
+      onSuccess();
+    } catch {
+      toast.error(t(`${namespace}.error.server_error`));
+    }
+  };
 
   const onCancel = () => {
     if (reasonInvalid) return;
-    startCancel(async () => {
-      try {
-        const res = await fetch(
-          `/api/admin/renewals/${encodeURIComponent(cycleId)}/cancel`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason: trimmedReason }),
-          },
-        );
-        if (!res.ok) {
-          const { code } = await readError(res);
-          const key = `cancelCycle.error.${code}`;
-          toast.error(
-            t.has(key) ? t(key) : t('cancelCycle.error.server_error'),
-          );
-          return;
-        }
-        // Body is { status: 'cancelled', closed_at } — read to confirm shape.
-        (await res.json()) as CancelSuccessBody;
-        toast.success(t('cancelCycle.successToast'));
-        setCancelOpen(false);
-        setReason('');
-        router.refresh();
-      } catch {
-        toast.error(t('cancelCycle.error.server_error'));
-      }
-    });
+    startCancel(() =>
+      runAction(
+        `/api/admin/renewals/${encodeURIComponent(cycleId)}/cancel`,
+        { reason: trimmedReason },
+        'cancelCycle',
+        () => {
+          toast.success(t('cancelCycle.successToast'));
+          setCancelOpen(false);
+          setReason('');
+          router.refresh();
+        },
+      ),
+    );
   };
 
   const onMarkPaid = () => {
     if (markPaidIncomplete) return;
-    startMarkPaid(async () => {
-      try {
-        const res = await fetch(
-          `/api/admin/renewals/${encodeURIComponent(cycleId)}/mark-paid-offline`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              payment_method: paymentMethod,
-              payment_reference: trimmedReference,
-              payment_date: paymentDate,
-            }),
-          },
-        );
-        if (!res.ok) {
-          const { code, orphan_invoice_id } = await readError(res);
-          if (code === 'f4_orphan_invoice' && orphan_invoice_id) {
+    startMarkPaid(() =>
+      runAction(
+        `/api/admin/renewals/${encodeURIComponent(cycleId)}/mark-paid-offline`,
+        {
+          payment_method: paymentMethod,
+          payment_reference: trimmedReference,
+          payment_date: paymentDate,
+        },
+        'markPaidOffline',
+        () => {
+          toast.success(t('markPaidOffline.successToast'));
+          setMarkPaidOpen(false);
+          setPaymentReference('');
+          setPaymentDate('');
+          setPaymentMethod('bank_transfer');
+          router.refresh();
+        },
+        (err) => {
+          if (err.code === 'f4_orphan_invoice' && err.orphan_invoice_id) {
+            const orphanId = err.orphan_invoice_id;
             // DO-NOT-RETRY: an invoice was issued but the cycle flip failed.
             // The admin must resume from the F4 invoice list — surface the
             // deep-link in the toast so they can act without a support ticket.
@@ -214,31 +222,18 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
                 label: t('markPaidOffline.viewOrphanInvoice'),
                 onClick: () => {
                   router.push(
-                    `/admin/invoices/${encodeURIComponent(orphan_invoice_id)}`,
+                    `/admin/invoices/${encodeURIComponent(orphanId)}`,
                   );
                 },
               },
               duration: 30_000,
             });
-            return;
+            return true;
           }
-          const key = `markPaidOffline.error.${code}`;
-          toast.error(
-            t.has(key) ? t(key) : t('markPaidOffline.error.server_error'),
-          );
-          return;
-        }
-        (await res.json()) as MarkPaidSuccessBody;
-        toast.success(t('markPaidOffline.successToast'));
-        setMarkPaidOpen(false);
-        setPaymentReference('');
-        setPaymentDate('');
-        setPaymentMethod('bank_transfer');
-        router.refresh();
-      } catch {
-        toast.error(t('markPaidOffline.error.server_error'));
-      }
-    });
+          return false;
+        },
+      ),
+    );
   };
 
   return (
