@@ -2620,6 +2620,23 @@
         "viewDetail": "Visa detaljer",
         "viewDetailFor": "Visa detaljer för {company}"
       },
+      "membersWithoutCycle": {
+        "banner": {
+          "title": "Medlemmar utan förnyelsecykel",
+          "description": "Dessa medlemmar har ingen förnyelsecykel ännu — de visas inte i pipelinen och får inga förnyelsepåminnelser. Öppna var och en för att starta en cykel."
+        },
+        "columns": {
+          "company": "Företag",
+          "joinedAt": "Anslöt"
+        },
+        "count": "{count, plural, one {# medlem utan förnyelsecykel} other {# medlemmar utan förnyelsecykel}}",
+        "empty": {
+          "title": "Alla medlemmar har en förnyelsecykel",
+          "description": "Varje aktiv medlem spåras i förnyelsepipelinen."
+        },
+        "loadFailed": "Det gick inte att läsa in medlemmar utan förnyelsecykel. Försök igen.",
+        "viewMemberFor": "Visa medlem {company}"
+      },
       "empty": {
         "title": "Inga förnyelser förfaller under de kommande 90 dagarna",
         "description": "Alla aktiva medlemmar är betalade. Kom tillbaka när utgångsdatum närmar sig.",
@@ -2844,6 +2861,52 @@
               "rate_limited": "För många försök. Vänta en stund och försök igen.",
               "server_error": "Något gick fel. Försök igen."
             }
+          }
+        },
+        "cancelCycle": {
+          "button": "Avbryt cykel",
+          "dialogTitle": "Avbryta denna förnyelsecykel?",
+          "dialogBody": "Detta avslutar förnyelsecykeln. Medlemmen får inga fler påminnelser för den. Åtgärden kan inte ångras.",
+          "reasonLabel": "Orsak till avbrytande",
+          "reasonPlaceholder": "Förklara varför cykeln avbryts (t.ex. medlem avgick, dubblettcykel).",
+          "reasonRequired": "Ange en orsak (1–500 tecken).",
+          "confirm": "Avbryt cykel",
+          "cancel": "Behåll cykel",
+          "submitting": "Avbryter…",
+          "successToast": "Förnyelsecykeln har avbrutits.",
+          "error": {
+            "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
+            "cycle_not_cancellable": "Denna cykel kan inte längre avbrytas i sitt nuvarande tillstånd.",
+            "feature_disabled": "Förnyelseflödet är inte aktiverat för denna handelskammare.",
+            "server_error": "Något gick fel. Försök igen."
+          }
+        },
+        "markPaidOffline": {
+          "button": "Markera betald offline",
+          "dialogTitle": "Registrera en offlinebetalning?",
+          "dialogBody": "Använd detta när medlemmen har betalat utanför systemet (banköverföring, kontant eller check). En faktura utfärdas och cykeln slutförs.",
+          "paymentMethodLabel": "Betalningsmetod",
+          "paymentMethod": {
+            "bank_transfer": "Banköverföring",
+            "cash": "Kontant",
+            "cheque": "Check"
+          },
+          "paymentReferenceLabel": "Betalningsreferens",
+          "paymentReferencePlaceholder": "t.ex. bankslippsnummer eller checknummer",
+          "paymentDateLabel": "Betalningsdatum",
+          "confirm": "Markera betald",
+          "cancel": "Avbryt",
+          "submitting": "Registrerar…",
+          "successToast": "Offlinebetalning registrerad — cykeln är nu slutförd.",
+          "viewOrphanInvoice": "Visa faktura",
+          "error": {
+            "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
+            "cycle_not_payable": "Denna cykel kan inte längre markeras som betald i sitt nuvarande tillstånd.",
+            "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
+            "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
+            "invalid_body": "Kontrollera betalningsuppgifterna och försök igen.",
+            "feature_disabled": "Förnyelseflödet är inte aktiverat för denna handelskammare.",
+            "server_error": "Något gick fel. Försök igen."
           }
         },
         "lookupFailedTitle": "Viss kopplad data kunde inte läsas in",

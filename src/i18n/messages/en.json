@@ -2620,6 +2620,23 @@
         "viewDetail": "View detail",
         "viewDetailFor": "View detail for {company}"
       },
+      "membersWithoutCycle": {
+        "banner": {
+          "title": "Members without a renewal cycle",
+          "description": "These members have no renewal cycle yet — they won't appear in the pipeline or receive renewal reminders. Open each one to start a cycle."
+        },
+        "columns": {
+          "company": "Company",
+          "joinedAt": "Joined"
+        },
+        "count": "{count, plural, one {# member without a renewal cycle} other {# members without a renewal cycle}}",
+        "empty": {
+          "title": "All members have a renewal cycle",
+          "description": "Every active member is tracked in the renewal pipeline."
+        },
+        "loadFailed": "Couldn't load members without a renewal cycle. Please try again.",
+        "viewMemberFor": "View member {company}"
+      },
       "empty": {
         "title": "No renewals due in the next 90 days",
         "description": "All active members are paid up. Check back when expiry dates approach.",
@@ -2844,6 +2861,52 @@
               "rate_limited": "Too many attempts. Please wait a moment and try again.",
               "server_error": "Something went wrong. Please try again."
             }
+          }
+        },
+        "cancelCycle": {
+          "button": "Cancel cycle",
+          "dialogTitle": "Cancel this renewal cycle?",
+          "dialogBody": "This ends the renewal cycle. The member will no longer receive reminders for it. This action cannot be undone.",
+          "reasonLabel": "Reason for cancelling",
+          "reasonPlaceholder": "Explain why this cycle is being cancelled (e.g. member resigned, duplicate cycle).",
+          "reasonRequired": "Please enter a reason (1–500 characters).",
+          "confirm": "Cancel cycle",
+          "cancel": "Keep cycle",
+          "submitting": "Cancelling…",
+          "successToast": "Renewal cycle cancelled.",
+          "error": {
+            "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
+            "cycle_not_cancellable": "This cycle can no longer be cancelled in its current state.",
+            "feature_disabled": "The renewals workflow is not enabled for this chamber.",
+            "server_error": "Something went wrong. Please try again."
+          }
+        },
+        "markPaidOffline": {
+          "button": "Mark paid offline",
+          "dialogTitle": "Record an offline payment?",
+          "dialogBody": "Use this when the member has paid outside the system (bank transfer, cash, or cheque). An invoice is issued and the cycle is completed.",
+          "paymentMethodLabel": "Payment method",
+          "paymentMethod": {
+            "bank_transfer": "Bank transfer",
+            "cash": "Cash",
+            "cheque": "Cheque"
+          },
+          "paymentReferenceLabel": "Payment reference",
+          "paymentReferencePlaceholder": "e.g. bank slip number or cheque number",
+          "paymentDateLabel": "Payment date",
+          "confirm": "Mark paid",
+          "cancel": "Cancel",
+          "submitting": "Recording…",
+          "successToast": "Offline payment recorded — the cycle is now completed.",
+          "viewOrphanInvoice": "View invoice",
+          "error": {
+            "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
+            "cycle_not_payable": "This cycle can no longer be marked paid in its current state.",
+            "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
+            "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
+            "invalid_body": "Please check the payment details and try again.",
+            "feature_disabled": "The renewals workflow is not enabled for this chamber.",
+            "server_error": "Something went wrong. Please try again."
           }
         },
         "lookupFailedTitle": "Some related data couldn't be loaded",

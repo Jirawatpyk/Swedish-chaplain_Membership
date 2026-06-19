@@ -36,6 +36,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleStatusBadge } from './_components/cycle-status-badge';
 import { PendingReactivationActions } from './_components/pending-reactivation-actions';
+import { CycleAdminActions } from './_components/cycle-admin-actions';
 // Phase 6 review-round 2 A2 — display-data fetchers extracted to a
 // testable module so unit tests can drive the C4 error semantics
 // (null-vs-throw) + TD1 zod parse without booting Drizzle.
@@ -373,6 +374,17 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
         currentUser.role === 'admin' && (
           <PendingReactivationActions cycleId={c.cycleId} status={c.status} />
         )}
+
+      {/* DV-5 — admin cancel-cycle + mark-paid-offline actions. The client
+          component renders the right control(s) based on the cycle's status
+          (cancel for upcoming/reminded/awaiting_payment; mark-paid for
+          upcoming/awaiting_payment) and nothing for terminal /
+          pending_admin_reactivation cycles. Admin-only — managers view this
+          surface read-only; the route handlers also reject a manager POST
+          with 403 + f8_role_violation_blocked audit. */}
+      {currentUser.role === 'admin' && (
+        <CycleAdminActions cycleId={c.cycleId} status={c.status} />
+      )}
 
       {/* Staff-Review-2026-05-09 SUG-5 fix: surface F2/F3 lookup
           failures via <Alert variant="warning"> instead of inline
