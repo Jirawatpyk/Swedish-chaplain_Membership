@@ -63,6 +63,10 @@ const unauthorisedResponse = NextResponse.json(
   { error: 'no-session' },
   { status: 401 },
 );
+const forbiddenResponse = NextResponse.json(
+  { error: 'forbidden' },
+  { status: 403 },
+);
 
 function makeRequest(
   body: unknown,
@@ -208,6 +212,17 @@ describe('POST /api/broadcasts/[id]/cancel — DV-12 member path (T113)', () => 
     const { req, ctx } = makeRequest({});
     const res = await POST(req, ctx);
     expect(res.status).toBe(401);
+    expect(cancelBroadcastMock).not.toHaveBeenCalled();
+  });
+
+  it('403: wrong-role (admin/manager) hitting the member endpoint', async () => {
+    requireMemberContextMock.mockResolvedValueOnce({
+      response: forbiddenResponse,
+    });
+    const { POST } = await importRoute();
+    const { req, ctx } = makeRequest({});
+    const res = await POST(req, ctx);
+    expect(res.status).toBe(403);
     expect(cancelBroadcastMock).not.toHaveBeenCalled();
   });
 

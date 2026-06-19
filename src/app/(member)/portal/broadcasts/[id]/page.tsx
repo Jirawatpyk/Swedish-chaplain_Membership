@@ -238,8 +238,10 @@ export default async function BroadcastDetailPage(props: {
       </Card>
 
       {/* DV-12 — member Cancel action. Visible only when the broadcast is
-          still cancellable (submitted or approved). Ownership is enforced
-          upstream by getMemberBroadcast (cross-member probe → 404).
+          still cancellable (submitted or approved). getMemberBroadcast gates
+          VISIBILITY (this page 404s a cross-member probe); the cancel POST is
+          independently re-guarded at write time by the cancelBroadcast use-case
+          (actor.kind==='member' + requestedByMemberId !== memberId → not_found).
 
           Scope note (review #4): the domain canCancel policy also permits
           cancelling a `sending` broadcast with pending split batch_manifests

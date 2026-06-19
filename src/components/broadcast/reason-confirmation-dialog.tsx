@@ -105,7 +105,6 @@ export interface ReasonConfirmationDialogProps {
   readonly onConfirm: (reason: string) => Promise<void>;
   /** Focus-return target on close — build via {@link useDialogFinalFocus}. */
   readonly finalFocus: () => HTMLElement | null;
-  readonly className?: string;
 }
 
 export function ReasonConfirmationDialog({
@@ -118,7 +117,6 @@ export function ReasonConfirmationDialog({
   textareaRows,
   onConfirm,
   finalFocus,
-  className,
 }: ReasonConfirmationDialogProps): React.ReactElement {
   const t = useTranslations(namespace);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -179,7 +177,7 @@ export function ReasonConfirmationDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
-        className={cn('max-w-lg', className)}
+        className="max-w-lg"
         finalFocus={finalFocus}
         {...(reasonRequired ? {} : { initialFocus: cancelRef })}
       >

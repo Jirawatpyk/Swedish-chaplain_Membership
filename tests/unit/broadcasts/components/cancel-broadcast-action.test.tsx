@@ -39,13 +39,21 @@ function renderAction(
   broadcastId = 'b1',
   variant?: 'cancel' | 'halt',
 ) {
-  return render(
-    <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
+  // Branch on the literal surface so the discriminated CancelBroadcastActionProps
+  // narrows ('member' cannot take a variant; 'admin' may take 'cancel' | 'halt').
+  const action =
+    surface === 'admin' ? (
       <CancelBroadcastAction
         broadcastId={broadcastId}
-        surface={surface}
+        surface="admin"
         {...(variant ? { variant } : {})}
       />
+    ) : (
+      <CancelBroadcastAction broadcastId={broadcastId} surface="member" />
+    );
+  return render(
+    <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
+      {action}
     </NextIntlClientProvider>,
   );
 }

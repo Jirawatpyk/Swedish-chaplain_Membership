@@ -58,7 +58,7 @@
 - **F8:** `admin.renewals.lapsed.viewDetail` (component uses `actions.open`); `admin.renewals.tier_upgrades.actions.escalate.dialog_title` / `.confirm` (Escalate has no dialog).
 - **F1:** `auth.resetPassword.errors.tokenUsed` / `auth.invite.errors.tokenUsed` (dead-token pages always render `tokenExpired`).
 - **F5 (dead route regex):** `proxy.ts:312` matches a `/admin/invoices/[id]/refund` page route that doesn't exist (refund is a `?refund=1` dialog). Harmless, but implies an unbuilt route.
-- **F7 (RESOLVED 2026-06-19):** `admin.broadcasts.cancelDialog.errors.reasonRequired` + `admin.broadcasts.rejectDialog.errors.reasonRequired` were dead disabled-button-UX keys — **removed** from en/th/sv in the DV-12 code-review fix-wave (reject + cancel now share one `ReasonConfirmationDialog`).
+- **F7 (RESOLVED 2026-06-19):** `admin.broadcasts.rejectDialog.errors.reasonRequired` (a genuine pre-existing dead disabled-button-UX key) was **removed** from en/th/sv in the DV-12 code-review fix-wave. The DV-12 feature commit had briefly added a matching `cancelDialog.errors.reasonRequired`; the fix-wave removed that too — so **net vs `main`, neither dialog ships a dead `reasonRequired` key** (reject + cancel now share one `ReasonConfirmationDialog`).
 
 ## Follow-ups resolved (post DV-12 fix-wave, 2026-06-19)
 
@@ -93,4 +93,4 @@
 | Dead/orphan i18n keys | §F | ~4 groups |
 | Refuted | DV-10 | 1 |
 
-**None block go-live.** ✅ The two HIGH items are **DONE**: **DV-11** (resend-verification button, PR #100) + **DV-12** (cancel-broadcast UI, branch `077-dv12-cancel-broadcast`). Remaining: the spec-reconciliation pass (§D, §E) and the dead-key cleanup (§F — note: `cancelDialog.errors.reasonRequired` + `rejectDialog.errors.reasonRequired` are dead-but-consistent disabled-button-UX keys; sweep both together).
+**None block go-live.** ✅ The two HIGH items are **DONE**: **DV-11** (resend-verification button, PR #100) + **DV-12** (cancel-broadcast UI, branch `077-dv12-cancel-broadcast`). Remaining: the spec-reconciliation pass (§D, §E) and the dead-key cleanup (§F — the `reject`/`cancel` `reasonRequired` keys are already resolved (see §F F7 note); remaining are the F3/F8/F1/F5 groups).

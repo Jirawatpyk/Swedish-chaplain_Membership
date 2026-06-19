@@ -1,3 +1,4 @@
+import type { BroadcastStatus } from '@/modules/broadcasts';
 import type { BatchBreakdownRow } from './batch-breakdown';
 
 /**
@@ -19,7 +20,7 @@ import type { BatchBreakdownRow } from './batch-breakdown';
  * without rendering the RSC page.
  */
 export function canHaltSending(
-  status: string,
+  status: BroadcastStatus,
   batchLoadFailed: boolean,
   batches: ReadonlyArray<Pick<BatchBreakdownRow, 'status'>>,
 ): boolean {

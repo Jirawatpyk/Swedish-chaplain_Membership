@@ -390,3 +390,39 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     );
   });
 });
+
+// ── Reset-on-open (review fix #1) ────────────────────────────────────────
+
+describe('CancelBroadcastDialog — reset on open', () => {
+  const reasonLabel = new RegExp(
+    en.admin.broadcasts.cancelDialog.reasonLabel,
+    'i',
+  );
+  const adminEl = (open: boolean) => (
+    <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
+      <CancelBroadcastDialog
+        open={open}
+        onOpenChange={vi.fn()}
+        endpoint="/api/admin/broadcasts/b1/cancel"
+        namespace="admin.broadcasts.cancelDialog"
+        toastNamespace="admin.broadcasts.toast"
+        reasonRequired
+      />
+    </NextIntlClientProvider>
+  );
+
+  it('a re-opened dialog starts with an empty reason (programmatic close bypasses Base UI onOpenChange)', () => {
+    const { rerender } = render(adminEl(true));
+    fireEvent.change(screen.getByLabelText(reasonLabel), {
+      target: { value: 'stale reason from a prior attempt' },
+    });
+    expect(screen.getByLabelText(reasonLabel)).toHaveValue(
+      'stale reason from a prior attempt',
+    );
+    // Success / 409 close the dialog by calling onOpenChange(false) directly —
+    // simulate that programmatic close, then re-open.
+    rerender(adminEl(false));
+    rerender(adminEl(true));
+    expect(screen.getByLabelText(reasonLabel)).toHaveValue('');
+  });
+});

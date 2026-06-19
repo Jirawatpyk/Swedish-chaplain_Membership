@@ -124,6 +124,12 @@ export default async function AdminBroadcastDetailPage({
     batchLoadFailed,
     batches,
   );
+  // Pre-send Cancel vs mid-send Halt are mutually exclusive (disjoint statuses);
+  // both, plus Approve/Reject, share one right-aligned action row.
+  const isCancellable =
+    broadcast.status === 'submitted' || broadcast.status === 'approved';
+  const showAdminActionRow =
+    !isReadOnlyManager && (isCancellable || haltAvailable);
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -262,12 +268,9 @@ export default async function AdminBroadcastDetailPage({
           right-aligned row (review #2). Manager role is excluded throughout
           (broadcast write is denied for manager). Halt is dormant for SweCham
           (<10k recipients never split → no pending batches). */}
-      {((broadcast.status === 'submitted' || broadcast.status === 'approved') ||
-        haltAvailable) &&
-      !isReadOnlyManager ? (
+      {showAdminActionRow ? (
         <div className="flex items-center justify-end gap-2">
-          {broadcast.status === 'submitted' ||
-          broadcast.status === 'approved' ? (
+          {isCancellable ? (
             <CancelBroadcastAction
               broadcastId={broadcast.broadcastId as string}
               surface="admin"

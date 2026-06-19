@@ -38,8 +38,15 @@ describe('canHaltSending', () => {
     expect(canHaltSending('submitted', false, [pending])).toBe(false);
   });
 
-  it('false: terminal states (sent / failed / cancelled)', () => {
-    for (const s of ['sent', 'failed', 'cancelled']) {
+  it('false: non-sending states (draft / sent / rejected / failed_to_dispatch / cancelled / partially_sent)', () => {
+    for (const s of [
+      'draft',
+      'sent',
+      'rejected',
+      'failed_to_dispatch',
+      'cancelled',
+      'partially_sent',
+    ] as const) {
       expect(canHaltSending(s, false, [pending])).toBe(false);
     }
   });
