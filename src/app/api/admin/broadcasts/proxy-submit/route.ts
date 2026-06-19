@@ -15,6 +15,7 @@ import {
   makeProxySubmitBroadcastDeps,
   type ProxySubmitBroadcastError,
 } from '@/modules/broadcasts';
+import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import {
   errorResponse,
   httpStatusForBroadcastError,
@@ -76,10 +77,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const tenantDisplayName = await resolveTenantDisplayName(tenantCtx.slug);
 
   try {
+    // DV-17 — resolve the proxied member's display name (F3 `companyName`)
+    // to compose the Resend From as "<member> via <tenant>". The admin
+    // context does not load a member, so read it here via the F3 barrel.
+    // A not-found member yields `''`; the canonical not-found rejection is
+    // still produced inside `proxySubmitBroadcast` (its `memberExistsInTenant`
+    // probe runs BEFORE from-name composition, so the placeholder is never
+    // persisted — `broadcast_member_not_found` behaviour is preserved). Inside
+    // the try so any unexpected repo throw maps to the route's 500 handler.
+    const memberLookup = await drizzleMemberRepo.findById(
+      tenantCtx,
+      asMemberId(parsed.data.requestedByMemberId),
+    );
+    const memberDisplayName = memberLookup.ok
+      ? memberLookup.value.companyName
+      : '';
+
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: parsed.data.requestedByMemberId,
       adminUserId: ctx.current.user.id,
       tenantDisplayName,
+      memberDisplayName,
       subject: parsed.data.subject,
       bodySource: parsed.data.bodySource,
       bodyHtml: parsed.data.bodyHtml,

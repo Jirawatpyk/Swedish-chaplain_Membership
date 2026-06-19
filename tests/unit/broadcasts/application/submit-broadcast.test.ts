@@ -399,6 +399,7 @@ const baseInput: SubmitBroadcastInput = {
   submittedByUserId: 'u-1',
   actorRole: 'member_self_service',
   tenantDisplayName: 'Test Chamber',
+  memberDisplayName: 'Acme Co',
   subject: 'Welcome',
   bodySource: 'plain',
   bodyHtml: '<p>Hello world</p>',
@@ -787,6 +788,83 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         '99999999-9999-9999-9999-999999999999',
       );
     }
+  });
+
+  // ---- DV-17 from_name composition ("<member> via <tenant>") --------
+
+  it('DV-17 insert path: from_name = "<memberDisplayName> via <tenantDisplayName>"', async () => {
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'r@example.com' },
+      ],
+    });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.inserted).toHaveLength(1);
+    expect(broadcastsRepo.inserted[0]!.fromName).toBe('Acme Co via Test Chamber');
+  });
+
+  it('DV-17 update-draft path: from_name = "<memberDisplayName> via <tenantDisplayName>"', async () => {
+    const updates: Array<{ patch: Record<string, unknown> }> = [];
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'r@example.com' },
+      ],
+    });
+    const draftId = 'cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa';
+    const repo = deps.broadcastsRepo as unknown as {
+      findByIdInTx: BroadcastsRepo['findByIdInTx'];
+      updateDraft: BroadcastsRepo['updateDraft'];
+    };
+    repo.findByIdInTx = async (_tx, _t, broadcastIdArg) =>
+      makeBroadcast({
+        tenantId: tenant.slug,
+        broadcastId: broadcastIdArg,
+        requestedByMemberId: 'm-1',
+        requestedByMemberPlanIdSnapshot: 'p',
+        submittedByUserId: 'u-1',
+        actorRole: 'member_self_service',
+        subject: 'old',
+        bodyHtml: '<p>old</p>',
+        bodySource: 'old',
+        fromName: 'stale name',
+        replyToEmail: 'me@example.com',
+        segmentType: 'all_members',
+        segmentParams: null,
+        customRecipientEmails: null,
+        estimatedRecipientCount: 0,
+        scheduledFor: null,
+      });
+    repo.updateDraft = async (_tx, _t, broadcastIdArg, patch) => {
+      updates.push({ patch: patch as unknown as Record<string, unknown> });
+      return {
+        ...makeBroadcast({
+          tenantId: tenant.slug,
+          broadcastId: broadcastIdArg,
+          requestedByMemberId: 'm-1',
+          requestedByMemberPlanIdSnapshot: 'p',
+          submittedByUserId: 'u-1',
+          actorRole: 'member_self_service',
+          subject: 'updated',
+          bodyHtml: '<p>updated</p>',
+          bodySource: 'updated',
+          fromName: (patch.fromName as string) ?? 'stale name',
+          replyToEmail: 'me@example.com',
+          segmentType: 'all_members',
+          segmentParams: null,
+          customRecipientEmails: null,
+          estimatedRecipientCount: 0,
+          scheduledFor: null,
+        }),
+      };
+    };
+
+    const result = await submitBroadcast(deps, { ...baseInput, draftId });
+    expect(result.ok).toBe(true);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.patch['fromName']).toBe('Acme Co via Test Chamber');
   });
 
   // ---- Sanitiser invocation ------------------------------------------

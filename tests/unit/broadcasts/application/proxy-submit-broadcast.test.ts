@@ -313,6 +313,7 @@ const baseInput = {
   proxiedMemberId: 'm-target',
   adminUserId: 'admin-7',
   tenantDisplayName: 'Test Chamber',
+  memberDisplayName: 'Acme Co',
   subject: 'Welcome from your chamber admin',
   bodySource: 'plain',
   bodyHtml: '<p>Hello</p>',
@@ -364,6 +365,19 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     });
     await proxySubmitBroadcast(deps, baseInput);
     expect(repo.inserted[0]?.actorRole).toBe('admin_proxy');
+  });
+
+  it('DV-17 proxy forwards memberDisplayName → composed from_name "<member> via <tenant>"', async () => {
+    const { deps, repo } = makeDeps({
+      primaryContact: 'm-target@example.com',
+      recipients: [
+        { memberId: 'm-other', primaryContactEmail: 'other@example.com' },
+      ],
+    });
+    const result = await proxySubmitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    expect(repo.inserted).toHaveLength(1);
+    expect(repo.inserted[0]?.fromName).toBe('Acme Co via Test Chamber');
   });
 
   it('audit broadcast_submitted carries actorRole="admin_proxy"', async () => {
