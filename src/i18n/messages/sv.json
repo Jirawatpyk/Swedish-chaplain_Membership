@@ -2236,7 +2236,6 @@
         "confirm": "Avvisa",
         "cancel": "Avbryt",
         "errors": {
-          "reasonRequired": "En icke-tom anledning krävs.",
           "reasonTooLong": "Anledningen överskrider 2 000 tecken."
         }
       },
@@ -2247,7 +2246,22 @@
         "reasonPlaceholder": "Varför avbryts detta…",
         "reasonHelp": "1–500 tecken.",
         "confirm": "Avbryt utskick",
-        "cancel": "Behåll utskick"
+        "cancel": "Behåll utskick",
+        "errors": {
+          "reasonTooLong": "Anledningen överskrider 500 tecken."
+        }
+      },
+      "haltDialog": {
+        "title": "Stoppa detta utskick mitt i sändningen?",
+        "description": "Detta stoppar alla batchar som ännu inte skickats. Batchar som redan skickats till Resend kan inte återkallas. Ange en anledning för granskningsloggen + medlemsmeddelande.",
+        "reasonLabel": "Anledning till stopp",
+        "reasonPlaceholder": "Varför stoppas detta…",
+        "reasonHelp": "1–500 tecken.",
+        "confirm": "Stoppa sändning",
+        "cancel": "Fortsätt sända",
+        "errors": {
+          "reasonTooLong": "Anledningen överskrider 500 tecken."
+        }
       },
       "proxySubmitDialog": {
         "title": "Skicka in å medlems vägnar",
@@ -2291,6 +2305,10 @@
         "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen.",
         "approved": "Utskicket har godkänts.",
         "rejected": "Utskicket har avvisats. Medlemmen har meddelats.",
+        "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
+        "halted": "Sändningen stoppades. Väntande batchar stoppades; redan skickade batchar levereras ändå.",
+        "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
+        "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
@@ -4463,7 +4481,24 @@
           "sent": "Väntar",
           "total": "Totalt"
         },
-        "back": "Tillbaka till utskick"
+        "back": "Tillbaka till utskick",
+        "cancelButton": "Avbryt utskick",
+        "cancelDialog": {
+          "title": "Avbryta detta utskick?",
+          "description": "När det väl avbryts kan det inte skickas igen. Du kan fortfarande se det i din historik.",
+          "reasonLabel": "Anledning (valfri)",
+          "reasonPlaceholder": "Valfritt — varför avbryter du…",
+          "reasonHelp": "Upp till 500 tecken.",
+          "confirm": "Avbryt utskick",
+          "cancel": "Behåll det",
+          "errors": { "reasonTooLong": "Anledningen överskrider 500 tecken." }
+        },
+        "toast": {
+          "cancelled": "Utskicket har avbrutits.",
+          "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
+          "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan börjat skickas.",
+          "concurrentRace": "Detta utskick har redan hanterats. Vyn har uppdaterats."
+        }
       }
     },
     "benefits": {

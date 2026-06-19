@@ -7,6 +7,8 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
+import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
+import { canHaltSending } from '@/components/broadcast/admin/can-halt-sending';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import {
@@ -113,6 +115,21 @@ export default async function AdminBroadcastDetailPage({
   const batches: ReadonlyArray<BatchBreakdownRow> = batchLoadFailed
     ? []
     : (batchManifests ?? []);
+  // F7.1a US1 FR-004 — an in-flight (`sending`) broadcast is still haltable
+  // while it has PENDING (not-yet-dispatched) batches. Derived from the
+  // already-loaded `batches` (no extra query) via the unit-tested pure helper.
+  // Dormant for <10k tenants (never split → no pending batches → never true).
+  const haltAvailable = canHaltSending(
+    broadcast.status,
+    batchLoadFailed,
+    batches,
+  );
+  // Pre-send Cancel vs mid-send Halt are mutually exclusive (disjoint statuses);
+  // both, plus Approve/Reject, share one right-aligned action row.
+  const isCancellable =
+    broadcast.status === 'submitted' || broadcast.status === 'approved';
+  const showAdminActionRow =
+    !isReadOnlyManager && (isCancellable || haltAvailable);
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -240,9 +257,35 @@ export default async function AdminBroadcastDetailPage({
         />
       ) : null}
 
-      {broadcast.status === 'submitted' && !isReadOnlyManager && !sanitisedBody.error ? (
-        <div className="flex justify-end">
-          <ReviewActions broadcastId={broadcast.broadcastId as string} />
+      {/* DV-12 / F7.1a — single action row holding all admin actions for the
+          broadcast's current state. Cancel covers submitted + approved (an
+          already-approved broadcast is still cancellable, FR-004a); Halt covers a
+          `sending` broadcast that still has pending (not-yet-dispatched) batches
+          (F7.1a US1 FR-004 — same /cancel endpoint, the use-case stops only the
+          pending batches). Approve/Reject (ReviewActions) render only for
+          `submitted` with a valid body. Cancel and Halt are mutually exclusive
+          (a broadcast is never both pre-send and sending). All live in ONE
+          right-aligned row (review #2). Manager role is excluded throughout
+          (broadcast write is denied for manager). Halt is dormant for SweCham
+          (<10k recipients never split → no pending batches). */}
+      {showAdminActionRow ? (
+        <div className="flex items-center justify-end gap-2">
+          {isCancellable ? (
+            <CancelBroadcastAction
+              broadcastId={broadcast.broadcastId as string}
+              surface="admin"
+            />
+          ) : null}
+          {haltAvailable ? (
+            <CancelBroadcastAction
+              broadcastId={broadcast.broadcastId as string}
+              surface="admin"
+              variant="halt"
+            />
+          ) : null}
+          {broadcast.status === 'submitted' && !sanitisedBody.error ? (
+            <ReviewActions broadcastId={broadcast.broadcastId as string} />
+          ) : null}
         </div>
       ) : null}
     </DetailContainer>
