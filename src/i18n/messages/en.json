@@ -2247,7 +2247,11 @@
         "reasonPlaceholder": "Why is this being cancelled…",
         "reasonHelp": "1–500 characters.",
         "confirm": "Cancel broadcast",
-        "cancel": "Keep"
+        "cancel": "Keep",
+        "errors": {
+          "reasonRequired": "A non-empty reason is required.",
+          "reasonTooLong": "Reason exceeds 500 characters."
+        }
       },
       "proxySubmitDialog": {
         "title": "Submit on behalf of member",
@@ -2291,6 +2295,9 @@
         "acceptPartialServerError": "Failed to accept partial delivery. Please try again.",
         "approved": "Broadcast approved.",
         "rejected": "Broadcast rejected. The member has been notified.",
+        "cancelled": "Broadcast cancelled. The member has been notified.",
+        "cancelError": "Could not cancel the broadcast. Please try again.",
+        "cancelTooLate": "This broadcast can no longer be cancelled — it has already started sending or completed.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."
@@ -4463,7 +4470,23 @@
           "sent": "Pending",
           "total": "Total"
         },
-        "back": "Back to broadcasts"
+        "back": "Back to broadcasts",
+        "cancelButton": "Cancel broadcast",
+        "cancelDialog": {
+          "title": "Cancel this broadcast?",
+          "description": "Once cancelled it cannot be re-sent. You can still view it in your history.",
+          "reasonLabel": "Reason (optional)",
+          "reasonPlaceholder": "Optional — why are you cancelling…",
+          "reasonHelp": "Up to 500 characters.",
+          "confirm": "Cancel broadcast",
+          "cancel": "Keep it",
+          "errors": { "reasonTooLong": "Reason exceeds 500 characters." }
+        },
+        "toast": {
+          "cancelled": "Broadcast cancelled.",
+          "cancelError": "Could not cancel the broadcast. Please try again.",
+          "cancelTooLate": "This broadcast can no longer be cancelled — it has already started sending."
+        }
       }
     },
     "benefits": {

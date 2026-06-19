@@ -2247,7 +2247,11 @@
         "reasonPlaceholder": "เหตุผลที่ยกเลิก…",
         "reasonHelp": "1–500 ตัวอักษร",
         "confirm": "ยกเลิก E-Blast",
-        "cancel": "ไม่ยกเลิก"
+        "cancel": "ไม่ยกเลิก",
+        "errors": {
+          "reasonRequired": "กรุณากรอกเหตุผล",
+          "reasonTooLong": "เหตุผลต้องไม่เกิน 500 ตัวอักษร"
+        }
       },
       "proxySubmitDialog": {
         "title": "ส่งแทนสมาชิก",
@@ -2291,6 +2295,9 @@
         "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง",
         "approved": "อนุมัติ E-Blast แล้ว",
         "rejected": "ปฏิเสธ E-Blast แล้ว และแจ้งสมาชิกทางอีเมลแล้ว",
+        "cancelled": "ยกเลิก E-Blast แล้ว แจ้งสมาชิกเรียบร้อย",
+        "cancelError": "ยกเลิก E-Blast ไม่สำเร็จ กรุณาลองอีกครั้ง",
+        "cancelTooLate": "ยกเลิกไม่ได้แล้ว — เริ่มส่งหรือเสร็จสิ้นแล้ว",
         "concurrentRace": "E-Blast นี้ถูกดำเนินการโดยผู้ดูแลคนอื่นไปแล้ว ระบบได้รีเฟรชหน้าให้แล้ว",
         "clearHalted": "ยกเลิกการระงับ E-Blast ของสมาชิกรายนี้แล้ว",
         "error": "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง"
@@ -4463,7 +4470,23 @@
           "sent": "อยู่ระหว่างส่ง",
           "total": "ทั้งหมด"
         },
-        "back": "กลับไปหน้า E-Blast"
+        "back": "กลับไปหน้า E-Blast",
+        "cancelButton": "ยกเลิก E-Blast",
+        "cancelDialog": {
+          "title": "ยกเลิก E-Blast นี้?",
+          "description": "เมื่อยกเลิกแล้วจะไม่สามารถส่งซ้ำได้ คุณยังดูประวัติได้เสมอ",
+          "reasonLabel": "เหตุผล (ไม่บังคับ)",
+          "reasonPlaceholder": "ไม่บังคับ — เหตุผลที่ยกเลิก…",
+          "reasonHelp": "ไม่เกิน 500 ตัวอักษร",
+          "confirm": "ยกเลิก E-Blast",
+          "cancel": "ไม่ยกเลิก",
+          "errors": { "reasonTooLong": "เหตุผลต้องไม่เกิน 500 ตัวอักษร" }
+        },
+        "toast": {
+          "cancelled": "ยกเลิก E-Blast แล้ว",
+          "cancelError": "ยกเลิก E-Blast ไม่สำเร็จ กรุณาลองอีกครั้ง",
+          "cancelTooLate": "ยกเลิก E-Blast นี้ไม่ได้แล้ว — เริ่มส่งแล้ว"
+        }
       }
     },
     "benefits": {
