@@ -7,6 +7,7 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
+import { AdminCancelAction } from '@/components/broadcast/admin/admin-cancel-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import {
@@ -243,6 +244,17 @@ export default async function AdminBroadcastDetailPage({
       {broadcast.status === 'submitted' && !isReadOnlyManager && !sanitisedBody.error ? (
         <div className="flex justify-end">
           <ReviewActions broadcastId={broadcast.broadcastId as string} />
+        </div>
+      ) : null}
+
+      {/* DV-12 — Cancel action: independent gate covers submitted + approved.
+          Must NOT live inside the ReviewActions block above (submitted-only)
+          so that admins can cancel an already-approved broadcast. Manager role
+          is excluded (broadcast write is denied for manager in requireAdminContext). */}
+      {(broadcast.status === 'submitted' || broadcast.status === 'approved') &&
+      !isReadOnlyManager ? (
+        <div className="flex justify-end">
+          <AdminCancelAction broadcastId={broadcast.broadcastId as string} />
         </div>
       ) : null}
     </DetailContainer>
