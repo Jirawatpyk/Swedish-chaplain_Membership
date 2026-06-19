@@ -44,7 +44,6 @@
       "success": "Lösenordet uppdaterat. Du kan nu logga in.",
       "errors": {
         "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
-        "tokenUsed": "Den här återställningslänken har redan använts.",
         "weakPassword": "Välj ett starkare lösenord.",
         "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat.",
         "tooShort": "Lösenordet måste vara minst 12 tecken",
@@ -78,7 +77,6 @@
       "submit": "Aktivera konto",
       "errors": {
         "tokenExpired": "Den här inbjudan har gått ut. Be en administratör skicka en ny.",
-        "tokenUsed": "Den här inbjudan har redan använts.",
         "contactAdminCta": "Kontakta en administratör för att begära en ny inbjudan."
       }
     },
@@ -1306,7 +1304,7 @@
         "editTitle": "Redigera kontakt",
         "description": "Lägg till ytterligare en person hos denna medlem. De läggs till som en sekundär kontakt.",
         "editDescription": "Uppdatera den här kontaktens uppgifter.",
-        "emailEditNote": "För att ändra kontaktens e-postadress, använd portalinbjudningsflödet.",
+        "emailEditNote": "För att ändra kontaktens e-postadress, redigera den på medlemmens redigeringssida. En okopplad kontakt måste först bjudas in till portalen.",
         "fieldRequired": "Detta fält är obligatoriskt.",
         "emailInvalid": "Ange en giltig e-postadress.",
         "submit": "Spara",
@@ -1366,20 +1364,7 @@
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
         "saved": "Sparat",
-        "columnHeaderHint": "Redigerbar",
-        "columnHeaderHintTooltip": "Dubbelklicka på en cell i denna kolumn för att redigera direkt. Tryck Enter för att spara, Escape för att avbryta.",
         "toggleStatus": "Växla status (nuvarande: {current})",
-        "editCountry": "Redigera land",
-        "editCountryHint": "Dubbelklicka för att redigera landskod (ISO 3166-1 alpha-2)",
-        "countryUpdated": "Land uppdaterat",
-        "countryInvalid": "Landskod måste vara 2 bokstäver (ISO).",
-        "countryInput": "Landskod (2 bokstäver)",
-        "editNotes": "Redigera anteckningar",
-        "editNotesHint": "Dubbelklicka för att redigera anteckningar",
-        "notesUpdated": "Anteckningar uppdaterade",
-        "notesSaved": "Anteckningar sparade",
-        "notesInput": "Redigera anteckningar",
-        "notesPlaceholder": "Lägg till anteckningar…",
         "networkError": "Nätverksfel. Kontrollera anslutningen."
       },
       "archive": {
@@ -2616,9 +2601,7 @@
         },
         "columns": {
           "reason": "Orsak"
-        },
-        "viewDetail": "Visa detaljer",
-        "viewDetailFor": "Visa detaljer för {company}"
+        }
       },
       "empty": {
         "title": "Inga förnyelser förfaller under de kommande 90 dagarna",
@@ -2969,8 +2952,6 @@
           },
           "escalate": {
             "label": "Eskalera",
-            "dialog_title": "Skapa kontaktutskick?",
-            "confirm": "Skapa ett utkast till uppsökande e-post för medlemmen?",
             "success": "Utkast till uppsökande skapat",
             "error": "Kunde inte skapa utkast"
           }

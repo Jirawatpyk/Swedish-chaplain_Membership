@@ -308,8 +308,7 @@ export function proxy(request: NextRequest): NextResponse {
     nextUrl.pathname.startsWith('/api/refunds') ||
     nextUrl.pathname.startsWith('/api/webhooks/stripe') ||
     nextUrl.pathname.startsWith('/api/tenant-payment-settings') ||
-    /^\/portal\/invoices\/[^/]+\/pay(?:\/|$)/.test(nextUrl.pathname) ||
-    /^\/admin\/invoices\/[^/]+\/refund(?:\/|$)/.test(nextUrl.pathname);
+    /^\/portal\/invoices\/[^/]+\/pay(?:\/|$)/.test(nextUrl.pathname);
   if (!env.features.f5OnlinePayment && isF5Path) {
     return build503(
       'feature_disabled',

@@ -5,10 +5,11 @@
  * `loadPipeline` use-case → snake_case URL params parsed → composed
  * UI (filter bar + urgency tabs + table + lapsed panel).
  *
- * Authz: admin OR manager. Manager is read-only — mutating row actions
- * (Send reminder / Cancel / Mark paid offline) render server-side as
- * disabled DropdownMenuItems for managers; the route handlers also
- * emit `f8_role_violation_blocked` audit on any manager-bypass attempt.
+ * Authz: admin OR manager. Manager is read-only — manager mutations are
+ * blocked server-side at the route handlers (403 + `f8_role_violation_blocked`
+ * audit), not via client-disabled menu items. The pipeline row menu only
+ * exposes Send reminder + Open; Cancel + Mark-paid-offline are not row actions
+ * at all (they live on the cycle-detail page).
  * Kill-switch: when `FEATURE_F8_RENEWALS=false`, the dashboard route
  * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */

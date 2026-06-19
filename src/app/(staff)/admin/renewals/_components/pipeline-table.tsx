@@ -9,9 +9,11 @@
  * pill · last reminder · status · linked invoice · row actions.
  *
  * WCAG 2.1 AA: keyboard-navigable rows, focus ring, screen-reader
- * dates via `<time dateTime>`, action menu uses `Tooltip` for icon-
- * only triggers. Action menu items: "Send reminder" is wired
- * (admin-only, manager sees disabled+tooltip); "Open" deep-links to
+ * dates via `<time dateTime>`, the icon-only row-actions trigger uses
+ * the native `title` attribute (no `Tooltip` primitive — it collides
+ * with the DropdownMenu popup positioning). Action menu items: "Send
+ * reminder" is wired (manager mutations are blocked server-side at the
+ * route handler, not via a client-disabled item); "Open" deep-links to
  * cycle detail; "Mark contacted" is reserved for US4 at-risk follow-
  * on. Cancel + mark-paid-offline live on the cycle detail page.
  */
