@@ -38,6 +38,7 @@ import {
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
+import { MemberCancelAction } from './_components/member-cancel-action';
 
 /* The detail page is per-(tenant, member, broadcastId) — caching across
  * users doesn't apply, and the route depends on the member-scoped
@@ -235,6 +236,13 @@ export default async function BroadcastDetailPage(props: {
           />
         </CardContent>
       </Card>
+
+      {/* DV-12 — member Cancel action. Visible only when the broadcast is
+          still cancellable (submitted or approved). Ownership is enforced
+          upstream by getMemberBroadcast (cross-member probe → 404). */}
+      {(broadcast.status === 'submitted' || broadcast.status === 'approved') ? (
+        <MemberCancelAction broadcastId={broadcast.broadcastId as string} />
+      ) : null}
     </DetailContainer>
   );
 }
