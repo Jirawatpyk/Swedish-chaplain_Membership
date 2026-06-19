@@ -44,7 +44,6 @@
       "success": "Password updated. You can now sign in.",
       "errors": {
         "tokenExpired": "This reset link has expired. Request a new one.",
-        "tokenUsed": "This reset link has already been used.",
         "weakPassword": "Choose a stronger password.",
         "passwordBreached": "This password appears in a known data breach. Choose a different one.",
         "tooShort": "Password must be at least 12 characters",
@@ -78,7 +77,6 @@
       "submit": "Activate account",
       "errors": {
         "tokenExpired": "This invitation has expired. Ask an administrator to send a new one.",
-        "tokenUsed": "This invitation has already been used.",
         "contactAdminCta": "Contact an administrator to request a new invitation."
       }
     },
@@ -1306,7 +1304,7 @@
         "editTitle": "Edit contact",
         "description": "Add another person at this member. They are added as a secondary contact.",
         "editDescription": "Update this contact's details.",
-        "emailEditNote": "To change this contact's email, use the portal invitation flow.",
+        "emailEditNote": "To change this contact's email, edit it on the member Edit page. An unlinked contact must be invited to the portal first.",
         "fieldRequired": "This field is required.",
         "emailInvalid": "Enter a valid email address.",
         "submit": "Save",
@@ -1366,20 +1364,7 @@
         "saveFailed": "Save failed. Reverted.",
         "saving": "Saving…",
         "saved": "Saved",
-        "columnHeaderHint": "Editable",
-        "columnHeaderHintTooltip": "Double-click any cell in this column to edit inline. Press Enter to save, Escape to cancel.",
         "toggleStatus": "Toggle status (currently {current})",
-        "editCountry": "Edit country",
-        "editCountryHint": "Double-click to edit country (ISO 3166-1 alpha-2)",
-        "countryUpdated": "Country updated",
-        "countryInvalid": "Country must be a 2-letter ISO code.",
-        "countryInput": "Country code (2 letters)",
-        "editNotes": "Edit notes",
-        "editNotesHint": "Double-click to edit notes",
-        "notesUpdated": "Notes updated",
-        "notesSaved": "Notes saved",
-        "notesInput": "Edit notes",
-        "notesPlaceholder": "Add notes…",
         "networkError": "Network error. Check your connection."
       },
       "archive": {
@@ -2616,9 +2601,7 @@
         },
         "columns": {
           "reason": "Reason"
-        },
-        "viewDetail": "View detail",
-        "viewDetailFor": "View detail for {company}"
+        }
       },
       "empty": {
         "title": "No renewals due in the next 90 days",
@@ -2969,8 +2952,6 @@
           },
           "escalate": {
             "label": "Escalate",
-            "dialog_title": "Escalate to outreach?",
-            "confirm": "Draft an outreach email for this member?",
             "success": "Outreach drafted",
             "error": "Failed to draft outreach"
           }

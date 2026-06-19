@@ -9,10 +9,10 @@
  *   - edit → PATCH  /api/members/[memberId]/contacts/[id]   (updateContactFields)
  *
  * Email is collected only on ADD (addContactSchema requires it). On EDIT
- * the email is shown read-only — changing a contact's email needs the
- * constrained portal-link flow (FR-012a), surfaced elsewhere — so this
- * dialog never sends an `email` field on PATCH and only patches the fields
- * that actually changed.
+ * the email is shown read-only — a linked contact's email is changed on the
+ * member Edit form (FR-012a direct change); an unlinked contact must be
+ * invited to the portal first — so this dialog never sends an `email` field
+ * on PATCH and only patches the fields that actually changed.
  */
 
 import { useMemo, useState } from 'react';

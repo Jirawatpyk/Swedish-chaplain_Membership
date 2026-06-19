@@ -90,10 +90,14 @@ const styles = StyleSheet.create({
   // reads as a clarifying note, not a new line item.
   vatInclusiveNote: { marginTop: 4, fontSize: 8, color: '#555', textAlign: 'right' },
   watermark: {
+    // FR-001a / US1-AS5 — the mandated draft watermark is a long bilingual
+    // string ("DRAFT / ร่าง — NOT A TAX DOCUMENT"), so the font is sized down
+    // + repositioned from the old single-word "PREVIEW" so it fits on one
+    // diagonal line across A4. Visual fit to be confirmed on the preview deploy.
     position: 'absolute',
-    top: 280,
-    left: 120,
-    fontSize: 80,
+    top: 360,
+    left: 40,
+    fontSize: 28,
     color: '#eee',
     transform: 'rotate(-30deg)',
     fontWeight: 700,
@@ -236,7 +240,11 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {isPreview && <Text style={styles.watermark}>PREVIEW</Text>}
+        {isPreview && (
+          <Text style={styles.watermark}>
+            DRAFT / {shapeThai('ร่าง')} — NOT A TAX DOCUMENT
+          </Text>
+        )}
         {isVoid && (
           <Text fixed style={styles.voidStamp}>
             VOID / {shapeThai('ยกเลิก')}
