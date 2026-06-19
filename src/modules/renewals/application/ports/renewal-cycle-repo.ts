@@ -88,6 +88,26 @@ export interface RenewalCyclePage {
   readonly totalCount?: number;
 }
 
+// ---------------------------------------------------------------------------
+// DV-18 — "Members without renewal cycle" admin tray
+// ---------------------------------------------------------------------------
+
+export interface ListMembersWithoutCycleOpts {
+  readonly limit: number;
+}
+
+export interface MemberWithoutCycleRow {
+  readonly memberId: string;
+  readonly companyName: string;
+  /** `registration_date` (a `date` column) surfaced as a YYYY-MM-DD string. */
+  readonly registrationDate: string;
+}
+
+export interface MembersWithoutCyclePage {
+  readonly items: ReadonlyArray<MemberWithoutCycleRow>;
+  readonly totalCount: number;
+}
+
 export interface RenewalCycleRepo {
   /** Insert a new cycle (typically called from F4 invoice-paid hook in Phase 5+). */
   insert(
@@ -345,6 +365,29 @@ export interface RenewalCycleRepo {
     tenantId: string,
     opts: PipelineQueryOpts,
   ): Promise<PipelineQueryResult>;
+
+  /**
+   * DV-18 — members that have NO `renewal_cycles` row at all (the renewal
+   * gap the admin tray surfaces). Anti-join LEADS from `members` with a
+   * correlated `NOT EXISTS` against the cycle table, EXCLUDING
+   * `status='archived'` AND `erased_at IS NOT NULL` (COMP-1 H4 — erasure
+   * keeps status='active', so a status filter alone won't hide an erased
+   * member). Ordered `registration_date DESC, member_id ASC`.
+   *
+   * Single capped page (no pagination cursor — the tray is a best-effort
+   * visibility widget like the pending-reactivation section; a chamber has
+   * well under the 200-row cap of no-cycle members). Returns `totalCount`
+   * (the WHOLE anti-join size, via a separate `count(*)` aggregate run in
+   * parallel with the page query) so the tray can show "N members" and flag
+   * when the rendered page is truncated past the cap.
+   *
+   * Tenant isolation: RLS+FORCE on BOTH `members` and `renewal_cycles` —
+   * the adapter threads `tx` from `runInTenant`, never the global `db`.
+   */
+  listMembersWithoutCycle(
+    tenantId: string,
+    opts: ListMembersWithoutCycleOpts,
+  ): Promise<MembersWithoutCyclePage>;
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@
  * `listEligibleForDispatch`) are implemented for port completeness but
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
-import { and, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
@@ -29,7 +29,9 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
   InvoiceLinkConflictError,
+  type ListMembersWithoutCycleOpts,
   type ListRenewalCyclesOpts,
+  type MembersWithoutCyclePage,
   type NewRenewalCycleInput,
   type PipelineQueryOpts,
   type PipelineQueryResult,
@@ -978,6 +980,72 @@ export function makeDrizzleRenewalCycleRepo(
         return {
           items: pageRows.map(rowToDomain),
           nextCursor: buildNextCursor(pageRows, hasNextPage),
+        };
+      });
+    },
+
+    async listMembersWithoutCycle(
+      _tenantId: string,
+      opts: ListMembersWithoutCycleOpts,
+    ): Promise<MembersWithoutCyclePage> {
+      // DV-18 — members with NO renewal_cycles row, EXCLUDING archived +
+      // GDPR-erased. RLS+FORCE on BOTH tables; threading `tx` from
+      // runInTenant keeps the anti-join tenant-scoped (NO global db).
+      return runInTenant(tenant, async (tx) => {
+        const limit = Math.max(1, Math.min(opts.limit, 200));
+
+        // Correlated NOT EXISTS: the member owns NO cycle. Reads only
+        // `renewal_cycles` in the subquery (RLS-scoped) — no join widens
+        // the `members` projection.
+        const noCycle = sql`NOT EXISTS (
+          SELECT 1 FROM ${renewalCycles} rc
+          WHERE rc.tenant_id = ${members.tenantId}
+            AND rc.member_id = ${members.memberId}
+        )`;
+
+        const filters: SQL[] = [
+          noCycle,
+          // Archived members are intentionally hidden — an archived row is
+          // not an operational "renewal gap" the admin needs to act on.
+          ne(members.status, 'archived'),
+          // COMP-1 H4 — erasure keeps status='active' and stamps only
+          // erased_at, so a status filter alone does NOT hide an erased
+          // member. Drop them from this operational enumeration.
+          isNull(members.erasedAt),
+        ];
+
+        // `totalCount` is the WHOLE anti-join size via a separate `count(*)`
+        // aggregate, run in parallel with the (single, capped) page query to
+        // save a round-trip. The tray shows it as "N members" and flags when
+        // the rendered page is truncated past the cap.
+        const countQueryPromise = tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(members)
+          .where(and(...filters));
+
+        const pageQueryPromise = tx
+          .select({
+            memberId: members.memberId,
+            companyName: members.companyName,
+            registrationDate: members.registrationDate,
+          })
+          .from(members)
+          .where(and(...filters))
+          .orderBy(desc(members.registrationDate), asc(members.memberId))
+          .limit(limit);
+
+        const [countRows, rows] = await Promise.all([
+          countQueryPromise,
+          pageQueryPromise,
+        ]);
+
+        return {
+          items: rows.map((r) => ({
+            memberId: r.memberId,
+            companyName: r.companyName,
+            registrationDate: r.registrationDate,
+          })),
+          totalCount: countRows[0]?.count ?? 0,
         };
       });
     },

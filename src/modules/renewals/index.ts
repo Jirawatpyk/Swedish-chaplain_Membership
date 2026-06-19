@@ -283,6 +283,10 @@ export type {
   PipelineRow,
   PipelineSummary,
   UrgencyBucket,
+  // DV-18 — members-without-cycle tray shapes.
+  ListMembersWithoutCycleOpts,
+  MemberWithoutCycleRow,
+  MembersWithoutCyclePage,
 } from './application/ports/renewal-cycle-repo';
 
 // --- Phase 3 use-cases (Wave H2 T056-T059) ---------------------------------
@@ -500,6 +504,15 @@ export {
   loadMembersMembershipStatus,
   type LoadMembersMembershipStatusInput,
 } from './application/use-cases/load-members-membership-status';
+
+// DV-18 — read-only "Members without renewal cycle" tray for the
+// `/admin/renewals` dashboard.
+export {
+  loadMembersWithoutCycle,
+  MEMBERS_WITHOUT_CYCLE_DEFAULT_LIMIT,
+  type LoadMembersWithoutCycleInput,
+  type LoadMembersWithoutCycleOutput,
+} from './application/use-cases/load-members-without-cycle';
 
 export {
   confirmRenewal,
