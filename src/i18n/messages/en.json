@@ -2251,6 +2251,18 @@
           "reasonTooLong": "Reason exceeds 500 characters."
         }
       },
+      "haltDialog": {
+        "title": "Halt this broadcast mid-send?",
+        "description": "This stops every batch that hasn't been dispatched yet. Batches already sent to Resend cannot be recalled. Provide a reason for the audit log + member notification.",
+        "reasonLabel": "Reason for halting",
+        "reasonPlaceholder": "Why is this being halted…",
+        "reasonHelp": "1–500 characters.",
+        "confirm": "Halt sending",
+        "cancel": "Keep sending",
+        "errors": {
+          "reasonTooLong": "Reason exceeds 500 characters."
+        }
+      },
       "proxySubmitDialog": {
         "title": "Submit on behalf of member",
         "description": "Compose a broadcast that will be queued for review with the proxied member's quota.",
@@ -2294,8 +2306,9 @@
         "approved": "Broadcast approved.",
         "rejected": "Broadcast rejected. The member has been notified.",
         "cancelled": "Broadcast cancelled. The member has been notified.",
+        "halted": "Sending halted. Pending batches were stopped; already-sent batches will still deliver.",
         "cancelError": "Could not cancel the broadcast. Please try again.",
-        "cancelTooLate": "This broadcast can no longer be cancelled — it has already started sending or completed.",
+        "cancelTooLate": "This broadcast can no longer be cancelled — it has already finished sending or was completed.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."

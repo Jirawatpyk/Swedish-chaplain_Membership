@@ -2251,6 +2251,18 @@
           "reasonTooLong": "Anledningen överskrider 500 tecken."
         }
       },
+      "haltDialog": {
+        "title": "Stoppa detta utskick mitt i sändningen?",
+        "description": "Detta stoppar alla batchar som ännu inte skickats. Batchar som redan skickats till Resend kan inte återkallas. Ange en anledning för granskningsloggen + medlemsmeddelande.",
+        "reasonLabel": "Anledning till stopp",
+        "reasonPlaceholder": "Varför stoppas detta…",
+        "reasonHelp": "1–500 tecken.",
+        "confirm": "Stoppa sändning",
+        "cancel": "Fortsätt sända",
+        "errors": {
+          "reasonTooLong": "Anledningen överskrider 500 tecken."
+        }
+      },
       "proxySubmitDialog": {
         "title": "Skicka in å medlems vägnar",
         "description": "Skapa ett utskick som köläggs för granskning med ombudsmedlemmens kvot.",
@@ -2294,8 +2306,9 @@
         "approved": "Utskicket har godkänts.",
         "rejected": "Utskicket har avvisats. Medlemmen har meddelats.",
         "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
+        "halted": "Sändningen stoppades. Väntande batchar stoppades; redan skickade batchar levereras ändå.",
         "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
-        "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan börjat skickas eller slutförts.",
+        "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan skickats färdigt eller slutförts.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."

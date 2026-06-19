@@ -114,6 +114,15 @@ export default async function AdminBroadcastDetailPage({
   const batches: ReadonlyArray<BatchBreakdownRow> = batchLoadFailed
     ? []
     : (batchManifests ?? []);
+  // F7.1a US1 FR-004 — an in-flight (`sending`) broadcast is still haltable
+  // while it has PENDING (not-yet-dispatched) batches. A batch in `sending`
+  // state is already at Resend and cannot be recalled, so only `pending` rows
+  // count. Derived from the already-loaded `batches` (no extra query); a load
+  // failure → no halt control (fail-safe). Dormant for <10k tenants (never split).
+  const canHaltSending =
+    broadcast.status === 'sending' &&
+    !batchLoadFailed &&
+    batches.some((b) => b.status === 'pending');
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -241,26 +250,35 @@ export default async function AdminBroadcastDetailPage({
         />
       ) : null}
 
-      {/* DV-12 — single action row. Cancel covers submitted + approved (an
-          already-approved broadcast is still cancellable, FR-004a), while
-          Approve/Reject (ReviewActions) only render for `submitted` with a
-          valid body. Both live in ONE right-aligned row so they read as one
-          action group (review #2 — previously two stacked rows). Manager role
-          is excluded throughout (broadcast write is denied for manager).
-
-          Scope note (review #4): the domain canCancel policy also permits
-          cancelling a `sending` broadcast that has pending split batch_manifests
-          (F7.1a US1 FR-004 mid-dispatch halt). That state is intentionally NOT
-          surfaced here — it is dormant for SweCham (<10k recipients never split)
-          and is tracked as F7.1a follow-up; DV-12's scope is "cancellable until
-          approved". */}
-      {(broadcast.status === 'submitted' || broadcast.status === 'approved') &&
+      {/* DV-12 / F7.1a — single action row holding all admin actions for the
+          broadcast's current state. Cancel covers submitted + approved (an
+          already-approved broadcast is still cancellable, FR-004a); Halt covers a
+          `sending` broadcast that still has pending (not-yet-dispatched) batches
+          (F7.1a US1 FR-004 — same /cancel endpoint, the use-case stops only the
+          pending batches). Approve/Reject (ReviewActions) render only for
+          `submitted` with a valid body. Cancel and Halt are mutually exclusive
+          (a broadcast is never both pre-send and sending). All live in ONE
+          right-aligned row (review #2). Manager role is excluded throughout
+          (broadcast write is denied for manager). Halt is dormant for SweCham
+          (<10k recipients never split → no pending batches). */}
+      {((broadcast.status === 'submitted' || broadcast.status === 'approved') ||
+        canHaltSending) &&
       !isReadOnlyManager ? (
         <div className="flex items-center justify-end gap-2">
-          <CancelBroadcastAction
-            broadcastId={broadcast.broadcastId as string}
-            surface="admin"
-          />
+          {broadcast.status === 'submitted' ||
+          broadcast.status === 'approved' ? (
+            <CancelBroadcastAction
+              broadcastId={broadcast.broadcastId as string}
+              surface="admin"
+            />
+          ) : null}
+          {canHaltSending ? (
+            <CancelBroadcastAction
+              broadcastId={broadcast.broadcastId as string}
+              surface="admin"
+              variant="halt"
+            />
+          ) : null}
           {broadcast.status === 'submitted' && !sanitisedBody.error ? (
             <ReviewActions broadcastId={broadcast.broadcastId as string} />
           ) : null}

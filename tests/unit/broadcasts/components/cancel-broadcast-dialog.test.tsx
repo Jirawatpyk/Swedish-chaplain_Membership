@@ -159,6 +159,33 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
+  it('halt variant (namespace=haltDialog, successToastKey=halted) → success toasts halted', async () => {
+    // F7.1a mid-dispatch halt reuses this dialog with the haltDialog namespace
+    // + a distinct success toast key; same /cancel endpoint.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as Response);
+    renderAdmin({
+      namespace: 'admin.broadcasts.haltDialog',
+      successToastKey: 'halted',
+    });
+    fireEvent.change(
+      screen.getByLabelText(
+        new RegExp(en.admin.broadcasts.haltDialog.reasonLabel, 'i'),
+      ),
+      { target: { value: 'stop the send' } },
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: en.admin.broadcasts.haltDialog.confirm }),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        en.admin.broadcasts.toast.halted,
+      ),
+    );
+  });
+
   it('409 broadcast_cancel_too_late → toasts cancelTooLate', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,

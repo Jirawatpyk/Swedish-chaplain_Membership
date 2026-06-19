@@ -41,6 +41,12 @@ export interface CancelBroadcastDialogProps {
    */
   readonly reasonRequired: boolean;
   /**
+   * Success toast key under `toastNamespace`. Defaults to 'cancelled'; the
+   * F7.1a mid-dispatch halt variant passes 'halted' (same /cancel endpoint,
+   * the use-case stops only the pending batches).
+   */
+  readonly successToastKey?: string;
+  /**
    * F7-A11Y-1 — ref to the trigger button so focus returns to it on close
    * (Cancel / ESC paths where the trigger survives).
    */
@@ -54,6 +60,7 @@ export function CancelBroadcastDialog({
   namespace,
   toastNamespace,
   reasonRequired,
+  successToastKey = 'cancelled',
   triggerRef,
 }: CancelBroadcastDialogProps): React.ReactElement {
   const tToast = useTranslations(toastNamespace);
@@ -72,7 +79,7 @@ export function CancelBroadcastDialog({
         body,
       });
       if (res.ok) {
-        toast.success(tToast('cancelled'));
+        toast.success(tToast(successToastKey));
         onOpenChange(false);
         router.refresh();
         return;
