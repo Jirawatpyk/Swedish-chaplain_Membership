@@ -38,7 +38,7 @@ import {
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
-import { MemberCancelAction } from './_components/member-cancel-action';
+import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 
 /* The detail page is per-(tenant, member, broadcastId) — caching across
  * users doesn't apply, and the route depends on the member-scoped
@@ -239,9 +239,19 @@ export default async function BroadcastDetailPage(props: {
 
       {/* DV-12 — member Cancel action. Visible only when the broadcast is
           still cancellable (submitted or approved). Ownership is enforced
-          upstream by getMemberBroadcast (cross-member probe → 404). */}
+          upstream by getMemberBroadcast (cross-member probe → 404).
+
+          Scope note (review #4): the domain canCancel policy also permits
+          cancelling a `sending` broadcast with pending split batch_manifests
+          (F7.1a US1) — intentionally not surfaced here (dormant for <10k
+          recipients; tracked as F7.1a follow-up). */}
       {(broadcast.status === 'submitted' || broadcast.status === 'approved') ? (
-        <MemberCancelAction broadcastId={broadcast.broadcastId as string} />
+        <div className="flex justify-end">
+          <CancelBroadcastAction
+            broadcastId={broadcast.broadcastId as string}
+            surface="member"
+          />
+        </div>
       ) : null}
     </DetailContainer>
   );

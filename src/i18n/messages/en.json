@@ -2236,7 +2236,6 @@
         "confirm": "Reject",
         "cancel": "Cancel",
         "errors": {
-          "reasonRequired": "A non-empty reason is required.",
           "reasonTooLong": "Reason exceeds 2,000 characters."
         }
       },
@@ -2249,7 +2248,6 @@
         "confirm": "Cancel broadcast",
         "cancel": "Keep",
         "errors": {
-          "reasonRequired": "A non-empty reason is required.",
           "reasonTooLong": "Reason exceeds 500 characters."
         }
       },
@@ -4485,7 +4483,8 @@
         "toast": {
           "cancelled": "Broadcast cancelled.",
           "cancelError": "Could not cancel the broadcast. Please try again.",
-          "cancelTooLate": "This broadcast can no longer be cancelled — it has already started sending."
+          "cancelTooLate": "This broadcast can no longer be cancelled — it has already started sending.",
+          "concurrentRace": "This broadcast was already actioned. The view has been refreshed."
         }
       }
     },

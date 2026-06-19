@@ -58,6 +58,12 @@
 - **F8:** `admin.renewals.lapsed.viewDetail` (component uses `actions.open`); `admin.renewals.tier_upgrades.actions.escalate.dialog_title` / `.confirm` (Escalate has no dialog).
 - **F1:** `auth.resetPassword.errors.tokenUsed` / `auth.invite.errors.tokenUsed` (dead-token pages always render `tokenExpired`).
 - **F5 (dead route regex):** `proxy.ts:312` matches a `/admin/invoices/[id]/refund` page route that doesn't exist (refund is a `?refund=1` dialog). Harmless, but implies an unbuilt route.
+- **F7 (RESOLVED 2026-06-19):** `admin.broadcasts.cancelDialog.errors.reasonRequired` + `admin.broadcasts.rejectDialog.errors.reasonRequired` were dead disabled-button-UX keys — **removed** from en/th/sv in the DV-12 code-review fix-wave (reject + cancel now share one `ReasonConfirmationDialog`).
+
+## Open follow-ups (post DV-12 fix-wave, 2026-06-19)
+
+- **F7.1a — `sending`+batches cancel has no UI.** The domain `canCancel` policy (`cancel-cutoff-policy.ts`) permits cancelling a `sending` broadcast that has pending split `batch_manifests` (US1 FR-004 mid-dispatch halt), and `makeCancelBroadcastDeps` wires the real port — but neither the admin nor member detail page surfaces a Cancel control for that state (DV-12 scope is "cancellable until approved"). **Dormant** for SweCham (<10k recipients never split). Build the mid-dispatch halt UI when a >10k tenant onboards.
+- **Dialog-family dedup (optional).** `approve-dialog` / `accept-partial-dialog` / `retry-confirmation-dialog` still each carry their own confirm-dialog shell. They differ more than reject/cancel did, so they were left as-is; consider migrating them onto `ReasonConfirmationDialog` (or a shared confirm-shell) in a dedicated pass.
 
 ## G. Refuted (checked — NOT a real divergence)
 

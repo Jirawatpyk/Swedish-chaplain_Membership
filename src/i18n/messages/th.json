@@ -2236,7 +2236,6 @@
         "confirm": "ปฏิเสธ",
         "cancel": "ยกเลิก",
         "errors": {
-          "reasonRequired": "กรุณากรอกเหตุผล",
           "reasonTooLong": "เหตุผลต้องไม่เกิน 2,000 ตัวอักษร"
         }
       },
@@ -2249,7 +2248,6 @@
         "confirm": "ยกเลิก E-Blast",
         "cancel": "ไม่ยกเลิก",
         "errors": {
-          "reasonRequired": "กรุณากรอกเหตุผล",
           "reasonTooLong": "เหตุผลต้องไม่เกิน 500 ตัวอักษร"
         }
       },
@@ -4485,7 +4483,8 @@
         "toast": {
           "cancelled": "ยกเลิก E-Blast แล้ว",
           "cancelError": "ยกเลิก E-Blast ไม่สำเร็จ กรุณาลองอีกครั้ง",
-          "cancelTooLate": "ยกเลิก E-Blast นี้ไม่ได้แล้ว — เริ่มส่งแล้ว"
+          "cancelTooLate": "ยกเลิก E-Blast นี้ไม่ได้แล้ว — เริ่มส่งแล้ว",
+          "concurrentRace": "E-Blast นี้ถูกดำเนินการไปแล้ว ระบบได้รีเฟรชหน้าให้แล้ว"
         }
       }
     },

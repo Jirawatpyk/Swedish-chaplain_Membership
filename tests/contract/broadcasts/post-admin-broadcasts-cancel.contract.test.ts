@@ -134,9 +134,12 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
 
   it('200 happy: returns { broadcastId, status, cancelledAt, reservationReleased }', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    // Aggregate status is deliberately NOT 'cancelled' here so the assertion
+    // proves the route returns the literal status: 'cancelled' on success
+    // (its documented contract), rather than merely echoing the fixture.
     cancelBroadcastMock.mockResolvedValueOnce(
       ok({
-        broadcast: broadcastFixture(),
+        broadcast: broadcastFixture({ status: 'approved' }),
         reservationReleased: true as const,
       }),
     );

@@ -2236,7 +2236,6 @@
         "confirm": "Avvisa",
         "cancel": "Avbryt",
         "errors": {
-          "reasonRequired": "En icke-tom anledning krävs.",
           "reasonTooLong": "Anledningen överskrider 2 000 tecken."
         }
       },
@@ -2249,7 +2248,6 @@
         "confirm": "Avbryt utskick",
         "cancel": "Behåll utskick",
         "errors": {
-          "reasonRequired": "En icke-tom anledning krävs.",
           "reasonTooLong": "Anledningen överskrider 500 tecken."
         }
       },
@@ -4485,7 +4483,8 @@
         "toast": {
           "cancelled": "Utskicket har avbrutits.",
           "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
-          "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan börjat skickas."
+          "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan börjat skickas.",
+          "concurrentRace": "Detta utskick har redan hanterats. Vyn har uppdaterats."
         }
       }
     },

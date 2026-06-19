@@ -1,10 +1,11 @@
 // tests/unit/broadcasts/components/cancel-broadcast-dialog.test.tsx
 /**
- * DV-12 — Unit tests for <CancelBroadcastDialog>.
+ * DV-12 — Unit tests for <CancelBroadcastDialog> (thin wrapper over the shared
+ * <ReasonConfirmationDialog>).
  *
  * Pattern: real NextIntlClientProvider + real en.json, mock fetch +
  * sonner + next/navigation. Real timers (global setup uses fake timers
- * which hang userEvent/waitFor). fireEvent for click/type (mirrors
+ * which hang waitFor). fireEvent for click/type (mirrors
  * resend-verification-button.test.tsx).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -26,7 +27,6 @@ function renderAdmin(extra: Partial<React.ComponentProps<typeof CancelBroadcastD
   render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
       <CancelBroadcastDialog
-        broadcastId="b1"
         open
         onOpenChange={onOpenChange}
         endpoint="/api/admin/broadcasts/b1/cancel"
@@ -47,7 +47,6 @@ function renderMember(
   render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
       <CancelBroadcastDialog
-        broadcastId="b1"
         open
         onOpenChange={onOpenChange}
         endpoint="/api/broadcasts/b1/cancel"
@@ -60,6 +59,12 @@ function renderMember(
   );
   return { onOpenChange };
 }
+
+// "Reason (optional)" contains parens — escape for use in a RegExp matcher.
+const MEMBER_REASON_LABEL = new RegExp(
+  en.portal.broadcasts.detail.cancelDialog.reasonLabel.replace(/[()]/g, '\\$&'),
+  'i',
+);
 
 // ── timer + mock lifecycle ──────────────────────────────────────────────
 
@@ -75,6 +80,11 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // Restore the per-test fetch spy so its impl never leaks into a later test
+  // (the global afterEach only clearAllMocks — call history, not the spy impl).
+  // Safe: restoreAllMocks restores vi.spyOn spies only; it does not un-register
+  // the vi.mock factories for sonner / next-navigation.
+  vi.restoreAllMocks();
   vi.useFakeTimers();
 });
 
@@ -96,16 +106,33 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(confirmBtn).toBeDisabled();
   });
 
-  it('does NOT submit and shows inline error when reason is empty and confirm clicked', async () => {
+  it('auto-focuses the reason textarea on open (admin/required path)', async () => {
+    // reasonRequired=true → the shared dialog double-RAFs an imperative
+    // textarea.focus(); jsdom's real RAF + .focus() DO set document.activeElement
+    // for the attached textarea (unlike Base UI's portal initialFocus). This is a
+    // real focus assertion for the admin path (the member path is covered
+    // structurally below + by e2e @a11y).
+    renderAdmin();
+    const textarea = screen.getByLabelText(
+      new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
+    );
+    await waitFor(() => expect(textarea).toHaveFocus());
+  });
+
+  it('confirm stays disabled and does NOT fetch when reason is empty (no inline error — disabled-button UX)', () => {
+    // The required-reason rule is enforced by DISABLING confirm, not by an
+    // inline "reason required" error. Assert: confirm disabled, NO alert (the
+    // only inline alert is reasonTooLong, gated on over-cap), and no request.
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(null, { status: 200 }),
     );
     renderAdmin();
-    // Confirm button should be disabled for empty reason
-    const confirmBtn = screen.getByRole('button', {
-      name: en.admin.broadcasts.cancelDialog.confirm,
-    });
-    expect(confirmBtn).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: en.admin.broadcasts.cancelDialog.confirm,
+      }),
+    ).toBeDisabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -116,12 +143,10 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     } as Response);
     const onOpenChange = vi.fn();
     renderAdmin({ onOpenChange });
-    // Type a valid reason
     const textarea = screen.getByLabelText(
       new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
     );
     fireEvent.change(textarea, { target: { value: 'duplicate send' } });
-    // Click confirm
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -157,7 +182,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     );
   });
 
-  it('409 broadcast_concurrent_action_blocked → toasts cancelError + closes dialog', async () => {
+  it('409 broadcast_concurrent_action_blocked → toasts concurrentRace + closes dialog', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
@@ -176,7 +201,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     );
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        en.admin.broadcasts.toast.cancelError,
+        en.admin.broadcasts.toast.concurrentRace,
       ),
     );
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -227,22 +252,22 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
 // ── Member (reasonRequired=false) ───────────────────────────────────────
 
 describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
-  it('C-1: Cancel ("Keep it") button receives initial focus when open (WCAG 2.1 AA SC 2.4.3)', async () => {
-    // Base UI's initialFocus prop wires the ref to the FloatingFocusManager.
-    // Under jsdom, Base UI's portal focus machinery does not fire the actual
-    // browser focus event synchronously — document.activeElement stays on
-    // <body>. toHaveFocus() therefore cannot pass in jsdom for portal dialogs.
-    // Observable instead: the Cancel button renders and cancelRef is wired as
-    // the initialFocus target on AlertDialogContent (confirmed by component
-    // reading + typecheck). We assert the button is present and not disabled,
-    // which is the structural precondition for initialFocus to work in a real
-    // browser environment.
+  it('member path wires Cancel as the initial-focus target and does NOT auto-focus the textarea', () => {
+    // reasonRequired=false → the shared dialog hands initial focus to the Cancel
+    // ("Keep it") button via Base UI `initialFocus={cancelRef}` and SKIPS the
+    // textarea auto-focus RAF. Base UI's portal focus machinery does not fire a
+    // real focus event under jsdom, so we cannot assert toHaveFocus() on the
+    // Cancel button here (covered by e2e @a11y on preview). What we CAN assert
+    // deterministically: the Cancel button is the wired target (present + not
+    // disabled) AND the textarea is NOT auto-focused (proving the required-path
+    // RAF was correctly skipped for the optional path).
     renderMember();
     const cancelBtn = screen.getByRole('button', {
       name: en.portal.broadcasts.detail.cancelDialog.cancel,
     });
     expect(cancelBtn).toBeInTheDocument();
     expect(cancelBtn).not.toBeDisabled();
+    expect(screen.getByLabelText(MEMBER_REASON_LABEL)).not.toHaveFocus();
   });
 
   it('shows the member dialog title when open', () => {
@@ -261,7 +286,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     ).not.toBeDisabled();
   });
 
-  it('member success with empty reason → toasts cancelled + onOpenChange(false)', async () => {
+  it('member success with empty reason → toasts cancelled + onOpenChange(false) + router.refresh', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -279,6 +304,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
       ),
     );
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(refreshSpy).toHaveBeenCalled();
   });
 
   it('member reason > 500 chars → shows reasonTooLong + confirm disabled', () => {
@@ -286,12 +312,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
       new Response(null, { status: 200 }),
     );
     renderMember();
-    // Escape parentheses in "Reason (optional)" for use in a RegExp
-    const escapedLabel = en.portal.broadcasts.detail.cancelDialog.reasonLabel.replace(
-      /[()]/g,
-      '\\$&',
-    );
-    const textarea = screen.getByLabelText(new RegExp(escapedLabel, 'i'));
+    const textarea = screen.getByLabelText(MEMBER_REASON_LABEL);
     fireEvent.change(textarea, { target: { value: 'b'.repeat(501) } });
     expect(
       screen.getByRole('alert'),
@@ -319,6 +340,25 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         en.portal.broadcasts.detail.toast.cancelTooLate,
+      ),
+    );
+  });
+
+  it('member 409 concurrent → toasts concurrentRace', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'broadcast_concurrent_action_blocked' } }),
+    } as unknown as Response);
+    renderMember();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: en.portal.broadcasts.detail.cancelDialog.confirm,
+      }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        en.portal.broadcasts.detail.toast.concurrentRace,
       ),
     );
   });

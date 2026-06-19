@@ -137,9 +137,12 @@ describe('POST /api/broadcasts/[id]/cancel — DV-12 member path (T113)', () => 
 
   it('200 happy: no reason (member reason is optional)', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    // Aggregate status is deliberately NOT 'cancelled' here so the assertion
+    // proves the route returns the literal status: 'cancelled' on success
+    // (its documented contract), rather than merely echoing the fixture.
     cancelBroadcastMock.mockResolvedValueOnce(
       ok({
-        broadcast: broadcastFixture(),
+        broadcast: broadcastFixture({ status: 'approved' }),
         reservationReleased: true as const,
       }),
     );

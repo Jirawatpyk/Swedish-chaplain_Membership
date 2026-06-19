@@ -7,7 +7,7 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
-import { AdminCancelAction } from '@/components/broadcast/admin/admin-cancel-action';
+import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import {
@@ -241,20 +241,29 @@ export default async function AdminBroadcastDetailPage({
         />
       ) : null}
 
-      {broadcast.status === 'submitted' && !isReadOnlyManager && !sanitisedBody.error ? (
-        <div className="flex justify-end">
-          <ReviewActions broadcastId={broadcast.broadcastId as string} />
-        </div>
-      ) : null}
+      {/* DV-12 — single action row. Cancel covers submitted + approved (an
+          already-approved broadcast is still cancellable, FR-004a), while
+          Approve/Reject (ReviewActions) only render for `submitted` with a
+          valid body. Both live in ONE right-aligned row so they read as one
+          action group (review #2 — previously two stacked rows). Manager role
+          is excluded throughout (broadcast write is denied for manager).
 
-      {/* DV-12 — Cancel action: independent gate covers submitted + approved.
-          Must NOT live inside the ReviewActions block above (submitted-only)
-          so that admins can cancel an already-approved broadcast. Manager role
-          is excluded (broadcast write is denied for manager in requireAdminContext). */}
+          Scope note (review #4): the domain canCancel policy also permits
+          cancelling a `sending` broadcast that has pending split batch_manifests
+          (F7.1a US1 FR-004 mid-dispatch halt). That state is intentionally NOT
+          surfaced here — it is dormant for SweCham (<10k recipients never split)
+          and is tracked as F7.1a follow-up; DV-12's scope is "cancellable until
+          approved". */}
       {(broadcast.status === 'submitted' || broadcast.status === 'approved') &&
       !isReadOnlyManager ? (
-        <div className="flex justify-end">
-          <AdminCancelAction broadcastId={broadcast.broadcastId as string} />
+        <div className="flex items-center justify-end gap-2">
+          <CancelBroadcastAction
+            broadcastId={broadcast.broadcastId as string}
+            surface="admin"
+          />
+          {broadcast.status === 'submitted' && !sanitisedBody.error ? (
+            <ReviewActions broadcastId={broadcast.broadcastId as string} />
+          ) : null}
         </div>
       ) : null}
     </DetailContainer>
