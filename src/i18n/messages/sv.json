@@ -1011,6 +1011,18 @@
             "serverError": "Något gick fel. Försök igen."
           }
         },
+        "resendVerification": {
+          "resendLabel": "Skicka verifieringsmejl igen",
+          "resendSubmitting": "Skickar…",
+          "resendSuccess": "Verifieringsmejl skickat på nytt.",
+          "errors": {
+            "notFound": "Kontakten hittades inte.",
+            "noLinkedUser": "Inget portalkonto är kopplat till denna kontakt.",
+            "emailVerified": "Denna e-post är redan verifierad.",
+            "rateLimited": "För många omsändningar. Vänta några minuter och försök igen.",
+            "serverError": "Något gick fel. Försök igen."
+          }
+        },
         "sections": {
           "company": "Företag",
           "organisation": "Organisation",

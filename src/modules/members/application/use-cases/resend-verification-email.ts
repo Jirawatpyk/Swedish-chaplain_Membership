@@ -49,6 +49,13 @@ export type ResendVerificationDeps = {
 
 export type ResendVerificationInput = {
   readonly contactId: ContactId;
+  /**
+   * The member the contact is expected to belong to (from the URL path).
+   * Asserted against the loaded contact so a mismatched-but-same-tenant
+   * `{memberId, contactId}` pair in the URL cannot trigger a resend.
+   * Mirrors the guard in `resendBouncedInvite`.
+   */
+  readonly memberId: string;
   readonly actorUserId: string;
   readonly requestId: string;
   readonly locale: 'en' | 'th' | 'sv';
@@ -83,6 +90,15 @@ export async function resendVerificationEmail(
     return err({ code: 'server_error', cause: contactResult.error });
   }
   const contact = contactResult.value;
+
+  // Path-param consistency: the contact must belong to the member in the URL.
+  // Mismatch → not_found (don't reveal the contact exists under another member).
+  // Same-tenant only (RLS), but keeps the two path params honest and the audit's
+  // member_id trustworthy. Mirrors the guard in `resendBouncedInvite`.
+  if (contact.memberId !== input.memberId) {
+    return err({ code: 'not_found' });
+  }
+
   if (!contact.linkedUserId) {
     return err({ code: 'not_eligible', reason: 'no_linked_user' });
   }

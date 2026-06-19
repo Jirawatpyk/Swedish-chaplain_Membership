@@ -1011,6 +1011,18 @@
             "serverError": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
           }
         },
+        "resendVerification": {
+          "resendLabel": "ส่งอีเมลยืนยันอีกครั้ง",
+          "resendSubmitting": "กำลังส่ง…",
+          "resendSuccess": "ส่งอีเมลยืนยันอีกครั้งแล้ว",
+          "errors": {
+            "notFound": "ไม่พบผู้ติดต่อ",
+            "noLinkedUser": "ไม่มีบัญชีพอร์ทัลที่เชื่อมโยงกับผู้ติดต่อนี้",
+            "emailVerified": "อีเมลนี้ยืนยันแล้ว",
+            "rateLimited": "ส่งซ้ำบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+            "serverError": "เกิดข้อผิดพลาด กรุณาลองใหม่"
+          }
+        },
         "sections": {
           "company": "ข้อมูลบริษัท",
           "organisation": "องค์กร",

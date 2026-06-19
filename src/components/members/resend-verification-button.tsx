@@ -1,0 +1,52 @@
+'use client';
+
+/**
+ * DV-11 — re-send verification email button (FR-012c).
+ * Shown on the member detail page next to a portal-linked contact whose email
+ * is still unverified. Mirrors ResendBouncedInviteButton.
+ *
+ * Fix 5: button stays disabled after success (does not re-enable while
+ *   router.refresh() is in-flight — prevents double-click rate-limit waste).
+ * Fix 10: delegates fetch/toast/refresh to useContactResendAction.
+ */
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { MailCheckIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useContactResendAction } from './use-contact-resend-action';
+
+type Props = { readonly memberId: string; readonly contactId: string };
+
+export function ResendVerificationButton({ memberId, contactId }: Props) {
+  const t = useTranslations('admin.members.detail.resendVerification');
+
+  const { submitting, handleClick } = useContactResendAction({
+    url: `/api/members/${encodeURIComponent(memberId)}/contacts/${encodeURIComponent(contactId)}/resend-verification`,
+    onSuccess: () => {
+      toast.success(t('resendSuccess'));
+    },
+    on429: () => {
+      toast.error(t('errors.rateLimited'));
+    },
+    onError: (body) => {
+      if (body.error === 'not_eligible') {
+        toast.error(
+          body.reason === 'email_verified'
+            ? t('errors.emailVerified')
+            : t('errors.noLinkedUser'),
+        );
+      } else if (body.error === 'not_found') {
+        toast.error(t('errors.notFound'));
+      } else {
+        toast.error(t('errors.serverError'));
+      }
+    },
+  });
+
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={handleClick} disabled={submitting} className="gap-2">
+      <MailCheckIcon className="h-4 w-4" aria-hidden="true" />
+      {submitting ? t('resendSubmitting') : t('resendLabel')}
+    </Button>
+  );
+}

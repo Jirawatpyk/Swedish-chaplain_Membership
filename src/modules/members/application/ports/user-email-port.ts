@@ -66,6 +66,16 @@ export interface UserEmailPort {
   ): Promise<Result<boolean, RepoError>>;
 
   /**
+   * Read-only batch: which of these users have a verified email?
+   * Returns the SET of userIds whose email_verified = true.
+   * Empty input ⇒ ok(empty set) WITHOUT a query.
+   * `users` is cross-tenant (no tenant_id). DV-11 visible-gate batch read.
+   */
+  isEmailVerifiedBatch(
+    userIds: readonly string[],
+  ): Promise<Result<ReadonlySet<string>, RepoError>>;
+
+  /**
    * Read-only check: is the user still in `pending` status?
    * Used by `resendBouncedInvite` to guard against re-issuing an
    * invitation for a user who has already redeemed their invite

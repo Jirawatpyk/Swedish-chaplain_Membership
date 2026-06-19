@@ -7,14 +7,18 @@
  * email bounced (`inviteBouncedAt` is non-null). POSTs to the new
  * resend-invite route and surfaces the result via `sonner` toast.
  * On success the page is refreshed so the bounced badge disappears.
+ *
+ * Fix 10: delegates fetch/toast/refresh to useContactResendAction.
+ * NOTE: this route has NO rate-limit — `on429` is intentionally omitted
+ * to avoid referencing a missing `errors.rateLimited` key in the
+ * `admin.members.detail.inviteBounced` namespace (MISSING_MESSAGE guard).
  */
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { MailIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useContactResendAction } from './use-contact-resend-action';
 
 type Props = {
   readonly memberId: string;
@@ -23,25 +27,15 @@ type Props = {
 
 export function ResendBouncedInviteButton({ memberId, contactId }: Props) {
   const t = useTranslations('admin.members.detail.inviteBounced');
-  const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
 
-  async function handleClick() {
-    setSubmitting(true);
-    try {
-      const response = await fetch(
-        `/api/members/${encodeURIComponent(memberId)}/contacts/${encodeURIComponent(contactId)}/resend-invite`,
-        { method: 'POST' },
-      );
-      if (response.ok) {
-        toast.success(t('resendSuccess'));
-        router.refresh();
-        return;
-      }
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        reason?: string;
-      };
+  const { submitting, handleClick } = useContactResendAction({
+    url: `/api/members/${encodeURIComponent(memberId)}/contacts/${encodeURIComponent(contactId)}/resend-invite`,
+    onSuccess: () => {
+      toast.success(t('resendSuccess'));
+    },
+    // on429 intentionally omitted — the resend-invite route is not rate-limited
+    // and the inviteBounced namespace has no rateLimited key.
+    onError: (body) => {
       if (body.error === 'not_eligible') {
         switch (body.reason) {
           case 'not_bounced':
@@ -61,12 +55,8 @@ export function ResendBouncedInviteButton({ memberId, contactId }: Props) {
       } else {
         toast.error(t('errors.serverError'));
       }
-    } catch {
-      toast.error(t('errors.serverError'));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    },
+  });
 
   return (
     <Button
