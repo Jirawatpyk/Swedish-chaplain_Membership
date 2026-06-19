@@ -10,10 +10,12 @@
  * can: opening each dialog, the live field-gating, and the cancel happy-path
  * submit → success toast.
  *
- * NOT covered here (tracked follow-up): the mark-paid `f4_orphan_invoice`
- * deep-link toast — reproducing it needs fault injection (an F4 invoice
- * issued THEN the cycle-flip failing mid-transaction), which has no
- * deterministic E2E seam. The mark-paid happy-path SUBMIT is also
+ * The mark-paid `f4_orphan_invoice` deep-link DECISION (the gate + the
+ * encoded invoice href) is unit-tested via `resolveOrphanInvoiceHref` in
+ * cycle-admin-error-i18n.test.ts. Only the end-to-end toast RENDER on a real
+ * orphan error stays uncovered here — reproducing it needs fault injection
+ * (an F4 invoice issued THEN the cycle-flip failing mid-transaction), which
+ * has no deterministic E2E seam. The mark-paid happy-path SUBMIT is also
  * intentionally not exercised end-to-end: a real submit issues an F4 invoice
  * + completes the cycle (heavy live-Neon/Blob mutation); the validation-gate
  * test gives the dialog-interaction coverage without that side effect.

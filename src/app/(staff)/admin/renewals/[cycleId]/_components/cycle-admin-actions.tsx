@@ -61,6 +61,7 @@ import {
   isMarkPaidIncomplete,
   REASON_MAX,
 } from './cycle-admin-validation';
+import { resolveOrphanInvoiceHref } from './cycle-admin-error-codes';
 
 /** Statuses where the Cancel control is offered (matches the route guard). */
 const CANCELLABLE_STATUSES = new Set<CycleStatus>([
@@ -212,8 +213,8 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
           router.refresh();
         },
         (err) => {
-          if (err.code === 'f4_orphan_invoice' && err.orphan_invoice_id) {
-            const orphanId = err.orphan_invoice_id;
+          const orphanHref = resolveOrphanInvoiceHref(err);
+          if (orphanHref) {
             // DO-NOT-RETRY: an invoice was issued but the cycle flip failed.
             // The admin must resume from the F4 invoice list — surface the
             // deep-link in the toast so they can act without a support ticket.
@@ -221,9 +222,7 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
               action: {
                 label: t('markPaidOffline.viewOrphanInvoice'),
                 onClick: () => {
-                  router.push(
-                    `/admin/invoices/${encodeURIComponent(orphanId)}`,
-                  );
+                  router.push(orphanHref);
                 },
               },
               duration: 30_000,

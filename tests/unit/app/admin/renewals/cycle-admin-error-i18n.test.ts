@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CANCEL_CYCLE_ERROR_CODES,
   MARK_PAID_OFFLINE_ERROR_CODES,
+  resolveOrphanInvoiceHref,
 } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-error-codes';
 import en from '@/i18n/messages/en.json';
 
@@ -117,5 +118,39 @@ describe('CycleAdminActions mark-paid-offline — EN i18n coverage (DV-5)', () =
     for (const m of ['bank_transfer', 'cash', 'cheque']) {
       expect(typeof pm[m], `markPaidOffline.paymentMethod.${m}`).toBe('string');
     }
+  });
+});
+
+describe('resolveOrphanInvoiceHref (DV-5 mark-paid DO-NOT-RETRY deep-link)', () => {
+  it('returns the encoded invoice deep-link for f4_orphan_invoice with an id', () => {
+    expect(
+      resolveOrphanInvoiceHref({
+        code: 'f4_orphan_invoice',
+        orphan_invoice_id: 'inv-123',
+      }),
+    ).toBe('/admin/invoices/inv-123');
+  });
+
+  it('encodes the invoice id (path-injection / special chars are escaped)', () => {
+    expect(
+      resolveOrphanInvoiceHref({
+        code: 'f4_orphan_invoice',
+        orphan_invoice_id: 'a/b c',
+      }),
+    ).toBe(`/admin/invoices/${encodeURIComponent('a/b c')}`);
+  });
+
+  it('returns null for f4_orphan_invoice WITHOUT an id (→ generic toast)', () => {
+    expect(resolveOrphanInvoiceHref({ code: 'f4_orphan_invoice' })).toBeNull();
+  });
+
+  it('returns null for any other code, even when an id is present', () => {
+    expect(
+      resolveOrphanInvoiceHref({
+        code: 'cycle_not_payable',
+        orphan_invoice_id: 'inv-123',
+      }),
+    ).toBeNull();
+    expect(resolveOrphanInvoiceHref({ code: 'server_error' })).toBeNull();
   });
 });

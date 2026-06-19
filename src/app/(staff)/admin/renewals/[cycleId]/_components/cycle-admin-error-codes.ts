@@ -75,3 +75,26 @@ export const MARK_PAID_OFFLINE_ERROR_CODES = [
 
 export type MarkPaidOfflineErrorCode =
   (typeof MARK_PAID_OFFLINE_ERROR_CODES)[number];
+
+/**
+ * Mark-paid-offline DO-NOT-RETRY routing. When the route returns
+ * `f4_orphan_invoice` (an invoice WAS issued but the cycle flip failed), the
+ * toast must deep-link the admin to that invoice so they can resume from the
+ * F4 list instead of retrying (a retry would double-issue). Returns the
+ * encoded invoice href, or `null` for any other error (the caller then falls
+ * through to the generic `error.<code>` toast).
+ *
+ * Pure so the exact gate (code AND id both present) + the `encodeURIComponent`
+ * href construction are unit-testable WITHOUT rendering the Base UI dialog
+ * (which deadlocks under jsdom + React 19 `startTransition`) and without the
+ * fault injection a real-error E2E would need.
+ */
+export function resolveOrphanInvoiceHref(err: {
+  readonly code: string;
+  readonly orphan_invoice_id?: string;
+}): string | null {
+  if (err.code === 'f4_orphan_invoice' && err.orphan_invoice_id) {
+    return `/admin/invoices/${encodeURIComponent(err.orphan_invoice_id)}`;
+  }
+  return null;
+}
