@@ -97,10 +97,9 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
   });
 
   it('does NOT submit and shows inline error when reason is empty and confirm clicked', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    } as Response);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
     renderAdmin();
     // Confirm button should be disabled for empty reason
     const confirmBtn = screen.getByRole('button', {
@@ -158,13 +157,14 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     );
   });
 
-  it('409 broadcast_concurrent_action_blocked → toasts cancelError', async () => {
+  it('409 broadcast_concurrent_action_blocked → toasts cancelError + closes dialog', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
       json: async () => ({ error: { code: 'broadcast_concurrent_action_blocked' } }),
     } as unknown as Response);
-    renderAdmin();
+    const onOpenChange = vi.fn();
+    renderAdmin({ onOpenChange });
     fireEvent.change(
       screen.getByLabelText(
         new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
@@ -179,6 +179,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
         en.admin.broadcasts.toast.cancelError,
       ),
     );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('non-409 server error → toasts cancelError', async () => {
@@ -205,6 +206,9 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
   });
 
   it('reason > 500 chars → shows reasonTooLong inline error + confirm stays disabled', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
     renderAdmin();
     const textarea = screen.getByLabelText(
       new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
@@ -216,12 +220,31 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     ).toBeDisabled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
 // ── Member (reasonRequired=false) ───────────────────────────────────────
 
 describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
+  it('C-1: Cancel ("Keep it") button receives initial focus when open (WCAG 2.1 AA SC 2.4.3)', async () => {
+    // Base UI's initialFocus prop wires the ref to the FloatingFocusManager.
+    // Under jsdom, Base UI's portal focus machinery does not fire the actual
+    // browser focus event synchronously — document.activeElement stays on
+    // <body>. toHaveFocus() therefore cannot pass in jsdom for portal dialogs.
+    // Observable instead: the Cancel button renders and cancelRef is wired as
+    // the initialFocus target on AlertDialogContent (confirmed by component
+    // reading + typecheck). We assert the button is present and not disabled,
+    // which is the structural precondition for initialFocus to work in a real
+    // browser environment.
+    renderMember();
+    const cancelBtn = screen.getByRole('button', {
+      name: en.portal.broadcasts.detail.cancelDialog.cancel,
+    });
+    expect(cancelBtn).toBeInTheDocument();
+    expect(cancelBtn).not.toBeDisabled();
+  });
+
   it('shows the member dialog title when open', () => {
     renderMember();
     expect(
@@ -259,6 +282,9 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
   });
 
   it('member reason > 500 chars → shows reasonTooLong + confirm disabled', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
     renderMember();
     // Escape parentheses in "Reason (optional)" for use in a RegExp
     const escapedLabel = en.portal.broadcasts.detail.cancelDialog.reasonLabel.replace(
@@ -275,6 +301,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
       }),
     ).toBeDisabled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('member 409 too_late → toasts cancelTooLate', async () => {

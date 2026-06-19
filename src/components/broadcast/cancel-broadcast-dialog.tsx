@@ -77,6 +77,7 @@ export function CancelBroadcastDialog({
   const tToast = useTranslations(toastNamespace);
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const [reason, setReason] = useState('');
   const [pending, startTransition] = useTransition();
 
@@ -160,7 +161,11 @@ export function CancelBroadcastDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
+      <AlertDialogContent
+        className="max-w-lg"
+        finalFocus={finalFocus}
+        {...(reasonRequired ? {} : { initialFocus: cancelRef })}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('description')}</AlertDialogDescription>
@@ -200,7 +205,7 @@ export function CancelBroadcastDialog({
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+          <AlertDialogCancel ref={cancelRef} disabled={pending}>{t('cancel')}</AlertDialogCancel>
           {/* Destructive confirm — paint red per ux-standards § 6.2 */}
           <AlertDialogAction
             disabled={!valid || pending}
