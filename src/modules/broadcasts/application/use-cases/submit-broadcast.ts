@@ -160,6 +160,13 @@ export interface SubmitBroadcastInput {
   /** Optional pre-existing draft id (compose flow). When omitted, a fresh broadcast id is minted. */
   readonly draftId?: string;
   readonly tenantDisplayName: string;
+  /**
+   * DV-17 — requesting member's display name (F3 `companyName`). Composed
+   * into `from_name` as `"<memberDisplayName> via <tenantDisplayName>"`
+   * (data-model.md:59; spec.md:346/500). Plain runtime string, NOT an
+   * i18n key — the literal " via " separator is intentional.
+   */
+  readonly memberDisplayName: string;
   readonly subject: string;
   readonly bodySource: string;
   readonly bodyHtml: string;
@@ -560,7 +567,10 @@ export async function submitBroadcast(
   // ---- Atomic persist: insert(draft) → transition(submitted) → audit ----
   const now = deps.clock.now();
   const broadcastId = asBroadcastId(input.draftId ?? randomUUID());
-  const fromName = input.tenantDisplayName;
+  // DV-17 — Resend "From" display name = "<member> via <tenant>" so the
+  // recipient sees which member sent the e-blast through the chamber
+  // (data-model.md:59 — e.g. "Fogmaker International AB via SweCham").
+  const fromName = `${input.memberDisplayName} via ${input.tenantDisplayName}`;
 
   try {
     return await deps.broadcastsRepo.withTx(async (tx) => {

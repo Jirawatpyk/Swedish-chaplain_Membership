@@ -258,6 +258,7 @@ const baseInput = {
   actorRole: 'member_self_service' as const,
   memberPlanIdSnapshot: 'plan-2026',
   tenantDisplayName: 'Test Chamber',
+  memberDisplayName: 'Acme Co',
   subject: 'Welcome',
   bodySource: 'plain',
   bodyHtml: '<p>Hello</p>',
@@ -467,5 +468,35 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
       tierCodes: ['premium'],
     });
     expect(broadcastsRepo.inserted[0]!.scheduledFor).toEqual(future);
+  });
+
+  // ---- DV-17 from_name composition ("<member> via <tenant>") --------
+
+  it('DV-17 create path: from_name = "<memberDisplayName> via <tenantDisplayName>"', async () => {
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+    });
+    const result = await saveDraft(deps, baseInput);
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.inserted).toHaveLength(1);
+    expect(broadcastsRepo.inserted[0]!.fromName).toBe('Acme Co via Test Chamber');
+  });
+
+  it('DV-17 update-draft path: from_name = "<memberDisplayName> via <tenantDisplayName>"', async () => {
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      existingDraft: {
+        broadcastId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' as never,
+        status: 'draft',
+      },
+    });
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      draftId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    });
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.updates).toHaveLength(1);
+    const patch = broadcastsRepo.updates[0]!.patch as { fromName: string };
+    expect(patch.fromName).toBe('Acme Co via Test Chamber');
   });
 });

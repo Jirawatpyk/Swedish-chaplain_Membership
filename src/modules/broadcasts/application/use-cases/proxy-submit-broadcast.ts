@@ -41,6 +41,14 @@ export interface ProxySubmitBroadcastInput {
   readonly proxiedMemberId: string;
   readonly adminUserId: string;
   readonly tenantDisplayName: string;
+  /**
+   * DV-17 — proxied member's display name (F3 `companyName`), composed
+   * into `from_name` as "<memberDisplayName> via <tenantDisplayName>" by
+   * the delegated `submitBroadcast` (data-model.md:59). Sourced by the
+   * route from the proxied member record (the admin context does not
+   * load it).
+   */
+  readonly memberDisplayName: string;
   readonly subject: string;
   readonly bodySource: string;
   readonly bodyHtml: string;
@@ -89,6 +97,7 @@ export async function proxySubmitBroadcast(
     submittedByUserId: input.adminUserId,
     actorRole: 'admin_proxy',
     tenantDisplayName: input.tenantDisplayName,
+    memberDisplayName: input.memberDisplayName,
     subject: input.subject,
     bodySource: input.bodySource,
     bodyHtml: input.bodyHtml,

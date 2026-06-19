@@ -89,6 +89,8 @@ async function handle(
       actorRole: 'member_self_service',
       memberPlanIdSnapshot: ctx.member.planId,
       tenantDisplayName,
+      // DV-17 — compose Resend From as "<member> via <tenant>".
+      memberDisplayName: ctx.member.companyName,
       ...(parsed.data.draftId !== undefined && {
         draftId: parsed.data.draftId,
       }),

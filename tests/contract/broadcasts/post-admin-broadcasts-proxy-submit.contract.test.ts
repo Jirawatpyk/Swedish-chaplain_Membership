@@ -41,6 +41,18 @@ vi.mock('@/modules/broadcasts', () => ({
   proxySubmitBroadcast: (...args: unknown[]) => proxySubmitMock(...args),
   makeProxySubmitBroadcastDeps: () => ({}),
 }));
+// DV-17 — the route resolves the proxied member's display name via the F3
+// barrel to compose the Resend From ("<member> via <tenant>"). Mock it so
+// the contract test never touches the live DB.
+const findMemberByIdMock = vi.fn(async (..._args: unknown[]) =>
+  ok({ companyName: 'Acme Co' }),
+);
+vi.mock('@/modules/members', () => ({
+  drizzleMemberRepo: {
+    findById: (...args: unknown[]) => findMemberByIdMock(...args),
+  },
+  asMemberId: (raw: string) => raw,
+}));
 
 const VALID_MEMBER_ID = '33333333-3333-3333-3333-333333333333';
 const NEW_BROADCAST_ID = '44444444-4444-4444-4444-444444444444';
@@ -121,6 +133,18 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     };
     expect(callArgs.proxiedMemberId).toBe(VALID_MEMBER_ID);
     expect(callArgs.adminUserId).toBe('user-admin-1');
+  });
+
+  it('DV-17: route resolves proxied member companyName → memberDisplayName', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Fogmaker International AB' }));
+    proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
+    const { POST } = await importRoute();
+    await POST(makeRequest(VALID_BODY));
+    const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
+      memberDisplayName: string;
+    };
+    expect(callArgs.memberDisplayName).toBe('Fogmaker International AB');
   });
 
   it('400 invalid_body: subject too long', async () => {

@@ -67,6 +67,11 @@ export interface SaveDraftInput {
   readonly memberPlanIdSnapshot: string;
   /** Tenant display name used to compose `from_name` ("X via Tenant"). */
   readonly tenantDisplayName: string;
+  /**
+   * DV-17 — requesting member's display name (F3 `companyName`), the "X"
+   * in the `from_name` "X via Tenant" composition (data-model.md:59).
+   */
+  readonly memberDisplayName: string;
   /** Existing draft id to update; omit to create a new draft. */
   readonly draftId?: string;
   readonly subject: string;
@@ -121,7 +126,8 @@ export async function saveDraft(
     });
   }
 
-  const fromName = `${input.tenantDisplayName}`;
+  // DV-17 — "<member> via <tenant>" Resend From display name (data-model.md:59).
+  const fromName = `${input.memberDisplayName} via ${input.tenantDisplayName}`;
   const now = deps.clock.now();
 
   // 4. Persist (create or update) inside a single transaction

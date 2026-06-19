@@ -243,6 +243,7 @@ const baseInput = {
   submittedByUserId: 'u-1',
   actorRole: 'member_self_service' as const,
   tenantDisplayName: 'SweCham',
+  memberDisplayName: 'Acme Co',
   subject: 'Hello',
   bodySource: 'plain',
   bodyHtml: '<p>Hello world</p>',

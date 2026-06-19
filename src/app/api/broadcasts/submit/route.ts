@@ -91,6 +91,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       draftId: parsed.data.draftId,
     }),
     tenantDisplayName,
+    // DV-17 — compose Resend From as "<member> via <tenant>".
+    memberDisplayName: ctx.member.companyName,
     subject: parsed.data.subject,
     bodySource: parsed.data.bodySource,
     bodyHtml: parsed.data.bodyHtml,
