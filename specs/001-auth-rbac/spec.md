@@ -357,7 +357,9 @@ through any user-facing surface.
   millions of passwords.
 - **User tries to sign into the wrong portal for their role**: a member signing in
   at the staff portal, or a staff user signing in at the member portal, MUST fail
-  with a helpful message telling them the correct URL.
+  with the same neutral "email or password is incorrect" response as any other
+  failed sign-in — the message MUST NOT reveal the account exists on the other
+  portal or point to its URL (FR-016 / anti-enumeration).
 - **Member account linked to a company record that is later deleted**: the member
   user's session MUST be invalidated and they MUST see a clear account-status
   message. (This interacts with F3 and is documented here for traceability.)
@@ -381,7 +383,7 @@ through any user-facing surface.
   explicit permission.
 - **FR-004**: System MUST expose two sign-in surfaces: a staff portal used by
   `admin` and `manager` roles, and a member portal used by `member` role. A user
-  signing in at the wrong portal MUST be rejected with a helpful message.
+  signing in at the wrong portal MUST be rejected with the same neutral "email or password is incorrect" response as a wrong-password attempt, so the error never reveals that the account exists on the other portal (FR-016 / anti-enumeration).
 - **FR-005**: System MUST provide a self-service "forgot password" recovery flow
   that issues a single-use email link valid for **1 hour** from issuance, without
   revealing whether the email address is registered.

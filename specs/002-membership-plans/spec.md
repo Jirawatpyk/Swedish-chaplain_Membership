@@ -85,23 +85,23 @@ Plans get retired when a tier is phased out — but the chamber must keep the hi
 1. **Given** an active plan, **When** the admin toggles it to inactive and confirms the dialog, **Then** the plan is hidden from future member signups but remains visible in admin lists with an "Inactive" badge.
 2. **Given** an inactive plan with zero members attached, **When** the admin soft-deletes it, **Then** the plan is removed from the default list, remains in the database with a deletion timestamp, and an audit entry records the delete.
 3. **Given** an inactive plan that still has at least one active member attached (future F3 state), **When** the admin attempts to soft-delete it, **Then** the system refuses with a message listing affected members and offering to open the member list instead.
-4. **Given** a soft-deleted plan, **When** the admin enables "Show deleted" in the list, **Then** deleted plans appear with a subdued style and an "Undelete" action that restores them.
+4. **Given** a soft-deleted plan, **When** the admin enables "Show deleted" in the list, **Then** deleted plans appear with a subdued style and a "Restore" action that restores them.
 
 ---
 
-### User Story 5 — Admin configures per-tenant fee defaults (Priority: P2)
+### User Story 5 — Admin views per-tenant fee defaults on the Plans surface (Priority: P2)
 
 VAT rate, default currency, and registration fee are **per-tenant** because different chambers operate under different tax regimes. SweCham needs Thailand's 7% VAT and a 1,000 THB registration fee; a future tenant in another country may need a different rate, currency, or no registration fee at all. An admin must be able to see and edit these defaults from the platform settings without a developer deploying a code change.
 
 **Why this priority**: P2 because the SweCham seed can hardcode 7% + 1,000 THB + THB on day one; editing the defaults is only required before the second tenant onboards. However, the **data model and tenant scoping** must be in place for F2 so the per-tenant column is not retrofitted later. UI is optional-MVP; schema + seed + read-only display is mandatory-MVP.
 
-**Independent Test**: Sign in as admin, open the fee-config settings page, confirm the values (currency = THB, VAT = 7%, registration fee = 1,000 THB) are displayed with the correct locale formatting, change the VAT rate, save, and verify the audit log records the change.
+**Independent Test**: Sign in as admin, confirm the fee defaults sourced from Settings → Invoicing (currency = THB, VAT = 7%, registration fee = 1,000 THB) are surfaced read-only on the Plans surface with the correct locale formatting (e.g. the list's "Total with VAT" preview reflects the 7% rate). Editing the VAT rate and verifying the audit entry is exercised against the Settings → Invoicing (F4) surface, not the Plans surface.
 
 **Acceptance Scenarios**:
 
-1. **Given** a fresh SweCham tenant, **When** the admin opens the fee-config page, **Then** currency THB, VAT 7%, registration fee 1,000 THB are displayed as the chamber's defaults.
-2. **Given** the admin edits the VAT rate to 7.5% and saves, **When** the save completes, **Then** the new rate takes effect for subsequent plan displays (the plan list's derived "Total with VAT" preview uses the new rate), the old rate is captured in the audit log, and an informational note warns that historical invoices are not retroactively updated (invoice VAT is frozen in F4 at issuance time).
-3. **Given** a manager role user signs in, **When** they open the fee-config page, **Then** they can read the values but all edit controls are hidden or disabled — only admin can change fee configuration.
+1. **Given** a fresh SweCham tenant, **When** the admin views the Plans surface, **Then** currency THB, VAT 7%, and registration fee 1,000 THB (sourced read-only from Settings → Invoicing) are surfaced as the chamber's defaults.
+2. **Given** the admin edits the VAT rate to 7.5% and saves in Settings → Invoicing (F4), **When** the save completes, **Then** the new rate takes effect for subsequent plan displays (the plan list's derived "Total with VAT" preview uses the new rate via `taxPolicy()`), the old rate is captured in the F4 audit log, and an informational note warns that historical invoices are not retroactively updated (invoice VAT is frozen in F4 at issuance time).
+3. **Given** a manager role user signs in, **When** they view the Plans surface (or Settings → Invoicing), **Then** they can read the fee values but all edit controls are hidden or disabled — only admin can change fee configuration, which is done in Settings → Invoicing.
 
 ---
 
@@ -151,7 +151,7 @@ For high-frequency edits (activate/deactivate five plans, nudge fees by 3%, rena
 - **Cloning a year with zero plans** — clicking "Clone 2026 → 2027" when 2026 has 0 active plans surfaces a clear empty-state message and refuses to create empty rows.
 - **Locale fallback** — if a plan name is missing a Swedish or Thai translation, the list renders the English name with a subtle "missing translation" indicator for admin; the app does not show a raw key or blank cell.
 - **VAT rate change mid-year** — changing VAT from 7% to 7.5% applies to future displays only; plan data itself does not store VAT. The tenant fee-config edit shows an explicit banner reminding the admin that historical F4 invoices are not retroactively recalculated.
-- **Currency code change after plans exist is NOT supported in F2** (critique R1, 2026-04-11). Because money values are stored as integer `*_minor_units` that derive their decimal-place meaning from `tenant_fee_config.currency_code`, changing the currency code after plans exist would silently re-interpret every plan's stored integer — e.g. switching THB (2 decimals) → JPY (0 decimals) would reinterpret `3_600_000` from 36,000 THB to 3,600,000 JPY, a ~100× silent mispricing. F2 therefore **blocks `currency_code` changes on `PATCH /api/fee-config` when any non-deleted plan exists for the tenant** and returns `422 currency_code_immutable_in_f2` with the plan count + a pointer to the "delete all plans first, then change currency, then rebuild" workflow. Proper currency migration with FX-rate-aware revaluation is an F10 multi-tenant onboarding concern.
+- **Currency code change after plans exist is NOT supported in F2** (critique R1, 2026-04-11). Because money values are stored as integer `*_minor_units` that derive their decimal-place meaning from the tenant's single authoritative `currency_code`, changing the currency code after plans exist would silently re-interpret every plan's stored integer — e.g. switching THB (2 decimals) → JPY (0 decimals) would reinterpret `3_600_000` from 36,000 THB to 3,600,000 JPY, a ~100× silent mispricing. F2 therefore treats `currency_code` as **set-once at tenant-creation time and not editable through the product UI**; there is no in-product currency-change path. Proper currency migration with FX-rate-aware revaluation is an F10 multi-tenant onboarding concern.
 - ~~**Very large paste into an inline-edit numeric cell**~~ *(deferred to F3 with US7)* — server-side validation still rejects out-of-range values on the standard edit form (0 ≤ annual fee ≤ 10,000,000).
 - **Browser refresh during an in-flight mutation** — the next page load reflects the true database state. Applies to every save from the standard edit form (US3).
 - **Keyboard-only admin** — every interaction (create, edit, clone, deactivate, delete, palette, inline edit, bulk select) is reachable via keyboard without a mouse; focus rings are visible.
@@ -175,7 +175,7 @@ For high-frequency edits (activate/deactivate five plans, nudge fees by 3%, rena
 - **FR-008**: Admin users MUST be able to clone all active plans for a given year into a new year with one action; the clone action MUST refuse if any plan already exists for the target year.
 - **FR-009**: Admin users MUST be able to toggle a plan's active state with a confirmation dialog; inactive plans MUST NOT be selectable in the (future) F3 member signup flow but MUST still be readable for historical reference.
 - **FR-010**: Admin users MUST be able to soft-delete a plan only when it has zero active member attachments; hard-delete MUST NOT exist in F2 for audit compliance.
-- **FR-011**: System MUST expose an "Undelete" action for soft-deleted plans and a "Show deleted" toggle on the list view.
+- **FR-011**: System MUST expose a "Restore" action for soft-deleted plans and a "Show deleted" toggle on the list view.
 
 **Year versioning**
 
@@ -187,8 +187,8 @@ For high-frequency edits (activate/deactivate five plans, nudge fees by 3%, rena
 
 - **FR-015**: System MUST store per-tenant fee configuration (default currency code, VAT rate, registration fee) with the SweCham defaults being currency code = `THB`, VAT rate = 7%, registration fee = 1,000 THB (stored as `(100000, 'THB')` in the minor-unit representation defined by FR-015a) per `docs/membership-benefits-analysis.md`.
 - **FR-015a**: Every monetary field on every F2 entity — plan annual fee, plan turnover limits, tenant registration-fee default — MUST be stored as a **non-negative integer `*_minor_units` column** (e.g. `annual_fee_minor_units`, `registration_fee_minor_units`) in the currency's smallest unit (satang for THB, yen for JPY, öre for SEK, cents for EUR). The currency itself is stored **once per tenant** on `tenant_fee_config.currency_code` as a 3-letter ISO 4217 code and is implicit for every plan field in that tenant (critique P3, 2026-04-11 — per-plan currency deliberately NOT stored). All VAT and total calculations MUST operate on integer minor units to avoid floating-point rounding drift, matching Constitution Principle IV (Payment Security).
-- **FR-016**: Admin users MUST be able to view and edit the fee configuration values (`vat_rate`, `registration_fee_minor_units`); every change MUST be captured in the audit log with actor, timestamp, and before/after values. **`currency_code` is immutable in F2 once any non-deleted plan exists for the tenant** (critique R1, 2026-04-11): attempts to change it MUST return `422 currency_code_immutable_in_f2` with the affected plan count. The field is set at tenant-creation time (seed script for SweCham in F2; F10 multi-tenant onboarding will own the setter UI for future tenants). F2 does not offer a currency-migration workflow because silently re-interpreting integer minor units across currencies with different decimal places is a data-integrity hazard.
-- **FR-017**: System MUST prevent manager-role users from editing fee configuration while allowing read-only access.
+- **FR-016**: Admin users MUST be able to view the fee configuration values (`currency_code`, `vat_rate`, `registration_fee_minor_units`) on the Plans surface. These values are **read-only on the Plans surface** and are sourced from the tenant's invoice settings (Settings → Invoicing); the Plans list consumes them through `PlansDeps.taxPolicy()` to derive the "Total with VAT" preview. Editing VAT rate, currency, and registration fee is owned by the F4 invoice-settings surface (Settings → Invoicing), where every change is captured in the audit log with actor, timestamp, and before/after values. The fee values are seeded at tenant-creation time (seed script for SweCham in F2; F10 multi-tenant onboarding will own the setter UI for future tenants). F2 does not offer a currency-migration workflow because silently re-interpreting integer minor units across currencies with different decimal places is a data-integrity hazard.
+- **FR-017**: System MUST prevent manager-role users from editing fee configuration (owned by Settings → Invoicing / F4 invoice settings) while allowing read-only access; on the Plans surface the fee values are read-only for every role.
 
 **Plan benefits (schema + display)**
 
@@ -205,7 +205,7 @@ For high-frequency edits (activate/deactivate five plans, nudge fees by 3%, rena
 
 **Audit**
 
-- **FR-025**: System MUST append an audit entry to the F1 append-only audit trail for every plan-affecting action: create, update, clone, activate, deactivate, soft-delete, undelete, and fee-config update. Each entry MUST include actor, timestamp, tenant, plan identifier, action, and a field-level diff where applicable.
+- **FR-025**: System MUST append an audit entry to the F1 append-only audit trail for every plan-affecting action: create, update, clone, activate, deactivate, soft-delete, and undelete. Each entry MUST include actor, timestamp, tenant, plan identifier, action, and a field-level diff where applicable. (Fee-configuration changes are audited by the F4 invoice-settings surface, not by F2 — the `fee_config_updated` event was retired with the `tenant_fee_config` table in migration 0029.)
 - **FR-026**: System MUST log every admin 404 from the Plans API as a `plan_not_found` info-severity audit event (from the request path — no `BYPASS RLS` query). A separate F13 periodic super-admin scan MUST correlate `plan_not_found` events across tenants and escalate matches to `plan_cross_tenant_probe` high-severity events, satisfying Constitution v1.4.0 Principle I clause 4. F2 ships the request-path emission; the correlation scan is out of scope in F2 and is documented as a known F13 deliverable in the observability runbook (critique E6, 2026-04-11).
 
 **Role-based access**
