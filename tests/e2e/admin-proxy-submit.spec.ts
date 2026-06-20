@@ -50,7 +50,11 @@ const proxySubmitButtonName = en.admin.broadcasts.proxySubmitButton;
 // Real submit label — the proxy form reuses the member compose SubmitButton.
 const submitButtonName = en.portal.broadcasts.compose.button.submit;
 
-test.describe.configure({ mode: 'serial', timeout: 120_000 });
+// NOT serial: with --workers=1 (mandatory) execution is already
+// serialized, and the three RBAC tests are independent of the happy
+// path — serial mode would skip those security checks whenever the
+// admin happy-path flakes (a skipped security test is not a passing one).
+test.describe.configure({ timeout: 120_000 });
 
 /**
  * Resolve the e2e member's member_id + company_name and the admin's
