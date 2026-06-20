@@ -2158,8 +2158,7 @@
           "p95Rolling30d": "p95: {hours}h",
           "withinBudget": "Within SLA budget",
           "breachWarning": "SC-002 breach — review queue capacity"
-        },
-        "proxySubmitButton": "Submit on behalf of member"
+        }
       },
       "review": {
         "title": "Broadcast review",
@@ -2250,15 +2249,26 @@
       },
       "proxySubmitDialog": {
         "title": "Submit on behalf of member",
-        "description": "Compose a broadcast that will be queued for review with the proxied member's quota.",
         "memberLabel": "Member",
         "memberPlaceholder": "Search by company name…",
         "subjectLabel": "Subject",
         "bodyLabel": "Message",
-        "segmentLabel": "Audience",
-        "confirm": "Submit",
-        "cancel": "Cancel"
+        "pageSubtitle": "Compose and queue a broadcast for review using this member's e-blast quota.",
+        "selfExclusionNotice": "{company} won't receive this broadcast — members are excluded from their own e-blasts.",
+        "memberNotFoundError": "That member no longer exists. Pick another member.",
+        "quotaBlockedError": "{company} has used all their e-blasts for this period.",
+        "notInPlanError": "{company}'s plan doesn't include E-Blast.",
+        "submitErrorToast": "Couldn't submit the broadcast. Please try again.",
+        "subjectTooLongError": "Subject must be 200 characters or fewer.",
+        "bodyTooLargeError": "Message body exceeds the 200 KB size limit.",
+        "bodyUnsafeHtmlError": "Message body contains formatting we can't accept — please simplify.",
+        "emptySegmentError": "No eligible recipients matched.",
+        "audienceTooLargeError": "Audience exceeds the 5,000 recipient limit.",
+        "successToast": "Broadcast queued for review on behalf of {company}.",
+        "searchFailed": "Member search failed. Try again.",
+        "noResults": "No members found."
       },
+      "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {
         "title": "{count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
         "body": "Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",

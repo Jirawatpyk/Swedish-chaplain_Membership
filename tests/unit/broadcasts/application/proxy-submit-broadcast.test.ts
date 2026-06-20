@@ -3,7 +3,9 @@
  *
  * Wave 6 GREEN โ€” admin-on-behalf-of-member. The use-case is a thin
  * wrapper that:
- *   1. Calls `membersBridge.getMemberPrimaryContact` (existence probe)
+ *   1. Reads member existence from the route-provided `memberLookup`
+ *      discriminated input (the route does the single RLS-scoped member
+ *      read), NOT a `memberExistsInTenant` bridge probe
  *   2. Delegates to `submitBroadcast` with actorRole='admin_proxy'
  *   3. Casts the result to ProxySubmitBroadcastOutput
  *
@@ -11,7 +13,7 @@
  *   - actorRole='admin_proxy' propagated into persisted row
  *   - dual-actor mapping: proxiedMemberId โ’ requestedByMemberId,
  *     adminUserId โ’ submittedByUserId
- *   - quota bypass (admin_proxy short-circuits the quota branch in submit-broadcast)
+ *   - quota ENFORCED (admin_proxy obeys the member quota cap, T-10, no bypass)
  *   - halt-flag still enforced (admin can NOT bypass halt โ€” R3-NEW-1)
  *   - SubmitBroadcastError pass-through
  */
@@ -58,8 +60,6 @@ interface FixtureOpts {
     memberId: string;
     primaryContactEmail: string | null;
   }>;
-  /** Round-5 R5-T โ€” let tests synthesise "member not found in tenant" + infra-throw paths. */
-  readonly memberExists?: boolean;
 }
 
 function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
@@ -114,7 +114,9 @@ function makeMembersBridge(opts: FixtureOpts): MembersBridgePort {
       return ok(undefined);
     },
     async memberExistsInTenant() {
-      return opts.memberExists ?? true;
+      // Retained to satisfy MembersBridgePort; the #18 use-case reads member
+      // existence from the route-provided `memberLookup` input, not this probe.
+      return true;
     },
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
@@ -313,7 +315,10 @@ const baseInput = {
   proxiedMemberId: 'm-target',
   adminUserId: 'admin-7',
   tenantDisplayName: 'Test Chamber',
-  memberDisplayName: 'Acme Co',
+  // #18 — the route now performs the single member read and threads its
+  // outcome in via `memberLookup`. The `found` arm carries DV-17
+  // `companyName` previously passed as `memberDisplayName`.
+  memberLookup: { status: 'found' as const, companyName: 'Acme Co' },
   subject: 'Welcome from your chamber admin',
   bodySource: 'plain',
   bodyHtml: '<p>Hello</p>',
@@ -394,9 +399,9 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     expect(payload.actorRole).toBe('admin_proxy');
   });
 
-  // ---- Quota bypass (Q12) ---------------------------------------------
+  // ---- Quota enforcement (T-10) ---------------------------------------
 
-  it('admin proxy bypasses quota check even when proxied member at full quota', async () => {
+  it('admin proxy at full quota is BLOCKED → broadcast_quota_blocked (T-10)', async () => {
     const { deps, repo } = makeDeps({
       planCap: 6,
       used: 6,
@@ -407,14 +412,22 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
       ],
     });
     const result = await proxySubmitBroadcast(deps, baseInput);
-    expect(result.ok).toBe(true);
-    expect(repo.inserted).toHaveLength(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_quota_blocked');
+    }
+    expect(repo.inserted).toHaveLength(0);
   });
 
-  it('admin proxy bypasses quota check at over-cap (rare invariant violation)', async () => {
+  it('admin proxy fully-reserved (used+reserved=cap) is BLOCKED → broadcast_quota_blocked (T-10 invariant)', async () => {
+    // Reserved (submitted/approved) slots fill the cap with no `used` headroom:
+    // the admin proxy must NOT be granted a free slot over the member's reserved
+    // pipeline. NOTE — used+reserved must satisfy the QuotaCounter invariant
+    // (sum <= cap); an over-subscribed counter (sum > cap) is a distinct
+    // pre-existing path that surfaces as submit.server_error, not quota_blocked.
     const { deps, repo } = makeDeps({
       planCap: 6,
-      used: 8,
+      used: 4,
       reserved: 2,
       primaryContact: 'm-target@example.com',
       recipients: [
@@ -422,8 +435,11 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
       ],
     });
     const result = await proxySubmitBroadcast(deps, baseInput);
-    expect(result.ok).toBe(true);
-    expect(repo.inserted).toHaveLength(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_quota_blocked');
+    }
+    expect(repo.inserted).toHaveLength(0);
   });
 
   // ---- Halt-state precondition still applies (R3-NEW-1) ------------
@@ -610,8 +626,9 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
   it('proxy probe returns null but bridge.recipients still resolve โ’ delegate fails on missing primary contact', async () => {
     // Even when getMemberPrimaryContact returns null at the probe, the
     // delegate (submit-broadcast) re-checks and emits the right error.
-    // memberExistsInTenant is true (default) so proxy-submit doesn't
-    // short-circuit; submit-broadcast surfaces the precondition (j) error.
+    // baseInput.memberLookup defaults to { status: 'found' } so proxy-submit
+    // doesn't short-circuit on existence; submit-broadcast surfaces the
+    // precondition (j) error.
     const { deps } = makeDeps({
       primaryContact: null,
       recipients: [
@@ -627,14 +644,14 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     }
   });
 
-  // ---- Round-5 R5-T โ€” memberExistsInTenant short-circuits ----------
+  // ---- Member lookup (provided by the route - #18 single-read) -------
 
-  it('F7.1-HIGHC โ€” memberExistsInTenant returns false โ’ broadcast_member_not_found', async () => {
-    const { deps } = makeDeps({
-      memberExists: false,
-      primaryContact: 'doesnt@matter.com',
+  it('memberLookup.status="not_found" -> broadcast_member_not_found, nothing inserted', async () => {
+    const { deps, repo } = makeDeps({ primaryContact: 'm@example.com' });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'not_found' },
     });
-    const result = await proxySubmitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('broadcast_member_not_found');
@@ -642,28 +659,36 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
         expect(result.error.memberId).toBe(baseInput.proxiedMemberId);
       }
     }
+    expect(repo.inserted).toHaveLength(0);
   });
 
-  it('R5-S2 โ€” memberExistsInTenant throws (Neon outage) โ’ submit.server_error', async () => {
-    const { deps } = makeDeps({
-      primaryContact: 'me@example.com',
-      recipients: [{ memberId: 'm-1', primaryContactEmail: 'r@example.com' }],
+  it('memberLookup.status="lookup_failed" -> submit.server_error (infra, maps to 500)', async () => {
+    const { deps, repo } = makeDeps({ primaryContact: 'm@example.com' });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'lookup_failed', message: 'repo.unexpected' },
     });
-    // Override the bridge to throw, simulating a repo.unexpected
-    // error rethrown from the bridge after R5-S2.
-    const throwingDeps = {
-      ...deps,
-      membersBridge: {
-        ...deps.membersBridge,
-        async memberExistsInTenant(): Promise<boolean> {
-          throw new Error('members-bridge.memberExistsInTenant: repo.unexpected');
-        },
-      },
-    };
-    const result = await proxySubmitBroadcast(throwingDeps, baseInput);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe('submit.server_error');
-    }
+    if (!result.ok) expect(result.error.kind).toBe('submit.server_error');
+    expect(repo.inserted).toHaveLength(0);
+  });
+
+  it('memberLookup.status="found" threads companyName into the delegated submit (DV-17)', async () => {
+    const { deps, repo } = makeDeps({
+      planCap: 6,
+      used: 0,
+      reserved: 0,
+      primaryContact: 'm-target@example.com',
+      recipients: [{ memberId: 'm-other', primaryContactEmail: 'other@example.com' }],
+    });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'found', companyName: 'Acme AB' },
+    });
+    expect(result.ok).toBe(true);
+    expect(repo.inserted).toHaveLength(1);
+    // from_name composed as "Acme AB via <tenant>" - assert via the inserted
+    // row's fromName field captured by the repo mock.
+    expect(repo.inserted[0]?.fromName).toContain('Acme AB');
   });
 });

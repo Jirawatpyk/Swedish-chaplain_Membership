@@ -198,6 +198,7 @@ export {
 } from './application/use-cases/cancel-broadcast';
 export {
   proxySubmitBroadcast,
+  type ProxyMemberLookup,
   type ProxySubmitBroadcastError,
   type ProxySubmitBroadcastInput,
   type ProxySubmitBroadcastOutput,

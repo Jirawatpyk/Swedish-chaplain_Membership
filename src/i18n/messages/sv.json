@@ -2158,8 +2158,7 @@
           "p95Rolling30d": "p95: {hours} h",
           "withinBudget": "Inom SLA-budget",
           "breachWarning": "SC-002 överskridning — kontrollera granskningskapacitet"
-        },
-        "proxySubmitButton": "Skicka in å medlems vägnar"
+        }
       },
       "review": {
         "title": "Granska utskick",
@@ -2250,15 +2249,26 @@
       },
       "proxySubmitDialog": {
         "title": "Skicka in å medlems vägnar",
-        "description": "Skapa ett utskick som köläggs för granskning med ombudsmedlemmens kvot.",
         "memberLabel": "Medlem",
         "memberPlaceholder": "Sök efter företagsnamn…",
         "subjectLabel": "Ämne",
         "bodyLabel": "Meddelande",
-        "segmentLabel": "Mottagare",
-        "confirm": "Skicka in",
-        "cancel": "Avbryt"
+        "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens e-utskickskvot.",
+        "selfExclusionNotice": "{company} får inte detta utskick — medlemmar exkluderas från sina egna utskick.",
+        "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
+        "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
+        "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
+        "submitErrorToast": "Det gick inte att skicka utskicket. Försök igen.",
+        "subjectTooLongError": "Ämnet får vara högst 200 tecken.",
+        "bodyTooLargeError": "Meddelandet överskrider gränsen på 200 KB.",
+        "bodyUnsafeHtmlError": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
+        "emptySegmentError": "Inga matchande mottagare hittades.",
+        "audienceTooLargeError": "Mottagarlistan överstiger gränsen på 5 000.",
+        "successToast": "Utskicket har kölagts för granskning å {company}:s vägnar.",
+        "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
+        "noResults": "Inga medlemmar hittades."
       },
+      "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
         "title": "{count, plural, =1 {1 medlem är spärrad} other {# medlemmar är spärrade}} från utskick",
         "body": "Automatisk spärr utlöst av klagomålströskel. Granska och häv spärren om det är lämpligt.",

@@ -13,7 +13,7 @@
  *   1. Halt-flag (k) โ€” emits audit + returns broadcast_member_halted_pending_review
  *   2. Rate limit (FR-002d) โ€” emits audit + returns broadcast_rate_limit_exceeded
  *   3. Plan check (a)
- *   4. Quota check (b) โ€” admin_proxy bypasses
+ *   4. Quota check (b) โ€” enforced for all actor roles incl admin_proxy (T-10)
  *   5. Reply-to (j)
  *   6. Subject length (c) โ€” empty + too-long
  *   7. Sanitiser (e + d)
@@ -497,8 +497,8 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     ).toBeDefined();
   });
 
-  it('admin_proxy bypass quota check (admin emergency correction path per Q12)', async () => {
-    const { broadcastsRepo, deps } = makeDeps({
+  it('admin_proxy at full quota is BLOCKED (T-10 — admin cannot bypass the member cap per Q12)', async () => {
+    const { audit, deps } = makeDeps({
       planCap: 6,
       used: 6,
       reserved: 0,
@@ -511,10 +511,16 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       ...baseInput,
       actorRole: 'admin_proxy',
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(broadcastsRepo.inserted.length).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_quota_blocked');
+      if (result.error.kind === 'broadcast_quota_blocked') {
+        expect(result.error.cap).toBe(6);
+      }
     }
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_quota_blocked'),
+    ).toBeDefined();
   });
 
   // ---- FR-002 precondition (j) โ€” reply-to ---------------------------

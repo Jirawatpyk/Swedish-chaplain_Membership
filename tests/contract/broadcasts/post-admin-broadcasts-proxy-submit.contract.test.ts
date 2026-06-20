@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
-import { ok, err } from '@/lib/result';
+import { ok, err, type Result } from '@/lib/result';
 
 const requireAdminContextMock = vi.fn();
 const proxySubmitMock = vi.fn();
@@ -44,8 +44,11 @@ vi.mock('@/modules/broadcasts', () => ({
 // DV-17 — the route resolves the proxied member's display name via the F3
 // barrel to compose the Resend From ("<member> via <tenant>"). Mock it so
 // the contract test never touches the live DB.
-const findMemberByIdMock = vi.fn(async (..._args: unknown[]) =>
-  ok({ companyName: 'Acme Co' }),
+const findMemberByIdMock = vi.fn(
+  async (
+    ..._args: unknown[]
+  ): Promise<Result<{ companyName: string }, { code: string }>> =>
+    ok({ companyName: 'Acme Co' }),
 );
 vi.mock('@/modules/members', () => ({
   drizzleMemberRepo: {
@@ -135,16 +138,24 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     expect(callArgs.adminUserId).toBe('user-admin-1');
   });
 
-  it('DV-17: route resolves proxied member companyName → memberDisplayName', async () => {
+  it('DV-17 + #18: route resolves proxied member companyName → memberLookup.found', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Fogmaker International AB' }));
     proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
     const { POST } = await importRoute();
     await POST(makeRequest(VALID_BODY));
+    // #18 — the single member read is threaded in via the discriminated
+    // `memberLookup`; the `found` arm carries the DV-17 companyName.
     const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
-      memberDisplayName: string;
+      memberLookup:
+        | { status: 'found'; companyName: string }
+        | { status: 'not_found' }
+        | { status: 'lookup_failed'; message: string };
     };
-    expect(callArgs.memberDisplayName).toBe('Fogmaker International AB');
+    expect(callArgs.memberLookup).toEqual({
+      status: 'found',
+      companyName: 'Fogmaker International AB',
+    });
   });
 
   it('400 invalid_body: subject too long', async () => {
@@ -228,6 +239,46 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     expect(body.error.details.memberId).toBe(VALID_MEMBER_ID);
   });
 
+  it('#18 route mapping: findById repo.not_found → memberLookup.not_found → 404', async () => {
+    // Drive the route's findById→memberLookup translation (route.ts ~103-109)
+    // through `findMemberByIdMock` rather than the use-case mock: a repo
+    // `not_found` must become `memberLookup: { status: 'not_found' }`. The
+    // use-case (mocked) then maps that input to broadcast_member_not_found.
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    findMemberByIdMock.mockResolvedValueOnce(err({ code: 'repo.not_found' }));
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_member_not_found', memberId: VALID_MEMBER_ID }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
+      memberLookup: { status: string };
+    };
+    expect(callArgs.memberLookup).toEqual({ status: 'not_found' });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_member_not_found');
+  });
+
+  it('#18 route mapping: findById repo.unexpected → memberLookup.lookup_failed → 500', async () => {
+    // The non-not_found repo error arm: any other repo error code must become
+    // `memberLookup: { status: 'lookup_failed', message: <code> }`. The
+    // use-case (mocked) maps that to submit.server_error → 500.
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    findMemberByIdMock.mockResolvedValueOnce(err({ code: 'repo.unexpected' }));
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'submit.server_error', message: 'lookup_failed' }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
+      memberLookup: { status: string; message?: string };
+    };
+    expect(callArgs.memberLookup.status).toBe('lookup_failed');
+    expect(callArgs.memberLookup.message).toBe('repo.unexpected');
+    expect(res.status).toBe(500);
+  });
+
   it('422 broadcast_member_halted_pending_review (admin cannot bypass halt)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
@@ -249,6 +300,22 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     const { POST } = await importRoute();
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(422);
+  });
+
+  it('admin_proxy at full member quota → 422 broadcast_quota_blocked (T-10)', async () => {
+    // T-10 — the proxied member's quota cap is ENFORCED; the use-case
+    // surfaces broadcast_quota_blocked when at cap and the route maps it
+    // to 422 (no admin bypass). Arranged via the file's existing
+    // proxySubmit deps-mock at-cap return.
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_quota_blocked', used: 6, reserved: 0, cap: 6 }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+    const json = await res.json();
+    expect(json.error.code).toBe('broadcast_quota_blocked');
   });
 
   it('422 broadcast_body_unsafe_html surfaced from use-case', async () => {

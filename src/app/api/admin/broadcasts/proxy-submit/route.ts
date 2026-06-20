@@ -4,8 +4,9 @@
  * Q12 admin-on-behalf-of-member submission. Wraps `proxySubmitBroadcast`
  * use-case which delegates to `submitBroadcast` with admin actor.
  *
- * Authz: admin only (manager 403). Quota check is BYPASSED for
- * `actor_role='admin_proxy'` (Q12 emergency correction).
+ * Authz: admin only (manager 403). The proxied member's quota cap is
+ * ENFORCED (T-10 / Q12 — the member never gets a free broadcast); an
+ * at-cap proxy submit returns 422 `broadcast_quota_blocked`.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -13,8 +14,12 @@ import { z } from 'zod';
 import {
   proxySubmitBroadcast,
   makeProxySubmitBroadcastDeps,
+  type ProxyMemberLookup,
   type ProxySubmitBroadcastError,
 } from '@/modules/broadcasts';
+// #18 — `ProxyMemberLookup` is re-exported from the barrel (Constitution
+// Principle III) so the route can build the single-read outcome it threads
+// into `proxySubmitBroadcast` without deep-importing the use-case module.
 import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import {
   errorResponse,
@@ -77,27 +82,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const tenantDisplayName = await resolveTenantDisplayName(tenantCtx.slug);
 
   try {
-    // DV-17 — resolve the proxied member's display name (F3 `companyName`)
-    // to compose the Resend From as "<member> via <tenant>". The admin
-    // context does not load a member, so read it here via the F3 barrel.
-    // A not-found member yields `''`; the canonical not-found rejection is
-    // still produced inside `proxySubmitBroadcast` (its `memberExistsInTenant`
-    // probe runs BEFORE from-name composition, so the placeholder is never
-    // persisted — `broadcast_member_not_found` behaviour is preserved). Inside
-    // the try so any unexpected repo throw maps to the route's 500 handler.
-    const memberLookup = await drizzleMemberRepo.findById(
+    // #18 + DV-17 — single member read. Resolve the proxied member once
+    // here (the admin context loads no member) and pass the outcome into
+    // the use-case so it does not re-probe. Distinguishes:
+    //   ok            → found, companyName → from-name "<member> via <tenant>"
+    //   repo.not_found → not_found → broadcast_member_not_found (404)
+    //   other error    → lookup_failed → submit.server_error (500)
+    // Inside the try so any unexpected repo throw still maps to the route's
+    // 500 handler.
+    const memberLookupResult = await drizzleMemberRepo.findById(
       tenantCtx,
       asMemberId(parsed.data.requestedByMemberId),
     );
-    const memberDisplayName = memberLookup.ok
-      ? memberLookup.value.companyName
-      : '';
+    let memberLookup: ProxyMemberLookup;
+    if (memberLookupResult.ok) {
+      memberLookup = {
+        status: 'found',
+        companyName: memberLookupResult.value.companyName,
+      };
+    } else if (memberLookupResult.error.code === 'repo.not_found') {
+      memberLookup = { status: 'not_found' };
+    } else {
+      memberLookup = {
+        status: 'lookup_failed',
+        message: memberLookupResult.error.code,
+      };
+    }
 
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: parsed.data.requestedByMemberId,
       adminUserId: ctx.current.user.id,
       tenantDisplayName,
-      memberDisplayName,
+      memberLookup,
       subject: parsed.data.subject,
       bodySource: parsed.data.bodySource,
       bodyHtml: parsed.data.bodyHtml,

@@ -115,6 +115,7 @@ export default async function AdminBroadcastsPage({
   // purity rule (`react-hooks/purity`) forbids `Date.now()` in
   // component body. Auto-instrumented span comes from `@vercel/otel`.
   const t = await getTranslations('admin.broadcasts.queue');
+  const tBroadcasts = await getTranslations('admin.broadcasts');
   const session = await requireSession('staff');
   const isReadOnlyManager = session.user.role === 'manager';
 
@@ -279,18 +280,34 @@ export default async function AdminBroadcastsPage({
               : t('subtitle')
           }
         />
-        {templatesEnabled ? (
-          <Link
-            href="/admin/broadcasts/templates"
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            <LayoutTemplateIcon
-              className="mr-2 size-4"
-              aria-hidden="true"
-            />
-            {t('templatesEntryButton')}
-          </Link>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {templatesEnabled ? (
+            <Link
+              href="/admin/broadcasts/templates"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              <LayoutTemplateIcon
+                className="mr-2 size-4"
+                aria-hidden="true"
+              />
+              {t('templatesEntryButton')}
+            </Link>
+          ) : null}
+          {/* DV-4 — admin-only proxy-submit entry. Hidden entirely for
+              manager (read-only): the e2e asserts the link is absent for
+              manager, so this is gated, not merely disabled. Uses the
+              `buttonVariants` default (primary CTA, h-9 36px tap target)
+              applied to a <Link> — the repo `Button` has no `asChild`
+              (Base UI), matching the sibling templates-entry pattern. */}
+          {!isReadOnlyManager ? (
+            <Link
+              href="/admin/broadcasts/new"
+              className={buttonVariants()}
+            >
+              {tBroadcasts('proxySubmitButton')}
+            </Link>
+          ) : null}
+        </div>
       </div>
       <SlaBanner stats={slaStats} />
       <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
