@@ -8,8 +8,8 @@
  *   - `submittedByUserId`   = acting admin user id (for audit)
  *   - `actorRole`            = 'admin_proxy'
  *
- * `submitBroadcast` already implements quota bypass for admin_proxy
- * (lines 224 of submit-broadcast.ts), so we delegate end-to-end.
+ * `submitBroadcast` enforces the member quota cap for ALL actor roles
+ * incl admin_proxy (T-10) — there is no bypass; we delegate end-to-end.
  *
  * The acting admin is NOT subjected to the 10/24h rate limit (proxied
  * submissions are queue-managed by admins for ops needs); the rate
