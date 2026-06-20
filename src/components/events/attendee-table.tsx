@@ -78,6 +78,7 @@ import type { MemberId } from '@/modules/members';
 import { MatchStatusBadge } from './match-status-badge';
 import { QuotaEffectBadge } from './quota-effect-badge';
 import { RelinkRegistrationDialog } from './relink-registration-dialog';
+import { ErasePiiDialog } from './erase-pii-dialog';
 
 export type AttendeeRow = {
   // Brand types propagated through the Server→Client prop boundary.
@@ -585,11 +586,12 @@ export function AttendeeTable({
         </div>
       ) : (
         // min-w sizing: 5 base columns (Attendee + Match + Ticket +
-        // Quota + Registered) ~580px; Phase 9 adds an optional Actions
-        // column (~80px when `showActions=true`). Bump to 660px so the
-        // table fills its viewport on the admin-render path without
-        // forcing horizontal scroll on mid-size laptop viewports.
-        <Table className={cn(showActions ? 'min-w-[660px]' : 'min-w-[580px]')}>
+        // Quota + Registered) ~580px; the admin Actions column now holds
+        // TWO row actions (Relink + DV-6 Erase PII) ~160px when
+        // `showActions=true`. Bump to 740px so both actions fit on the
+        // admin-render path without forcing horizontal scroll on mid-size
+        // laptop viewports.
+        <Table className={cn(showActions ? 'min-w-[740px]' : 'min-w-[580px]')}>
           <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
@@ -738,14 +740,28 @@ export function AttendeeTable({
                 </TableCell>
                 {showActions && eventId !== null && (
                   <TableCell className="text-right">
-                    <RelinkRegistrationDialog
-                      registrationId={r.registrationId}
-                      eventId={eventId}
-                      attendeeName={r.attendeeName}
-                      attendeeEmail={r.attendeeEmail}
-                      currentMatchedMemberId={r.currentMatchedMemberId}
-                      isPseudonymised={r.isPseudonymised}
-                    />
+                    <div className="flex items-center justify-end gap-1">
+                      <RelinkRegistrationDialog
+                        registrationId={r.registrationId}
+                        eventId={eventId}
+                        attendeeName={r.attendeeName}
+                        attendeeEmail={r.attendeeEmail}
+                        currentMatchedMemberId={r.currentMatchedMemberId}
+                        isPseudonymised={r.isPseudonymised}
+                      />
+                      {/* DV-6 — surface the EXISTING per-registration erase tool
+                          (FR-032a) as a row action; it was reachable only by
+                          hand-typing the deep-link URL. Hidden once
+                          pseudonymised: the erase page redirects an already-
+                          purged row away + re-erase is an idempotent no-op. */}
+                      {!r.isPseudonymised && (
+                        <ErasePiiDialog
+                          eventId={eventId}
+                          registrationId={r.registrationId}
+                          attendeeName={r.attendeeName}
+                        />
+                      )}
+                    </div>
                   </TableCell>
                 )}
               </TableRow>
