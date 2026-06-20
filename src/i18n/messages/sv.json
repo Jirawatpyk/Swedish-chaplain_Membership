@@ -4958,9 +4958,9 @@
   "shared": {
     "loaded": "Innehåll laddat",
     "validation": {
-      "required": "Det här fältet är obligatoriskt.",
+      "required": "Detta fält är obligatoriskt.",
       "invalidEmail": "Ange en giltig e-postadress.",
-      "tooLong": "Använd högst {max} tecken."
+      "tooLong": "Får vara högst {max} tecken."
     }
   },
   "email": {

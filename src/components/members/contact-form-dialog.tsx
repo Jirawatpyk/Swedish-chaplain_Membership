@@ -117,7 +117,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           : z.string().optional(),
     };
     return z.object(shape);
-    // t/tf are stable per-render; mode never changes for a mounted dialog.
+    // t/tf/tv are stable per-render; mode never changes for a mounted dialog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
