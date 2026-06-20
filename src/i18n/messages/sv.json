@@ -2257,8 +2257,18 @@
         "bodyLabel": "Meddelande",
         "segmentLabel": "Mottagare",
         "confirm": "Skicka in",
-        "cancel": "Avbryt"
+        "cancel": "Avbryt",
+        "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens e-utskickskvot.",
+        "selfExclusionNotice": "{company} får inte detta utskick — medlemmar exkluderas från sina egna utskick.",
+        "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
+        "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
+        "notInPlanError": "{company}s paket inkluderar inte E-utskick.",
+        "submitErrorToast": "Det gick inte att skicka utskicket. Försök igen.",
+        "successToast": "Utskicket har köalts för granskning å {company}:s vägnar.",
+        "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
+        "noResults": "Inga medlemmar hittades."
       },
+      "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
         "title": "{count, plural, =1 {1 medlem är spärrad} other {# medlemmar är spärrade}} från utskick",
         "body": "Automatisk spärr utlöst av klagomålströskel. Granska och häv spärren om det är lämpligt.",

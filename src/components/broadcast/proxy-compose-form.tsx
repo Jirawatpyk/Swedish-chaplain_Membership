@@ -1,0 +1,348 @@
+'use client';
+
+/**
+ * DV-4 — Admin proxy-compose form.
+ *
+ * A thin admin-only orchestrator that reuses the member-facing compose
+ * sub-components (segment-picker, custom-list-input, schedule-picker,
+ * preview-pane, submit-button, Tiptap body editor) to submit a broadcast
+ * on a member's behalf via the existing `/api/admin/broadcasts/proxy-submit`
+ * route (Q12 admin-on-behalf-of-member).
+ *
+ * Differences from the member `ComposeForm`:
+ *   - Adds a `MemberPicker` for selecting the proxied member (DV-4 Task 4).
+ *   - Drops quota display, save-draft, and template-picker (admin proxy
+ *     flow has no draft lifecycle and the member's quota is enforced
+ *     server-side, surfaced via the `broadcast_quota_blocked` error toast).
+ *   - Self-exclusion notice (Q16) once a member is picked: the proxied
+ *     member never receives their own e-blast.
+ *
+ * Error mapping (`ERROR_HANDLING`) reacts to `json.error.code` from the
+ * route's bilingual envelope (`broadcasts-route-helpers.ts`):
+ *   - broadcast_member_not_found → inline picker error + refocus picker
+ *   - broadcast_quota_blocked / broadcast_not_in_plan → toast with {company}
+ *   - field codes → inline field error (subject/body/segment)
+ *   - everything else (halt, rate-limit, missing-contact, internal) → generic toast
+ */
+
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { MemberPicker, type MemberPickerOption } from './member-picker';
+import {
+  SegmentPicker,
+  type SegmentPickerValue,
+} from './segment-picker';
+import { CustomListInput, parseLines } from './custom-list-input';
+import { SchedulePicker } from './schedule-picker';
+import { PreviewPane } from './preview-pane';
+import { SubmitButton } from './submit-button';
+import { buildSegmentPayload } from './compose-form';
+
+// Proxy form drops inline images + draft lifecycle — the Tiptap editor is
+// loaded with the same loader the member compose form uses, minus the
+// `imagesEnabled` / `draftId` props.
+const TiptapEditor = loadTiptapEditor<{
+  initialHtml: string;
+  onChange: (html: string) => void;
+  disabled?: boolean;
+  labelledById?: string;
+}>(() => import('./tiptap-editor'));
+
+const INITIAL_BODY_HTML = '<p></p>';
+
+const SubmitSchema = z.object({
+  subject: z.string().min(1).max(200),
+  bodyHtml: z.string().min(1).max(200 * 1024),
+});
+
+/**
+ * Field-level server error target. `null` for form-level errors handled
+ * by toast. Mirrors `compose-form.tsx`'s `ServerErrorField`.
+ */
+type ServerErrorField = 'subject' | 'body' | 'segment' | null;
+
+/**
+ * Map a route error code → how the proxy form reacts. Field codes set an
+ * inline error; `picker` refocuses the member combobox; `toast` shows a
+ * sonner toast keyed to a `{company}`-interpolated message.
+ */
+type ProxyErrorHandling =
+  | { readonly kind: 'picker' }
+  | { readonly kind: 'field'; readonly field: 'subject' | 'body' | 'segment' }
+  | {
+      readonly kind: 'toast';
+      readonly key: 'quotaBlockedError' | 'notInPlanError';
+    };
+
+const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
+  broadcast_member_not_found: { kind: 'picker' },
+  broadcast_quota_blocked: { kind: 'toast', key: 'quotaBlockedError' },
+  broadcast_not_in_plan: { kind: 'toast', key: 'notInPlanError' },
+  broadcast_subject_too_long: { kind: 'field', field: 'subject' },
+  broadcast_body_too_large: { kind: 'field', field: 'body' },
+  broadcast_body_unsafe_html: { kind: 'field', field: 'body' },
+  broadcast_empty_segment_blocked: { kind: 'field', field: 'segment' },
+  broadcast_audience_too_large: { kind: 'field', field: 'segment' },
+};
+
+export function ProxyComposeForm(): React.ReactElement {
+  const t = useTranslations('admin.broadcasts.proxySubmitDialog');
+  const router = useRouter();
+
+  const pickerRef = useRef<HTMLButtonElement>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyContainerRef = useRef<HTMLDivElement>(null);
+
+  const [member, setMember] = useState<MemberPickerOption | null>(null);
+  const [memberError, setMemberError] = useState<string | null>(null);
+  const [subject, setSubject] = useState('');
+  const [bodyHtml, setBodyHtml] = useState(INITIAL_BODY_HTML);
+  const [segment, setSegment] = useState<SegmentPickerValue>({
+    kind: 'all_members',
+    tierCodes: [],
+  });
+  const [customList, setCustomList] = useState('');
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [fieldError, setFieldError] = useState<{
+    field: ServerErrorField;
+    message: string;
+  } | null>(null);
+
+  const deferredBody = useDeferredValue(bodyHtml);
+  const customLines = parseLines(customList);
+
+  // Submit precondition: member picked + subject/body valid + segment
+  // shape valid (custom needs 1–100 entries; tier needs ≥1 code). Mirrors
+  // compose-form.tsx's derivation.
+  const validation = SubmitSchema.safeParse({ subject, bodyHtml });
+  const customListValid =
+    segment.kind !== 'custom' ||
+    (customLines.length > 0 && customLines.length <= 100);
+  const tierValid = segment.kind !== 'tier' || segment.tierCodes.length > 0;
+  const submitDisabled =
+    member === null || !validation.success || !customListValid || !tierValid;
+
+  // Auto-focus the failing field when a field-level server error arrives.
+  useEffect(() => {
+    if (fieldError === null) return;
+    if (fieldError.field === 'subject') subjectRef.current?.focus();
+    else if (fieldError.field === 'body') bodyContainerRef.current?.focus();
+    // segment is a radio group — the inline error + toast suffices.
+  }, [fieldError]);
+
+  function handleErrorCode(code: string, companyName: string): void {
+    const handling = ERROR_HANDLING[code] ?? null;
+    if (handling === null) {
+      // Unmapped: halt, rate-limit, missing-primary-contact, internal,
+      // invalid_body, etc. → generic toast.
+      toast.error(t('submitErrorToast'));
+      return;
+    }
+    switch (handling.kind) {
+      case 'picker':
+        setMemberError(t('memberNotFoundError'));
+        pickerRef.current?.focus();
+        break;
+      case 'field':
+        setFieldError({ field: handling.field, message: t('submitErrorToast') });
+        toast.error(t('submitErrorToast'));
+        break;
+      case 'toast':
+        toast.error(t(handling.key, { company: companyName }));
+        break;
+    }
+  }
+
+  async function handleSubmit(): Promise<void> {
+    if (submitting || member === null) return;
+    setSubmitting(true);
+    setMemberError(null);
+    setFieldError(null);
+    const companyName = member.companyName;
+    try {
+      const res = await fetch('/api/admin/broadcasts/proxy-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          requestedByMemberId: member.memberId,
+          subject,
+          bodyHtml,
+          bodySource: bodyHtml,
+          segment: buildSegmentPayload(segment, customLines),
+          scheduledFor,
+        }),
+      });
+
+      if (res.ok) {
+        toast.success(t('successToast', { company: companyName }));
+        router.push('/admin/broadcasts');
+        router.refresh();
+        return;
+      }
+
+      const json: unknown = await res.json().catch(() => null);
+      const code =
+        typeof json === 'object' &&
+        json !== null &&
+        'error' in json &&
+        typeof (json as { error?: { code?: unknown } }).error?.code === 'string'
+          ? (json as { error: { code: string } }).error.code
+          : 'internal_error';
+      handleErrorCode(code, companyName);
+    } catch (e) {
+      // Network/CORS/offline — log for local + E2E visibility; generic toast.
+
+      console.error(
+        { err: e instanceof Error ? e.message : String(e) },
+        'admin.broadcasts.proxy_submit.network_failed',
+      );
+      toast.error(t('submitErrorToast'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <MemberPicker
+            value={member}
+            onSelect={(m) => {
+              setMember(m);
+              setMemberError(null);
+            }}
+            label={t('memberLabel')}
+            placeholder={t('memberPlaceholder')}
+            searchFailedText={t('searchFailed')}
+            emptyText={t('noResults')}
+            disabled={submitting}
+            triggerRef={pickerRef}
+          />
+          {memberError !== null ? (
+            <p role="alert" className="text-xs text-destructive">
+              {memberError}
+            </p>
+          ) : null}
+          {member !== null ? (
+            <p className="text-sm text-muted-foreground">
+              {t('selfExclusionNotice', { company: member.companyName })}
+            </p>
+          ) : null}
+        </div>
+
+        <SegmentPicker
+          value={segment}
+          onChange={(next) => {
+            setSegment(next);
+            if (fieldError?.field === 'segment') setFieldError(null);
+          }}
+          disabled={submitting}
+        />
+
+        {fieldError?.field === 'segment' ? (
+          <p role="alert" className="text-xs text-destructive">
+            {fieldError.message}
+          </p>
+        ) : null}
+
+        {segment.kind === 'custom' ? (
+          <CustomListInput
+            value={customList}
+            onChange={setCustomList}
+            disabled={submitting}
+          />
+        ) : null}
+
+        <div className="space-y-2">
+          <Label htmlFor="proxy-broadcast-subject">{t('subjectLabel')}</Label>
+          <Input
+            ref={subjectRef}
+            id="proxy-broadcast-subject"
+            value={subject}
+            onChange={(e) => {
+              setSubject(e.target.value);
+              if (fieldError?.field === 'subject') setFieldError(null);
+            }}
+            maxLength={200}
+            disabled={submitting}
+            aria-invalid={fieldError?.field === 'subject' || undefined}
+            aria-describedby={
+              fieldError?.field === 'subject'
+                ? 'proxy-broadcast-subject-error'
+                : undefined
+            }
+          />
+          {fieldError?.field === 'subject' ? (
+            <p
+              id="proxy-broadcast-subject-error"
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {fieldError.message}
+            </p>
+          ) : null}
+        </div>
+
+        <div
+          ref={bodyContainerRef}
+          tabIndex={-1}
+          className="space-y-2 outline-none"
+          aria-invalid={fieldError?.field === 'body' || undefined}
+          aria-describedby={
+            fieldError?.field === 'body'
+              ? 'proxy-broadcast-body-error'
+              : undefined
+          }
+        >
+          <Label id="proxy-broadcast-body-label">{t('bodyLabel')}</Label>
+          <TiptapEditor
+            initialHtml={INITIAL_BODY_HTML}
+            onChange={(next) => {
+              setBodyHtml(next);
+              if (fieldError?.field === 'body') setFieldError(null);
+            }}
+            disabled={submitting}
+            labelledById="proxy-broadcast-body-label"
+          />
+          {fieldError?.field === 'body' ? (
+            <p
+              id="proxy-broadcast-body-error"
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {fieldError.message}
+            </p>
+          ) : null}
+        </div>
+
+        <SchedulePicker
+          value={scheduledFor}
+          onChange={setScheduledFor}
+          disabled={submitting}
+        />
+
+        <PreviewPane subject={subject} bodyHtml={deferredBody} />
+
+        <div className="flex justify-end border-t pt-4">
+          <SubmitButton
+            disabled={submitDisabled}
+            submitting={submitting}
+            onClick={() => {
+              void handleSubmit();
+            }}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

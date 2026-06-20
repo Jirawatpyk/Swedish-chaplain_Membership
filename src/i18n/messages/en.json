@@ -2257,8 +2257,18 @@
         "bodyLabel": "Message",
         "segmentLabel": "Audience",
         "confirm": "Submit",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "pageSubtitle": "Compose and queue a broadcast for review using this member's e-blast quota.",
+        "selfExclusionNotice": "{company} won't receive this broadcast — members are excluded from their own e-blasts.",
+        "memberNotFoundError": "That member no longer exists. Pick another member.",
+        "quotaBlockedError": "{company} has used all their e-blasts for this period.",
+        "notInPlanError": "{company}'s plan doesn't include E-Blast.",
+        "submitErrorToast": "Couldn't submit the broadcast. Please try again.",
+        "successToast": "Broadcast queued for review on behalf of {company}.",
+        "searchFailed": "Member search failed. Try again.",
+        "noResults": "No members found."
       },
+      "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {
         "title": "{count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
         "body": "Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",

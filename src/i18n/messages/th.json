@@ -2257,8 +2257,18 @@
         "bodyLabel": "ข้อความ",
         "segmentLabel": "ผู้รับ",
         "confirm": "ส่ง",
-        "cancel": "ยกเลิก"
+        "cancel": "ยกเลิก",
+        "pageSubtitle": "เขียนและส่ง E-Blast เข้าคิวตรวจสอบโดยใช้โควตา E-Blast ของสมาชิกรายนี้",
+        "selfExclusionNotice": "{company} จะไม่ได้รับ E-Blast ฉบับนี้ — สมาชิกจะถูกยกเว้นจาก E-Blast ของตนเอง",
+        "memberNotFoundError": "ไม่พบสมาชิกรายนี้แล้ว กรุณาเลือกสมาชิกรายอื่น",
+        "quotaBlockedError": "{company} ใช้โควตา E-Blast ของช่วงเวลานี้ครบแล้ว",
+        "notInPlanError": "แพ็กเกจของ {company} ไม่รวมสิทธิ์ E-Blast",
+        "submitErrorToast": "ส่ง E-Blast ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+        "successToast": "ส่ง E-Blast เข้าคิวตรวจสอบแทน {company} แล้ว",
+        "searchFailed": "ค้นหาสมาชิกไม่สำเร็จ ลองอีกครั้ง",
+        "noResults": "ไม่พบสมาชิก"
       },
+      "proxySubmitButton": "ส่งแทนสมาชิก",
       "haltBanner": {
         "title": "{count, plural, =1 {สมาชิก 1 รายถูกพักการส่ง} other {สมาชิก # รายถูกพักการส่ง}}",
         "body": "พักอัตโนมัติเนื่องจากเกินเกณฑ์ความถี่ในการรายงานสแปม กรุณาตรวจสอบและคลายล็อกหากเหมาะสม",
