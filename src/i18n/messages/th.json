@@ -2158,8 +2158,7 @@
           "p95Rolling30d": "p95: {hours} ชม.",
           "withinBudget": "อยู่ในเกณฑ์ SLA",
           "breachWarning": "เกิน SLA — ทบทวนกำลังคนของทีมตรวจสอบ"
-        },
-        "proxySubmitButton": "ส่งแทนสมาชิก"
+        }
       },
       "review": {
         "title": "ตรวจสอบ E-Blast",

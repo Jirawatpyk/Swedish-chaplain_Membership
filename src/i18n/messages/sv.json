@@ -2158,8 +2158,7 @@
           "p95Rolling30d": "p95: {hours} h",
           "withinBudget": "Inom SLA-budget",
           "breachWarning": "SC-002 överskridning — kontrollera granskningskapacitet"
-        },
-        "proxySubmitButton": "Skicka in å medlems vägnar"
+        }
       },
       "review": {
         "title": "Granska utskick",

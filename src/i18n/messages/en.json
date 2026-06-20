@@ -2158,8 +2158,7 @@
           "p95Rolling30d": "p95: {hours}h",
           "withinBudget": "Within SLA budget",
           "breachWarning": "SC-002 breach — review queue capacity"
-        },
-        "proxySubmitButton": "Submit on behalf of member"
+        }
       },
       "review": {
         "title": "Broadcast review",

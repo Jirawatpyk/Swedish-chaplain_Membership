@@ -274,6 +274,31 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     await expect(page).toHaveURL(/\/portal(\/|$)/, { timeout: 30_000 });
     expect(page.url()).not.toContain('/admin/broadcasts/new');
   });
+
+  test('member POST proxy-submit → 403', async ({ page }) => {
+    test.skip(
+      !process.env.E2E_MEMBER_EMAIL || !process.env.E2E_MEMBER_PASSWORD,
+      'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD',
+    );
+    // A member holds a valid (unified) session, so requireAdminContext
+    // passes the session-presence check (no 401) and denies on role → 403:
+    // a member has no `broadcast:write` (policies.ts grants only
+    // `broadcast:own`). Confirms the route is not member-reachable even
+    // with a live member session — the same forbidden code as the manager
+    // probe. NOT 200 (security failure), NOT 404 (route exists).
+    await signInAsMember(page);
+    const res = await page.request.post('/api/admin/broadcasts/proxy-submit', {
+      data: {
+        requestedByMemberId: '00000000-0000-4000-8000-000000000000',
+        subject: 'x',
+        bodyHtml: '<p>x</p>',
+        bodySource: '<p>x</p>',
+        segment: { kind: 'all_members' },
+      },
+      failOnStatusCode: false,
+    });
+    expect(res.status()).toBe(403);
+  });
 });
 
 /**
