@@ -3,7 +3,9 @@
  *
  * Wave 6 GREEN โ€” admin-on-behalf-of-member. The use-case is a thin
  * wrapper that:
- *   1. Calls `membersBridge.getMemberPrimaryContact` (existence probe)
+ *   1. Reads member existence from the route-provided `memberLookup`
+ *      discriminated input (the route does the single RLS-scoped member
+ *      read), NOT a `memberExistsInTenant` bridge probe
  *   2. Delegates to `submitBroadcast` with actorRole='admin_proxy'
  *   3. Casts the result to ProxySubmitBroadcastOutput
  *
@@ -11,7 +13,7 @@
  *   - actorRole='admin_proxy' propagated into persisted row
  *   - dual-actor mapping: proxiedMemberId โ’ requestedByMemberId,
  *     adminUserId โ’ submittedByUserId
- *   - quota bypass (admin_proxy short-circuits the quota branch in submit-broadcast)
+ *   - quota ENFORCED (admin_proxy obeys the member quota cap, T-10, no bypass)
  *   - halt-flag still enforced (admin can NOT bypass halt โ€” R3-NEW-1)
  *   - SubmitBroadcastError pass-through
  */

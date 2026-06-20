@@ -13,7 +13,7 @@
  *   1. Halt-flag (k) โ€” emits audit + returns broadcast_member_halted_pending_review
  *   2. Rate limit (FR-002d) โ€” emits audit + returns broadcast_rate_limit_exceeded
  *   3. Plan check (a)
- *   4. Quota check (b) โ€” admin_proxy bypasses
+ *   4. Quota check (b) โ€” enforced for all actor roles incl admin_proxy (T-10)
  *   5. Reply-to (j)
  *   6. Subject length (c) โ€” empty + too-long
  *   7. Sanitiser (e + d)

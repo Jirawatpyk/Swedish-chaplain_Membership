@@ -5,14 +5,20 @@
  *
  * #18 (single member read) amendment: the proxied-member read now lives
  * in the ROUTE (`drizzleMemberRepo.findById`, RLS-scoped) — the use-case
- * no longer probes via `membersBridge.memberExistsInTenant`. The DB-layer
- * RLS scoping of that single read is exercised by the F3 member-repo
- * cross-tenant tests; under tenant A it resolves the tenant-B id to
- * `repo.not_found` → `memberLookup: { status: 'not_found' }`. This DV-4
- * test pins the APPLICATION-LAYER half of the guarantee: given that
- * not-found lookup, `proxySubmitBroadcast` short-circuits with
- * `broadcast_member_not_found` BEFORE delegating to `submitBroadcast`, so
- * nothing is written in EITHER tenant (verified against live Neon below).
+ * no longer probes via `membersBridge.memberExistsInTenant`. Under tenant A
+ * that single read resolves the tenant-B id to `repo.not_found` →
+ * `memberLookup: { status: 'not_found' }`.
+ *
+ * This DV-4 test pins BOTH halves of the Principle-I guarantee WITHIN DV-4
+ * (not only inferentially via the F3 member-repo suite):
+ *   1. DB layer — a tenant-A-scoped `drizzleMemberRepo.findById` of a
+ *      tenant-B member id MISSES (RLS hides the row) → `repo.not_found`.
+ *      This proves the route would derive `memberLookup.not_found` for a
+ *      cross-tenant id rather than assuming it.
+ *   2. Application layer — given that not-found lookup, `proxySubmitBroadcast`
+ *      short-circuits with `broadcast_member_not_found` BEFORE delegating to
+ *      `submitBroadcast`, so nothing is written in EITHER tenant (verified
+ *      against live Neon below).
  *
  * A single missed isolation path here would let one chamber's admin send a
  * marketing e-blast charged against another chamber's member quota — a
@@ -41,6 +47,7 @@ import {
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
@@ -122,6 +129,19 @@ describe('DV-4 / Principle I — proxy-submit cross-tenant isolation (live Neon)
   });
 
   it('admin in tenant A proxy-submitting a tenant-B member id → member_not_found, no cross-tenant write', async () => {
+    // Principle I (DB layer): the route's single member read is RLS-scoped.
+    // A tenant-A-scoped findById of a tenant-B member id must MISS (RLS
+    // hides the row) → repo.not_found. This proves the route would derive
+    // memberLookup={status:'not_found'} for a cross-tenant id — not assumed.
+    const crossTenantRead = await drizzleMemberRepo.findById(
+      tenantA.ctx,
+      asMemberId(bMemberId),
+    );
+    expect(crossTenantRead.ok).toBe(false);
+    if (!crossTenantRead.ok) {
+      expect(crossTenantRead.error.code).toBe('repo.not_found');
+    }
+
     // Deps scoped to tenant A; target member id lives in tenant B.
     const depsTenantA = makeProxySubmitBroadcastDeps(tenantA.ctx.slug);
 
