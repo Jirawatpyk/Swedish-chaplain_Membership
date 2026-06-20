@@ -60,8 +60,6 @@ interface FixtureOpts {
     memberId: string;
     primaryContactEmail: string | null;
   }>;
-  /** Round-5 R5-T โ€” let tests synthesise "member not found in tenant" + infra-throw paths. */
-  readonly memberExists?: boolean;
 }
 
 function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
@@ -116,7 +114,9 @@ function makeMembersBridge(opts: FixtureOpts): MembersBridgePort {
       return ok(undefined);
     },
     async memberExistsInTenant() {
-      return opts.memberExists ?? true;
+      // Retained to satisfy MembersBridgePort; the #18 use-case reads member
+      // existence from the route-provided `memberLookup` input, not this probe.
+      return true;
     },
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
@@ -626,8 +626,9 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
   it('proxy probe returns null but bridge.recipients still resolve โ’ delegate fails on missing primary contact', async () => {
     // Even when getMemberPrimaryContact returns null at the probe, the
     // delegate (submit-broadcast) re-checks and emits the right error.
-    // memberExistsInTenant is true (default) so proxy-submit doesn't
-    // short-circuit; submit-broadcast surfaces the precondition (j) error.
+    // baseInput.memberLookup defaults to { status: 'found' } so proxy-submit
+    // doesn't short-circuit on existence; submit-broadcast surfaces the
+    // precondition (j) error.
     const { deps } = makeDeps({
       primaryContact: null,
       recipients: [

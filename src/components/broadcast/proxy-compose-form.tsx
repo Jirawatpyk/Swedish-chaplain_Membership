@@ -128,6 +128,10 @@ const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
 
 export function ProxyComposeForm(): React.ReactElement {
   const t = useTranslations('admin.broadcasts.proxySubmitDialog');
+  // The proxySubmitDialog namespace has no member-search loading string;
+  // reuse the canonical members-picker loading copy ("Loading members…")
+  // rather than hardcoding a new string.
+  const tLink = useTranslations('admin.users.invite.linkMember');
   const router = useRouter();
 
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -182,6 +186,11 @@ export function ProxyComposeForm(): React.ReactElement {
     }
     switch (handling.kind) {
       case 'picker':
+        // Clear the stale selection: the picked member no longer exists, so
+        // the trigger must drop its company name, the self-exclusion notice
+        // must disappear, and submit must re-disable (member === null) so the
+        // admin can't resubmit the same dead id.
+        setMember(null);
         setMemberError(t('memberNotFoundError'));
         pickerRef.current?.focus();
         break;
@@ -261,6 +270,7 @@ export function ProxyComposeForm(): React.ReactElement {
             placeholder={t('memberPlaceholder')}
             searchFailedText={t('searchFailed')}
             emptyText={t('noResults')}
+            loadingText={tLink('loading')}
             disabled={submitting}
             triggerRef={pickerRef}
           />

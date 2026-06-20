@@ -14,12 +14,12 @@ import { z } from 'zod';
 import {
   proxySubmitBroadcast,
   makeProxySubmitBroadcastDeps,
+  type ProxyMemberLookup,
   type ProxySubmitBroadcastError,
 } from '@/modules/broadcasts';
-// #18 — `ProxyMemberLookup` is exported from the use-case module (not the
-// barrel) and imported directly here so the route can build the single-read
-// outcome it threads into `proxySubmitBroadcast`.
-import type { ProxyMemberLookup } from '@/modules/broadcasts/application/use-cases/proxy-submit-broadcast';
+// #18 — `ProxyMemberLookup` is re-exported from the barrel (Constitution
+// Principle III) so the route can build the single-read outcome it threads
+// into `proxySubmitBroadcast` without deep-importing the use-case module.
 import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import {
   errorResponse,

@@ -27,6 +27,7 @@ describe('MemberPicker (closed-state guard)', () => {
     placeholder: 'Search by company name…',
     searchFailedText: 'Search failed',
     emptyText: 'No members',
+    loadingText: 'Loading members…',
   };
 
   it('shows the placeholder when no member is selected', () => {

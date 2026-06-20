@@ -23,7 +23,7 @@
 
 import { useEffect, useId, useRef, useState, useDeferredValue } from 'react';
 import { z } from 'zod';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronsUpDown, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -59,6 +59,7 @@ export interface MemberPickerProps {
   readonly placeholder: string;
   readonly searchFailedText: string;
   readonly emptyText: string;
+  readonly loadingText: string;
   readonly disabled?: boolean;
   readonly triggerRef?: React.Ref<HTMLButtonElement>;
 }
@@ -70,6 +71,7 @@ export function MemberPicker({
   placeholder,
   searchFailedText,
   emptyText,
+  loadingText,
   disabled,
   triggerRef,
 }: MemberPickerProps): React.ReactElement {
@@ -88,10 +90,10 @@ export function MemberPicker({
 
   /* eslint-disable react-hooks/set-state-in-effect --
    * Legitimate data-fetching effect mirroring relink-registration-dialog.tsx:203-271
-   * (cancellable fetch; the spinner state MUST flip synchronously on query
-   * change so the user gets immediate feedback before the network resolves —
-   * results depend on live server state, so the use-memo alternative
-   * doesn't apply). */
+   * (cancellable fetch; `searching` flips synchronously on query change so the
+   * loading row in the CommandList gives the user immediate feedback before the
+   * network resolves — results depend on live server state, so the use-memo
+   * alternative doesn't apply). */
   useEffect(() => {
     if (!open || trimmedQuery === '') return;
     const controller = new AbortController();
@@ -141,6 +143,10 @@ export function MemberPicker({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const emptyMessage = searchError ? searchFailedText : emptyText;
+  // Visible results — empty when the user has cleared the input so stale
+  // results from a previous query don't briefly flash and stay selectable
+  // under an empty search box (mirrors relink-registration-dialog.tsx:295).
+  const visibleResults = trimmedQuery === '' ? [] : results;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -178,9 +184,31 @@ export function MemberPicker({
               placeholder={placeholder}
             />
             <CommandList>
-              {!searching && <CommandEmpty>{emptyMessage}</CommandEmpty>}
+              {searching && (
+                // role="status" has an implicit aria-live="polite"; the
+                // explicit attribute makes the announcement reliable across
+                // older SR implementations. Mirrors members/member-picker.tsx.
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground"
+                >
+                  <Loader2Icon
+                    className="size-4 motion-safe:animate-spin"
+                    aria-hidden
+                  />
+                  <span>{loadingText}</span>
+                </div>
+              )}
+              {/* Only show the empty-state after a real search ran and
+                  returned nothing — never on an empty query before a search,
+                  and never while a fetch is in flight. */}
+              {trimmedQuery !== '' && !searching && (
+                <CommandEmpty>{emptyMessage}</CommandEmpty>
+              )}
               <CommandGroup>
-                {results.map((m) => (
+                {visibleResults.map((m) => (
                   <CommandItem
                     key={m.memberId}
                     value={m.memberId}
