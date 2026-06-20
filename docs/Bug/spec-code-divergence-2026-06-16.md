@@ -15,7 +15,7 @@
 | DV-1 | F1 | **Change user role**: API route exists, **no UI** calls it (user-list only Disable/Enable; the role grep-hit was a stale file-header comment). | `api/auth/users/[id]/role/route.ts` vs `user-list-table.tsx` (PendingAction = disable/enable only) | Build the role UI, or mark US2-AS4/US4-AS4 backend-only in spec | MED | verified |
 | DV-2 | F2 | **Fee-config edit UI** not shipped — no `/admin/settings/plans`, no fee-config page, no `/api/fee-config`. VAT/reg-fee read-only from F4 `invoice_settings` via `deps.taxPolicy()`. `fee_config_updated` audit retired (migration 0029). | spec FR-016/FR-017/US5 | Confirm Settings→Invoicing is the single source; descope US5 fee-config-UI or build it | LOW | done (spec amended 2026-06-21) |
 | DV-3 | F3 | **Bulk "Change plan"** not wired (`bulk-action-bar.tsx` = Archive + Send-invite only). i18n `admin.members.bulk.actions.change_plan` is dead. | `bulk-action-bar.tsx:31` | Remove dead key or wire it | LOW | verified |
-| DV-4 | F7 | **"Submit on behalf of member"** (admin proxy): use-case + route + i18n keys exist, **no button/dialog wired**. | `proxy-submit-broadcast.ts` + route exist; 0 component refs to `proxySubmitButton` | Remove dead keys or wire it | LOW | verified |
+| DV-4 | F7 | **"Submit on behalf of member"** (admin proxy): use-case + route + i18n keys existed; the admin UI (button + compose page) was **not wired** — now built. | admin `/admin/broadcasts/new` + entry button on `/admin/broadcasts` | **Resolved by build** (also folded in the T-10 quota-cap fix + #18 read-dedup) | LOW | **done** (PR #109, 2026-06-21) |
 | DV-5 | F8 | **"Cancel cycle"** + **"Mark renewal as paid offline"** (FR-006/FR-058): use-cases + API routes exist, **no UI control**. 3 stale comments claim otherwise. | `cancel-cycle.ts`/`mark-paid-offline.ts` + routes vs cycle-detail `page.tsx:336-348` (empty actions) | Decide in/out of scope; build or descope | MED | verified |
 | **DV-11** | F3 | **"Re-send verification email"** admin button **does not exist** — only the API route + `resendVerificationEmail` use-case. The route docstring falsely claims "the admin UI surfaces a toast". (Docs corrected to API-only.) | `…/resend-verification/route.ts` exists; 0 component/i18n refs | ~~Build the button (FR-012c recovery)~~ → **BUILT**: visible-gate `ResendVerificationButton` + per-(admin,contact) rate-limiter (PR #100, merged a4df0e89) | **HIGH** | **fixed** |
 | **DV-12** | F7 | **Cancel broadcast** (FR-004a / Q10 / US6-AS4, "cancellable until approved") has **NO UI** anywhere — member route + admin route + `cancel-broadcast.ts` + i18n `cancelDialog.*` all exist, but `review-actions.tsx` renders only Approve/Reject and the member panel has no cancel control. Same shape as DV-4. | member+admin cancel routes vs `review-actions.tsx` | ~~Wire a Cancel button (member + admin)~~ → **BUILT**: shared `CancelBroadcastDialog` + admin page-level action (gate `submitted\|approved`) + member portal action (branch `077-dv12-cancel-broadcast`) | **HIGH** | **fixed** |
@@ -25,7 +25,7 @@
 
 | # | Feature | Divergence | Where (verified) | Recommended action | Sev | Status |
 |---|---------|-----------|------------------|--------------------|-----|--------|
-| DV-6 | F6 | **Erase attendee PII** (FR-032a) has **no row action** — Actions column only has Relink. Reachable only via deep-link `…/registrations/{id}/erase`. | `attendee-table.tsx:739-749` (Relink only) | Add an "Erase PII" row action — a PDPA erasure path shouldn't need URL-typing | MED | verified |
+| DV-6 | F6 | **Erase attendee PII** (FR-032a) had **no row action** — Actions column only had Relink; reachable only via deep-link `…/registrations/{id}/erase`. Now surfaced as a row action. | `attendee-table.tsx` Erase-PII row action | **Resolved by build**: admin-only, reason-gated "Erase PII" row action added. | MED | **done** (PR #107, 2026-06-21) |
 
 ## C. Stale / misleading copy (small real bug)
 
@@ -39,9 +39,9 @@
 
 | # | Feature | Divergence | Where (verified) | Recommended action | Sev | Status |
 |---|---------|-----------|------------------|--------------------|-----|--------|
-| **DV-13** | F4 | Draft preview watermark renders the word **"PREVIEW"**, but spec FR-001a / US1-AS5 mandate **"DRAFT / ร่าง — NOT A TAX DOCUMENT"**. (Docs corrected to "PREVIEW".) | `invoice-template.tsx:239` vs spec FR-001a | Either render the mandated DRAFT string, or amend FR-001a/AS5 to "PREVIEW" | MED | open |
+| **DV-13** | F4 | Draft preview watermark originally rendered the word **"PREVIEW"**; spec FR-001a / US1-AS5 mandate **"DRAFT / ร่าง — NOT A TAX DOCUMENT"**. | `invoice-template.tsx:245` now renders the DRAFT string; spec US1-AS5 already aligned. | **Resolved by implement**: code renders the mandated DRAFT string. | MED | **done** (PR #102, verified 2026-06-21) |
 | **DV-14** | F5 | Spec SC-008 + US4-AS1 name an **`invoice_credited`** audit event that **doesn't exist** — refund/credit trail emits `credit_note_issued` only (invoice→Credited has no own event). UAT inherited the phantom id (now corrected). | `payments`/`invoicing` audit-ports vs spec.md:177,395 | Implement `invoice_credited`, or amend SC-008/US4-AS1 to `credit_note_issued` | MED | done (spec amended → credit_note_issued, 2026-06-21) |
-| **DV-17** | F7 | **Broadcast From-name**: `data-model.md:59` intends `<member.display_name> via <tenant.display_name>`, but code sets `fromName = tenantDisplayName` only (`submit-broadcast.ts:563`, `save-draft.ts:124`); dispatch + Resend gateway read it verbatim — no "via member" composition. Recipients see the chamber name only. (Reply-To = member email IS correct.) (Docs corrected to chamber-only.) | `submit-broadcast.ts:563` vs `data-model.md:59` | Implement the composition, or amend data-model.md:59 to chamber-only | MED | open |
+| **DV-17** | F7 | **Broadcast From-name**: `data-model.md:59` intends `<member.display_name> via <tenant.display_name>`; code originally set `fromName = tenantDisplayName` only (Reply-To = member email was already correct). | `composeBroadcastFromName` (`domain/from-name.ts`) → `submit-broadcast.ts:572` + `save-draft.ts:131` | **Resolved by implement**: composes "<member> via <tenant>" on submit + save-draft; matches data-model.md:59. | MED | **done** (PR #106, verified 2026-06-21) |
 
 ## E. Spec text stale (docs + code are correct; spec is the wrong side)
 
@@ -90,11 +90,11 @@
 | Backend-only / no UI | DV-1,2,3,4,5,11,12,18 | 8 (2 HIGH) |
 | UX gap | DV-6 | 1 |
 | Stale/misleading copy | DV-7,15,16 | 3 |
-| Code↔spec contract mismatch | DV-13,14,17 | 3 (open) |
+| Code↔spec contract mismatch | DV-13,14,17 | 3 (all resolved ✓) |
 | Spec text stale (docs correct) | §E | 6 |
 | Dead/orphan i18n keys | §F | ~4 groups |
 | Refuted | DV-10 | 1 |
 
-> **Note (2026-06-21):** §E (all 6 spec-text-stale items) + **DV-2** + **DV-14** are **resolved** via the spec-reconciliation PR (branch `086-amend-spec-dv2-dv14-e`). Counts above left as-original for traceability.
+> **Note (2026-06-21):** Resolved this session — **DV-4** (admin proxy-submit UI, PR #109) · **DV-6** (erase-attendee row action, PR #107) · **DV-2 + DV-14 + §E** all 6 spec-text-stale items (spec-reconciliation PR #111) · **DV-13** (DRAFT watermark, implemented PR #102) · **DV-17** (from-name "<member> via <tenant>", implemented PR #106). **§D (DV-13/14/17) is now fully closed.** Counts above left as-original for traceability.
 
-**None block go-live.** ✅ The two HIGH items are **DONE**: **DV-11** (resend-verification button, PR #100) + **DV-12** (cancel-broadcast UI, branch `077-dv12-cancel-broadcast`). Remaining: the spec-reconciliation pass (§D, §E) and the dead-key cleanup (§F — the `reject`/`cancel` `reasonRequired` keys are already resolved (see §F F7 note); remaining are the F3/F8/F1/F5 groups).
+**None block go-live.** ✅ The two HIGH items are **DONE**: **DV-11** (resend-verification button, PR #100) + **DV-12** (cancel-broadcast UI, branch `077-dv12-cancel-broadcast`). §D + §E are now fully reconciled (see the 2026-06-21 note above). Remaining: the §F dead-key cleanup (F3/F8/F1/F5 groups — the `reject`/`cancel` `reasonRequired` keys are already resolved per the §F F7 note) plus the lower-priority items **DV-1** (role UI), **DV-3** (bulk change_plan key), and **DV-7/15/16** (stale copy).
