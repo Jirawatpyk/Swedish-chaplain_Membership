@@ -313,7 +313,10 @@ const baseInput = {
   proxiedMemberId: 'm-target',
   adminUserId: 'admin-7',
   tenantDisplayName: 'Test Chamber',
-  memberDisplayName: 'Acme Co',
+  // #18 — the route now performs the single member read and threads its
+  // outcome in via `memberLookup`. The `found` arm carries DV-17
+  // `companyName` previously passed as `memberDisplayName`.
+  memberLookup: { status: 'found' as const, companyName: 'Acme Co' },
   subject: 'Welcome from your chamber admin',
   bodySource: 'plain',
   bodyHtml: '<p>Hello</p>',
@@ -638,14 +641,14 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     }
   });
 
-  // ---- Round-5 R5-T โ€” memberExistsInTenant short-circuits ----------
+  // ---- Member lookup (provided by the route - #18 single-read) -------
 
-  it('F7.1-HIGHC โ€” memberExistsInTenant returns false โ’ broadcast_member_not_found', async () => {
-    const { deps } = makeDeps({
-      memberExists: false,
-      primaryContact: 'doesnt@matter.com',
+  it('memberLookup.status="not_found" -> broadcast_member_not_found, nothing inserted', async () => {
+    const { deps, repo } = makeDeps({ primaryContact: 'm@example.com' });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'not_found' },
     });
-    const result = await proxySubmitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('broadcast_member_not_found');
@@ -653,28 +656,36 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
         expect(result.error.memberId).toBe(baseInput.proxiedMemberId);
       }
     }
+    expect(repo.inserted).toHaveLength(0);
   });
 
-  it('R5-S2 โ€” memberExistsInTenant throws (Neon outage) โ’ submit.server_error', async () => {
-    const { deps } = makeDeps({
-      primaryContact: 'me@example.com',
-      recipients: [{ memberId: 'm-1', primaryContactEmail: 'r@example.com' }],
+  it('memberLookup.status="lookup_failed" -> submit.server_error (infra, maps to 500)', async () => {
+    const { deps, repo } = makeDeps({ primaryContact: 'm@example.com' });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'lookup_failed', message: 'repo.unexpected' },
     });
-    // Override the bridge to throw, simulating a repo.unexpected
-    // error rethrown from the bridge after R5-S2.
-    const throwingDeps = {
-      ...deps,
-      membersBridge: {
-        ...deps.membersBridge,
-        async memberExistsInTenant(): Promise<boolean> {
-          throw new Error('members-bridge.memberExistsInTenant: repo.unexpected');
-        },
-      },
-    };
-    const result = await proxySubmitBroadcast(throwingDeps, baseInput);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe('submit.server_error');
-    }
+    if (!result.ok) expect(result.error.kind).toBe('submit.server_error');
+    expect(repo.inserted).toHaveLength(0);
+  });
+
+  it('memberLookup.status="found" threads companyName into the delegated submit (DV-17)', async () => {
+    const { deps, repo } = makeDeps({
+      planCap: 6,
+      used: 0,
+      reserved: 0,
+      primaryContact: 'm-target@example.com',
+      recipients: [{ memberId: 'm-other', primaryContactEmail: 'other@example.com' }],
+    });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'found', companyName: 'Acme AB' },
+    });
+    expect(result.ok).toBe(true);
+    expect(repo.inserted).toHaveLength(1);
+    // from_name composed as "Acme AB via <tenant>" - assert via the inserted
+    // row's fromName field captured by the repo mock.
+    expect(repo.inserted[0]?.fromName).toContain('Acme AB');
   });
 });
