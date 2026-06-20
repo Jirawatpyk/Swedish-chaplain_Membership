@@ -4956,7 +4956,12 @@
     "page": "Sida {page}"
   },
   "shared": {
-    "loaded": "Innehåll laddat"
+    "loaded": "Innehåll laddat",
+    "validation": {
+      "required": "Det här fältet är obligatoriskt.",
+      "invalidEmail": "Ange en giltig e-postadress.",
+      "tooLong": "Använd högst {max} tecken."
+    }
   },
   "email": {
     "invoiceIssued": {

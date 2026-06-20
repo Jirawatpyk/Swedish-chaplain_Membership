@@ -4956,7 +4956,12 @@
     "page": "Page {page}"
   },
   "shared": {
-    "loaded": "Loaded"
+    "loaded": "Loaded",
+    "validation": {
+      "required": "This field is required.",
+      "invalidEmail": "Please enter a valid email address.",
+      "tooLong": "Please use {max} characters or fewer."
+    }
   },
   "email": {
     "invoiceIssued": {
