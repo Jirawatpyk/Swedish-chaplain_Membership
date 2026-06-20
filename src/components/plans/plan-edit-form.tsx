@@ -137,6 +137,7 @@ export function PlanEditForm({
           onChange={(next) => update('description', next as PlanSchemaInput['description'])}
           multiline
           maxLength={2000}
+          required
         />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-1">

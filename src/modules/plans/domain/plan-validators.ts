@@ -31,7 +31,11 @@ export const localeTextSchema = z.object({
 });
 
 export const localeDescriptionSchema = z.object({
-  en: z.string().trim().max(2000),
+  // `.min(1)` mirrors the DB CHECK `membership_plans_description_en_non_empty`
+  // (migration 0174) so an empty/whitespace EN description fails validation
+  // (400 invalid_body) instead of slipping through to the INSERT and tripping
+  // the constraint as a 500. TH/SV stay optional, matching `localeTextSchema`.
+  en: z.string().trim().min(1).max(2000),
   th: z.string().trim().max(2000).optional(),
   sv: z.string().trim().max(2000).optional(),
 });

@@ -192,7 +192,8 @@ export function PlanFormWizard({
       Number.isInteger(draft.plan_year) &&
       draft.plan_year >= 2000 &&
       draft.plan_year <= 2100 &&
-      (draft.plan_name.en?.trim().length ?? 0) > 0;
+      (draft.plan_name.en?.trim().length ?? 0) > 0 &&
+      (draft.description.en?.trim().length ?? 0) > 0;
     const fees =
       Number.isInteger(draft.annual_fee_minor_units) &&
       draft.annual_fee_minor_units >= 0;
@@ -360,6 +361,7 @@ export function PlanFormWizard({
             onChange={(next) => update('description', next as PlanSchemaInput['description'])}
             multiline
             maxLength={2000}
+            required
           />
           <div className="space-y-1">
             <Label htmlFor="sort_order">{tLabels('sortOrder')}</Label>
