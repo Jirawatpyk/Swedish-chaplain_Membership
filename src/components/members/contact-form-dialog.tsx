@@ -82,6 +82,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
   const tf = useTranslations('admin.members.create.fields');
   const tA = useTranslations('admin.members.detail.contactActions');
   const tLang = useTranslations('common');
+  const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -89,13 +90,21 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
   const schema = useMemo(() => {
     const phone = z
       .string()
-      .max(20)
+      .max(20, tv('tooLong', { max: 20 }))
       .refine((v) => isAcceptablePhoneInput(v), { message: tf('phoneError') });
     const shape = {
-      first_name: z.string().trim().min(1, t('fieldRequired')).max(100),
-      last_name: z.string().trim().min(1, t('fieldRequired')).max(100),
+      first_name: z
+        .string()
+        .trim()
+        .min(1, t('fieldRequired'))
+        .max(100, tv('tooLong', { max: 100 })),
+      last_name: z
+        .string()
+        .trim()
+        .min(1, t('fieldRequired'))
+        .max(100, tv('tooLong', { max: 100 })),
       phone,
-      role_title: z.string().max(100),
+      role_title: z.string().max(100, tv('tooLong', { max: 100 })),
       preferred_language: z.enum(['en', 'th', 'sv']),
       email:
         mode === 'add'
@@ -103,12 +112,12 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               .string()
               .trim()
               .min(1, t('fieldRequired'))
-              .max(254)
+              .max(254, tv('tooLong', { max: 254 }))
               .email(t('emailInvalid'))
           : z.string().optional(),
     };
     return z.object(shape);
-    // t/tf are stable per-render; mode never changes for a mounted dialog.
+    // t/tf/tv are stable per-render; mode never changes for a mounted dialog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 

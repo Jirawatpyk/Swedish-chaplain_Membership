@@ -16,7 +16,7 @@
  *   - Keyboard: Enter submits. Esc is a no-op (spec explicitly does
  *     NOT want Esc to clear the form since that is surprising).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
@@ -26,22 +26,31 @@ import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { emailText, type Translator } from '@/lib/zod-i18n';
 
-const schema = z.object({
-  email: z.string().email().max(254),
-});
+function buildForgotPasswordSchema(tv: Translator) {
+  return z.object({
+    email: emailText(tv, 254),
+  });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof buildForgotPasswordSchema>>;
 
 const RESEND_COUNTDOWN_SECONDS = 60;
 
 export function ForgotPasswordForm() {
   const t = useTranslations('auth.forgotPassword');
   const tErrors = useTranslations('errors');
+  const tv = useTranslations('shared.validation');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [remaining, setRemaining] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const schema = useMemo(
+    () => buildForgotPasswordSchema(tv as Translator),
+    [tv],
+  );
 
   const {
     register,

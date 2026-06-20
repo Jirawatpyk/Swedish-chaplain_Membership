@@ -29,7 +29,7 @@ function guardI18nValue(value: string, context: string): string {
   if (
     process.env.NODE_ENV !== 'production' &&
     I18N_KEY_RE.test(value) &&
-    value.startsWith('auth.')
+    (value.startsWith('auth.') || value.startsWith('shared.'))
   ) {
     console.error(
       `[i18n] ${context}: t() returned the key '${value}' as the message — translation missing. Run \`pnpm check:i18n\` to find the gap.`,
@@ -39,17 +39,73 @@ function guardI18nValue(value: string, context: string): string {
 }
 
 /**
+ * A next-intl translator narrowed to the shape these helpers need:
+ * `(key, values?) => string`. The real `useTranslations('shared.validation')`
+ * return value is structurally compatible once widened at the call site
+ * (next-intl's namespaced key typing does not match a plain `string`
+ * param — same widening already used by `buildMemberFormSchema`). A test
+ * sentinel translator also satisfies this shape.
+ */
+export type Translator = (
+  key: string,
+  values?: Record<string, string | number>,
+) => string;
+
+/**
+ * Required free-text field: an i18n "this field is required" message
+ * and, optionally, an i18n "too long" bound. Replaces the raw
+ * `z.string().min(1).max(n)` shape whose Zod-default English
+ * ("String must contain at least 1 character(s)") leaked verbatim into
+ * every locale (2026-06-20 raw-Zod sweep).
+ */
+export function requiredText(tv: Translator, max?: number): z.ZodString {
+  const base = z.string().min(1, guardI18nValue(tv('required'), 'required'));
+  return max === undefined
+    ? base
+    : base.max(max, guardI18nValue(tv('tooLong', { max }), 'tooLong'));
+}
+
+/**
+ * Email field with i18n "invalid email" + "too long" messages (replaces
+ * the raw `.email()` whose Zod default "Invalid email" leaked).
+ */
+export function emailText(tv: Translator, max = 254): z.ZodString {
+  return z
+    .string()
+    .email(guardI18nValue(tv('invalidEmail'), 'invalidEmail'))
+    .max(max, guardI18nValue(tv('tooLong', { max }), 'tooLong'));
+}
+
+/**
+ * Optional/bounded free-text field — only an i18n "too long" bound, no
+ * required check. Caller adds `.optional()` / `.default('')` as needed.
+ */
+export function boundedText(tv: Translator, max: number): z.ZodString {
+  return z.string().max(max, guardI18nValue(tv('tooLong', { max }), 'tooLong'));
+}
+
+/**
  * Common password-pair field shape. Returned as a plain
  * `Record<string, ZodType>` so callers can spread it into a larger
  * `z.object({...})` shape that includes extra fields (e.g.
  * `displayName`, `currentPassword`).
+ *
+ * `tooLong` was added in the 2026-06-20 raw-Zod sweep — the trailing
+ * `.max(256)` previously had no message and leaked Zod's English default
+ * into reset-password / change-password.
  */
-export function passwordPairFields(tooShort: string): {
+export function passwordPairFields(
+  tooShort: string,
+  tooLong: string,
+): {
   newPassword: z.ZodString;
   confirmPassword: z.ZodString;
 } {
   return {
-    newPassword: z.string().min(12, guardI18nValue(tooShort, 'tooShort')).max(256),
+    newPassword: z
+      .string()
+      .min(12, guardI18nValue(tooShort, 'tooShort'))
+      .max(256, guardI18nValue(tooLong, 'tooLong')),
     confirmPassword: z.string(),
   };
 }

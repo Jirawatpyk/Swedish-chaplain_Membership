@@ -41,11 +41,16 @@ type FormValues = {
   confirmPassword: string;
 };
 
-function buildSchema(tooShort: string, passwordMismatch: string) {
+function buildSchema(
+  required: string,
+  tooShort: string,
+  tooLong: string,
+  passwordMismatch: string,
+) {
   return refinePasswordPair(
     z.object({
-      currentPassword: z.string().min(1),
-      ...passwordPairFields(tooShort),
+      currentPassword: z.string().min(1, required),
+      ...passwordPairFields(tooShort, tooLong),
     }),
     passwordMismatch,
   );
@@ -55,6 +60,7 @@ export function ChangePasswordForm() {
   const t = useTranslations('auth.changePassword');
   const tReset = useTranslations('auth.resetPassword');
   const tErrors = useTranslations('errors');
+  const tv = useTranslations('shared.validation');
   const [submitting, setSubmitting] = useState(false);
 
   const {
@@ -68,7 +74,9 @@ export function ChangePasswordForm() {
   } = useForm<FormValues>({
     resolver: zodResolver(
       buildSchema(
+        tv('required'),
         tReset('errors.tooShort'),
+        tv('tooLong', { max: 256 }),
         tReset('errors.passwordMismatch'),
       ),
     ),

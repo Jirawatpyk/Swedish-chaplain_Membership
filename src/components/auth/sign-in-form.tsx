@@ -17,7 +17,7 @@
  *     (or the email if the failure is "invalid-credentials")
  *   - All toasts are routed through `sonner` (see RootLayout)
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -30,13 +30,16 @@ import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { safeReturnTo } from '@/lib/return-url';
+import { emailText, requiredText, type Translator } from '@/lib/zod-i18n';
 
-const schema = z.object({
-  email: z.string().email().max(254),
-  password: z.string().min(1).max(256),
-});
+function buildSignInSchema(tv: Translator) {
+  return z.object({
+    email: emailText(tv, 254),
+    password: requiredText(tv, 256),
+  });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof buildSignInSchema>>;
 
 export interface SignInFormProps {
   readonly portal: 'staff' | 'member';
@@ -51,8 +54,11 @@ export interface SignInFormProps {
 export function SignInForm({ portal, returnTo }: SignInFormProps) {
   const t = useTranslations('auth.signIn');
   const tErrors = useTranslations('errors');
+  const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+
+  const schema = useMemo(() => buildSignInSchema(tv as Translator), [tv]);
 
   const {
     register,

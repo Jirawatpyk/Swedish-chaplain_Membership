@@ -19,7 +19,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { refinePasswordPair } from '@/lib/zod-i18n';
+import { refinePasswordPair, requiredText, type Translator } from '@/lib/zod-i18n';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -42,11 +42,18 @@ type FormValues = {
   confirmPassword: string;
 };
 
-function buildSchema(tooShort: string, passwordMismatch: string) {
+function buildSchema(
+  tv: Translator,
+  tooShort: string,
+  passwordMismatch: string,
+) {
   return refinePasswordPair(
     z.object({
-      displayName: z.string().min(1).max(120),
-      password: z.string().min(12, tooShort).max(256),
+      displayName: requiredText(tv, 120),
+      password: z
+        .string()
+        .min(12, tooShort)
+        .max(256, tv('tooLong', { max: 256 })),
       confirmPassword: z.string(),
     }),
     passwordMismatch,
@@ -63,6 +70,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   const t = useTranslations('auth.invite');
   const tReset = useTranslations('auth.resetPassword');
   const tErrors = useTranslations('errors');
+  const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
@@ -84,6 +92,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   } = useForm<FormValues>({
     resolver: zodResolver(
       buildSchema(
+        tv as Translator,
         tReset('errors.tooShort'),
         tReset('errors.passwordMismatch'),
       ),

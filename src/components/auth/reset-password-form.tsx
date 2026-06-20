@@ -41,9 +41,13 @@ import {
 // z.ZodType<FormValues>` cast is gone.
 type FormValues = { newPassword: string; confirmPassword: string };
 
-function buildSchema(tooShort: string, passwordMismatch: string) {
+function buildSchema(
+  tooShort: string,
+  tooLong: string,
+  passwordMismatch: string,
+) {
   return refinePasswordPair(
-    z.object(passwordPairFields(tooShort)),
+    z.object(passwordPairFields(tooShort, tooLong)),
     passwordMismatch,
   );
 }
@@ -55,6 +59,7 @@ export interface ResetPasswordFormProps {
 export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const t = useTranslations('auth.resetPassword');
   const tErrors = useTranslations('errors');
+  const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
@@ -73,7 +78,11 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(
-      buildSchema(t('errors.tooShort'), t('errors.passwordMismatch')),
+      buildSchema(
+        t('errors.tooShort'),
+        tv('tooLong', { max: 256 }),
+        t('errors.passwordMismatch'),
+      ),
     ),
     defaultValues: { newPassword: '', confirmPassword: '' },
     mode: 'onSubmit',

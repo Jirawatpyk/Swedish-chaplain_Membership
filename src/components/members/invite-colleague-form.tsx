@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -24,6 +24,12 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import {
+  boundedText,
+  emailText,
+  requiredText,
+  type Translator,
+} from '@/lib/zod-i18n';
 
 /**
  * Invite colleague form — US5 AS4 (T125).
@@ -31,21 +37,29 @@ import {
  * Primary contact invites a secondary contact via F1 invitation flow.
  */
 
-const inviteSchema = z.object({
-  first_name: z.string().min(1).max(100),
-  last_name: z.string().min(1).max(100),
-  email: z.string().email().max(254),
-  role_title: z.string().max(100).optional().default(''),
-  preferred_language: z.enum(['en', 'th', 'sv']).optional().default('en'),
-});
+function buildInviteSchema(tv: Translator) {
+  return z.object({
+    first_name: requiredText(tv, 100),
+    last_name: requiredText(tv, 100),
+    email: emailText(tv, 254),
+    role_title: boundedText(tv, 100).optional().default(''),
+    preferred_language: z.enum(['en', 'th', 'sv']).optional().default('en'),
+  });
+}
 
-type InviteFormValues = z.infer<typeof inviteSchema>;
+type InviteFormValues = z.infer<ReturnType<typeof buildInviteSchema>>;
 
 export function InviteColleagueForm() {
   const t = useTranslations('portal.invite');
   const tLang = useTranslations('common');
+  const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+
+  const inviteSchema = useMemo(
+    () => buildInviteSchema(tv as Translator),
+    [tv],
+  );
 
   const form = useForm<InviteFormValues>({
     resolver: zodResolver(inviteSchema),

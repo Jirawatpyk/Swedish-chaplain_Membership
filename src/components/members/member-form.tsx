@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import { type Translator } from '@/lib/zod-i18n';
 
 // --- Form shape --------------------------------------------------------------
 
@@ -53,22 +54,34 @@ import {
 // (key) => string at the call site (next-intl's namespaced key typing doesn't
 // structurally match a plain string param). Mirrors the in-component schema
 // pattern in contact-form-dialog.tsx.
-function buildMemberFormSchema(tf: (key: string) => string) {
+function buildMemberFormSchema(
+  tf: (key: string) => string,
+  tv: Translator,
+) {
   return z.object({
-  company_name: z.string().trim().min(1, tf('errors.required')).max(200),
-  legal_entity_type: z.string().max(100).optional(),
+  company_name: z
+    .string()
+    .trim()
+    .min(1, tf('errors.required'))
+    .max(200, tv('tooLong', { max: 200 })),
+  legal_entity_type: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
   country: z
     .string()
     .length(2, tf('errors.countryCode'))
     .regex(/^[A-Za-z]{2}$/, tf('errors.countryCode')),
-  tax_id: z.string().max(50).optional(),
-  website: z.string().max(200).url(tf('errors.url')).optional().or(z.literal('')),
-  description: z.string().max(2000).optional(),
-  address_line1: z.string().max(200).optional(),
-  address_line2: z.string().max(200).optional(),
-  city: z.string().max(100).optional(),
-  province: z.string().max(100).optional(),
-  postal_code: z.string().max(20).optional(),
+  tax_id: z.string().max(50, tv('tooLong', { max: 50 })).optional(),
+  website: z
+    .string()
+    .max(200, tv('tooLong', { max: 200 }))
+    .url(tf('errors.url'))
+    .optional()
+    .or(z.literal('')),
+  description: z.string().max(2000, tv('tooLong', { max: 2000 })).optional(),
+  address_line1: z.string().max(200, tv('tooLong', { max: 200 })).optional(),
+  address_line2: z.string().max(200, tv('tooLong', { max: 200 })).optional(),
+  city: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  province: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  postal_code: z.string().max(20, tv('tooLong', { max: 20 })).optional(),
   founded_year: z
     .union([z.string(), z.number()])
     .optional()
@@ -91,16 +104,28 @@ function buildMemberFormSchema(tf: (key: string) => string) {
   // zod type mismatch on imperative `trigger('notes')`.
   notes: z
     .string()
-    .max(4000)
+    .max(4000, tv('tooLong', { max: 4000 }))
     .nullable()
     .optional()
     .transform((v) =>
       v === '' || v === undefined || v === null ? null : v,
     ),
   primary_contact: z.object({
-    first_name: z.string().trim().min(1, tf('errors.required')).max(100),
-    last_name: z.string().trim().min(1, tf('errors.required')).max(100),
-    email: z.string().trim().min(1, tf('errors.required')).max(254),
+    first_name: z
+      .string()
+      .trim()
+      .min(1, tf('errors.required'))
+      .max(100, tv('tooLong', { max: 100 })),
+    last_name: z
+      .string()
+      .trim()
+      .min(1, tf('errors.required'))
+      .max(100, tv('tooLong', { max: 100 })),
+    email: z
+      .string()
+      .trim()
+      .min(1, tf('errors.required'))
+      .max(254, tv('tooLong', { max: 254 })),
     // Phone must be E.164 (matches the `asPhone` domain value object used
     // by create-member + updateContactFields). Validating client-side
     // highlights the field inline instead of letting the server reject it
@@ -110,12 +135,12 @@ function buildMemberFormSchema(tf: (key: string) => string) {
     // "+66 81-234-5678" is accepted and normalised server-side.
     phone: z
       .string()
-      .max(20)
+      .max(20, tv('tooLong', { max: 20 }))
       .optional()
       .refine((v) => v === undefined || isAcceptablePhoneInput(v), {
         message: tf('phoneError'),
       }),
-    role_title: z.string().max(100).optional(),
+    role_title: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
   }),
@@ -190,6 +215,7 @@ export function MemberForm({
   const t = useTranslations('admin.members.create');
   const tEdit = useTranslations('admin.members.edit');
   const tf = useTranslations('admin.members.create.fields');
+  const tv = useTranslations('shared.validation');
   const tLang = useTranslations('common');
   const submitLabel = mode === 'edit' ? tEdit('submit') : t('submit');
   const submittingLabel =
@@ -200,8 +226,12 @@ export function MemberForm({
   // is stable per locale render (next-intl), so the memo only re-runs on a
   // locale switch (which re-renders the page anyway).
   const schema = useMemo(
-    () => buildMemberFormSchema(tf as (key: string) => string),
-    [tf],
+    () =>
+      buildMemberFormSchema(
+        tf as (key: string) => string,
+        tv as Translator,
+      ),
+    [tf, tv],
   );
 
   const {

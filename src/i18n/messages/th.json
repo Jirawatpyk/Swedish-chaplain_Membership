@@ -4956,7 +4956,12 @@
     "page": "หน้า {page}"
   },
   "shared": {
-    "loaded": "โหลดเสร็จแล้ว"
+    "loaded": "โหลดเสร็จแล้ว",
+    "validation": {
+      "required": "กรุณากรอกข้อมูลในช่องนี้",
+      "invalidEmail": "กรุณากรอกอีเมลให้ถูกต้อง",
+      "tooLong": "กรุณาใช้ไม่เกิน {max} ตัวอักษร"
+    }
   },
   "email": {
     "invoiceIssued": {
