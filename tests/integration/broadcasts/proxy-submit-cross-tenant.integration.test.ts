@@ -3,17 +3,18 @@
  * tenant A cannot proxy-submit a broadcast for a member that exists
  * only in tenant B.
  *
- * Two-layer isolation under test:
- *   1. DB layer  — RLS+FORCE on F3 `members` hides the tenant-B row from
- *      a tenant-A-scoped `runInTenant` query, so the proxy use-case's
- *      `membersBridge.memberExistsInTenant(tenantA, bMemberId)` returns
- *      `false` (NOT a throw — the F3 repo maps the RLS-filtered miss to
- *      `repo.not_found`).
- *   2. Application layer — `proxySubmitBroadcast` short-circuits on that
- *      `false` with `broadcast_member_not_found` BEFORE delegating to
- *      `submitBroadcast`, so nothing is written in EITHER tenant.
+ * #18 (single member read) amendment: the proxied-member read now lives
+ * in the ROUTE (`drizzleMemberRepo.findById`, RLS-scoped) — the use-case
+ * no longer probes via `membersBridge.memberExistsInTenant`. The DB-layer
+ * RLS scoping of that single read is exercised by the F3 member-repo
+ * cross-tenant tests; under tenant A it resolves the tenant-B id to
+ * `repo.not_found` → `memberLookup: { status: 'not_found' }`. This DV-4
+ * test pins the APPLICATION-LAYER half of the guarantee: given that
+ * not-found lookup, `proxySubmitBroadcast` short-circuits with
+ * `broadcast_member_not_found` BEFORE delegating to `submitBroadcast`, so
+ * nothing is written in EITHER tenant (verified against live Neon below).
  *
- * A single missed RLS path here would let one chamber's admin send a
+ * A single missed isolation path here would let one chamber's admin send a
  * marketing e-blast charged against another chamber's member quota — a
  * PDPA §28 + GDPR Art. 6 cross-controller leak. Hence Review-Gate blocker.
  *
@@ -128,9 +129,12 @@ describe('DV-4 / Principle I — proxy-submit cross-tenant isolation (live Neon)
       proxiedMemberId: bMemberId,
       adminUserId: admin.userId,
       tenantDisplayName: 'Tenant A Chamber',
-      // Task 3 replaces this field with a `memberLookup` discriminated
-      // input — write against the CURRENT shape (`memberDisplayName`).
-      memberDisplayName: 'DV-4 Cross-Tenant Member (tenant B)',
+      // #18 — the route's single member read runs under tenant-A's RLS
+      // scope, so `drizzleMemberRepo.findById(tenantA, bMemberId)` MISSES
+      // the tenant-B row → `repo.not_found` → `memberLookup.not_found`.
+      // The use-case short-circuits with `broadcast_member_not_found`
+      // before any write, in EITHER tenant.
+      memberLookup: { status: 'not_found' },
       subject: 'Cross-tenant proxy attempt',
       bodySource: '<p>hi</p>',
       bodyHtml: '<p>hi</p>',

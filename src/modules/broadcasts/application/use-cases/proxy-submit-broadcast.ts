@@ -8,18 +8,23 @@
  *   - `submittedByUserId`   = acting admin user id (for audit)
  *   - `actorRole`            = 'admin_proxy'
  *
- * `submitBroadcast` enforces the member quota cap for ALL actor roles
- * incl admin_proxy (T-10) — there is no bypass; we delegate end-to-end.
+ * #18 (single member read): the calling route already loads the proxied
+ * member once (for the DV-17 `companyName` → from-name). It passes the
+ * outcome in via `memberLookup` so this use-case does NOT issue a second
+ * `memberExistsInTenant` probe. The route maps its single
+ * `drizzleMemberRepo.findById` to:
+ *   - found       → { status: 'found', companyName }
+ *   - repo.not_found → { status: 'not_found' }  → broadcast_member_not_found (404)
+ *   - other error    → { status: 'lookup_failed', message } → submit.server_error (500)
+ * preserving the not-found(404)/infra-throw(500) distinction without a
+ * second round-trip.
  *
- * The acting admin is NOT subjected to the 10/24h rate limit (proxied
- * submissions are queue-managed by admins for ops needs); the rate
- * limiter key uses the proxied member id BUT we skip the check on
- * the admin path. **Decision** (Ultraplan AD-proxy-rate): pass-through —
- * `submitBroadcast` runs `rateLimiter.check` always, but for admin_proxy
- * we use a separate higher-cap key.
+ * The proxied member's quota cap IS enforced inside `submitBroadcast`
+ * (T-10); admin_proxy gets no free broadcast.
  *
- * Halt-state precondition (FR-002 k) STILL applies — admin cannot
- * bypass a member's halt flag (R3-NEW-1).
+ * The acting admin path runs `submitBroadcast`'s rate-limit precondition
+ * (d) unchanged. Halt-state precondition (FR-002 k) STILL applies —
+ * admin cannot bypass a member's halt flag (R3-NEW-1).
  */
 import type { Result } from '@/lib/result';
 import {
@@ -30,6 +35,16 @@ import {
   type SubmitBroadcastOutput,
 } from './submit-broadcast';
 import type { RecipientSegment } from '../../domain/recipient-segment';
+
+/**
+ * Outcome of the route's single member read, threaded into the use-case
+ * so it need not re-probe (#18). `companyName` only exists in the `found`
+ * arm — the type forbids reading it otherwise.
+ */
+export type ProxyMemberLookup =
+  | { readonly status: 'found'; readonly companyName: string }
+  | { readonly status: 'not_found' }
+  | { readonly status: 'lookup_failed'; readonly message: string };
 
 export type ProxySubmitBroadcastError =
   | SubmitBroadcastError
@@ -42,13 +57,12 @@ export interface ProxySubmitBroadcastInput {
   readonly adminUserId: string;
   readonly tenantDisplayName: string;
   /**
-   * DV-17 — proxied member's display name (F3 `companyName`), composed
-   * into `from_name` as "<memberDisplayName> via <tenantDisplayName>" by
-   * the delegated `submitBroadcast` (data-model.md:59). Sourced by the
-   * route from the proxied member record (the admin context does not
-   * load it).
+   * #18 — the proxied member read performed once by the route. The
+   * `found` arm carries DV-17 `companyName` (F3) used by the delegated
+   * `submitBroadcast` to compose `from_name` as
+   * "<companyName> via <tenantDisplayName>" (data-model.md:59).
    */
-  readonly memberDisplayName: string;
+  readonly memberLookup: ProxyMemberLookup;
   readonly subject: string;
   readonly bodySource: string;
   readonly bodyHtml: string;
@@ -63,33 +77,27 @@ export async function proxySubmitBroadcast(
   deps: ProxySubmitBroadcastDeps,
   input: ProxySubmitBroadcastInput,
 ): Promise<Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>> {
-  // F7.1-HIGHC + R5-S2 — distinguish "wrong member id" (false) from
-  // "infra failure" (throws). The bridge re-throws on `repo.unexpected`
-  // so a Neon outage surfaces as 500 server_error instead of misleading
-  // 422 member_not_found.
-  let exists: boolean;
-  try {
-    exists = await deps.membersBridge.memberExistsInTenant(
-      deps.tenant,
-      input.proxiedMemberId,
-    );
-  } catch (e) {
-    return {
-      ok: false,
-      error: {
-        kind: 'submit.server_error',
-        message: `member_exists_check_failed: ${e instanceof Error ? e.message : 'unknown'}`,
-      },
-    } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
-  }
-  if (!exists) {
-    return {
-      ok: false,
-      error: {
-        kind: 'broadcast_member_not_found',
-        memberId: input.proxiedMemberId,
-      },
-    } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
+  // #18 — consume the route's single member read instead of re-probing.
+  switch (input.memberLookup.status) {
+    case 'lookup_failed':
+      // infra failure during the read → 500, never a misleading 422/404.
+      return {
+        ok: false,
+        error: {
+          kind: 'submit.server_error',
+          message: `member_lookup_failed: ${input.memberLookup.message}`,
+        },
+      } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
+    case 'not_found':
+      return {
+        ok: false,
+        error: {
+          kind: 'broadcast_member_not_found',
+          memberId: input.proxiedMemberId,
+        },
+      } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
+    case 'found':
+      break;
   }
 
   const submitInput: SubmitBroadcastInput = {
@@ -97,7 +105,7 @@ export async function proxySubmitBroadcast(
     submittedByUserId: input.adminUserId,
     actorRole: 'admin_proxy',
     tenantDisplayName: input.tenantDisplayName,
-    memberDisplayName: input.memberDisplayName,
+    memberDisplayName: input.memberLookup.companyName,
     subject: input.subject,
     bodySource: input.bodySource,
     bodyHtml: input.bodyHtml,

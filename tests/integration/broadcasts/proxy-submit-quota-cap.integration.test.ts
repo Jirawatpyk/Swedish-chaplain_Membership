@@ -34,6 +34,7 @@ import { runInTenant } from '@/lib/db';
 import {
   proxySubmitBroadcast,
   makeProxySubmitBroadcastDeps,
+  currentQuotaYear,
 } from '@/modules/broadcasts';
 import {
   broadcasts,
@@ -68,11 +69,13 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
   let admin: TestUser;
   let memberId: string;
   let planId: string;
-  // Current quota year (Asia/Bangkok per FR-006/FR-007). UTC year is
-  // identical for the vast majority of the year; the seeded `sent` row's
-  // `quota_year_consumed` must match the year the use-case computes from
-  // its system clock at call time, so derive both from the same `now`.
-  const quotaYear = new Date().getUTCFullYear();
+  // Current quota year (Asia/Bangkok per FR-006/FR-007). The seeded `sent`
+  // row's `quota_year_consumed` MUST match the year the use-case computes
+  // from its system clock at call time. The use-case counts quota in
+  // Asia/Bangkok, so seed with the SAME Bangkok-year helper — a UTC-year
+  // seed mis-seeds the year during 00:00–07:00 UTC on Jan 1 (when Bangkok
+  // is already in the next year) and would flake the at-cap assertion.
+  const quotaYear = currentQuotaYear(new Date(), 'Asia/Bangkok');
 
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
@@ -158,9 +161,10 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
       proxiedMemberId: memberId,
       adminUserId: admin.userId,
       tenantDisplayName: 'Test Chamber',
-      // Task 3 replaces this field with a `memberLookup` discriminated
-      // input — write against the CURRENT shape (`memberDisplayName`).
-      memberDisplayName: 'DV-4 At-Cap Member',
+      // #18 — the route now performs the single member read and threads the
+      // outcome in via `memberLookup`. The seeded member exists, so the
+      // `found` arm carries its companyName (DV-17 from-name source).
+      memberLookup: { status: 'found', companyName: 'DV-4 At-Cap Member' },
       subject: 'Proxy at cap',
       bodySource: '<p>hi</p>',
       bodyHtml: '<p>hi</p>',

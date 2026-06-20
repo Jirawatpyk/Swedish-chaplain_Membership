@@ -135,16 +135,24 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     expect(callArgs.adminUserId).toBe('user-admin-1');
   });
 
-  it('DV-17: route resolves proxied member companyName → memberDisplayName', async () => {
+  it('DV-17 + #18: route resolves proxied member companyName → memberLookup.found', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Fogmaker International AB' }));
     proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
     const { POST } = await importRoute();
     await POST(makeRequest(VALID_BODY));
+    // #18 — the single member read is threaded in via the discriminated
+    // `memberLookup`; the `found` arm carries the DV-17 companyName.
     const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
-      memberDisplayName: string;
+      memberLookup:
+        | { status: 'found'; companyName: string }
+        | { status: 'not_found' }
+        | { status: 'lookup_failed'; message: string };
     };
-    expect(callArgs.memberDisplayName).toBe('Fogmaker International AB');
+    expect(callArgs.memberLookup).toEqual({
+      status: 'found',
+      companyName: 'Fogmaker International AB',
+    });
   });
 
   it('400 invalid_body: subject too long', async () => {
