@@ -52,8 +52,8 @@ export async function loadMembersWithoutCycle(
   const page = await deps.cyclesRepo.listMembersWithoutCycle(input.tenantId, {
     limit: input.limit ?? MEMBERS_WITHOUT_CYCLE_DEFAULT_LIMIT,
   });
-  return ok({
-    items: page.items,
-    totalCount: page.totalCount,
-  });
+  // The repo page (MembersWithoutCyclePage) is structurally the use-case
+  // output — no transform/defaulting here, so return it directly rather than
+  // re-spreading field-by-field.
+  return ok(page);
 }

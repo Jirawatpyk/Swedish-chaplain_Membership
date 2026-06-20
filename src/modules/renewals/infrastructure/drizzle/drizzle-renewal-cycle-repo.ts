@@ -1040,11 +1040,10 @@ export function makeDrizzleRenewalCycleRepo(
         ]);
 
         return {
-          items: rows.map((r) => ({
-            memberId: r.memberId,
-            companyName: r.companyName,
-            registrationDate: r.registrationDate,
-          })),
+          // The select projects exactly { memberId, companyName,
+          // registrationDate } = MemberWithoutCycleRow, so the rows ARE the
+          // page items — no identity re-map needed.
+          items: rows,
           totalCount: countRows[0]?.count ?? 0,
         };
       });

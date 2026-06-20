@@ -40,6 +40,7 @@ import {
   type BroadcastActorRole,
 } from '../../domain/broadcast';
 import type { RecipientSegment } from '../../domain/recipient-segment';
+import { composeBroadcastFromName } from '../../domain/from-name';
 import {
   unsafeBrandEmailLower,
   type EmailLower,
@@ -570,7 +571,10 @@ export async function submitBroadcast(
   // DV-17 — Resend "From" display name = "<member> via <tenant>" so the
   // recipient sees which member sent the e-blast through the chamber
   // (data-model.md:59 — e.g. "Fogmaker International AB via SweCham").
-  const fromName = `${input.memberDisplayName} via ${input.tenantDisplayName}`;
+  const fromName = composeBroadcastFromName(
+    input.memberDisplayName,
+    input.tenantDisplayName,
+  );
 
   try {
     return await deps.broadcastsRepo.withTx(async (tx) => {

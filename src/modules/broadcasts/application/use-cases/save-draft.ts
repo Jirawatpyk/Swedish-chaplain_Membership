@@ -26,6 +26,7 @@ import {
   type BroadcastActorRole,
 } from '../../domain/broadcast';
 import type { BroadcastSegmentType } from '../../domain/value-objects/segment-type';
+import { composeBroadcastFromName } from '../../domain/from-name';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
@@ -127,7 +128,10 @@ export async function saveDraft(
   }
 
   // DV-17 — "<member> via <tenant>" Resend From display name (data-model.md:59).
-  const fromName = `${input.memberDisplayName} via ${input.tenantDisplayName}`;
+  const fromName = composeBroadcastFromName(
+    input.memberDisplayName,
+    input.tenantDisplayName,
+  );
   const now = deps.clock.now();
 
   // 4. Persist (create or update) inside a single transaction
