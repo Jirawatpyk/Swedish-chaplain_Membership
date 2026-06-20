@@ -45,7 +45,7 @@ export interface MemberPickerOption {
 const SearchResponseSchema = z.object({
   items: z.array(
     z.object({
-      memberId: z.string(),
+      memberId: z.string().uuid(),
       companyName: z.string(),
       primaryContactName: z.string().nullable(),
     }),
