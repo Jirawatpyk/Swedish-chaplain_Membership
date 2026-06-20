@@ -15,6 +15,7 @@
  */
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -46,7 +47,10 @@ import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from './_components/error-card-actions';
 import { AtRiskWidget } from './_components/at-risk-widget';
-import { MembersWithoutCycleTray } from './_components/members-without-cycle-tray';
+import {
+  MembersWithoutCycleTray,
+  MembersWithoutCycleTraySkeleton,
+} from './_components/members-without-cycle-tray';
 import { RenewalsViewTabs } from './_components/renewals-view-tabs';
 import {
   PendingReviewList,
@@ -301,8 +305,12 @@ export default async function RenewalsPipelinePage({
       {/* DV-18 — read-only "Members without renewal cycle" tray. Best-effort:
           the sub-component catches an infra throw + renders a load-error card,
           so it NEVER crashes the pipeline page. Mounted on the pipeline view
-          only (not the pending-review discovery view). */}
-      <MembersWithoutCycleTray tenantSlug={tenantCtx.slug} />
+          only (not the pending-review discovery view). Suspense-wrapped so its
+          anti-join query streams in instead of running as a serial waterfall
+          after loadPipeline (keeps it off the pipeline's blocking render). */}
+      <Suspense fallback={<MembersWithoutCycleTraySkeleton />}>
+        <MembersWithoutCycleTray tenantSlug={tenantCtx.slug} />
+      </Suspense>
     </RenewalsPageShell>
   );
 }

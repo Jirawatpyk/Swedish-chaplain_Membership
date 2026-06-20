@@ -29,7 +29,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/shell/empty-state';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { logger } from '@/lib/logger';
 import {
   loadMembersWithoutCycle,
@@ -83,12 +84,6 @@ export async function MembersWithoutCycleTray({
       </Card>
     );
   }
-
-  const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
-    dateStyle: 'long',
-  });
-  const fmtDateOnly = (s: string | null | undefined): string =>
-    s ? dtFmtDay.format(new Date(s)) : '—';
 
   return (
     <Card>
@@ -148,7 +143,13 @@ export async function MembersWithoutCycleTray({
                         </Link>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {fmtDateOnly(m.registrationDate)}
+                        {/* registrationDate is a date-only string — force UTC
+                            so it never renders the previous day on a non-UTC
+                            runtime (matches the invoice tables' convention). */}
+                        {formatLocalisedDate(m.registrationDate, locale, {
+                          dateStyle: 'long',
+                          timeZone: 'UTC',
+                        })}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -157,6 +158,24 @@ export async function MembersWithoutCycleTray({
             </>
           )}
         </section>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Suspense fallback for `<MembersWithoutCycleTray>` — a Card-shaped skeleton so
+ * the tray's anti-join query streams in WITHOUT blocking the pipeline's render
+ * (it would otherwise run as a serial waterfall after `loadPipeline`, adding a
+ * round-trip to the SC-003 hot path). Presentational only; no layout shift.
+ */
+export function MembersWithoutCycleTraySkeleton() {
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3">
+        <Skeleton className="h-5 w-64" />
+        <Skeleton className="h-4 w-full max-w-md" />
+        <Skeleton className="h-24 w-full" />
       </CardContent>
     </Card>
   );

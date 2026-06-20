@@ -145,6 +145,12 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
   const trimmedReference = paymentReference.trim();
   const markPaidIncomplete = isMarkPaidIncomplete(paymentReference, paymentDate);
 
+  const resetMarkPaidFields = () => {
+    setPaymentReference('');
+    setPaymentDate('');
+    setPaymentMethod('bank_transfer');
+  };
+
   // Shared POST runner — owns the fetch + non-2xx error-toast + catch
   // envelope that is identical for both endpoints. `onSuccess` does the
   // toast + field reset + refresh; the optional `onError` returns true when
@@ -189,6 +195,19 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
           setReason('');
           router.refresh();
         },
+        (err) => {
+          if (err.code === 'cycle_not_cancellable') {
+            // The cycle changed under us (e.g. another admin marked it paid):
+            // show why, then close + refresh so the now-invalid action
+            // disappears instead of inviting a doomed re-submit.
+            toast.error(t('cancelCycle.error.cycle_not_cancellable'));
+            setCancelOpen(false);
+            setReason('');
+            router.refresh();
+            return true;
+          }
+          return false;
+        },
       ),
     );
   };
@@ -207,9 +226,7 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
         () => {
           toast.success(t('markPaidOffline.successToast'));
           setMarkPaidOpen(false);
-          setPaymentReference('');
-          setPaymentDate('');
-          setPaymentMethod('bank_transfer');
+          resetMarkPaidFields();
           router.refresh();
         },
         (err) => {
@@ -227,6 +244,15 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
               },
               duration: 30_000,
             });
+            return true;
+          }
+          if (err.code === 'cycle_not_payable') {
+            // The cycle is no longer payable (another admin acted): show why,
+            // then close + refresh so the stale action disappears.
+            toast.error(t('markPaidOffline.error.cycle_not_payable'));
+            setMarkPaidOpen(false);
+            resetMarkPaidFields();
+            router.refresh();
             return true;
           }
           return false;
@@ -248,9 +274,7 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
             onOpenChange={(open) => {
               setMarkPaidOpen(open);
               if (!open) {
-                setPaymentReference('');
-                setPaymentDate('');
-                setPaymentMethod('bank_transfer');
+                resetMarkPaidFields();
               }
             }}
           >

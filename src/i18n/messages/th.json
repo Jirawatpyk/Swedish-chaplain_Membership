@@ -4545,7 +4545,7 @@
         "toast": {
           "cancelled": "ยกเลิก E-Blast แล้ว",
           "cancelError": "ยกเลิก E-Blast ไม่สำเร็จ กรุณาลองอีกครั้ง",
-          "cancelTooLate": "ยกเลิก E-Blast นี้ไม่ได้แล้ว — เริ่มส่งแล้ว",
+          "cancelTooLate": "ยกเลิก E-Blast นี้ไม่ได้แล้ว — เลยจุดที่หยุดได้แล้ว",
           "concurrentRace": "E-Blast นี้ถูกดำเนินการไปแล้ว ระบบได้รีเฟรชหน้าให้แล้ว"
         }
       }

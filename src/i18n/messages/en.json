@@ -4545,7 +4545,7 @@
         "toast": {
           "cancelled": "Broadcast cancelled.",
           "cancelError": "Could not cancel the broadcast. Please try again.",
-          "cancelTooLate": "This broadcast can no longer be cancelled — it has already started sending.",
+          "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
           "concurrentRace": "This broadcast was already actioned. The view has been refreshed."
         }
       }

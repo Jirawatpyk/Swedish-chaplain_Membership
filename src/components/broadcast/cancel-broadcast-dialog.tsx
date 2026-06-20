@@ -14,7 +14,9 @@
  *       'broadcast_cancel_too_late'           → ${toastNamespace}.cancelTooLate
  *       'broadcast_concurrent_action_blocked' → ${toastNamespace}.concurrentRace
  *       anything else                         → ${toastNamespace}.cancelError
- *   - Non-409 errors keep the dialog open (retry) with the generic cancelError.
+ *   - 404 / 403 (broadcast gone / not permitted) → close + refresh; retrying a
+ *     permanent error is futile and leaving the dialog open invites a loop.
+ *   - Other non-409 (5xx / network throw) keep the dialog open for retry.
  */
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -69,8 +71,9 @@ export function CancelBroadcastDialog({
 
   async function onConfirm(reason: string): Promise<void> {
     try {
-      const body = reason.trim()
-        ? JSON.stringify({ cancellationReason: reason })
+      const trimmed = reason.trim();
+      const body = trimmed
+        ? JSON.stringify({ cancellationReason: trimmed })
         : JSON.stringify({});
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -97,8 +100,16 @@ export function CancelBroadcastDialog({
         }
         onOpenChange(false);
         router.refresh();
+      } else if (res.status === 404 || res.status === 403) {
+        // Permanent: the broadcast is gone (404 — incl. a cross-member /
+        // concurrently-deleted broadcast) or not permitted (403). Retrying is
+        // futile, so close + refresh to update the stale view instead of
+        // leaving the dialog open over a doomed request.
+        toast.error(tToast('cancelError'));
+        onOpenChange(false);
+        router.refresh();
       } else {
-        // Transient / unexpected non-409: keep the dialog open for retry.
+        // Transient (5xx / unexpected): keep the dialog open for retry.
         toast.error(tToast('cancelError'));
       }
     } catch {
