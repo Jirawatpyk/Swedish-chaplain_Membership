@@ -148,6 +148,28 @@ describe('planSchema', () => {
     ).toBe(false);
   });
 
+  // Mirror of plan_name.en — the DB CHECK `membership_plans_description_en_non_empty`
+  // (migration 0174) requires `length(trim(description->>'en')) > 0`; the schema
+  // must reject empty/whitespace EN descriptions BEFORE the INSERT so the API
+  // returns a 400 invalid_body instead of a 500 constraint violation.
+  it('rejects empty description.en', () => {
+    expect(
+      planSchema.safeParse({
+        ...validCorporateInput,
+        description: { en: '' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects whitespace-only description.en', () => {
+    expect(
+      planSchema.safeParse({
+        ...validCorporateInput,
+        description: { en: '   ' },
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects plan_id with spaces', () => {
     expect(
       planSchema.safeParse({
@@ -181,6 +203,12 @@ describe('planPatchSchema', () => {
   it('rejects negative annual_fee on patch', () => {
     expect(
       planPatchSchema.safeParse({ annual_fee_minor_units: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects empty description.en in patch', () => {
+    expect(
+      planPatchSchema.safeParse({ description: { en: '' } }).success,
     ).toBe(false);
   });
 
