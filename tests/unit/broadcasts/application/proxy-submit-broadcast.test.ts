@@ -394,9 +394,9 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     expect(payload.actorRole).toBe('admin_proxy');
   });
 
-  // ---- Quota bypass (Q12) ---------------------------------------------
+  // ---- Quota enforcement (T-10) ---------------------------------------
 
-  it('admin proxy bypasses quota check even when proxied member at full quota', async () => {
+  it('admin proxy at full quota is BLOCKED → broadcast_quota_blocked (T-10)', async () => {
     const { deps, repo } = makeDeps({
       planCap: 6,
       used: 6,
@@ -407,11 +407,14 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
       ],
     });
     const result = await proxySubmitBroadcast(deps, baseInput);
-    expect(result.ok).toBe(true);
-    expect(repo.inserted).toHaveLength(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_quota_blocked');
+    }
+    expect(repo.inserted).toHaveLength(0);
   });
 
-  it('admin proxy bypasses quota check at over-cap (rare invariant violation)', async () => {
+  it('admin proxy over-cap is BLOCKED → broadcast_quota_blocked (T-10 invariant)', async () => {
     const { deps, repo } = makeDeps({
       planCap: 6,
       used: 8,
@@ -422,8 +425,11 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
       ],
     });
     const result = await proxySubmitBroadcast(deps, baseInput);
-    expect(result.ok).toBe(true);
-    expect(repo.inserted).toHaveLength(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_quota_blocked');
+    }
+    expect(repo.inserted).toHaveLength(0);
   });
 
   // ---- Halt-state precondition still applies (R3-NEW-1) ------------
