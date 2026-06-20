@@ -72,10 +72,24 @@ type ServerErrorField = 'subject' | 'body' | 'segment' | null;
  * Map a route error code → how the proxy form reacts. Field codes set an
  * inline error; `picker` refocuses the member combobox; `toast` shows a
  * sonner toast keyed to a `{company}`-interpolated message.
+ *
+ * UX-review fix (DV-4) — WCAG 3.3.1/3.3.3: each field/segment code now
+ * carries a SPECIFIC message key (mirrors the member compose-form's
+ * `ERROR_CODE_FIELD` → per-code copy) instead of the generic
+ * `submitErrorToast`, so SR users hear WHICH field failed and WHY.
  */
 type ProxyErrorHandling =
   | { readonly kind: 'picker' }
-  | { readonly kind: 'field'; readonly field: 'subject' | 'body' | 'segment' }
+  | {
+      readonly kind: 'field';
+      readonly field: 'subject' | 'body' | 'segment';
+      readonly key:
+        | 'subjectTooLongError'
+        | 'bodyTooLargeError'
+        | 'bodyUnsafeHtmlError'
+        | 'emptySegmentError'
+        | 'audienceTooLargeError';
+    }
   | {
       readonly kind: 'toast';
       readonly key: 'quotaBlockedError' | 'notInPlanError';
@@ -85,11 +99,31 @@ const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
   broadcast_member_not_found: { kind: 'picker' },
   broadcast_quota_blocked: { kind: 'toast', key: 'quotaBlockedError' },
   broadcast_not_in_plan: { kind: 'toast', key: 'notInPlanError' },
-  broadcast_subject_too_long: { kind: 'field', field: 'subject' },
-  broadcast_body_too_large: { kind: 'field', field: 'body' },
-  broadcast_body_unsafe_html: { kind: 'field', field: 'body' },
-  broadcast_empty_segment_blocked: { kind: 'field', field: 'segment' },
-  broadcast_audience_too_large: { kind: 'field', field: 'segment' },
+  broadcast_subject_too_long: {
+    kind: 'field',
+    field: 'subject',
+    key: 'subjectTooLongError',
+  },
+  broadcast_body_too_large: {
+    kind: 'field',
+    field: 'body',
+    key: 'bodyTooLargeError',
+  },
+  broadcast_body_unsafe_html: {
+    kind: 'field',
+    field: 'body',
+    key: 'bodyUnsafeHtmlError',
+  },
+  broadcast_empty_segment_blocked: {
+    kind: 'field',
+    field: 'segment',
+    key: 'emptySegmentError',
+  },
+  broadcast_audience_too_large: {
+    kind: 'field',
+    field: 'segment',
+    key: 'audienceTooLargeError',
+  },
 };
 
 export function ProxyComposeForm(): React.ReactElement {
@@ -151,10 +185,12 @@ export function ProxyComposeForm(): React.ReactElement {
         setMemberError(t('memberNotFoundError'));
         pickerRef.current?.focus();
         break;
-      case 'field':
-        setFieldError({ field: handling.field, message: t('submitErrorToast') });
-        toast.error(t('submitErrorToast'));
+      case 'field': {
+        const message = t(handling.key);
+        setFieldError({ field: handling.field, message });
+        toast.error(message);
         break;
+      }
       case 'toast':
         toast.error(t(handling.key, { company: companyName }));
         break;
@@ -234,12 +270,25 @@ export function ProxyComposeForm(): React.ReactElement {
             </p>
           ) : null}
           {member !== null ? (
-            <p className="text-sm text-muted-foreground">
+            // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages: this
+            // notice appears when a member is picked and focus returns to
+            // the picker trigger, so it must be announced. `role="status"`
+            // (implicit aria-live="polite") makes SR users hear it without
+            // stealing focus. Scoped to the <p> rather than the wrapping
+            // <div> so it does not interfere with the picker's combobox
+            // interactions or the sibling member-not-found `role="alert"`.
+            <p role="status" className="text-sm text-muted-foreground">
               {t('selfExclusionNotice', { company: member.companyName })}
             </p>
           ) : null}
         </div>
 
+        {/* SegmentPicker / SchedulePicker / SubmitButton are the shared
+            member-facing compose sub-components and intentionally render
+            their own `portal.broadcasts.compose.*` copy. Reusing them
+            (rather than forking admin variants) is the accepted trade-off
+            of the proxy-compose reuse approach — the admin-specific copy
+            lives only in the fields this form owns directly. */}
         <SegmentPicker
           value={segment}
           onChange={(next) => {
@@ -298,6 +347,15 @@ export function ProxyComposeForm(): React.ReactElement {
           tabIndex={-1}
           className="space-y-2 outline-none"
           aria-invalid={fieldError?.field === 'body' || undefined}
+          // WCAG 3.3.1: SR users hearing `aria-invalid` need the error
+          // reason programmatically associated. The error <p> below carries
+          // id="proxy-broadcast-body-error"; this `aria-describedby` wires
+          // the chain. Note: ideally the inner Tiptap `contenteditable`
+          // would also receive the describedby via `editorProps.attributes`
+          // but that requires a TiptapEditor prop addition; the wrapper-
+          // div-level association is what most SR pipelines resolve to
+          // anyway when `aria-invalid` is on the wrapper. Mirrors the
+          // accepted member compose-form compromise (compose-form.tsx).
           aria-describedby={
             fieldError?.field === 'body'
               ? 'proxy-broadcast-body-error'

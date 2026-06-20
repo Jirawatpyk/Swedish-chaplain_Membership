@@ -2264,6 +2264,11 @@
         "quotaBlockedError": "{company} has used all their e-blasts for this period.",
         "notInPlanError": "{company}'s plan doesn't include E-Blast.",
         "submitErrorToast": "Couldn't submit the broadcast. Please try again.",
+        "subjectTooLongError": "Subject must be 200 characters or fewer.",
+        "bodyTooLargeError": "Message body exceeds the 200 KB size limit.",
+        "bodyUnsafeHtmlError": "Message body contains formatting we can't accept — please simplify.",
+        "emptySegmentError": "No eligible recipients matched.",
+        "audienceTooLargeError": "Audience exceeds the 5,000 recipient limit.",
         "successToast": "Broadcast queued for review on behalf of {company}.",
         "searchFailed": "Member search failed. Try again.",
         "noResults": "No members found."
