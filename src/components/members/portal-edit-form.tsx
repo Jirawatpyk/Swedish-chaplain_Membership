@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useForm, Controller } from 'react-hook-form';
@@ -20,6 +20,11 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import {
+  boundedText,
+  requiredText,
+  type Translator,
+} from '@/lib/zod-i18n';
 
 /**
  * Portal edit form — US5 AS2 (T124).
@@ -28,16 +33,18 @@ import {
  * hidden entirely, not shown disabled.
  */
 
-const editSchema = z.object({
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
-  phone: z.string().max(20).optional().default(''),
-  preferredLanguage: z.enum(['en', 'th', 'sv']),
-  website: z.string().max(200).optional().default(''),
-  description: z.string().max(2000).optional().default(''),
-});
+function buildEditSchema(tv: Translator) {
+  return z.object({
+    firstName: requiredText(tv, 100),
+    lastName: requiredText(tv, 100),
+    phone: boundedText(tv, 20).optional().default(''),
+    preferredLanguage: z.enum(['en', 'th', 'sv']),
+    website: boundedText(tv, 200).optional().default(''),
+    description: boundedText(tv, 2000).optional().default(''),
+  });
+}
 
-type EditFormValues = z.infer<typeof editSchema>;
+type EditFormValues = z.infer<ReturnType<typeof buildEditSchema>>;
 
 type PortalEditFormProps = {
   initialValues: EditFormValues;
@@ -46,8 +53,11 @@ type PortalEditFormProps = {
 export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const t = useTranslations('portal.edit');
   const tLang = useTranslations('common');
+  const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+
+  const editSchema = useMemo(() => buildEditSchema(tv as Translator), [tv]);
 
   const form = useForm<EditFormValues>({
     resolver: zodResolver(editSchema),
