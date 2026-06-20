@@ -56,7 +56,7 @@ A new admin compose page (`/admin/broadcasts/new`) that renders a **member-picke
 ## Testing (TDD)
 
 - **Unit (jsdom-safe):** member-picker render + selection (mock the search endpoint); the compose-form validation predicates that are reused; `buildSegmentPayload` (if newly exported, a pin test). The full Tiptap/dialog interaction is e2e (jsdom Base UI hang).
-- **E2E (AS9):** admin opens `/admin/broadcasts/new` → picks a member → fills subject/body/segment → asserts the compose surface + (either) submit → success toast + redirect, **or** assert up to pre-submit + a separate manager-403 API probe (to avoid a real broadcast row + quota mutation on shared Neon — decide in the plan; prefer the gating + manager-403 + a single seeded happy-path with teardown if feasible).
+- **E2E (AS9) — full happy path (decided):** admin opens `/admin/broadcasts/new` → picks a member → fills subject + body + segment → **submits** → assert success toast + redirect to the broadcast detail, and the persisted row carries `requested_by_member_id` = the picked member + `actor_role='admin_proxy'` (the AS9 dual-actor outcome). `afterAll` teardown deletes the created broadcast row(s) for the proxied member + resets that member's consumed quota (mirror the existing broadcasts-submit e2e seed/teardown; global-setup quota reset where available). PLUS: admin-only button visibility (hidden for manager) + a manager-403 API probe on the proxy route. Use `--workers=1`.
 - **Contract:** the proxy-submit route already has tests; add/extend i18n coverage for the page/button keys. Keep the route's existing contract tests green after the #18 change.
 
 ## Out of scope / YAGNI
