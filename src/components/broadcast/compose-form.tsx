@@ -83,7 +83,7 @@ const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
  * Simplify-S4 (round-3) — switch instead of nested ternary
  * (CLAUDE.md forbids nested ternaries in presentation layer).
  */
-function buildSegmentPayload(
+export function buildSegmentPayload(
   segment: SegmentPickerValue,
   customLines: ReadonlyArray<string>,
 ):
