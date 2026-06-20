@@ -4545,7 +4545,7 @@
         "toast": {
           "cancelled": "Utskicket har avbrutits.",
           "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
-          "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har redan börjat skickas.",
+          "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
           "concurrentRace": "Detta utskick har redan hanterats. Vyn har uppdaterats."
         }
       }

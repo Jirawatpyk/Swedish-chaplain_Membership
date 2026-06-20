@@ -33,6 +33,11 @@ export function ResendBouncedInviteButton({ memberId, contactId }: Props) {
     onSuccess: () => {
       toast.success(t('resendSuccess'));
     },
+    // On success the route clears invite_bounced_at, so the visible-gate
+    // (inviteBouncedAt && linkedUserId) goes false and this button UNMOUNTS
+    // after router.refresh() — keep it disabled until then to avoid a
+    // re-enable flicker (no need to reset submitting).
+    keepDisabledOnSuccess: true,
     // on429 intentionally omitted — the resend-invite route is not rate-limited
     // and the inviteBounced namespace has no rateLimited key.
     onError: (body) => {

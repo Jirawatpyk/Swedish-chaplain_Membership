@@ -4,10 +4,14 @@
  * useContactResendAction — shared fetch + toast + router.refresh pattern
  * for resend-action buttons on the member detail page.
  *
- * Fix 5: on the success path the submitting state is NOT reset (button stays
- * disabled while the RSC router.refresh() is in-flight, preventing a double-
- * click from wasting a rate-limit token). setSubmitting(false) is only called
- * on error paths.
+ * Success-path submitting reset: by DEFAULT `submitting` resets to false on a
+ * 200 so a button that stays mounted (its visible-gate did not clear) can be
+ * used again. A caller whose gate clears on success — so the component
+ * unmounts after router.refresh() — passes `keepDisabledOnSuccess: true` to
+ * avoid a brief re-enable flicker before unmount. (DV code-review fix: the
+ * verification button's gate does NOT clear on resend — resending only
+ * re-issues a token, the email stays unverified — so the old always-no-reset
+ * left it stuck disabled showing "Sending…" forever; it could never re-send.)
  *
  * Fix 10: extracts the near-identical handler logic from
  * ResendVerificationButton and ResendBouncedInviteButton so the 429/error
@@ -37,6 +41,17 @@ export interface ContactResendActionOptions {
    * Receives the parsed body so the caller can branch on `error` / `reason`.
    */
   readonly onError: (body: Body) => void;
+  /**
+   * Keep `submitting` true after a 200 success (default: reset to false).
+   * Set true ONLY for a button whose visible-gate clears on success so the
+   * component unmounts after `router.refresh()` (ResendBouncedInviteButton:
+   * the route clears `invite_bounced_at` → the button unmounts) — keeping it
+   * disabled avoids a re-enable flicker. A button whose gate does NOT clear
+   * (ResendVerificationButton: the email stays unverified, so the button stays
+   * mounted) MUST leave this false, else it is stuck disabled "Sending…"
+   * forever and can never re-send.
+   */
+  readonly keepDisabledOnSuccess?: boolean;
 }
 
 export interface ContactResendActionReturn {
@@ -56,12 +71,14 @@ export function useContactResendAction(
       const response = await fetch(opts.url, { method: 'POST' });
 
       if (response.ok) {
-        // Fix 5 — do NOT reset submitting on success; button stays disabled
-        // until the component is unmounted/hidden after router.refresh().
         const body = (await response.json().catch(() => ({}))) as Body;
         opts.onSuccess(body);
         router.refresh();
-        // intentionally no setSubmitting(false) here
+        // Reset submitting so a button that stays mounted across the refresh
+        // (its visible-gate did not clear) can be used again. Buttons that
+        // unmount on success opt out via keepDisabledOnSuccess to avoid a
+        // re-enable flicker. (See the option's docstring.)
+        if (!opts.keepDisabledOnSuccess) setSubmitting(false);
         return;
       }
 

@@ -42,8 +42,6 @@ export const CANCEL_CYCLE_ERROR_CODES = [
   'server_error',
 ] as const;
 
-export type CancelCycleErrorCode = (typeof CANCEL_CYCLE_ERROR_CODES)[number];
-
 /**
  * Mark-paid-offline route error codes that warrant their OWN toast copy.
  *
@@ -72,9 +70,6 @@ export const MARK_PAID_OFFLINE_ERROR_CODES = [
   'feature_disabled',
   'server_error',
 ] as const;
-
-export type MarkPaidOfflineErrorCode =
-  (typeof MARK_PAID_OFFLINE_ERROR_CODES)[number];
 
 /**
  * Mark-paid-offline DO-NOT-RETRY routing. When the route returns

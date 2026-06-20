@@ -5,8 +5,12 @@
  * Shown on the member detail page next to a portal-linked contact whose email
  * is still unverified. Mirrors ResendBouncedInviteButton.
  *
- * Fix 5: button stays disabled after success (does not re-enable while
- *   router.refresh() is in-flight — prevents double-click rate-limit waste).
+ * Submitting resets on success (the hook default) so the admin can re-send
+ *   again — resending only re-issues a verification token; the email stays
+ *   unverified so this button stays mounted (its gate does not clear). The
+ *   3/hr route rate-limiter (DV-11) is the double-click backstop. (DV
+ *   code-review fix: the old always-no-reset left the button stuck disabled
+ *   "Sending…" forever after one resend.)
  * Fix 10: delegates fetch/toast/refresh to useContactResendAction.
  */
 import { useTranslations } from 'next-intl';

@@ -257,6 +257,76 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     );
   });
 
+  it('trims the reason before sending (whitespace not persisted to the audit)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as Response);
+    renderAdmin();
+    fireEvent.change(
+      screen.getByLabelText(
+        new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
+      ),
+      { target: { value: '  duplicate send  ' } },
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
+    );
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const sent = JSON.parse(
+      (fetchSpy.mock.calls[0]![1] as RequestInit).body as string,
+    );
+    expect(sent).toEqual({ cancellationReason: 'duplicate send' });
+  });
+
+  it('404 (broadcast gone / cross-member) → toasts cancelError + CLOSES + refresh (permanent)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: { code: 'broadcast_not_found' } }),
+    } as unknown as Response);
+    const onOpenChange = vi.fn();
+    renderAdmin({ onOpenChange });
+    fireEvent.change(
+      screen.getByLabelText(
+        new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
+      ),
+      { target: { value: 'x' } },
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en.admin.broadcasts.toast.cancelError),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it('5xx transient → toasts cancelError but KEEPS the dialog open (no close/refresh)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    } as unknown as Response);
+    const onOpenChange = vi.fn();
+    renderAdmin({ onOpenChange });
+    fireEvent.change(
+      screen.getByLabelText(
+        new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
+      ),
+      { target: { value: 'y' } },
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en.admin.broadcasts.toast.cancelError),
+    );
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
   it('reason > 500 chars → shows reasonTooLong inline error + confirm stays disabled', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(null, { status: 200 }),

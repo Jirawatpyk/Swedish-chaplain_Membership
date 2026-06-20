@@ -36,16 +36,19 @@ afterEach(() => {
 });
 
 describe('ResendVerificationButton', () => {
-  it('posts and toasts success, calls router.refresh, and button stays disabled (Fix 4 + 5)', async () => {
+  it('posts, toasts success, calls router.refresh, and RE-ENABLES so the admin can re-send again (DV review fix)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
     renderButton();
     const btn = screen.getByRole('button', { name: /Re-send verification email/i });
     fireEvent.click(btn);
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Verification email re-sent.'));
-    // Fix 4 — router.refresh must have been called
+    // router.refresh must have been called
     expect(refreshSpy).toHaveBeenCalled();
-    // Fix 5 — button stays disabled (submitting not reset on success path)
-    expect(btn).toBeDisabled();
+    // DV review fix — the verification button's visible-gate (email unverified)
+    // does NOT clear on resend, so the button stays mounted; submitting MUST
+    // reset so the admin can re-send again (was stuck disabled "Sending…"
+    // forever). The 3/hr route rate-limiter is the double-click backstop.
+    await waitFor(() => expect(btn).toBeEnabled());
   });
 
   it('toasts emailVerified on 409 not_eligible/email_verified', async () => {

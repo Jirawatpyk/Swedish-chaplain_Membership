@@ -47,7 +47,9 @@ describe('ResendBouncedInviteButton', () => {
       expect(toast.success).toHaveBeenCalledWith(en.admin.members.detail.inviteBounced.resendSuccess),
     );
     expect(refreshSpy).toHaveBeenCalled();
-    // Fix 5 applied to both buttons: stays disabled on success
+    // This button opts into keepDisabledOnSuccess (its gate clears on success →
+    // it unmounts after refresh), so it intentionally stays disabled — unlike
+    // the verification button, which re-enables. See use-contact-resend-action.
     expect(btn).toBeDisabled();
   });
 
