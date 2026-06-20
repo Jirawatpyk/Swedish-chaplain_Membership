@@ -414,10 +414,15 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     expect(repo.inserted).toHaveLength(0);
   });
 
-  it('admin proxy over-cap is BLOCKED → broadcast_quota_blocked (T-10 invariant)', async () => {
+  it('admin proxy fully-reserved (used+reserved=cap) is BLOCKED → broadcast_quota_blocked (T-10 invariant)', async () => {
+    // Reserved (submitted/approved) slots fill the cap with no `used` headroom:
+    // the admin proxy must NOT be granted a free slot over the member's reserved
+    // pipeline. NOTE — used+reserved must satisfy the QuotaCounter invariant
+    // (sum <= cap); an over-subscribed counter (sum > cap) is a distinct
+    // pre-existing path that surfaces as submit.server_error, not quota_blocked.
     const { deps, repo } = makeDeps({
       planCap: 6,
-      used: 8,
+      used: 4,
       reserved: 2,
       primaryContact: 'm-target@example.com',
       recipients: [

@@ -10,7 +10,7 @@
  *   k. halt flag → broadcast_member_halted_pending_review
  *   d. rate limit → broadcast_rate_limit_exceeded
  *   a. plan check → broadcast_not_in_plan
- *   b. quota → broadcast_quota_blocked  (admin_proxy bypasses per Q12)
+ *   b. quota → broadcast_quota_blocked  (enforced for all actors incl admin_proxy — T-10)
  *   j. reply-to → broadcast_member_missing_primary_contact_email
  *   c. subject length → broadcast_subject_too_long
  *   e. sanitiser → broadcast_body_unsafe_html (catches sanitiser-throw
@@ -326,40 +326,41 @@ export async function submitBroadcast(
   }
 
   // ---- Precondition (b): quota -------------------------------------
-  // admin_proxy bypasses quota per Q12 (admin emergency correction path)
-  if (input.actorRole !== 'admin_proxy') {
-    const quota = await computeQuotaCounter(
-      {
-        tenant: deps.tenant,
-        plansBridge: deps.plansBridge,
-        broadcastsRepo: deps.broadcastsRepo,
-        clock: deps.clock,
-      },
-      { memberId: asMemberId(input.memberId) },
-    );
-    if (!quota.ok) {
-      // Round-4 MED-D — counter internal error (DB blip) is NOT
-      // "quota full". Returning fake `quota_blocked` collapses the
-      // distinction and wrongly maps to 422 (user fault). Surface as
-      // 500 server_error so ops dashboards can split rate-limited
-      // submissions from infra-induced rejections.
-      return err({
-        kind: 'submit.server_error',
-        message: `quota_counter_error: ${quota.error.kind}`,
-      });
-    }
-    if (quota.value.counter.remaining === 0) {
-      await emitReject(deps, input, 'broadcast_quota_blocked', {
-        memberId: input.memberId,
-        ...quota.value.counter,
-      });
-      return err({
-        kind: 'broadcast_quota_blocked',
-        used: quota.value.counter.used,
-        reserved: quota.value.counter.reserved,
-        cap: quota.value.counter.cap,
-      });
-    }
+  // Enforced for ALL actor roles incl admin_proxy: Q12 says the
+  // member's quota counts against them "regardless" — an admin
+  // submitting on their behalf must NOT grant a free broadcast
+  // (T-10 / security.md CHK005). There is no "emergency bypass" in Q12.
+  const quota = await computeQuotaCounter(
+    {
+      tenant: deps.tenant,
+      plansBridge: deps.plansBridge,
+      broadcastsRepo: deps.broadcastsRepo,
+      clock: deps.clock,
+    },
+    { memberId: asMemberId(input.memberId) },
+  );
+  if (!quota.ok) {
+    // Round-4 MED-D — counter internal error (DB blip) is NOT
+    // "quota full". Returning fake `quota_blocked` collapses the
+    // distinction and wrongly maps to 422 (user fault). Surface as
+    // 500 server_error so ops dashboards can split rate-limited
+    // submissions from infra-induced rejections.
+    return err({
+      kind: 'submit.server_error',
+      message: `quota_counter_error: ${quota.error.kind}`,
+    });
+  }
+  if (quota.value.counter.remaining === 0) {
+    await emitReject(deps, input, 'broadcast_quota_blocked', {
+      memberId: input.memberId,
+      ...quota.value.counter,
+    });
+    return err({
+      kind: 'broadcast_quota_blocked',
+      used: quota.value.counter.used,
+      reserved: quota.value.counter.reserved,
+      cap: quota.value.counter.cap,
+    });
   }
 
   // ---- Precondition (j): reply-to derivation -----------------------

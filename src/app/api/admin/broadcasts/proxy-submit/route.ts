@@ -4,8 +4,9 @@
  * Q12 admin-on-behalf-of-member submission. Wraps `proxySubmitBroadcast`
  * use-case which delegates to `submitBroadcast` with admin actor.
  *
- * Authz: admin only (manager 403). Quota check is BYPASSED for
- * `actor_role='admin_proxy'` (Q12 emergency correction).
+ * Authz: admin only (manager 403). The proxied member's quota cap is
+ * ENFORCED (T-10 / Q12 — the member never gets a free broadcast); an
+ * at-cap proxy submit returns 422 `broadcast_quota_blocked`.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';

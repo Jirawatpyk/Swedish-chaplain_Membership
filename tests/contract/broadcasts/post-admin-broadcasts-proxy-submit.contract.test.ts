@@ -251,6 +251,22 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     expect(res.status).toBe(422);
   });
 
+  it('admin_proxy at full member quota → 422 broadcast_quota_blocked (T-10)', async () => {
+    // T-10 — the proxied member's quota cap is ENFORCED; the use-case
+    // surfaces broadcast_quota_blocked when at cap and the route maps it
+    // to 422 (no admin bypass). Arranged via the file's existing
+    // proxySubmit deps-mock at-cap return.
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_quota_blocked', used: 6, reserved: 0, cap: 6 }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+    const json = await res.json();
+    expect(json.error.code).toBe('broadcast_quota_blocked');
+  });
+
   it('422 broadcast_body_unsafe_html surfaced from use-case', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
