@@ -3,7 +3,7 @@
 **Date:** 2026-06-20 (rev. 2 — incorporates 4-agent review: architect / spec-compliance / security / QA)
 **Feature:** F7 Email Broadcast — admin proxy-submit (Clarifications Q12 + Q16 + Q17, AS9, FR-001/FR-005)
 **Branch:** `085-dv4-admin-proxy-submit` (off `main`)
-**Scope:** divergence DV-4. Backend fully shipped; **only the admin UI is missing.** Presentation-focused + one behavior-preserving backend read-dedup (#18).
+**Scope:** divergence DV-4. Backend route/use-case/i18n shipped; **the admin UI is missing.** This PR = (1) the admin proxy-submit UI, (2) the #18 read-dedup (behavior-preserving), (3) the **admin_proxy quota-cap fairness fix (security T-10)** — bundled, separate commits.
 
 ## Goal
 
@@ -53,12 +53,20 @@ New admin compose page `/admin/broadcasts/new` rendering a **member-picker** + t
    - Make a not-found unrepresentable-with-a-name (discriminated input) so "exists but blank companyName" can't be constructed.
 6. Success → toast + redirect to the broadcast detail (admin). Quota **consumed/attributed to the member**; audit `broadcast_submitted` `actor_role='admin_proxy'` with both ids (unchanged).
 
-## Quota behavior (important — pre-existing divergence, flagged not fixed)
+## Quota-cap fairness FIX (in scope — security T-10) — own commit
 
-`submit-broadcast.ts:330` **bypasses the member quota CAP for `actor_role='admin_proxy'`** (Q12 "emergency correction" path). Net: the broadcast row is attributed to the member (`requested_by_member_id`) and quota is **consumed/derived** against that member (no free chamber broadcasts in accounting), BUT the per-year **cap is NOT enforced** for admin-initiated sends — an admin can push a member over their cap.
+`submit-broadcast.ts:329-330` `if (input.actorRole !== 'admin_proxy')` **bypasses the member quota CAP (precondition b) for admin_proxy**, citing a "Q12 emergency correction" — but **NO such emergency clause exists** in Q12/AS9 ("emergency" in the spec = only the READ_ONLY_MODE global switch). Verified against the authoritative spec, the bypass is a **bug + security gap (threat T-10 admin-proxy abuse)**:
+- **Q12 (spec.md:87):** "quota slot is reserved/consumed" + "**quota counts against the member regardless**" + "**preserves quota fairness — the chamber never gets free broadcasts via admin proxy**".
+- **AS9 (spec.md:136):** "the quota slot is **reserved against Fogmaker**".
+- **security.md CHK005 / T-10:** "admin **cannot bypass any member-side validation (quota**, tier, primary-contact)".
 
-- This **diverges from Q12's literal "quota fairness / never gets free broadcasts" wording** and the route's `reservedQuotaSlot: true` envelope reads misleadingly. **This is a PRE-EXISTING F7 backend↔spec divergence, OUT OF DV-4 SCOPE** (DV-4 is presentation + the #18 read-dedup). Tracked as a separate divergence to reconcile (update Q12 text to document the deliberate admin override, OR treat as a bug) — NOT in this PR.
-- **DV-4's obligation:** the admin UI must be HONEST — no blocking quota badge, no "X of Y left" gate that implies over-cap is blocked (it isn't). The e2e must NOT assert quota movement.
+**Fix:** remove the precondition-(b) `actorRole !== 'admin_proxy'` guard so admin_proxy enforces the member's quota cap exactly like self-service. An admin proxy-submitting for an at-cap member now gets `broadcast_quota_blocked` (422). **KEEP the precondition-(d) rate-limit handling** (admin_proxy uses a separate higher-cap key — the intended Ultraplan AD-proxy-rate decision; NOT touched). The spec.md Q12 text is already correct (it says enforce) — only the CODE + its comments are wrong; do NOT change Q12.
+
+**Behavior change (accepted):** admins can no longer push a member OVER their per-year cap via proxy (was an unsupported override). Aligns with Q12/T-10.
+
+**Touch points:** `submit-broadcast.ts` (remove guard at 329-330 + fix the precondition-(b) comment + the header line 13 "admin_proxy bypasses per Q12" → "enforced"); proxy `route.ts` (map `broadcast_quota_blocked` → 422 if not already; fix the header "Quota check is BYPASSED" comment; `reservedQuotaSlot: true` is now genuinely accurate); **flip the 3 tests that assert the bypass** (`proxy-submit-broadcast.test.ts:399` "bypasses quota even at full quota", `:414` "bypasses at over-cap", `submit-broadcast.test.ts:500` "admin_proxy bypass quota check") RED → assert enforce-cap (at-cap admin_proxy → `broadcast_quota_blocked`); add an at-cap proxy **integration** test. **Security-engineer sign-off required (T-10).**
+
+**UI consequence:** the admin compose page MAY surface the proxied member's quota (now real + enforced), but a quota gate is optional — the route is the source of truth. The AS9 happy-path e2e uses a member WITH quota available (so it succeeds); at-cap→blocked is covered by the flipped unit + integration tests, not the happy-path e2e.
 
 ## Self-exclusion (Q16)
 
@@ -81,7 +89,7 @@ Backend correctly auto-excludes the **proxied member** (not the admin) from memb
 ## Scope cuts (explicit)
 
 - **FR-001 draft-on-behalf DEFERRED.** FR-001 also permits an admin to create a *draft* on behalf of a member; DV-4 ships **submit-on-behalf only** (the Q12 "send this for me" path). Draft-on-behalf needs a separate admin draft route + is low-value (admin proxying usually has the full content) — deferred, NOT silently dropped.
-- No new RBAC role (Q17). No dedicated events/sponsorship UX (post-MVP F7.2). No member self-service compose change (only `buildSegmentPayload` export). No quota-cap fix (pre-existing divergence, separate ticket).
+- No new RBAC role (Q17). No dedicated events/sponsorship UX (post-MVP F7.2). No member self-service compose change (only `buildSegmentPayload` export). (The quota-cap fairness fix IS in scope — see the Quota-cap section.)
 
 ## Testing (TDD)
 
@@ -96,5 +104,5 @@ Backend correctly auto-excludes the **proxied member** (not the admin) from memb
 
 - **#18 touches `src/modules/broadcasts`** → pre-push runs the broadcasts integration suite, whose `audit-event-type-parity` test is RED from COMP-1's unmerged `broadcast_content_redacted` enum on shared Neon (external drift). Push with `SKIP_INTEGRATION_PREPUSH=1` + run the proxy-submit + cross-tenant integration tests manually (mirror PR #106).
 - **COMP-1 disjointness:** member-erasure does not touch the admin broadcasts compose surface or the proxy route; avoid touching `src/modules/broadcasts/index.ts` (mutate `ProxySubmitBroadcastInput` fields only).
-- **Quota-cap bypass divergence** (above) — flagged for a separate ticket; DV-4 only keeps the UI honest.
+- **Quota-cap fairness fix** (T-10) is bundled in this PR as its OWN commit (verified direction: the code bypass is the bug; Q12/AS9/CHK005 are authoritative). Needs security-engineer sign-off. The `submit-broadcast.ts` edit only affects the admin_proxy path (self-service already enforces), so blast radius is small — but re-run the full broadcasts unit suite (it has many admin_proxy assertions) to catch any other test that encoded the bypass.
 - Member-picker: mirror, don't extract (keep the F6 relink surface untouched).
