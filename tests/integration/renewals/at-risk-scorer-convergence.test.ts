@@ -297,6 +297,45 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
   }
 
   /**
+   * Insert a `partial_delivery_accepted` broadcast ORIGINATED by
+   * `memberId` in the current quota year. Finding C: this terminal state
+   * CONSUMES the annual quota slot exactly like `sent` (it stamps
+   * `quota_year_consumed` per the schema CHECK + `acceptPartial`), so the
+   * at-risk ENGAGEMENT usage count MUST include it. Counting only `sent`
+   * undercounts usage and falsely fires the +15 "didn't use e-blast"
+   * factor for a member who did send (partial accept).
+   */
+  async function seedOriginatedPartialAcceptedBroadcast(
+    memberId: string,
+  ): Promise<void> {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(broadcasts).values({
+        tenantId: tenant.ctx.slug,
+        broadcastId: randomUUID(),
+        requestedByMemberId: memberId,
+        requestedByMemberPlanIdSnapshot: 'snap',
+        submittedByUserId: user.userId,
+        actorRole: 'admin_proxy',
+        subject: 'Partial Accepted',
+        bodyHtml: '<p>x</p>',
+        bodySource: '<p>x</p>',
+        fromName: 'Test',
+        replyToEmail: 'reply@example.com',
+        segmentType: 'all_members',
+        estimatedRecipientCount: 1,
+        status: 'partial_delivery_accepted',
+        // Both quota fields are mandatory for this terminal state
+        // (CHECK broadcasts_quota_year_only_on_sent), mirroring the
+        // `acceptPartial` repo write.
+        quotaYearConsumed: QUOTA_YEAR,
+        quotaConsumedAt: new Date(),
+        partialDeliveryAcceptedAt: new Date(NOW_MS - 7 * MS_PER_DAY),
+        partialDeliveryAcceptedByUserId: user.userId,
+      });
+    });
+  }
+
+  /**
    * Insert a `sent` broadcast originated by SOMEONE ELSE that was
    * DELIVERED TO `recipientMemberId` (the received axis). This must NOT
    * count toward the recipient's own SENDING quota.
@@ -396,6 +435,40 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
 
     expect(single).toBe(batch);
     expect(single).toBe(true);
+  }, 90_000);
+
+  it('finding C e-blast: 1 sent + 1 partial_delivery_accepted this year → usage=2 (partial COUNTED) → +15 does NOT fire on BOTH', async () => {
+    // Plan eblast_per_year = 4. Member has:
+    //   (a) 1 `sent` broadcast in the current quota year
+    //   (b) 1 `partial_delivery_accepted` broadcast in the current quota
+    //       year (admin accepted a partial delivery — this CONSUMES the
+    //       quota slot, FR-008c).
+    // Correct usage = 2/4 = 50% >= 30% → the +15 "didn't use e-blast"
+    // factor MUST NOT fire. The pre-fix code counted only `sent` = 1/4 =
+    // 25% < 30% → factor WOULD fire (the undercount bug). Both scorers
+    // (single + batch) must now agree the factor does NOT fire.
+    const planId = `conv-partial-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Partial Accepted Plan' },
+        benefitMatrix: { ...DEFAULT_TEST_BENEFIT_MATRIX, eblast_per_year: 4 },
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMember(planId);
+    await seedOriginatedSentBroadcast(memberId); // counts (1)
+    await seedOriginatedPartialAcceptedBroadcast(memberId); // counts (2) — Finding C
+
+    const single = await singleFires(memberId, EBLAST_FACTOR);
+    const batch = await batchFires(memberId, EBLAST_FACTOR);
+
+    // Both agree, and both do NOT fire: usage = 2 (50% >= 30%). If the
+    // partial-accepted row were dropped, usage = 1 (25% < 30%) and the
+    // factor would (wrongly) fire — that is the regression this guards.
+    expect(single).toBe(batch);
+    expect(single).toBe(false);
   }, 90_000);
 
   // ---------------------------------------------------------------------

@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -788,6 +788,11 @@ export function makeDrizzleBroadcastsRepo(
       // excluded. The field name is kept as-is because callers depend
       // on it.
       readonly submittedOrApproved: number;
+      // Consumed-quota bucket: `sent` ∪ `partial_delivery_accepted`,
+      // year-fenced on `quota_year_consumed` (FR-008c). Both terminal
+      // states stamp the quota year (schema CHECK
+      // `broadcasts_quota_year_only_on_sent`). Field name kept as `sent`
+      // for caller stability even though it now covers two states.
       readonly sent: number;
     }> {
       return runInTenant(ctx, async (tx) => {
@@ -814,7 +819,17 @@ export function makeDrizzleBroadcastsRepo(
               and(
                 eq(broadcasts.tenantId, tenantIdArg),
                 eq(broadcasts.requestedByMemberId, memberId),
-                eq(broadcasts.status, 'sent'),
+                // Consumed-quota bucket = BOTH terminal states that stamp
+                // `quota_year_consumed`. The schema CHECK
+                // `broadcasts_quota_year_only_on_sent` enforces a non-null
+                // `quota_year_consumed` for `sent` AND
+                // `partial_delivery_accepted` (FR-008c) — `acceptPartial`
+                // sets it identically to the webhook `sent` path. Counting
+                // only `sent` UNDERCOUNTS the member's consumed quota, so a
+                // member at cap via a partial-accepted broadcast would be
+                // wrongly allowed to send again. The year fence below scopes
+                // the count to the current quota year (FR-006/FR-007).
+                inArray(broadcasts.status, ['sent', 'partial_delivery_accepted']),
                 eq(broadcasts.quotaYearConsumed, quotaYear),
               ),
             ),
