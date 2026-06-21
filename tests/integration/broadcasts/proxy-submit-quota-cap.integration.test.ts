@@ -43,6 +43,7 @@ import {
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { asMemberId } from '@/modules/members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -255,7 +256,7 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
     const counts = await repo.countForMemberQuota(
       tenant.ctx.slug,
-      partialMemberId,
+      asMemberId(partialMemberId),
       quotaYear,
     );
     expect(counts.sent).toBe(1);
