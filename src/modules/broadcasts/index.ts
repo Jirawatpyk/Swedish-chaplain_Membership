@@ -390,6 +390,18 @@ export {
 } from './application/use-cases/cleanup-orphaned-audiences';
 export { makeCleanupOrphanedAudiencesDeps } from './infrastructure/broadcasts-deps';
 
+// --- PR-2 Task 4 — reclaim-orphaned-audiences cron (defect #5 companion) -
+// Safety-net for audiences whose broadcast row is already gone — complements
+// cleanup-orphaned-audiences (which handles the row-exists-but-terminal case).
+export {
+  reclaimOrphanedAudiences,
+  type ReclaimOrphanedAudiencesDeps,
+  type ReclaimOrphanedAudiencesInput,
+  type ReclaimOrphanedAudiencesOutput,
+  type ReclaimOrphanedAudiencesError,
+} from './application/use-cases/reclaim-orphaned-audiences';
+export { makeReclaimOrphanedAudiencesDeps } from './infrastructure/broadcasts-deps';
+
 // --- Ship-blocker A — batch completion roll-up --------------------------
 export {
   rollUpBatchBroadcast,

@@ -678,6 +678,31 @@ export function makeCleanupOrphanedAudiencesDeps(
   };
 }
 
+// ----- PR-2 Task 4 — reclaim-orphaned-audiences cron composition -----------
+
+import type { ReclaimOrphanedAudiencesDeps } from '../application/use-cases/reclaim-orphaned-audiences';
+
+/**
+ * PR-2 Task 4 — composition root for `reclaimOrphanedAudiences` use case
+ * (cron POST /api/cron/broadcasts/reclaim-orphan-audiences, defect #5
+ * companion — safety-net for audiences whose broadcast row is already gone).
+ *
+ * Deps: tenant context + `broadcastsRepo` (existingBroadcastIds) +
+ * `broadcastsGateway` (listAudiences + deleteAudience) + `clock` (grace cutoff).
+ * Mirrors `makeCleanupOrphanedAudiencesDeps` — same adapters, same dep set.
+ */
+export function makeReclaimOrphanedAudiencesDeps(
+  tenantId: string,
+): ReclaimOrphanedAudiencesDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
+    clock: systemClock,
+  };
+}
+
 // ----- F7.1a Phase 4 (US2 — Image embedding) ---------------------------------
 //
 // Composition roots for the 3 US2 use-cases. Each is per-tenant for

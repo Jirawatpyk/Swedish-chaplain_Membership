@@ -37,6 +37,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
 | **F7 cleanup-audiences** (PR-2 defect #5) | **`POST /api/cron/broadcasts/cleanup-audiences`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 cleanup-audiences) — deletes terminal broadcasts' Resend audiences so the per-account audience count stays bounded |
+| **F7 reclaim-orphan-audiences** (PR-2 Task 4) | **`POST /api/cron/broadcasts/reclaim-orphan-audiences`** | **`30 3 * * *`** (daily 03:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reclaim-orphan-audiences) — safety-net deleting orphaned Resend audiences whose broadcast row is gone (the per-broadcast cleanup-audiences cron can't reach those) |
 | **F7 broadcasts gauges** (T172) | **`GET /api/internal/metrics/broadcasts-gauges`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | emits `broadcasts.queue_pending` + `broadcasts.stuck_sending_count` gauges per tenant |
 | **F7.1a US1 split-large-broadcasts** | **`POST /api/cron/broadcasts/split-large-broadcasts`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — splits broadcasts whose recipient count exceeds the Resend per-audience cap into ≤10k batch manifests |
 | **F7.1a US1 dispatch-batches** | **`POST /api/cron/broadcasts/dispatch-batches`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — dispatches pending batch manifests created by split-large-broadcasts |
@@ -456,6 +457,79 @@ Per tenant, inside `cleanupOrphanedAudiences`:
 ### Handler module
 
 `src/app/api/cron/broadcasts/cleanup-audiences/route.ts`
+
+## F7 — broadcasts/reclaim-orphan-audiences (NEW — PR-2 Task 4, defect #5 companion)
+
+Daily safety-net cron that **reclaims orphaned Resend audiences** — audiences
+that exist in the Resend account but whose corresponding local broadcast row
+is gone from the database. These arise when:
+
+- A broadcast row was hard-deleted (GDPR erasure, manual purge) AFTER a Resend
+  audience was already created during dispatch.
+- A dispatch crashed mid-flight AFTER `gateway.createAudience` but BEFORE
+  `broadcastsRepo.attachAudienceId`, leaving a Resend audience with no tracked
+  DB reference.
+
+This cron **complements** `cleanup-audiences` (which handles the case where the
+broadcast row EXISTS and is terminal). Together they achieve full audience hygiene:
+
+- **`cleanup-audiences`** → broadcast row exists, is terminal, `audience_deleted_at IS NULL` → delete audience + stamp row.
+- **`reclaim-orphan-audiences`** (this job) → broadcast row is GONE → delete the dangling Resend audience.
+
+Grace window: **24 hours**. Audiences whose `createdAt` is within the last 24h
+are skipped — they may belong to an in-flight dispatch that hasn't committed
+its broadcast row yet. A longer window than cleanup-audiences (1h) reduces the
+risk of false-positive deletes disrupting active sends.
+
+Per-tick candidate limit: **200** (applied after name-matching and grace
+filtering). Higher than cleanup-audiences (50) because this cron runs daily
+rather than every 15 min, so a larger backlog per tick is expected.
+
+The job lists all Resend audiences for the configured API key, filters by
+naming convention `broadcast-{tenantSlug}-{uuid}` (optional `-batch-N` suffix),
+cross-checks extracted broadcast IDs against the DB, and deletes audiences with
+no live DB row. **No DB write on success** — there is no row to stamp.
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · broadcasts.reclaim-orphan-audiences`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/broadcasts/reclaim-orphan-audiences`
+   - **Schedule**: `30 3 * * *` (daily 03:30 UTC = 10:30 ICT — low-traffic
+     window; scheduled 30 min before `prune-expired-drafts` at 04:30 UTC for
+     clean ordering. The 24h grace window has ample tolerance for a missed
+     daily tick — next tick catches up automatically.)
+   - **Request method**: `POST`
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7)
+   - **Timeout**: 60 seconds (200 candidates × listAudiences RTT + Resend
+     delete RTT per chunk; comfortably within budget)
+   - **Retry on failure**: **OFF** (per § Retry policy contract — the sweep is
+     idempotent; the next daily tick is the natural retry)
+   - **Notifications**: email on ≥3 consecutive failures
+3. Click **Run** to verify a 200 OK response:
+   ```json
+   { "scanned": 0, "orphaned": 0, "deleted": 0, "failed": 0, "skippedNonMatching": 0 }
+   ```
+   At steady state `scanned` may be > 0 (there may be a `General` Resend audience
+   or other tenants' audiences), but `orphaned: 0` is expected after a clean
+   deployment where `cleanup-audiences` has already been running.
+
+### Expected response codes
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `orphaned: 0` | No orphaned audiences found this tick | None — expected steady state |
+| 200 + `deleted > 0` | Orphaned audiences reclaimed | None — expected after a broadcast row hard-delete |
+| 200 + `failed > 0` | Some deletes failed (Resend gateway blip) | Inspect Vercel logs `broadcasts.audience_reclaim.delete_failed`; next tick retries automatically |
+| 200 + `skippedNonMatching > 0` | Resend audiences not matching this tenant's naming convention (e.g. `General`, another tenant) | None — expected; these are intentionally ignored |
+| 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing |
+| 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |
+| 500 + `{ error: { code: 'internal_error' } }` | `listAudiences` or DB existence check failed | Inspect Vercel logs `cron.broadcasts.reclaim_orphan_audiences.server_error`; next daily tick retries |
+
+### Handler module
+
+`src/app/api/cron/broadcasts/reclaim-orphan-audiences/route.ts`
 
 ## Secret rotation
 
