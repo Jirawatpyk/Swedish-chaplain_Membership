@@ -97,4 +97,34 @@ export interface EmailChangeTokenPort {
     type: TokenType,
     consumedAt: Date,
   ): Promise<Result<{ invalidatedCount: number }, RepoError>>;
+
+  /**
+   * COMP-1 US2a (M1) — invalidate EVERY still-active token of ANY type
+   * (`verification` + `revert`) belonging to a SET of users, in one UPDATE,
+   * inside the caller's transaction. Used by `eraseMember`'s atomic scrub tx
+   * to neutralise the post-erasure PII-resurrection hole: a live 48h `revert`
+   * token holds the original email in plaintext and, if redeemed, would restore
+   * erased PII. Marking it `consumed_at` removes it from `findActiveByIdInTx`'s
+   * unconsumed filter so it can never be redeemed.
+   *
+   * Returns the OLD + NEW emails of every token it invalidated so the caller
+   * can also cancel the matching pending `notifications_outbox` rows (L1):
+   * the `email_change_revert` outbox row's `to_email` is the token's
+   * `old_email`, and the `email_verification` row's is the `new_email` — both
+   * frozen real addresses.
+   *
+   * `userIds` empty ⇒ no-op, returns `{ invalidatedEmails: [] }`. Tenant-scoped
+   * via the caller's runInTenant tx (RLS). Same FAIL-LOUD contract as the rest
+   * of the erasure tx: a DB error returns `err` so the caller's tx rolls back.
+   */
+  invalidateAllActiveForUsersInTx(
+    tx: TenantTx,
+    userIds: readonly string[],
+    consumedAt: Date,
+  ): Promise<
+    Result<
+      { readonly invalidatedEmails: readonly string[] },
+      RepoError
+    >
+  >;
 }

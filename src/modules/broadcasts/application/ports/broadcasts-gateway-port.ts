@@ -146,4 +146,12 @@ export interface BroadcastsGatewayPort {
   getAudienceContactCount(
     audienceId: string,
   ): Promise<GetAudienceContactCountOutcome>;
+
+  /**
+   * COMP-1 US3-C — best-effort removal of a contact from an audience on
+   * member erasure. A 404 (contact or audience already absent) resolves
+   * (idempotent); a 5xx / network error throws a retryable GatewayThrowable
+   * so the caller can classify it as a propagation failure.
+   */
+  removeContactFromAudience(audienceId: string, email: string): Promise<void>;
 }

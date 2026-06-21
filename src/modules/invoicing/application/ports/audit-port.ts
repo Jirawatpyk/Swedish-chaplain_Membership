@@ -120,6 +120,25 @@ export type F4AuditEventType =
    * erasure record itself (the financial/numbering fields on the
    * invoice row are PRESERVED untouched — only the buyer identity is
    * tombstoned).
+   *
+   * COMP-1 US3-B — this type is now ALSO emitted by the sibling
+   * `/api/cron/invoicing/redact-expired-member-invoices` sweeper for an
+   * ERASED member's >10y documents (membership invoices, matched-member
+   * EVENT invoices, AND credit notes). Those payloads ADD a discriminator:
+   * `member_id` (the erased member — a uuid; the PII was scrubbed) +
+   * `document_kind` (`'invoice'` | `'credit_note'`) + (`invoice_subject`
+   * for invoices / `original_invoice_id` for credit notes), so the DPO
+   * erasure-evidence log (US3-D) can join the tax-redaction outcome per
+   * member. The event-named type is LEGACY (it predates the member arm);
+   * the `document_kind`/`member_id` discriminator makes the member case
+   * unambiguous. At the TS level it stays on the generic (non-timeline) arm
+   * of `F4AuditEvent`, BUT at RUNTIME the F9 `member_timeline_v` selects audit
+   * rows purely by `payload ? 'member_id'` (no event-type allow-list), so the
+   * MEMBER-arm row (which carries `member_id`) DOES surface on that erased
+   * member's timeline — an INTENDED record-of-processing entry (the erasure
+   * lifecycle, consistent with US3-A post-erase state S5 + the US3-D DPO
+   * evidence log, which needs `member_id` to join). The legacy non-member arm
+   * (member_id absent) stays off the timeline. No new audit type was added.
    */
   | 'event_buyer_pii_redacted';
 

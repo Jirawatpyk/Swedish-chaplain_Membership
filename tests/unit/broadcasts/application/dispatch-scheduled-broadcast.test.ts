@@ -188,6 +188,10 @@ function makeRepo(opts: RepoOpts): {
         return { prunedCount: 0 };
       },
     async listInFlightOwnedByMember() { return []; },
+    async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
+    async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
+    async listMemberResendAudienceContactsInTx() { return []; },
+    async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     },
   };
 }
@@ -270,6 +274,7 @@ function makeGateway(opts: GatewayOpts = {}): {
           count: opts.audienceContactCount ?? 2,
         };
       },
+      async removeContactFromAudience() {},
     },
   };
 }

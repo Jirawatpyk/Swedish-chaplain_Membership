@@ -511,6 +511,82 @@ GROUP BY 1;
 - Constitution Principle I clause 4 (audit severity for cross-tenant probes)
 - Constitution Principle VII (Performance & Observability SLOs)
 
+### 14.8 COMP-1 Member Erasure — reconciliation sweep (US2d)
+
+GDPR Art.17 / PDPA §33 member erasure is two-phase: a durable atomic scrub tx
+(sets `members.erased_at`) followed by best-effort POST-COMMIT cascades (F1
+linked-login erasure, F7 broadcast cancel/content-scrub, F8 renewal cancel, F6
+event-registration erasure). `member_erased` is the completion proof — emitted
+ONLY when every cascade reports clean. If a cascade fails after the scrub
+committed, the member is **stuck**: `erased_at` is set but `member_erased` never
+landed. The reconciliation sweep (`POST /api/cron/members/reconcile-erasures`)
+re-drives the idempotent `eraseMember` for each stuck member and emits the
+metric below per re-driven member.
+
+#### 14.8.1 Metrics catalogue
+
+| Metric | Type | Labels | Source |
+|---|---|---|---|
+| `members_erasure_outcome_total` | counter | `{outcome, tenant}` where `outcome ∈ {reconciled, still_pending, error}` | one per re-driven member in `/api/cron/members/reconcile-erasures` (`erasureMetrics.outcome`) |
+| `auth_erase_cascade_outcome_total` | counter | `{outcome}` where `outcome ∈ {failed, last_admin, threw}` | emitted INSIDE the F1 linked-login erasure cascade (`authMetrics.eraseCascadeOutcome`) when an `eraseUser` re-drive does not complete. **`last_admin` is the non-auto-recoverable signal** — see § 14.8.3. |
+
+`outcome` semantics for `members_erasure_outcome_total`:
+
+- `reconciled` — `member_erased` was emitted THIS tick; the erasure is now
+  complete. The healthy terminal state. (A reconciled member is no longer stuck,
+  so it is not enumerated on the next tick — no double `member_erased`.)
+- `still_pending` — the scrub is committed (row IS erased) but a cascade is STILL
+  failing (`cascadesComplete=false`, or a typed `Result.err` on the re-drive).
+  **TRANSIENT** — the next tick retries. NOT an error; the tick returns 200.
+- `error` — an UNCAUGHT throw from `eraseMember` (genuine bug / DB blip). The
+  tick returns **500** so cron-job.org retries it.
+
+#### 14.8.2 Alert rules
+
+| Alert | Condition | Severity | Owner | Action |
+|---|---|---|---|---|
+| Stuck-erasure (transient) | `members_erasure_outcome_total{outcome="still_pending"}` rate > 0 sustained over N≥3 consecutive ticks | alarm → page DPO/on-call | Platform on-call + DPO | A cascade keeps failing across ticks → the Art.17/§33 erasure is NOT completing. Inspect the per-cascade pino error (`erase-member: <cascade> not clean / threw`) for the failing module; once the underlying fault clears, the next tick auto-completes (no manual data action). |
+| Stuck-erasure (tick error) | `members_erasure_outcome_total{outcome="error"}` rate > 0 sustained over N≥3 ticks (the tick also 500s) | alarm → page on-call | Platform on-call | An uncaught throw from `eraseMember` — a real bug or DB outage. Inspect `cron.members.reconcile_erasures.uncaught` (stack) + `cron.members.reconcile_erasures.query_failed`. |
+| **Last-admin (NON-retryable)** | `auth_erase_cascade_outcome_total{outcome="last_admin"}` ≥ 1 in any tick **(distinct from a transient `still_pending`)** | alarm → page DPO/on-call as a **manual operator action**, NOT a transient | Platform on-call + DPO | See § 14.8.3 — the re-drive can NEVER self-complete; an operator MUST promote/transfer another admin first. |
+
+#### 14.8.3 The `last_admin` distinct, non-auto-recoverable alert
+
+When the erased member's contact is the **last active admin** for the tenant,
+the F1 linked-login erasure cascade hits the
+`users_last_admin_protection` trigger and `eraseUser` returns the distinct
+`'erase-user-last-admin'` code. The cascade adapter maps it to the
+`authMetrics.eraseCascadeOutcome('last_admin')` metric label (NOT the generic
+`failed`). The use-case withholds `member_erased` (allCascadesClean=false), so
+the reconciler re-drives it **every tick** — and it will recur as `still_pending`
+**forever**, because re-driving the SAME erasure cannot remove the last-admin
+constraint. This is the ONE stuck-erasure case the reconciler **cannot**
+self-heal.
+
+Alert on the `last_admin` signal **SEPARATELY** from a transient `still_pending`:
+
+- A transient `still_pending` clears on its own once the failing cascade's
+  underlying fault (DB blip, Resend outage, etc.) resolves — page, but expect
+  auto-recovery.
+- A `last_admin` signal requires a **manual, non-retryable operator action**:
+  **promote or transfer another user to the `admin` role** (so the erased
+  member's login is no longer the last admin), after which the NEXT reconciler
+  tick completes the erasure normally. Re-driving the cron without doing this is
+  futile (it will recur as `still_pending`/`last_admin` indefinitely).
+
+Align the two signals on ONE dashboard: a co-incident
+`members_erasure_outcome_total{outcome="still_pending"}` + a
+`auth_erase_cascade_outcome_total{outcome="last_admin"}` on the same member
+means **fix the last-admin first**; a `still_pending` with NO `last_admin`
+companion is a transient cascade fault to investigate and wait out.
+
+#### 14.8.4 Reference
+
+- `src/app/api/cron/members/reconcile-erasures/route.ts` — the sweep
+- `src/modules/members/application/use-cases/erase-member.ts` — `cascadesComplete` gating
+- `src/modules/members/infrastructure/adapters/auth-user-erasure-adapter.ts` — `last_admin` metric label
+- `docs/runbooks/cron-jobs.md § Members — reconcile-erasures` — operator playbook + cadence
+- Constitution Principle I clause 3 (mandatory cross-tenant integration test) + clause 4
+
 ---
 
 ## 15. Post-F3 observability backlog

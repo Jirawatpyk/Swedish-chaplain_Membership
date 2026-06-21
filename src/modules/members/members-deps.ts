@@ -26,6 +26,13 @@ import { createUserPortAdapter } from './infrastructure/adapters/create-user-por
 import { deleteInvitedUserPortAdapter } from './infrastructure/adapters/delete-invited-user-port-adapter';
 import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
 import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
+import { authUserErasureAdapter } from './infrastructure/adapters/auth-user-erasure-adapter';
+import { f7BroadcastsContentScrubAdapter } from './infrastructure/adapters/broadcasts-content-scrub-adapter';
+import { f7BroadcastsDeliveryTombstoneAdapter } from './infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
+import { outboxCancelAdapter } from './infrastructure/adapters/outbox-cancel-adapter';
+import { eventRegistrationErasureAdapter } from './infrastructure/adapters/event-registration-erasure-adapter';
+import { f7BroadcastsAudienceDerivationAdapter } from './infrastructure/adapters/broadcasts-audience-derivation-adapter';
+import { subprocessorErasureAdapter } from './infrastructure/adapters/subprocessor-erasure-adapter';
 import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
 import { drizzleMemberNumberAllocator } from './infrastructure/repos/drizzle-member-number-allocator';
 import { drizzleMemberSettingsRepo } from './infrastructure/repos/drizzle-member-settings-repo';
@@ -187,6 +194,33 @@ export function buildEraseMemberDeps(tenant: TenantContext): EraseMemberDeps {
     sessions: authSessionRevocationPort,
     broadcastsCascade: f7BroadcastsCascadeAdapter,
     renewalsCascade: f8RenewalsCascadeAdapter,
+    userErasure: authUserErasureAdapter,
+    // COMP-1 US2b — F7 broadcast CONTENT redaction cascade. Runs post-commit
+    // (after the F1 user-erasure loop, before member_erased).
+    broadcastsContentScrub: f7BroadcastsContentScrubAdapter,
+    // COMP-1 US2b — F7 broadcast-DELIVERY tombstone. Runs INSIDE the atomic
+    // scrub tx (co-committing with erased_at) so it is re-drive-stable — moved
+    // out of the post-commit content cascade (the 2026-06-18 2nd /code-review
+    // HIGH fix) where a re-drive's empty live-email set silently no-op'd it.
+    broadcastsDeliveryTombstone: f7BroadcastsDeliveryTombstoneAdapter,
+    // COMP-1 US2a (M1/L1) — token-invalidation + linked-login email read +
+    // pending-outbox cancel, all run inside eraseMember's atomic scrub tx.
+    tokens: emailChangeTokenAdapter,
+    userEmails: userEmailAdapter,
+    outboxCancel: outboxCancelAdapter,
+    // COMP-1 US2c — F6 event-registration fan-out erasure cascade. Runs
+    // post-commit (order-independent of the F1/F7/F8 cascades), hard-deleting
+    // every F6 registration matched to the erased member + crediting back any
+    // consumed benefit quota. Best-effort + re-drive-stable (keyed on
+    // matched_member_id, which erasure does not scrub).
+    eventRegistrationErasure: eventRegistrationErasureAdapter,
+    // COMP-1 US3-C — sub-processor erasure propagation. The audience-derivation
+    // adapter reads the member's (Resend audience, email) pairs INSIDE the
+    // atomic scrub tx (before the delivery tombstone redacts the emails); the
+    // subprocessor-erasure adapter removes them from Resend post-commit
+    // (best-effort / non-blocking). Stripe is a pure no-op today.
+    broadcastsAudienceDerivation: f7BroadcastsAudienceDerivationAdapter,
+    subprocessorErasure: subprocessorErasureAdapter,
     audit: drizzleAuditAdapter,
     clock: systemClock,
   };

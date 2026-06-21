@@ -184,6 +184,10 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       return { prunedCount: 0 };
     },
     async listInFlightOwnedByMember() { return []; },
+    async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
+    async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
+    async listMemberResendAudienceContactsInTx() { return []; },
+    async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
   };
 }
 

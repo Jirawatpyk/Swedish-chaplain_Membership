@@ -23,7 +23,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth/domain/audit-event';
 
-describe('integration: audit completeness — all 32 event types writable', () => {
+describe('integration: audit completeness — all 33 event types writable', () => {
   it.each(AUDIT_EVENT_TYPES)(
     'can append and read back a %s audit row',
     async (eventType) => {
@@ -55,7 +55,7 @@ describe('integration: audit completeness — all 32 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 32 entries', () => {
+  it('the full event-type list has exactly 33 entries', () => {
     // Regression guard against accidental removal or duplication.
     // Pass 5: 16 → 17 after splitting `password_reset_failed` out of
     //         `invitation_redemption_failed` (migration 0002).
@@ -72,8 +72,10 @@ describe('integration: audit completeness — all 32 event types writable', () =
     //                  SAGA rollback of an orphaned portal invite).
     // go-live P3 n24: 31 → 32 (migration 0199 — refund_initiate_rate_limited,
     //                  route-level forensic event for refund rate-limit hits).
-    expect(AUDIT_EVENT_TYPES.length).toBe(32);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(32);
+    // COMP-1 US2a: 32 → 33 (migration 0222 — user_erased, GDPR Art. 17 / PDPA
+    //                  member-erasure audit event).
+    expect(AUDIT_EVENT_TYPES.length).toBe(33);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(33);
   });
 });
 

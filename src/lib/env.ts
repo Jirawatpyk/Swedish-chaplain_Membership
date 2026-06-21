@@ -393,6 +393,18 @@ const schema = z.object({
   // tasks all gated by this single flag.
   FEATURE_F8_RENEWALS: booleanFromString.default(false),
 
+  // --- COMP-1 Member Erasure (GDPR Art.17 / PDPA §33) -----------------------
+  // Kill-switch for the US2d member-erasure reconciliation sweep
+  // (`/api/cron/members/reconcile-erasures`). When FALSE the cron route
+  // returns 200 + {skipped:true} so cron-job.org does NOT retry-storm during a
+  // pause window. The reconciler re-drives the idempotent `eraseMember` for
+  // members whose erasure committed (`members.erased_at` set) but whose
+  // `member_erased` completion audit never landed. Default TRUE — erasure is a
+  // shipped compliance surface (mirrors F3/F4 default-true), so the self-healing
+  // sweep must run unless an operator explicitly pauses it. Flip to FALSE in
+  // Vercel env to halt re-drives during an incident, then revert + redeploy.
+  FEATURE_MEMBER_ERASURE_RECONCILE: booleanFromString.default(true),
+
   // Granular kill-switch for F8 at-risk widget + at-risk recompute cron.
   // When TRUE, ONLY the at-risk surfaces are short-circuited (widget
   // returns "Feature temporarily unavailable" placeholder; recompute cron
@@ -858,6 +870,8 @@ export const env = {
     f71aUs7Templates: raw.FEATURE_F71A_US7_TEMPLATES,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
+    // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.
+    memberErasureReconcile: raw.FEATURE_MEMBER_ERASURE_RECONCILE,
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
     f6EventCreateAdapter: raw.FEATURE_F6_EVENTCREATE_ADAPTER,
     f9Dashboard: raw.FEATURE_F9_DASHBOARD,

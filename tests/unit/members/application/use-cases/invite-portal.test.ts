@@ -88,6 +88,39 @@ describe('invitePortal — happy path', () => {
   });
 });
 
+describe('invitePortal — erased/removed-contact guard (COMP-1 PR-review FIX B)', () => {
+  // A member erasure stamps `removed_at` on every contact but PRESERVES
+  // `linked_user_id`-less rows. An admin hitting the invite route directly on
+  // an erased member's removed contact (UI hidden, route reachable via a stale
+  // tab) must NOT resurrect a brand-new active member account + invitation
+  // token — refuse BEFORE F1 createUser runs.
+  const removedContact = {
+    ...contact,
+    linkedUserId: null,
+    isPrimary: false,
+    removedAt: new Date('2026-06-20T00:00:00Z'),
+  };
+
+  it('removed contact → contact_removed, createUser NEVER called, nothing linked', async () => {
+    const { deps, createUser, linkUserInTx, deleteInvitedUser } = makeDeps({
+      contactRepo: {
+        findById: vi.fn(async () => ok(removedContact)),
+        linkUserInTx: vi.fn(async () => ok(undefined)),
+      } as unknown as InvitePortalDeps['contactRepo'],
+    });
+
+    const result = await invitePortal(deps, input);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('contact_removed');
+    // The resurrection path is never reached.
+    expect(createUser).not.toHaveBeenCalled();
+    expect(linkUserInTx).not.toHaveBeenCalled();
+    expect(deleteInvitedUser).not.toHaveBeenCalled();
+  });
+});
+
 describe('invitePortal — SAGA compensation on link failure (#12-13)', () => {
   it('link fails → rolls back the invite via deleteInvitedUser, returns link_failed', async () => {
     const { deps, deleteInvitedUser } = makeDeps({

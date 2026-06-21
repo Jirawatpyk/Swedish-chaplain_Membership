@@ -124,6 +124,26 @@ export interface UserRepo {
    * a redeemed account is NEVER destroyed.
    */
   deleteInvitedPendingInTx(tx: DbTx, id: UserId): Promise<{ deleted: number }>;
+  /**
+   * COMP-1 US2a — anonymise an F1 login account so a GDPR-Art.17 /
+   * PDPA-§33-erased member can no longer authenticate. Email → a
+   * globally-unique non-routable sentinel (`erased+{userId}@erased.invalid`,
+   * lower-cased to survive the functional `lower(email)` unique index),
+   * `password_hash` → NULL, `display_name` → '[erased]', `status` → 'disabled'
+   * (NULL hash + disabled status are belt-and-suspenders auth blocks),
+   * `email_verified` + `requires_password_reset` → false. Keyed by id.
+   *
+   * Runs in an OWNER-role `DbTx` (the `users` table is cross-tenant — no
+   * tenant_id, no RLS — so it cannot join a members `runInTenant` tx; mirrors
+   * `deleteInvitedPendingInTx`). Idempotent: the sentinel is computed from the
+   * id, so a re-run on an already-erased row sets the byte-identical values
+   * with no unique-index violation. `erased` is `false` only when no row matched
+   * the id (already hard-deleted / never existed).
+   */
+  anonymiseErasedInTx(
+    tx: DbTx,
+    userId: UserId,
+  ): Promise<{ readonly erased: boolean }>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   /** Tx-scoped variant of `setPasswordHash` (Path C — A3 / A4). */
   setPasswordHashInTx(
@@ -329,6 +349,38 @@ export const userRepo: UserRepo = {
       .where(and(eq(users.id, id), eq(users.status, 'pending')))
       .returning({ id: users.id });
     return { deleted: rows.length };
+  },
+
+  async anonymiseErasedInTx(tx, userId) {
+    // Sentinel is derived from the id → always unique per user AND already
+    // lowercase, so the functional `lower(email)` unique index never trips,
+    // even on a re-run against the already-anonymised row (idempotent).
+    //
+    // Denial-of-erasure edge: if some OTHER live account already held
+    // `erased+<thisUserId>@erased.invalid`, this UPDATE would collide on the
+    // global `lower(email)` unique index and throw — blocking the erasure.
+    // Accepted, NOT defended here, because it is not reachable in practice:
+    // (a) the app is invitation-only — there is no self-registration route to
+    // plant such an address, and (b) `userId` is an unguessable UUIDv4, so an
+    // attacker cannot pre-register the exact sentinel for a future target.
+    // Rejecting the reserved `@erased.invalid` domain at the email-collection
+    // boundary (invite / member-create) is a documented follow-up, out of
+    // Task 2 scope — it touches those routes plus a cross-module email-policy
+    // decision (the sentinel domain is owned by the members context).
+    const sentinelEmail = `erased+${userId}@erased.invalid`;
+    const updated = await tx
+      .update(users)
+      .set({
+        email: sentinelEmail,
+        passwordHash: null,
+        displayName: '[erased]',
+        status: 'disabled',
+        emailVerified: false,
+        requiresPasswordReset: false,
+      })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id });
+    return { erased: updated.length === 1 };
   },
 
   async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {

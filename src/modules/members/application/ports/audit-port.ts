@@ -66,7 +66,12 @@ export type F3AuditEventType =
   // `member_erased` is the completion proof emitted ONLY after every cascade
   // reports complete. Neither payload may carry erased PII (append-only log).
   | 'member_erasure_requested'
-  | 'member_erased';
+  | 'member_erased'
+  // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure
+  // propagation. Payload: { member_id, reason, resend_outcome,
+  // resend_contacts_removed_count, resend_contacts_failed_count,
+  // stripe_outcome } — ids + outcomes ONLY, never erased PII. 5y retention.
+  | 'subprocessor_erasure_propagated';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

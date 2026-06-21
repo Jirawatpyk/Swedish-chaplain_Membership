@@ -32,6 +32,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | F4 outbox purge | `POST /api/cron/outbox-purge` | `15 20 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | (in `vercel.json`) |
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
 | **F4 redact-expired-event-buyers** (054 Task 15) | **`POST /api/cron/invoicing/redact-expired-event-buyers`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F4 redact-expired-event-buyers) |
+| **redact-expired-member-invoices** (COMP-1 US3-B) | **`POST /api/cron/invoicing/redact-expired-member-invoices`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § COMP-1 redact-expired-member-invoices) |
 | **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
@@ -50,6 +51,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
 | **F6.1 error-CSV blob TTL sweep** (T058 — folded into F6 T154 on 2026-05-19) | **`POST /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
 | **F6 recompute match-rate gauge** (Phase 10 T126) | **`POST /api/internal/observability/recompute-match-rate`** | **`0 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | [f6-match-rate-degradation-triage.md](./f6-match-rate-degradation-triage.md) — refreshes `eventcreate_match_rate_gauge` per tenant; powers SC-002 dashboard |
+| **COMP-1 reconcile-erasures** (US2d) | **`POST /api/cron/members/reconcile-erasures`** | **`*/30 * * * *`** (every 30 min) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Members — reconcile-erasures) — re-drives stuck member erasures (`erased_at` set, `member_erased` absent); kill-switch `FEATURE_MEMBER_ERASURE_RECONCILE`; **retry ON** (500-on-error → cron-job.org retries) |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
@@ -178,6 +180,87 @@ with all the other columns. **Only this cron sets the GUC.**
 ### Handler module
 
 `src/app/api/cron/invoicing/redact-expired-event-buyers/route.ts`
+
+## COMP-1 — redact-expired-member-invoices (NEW — US3-B)
+
+Daily retention sweep that **tombstones the buyer PII** on an **ERASED member's**
+F4 tax documents once their Thai RD §87/3 + §86/10 10-year statutory retention
+window elapses (GDPR Art.17 / PDPA §33 minimisation of the retained copy). The
+sibling of `redact-expired-event-buyers` (which covers the `member_id IS NULL`
+non-member event buyers); this one covers `member_id IS NOT NULL` documents of an
+erased member — **membership invoices, matched-member EVENT invoices, AND credit
+notes** (joined via `original_invoice_id`). For each due document it tombstones
+the 5 buyer-PII fields on `member_identity_snapshot` (DB) **and** purges the issued
+§86/4 / §86/10 PDF blob bytes (retryable via `pii_blob_purged_at`). Every
+numbering / amount / seller / `source_refund_id` / date field is PRESERVED — only
+the buyer block is minimised, so §87 no-gaps integrity holds. **No live redaction
+for ~10 years** (SweCham's earliest invoices are 2026 → first fires ~2036); ships
+now for correctness + so the obligation is automated when the window opens.
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · redact-expired-member-invoices`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/invoicing/redact-expired-member-invoices`
+   - **Schedule**: `0 5 * * *` (daily 05:00 UTC = 12:00 ICT — the 10-year cutoff
+     has >24h tolerance, so a missed tick is not a correctness issue)
+   - **Request method**: `POST`
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7/F8)
+   - **Timeout**: 60 seconds
+   - **Retry on failure**: **OFF** (idempotent sweep; the next daily tick is the
+     natural retry)
+   - **Notifications**: email on ≥3 consecutive failures
+3. Click **Run** to verify a 200 OK (`redactedCount: 0` is the expected steady
+   state until ~2036).
+
+### Expected response codes
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `redactedCount: 0` | Healthy steady state (nothing due) | None |
+| 200 + `redactedCount > 0` | Buyer PII tombstoned this tick (≈2036+) | None — expected |
+| 200 + `tenantsErrored > 0` | A per-tenant sweep threw — others unaffected | Inspect logs `cron.redact_expired_member_invoices.tenant_threw` / `.blob_delete_failed` / `.purge_marker_failed`; alert binds to `member_document_pii_redacted_total{outcome=error}` |
+| 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |
+| 500 + `tenant_list_failed` | Tenant-list query failed | Investigate DB connectivity; harness retries next tick |
+
+### Alert rules
+
+- `member_document_pii_redacted_total{outcome=error}` non-zero over 24h pages
+  on-call — the §87/3 + Art.17 erasure of the retained tax copy is then NOT
+  being met. A stuck blob purge leaves `pii_blob_purged_at` NULL and re-tries on
+  the next tick (the snapshot is already tombstoned → no PII re-exposed).
+  - **Most failures self-heal**: a missing blob (`@vercel/blob` `del()` is
+    idempotent on a 404) does not throw → no error. A SUSTAINED per-tenant error
+    rate means a **non-self-healing** key (revoked `BLOB_READ_WRITE_TOKEN`, a key
+    the token's store can't address, a persistent 5xx) — the PDF bytes (printed
+    buyer PII) then persist on Blob until fixed.
+  - **Manual escalation** for a sustained error: (1) grep
+    `cron.redact_expired_member_invoices.blob_delete_failed` for the
+    `documentId` + `errKind`; (2) verify `BLOB_READ_WRITE_TOKEN` + the store
+    addresses the key; (3) once reachable the next daily tick auto-purges (the
+    row is still re-selected via `pii_blob_purged_at IS NULL`), OR manually
+    `del()` the key + stamp `pii_blob_purged_at` under the GUC. A
+    redacted-but-unpurged backlog gauge (rows with `pii_blob_purged_at IS NULL
+    AND legal_name='[REDACTED]'` older than N days) is a future hardening.
+- The 10-year forensic record is the `event_buyer_pii_redacted` audit row
+  (reused; 10y retention) carrying `member_id` + `document_kind` (`invoice` /
+  `credit_note`) — a future RD/DSAR audit reads it to prove WHICH columns were
+  minimised WHEN, per member.
+
+### Known scope residual
+
+A credit note issued against a **non-member EVENT** invoice (`member_id IS NULL`
+parent) is redacted by **neither** cron: `redact-expired-event-buyers` only
+sweeps `invoices` (never `credit_notes`), and this cron only covers
+`member_id IS NOT NULL` parents. If F4 can issue a credit note against a
+non-member event invoice, its buyer PII has no 10y redaction sweep — a tracked
+GDPR Art.17 residual (US3-E RoPA residuals checklist; close by extending the
+event-buyer cron to credit notes if the case is reachable).
+
+### Handler module
+
+`src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts`
 
 ## F7 — broadcasts/dispatch-scheduled (NEW — F7 ship)
 
@@ -832,6 +915,135 @@ for the full operational runbook.
 ### Handler module
 
 `src/app/api/internal/retention/sweep-error-csv-blobs/route.ts` (F6.1 Phase 5 US5 / T050)
+
+---
+
+## Members — reconcile-erasures (NEW — COMP-1 US2d)
+
+Reconciliation sweep that re-drives **stuck member erasures**. GDPR Art.17 /
+PDPA §33 member erasure is two-phase: a durable atomic scrub tx (sets
+`members.erased_at`) followed by best-effort POST-COMMIT cascades (F1
+linked-login erasure, F7 broadcast cancel/content-scrub, F8 renewal cancel, F6
+event-registration erasure). `member_erased` is the completion proof — emitted
+ONLY when every cascade reports clean. If a cascade fails after the scrub
+committed, the member is **stuck**: `erased_at` is set but `member_erased` never
+landed. This sweep finds those stuck members
+(`MemberRepo.findStuckErasuresInTx`, `FOR UPDATE SKIP LOCKED`) and re-drives the
+idempotent `eraseMember` per member (re-attempting only the incomplete cascades).
+
+### What it does
+
+For the resolved tenant, inside `runInTenant`:
+
+1. Select up to **MAX_PER_TICK = 50** stuck members
+   (`findStuckErasuresInTx`, `FOR UPDATE SKIP LOCKED` so concurrent ticks +
+   slow re-drives don't double-process). The candidate select runs in its OWN
+   tx, so the member-row lock drops BEFORE the per-member re-drive loop.
+2. Re-drive `eraseMember` per member with system-actor sentinels
+   (`actorUserId = 'system:cron'`, `requestId = 'system:erase-reconcile'`) +
+   the member's original erasure `reason`.
+3. Bucket each outcome → emit `members_erasure_outcome_total{outcome,tenant}`:
+   - `reconciled` — `member_erased` emitted this tick (complete).
+   - `still_pending` — a cascade is STILL failing (`cascadesComplete=false`) or
+     a typed `Result.err` on the re-drive. **TRANSIENT** — next tick retries.
+   - `error` — an UNCAUGHT throw from `eraseMember` (genuine bug / DB blip).
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · COMP-1 reconcile-erasures`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/members/reconcile-erasures`
+   - **Schedule**: `*/30 * * * *` (every 30 minutes — erasure is admin-initiated
+     at ~0–2/year, so a stuck erasure is rare; 30 min is a tight-enough loop to
+     auto-heal a transient cascade fault within the Art.12 one-month clock,
+     while not hammering the endpoint. Matches the reconcile-cadence style of the
+     other reconcile crons.)
+   - **Request method**: `POST`
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7/F8)
+   - **Timeout**: **300 seconds** — set EQUAL to the route's `maxDuration=300`,
+     NOT the 60s used by the other crons. **This is load-bearing for
+     single-flight** (closes the US2d /code-review #1 concurrent-double-`member_erased`
+     window): with retry ON, if the cron-job.org HTTP timeout were shorter than
+     the function's actual runtime, a slow tick (many stuck members, each doing
+     sequential F1/F6/F7/F8 cascades) would time out at the cron-job.org edge
+     and fire a **retry while the original Vercel invocation is still running**.
+     The candidate-select's `FOR UPDATE SKIP LOCKED` lock is released before the
+     re-drive loop, and `member_erased` is emitted only at the END of each
+     member's re-drive — so an overlapping retry tick re-selects the same
+     still-stuck members (their `member_erased` has not landed yet) and
+     re-drives them concurrently, producing a duplicate `member_erased`
+     completion-proof audit row + a double `reconciled` metric. Setting the
+     timeout = `maxDuration` makes cron-job.org WAIT for the function to return
+     (Vercel hard-kills it at 300s regardless), so a retry only ever fires
+     AFTER the tick has fully returned — by which point the completed members'
+     `member_erased` rows have landed and the anti-join (`NOT EXISTS member_erased`)
+     excludes them, so the retry is sequential and re-drives only the genuinely
+     still-stuck members. **Operator: configure this cron's timeout to 300s, not
+     the boilerplate 60s.**
+   - **Retry on failure**: **ON** — UNLIKE the F7/F8 idempotent housekeeping
+     crons. The route returns **500 ONLY when an uncaught throw occurred this
+     tick** (`summary.error > 0`), and a 500 is a genuinely-broken tick worth
+     retrying. A tick of pure `still_pending` returns **200** (the expected
+     steady state until the operator fixes the failing cascade) so a transient
+     stuck-erasure does NOT trigger a retry-storm. The 300s timeout above means
+     a 500-triggered retry runs AFTER the prior tick returned, never concurrently.
+   - **Notifications**: email on ≥3 consecutive failures
+3. Click **Run** to verify a 200 OK response:
+   ```json
+   { "processed": 0, "reconciled": 0, "still_pending": 0, "error": 0 }
+   ```
+   All-zero is the expected steady state (no stuck erasures pending).
+
+### Kill-switch
+
+`FEATURE_MEMBER_ERASURE_RECONCILE` (default `true`). When `false`, the route
+returns **200 + `{ skipped: true, reason: 'feature_disabled' }`** (NOT 503) so
+cron-job.org does not retry-storm during a pause window.
+
+### Expected response codes
+
+| HTTP code | Body | Operator action |
+|-----------|------|-----------------|
+| 200 + all-zero summary | `{ processed:0, reconciled:0, still_pending:0, error:0 }` | Healthy steady state (nothing stuck) — None |
+| 200 + `reconciled > 0` | A stuck erasure completed this tick | None — expected after a transient cascade fault clears |
+| 200 + `still_pending > 0`, `error: 0` | A cascade is STILL failing — TRANSIENT, retried next tick | Inspect the per-cascade pino error (`erase-member: <cascade> not clean / threw`). If sustained over ≥3 ticks → alarm (see § Alert rules). **If accompanied by a `last_admin` signal → manual operator action (see below).** |
+| 500 + `error > 0` | An uncaught throw from `eraseMember` (bug / DB blip) | Harness retries. Inspect `cron.members.reconcile_erasures.uncaught` (stack). |
+| 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_MEMBER_ERASURE_RECONCILE=false` | Expected during a pause; do nothing. |
+| 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |
+| 500 + `{ error: { code: 'internal_error' } }` | The candidate-select query threw | Investigate DB connectivity; harness retries next tick |
+
+### Alert rules
+
+- `members_erasure_outcome_total{outcome="still_pending"}` rate > 0 sustained
+  over ≥3 consecutive ticks → page DPO/on-call. The Art.17/§33 erasure is NOT
+  completing; inspect the failing cascade's pino error. Once the underlying
+  fault clears, the next tick auto-completes (no manual data action).
+- `members_erasure_outcome_total{outcome="error"}` sustained over ≥3 ticks
+  (the tick also 500s) → page on-call. A real bug or DB outage.
+
+### Last-admin manual remediation (the NON-retryable case)
+
+The ONE stuck-erasure case the reconciler **cannot self-heal**: when the erased
+member's contact is the **last active admin** for the tenant, the F1
+linked-login erasure cascade hits the `users_last_admin_protection` trigger,
+`eraseUser` returns `'erase-user-last-admin'`, and the cascade emits the
+distinct `auth_erase_cascade_outcome_total{outcome="last_admin"}` metric. The
+reconciler re-drives it **every tick** and it recurs as `still_pending`
+**forever** — because re-driving the SAME erasure cannot remove the last-admin
+constraint. Alert on the `last_admin` signal SEPARATELY from a transient
+`still_pending` (see `docs/observability.md § 14.8.3`). Remediation is a
+**manual, non-retryable operator action**:
+
+1. Promote or transfer ANOTHER user to the `admin` role (so the erased member's
+   login is no longer the last admin).
+2. The NEXT reconciler tick then completes the erasure normally (no further
+   action). Re-running the cron WITHOUT step 1 is futile — it will recur as
+   `still_pending`/`last_admin` indefinitely.
+
+### Handler module
+
+`src/app/api/cron/members/reconcile-erasures/route.ts`
 
 ---
 

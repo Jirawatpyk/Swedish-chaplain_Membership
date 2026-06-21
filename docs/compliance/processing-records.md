@@ -11,8 +11,13 @@ retention periods, and technical + organisational measures (TOMs).
 chamber legal-counsel for regulatory updates and with platform
 on-call for technical detail.
 
-**Last reviewed**: 2026-04-29 (Batch D T034 spec scaffolding)
+**Last reviewed**: 2026-06-21 (COMP-1 US3-E — F3 Members & Contacts + Member Erasure RoPA authored)
 
+> **AUTHORED 2026-06-21 (COMP-1 US3-E)**: the **F3 — Members & Contacts** core
+> RoPA and the **COMP-1 — Member Erasure (Art. 17 / §33)** processing-activity
+> record are now authored below (closing the design § US3-E exit dependency,
+> incl. the H-2 Resend sub-processor erasure-limitation language).
+>
 > **TODO**: F1 (Auth & RBAC) and F5 (Online Payment) sections are part of
 > the Constitution-mandated compliance backlog and NOT yet authored. The
 > **F4 (Invoices & Receipts)** RoPA is partially authored: the
@@ -836,4 +841,318 @@ Same as F7.
 | Date | Change | Author |
 |---|---|---|
 | 2026-06-04 | Initial F4 event-fee sub-scope entry created — issuance + 10-year redaction cron (branch `054-event-fee-invoices`, Task 16) | F4 event-fee implementation pass |
+
+---
+
+## F3 — Members & Contacts (core member data)
+
+**Status**: SHIPPED — branch `005-members-contacts`. This is the **foundational
+member-data processing record**: the chamber's directory of member legal
+entities and their natural-person contacts. The COMP-1 erasure record (next
+section) governs the Art. 17 / §33 lifecycle of this data.
+
+### Controller
+
+The chamber tenant operating the Chamber-OS deployment (single-tenant F1
+deployment = Thailand-Swedish Chamber of Commerce / SweCham / TSCC). The chamber
+is the controller of its members' and contacts' identity data.
+
+### Processors
+
+No processor is unique to F3 — all are the shared F1–F8 set:
+
+- **Vercel Inc.** (US-incorporated; region `sin1` Singapore) — application
+  hosting + function execution. Existing DPA + SCCs.
+- **Neon, Inc.** (US-incorporated; region `ap-southeast-1` Singapore) — Postgres
+  holding the `members` + `contacts` rows. Existing DPA + SCCs.
+- **Upstash, Inc.** (Singapore) — Redis rate-limit cache; no member PII (only
+  rate-limit counters). Existing DPA.
+- **Resend Inc.** (US-incorporated) — **transactional** email only for F3
+  (member-invitation + email-verification + email-change messages). This is the
+  F1+F4 transactional Resend surface (operational), NOT the F7 Broadcasts
+  marketing surface. Existing DPA + SCCs.
+
+### Categories of data subjects
+
+- **Chamber members** — legal-entity members; the natural-person data subjects
+  are the *primary contacts* and *secondary contacts* of those entities.
+- **Primary + secondary contacts** — natural persons whose name, email, phone,
+  and (optional) role title / date of birth are stored in `contacts`, plus the
+  primary contact's email mirrored on `members.primary_contact_email`.
+
+### Categories of personal data
+
+| Category | Field | Notes |
+|---|---|---|
+| **Identity (entity)** | `members.company_name` | Member legal name — NOT NULL free-text. `src/modules/members/infrastructure/db/schema-members.ts` |
+| **Identity (natural person)** | `contacts.first_name`, `contacts.last_name` | NOT NULL free-text. `schema` contacts |
+| **Contact** | `members.primary_contact_email`, `contacts.email`, `contacts.phone` | Email normalised lower-case; `contacts_tenant_email_uniq` partial unique index on `lower(email) WHERE removed_at IS NULL` |
+| **Business quasi-identifier** | `members.legal_entity_type`, `members.tax_id`, `members.website`, `members.turnover_thb`, `members.founded_year`, `members.description` | `turnover_thb` + `founded_year` are GDPR-Recital-26 re-identification risks at small-chamber scale — scrubbed on erasure (see COMP-1 record) |
+| **Address** | `members.address_line1`, `address_line2`, `city`, `province`, `postal_code` | Postal address of the member entity |
+| **Membership** | `members.plan_id`, `members.plan_year`, `members.member_number` | `member_number` is the per-tenant human-readable display id (`SCCM-NNNN`) |
+| **Derived / behavioural (F8)** | `members.risk_score`, `risk_score_band`, `risk_score_factors`, `risk_score_last_computed_at`, `risk_snoozed_until` | F8 8-factor retention heuristic — see the F8 RoPA for the Art. 22 / §32 DPIA analysis |
+| **Free-text operational** | `members.notes`, `members.blocked_from_auto_reactivation_reason`, `contacts.role_title`, `contacts.date_of_birth` | Admin/staff free-text + contact attributes — can name/email the subject |
+| **Non-identifying state** | `members.status`, `country` (ISO-3166-1 alpha-2), `preferred_locale` (en/th/sv), the registration dates, the consent/opt-out timestamps | Retained on erasure (see COMP-1 record) |
+
+**No special categories (Art. 9 / PDPA §26)** are processed by F3 — no health,
+religion, political opinion, racial origin, biometric, or genetic data. Member
+tier codes + turnover are business categorisation, not special-category PII.
+
+### Purpose of processing
+
+- **Membership administration** — maintaining the chamber's member directory +
+  contact records is **necessary for performance of the membership contract**
+  (PDPA §24 ¶2 / GDPR Art. 6(1)(b)).
+- **Member directory + engagement** — admin oversight of the member base
+  (legitimate interest, PDPA §24(5) / GDPR Art. 6(1)(f)).
+- **Tier eligibility signals** — `turnover_thb` / `founded_year` inform plan-tier
+  eligibility + the F8 tier-upgrade suggestion (legitimate interest).
+
+### Lawful basis
+
+Performance of contract (the membership) for the core directory data; legitimate
+interest for the admin directory + the F8-derived signals (DPIA documents the
+F8 Art. 22 analysis). The business quasi-identifiers are member-supplied at
+onboarding.
+
+### Recipients of personal data
+
+- **Chamber admin + manager users** — the admin members directory, the
+  command-palette search, member detail/edit.
+- **The member's own contacts** — the member self-service portal (`/portal/**`).
+- **Resend Inc. (processor)** — receives a contact email at invitation /
+  verification / email-change time (transactional).
+- **Chamber DPO + legal counsel** — may access any record for compliance review.
+
+### Cross-border data transfers
+
+Same as F7 — **Singapore** (Vercel `sin1` / Neon `ap-southeast-1` / Upstash):
+Thailand → Singapore under **PDPA §28** cross-border provisions; Swedish/EU
+contacts under **GDPR SCCs** with Vercel + Neon + Upstash. The hosting-region
+choice is the documented **F1 hosting deviation** (Constitution § Compliance —
+"Thailand primary, or nearest APAC with written justification"; no major cloud
+has a TH region — see `specs/001-auth-rbac/plan.md` Complexity Tracking).
+
+### Retention periods
+
+| Resource | Retention | Authority |
+|---|---|---|
+| `members` + `contacts` rows (active member) | **Indefinite while the membership exists** | Contract performance; the row is NOT hard-deleted (the FK web — invoices/payments/registrations/broadcasts reference it — forbids hard-delete), it is **anonymised in place** on Art. 17 erasure (see COMP-1 record) |
+| `audit_log` rows for F3 events | **5 years** | Constitution Principle VIII (≥5y for finance / auth / PII-access records); `audit_log.retention_years DEFAULT 5`, CHECK `IN (5,10)` (migration 0039) |
+
+### Technical + organisational measures (TOMs)
+
+- **Tenant isolation (NON-NEGOTIABLE)** — `members` + `contacts` have Postgres
+  `ENABLE` + `FORCE ROW LEVEL SECURITY` + `tenant_id = current_setting(...)`
+  policy; `runInTenant(ctx, tx)` is the only entry point. Cross-tenant
+  integration test is a Review-Gate blocker (Principle I).
+- **Append-only audit log** — F3 mutations emit audit events; the `audit_log`
+  BEFORE UPDATE/DELETE triggers prevent tampering.
+- **Pino log redaction** — `member.email`, `email`, `primary_contact_email`
+  (snake + camel + nested) are in `REDACT_PATHS`; contact PII never reaches the
+  log aggregator.
+- **Encryption** — TLS in-flight (Vercel managed certs); Neon at-rest AES-256.
+
+### Data subject rights — exercise procedures
+
+| Right (GDPR / PDPA) | Procedure |
+|---|---|
+| **Access (Art. 15 / §30)** | F9 GDPR data-export — member self-service `POST /api/portal/account/data-export` + admin on-behalf `POST /api/admin/members/[id]/data-export` (enqueue `gdpr_member_archive` → ZIP). |
+| **Rectification (Art. 16 / §31)** | Member portal self-edit `/portal/edit` (whitelisted fields); admin edit `/admin/members/[memberId]/edit` → `PATCH /api/members/[memberId]` (diff-tracked audit); single-field `PATCH …/inline-edit`. |
+| **Erasure (Art. 17 / §33)** | The **COMP-1 member-erasure** flow — admin-only `POST /api/members/[memberId]/erase` (US3-A) → `eraseMember` cascade → see the COMP-1 record below + `docs/runbooks/member-erasure.md`. |
+| **Restrict processing (Art. 18 / §34)** | Per-member operational halts (F7 `broadcasts_halted_until_admin_review`, F8 renewal opt-out); tenant-wide kill-switches per feature. *(PDPA §34 is the restriction-of-use right; §33 is erasure — distinct sections.)* |
+| **Portability (Art. 20)** | Same F9 export surface as Art. 15 (portable ZIP). |
+| **Object (Art. 21 / §32)** | Marketing: one-click F7 unsubscribe (`marketing_unsubscribes`, indefinite suppression). |
+| **No automated decision-making (Art. 22)** | F3 itself makes no automated decision; the F8 risk score is admin-facing only (DPIA documents the analysis). |
+
+### DPO contact
+
+Same as F7.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-06-21 | Initial F3 Members & Contacts core RoPA authored (COMP-1 US3-E) | COMP-1 US3-E pass |
+
+---
+
+## COMP-1 — Member Erasure (GDPR Art. 17 / PDPA §33)
+
+**Status**: SHIPPED — the erasure lifecycle (`eraseMember`,
+`src/modules/members/application/use-cases/erase-member.ts`) is live across US1
+(core) + US2a–d (per-module cascades + reconciler) + US3-A (admin trigger) +
+US3-B (10-year tax-document redaction) + US3-C (sub-processor propagation) +
+US3-D (DPO evidence log). This entry records the **erasure itself as a distinct
+processing activity** — the retention-management + data-subject-right mechanism
+for the F3 member data above (PDPA §39 / GDPR Art. 30 expect the erasure
+mechanism to be recorded, as with the F4 retention-managed erasure).
+
+### Controller
+
+Same as F3 — the chamber tenant.
+
+### Processors
+
+No new processor. The erasure **propagates to** the existing sub-processors:
+Vercel/Neon (the controller-copy scrub), Vercel Blob (US3-B tax-PDF byte purge),
+**Resend** (US3-C audience-contact removal — best-effort, see below), and
+**Stripe** (a **pure no-op** — there is no member↔Stripe-customer model; F5
+holds only payment-method tokens, no member-keyed customer record;
+`specs/009-online-payment/` models no Stripe Customer aggregate).
+
+### The erasure model — anonymise-in-place
+
+A member's FK web (invoices, payments, event registrations, broadcasts) **forbids
+a hard delete**, so erasure **anonymises the member + contacts in place** and
+leaves a pseudonymous stub row. On erasure (`scrubPiiInTx` /
+`scrubPiiForMemberInTx`):
+
+| Action | Fields |
+|---|---|
+| → `'[erased]'` sentinel (`ERASED_SENTINEL`, `members/domain/erasure-sentinels.ts`) | `members.company_name`, `contacts.first_name`, `contacts.last_name` (NOT NULL free-text) |
+| → per-row `erased+<contact_id>@erased.invalid` (`ERASED_EMAIL_*`) | `contacts.email` (NOT NULL; the sentinel leaves the `lower(email)` partial-unique index, no collision) |
+| → `NULL` | `members.legal_entity_type`, `tax_id`, `website`, `description`, `notes`, **`turnover_thb`, `founded_year`** (business quasi-identifiers — Recital 26), the full address (`address_line1/2`, `city`, `province`, `postal_code`); `contacts.phone`, `date_of_birth`, `role_title`; the F8 risk cluster (`risk_score`, `risk_score_band`, `risk_score_factors`, `risk_score_last_computed_at`, `risk_snoozed_until`); the blocked-auto-reactivation cluster (flag→FALSE, actor + reason → NULL, to satisfy the consistency CHECK) |
+| `removed_at`-stamped + `is_primary`→FALSE | every `contacts` row (exits the `one_primary_per_member` + `primary_not_removed` CHECKs) |
+| `erased_at`→ erasure timestamp | `members.erased_at` (the operational marker enabling the US2d reconciler sweep via the partial index `members_erased_at_idx`) |
+| **KEPT (non-identifying — re-identification analysis, design §3)** | `member_id`/`member_number`/`tenant_id` (opaque without the scrubbed `members.*`), `plan_id`/`plan_year`, the registration + audit dates, `status`, `country` (ISO alpha-2), `preferred_locale`, the consent/opt-out timestamps |
+| **KEPT (deliberate — Art. 17 survival hazard)** | `contacts.linked_user_id` — NOT nulled, so the F1 linked-login erasure work-list (`listAllLinkedUserIdsForMemberInTx`, reads off `removed_at`-stamped rows) can re-drive a previously-failed login on a reconciler pass; nulling it would leave the credential alive forever |
+
+The member + contact scrub + the in-tx F7 delivery tombstone +
+(US3-C) the sub-processor-audience capture all run in **one atomic
+`runInTenant` transaction** — a partial scrub can never commit.
+
+### Lifecycle (the A–D processing flow)
+
+1. **A — admin trigger (US3-A).** Admin-only `POST /api/members/[memberId]/erase`
+   (manager/member → 404): typed-phrase confirm + reason
+   (`gdpr_erasure_request` | `pdpa_deletion_request`) + **Art. 12 identity
+   attestation** (`identity_verified` = true + `verification_method` ∈
+   {`verified_account_login`, `in_person`, `email_confirmation_loop`,
+   `official_document`} + optional note). These are recorded once in the
+   originating `member_erasure_requested` audit (never on a reconciler re-drive).
+2. **B — durable request + atomic scrub (US1).** A `member_erasure_requested`
+   audit is emitted in its own committed tx (the **Art. 12 / §30 clock-start**);
+   then the atomic scrub tx (above) + session revocation + invitation
+   soft-consume + email-change-token invalidation + pending-outbox cancel + the
+   in-tx F7 delivery tombstone.
+3. **C — post-commit cascades.** **BLOCKING** (any failure withholds
+   `member_erased` → the US2d reconciler retries): **F1** linked-login
+   anonymisation (US2a — email/password/display anonymised, sessions revoked),
+   **F7** broadcast CONTENT scrub (US2b — authored subject/body → `'[redacted]'`),
+   **F6** event-registration hard-delete + quota credit-back (US2c), **F8**
+   in-flight renewal-cycle + broadcast cancellation. **NON-BLOCKING** (never
+   withholds `member_erased`): **US3-C** sub-processor propagation (Resend
+   best-effort + Stripe no-op).
+4. **D — completion + operational.** `member_erased` (the completion proof) is
+   emitted **only when every blocking cascade reports clean**. The **US2d
+   reconciler** cron re-drives any half-run (`erased_at` set, no `member_erased`).
+   The **US3-B** cron redacts the member's tax documents at the 10-year boundary
+   (below). The **US3-D** evidence log (`/admin/compliance/erasure-log`) surfaces
+   the proof for the DPO.
+
+### Lawful basis
+
+The data subject's **right to erasure** — GDPR Art. 17 / PDPA §33. The **10-year
+tax-document retention** (below) is the **Art. 17(3)(b)** override (retention
+required for compliance with a legal obligation — Thai RD §87/3) and applies
+only to the F4 tax-document copy until the statutory window elapses.
+
+### Retention periods (erasure audit trail)
+
+| Audit event | Retention | Authority |
+|---|---|---|
+| `member_erasure_requested`, `member_erased` (F3) | **5 years** | Constitution Principle VIII default (`audit-port.ts`) |
+| `subprocessor_erasure_propagated` (F3, migration 0228) | **5 years** | F3 default — records the Resend/Stripe propagation outcome (ids + outcome counts only, **no PII**) |
+| `user_erased` (F1) | **5 years** | F1 audit convention (tenant-NULL per F1 identity convention — see the US3-D evidence log) |
+| `event_buyer_pii_redacted` (F4) | **10 years** | `F4_AUDIT_RETENTION_YEARS['event_buyer_pii_redacted'] = 10` — keeps the §87/3 forensic window; **payload carries field NAMES only, never erased PII values** |
+| **The member's F4 tax documents** | **10 years from issue date**, then PII-redacted | Thai RD §87/3 — the **US3-B** member-invoice cron (`/api/cron/invoicing/redact-expired-member-invoices`, gate `member_id IS NOT NULL AND erased_at IS NOT NULL AND issue_date < now()−10y`) tombstones the buyer snapshot + purges the PDF bytes (incl. credit notes, anchored on their own issue_date) at the boundary, emitting the **shared `event_buyer_pii_redacted` audit type** (deliberately reused by both the event-buyer cron and this member-invoice cron); the financial / numbering record is preserved permanently |
+
+### Sub-processor erasure propagation (US3-C) — RoPA exit dependency (H-2)
+
+> **Resend (sub-processor):** best-effort-once erasure propagation
+> (audience-contact removal on member erasure), un-enumerable historical
+> audiences out of automated reach, manual remediation on failure within the
+> Art. 12(3) / §30 response window.
+
+This is the documented compensating control that makes the **non-blocking**
+US3-C cascade Art. 17(2) / Art. 19 compliant (security-engineer + DPO sign-off,
+plan-review 2026-06-20). The full operational procedure + the
+`member_subprocessor_erasure_total{resend_outcome}` alert are in
+`docs/runbooks/member-erasure.md`. **Stripe** propagation is a pure no-op (no
+member↔customer model).
+
+### Documented residuals (accepted limitations — design known-limitations)
+
+The controller-copy erasure is durable + atomic. These residuals are **accepted
+by design** with the stated compensating control; the DPO must be aware of them
+when answering a DSR:
+
+| # | Residual | Why accepted / compensating control |
+|---|---|---|
+| 1 | **Backup / PITR snapshots** hold pre-erasure data | Re-erased only **if/when a restore is performed**; erasure does not rewrite completed snapshots. Restore-runbook re-runs the erasure. |
+| 2 | **Already-downloaded F9 GDPR-export ZIPs** | Out of reach once on the subject's device — erasure cannot delete a downloaded file. |
+| 3 | **`marketing_unsubscribes.email_lower` retained whole** (memberId→NULL, never deleted) | The **Art. 21 / §32 suppression invariant** ("we will not contact this email again") must remain enforceable post-erasure — the plaintext is an intentional, lawful residual. |
+| 4 | **`audit_log` historical free-text payloads** may carry legacy PII | Append-only (immutability trigger) — cannot be modified/deleted; held under the **forensic / record-of-processing basis** (Art. 30 / §39). Forward-fix: new erasure audits write **no PII**. |
+| 5 | **NULL-`matched_member_id` event registrations** | A fuzzy/unlinked F6 registration the system never matched to the member is unreachable by the fan-out — remediate by hand on a DSR. |
+| 6 | **Old-address broadcast deliveries / outbox mail** — a contact's email was *edited off* its row before erasure (peer-collision sub-case) | A contact **archived** before erasure is now tombstoned: the in-tx redaction set is **all** the member's contact emails (any `removed_at`) **minus** any address a *peer* holds via a LIVE contact (COMP-1 review **FIX-3**), and the `notifications_outbox` cancel carries a two-pronged cross-member ownership guard (**FIX-4**). The residual is narrowed to (a) an address that was UPDATE-edited off every contact row (no longer discoverable) and (b) the deliberate **peer-collision exclusion** — an address a peer still holds live is left un-redacted to avoid cross-member over-deletion. |
+| 7 | **Cross-author `custom_recipient_emails`** (peer-collision edge only) | The erased member's email is now **element-wise redacted** out of OTHER authors' custom recipient lists tenant-wide, keyed on the same peer-excluding email set as the tombstone (COMP-1 review **FIX-9**). Residual narrowed to the deliberate peer-collision exclusion: an email that is ALSO a peer's LIVE contact is left in place to avoid over-redacting the peer's legitimate target. |
+| 8 | **Resend historical / un-enumerable audiences** (US3-C #H-2 above) | Best-effort-once; manual remediation within the §30 window. |
+| 9 | **Sentinel vocabulary divergence** (`'[erased]'` F1/F3 vs `'[redacted]'` F7) | Clean-Architecture prevents F7 importing F3's constant; a single-token PII-oracle must check both. Cosmetic, no leak. |
+
+### Technical + organisational measures (TOMs)
+
+- **Atomic + tenant-scoped scrub** — the member + contact PII scrub (+ the in-tx
+  F7 delivery tombstone + the US3-C audience capture) runs in ONE
+  `runInTenant(ctx, tx)` transaction under Postgres RLS + FORCE on `members` /
+  `contacts`; a partial scrub can never commit. The cross-tenant integration test
+  is a Review-Gate blocker (Principle I).
+- **FAIL-LOUD in-tx reads** — the audience-derivation + delivery-tombstone reads
+  throw → the whole erasure rolls back (the member stays un-erased + re-drivable)
+  rather than committing an incomplete scrub.
+- **Append-only audit, NO PII in payload** — `member_erasure_requested` /
+  `member_erased` / `subprocessor_erasure_propagated` / `user_erased` /
+  `event_buyer_pii_redacted` are append-only (the `audit_log` BEFORE UPDATE/DELETE
+  triggers); every NEW erasure audit carries **ids + outcome counts + field NAMES
+  only — never the erased PII values**.
+- **GUC-gated tax-redaction exemption** — the US3-B / F4 redaction crons are the
+  ONLY code path that sets `SET LOCAL app.allow_pii_redaction = 'true'` (tx-scoped,
+  auto-reset); under it the invoice/credit-note immutability trigger permits ONLY
+  the buyer snapshot + the purge marker to change — every financial / numbering
+  column still `RAISE`s.
+- **US3-D deliberate tenant-NULL read is scoped + tested** — the evidence log's one
+  app-layer RLS exception (reading the tenant-NULL `user_erased` rows under the
+  PERMISSIVE `audit_log` policy) is bounded to the member's OWN linked-user ids and
+  DROPPED entirely when that set is empty (security FIX-1), with a cross-tenant
+  gate-blocker integration test (FIX-2).
+- **Log redaction + Bearer-gated crons** — pino `REDACT_PATHS` covers member /
+  contact email + `member_identity_snapshot`; the US2d reconciler + the US3-B
+  redaction cron authenticate with a constant-time `CRON_SECRET` Bearer check.
+- **Solo-maintainer substitute** (Constitution Principle IX) — automated review +
+  DB-level defence-in-depth substitute the ≥2-reviewer rule for this PII surface.
+
+### Cross-border data transfers
+
+Same as F3 (Singapore + PDPA §28 + GDPR SCCs). The US3-C Resend propagation
+**reduces** data at an existing recipient — no new transfer or sub-processor.
+
+### Data subject rights — exercise procedures
+
+This record IS the Art. 17 / §33 erasure mechanism. The DPO operates it via the
+US3-A admin UI + the `docs/runbooks/member-erasure.md` procedure; the **US3-D
+evidence log** (`/admin/compliance/erasure-log`) is the accountability proof
+(requested + completion + the F1 `user_erased` proof + the tax-redaction +
+sub-processor outcomes + a half-run/overdue badge). The **Art. 12 / §30
+one-month deadline** runs from the `member_erasure_requested` timestamp.
+
+### DPO contact
+
+Same as F7.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-06-21 | Initial COMP-1 Member Erasure processing-activity record authored — lifecycle A–D, scrub matrix, retention, US3-C H-2 exit dependency, documented residuals (COMP-1 US3-E) | COMP-1 US3-E pass |
+| 2026-06-21 | Whole-feature `/code-review` fixes folded in — residuals #6/#7 **narrowed** (FIX-3 pre-archived-contact tombstone via peer-excluding all-contact set, FIX-4 outbox two-pronged cross-member ownership guard, FIX-9 cross-author custom-list element-wise redaction); also closed: non-member event credit-note cross-cron §87/3 redaction gap (FIX-1), `members.erased_at` made sticky across reconciler re-drives (FIX-2), reconciler legal-basis = earliest request to match the DPO log (FIX-8), DPO credential-proof dedupe per-login (FIX-7) | COMP-1 review-fixes (branch 084) |
 

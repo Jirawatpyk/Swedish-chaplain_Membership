@@ -375,4 +375,140 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     memberId: MemberId,
   ): Promise<ReadonlyArray<Broadcast>>;
+
+  /**
+   * COMP-1 US2b — GDPR Art.17 / PDPA §33 content redaction. Inside the
+   * caller's erasure tx (threaded `tx` from `runInTenant`), redacts the
+   * PII a member authored into ALL their broadcasts (every status,
+   * including `draft`): subject/body_html/body_source → `[redacted]`,
+   * from_name/reply_to_email → `[redacted]`, and custom_recipient_emails
+   * → `['[redacted]']` on `custom` rows (the broadcasts_custom_recipient_cap
+   * CHECK forbids NULL on custom rows) / NULL otherwise.
+   *
+   * Sets `SET LOCAL app.allow_broadcast_redaction = 'on'` first so the
+   * `broadcasts_immutable_after_submit_fn` trigger (migration 0224) permits
+   * the PII columns to change on post-`draft` rows. FAIL-LOUD: a DB error
+   * propagates and rolls the caller's tx back (never swallowed to a no-op).
+   *
+   * `tx` is `unknown` at the port boundary (the Drizzle adapter casts to
+   * its internal TenantTx); the caller passes the live `runInTenant` tx.
+   * Returns the count of redacted broadcasts for audit/observability.
+   */
+  scrubContentForMemberInTx(
+    tx: unknown,
+    tenantSlug: TenantSlug,
+    memberId: MemberId,
+  ): Promise<{ readonly scrubbedCount: number }>;
+
+  /**
+   * COMP-1 US2b — GDPR Art.17 / PDPA §33 delivery tombstone. Inside the
+   * caller's erasure tx, sets `recipient_member_id` → NULL and
+   * `recipient_email_lower` → `erased+<delivery_id>@erased.invalid` for
+   * every `broadcast_deliveries` row whose `recipient_email_lower` is one of
+   * the erased member's email addresses (`recipientEmails`). The rows are
+   * RETAINED (never deleted) for record-of-processing (PDPA §39 / GDPR
+   * Art.30).
+   *
+   * KEYED ON EMAIL, NOT recipient_member_id (the 2026-06-18 /code-review
+   * fix): `recipient_member_id` is NEVER populated in production (the Resend
+   * webhook hard-codes it NULL at both insert sites, no resolver exists), so
+   * a member-id-keyed tombstone matched 0 rows — a silent no-op that let the
+   * erased member's plaintext recipient email survive while erasure reported
+   * complete. Deliveries are correlated to members by `recipient_email_lower`
+   * (the sole recipient lookup index). The caller passes the member's
+   * LIVE-contact emails ONLY — deliveries are only ever addressed to contact
+   * emails, so the linked-login axis adds zero coverage and a cross-member
+   * over-tombstone risk (live-only because a removed contact's address is
+   * ambiguously owned). The adapter lower-cases each address before matching,
+   * de-dupes, and short-circuits an empty set to `{ tombstonedCount: 0 }`
+   * without running the UPDATE.
+   *
+   * Sets `SET LOCAL app.allow_broadcast_redaction = 'on'` first so the
+   * `broadcast_deliveries_append_only_fn` trigger (migration 0225) permits
+   * this UPDATE-only change to the THREE recipient-PII columns it writes:
+   * `recipient_member_id` + `recipient_email_lower` + `error_message` (the
+   * last holds raw Resend bounce diagnostics that can embed the recipient
+   * email). A change to any other column would RAISE
+   * `broadcast_deliveries_redaction_only_pii_cols`. FAIL-LOUD: a DB error
+   * propagates and rolls the caller's tx back.
+   *
+   * Returns the count of tombstoned deliveries.
+   */
+  tombstoneDeliveriesForMemberInTx(
+    tx: unknown,
+    tenantSlug: TenantSlug,
+    recipientEmails: readonly string[],
+  ): Promise<{ readonly tombstonedCount: number }>;
+
+  /**
+   * COMP-1 FIX-9 — GDPR Art.17 / PDPA §33 cross-author custom-recipient
+   * redaction. Inside the caller's atomic erasure tx, ELEMENT-WISE redacts the
+   * erased member's email out of OTHER authors' `custom_recipient_emails`
+   * tenant-wide (segment_type='custom'); the AUTHOR scrub
+   * (`scrubContentForMemberInTx`, keyed on `requested_by_member_id`) handles
+   * the member's OWN rows, but the erased member's email sitting in a sibling
+   * author's recipient list is never reached by that scrub and would survive as
+   * plaintext PII.
+   *
+   * Keyed on EMAIL (case-insensitive — each element + the erasure set are
+   * lower-cased before matching). The caller passes the erased member's
+   * LIVE-contact emails ONLY (the cross-member over-redaction guard: a removed
+   * contact's address is ambiguously owned and may belong to a different
+   * member). ELEMENT-WISE (not whole-array) so the sibling author's OTHER
+   * legitimate recipients are preserved, with order preserved. The adapter
+   * short-circuits an empty set to `{ redactedCount: 0 }` without running the
+   * UPDATE; the count reflects rows CHANGED (an EXISTS guard) so a re-drive is
+   * a clean no-op.
+   *
+   * Sets `SET LOCAL app.allow_broadcast_redaction = 'on'` first so the
+   * `broadcasts_immutable_after_submit_fn` trigger (migration 0224) permits the
+   * `custom_recipient_emails` change on post-`draft` rows. FAIL-LOUD: a DB error
+   * propagates and rolls the caller's tx back.
+   *
+   * `tx` is `unknown` at the port boundary (the Drizzle adapter casts to its
+   * internal TenantTx); the caller passes the live `runInTenant` tx.
+   */
+  redactMemberEmailFromCustomRecipientsInTx(
+    tx: unknown,
+    tenantSlug: TenantSlug,
+    recipientEmails: readonly string[],
+  ): Promise<{ readonly redactedCount: number }>;
+
+  /**
+   * COMP-1 US3-C — GDPR Art.17 / PDPA §33 sub-processor (Resend) audience
+   * propagation. Inside the caller's erasure tx, reads the
+   * `(resend_audience_id, recipient_email_lower)` pairs the erased member
+   * received broadcasts in, so a later cascade can remove the member's email
+   * from those Resend AUDIENCES.
+   *
+   * Must be called BEFORE `tombstoneDeliveriesForMemberInTx` in the same atomic
+   * scrub tx: the tombstone redacts `broadcast_deliveries.recipient_email_lower`
+   * (and `recipient_member_id` is always NULL in production), destroying the
+   * join keys this read depends on. Capturing the pairs WHILE the emails are
+   * still live is the whole point.
+   *
+   * KEYED ON EMAIL (same axis as the delivery tombstone): correlate the
+   * delivery to its broadcast by `broadcast_id`, then read the broadcast's
+   * `resend_audience_id`. Only rows whose broadcast carries a non-null
+   * `resend_audience_id` are returned (a broadcast that never reached Resend
+   * dispatch has no audience to scrub). Emails are lower-cased + de-duped
+   * inside the adapter before matching: `recipient_email_lower` is always
+   * lower-cased by the webhook, but a contact email is case-PRESERVED in
+   * storage, so a `Mixed.Case@…` contact would otherwise never match its own
+   * lower-stored delivery (coverage survival → the contact survives in a Resend
+   * audience). An empty email set short-circuits to `[]`.
+   *
+   * Tenant-scoped via WHERE `broadcast_deliveries.tenant_id = $1` + RLS+FORCE.
+   * Result pairs are DISTINCT (a member may have many deliveries into the same
+   * audience). This is a READ — it mutates nothing — so it is NOT GUC-gated and
+   * does not require the append-only exemption.
+   *
+   * `tx` is `unknown` at the port boundary (the Drizzle adapter casts to its
+   * internal TenantTx); the caller passes the live `runInTenant` tx.
+   */
+  listMemberResendAudienceContactsInTx(
+    tx: unknown,
+    tenantSlug: TenantSlug,
+    emails: readonly string[],
+  ): Promise<ReadonlyArray<{ readonly audienceId: string; readonly email: string }>>;
 }

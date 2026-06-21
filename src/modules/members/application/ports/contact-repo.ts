@@ -148,6 +148,36 @@ export interface ContactRepo {
   ): Promise<string[]>;
 
   /**
+   * COMP-1 US2a — list `linkedUserId`s for EVERY contact on the member,
+   * INCLUDING removed (`removed_at IS NOT NULL`) contacts, inside the caller's
+   * transaction. This is the F1 linked-login ERASURE work-list source.
+   *
+   * Why unfiltered (and why a SEPARATE method from
+   * `listLinkedUserIdsForMemberInTx`): the contacts scrub
+   * (`scrubPiiForMemberInTx`) stamps `removed_at` on every contact but
+   * PRESERVES `linked_user_id`. The `removed_at IS NULL` variant therefore
+   * returns `[]` once the scrub has run — so on a US2d reconciler RE-DRIVE
+   * (where the contacts are already scrubbed) the filtered read would yield an
+   * empty F1 work-list and the loop would silently skip a login that FAILED to
+   * erase on a prior pass, while `member_erased` was emitted as "complete" — an
+   * Art.17 credential-survival hole. Reading unfiltered re-discovers every
+   * linked login on the removed contact row, so the re-drive re-attempts the
+   * previously-failed login. The `removed_at IS NULL` variant is for the in-tx
+   * session/invitation cascade ONLY (it operates on the live contacts).
+   *
+   * Same FAIL-LOUD contract as the filtered variant: a read failure
+   * (statement timeout / connection blip) THROWS rather than returning `[]`,
+   * so the caller's atomic tx rolls back instead of silently skipping the
+   * Art.17 login anonymisation. Returns a de-duplication-friendly list (a
+   * member may have two removed contacts pointing at the same login); callers
+   * dedupe via `new Set(...)`.
+   */
+  listAllLinkedUserIdsForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<readonly string[]>;
+
+  /**
    * Mark a contact's pending invitation as bounced (spec § Edge Cases) by
    * stamping `invite_bounced_at = now()`. Idempotent: returns `affected: 0`
    * if the contact does not exist, is removed, or is already marked.
@@ -173,6 +203,101 @@ export interface ContactRepo {
     tx: TenantTx,
     contactId: ContactId,
   ): Promise<Result<{ affected: number }, RepoError>>;
+
+  /**
+   * COMP-1 US2a (L1) — list the REAL email addresses of every contact on the
+   * member (any state, including already-removed rows), inside the caller's
+   * transaction. Read BEFORE `scrubPiiForMemberInTx` sentinel-izes the emails,
+   * so it captures the frozen `to_email` values used by pending
+   * `notifications_outbox` rows (`member_invitation` / `email_verification` to
+   * the contact's address) that the erasure must cancel (L1).
+   *
+   * Not filtered by `removed_at` — a re-drive over an already-scrubbed member
+   * would then only see the `erased+…@erased.invalid` sentinels (harmless,
+   * never matches a real outbox row), and a contact removed by ordinary
+   * archive still has its real email on the row until the erasure scrub runs.
+   *
+   * Same FAIL-LOUD contract as the linked-user reads: a DB error THROWS so the
+   * caller's atomic erasure tx rolls back rather than silently skipping the
+   * outbox cancel. De-duplicated.
+   */
+  listEmailsForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<readonly string[]>;
+
+  /**
+   * COMP-1 US2a (L1 over-delete fix) — list the REAL email addresses of the
+   * member's LIVE contacts ONLY (`removed_at IS NULL`), inside the caller's
+   * transaction. Read BEFORE `scrubPiiForMemberInTx` sentinel-izes the emails.
+   *
+   * This is the CONTACT-email component of the outbox cancel-set (the address
+   * set used to DELETE the erased subject's pending `notifications_outbox`
+   * rows). It MUST be live-only — and is therefore a SEPARATE method from the
+   * unfiltered `listEmailsForMemberInTx`:
+   *
+   *   The `contacts_tenant_email_uniq` index is PARTIAL (`WHERE removed_at IS
+   *   NULL`), so a REMOVED contact of member A and a LIVE contact of member B
+   *   (same tenant) can share an email X. A removed contact's email is thus
+   *   AMBIGUOUSLY OWNED — it may be another member's live contact's address.
+   *   Cancelling on a removed contact's email would `DELETE … WHERE
+   *   to_email='X'` and silently delete member B's legitimate pending mail
+   *   (cross-member over-delete). A LIVE contact's email is unambiguously the
+   *   erased member's right now, so only those are safe to cancel on.
+   *
+   * The unfiltered `listEmailsForMemberInTx` stays in use for the F1 work-list
+   * reads that are USER-keyed (no email collision) and must be re-drive-stable;
+   * this live-only read is used SOLELY for the outbox cancel-set. The residual
+   * (a pending row A enqueued to an already-removed contact's email, if that
+   * email is not also a live-login/token email, is no longer cancelled) is the
+   * documented, safer failure mode vs. deleting a peer member's mail.
+   *
+   * Same FAIL-LOUD contract as the other erasure reads: a DB error THROWS so
+   * the caller's atomic erasure tx rolls back rather than silently skipping the
+   * outbox cancel. De-duplicated.
+   */
+  listLiveEmailsForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<readonly string[]>;
+
+  /**
+   * COMP-1 FIX-3 (cross-member-safe recipient-PII redaction) — list the REAL
+   * email addresses of ALL of the member's contacts (ANY `removed_at` state),
+   * MINUS any email currently held by a LIVE contact of a DIFFERENT member in
+   * the tenant. Read BEFORE `scrubPiiForMemberInTx` sentinel-izes the emails.
+   *
+   * This is the email set for the EMAIL-KEYED REDACTION ops (the F7 delivery
+   * tombstone, the Resend audience-removal derivation, and the cross-author
+   * custom-recipient redaction). It is a THIRD email read, distinct from both
+   * `listEmailsForMemberInTx` (unfiltered, USER-keyed work-lists) and
+   * `listLiveEmailsForMemberInTx` (live-only, the address-keyed outbox cancel):
+   *
+   *   - It must INCLUDE a contact ARCHIVED before erasure (its identity row IS
+   *     scrubbed by `scrubPiiForMemberInTx`, which redacts ALL contacts
+   *     regardless of `removed_at` — so its historical recipient PII must be
+   *     redacted too, or it survives in plaintext on the delivery / Resend
+   *     audience / a sibling author's custom-recipient list). `listLive…` would
+   *     EXCLUDE it (the FIX-3 gap).
+   *   - It must EXCLUDE an email a PEER member still holds LIVE. The partial
+   *     `contacts_tenant_email_uniq` index (`WHERE removed_at IS NULL`) permits
+   *     an email X to be simultaneously (this member, REMOVED contact) AND
+   *     (peer member, LIVE contact). Redacting on X would tombstone the PEER's
+   *     live delivery to a sentinel AND drive the post-commit Resend
+   *     audience-removal on X → UNSUBSCRIBE the peer from Resend (cross-member
+   *     data loss). A blanket "all contact emails" (the unfiltered read) would
+   *     over-reach into exactly this. For the rare collision we leave the erased
+   *     member's own datum — the SAME accepted safer-failure residual as the
+   *     live-only outbox guard (a residual self-datum beats peer data loss).
+   *
+   * Same FAIL-LOUD contract as the other erasure reads: a DB error THROWS so
+   * the caller's atomic erasure tx rolls back rather than silently skipping the
+   * redaction. Lower-cased + de-duplicated.
+   */
+  listTombstoneEmailsForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<readonly string[]>;
 
   /**
    * COMP-1 — anonymise every contact of a member in place. NOT NULL identity

@@ -76,6 +76,7 @@ import type { ResetPasswordDeps } from '@/modules/auth/application/reset-passwor
 import type { ChangePasswordDeps } from '@/modules/auth/application/change-password';
 import type { CreateUserDeps } from '@/modules/auth/application/create-user';
 import type { DeleteInvitedUserDeps } from '@/modules/auth/application/delete-invited-user';
+import type { EraseUserDeps } from '@/modules/auth/application/erase-user';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
@@ -222,6 +223,22 @@ const deleteOutboxInTx = async (tx: DbTx, outboxRowId: string): Promise<void> =>
 export const defaultDeleteInvitedUserDeps: DeleteInvitedUserDeps = {
   users: userRepo,
   deleteOutboxInTx,
+  audit: auditRepo,
+};
+
+/**
+ * COMP-1 US2a — `eraseUser` deps (Member Erasure F1 linked-user erasure).
+ *
+ * Owner-role (`db.transaction`) flow that anonymises one cross-tenant `users`
+ * row + revokes its sessions + emits `user_erased`. Reuses the real
+ * `sessionRepo.deleteByUserIdInTx` for the session revoke — it issues
+ * `DELETE FROM sessions WHERE user_id = $1` on the caller's tx handle, which is
+ * tx-type-agnostic (works on the owner `DbTx` here as well as the members
+ * `runInTenant` tx it was written for). No bespoke session helper needed.
+ */
+export const defaultEraseUserDeps: EraseUserDeps = {
+  users: userRepo,
+  sessions: sessionRepo,
   audit: auditRepo,
 };
 

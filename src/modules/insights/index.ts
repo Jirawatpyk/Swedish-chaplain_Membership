@@ -231,6 +231,23 @@ export {
   type SetDirectoryLogoInput,
 } from './application/use-cases/set-directory-logo';
 
+// --- Application use-case (COMP-1 US3-D — DPO erasure-evidence log) --------
+// The read-only grouped-evidence fold over the auth erasure-evidence reader +
+// the members erased-list/linked-ids barrel reads. Consumed by the admin
+// `/admin/compliance/erasure-log` page (Task 4).
+export {
+  getErasureEvidenceLog,
+  THIRTY_DAYS_MS,
+  type ErasureEvidenceReader,
+  type GetErasureEvidenceLogDeps,
+  type GetErasureEvidenceLogInput,
+  type GetErasureEvidenceLogResult,
+  type GroupedEvidence,
+  type SubprocessorOutcomeEvidence,
+  type TaxRedactionEvidence,
+  type UserErasedProof,
+} from './application/erasure-evidence';
+
 // --- Composition root factories (US1) -------------------------------------
 export {
   makeDismissInsightDeps,
@@ -248,6 +265,7 @@ export {
   makePrepareExportDownloadDeps,
   makeDownloadExportDeps,
   makeRequestDataExportDeps,
+  makeGetErasureEvidenceLogDeps,
   listMemberDataExports,
   systemClock,
 } from './infrastructure/insights-deps';

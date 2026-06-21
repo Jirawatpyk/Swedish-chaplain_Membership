@@ -40,6 +40,7 @@ import { NextRequest } from 'next/server';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -553,6 +554,14 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     expect(payload.redacted_fields).toEqual(
       expect.arrayContaining(TOMBSTONE_FIELDS),
     );
+    // FIX #8 — the audit row is SELF-DESCRIBING: the invoice arm stamps
+    // `document_kind:'invoice'` so an event-buyer invoice redaction is
+    // distinguishable from a credit-note redaction without inferring from the
+    // id-column key. A non-member event row carries NO `member_id` (it has no
+    // member) — that minimisation invariant must hold alongside the new
+    // discriminator.
+    expect(payload.document_kind).toBe('invoice');
+    expect(Object.prototype.hasOwnProperty.call(payload, 'member_id')).toBe(false);
     // No PII value anywhere in the serialised payload.
     const payloadStr = JSON.stringify(payload);
     expect(payloadStr).not.toContain('Old Buyer Co Ltd');
@@ -1721,4 +1730,496 @@ describe('redact cron — Bearer auth rejection (FIX B)', () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('unauthorized');
   }, 30_000);
+});
+
+/**
+ * COMP-1 review FIX-1 — NON-MEMBER event-invoice CREDIT NOTES were redacted by
+ * NEITHER §87/3 cron (the cross-cron gap).
+ *
+ * A credit note issued against a NON-MEMBER event invoice (`invoices.member_id
+ * IS NULL`, `invoice_subject='event'`, with a 13-digit TIN so it is §86/4-
+ * creditable) carries the SAME buyer PII (`credit_notes.member_identity_snapshot`
+ * + a non-expiring PDF blob) + the SAME 10-year §87/3 retention as its parent
+ * invoice — but was matched by NEITHER redaction cron:
+ *   - the event-buyer cron swept ONLY the `invoices` table (no credit_notes arm);
+ *   - the member-invoice cron's credit-note arm JOINs `members` + filters
+ *     `i.member_id IS NOT NULL`, dropping non-member parents by construction.
+ * So the CN's buyer PII survived FOREVER past the 10y window (GDPR
+ * Art.5(1)(e)/Art.17 violation).
+ *
+ * FIX: add a non-member CN arm to THIS cron (mirrors the member cron's CN arm
+ * but INVERTS the parent filter → `i.member_id IS NULL AND invoice_subject =
+ * 'event'`). `credit_notes` has NO `member_id`, so eligibility joins via
+ * `original_invoice_id → invoices(member_id IS NULL, invoice_subject='event')`;
+ * the 10y anchor is the CN's OWN `issue_date` (its own §86/10 tax document).
+ * `auditPayloadExtra` is `{}` (the empty `Record<string,never>` arm) — a
+ * non-member buyer has NO member, so the audit payload MUST NOT carry member_id.
+ *
+ * Cases pinned here:
+ *   1. a >10y non-member event-invoice credit note → tombstoned (PII →
+ *      '[REDACTED]' / '' / null) + PDF purged + ONE `event_buyer_pii_redacted`
+ *      audit row whose payload has `credit_note_id` and NO `member_id` key;
+ *      `pii_blob_purged_at` stamped after the stubbed-success purge.
+ *   2. a <10y non-member event-invoice credit note → UNTOUCHED (its own §86/10
+ *      retention window has not elapsed; anchored on the CN's OWN issue_date).
+ *
+ * On HEAD (pre-fix) case 1 FAILS: no cron arm matches the row, so the snapshot
+ * stays un-redacted. Migrations through 0227 MUST be applied first.
+ */
+describe('redact-expired-event-buyers cron — non-member event CREDIT NOTE arm (COMP-1 FIX-1)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let blobDeleteSpy: MockInstance<(key: string) => Promise<void>>;
+
+  // parent non-member event invoices (member_id IS NULL, subject='event').
+  let oldParentInvoiceId: string;
+  let recentParentInvoiceId: string;
+  // the credit notes under test.
+  let oldCreditNoteId: string;
+  let recentCreditNoteId: string;
+  const OLD_CN_PDF_KEY = 'test/redact-evt-cn-old.pdf';
+  const RECENT_CN_PDF_KEY = 'test/redact-evt-cn-recent.pdf';
+
+  let cnSeq = 950_000;
+  function nextCnSeq(): number {
+    cnSeq += 1;
+    return cnSeq;
+  }
+
+  /**
+   * Seed an ISSUED NON-MEMBER event invoice (member_id IS NULL,
+   * invoice_subject='event') back-dated >10y. Insert as draft then promote via
+   * a single UPDATE (trigger's OLD.status='draft' branch lets the issue through).
+   */
+  async function seedNonMemberEventInvoice(issueDateInterval: string): Promise<string> {
+    const invoiceId = randomUUID();
+    const regId = randomUUID();
+    const seq = nextCnSeq();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: `att_evt_cn_${seq}`,
+        attendeeEmail: 'jane@old-buyer.example',
+        attendeeName: 'Jane Doe',
+        attendeeCompany: 'Old Buyer Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2014-09-01T03:00:00Z'),
+      });
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          pdf_doc_kind = 'invoice',
+          fiscal_year = 2014,
+          sequence_number = ${seq},
+          document_number = ${`EVT14-${seq}`},
+          issue_date = (now() - interval '${sql.raw(issueDateInterval)}')::date,
+          due_date = (now() - interval '${sql.raw(issueDateInterval)}' + interval '30 days')::date,
+          subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+          vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+          vat_satang = ${ISSUED_NUMBERS.vatSatang},
+          total_satang = ${ISSUED_NUMBERS.totalSatang},
+          net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+          pro_rate_policy_snapshot = NULL,
+          tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+          pdf_blob_key = ${`test/redact-evt-cn-parent-${seq}.pdf`},
+          pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+    });
+    return invoiceId;
+  }
+
+  /**
+   * Seed an ISSUED credit note against a parent non-member event invoice
+   * (born-issued, no draft phase — the credit_notes immutability trigger is
+   * BEFORE UPDATE only). The 10y anchor is the CN's OWN issue_date. The buyer
+   * snapshot carries a real 13-digit TIN (§86/4-creditable non-member buyer).
+   */
+  async function seedNonMemberEventCreditNote(
+    originalInvoiceId: string,
+    issueDate: string,
+    pdfKey: string,
+  ): Promise<string> {
+    const creditNoteId = randomUUID();
+    const seq = nextCnSeq();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(creditNotes).values({
+        tenantId: tenant.ctx.slug,
+        creditNoteId,
+        originalInvoiceId,
+        fiscalYear: 2014,
+        sequenceNumber: seq,
+        documentNumber: `EVTC14-${seq}`,
+        issueDate,
+        issuedByUserId: user.userId,
+        reason: 'COMP-1 FIX-1 non-member event CN redaction fixture',
+        creditAmountSatang: 9350n,
+        vatSatang: 654n,
+        totalSatang: 10004n,
+        tenantIdentitySnapshot: ISSUED_NUMBERS.tenantIdentitySnapshot,
+        memberIdentitySnapshot: BUYER,
+        pdfBlobKey: pdfKey,
+        pdfSha256: ISSUED_NUMBERS.pdfSha256,
+        pdfTemplateVersion: ISSUED_NUMBERS.pdfTemplateVersion,
+      });
+    });
+    return creditNoteId;
+  }
+
+  async function readCreditNoteRow(
+    creditNoteId: string,
+  ): Promise<{ snapshot: Record<string, unknown>; piiBlobPurgedAt: Date | null }> {
+    const [row] = await db
+      .select()
+      .from(creditNotes)
+      .where(
+        and(eq(creditNotes.tenantId, tenant.ctx.slug), eq(creditNotes.creditNoteId, creditNoteId)),
+      );
+    return {
+      snapshot: row!.memberIdentitySnapshot as Record<string, unknown>,
+      piiBlobPurgedAt: row!.piiBlobPurgedAt,
+    };
+  }
+
+  async function creditNoteAuditPayloadsFor(
+    creditNoteId: string,
+  ): Promise<Array<Record<string, unknown>>> {
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'event_buyer_pii_redacted'),
+        ),
+      );
+    return rows
+      .map((r) => r.payload as Record<string, unknown>)
+      .filter((p) => p.credit_note_id === creditNoteId);
+  }
+
+  beforeAll(async () => {
+    blobDeleteSpy = vi.spyOn(vercelBlobAdapter, 'delete').mockResolvedValue(undefined);
+
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_redact_cn_int',
+        name: 'Old CN Gala',
+        startDate: new Date('2014-09-10T11:00:00Z'),
+      });
+    });
+
+    // Parent invoices: both >10y (so the parent itself is also eligible — but the
+    // CN under test is gated on the CN's OWN issue_date, not the parent's).
+    oldParentInvoiceId = await seedNonMemberEventInvoice('11 years');
+    recentParentInvoiceId = await seedNonMemberEventInvoice('11 years');
+
+    // The credit notes: one >10y (eligible), one <10y (NOT eligible — anchored
+    // on the CN's own issue_date).
+    oldCreditNoteId = await seedNonMemberEventCreditNote(
+      oldParentInvoiceId,
+      // >10y ago — eligible.
+      new Date(Date.now() - 11 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      OLD_CN_PDF_KEY,
+    );
+    recentCreditNoteId = await seedNonMemberEventCreditNote(
+      recentParentInvoiceId,
+      // <10y ago — NOT eligible.
+      new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      RECENT_CN_PDF_KEY,
+    );
+  }, 90_000);
+
+  afterAll(async () => {
+    blobDeleteSpy.mockRestore();
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it("redacts a NON-member event invoice's >10y credit note (closes the cross-cron gap)", async () => {
+    const res = await callCron();
+    expect(res.status).toBe(200);
+
+    // (1) the CN's buyer snapshot is tombstoned (PII → '[REDACTED]' / '' / null).
+    const { snapshot, piiBlobPurgedAt } = await readCreditNoteRow(oldCreditNoteId);
+    expect(snapshot.legal_name).toBe('[REDACTED]');
+    expect(snapshot.address).toBe('[REDACTED]');
+    expect(snapshot.primary_contact_name).toBe('[REDACTED]');
+    expect(snapshot.primary_contact_email).toBe('');
+    expect(snapshot.tax_id).toBeNull();
+
+    // (2) exactly ONE event_buyer_pii_redacted audit row for the seeded CN, whose
+    // payload carries credit_note_id and NO 'member_id' key (non-member buyer →
+    // the empty `Record<string,never>` `auditPayloadExtra` arm, byte-identical
+    // to this cron's invoices arm — so NO member_id and NO original_invoice_id
+    // discriminator, unlike the member cron's credit-note arm).
+    const payloads = await creditNoteAuditPayloadsFor(oldCreditNoteId);
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]!.credit_note_id).toBe(oldCreditNoteId);
+    expect(Object.prototype.hasOwnProperty.call(payloads[0]!, 'member_id')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(payloads[0]!, 'original_invoice_id')).toBe(false);
+    // FIX #8 — the CN arm is SELF-DESCRIBING: it stamps `document_kind:'credit_note'`
+    // (the non-member document-kind union arm) so the DPO can tell which document
+    // class was redacted without inferring from the id-column key. Still NO
+    // `member_id` (non-member event buyer) — the new discriminator carries no PII.
+    expect(payloads[0]!.document_kind).toBe('credit_note');
+    // No PII value anywhere in the serialised payload.
+    const payloadStr = JSON.stringify(payloads[0]);
+    expect(payloadStr).not.toContain('Old Buyer Co Ltd');
+    expect(payloadStr).not.toContain('9876543210123');
+    expect(payloadStr).not.toContain('jane@old-buyer.example');
+
+    // The issued CN PDF BYTES were erased (a public, non-expiring Blob URL else).
+    const deletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).toContain(OLD_CN_PDF_KEY);
+
+    // (3) pii_blob_purged_at stamped after the stubbed-success purge.
+    expect(piiBlobPurgedAt).not.toBeNull();
+  }, 90_000);
+
+  it('leaves a <10y non-member event CN untouched (anchored on the CN OWN issue_date)', async () => {
+    // The first test already ran the cron once; the <10y CN must remain intact.
+    const { snapshot } = await readCreditNoteRow(recentCreditNoteId);
+    expect(snapshot.legal_name).toBe('Old Buyer Co Ltd');
+    expect(snapshot.tax_id).toBe('9876543210123');
+    expect(await creditNoteAuditPayloadsFor(recentCreditNoteId)).toHaveLength(0);
+    // Its PDF bytes were NEVER purged.
+    const deletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
+    expect(deletedKeys).not.toContain(RECENT_CN_PDF_KEY);
+  }, 90_000);
+});
+
+/**
+ * COMP-1 PR-review FIX #6 — the §87/3 redaction crons must BOUND the per-tick
+ * eligibility SELECT so an unbounded backlog cannot starve forward progress.
+ *
+ * The pre-fix eligible-SELECT had NO `LIMIT`, so a high-volume / backdated
+ * tenant that accrues tens of thousands of >10y rows would try to tombstone +
+ * purge EVERY one in a SINGLE tick. One tick then exceeds `maxDuration=300`,
+ * the tx is killed mid-loop, the whole tx rolls back → ZERO forward progress;
+ * the same rows are re-selected forever (livelock). The reconcile + dispatch
+ * crons already bound their picks with `LIMIT ${MAX_PER_TICK}`; the redaction
+ * crons did not. The fix adds `LIMIT ${MAX_PER_TICK}` (after `FOR UPDATE …
+ * SKIP LOCKED`, statement-end per Postgres grammar) to BOTH eligible SELECTs
+ * (the invoice arm + the credit-note arm). With `SKIP LOCKED`, each tick drains
+ * at most N un-contended rows; the cron's periodic re-ticks drain the rest —
+ * forward progress is guaranteed.
+ *
+ * To prove the bound without seeding 50+ rows, `REDACTION_MAX_PER_TICK` is an
+ * env override (default 50, read live from `process.env` at request time so a
+ * test/operator can shrink it without rebuilding the cached env object — the
+ * same live-read idiom the outbox crons use for `CRON_SECRET`). The test sets
+ * it to 2, seeds 3 eligible >10y NON-member event invoices, runs the cron once
+ * → EXACTLY 2 are redacted and 1 stays un-redacted (its `legal_name` still
+ * real), runs the cron AGAIN → the last row is redacted (forward progress).
+ *
+ * On HEAD (no LIMIT) the first-tick assertion FAILS: all 3 are redacted at once.
+ *
+ * Migrations through 0227 MUST be applied first (`pnpm db:migrate`).
+ */
+describe('redact-expired-event-buyers cron — per-tick LIMIT + forward progress (COMP-1 FIX #6)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let blobDeleteSpy: MockInstance<(key: string) => Promise<void>>;
+
+  // Three eligible (>10y, non-member, issued) event invoices — N+1 for N=2.
+  const invoiceIds: string[] = [];
+
+  let bpSeq = 970_000;
+  function nextBpSeq(): number {
+    bpSeq += 1;
+    return bpSeq;
+  }
+
+  /** Seed an ISSUED >10y NON-member event invoice; returns its invoice_id. */
+  async function seedEligibleNonMemberEventInvoice(): Promise<string> {
+    const invoiceId = randomUUID();
+    const regId = randomUUID();
+    const seq = nextBpSeq();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: `att_bp_${seq}`,
+        attendeeEmail: 'jane@old-buyer.example',
+        attendeeName: 'Jane Doe',
+        attendeeCompany: 'Old Buyer Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2014-09-01T03:00:00Z'),
+      });
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          pdf_doc_kind = 'invoice',
+          fiscal_year = 2014,
+          sequence_number = ${seq},
+          document_number = ${`EVT14-${seq}`},
+          issue_date = (now() - interval '11 years')::date,
+          due_date = (now() - interval '11 years' + interval '30 days')::date,
+          subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+          vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+          vat_satang = ${ISSUED_NUMBERS.vatSatang},
+          total_satang = ${ISSUED_NUMBERS.totalSatang},
+          net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+          pro_rate_policy_snapshot = NULL,
+          tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+          pdf_blob_key = ${`test/redact-evt-bp-${seq}.pdf`},
+          pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+    });
+    return invoiceId;
+  }
+
+  async function legalNameOf(invoiceId: string): Promise<unknown> {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    return (row!.memberIdentitySnapshot as Record<string, unknown>).legal_name;
+  }
+
+  /** How many of the seeded invoices are tombstoned (legal_name = '[REDACTED]'). */
+  async function redactedCount(): Promise<number> {
+    let n = 0;
+    for (const id of invoiceIds) {
+      if ((await legalNameOf(id)) === '[REDACTED]') n += 1;
+    }
+    return n;
+  }
+
+  beforeAll(async () => {
+    blobDeleteSpy = vi.spyOn(vercelBlobAdapter, 'delete').mockResolvedValue(undefined);
+
+    user = await createActiveTestUser('admin');
+    // A DEDICATED tenant so the only eligible event rows in this tenant are the
+    // three seeded here — the per-tick count assertion is exact (no other suite's
+    // rows can inflate it, and SKIP LOCKED only ever returns these three).
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_redact_bp_int',
+        name: 'Backpressure Gala',
+        startDate: new Date('2014-09-10T11:00:00Z'),
+      });
+    });
+
+    for (let i = 0; i < 3; i += 1) {
+      invoiceIds.push(await seedEligibleNonMemberEventInvoice());
+    }
+  }, 90_000);
+
+  afterAll(async () => {
+    blobDeleteSpy.mockRestore();
+    delete process.env.REDACTION_MAX_PER_TICK;
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('bounds redaction to MAX_PER_TICK per tick and makes forward progress across ticks', async () => {
+    // Shrink the per-tick cap to 2 (default 50) — read live from process.env at
+    // request time, so no env rebuild is needed.
+    process.env.REDACTION_MAX_PER_TICK = '2';
+
+    // Tick 1 — at most 2 of the 3 eligible rows are redacted.
+    const res1 = await callCron();
+    expect(res1.status).toBe(200);
+    expect(await redactedCount()).toBe(2);
+
+    // Exactly ONE row is still live (the per-tick bound held — the 3rd row was
+    // NOT processed this tick). On HEAD (no LIMIT) all 3 would already be redacted
+    // and this would FAIL (count === 3, leaving 0 un-redacted).
+    const stillLive = (
+      await Promise.all(invoiceIds.map((id) => legalNameOf(id)))
+    ).filter((name) => name !== '[REDACTED]');
+    expect(stillLive).toHaveLength(1);
+    expect(stillLive[0]).toBe('Old Buyer Co Ltd');
+
+    // Tick 2 — the remaining row is drained (forward progress guaranteed; SKIP
+    // LOCKED + periodic re-ticks empty the backlog).
+    const res2 = await callCron();
+    expect(res2.status).toBe(200);
+    expect(await redactedCount()).toBe(3);
+  }, 120_000);
 });

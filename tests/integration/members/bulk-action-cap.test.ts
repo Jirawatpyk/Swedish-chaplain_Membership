@@ -49,6 +49,7 @@ function stubDeps(): BulkActionDeps {
     findPendingInvitationsForMember: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
+    findStuckErasuresInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

@@ -46,6 +46,12 @@ export const creditNotes = pgTable(
     pdfSha256: char('pdf_sha256', { length: 64 }).notNull(),
     pdfTemplateVersion: smallint('pdf_template_version').notNull(),
 
+    // COMP-1 US3-B — retryable PDF-blob purge marker, set ONLY by the member-
+    // invoice redaction cron after a fully successful blob purge (migration 0227).
+    // NULL = purge not yet completed. Exempt (with member_identity_snapshot) under
+    // the `app.allow_pii_redaction` GUC; locked on every normal write path.
+    piiBlobPurgedAt: timestamp('pii_blob_purged_at', { withTimezone: true }),
+
     // F5 extension (migration 0038) — nullable FK → refunds(id). NULL for
     // F4-manual credit notes; non-NULL for F5-origin (refund-triggered)
     // credit notes. Projects through row-to-domain mapping.

@@ -163,6 +163,35 @@ export interface RegistrationsRepository {
     registrationId: RegistrationId,
   ): Promise<Result<EventRegistrationAggregate | null, RegistrationsRepositoryError>>;
 
+  /**
+   * COMP-1 US2c (member-erasure F6 fan-out) — enumerate every event
+   * registration matched to a member (`matched_member_id = memberId`),
+   * returning just the `(registrationId, eventId)` pair each consumer
+   * needs to drive the per-registration `eraseAttendeePii` call. Scoped
+   * to the tenant by RLS + the explicit `tenant_id` predicate; rides the
+   * existing `event_regs_tenant_matched_member_idx (tenant_id,
+   * matched_member_id)` index (migration 0131) — no new index needed.
+   *
+   * Returns a bare array (NOT `Result`-wrapped): the fan-out's `list`
+   * dependency expects a plain array and a DB error must FAIL LOUD —
+   * propagate as a thrown error rather than being swallowed into a
+   * `Result.err` the best-effort caller might silently treat as "no
+   * registrations". The `*InTx` suffix flags that the caller MUST thread
+   * the tenant-scoped `tx` from `runInTenant` (RLS gotcha).
+   *
+   * Idempotent for the erasure path: after the registrations are
+   * hard-deleted, a re-run enumerates 0 rows.
+   */
+  listMemberRegistrationsInTx(
+    tenantId: TenantId,
+    memberId: MemberId,
+  ): Promise<
+    ReadonlyArray<{
+      readonly registrationId: RegistrationId;
+      readonly eventId: EventId;
+    }>
+  >;
+
   findByEventId(
     input: ListRegistrationsByEventInput,
   ): Promise<Result<ListRegistrationsByEventResult, RegistrationsRepositoryError>>;

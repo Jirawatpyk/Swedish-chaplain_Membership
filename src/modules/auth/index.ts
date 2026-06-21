@@ -92,6 +92,16 @@ export {
   type DeleteInvitedUserDeps,
 } from './application/delete-invited-user';
 
+// COMP-1 US2a — F1 linked-user erasure. Exposed so the members `eraseMember`
+// cascade adapter (Task 5) can drive it via `@/modules/auth`.
+export {
+  eraseUser,
+  type EraseUserInput,
+  type EraseUserSuccess,
+  type EraseUserError,
+  type EraseUserDeps,
+} from './application/erase-user';
+
 export {
   redeemInvite,
   type RedeemInviteInput,
@@ -222,6 +232,17 @@ export {
   type GdprAuditSubsetReadPort,
 } from './application/gdpr-audit-subset-read';
 export { gdprAuditSubsetReadAdapter } from './infrastructure/db/gdpr-audit-subset-repo';
+// COMP-1 US3-D — the SECURITY-CRITICAL DPO erasure-evidence reader. `audit_log`
+// is auth-owned, so the reader (which deliberately + bounded-ly reads the
+// tenant-NULL `user_erased` rows) lives here; the insights `getErasureEvidence
+// Log` use-case folds its rows into the DPO grouped shape on top of it.
+export {
+  ERASURE_EVIDENCE_EVENTS,
+  type ErasureEvidenceEventType,
+  type ErasureEvidenceReadPort,
+  type ErasureEvidenceRow,
+} from './application/erasure-evidence-read';
+export { erasureEvidenceReadAdapter } from './infrastructure/db/erasure-evidence-repo';
 export {
   resolveActorIdentities,
   type ActorIdentity,

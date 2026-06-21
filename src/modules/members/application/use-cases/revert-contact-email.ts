@@ -92,6 +92,30 @@ export async function revertContactEmail(
         throw new UseCaseAbort({ code: 'wrong_type' });
       }
 
+      // COMP-1 US2a (M1) — redemption guard. A revert token holds the ORIGINAL
+      // email in plaintext; redeeming it restores that email to users.email +
+      // contacts.email and flips email_verified=true. If the target login was
+      // GDPR-Art.17 / PDPA §33 erased (left `status='disabled'`) — or the row is
+      // gone entirely — restoring would RESURRECT erased PII. Refuse here, with
+      // a typed `not_found` (the route renders it as link-invalid), touching NO
+      // PII. Belt-and-suspenders to the in-tx token invalidation in eraseMember:
+      // this catches ANY stale token regardless of timing/edge-case origin.
+      // Read inside this same tx (after the FOR-UPDATE token re-fetch) so the
+      // status check is consistent with the consumption — no TOCTOU window.
+      const statusResult = await deps.userEmails.readStatusInTx(tx, token.userId);
+      if (!statusResult.ok) {
+        throw new UseCaseAbort({
+          code: 'server_error',
+          cause: statusResult.error,
+        });
+      }
+      if (
+        statusResult.value === null ||
+        statusResult.value.status === 'disabled'
+      ) {
+        throw new UseCaseAbort({ code: 'not_found' });
+      }
+
       const oldEmailVo = asEmail(token.oldEmail);
       if (!oldEmailVo.ok) {
         throw new UseCaseAbort({

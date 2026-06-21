@@ -300,8 +300,13 @@ describe('eraseMember — live-Neon REAL F7/F8 cascade cancellation (production 
       .where(eq(broadcasts.broadcastId, broadcastId));
     expect(broadcastRows).toHaveLength(1);
     expect(broadcastRows[0]!.status).toBe('cancelled');
-    // F7 cascade threads the erasure reason straight through (no remap).
-    expect(broadcastRows[0]!.cancellationReason).toBe('gdpr_erasure_request');
+    // The F7 cancel cascade sets cancellation_reason = 'gdpr_erasure_request',
+    // then the F7 CONTENT scrub (US2b) correctly NULLs it: cancellation_reason
+    // is nullable free-text that can quote the member's own PII, so erasure
+    // redacts it (drizzle-broadcasts-repo scrubContentForMemberInTx). The
+    // erasure reason is NOT lost — it is retained on the broadcast_cancelled
+    // audit row (asserted below). So after a full erasure the column is NULL.
+    expect(broadcastRows[0]!.cancellationReason).toBeNull();
     // System-initiated — the member is the subject, not the actor.
     expect(broadcastRows[0]!.cancelledByUserId).toBeNull();
     expect(broadcastRows[0]!.cancelledAt).not.toBeNull();

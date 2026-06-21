@@ -229,6 +229,32 @@ export const drizzleContactRepo: ContactRepo = {
       .filter((uid): uid is string => uid !== null);
   },
 
+  async listAllLinkedUserIdsForMemberInTx(tx, memberId) {
+    // NO try/catch: a thrown DB error (statement timeout / connection blip)
+    // MUST propagate so the caller's runInTenant tx ROLLS BACK. An empty
+    // array means "genuinely no linked users", never "a read failed".
+    //
+    // UNLIKE listLinkedUserIdsForMemberInTx, this read is NOT filtered by
+    // `removed_at IS NULL` — it deliberately INCLUDES the linked logins of
+    // contacts whose row was already removed_at-stamped by the erasure scrub
+    // (which preserves linked_user_id). This is the F1 linked-login ERASURE
+    // work-list source (erase-member.ts / COMP-1 US2a): it must survive the
+    // contacts scrub so a US2d reconciler RE-DRIVE re-discovers every login and
+    // re-attempts one that FAILED to erase on a prior pass. If it filtered
+    // removed_at IS NULL (or swallowed a read error to []), the re-drive would
+    // skip the previously-failed login while member_erased was emitted as
+    // "complete" — leaving the erased member's credential alive forever
+    // (Art.17 credential survival). Failing loud rolls the whole tx back: no
+    // partial scrub, no false completion.
+    const rows = await tx
+      .select({ linkedUserId: contacts.linkedUserId })
+      .from(contacts)
+      .where(eq(contacts.memberId, memberId));
+    return rows
+      .map((r) => r.linkedUserId)
+      .filter((uid): uid is string => uid !== null);
+  },
+
   async markInviteBouncedInTx(tx, contactId, bouncedAt) {
     try {
       // Tenant-scoped via the caller's runInTenant tx (RLS scopes the row to
@@ -269,6 +295,74 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async listEmailsForMemberInTx(tx, memberId) {
+    // NO try/catch: a thrown DB error (statement timeout / connection blip)
+    // MUST propagate so the caller's runInTenant tx ROLLS BACK. An empty array
+    // means "genuinely no contacts", never "a read failed". This read captures
+    // the contacts' REAL emails BEFORE scrubPiiForMemberInTx sentinel-izes them
+    // — the frozen `to_email` values of pending notifications_outbox rows the
+    // erasure must cancel (L1). Unfiltered by removed_at (see port JSDoc).
+    const rows = await tx
+      .select({ email: contacts.email })
+      .from(contacts)
+      .where(eq(contacts.memberId, memberId));
+    const emails = new Set<string>();
+    for (const r of rows) if (r.email) emails.add(r.email);
+    return [...emails];
+  },
+
+  async listLiveEmailsForMemberInTx(tx, memberId) {
+    // NO try/catch: a thrown DB error MUST propagate so the caller's
+    // runInTenant tx ROLLS BACK (fail-loud, mirrors listEmailsForMemberInTx).
+    // UNLIKE listEmailsForMemberInTx, this filters `removed_at IS NULL` — it
+    // returns the REAL emails of the member's LIVE contacts only. This is the
+    // CONTACT-email component of the outbox cancel-set: a removed contact's
+    // email is ambiguously owned (the partial contacts_tenant_email_uniq index
+    // permits a DIFFERENT member's live contact to hold the same address), so
+    // cancelling on it would delete that peer member's legitimate pending mail
+    // (the COMP-1 US2a cross-member over-delete). Live emails are unambiguously
+    // the erased member's now, so only those are safe to cancel on.
+    const rows = await tx
+      .select({ email: contacts.email })
+      .from(contacts)
+      .where(and(eq(contacts.memberId, memberId), isNull(contacts.removedAt)));
+    const emails = new Set<string>();
+    for (const r of rows) if (r.email) emails.add(r.email);
+    return [...emails];
+  },
+
+  async listTombstoneEmailsForMemberInTx(tx, memberId) {
+    // NO try/catch (fail-loud, mirrors listEmailsForMemberInTx — a thrown DB
+    // error MUST roll back the erasure). ALL of the erased member's contact
+    // emails (ANY removed_at), MINUS any email currently held by a LIVE contact
+    // of a DIFFERENT member. Used for the email-keyed REDACTION ops (F7 delivery
+    // tombstone, Resend audience-removal derivation, cross-author custom-
+    // recipient redaction): these MUST cover a contact ARCHIVED before erasure
+    // (its identity is scrubbed, so its historical recipient PII must be too)
+    // but must NOT redact a PEER's live delivery / unsubscribe a peer from
+    // Resend. For the rare collision (the erased member's email is ALSO a peer's
+    // live contact) we leave the erased member's own datum — the SAME accepted
+    // safer-failure residual as the live-only outbox guard (a residual self-
+    // datum beats deleting/redacting a peer's data). RLS scopes BOTH `contacts`
+    // references to the tenant via the caller's runInTenant tx — the
+    // `peer.member_id <> ${memberId}` anti-join is the cross-member guard.
+    const rows = (await tx.execute(sql`
+      SELECT DISTINCT lower(c.email) AS email
+      FROM contacts c
+      WHERE c.member_id = ${memberId}
+        AND c.email IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM contacts peer
+          WHERE peer.member_id <> ${memberId}
+            AND peer.removed_at IS NULL
+            AND lower(peer.email) = lower(c.email)
+        )
+    `)) as unknown as Array<{ email: string | null }>;
+    const emails = new Set<string>();
+    for (const r of rows) if (r.email) emails.add(r.email);
+    return [...emails];
+  },
+
   async scrubPiiForMemberInTx(tx, memberId, opts) {
     try {
       // COMP-1 member erasure (GDPR Art.17 / PDPA §33). One UPDATE over every
@@ -283,6 +377,16 @@ export const drizzleContactRepo: ContactRepo = {
       // and respects the `contacts_primary_not_removed` CHECK. Tenant-scoped via
       // the caller's runInTenant tx (RLS); no manual tenant_id filter needed.
       // Idempotent: re-running yields the same stable sentinels per contact_id.
+      //
+      // `linked_user_id` is DELIBERATELY absent from this .set() — it is NOT
+      // scrubbed/NULLed. The F1 linked-login erasure work-list
+      // (`listAllLinkedUserIdsForMemberInTx`) and the US2d reconciler re-drive
+      // re-discover a previously-FAILED linked login by reading
+      // `linked_user_id` off the (now removed_at-stamped) contact rows AFTER
+      // this scrub. NULLing it here would silently re-open the credential-
+      // survival hole (a failed F1 erasure could never be re-driven → the
+      // erased member's login stays alive forever). The invariant is guarded by
+      // `erase-member-linked-user-shadow.test.ts`.
       const updated = await tx
         .update(contacts)
         .set({

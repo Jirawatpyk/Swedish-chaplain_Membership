@@ -113,6 +113,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     scrubPiiInTx: async () => ok(undefined),
     // COMP-1 (erase pre-flight) — interface compliance stub.
     findErasedAtById: async () => ok({ erasedAt: null }),
+    // COMP-1 US2d (reconciler candidate) — interface compliance stub.
+    findStuckErasuresInTx: async () => [],
   };
 
   const contactRepo: ContactRepo = {
@@ -129,6 +131,10 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     linkUserInTx: async () => ok(baseContact),
     updateEmailInTx: async () => ok({ oldEmail: baseContact.email }),
     listLinkedUserIdsForMemberInTx: async () => [],
+    listAllLinkedUserIdsForMemberInTx: async () => [],
+    listEmailsForMemberInTx: async () => [],
+    listLiveEmailsForMemberInTx: async () => [],
+    listTombstoneEmailsForMemberInTx: async () => [],
     markInviteBouncedInTx: async () => ok({ affected: 0 }),
     clearInviteBouncedInTx: async () => ok({ affected: 0 }),
     scrubPiiForMemberInTx: async () => ok({ scrubbedCount: 0 }),

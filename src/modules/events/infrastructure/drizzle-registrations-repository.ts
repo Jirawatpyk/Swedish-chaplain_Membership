@@ -290,6 +290,40 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
       }
     },
 
+    async listMemberRegistrationsInTx(
+      tenantId: TenantId,
+      memberId: MemberId,
+    ): Promise<
+      ReadonlyArray<{
+        readonly registrationId: RegistrationId;
+        readonly eventId: EventId;
+      }>
+    > {
+      // COMP-1 US2c — member-erasure F6 fan-out enumeration. Threads the
+      // caller's tenant-scoped `executor` (tx from runInTenant) so RLS +
+      // the explicit tenant_id predicate scope the read to this tenant.
+      // Rides `event_regs_tenant_matched_member_idx (tenant_id,
+      // matched_member_id)` (migration 0131). FAIL-LOUD: no try/catch —
+      // a DB error MUST propagate so the best-effort fan-out treats it as
+      // a failure (re-driven by the reconciler), never as "0 registrations".
+      const rows = await executor
+        .select({
+          registrationId: eventRegistrations.registrationId,
+          eventId: eventRegistrations.eventId,
+        })
+        .from(eventRegistrations)
+        .where(
+          and(
+            eq(eventRegistrations.tenantId, tenantId),
+            eq(eventRegistrations.matchedMemberId, memberId),
+          ),
+        );
+      return rows.map((r) => ({
+        registrationId: r.registrationId as RegistrationId,
+        eventId: r.eventId as EventId,
+      }));
+    },
+
     async findByEventId(
       input: ListRegistrationsByEventInput,
     ): Promise<

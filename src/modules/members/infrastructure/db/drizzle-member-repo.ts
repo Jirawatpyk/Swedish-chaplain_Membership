@@ -317,6 +317,68 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findStuckErasuresInTx(tx, tenantSlug, limit) {
+    // COMP-1 US2d reconciler candidate query. Anti-join: erased members
+    // (erased_at IS NOT NULL) with NO `member_erased` completion audit. The
+    // `reason` is resolved from the member's EARLIEST (first)
+    // `member_erasure_requested` audit (COALESCE → 'gdpr_erasure_request') — the
+    // original Art.17/PDPA §33 reason, matching the insights `earliest()` fold
+    // (erasure-evidence.ts) and the Art.12-clock invariant (erase-member.ts:
+    // "the earliest timestamp wins ... the conservative direction"). Under the
+    // documented concurrent-double-request edge (two `member_erasure_requested`
+    // rows with different reasons) the reconciler-emitted member_erased/cascade
+    // audits must carry the SAME legal basis the DPO evidence page shows.
+    //
+    // LOAD-BEARING tenant filter on BOTH audit_log subqueries: audit_log uses
+    // a PERMISSIVE RLS policy (migration 0007 — NULL-tenant F1 identity rows are
+    // visible to every context), so `al.tenant_id = ${tenantSlug}` is required
+    // for correctness, NOT defence-in-depth (mirrors the at-risk-scorer's
+    // audit_log subqueries). `members` uses a strict isolating policy — its
+    // outer WHERE is RLS-scoped by runInTenant, no explicit filter needed.
+    //
+    // The string-literal `event_type = 'member_erased'` comparisons are coerced
+    // to the `audit_event_type` enum by Postgres (same pattern as
+    // `findLastPlanChangedAt` / the audit-log queries elsewhere in this file).
+    // `payload->>'member_id'` / `'reason'` are the EXACT snake_case keys the
+    // `audit.recordInTx` emit in `erase-member.ts` writes — a key drift here
+    // would silently 0-match and strand erasures, which the live integration
+    // test guards against.
+    //
+    // FOR UPDATE OF m SKIP LOCKED locks ONLY the `members` row (audit subqueries
+    // aren't lockable) so concurrent reconciler ticks don't double-drive a row.
+    // Threads the runInTenant `tx` (RLS gotcha — never the global db).
+    const rows = (await tx.execute(sql`
+      SELECT m.member_id::text AS member_id,
+             COALESCE(
+               (SELECT al.payload->>'reason'
+                FROM audit_log al
+                WHERE al.tenant_id = ${tenantSlug}
+                  AND al.event_type = 'member_erasure_requested'
+                  AND al.payload->>'member_id' = m.member_id::text
+                ORDER BY al."timestamp" ASC LIMIT 1),
+               'gdpr_erasure_request'
+             ) AS reason
+      FROM members m
+      WHERE m.erased_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM audit_log al2
+          WHERE al2.tenant_id = ${tenantSlug}
+            AND al2.event_type = 'member_erased'
+            AND al2.payload->>'member_id' = m.member_id::text
+        )
+      ORDER BY m.erased_at ASC
+      LIMIT ${limit}
+      FOR UPDATE OF m SKIP LOCKED
+    `)) as unknown as Array<{ member_id: string; reason: string }>;
+    return rows.map((r) => ({
+      memberId: r.member_id as MemberId,
+      reason:
+        r.reason === 'pdpa_deletion_request'
+          ? ('pdpa_deletion_request' as const)
+          : ('gdpr_erasure_request' as const),
+    }));
+  },
+
   async findManyByIdsInTx(tx, memberIds) {
     try {
       if (memberIds.length === 0) {
@@ -604,7 +666,26 @@ export const drizzleMemberRepo: MemberRepo = {
           riskScoreFactors: null,
           riskScoreLastComputedAt: null,
           riskSnoozedUntil: null,
-          erasedAt: opts.erasedAt,
+          // `erased_at` is STICKY — COALESCE preserves the ORIGINAL erasure
+          // instant on a US2d reconciler re-drive (erase-member.ts always passes
+          // a FRESH `{ erasedAt: now }`). The Art.12/§30 date-of-erasure must not
+          // drift forward: member-erasure-evidence-reads.ts paginates keyset on
+          // this column (a drifting value silently skips/duplicates a re-driven
+          // member between "load more" fetches) and findStuckErasuresInTx
+          // ORDER BYs it (a drift re-sorts the row to the back of the reconciler
+          // queue each tick). Every PII column above stays UNCONDITIONAL so the
+          // re-drive still defensively re-applies anonymisation, and `updated_at`
+          // (a generic mutation marker no consumer paginates on) DOES advance to
+          // record the re-write. The WHERE stays member-id-only — the re-drive
+          // must still re-scrub PII even when erased_at is already set, so NO
+          // `WHERE erased_at IS NULL` guard.
+          //
+          // The fresh instant is bound as an ISO string cast to `timestamptz`:
+          // a raw `sql` placeholder hands the parameter straight to the postgres
+          // driver, which rejects a JS `Date` for an untyped placeholder ("the
+          // string argument must be of type string"), so we serialise + cast
+          // explicitly (Drizzle's column mapper is bypassed inside raw `sql`).
+          erasedAt: sql<Date>`COALESCE(${members.erasedAt}, ${opts.erasedAt.toISOString()}::timestamptz)`,
           updatedAt: opts.erasedAt,
         })
         .where(eq(members.memberId, memberId))

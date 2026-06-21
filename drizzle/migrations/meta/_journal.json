@@ -1555,6 +1555,55 @@
 			"when": 1798535000000,
 			"tag": "0221_members_erasure_columns_audit",
 			"breakpoints": true
+		},
+		{
+			"idx": 222,
+			"version": "7",
+			"when": 1798535100000,
+			"tag": "0222_auth_user_erased_audit",
+			"breakpoints": true
+		},
+		{
+			"idx": 223,
+			"version": "7",
+			"when": 1798535200000,
+			"tag": "0223_outbox_delete_grant_erasure",
+			"breakpoints": true
+		},
+		{
+			"idx": 224,
+			"version": "7",
+			"when": 1798535300000,
+			"tag": "0224_broadcasts_redaction_guc",
+			"breakpoints": true
+		},
+		{
+			"idx": 225,
+			"version": "7",
+			"when": 1798535400000,
+			"tag": "0225_broadcast_deliveries_redaction_guc",
+			"breakpoints": true
+		},
+		{
+			"idx": 226,
+			"version": "7",
+			"when": 1798535500000,
+			"tag": "0226_members_erased_at_reconciler_idx",
+			"breakpoints": true
+		},
+		{
+			"idx": 227,
+			"version": "7",
+			"when": 1798535600000,
+			"tag": "0227_credit_notes_pii_redaction_exemption",
+			"breakpoints": true
+		},
+		{
+			"idx": 228,
+			"version": "7",
+			"when": 1798535700000,
+			"tag": "0228_subprocessor_erasure_propagated_audit",
+			"breakpoints": true
 		}
 	]
 }

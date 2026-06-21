@@ -387,6 +387,29 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       throw e;
     }
   },
+
+  async removeContactFromAudience(audienceId: string, email: string): Promise<void> {
+    try {
+      await withRetry(
+        async () => {
+          const sdk = client();
+          const result = (await sdk.contacts.remove({
+            audienceId,
+            email,
+          })) as ResendSdkResponse<{ deleted: boolean }>;
+          if (result.error) {
+            throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+          }
+        },
+        { method: 'removeContactFromAudience' },
+      );
+      logger.info({ audienceId }, 'resend.broadcasts.contact_removed');
+    } catch (e) {
+      // A 404 → the contact/audience is already gone → erasure goal already met.
+      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
+      throw e;
+    }
+  },
 };
 
 function normaliseStatus(

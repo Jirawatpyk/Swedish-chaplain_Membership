@@ -49,6 +49,13 @@ import type {
 } from '../application/use-cases/download-export';
 import type { RequestDataExportDeps } from '../application/use-cases/request-data-export';
 import type { ExportJobRecord } from '../application/ports/export-job-repo';
+import type { GetErasureEvidenceLogDeps } from '../application/erasure-evidence';
+import {
+  listErasedMembers,
+  listMemberLinkedUserIds,
+  asMemberId,
+} from '@/modules/members';
+import { erasureEvidenceReadAdapter } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 
 /** Shared wall-clock port impl (injected so use-cases stay deterministic in tests). */
@@ -266,4 +273,23 @@ export function listMemberDataExports(
     'gdpr_member_archive',
     limit,
   );
+}
+
+/**
+ * COMP-1 US3-D — `getErasureEvidenceLog` dependency bundle.
+ *
+ * Wires the two members-barrel read free-functions (`listErasedMembers` /
+ * `listMemberLinkedUserIds`) + the auth `erasureEvidenceReadAdapter`. Each
+ * collaborator threads its OWN `runInTenant` tx (Principle I); this factory
+ * is a stateless wiring (no per-tenant bound state) — the `ctx` flows through
+ * the use-case input. `listMemberLinkedUserIds` brands the plain `memberId`
+ * string at the boundary (the erased-members list carries it as a string).
+ */
+export function makeGetErasureEvidenceLogDeps(): GetErasureEvidenceLogDeps {
+  return {
+    listErasedMembers,
+    listMemberLinkedUserIds: (ctx, memberId) =>
+      listMemberLinkedUserIds(ctx, asMemberId(memberId)),
+    evidenceReader: erasureEvidenceReadAdapter,
+  };
 }

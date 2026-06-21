@@ -63,7 +63,10 @@ export type ResendVerificationInput = {
 
 export type ResendVerificationError =
   | { code: 'not_found' }
-  | { code: 'not_eligible'; reason: 'no_linked_user' | 'email_verified' }
+  | {
+      code: 'not_eligible';
+      reason: 'no_linked_user' | 'email_verified' | 'contact_removed';
+    }
   | { code: 'server_error'; cause?: unknown };
 
 export type ResendVerificationOutput = {
@@ -97,6 +100,21 @@ export async function resendVerificationEmail(
   // member_id trustworthy. Mirrors the guard in `resendBouncedInvite`.
   if (contact.memberId !== input.memberId) {
     return err({ code: 'not_found' });
+  }
+
+  // COMP-1 PR-review (FIX A) — erased/removed-contact guard. `findById` does NOT
+  // filter `removed_at`, and the eligibility gate below is `isEmailVerified ===
+  // false → proceed`. A member erasure (`eraseUser`) sets the linked login's
+  // `email_verified = false`, which FLIPS that gate ON for an erased member's
+  // removed contact — so an admin hitting this route directly (the UI button is
+  // hidden because the contact no longer renders post-erasure, but the route is
+  // reachable via a stale tab) would mint a fresh verification token + enqueue an
+  // `email_verification_resent` mail to the scrubbed sentinel address, leaving a
+  // redeemable token on a `status='disabled'` login (resurrection). Refuse here,
+  // BEFORE the linkedUser / isEmailVerified checks and any token-issue work — a
+  // removed contact is never eligible for a verification resend.
+  if (contact.removedAt) {
+    return err({ code: 'not_eligible', reason: 'contact_removed' });
   }
 
   if (!contact.linkedUserId) {

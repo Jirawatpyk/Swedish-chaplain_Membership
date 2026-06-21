@@ -344,6 +344,69 @@
         "next": "Load older events"
       }
     },
+    "compliance": {
+      "erasureLog": {
+        "title": "Erasure evidence log",
+        "subtitle": "Accountable record of every member erasure and its Article 17 evidence",
+        "resultCount": "{count, plural, =0 {No erasures on this page} one {# erasure} other {# erasures}}",
+        "loadMore": "Load older erasures",
+        "memberNumber": "Member #{number}",
+        "erasedAt": "Erased {at}",
+        "reDriveNote": "Completed via reconciler re-drive — the counts above reflect this pass only (the original run revoked the sessions and invitations).",
+        "credentialErasedAt": "Login credential erased {at}",
+        "credentialNone": "No linked login credential was erased.",
+        "taxRedactionsNone": "No tax-document redactions recorded.",
+        "subprocessorNone": "No sub-processor propagation recorded.",
+        "empty": {
+          "title": "No erasures recorded",
+          "body": "No members have been erased for this organisation yet. Erasure evidence appears here once a member is erased."
+        },
+        "emptyTail": {
+          "title": "No more results",
+          "body": "You've reached the end of the erasure evidence log."
+        },
+        "status": {
+          "complete": "Complete",
+          "halfRun": "In progress",
+          "overdue": "Overdue",
+          "elapsedDays": "{count, plural, one {# day} other {# days}}",
+          "elapsedHours": "{count, plural, one {# hour} other {# hours}}",
+          "elapsedMinutes": "{count, plural, one {# minute} other {# minutes}}"
+        },
+        "halfRunNote": {
+          "pending": "Requested {elapsed} ago and not yet complete. The reconciler retries automatically and escalates if it passes the 30-day statutory window.",
+          "overdue": "Requested {elapsed} ago and still not complete — past the 30-day statutory window. This is a reportable breach: review the reconciler and escalate."
+        },
+        "sections": {
+          "requested": "Request & attestation",
+          "completion": "Completion",
+          "credential": "Login credential",
+          "taxRedactions": "Tax-document redactions",
+          "subprocessor": "Sub-processor (Resend)"
+        },
+        "fields": {
+          "requestedAt": "Requested",
+          "reason": "Reason",
+          "identityVerified": "Identity verified",
+          "verificationMethod": "Verification method",
+          "note": "Note",
+          "completedAt": "Completed",
+          "sessionsRevoked": "Sessions revoked",
+          "invitationsRevoked": "Invitations revoked",
+          "resendOutcome": "Outcome",
+          "contactsRemoved": "Contacts removed",
+          "contactsFailed": "Contacts failed"
+        },
+        "documentKind": {
+          "invoice": "Invoice",
+          "creditNote": "Credit note"
+        },
+        "value": {
+          "yes": "Yes",
+          "no": "No"
+        }
+      }
+    },
     "dashboard": {
       "title": "Dashboard",
       "subtitle": "Chamber operations at a glance",
@@ -1387,6 +1450,41 @@
         "undeleteSuccess": "Member restored.",
         "undeleteError": "Could not restore. Please try again.",
         "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore."
+      },
+      "erase": {
+        "eraseCta": "Erase (GDPR/PDPA)…",
+        "dialogTitle": "Erase member (permanent)",
+        "permanenceCallout": "This anonymises ALL personal data for {companyName} ({memberNumber}). It is permanent and cannot be undone.",
+        "reasonLegend": "Legal basis",
+        "reasonGdpr": "GDPR Art. 17 (right to erasure)",
+        "reasonPdpa": "PDPA §33 (right to deletion)",
+        "attestationLabel": "I confirm the data subject's identity was verified per GDPR Art. 12 / PDPA §30.",
+        "methodLabel": "How was identity verified?",
+        "methodPlaceholder": "Select verification method",
+        "method": {
+          "verified_account_login": "Verified account login (signed-in request)",
+          "in_person": "In person (ID checked)",
+          "email_confirmation_loop": "Email confirmation loop",
+          "official_document": "Official document"
+        },
+        "noteLabel": "DPO reference / note (optional)",
+        "notePlaceholder": "e.g. DPO ticket DPO-2026-014",
+        "noteHelper": "Up to 500 characters. Recorded in the erasure audit.",
+        "confirmLabel": "Type the member number {memberNumber} to confirm",
+        "gateHeading": "Before you can erase, complete:",
+        "gateReason": "Select a legal basis",
+        "gateAttestation": "Confirm identity verification",
+        "gateMethod": "Select the verification method",
+        "gateTyped": "Type the member number exactly",
+        "cancel": "Cancel",
+        "confirmCta": "Erase permanently",
+        "erasingInProgress": "Erasing…",
+        "eraseSuccess": "{companyName} erased.",
+        "eraseSuccessPending": "{companyName} erasure started — completion pending.",
+        "eraseError": "Could not erase. Please try again.",
+        "bannerTitle": "Personal data erased on {date}",
+        "bannerBody": "This member's personal data was erased (GDPR Art. 17 / PDPA §33). Permanent — cannot be undone.",
+        "bannerPending": "Completion pending — the automated reconciler will finish the remaining steps."
       },
       "undelete": {
         "cta": "Restore",
@@ -4007,6 +4105,7 @@
         "finance": "Finance",
         "engagement": "Engagement",
         "system": "System",
+        "compliance": "Compliance",
         "settings": "Settings"
       },
       "collapse": "Collapse sidebar",
@@ -4018,7 +4117,8 @@
       "broadcasts": "Broadcasts",
       "renewals": "Renewals",
       "audit": "Audit log",
-      "directory": "Directory"
+      "directory": "Directory",
+      "erasureLog": "Erasure log"
     },
     "member": {
       "dashboard": "Dashboard",

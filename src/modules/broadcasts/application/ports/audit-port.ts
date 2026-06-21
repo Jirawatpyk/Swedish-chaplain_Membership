@@ -35,7 +35,9 @@
  *   - R3.1 C-3 snapshot refusal: 1 event
  *   - review-fix F batch partial roll-up: 1 event
  *     (`broadcast_partially_sent`, migration 0220)
- *   = 59 total. Static-assert at line ~170 (`extends 59`) is the
+ *   - COMP-1 US2b content redaction: 1 event
+ *     (`broadcast_content_redacted`, migration 0224)
+ *   = 60 total. Static-assert at line ~170 (`extends 60`) is the
  *   source of truth; the header summary is informational only and
  *   should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
@@ -163,14 +165,21 @@ export const F7_AUDIT_EVENT_TYPES = [
   // filters (refusals counted as successes). Same payload shape as the
   // success event so forensic pivots can join the two.
   'broadcast_template_snapshot_refused_deleted',
+
+  // --- COMP-1 US2b (migration 0224) — GDPR Art.17 content redaction — 1 ----
+  // Emitted by `scrubBroadcastContentForMember` inside the erasure cascade
+  // when a member's authored broadcast content (subject/body/from_name/
+  // reply_to_email/custom_recipient_emails) is tombstoned + their
+  // `broadcast_deliveries` recipient email is anonymised. 5y retention.
+  'broadcast_content_redacted',
 ] as const;
 
 /**
- * Static assertion: the tuple length is 59. The authoritative per-category
- * breakdown is the file-header taxonomy above (it sums to 59); this assert
+ * Static assertion: the tuple length is 60. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it sums to 60); this assert
  * is the enforced source of truth. If a spec amendment adds/removes an
  * event, update the tuple, this literal, and the header taxonomy —
- * TypeScript errors here ("Type '60' is not assignable to type '59'") if
+ * TypeScript errors here ("Type '61' is not assignable to type '60'") if
  * the count drifts.
  *
  * (The previous inline arithmetic here was dropped — it double-counted
@@ -178,7 +187,7 @@ export const F7_AUDIT_EVENT_TYPES = [
  * additions", so it summed to 60 while the real count was 59. Don't
  * re-introduce a hand-summed breakdown next to a self-checking assert.)
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 59
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 60
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -326,6 +335,23 @@ export interface F7AuditPayloadShapes {
       | 'body_too_large'
       | 'missing_header'
       | 'bad_signature';
+  };
+  // COMP-1 US2b — GDPR Art.17 / PDPA §33 content-redaction evidence. Emitted
+  // by `scrubBroadcastContentForMember` inside the erasure cascade. The payload
+  // is compliance-critical forensic evidence (which member, how many authored
+  // broadcasts scrubbed + deliveries tombstoned, the legal basis), so it is
+  // typed here and emitted via `emitTyped` (the S1 type-design fix) — the
+  // compiler now catches a missing/misshapen field at the emit site. PII-free:
+  // the opaque member uuid is the only identifier; no email/authored content.
+  readonly broadcast_content_redacted: {
+    readonly member_id: string;
+    readonly scrubbed_count: number;
+    readonly tombstoned_count: number;
+    readonly reason:
+      | 'originator_member_deleted'
+      | 'gdpr_erasure_request'
+      | 'pdpa_deletion_request';
+    readonly cascade: 'f3_member_erasure';
   };
 }
 

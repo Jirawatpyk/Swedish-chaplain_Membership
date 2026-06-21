@@ -349,6 +349,26 @@ export function makeCancelInFlightBroadcastsForMemberDeps(tenantId: string) {
   };
 }
 
+/**
+ * COMP-1 US2b — F7 content redaction composition. Scrubs the PII a member
+ * authored into broadcasts (subject/body/from_name/reply_to_email +
+ * custom_recipient_emails + the nullable reason columns) and emits the
+ * `broadcast_content_redacted` audit inside ONE `broadcastsRepo.withTx` tx.
+ * The `broadcast_deliveries` tombstone is NOT done here — it runs in the
+ * members-module ATOMIC scrub tx (`BroadcastsDeliveryTombstonePort`), co-
+ * committing with `erased_at` (the 2026-06-18 2nd /code-review HIGH fix).
+ * Reached by the members-module `BroadcastsContentScrubPort` adapter as a
+ * post-commit best-effort erasure cascade. Real repo + real audit
+ * adapter — no clock (this cascade writes no timestamp; the audit row's
+ * recorded_at is stamped by the adapter).
+ */
+export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
+  return {
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    audit: f7AuditAdapter,
+  };
+}
+
 // =====================================================================
 // Phase 5 US3 — member quota + history surface use-case factories
 // =====================================================================

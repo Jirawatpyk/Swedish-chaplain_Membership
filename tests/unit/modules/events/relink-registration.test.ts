@@ -194,6 +194,7 @@ function makeDeps(o: MockOverrides = {}): {
     } as EventsRepository,
     registrationsRepo: {
       findById: findRegistrationByIdMock as never,
+      listMemberRegistrationsInTx: vi.fn() as never,
       updateMatchAndQuota: updateMatchAndQuotaMock as never,
       insertOnConflictDoNothing: vi.fn() as never,
       findByEventId: vi.fn() as never,
