@@ -543,8 +543,12 @@ export interface BroadcastsRepo {
    * audience has been successfully deleted, inside the caller's
    * `runInTenant` tx so the stamp is atomic with the delete confirmation.
    *
-   * Idempotent: stamping a row that already has `audience_deleted_at` set
-   * is a no-op (the UPDATE matches 0 rows; no error is raised).
+   * Idempotent-safe: stamping a row that already has `audience_deleted_at`
+   * set re-writes it to a fresh `now()` — the impl's WHERE clause is
+   * intentionally permissive on `audience_deleted_at` so a re-drive after a
+   * partial cron failure does not silently skip. A re-stamp therefore still
+   * MATCHES the row (1 affected); callers MUST NOT rely on the affected-row
+   * count to detect an already-cleaned row.
    *
    * `tx` is `unknown` at the port boundary (the Drizzle adapter casts
    * to its internal `TenantTx`). Callers MUST pass the live `runInTenant`
