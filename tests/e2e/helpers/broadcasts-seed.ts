@@ -351,11 +351,12 @@ export async function resetF7AckSeed(): Promise<void> {
  * (was duplicated byte-identical across both).
  *
  * Resets e2e-member's broadcast history so the test starts with a
- * fresh 1/1 quota slot. AS2 requires `failed_to_dispatch` rows to
- * HOLD their quota reservation indefinitely (so admin can re-trigger
- * manually) — but in CI/dev that means a single failed run pollutes
- * subsequent runs forever. This helper wipes ALL broadcasts owned by
- * e2e-member regardless of status (BYPASSRLS via raw `postgres`).
+ * fresh 1/1 quota slot. `failed_to_dispatch` now RELEASES the quota
+ * slot (Design D1, 2026-06-21), but `submitted`/`approved` rows still
+ * hold a slot in F7's enforcement count while in-flight — a single
+ * failed CI run could leave those behind and pollute subsequent runs.
+ * This helper wipes ALL broadcasts owned by e2e-member regardless of
+ * status (BYPASSRLS via raw `postgres`).
  *
  * Audit rows are append-only and survive — the wipe only touches
  * `broadcasts` + `broadcast_deliveries` (FK cascade via temporary

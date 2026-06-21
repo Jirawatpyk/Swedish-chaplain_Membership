@@ -250,15 +250,16 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
   }
 
   /**
-   * Insert a RESERVED broadcast ORIGINATED by `memberId` that holds an
-   * F7 quota slot indefinitely (per spec AS2: `failed_to_dispatch` /
-   * `submitted` / `approved` rows reserve their slot until manually
-   * resolved). Reserved rows carry `quota_year_consumed IS NULL` (CHECK
-   * `broadcasts_quota_year_only_on_sent`), so F7's enforcement counter
-   * counts them against the CURRENT year regardless of WHEN they were
-   * submitted — a prior-year stale reservation never ages out.
+   * Insert a RESERVED broadcast ORIGINATED by `memberId` that must be
+   * IGNORED by the at-risk engagement count (which counts only sent
+   * rows). Reserved rows (`submitted` / `approved` / `failed_to_dispatch`)
+   * carry `quota_year_consumed IS NULL` (CHECK
+   * `broadcasts_quota_year_only_on_sent`), so they have no year fence.
+   * NOTE: `failed_to_dispatch` RELEASES the quota slot (Design D1,
+   * 2026-06-21); `submitted`/`approved` still hold a slot in F7's
+   * enforcement count while in-flight.
    *
-   * This is the #8 hazard: a stale reserved row inflates the at-risk
+   * This is the #8 hazard: a stale reserved row would inflate the at-risk
    * ENGAGEMENT usage count, masking a disengaged member. The at-risk
    * factor must IGNORE reserved rows and count only sent-this-year
    * (matching F9 `computeQuotaCounter.used`).
@@ -399,19 +400,20 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
 
   // ---------------------------------------------------------------------
   // #8 — at-risk eBlast usage = sent THIS quota year (year-fenced),
-  // matching F9 `computeQuotaCounter.used`. A stale prior-year RESERVED
-  // row (failed_to_dispatch / submitted / approved — quota_year_consumed
-  // IS NULL, never ages out of F7's ENFORCEMENT count) must NOT inflate
-  // the ENGAGEMENT usage count, or a disengaged member's +15 risk
-  // factor would be silently suppressed.
+  // matching F9 `computeQuotaCounter.used`. A stale prior-year
+  // `failed_to_dispatch` row (quota_year_consumed IS NULL) must be
+  // IGNORED by the ENGAGEMENT usage count — it does NOT hold a slot
+  // (Design D1, 2026-06-21: failed_to_dispatch releases the quota slot),
+  // and counting it would silently suppress the +15 risk factor for a
+  // disengaged member.
   // ---------------------------------------------------------------------
 
   it('#8 e-blast: 1 sent-this-year + 1 stale prior-year RESERVED → usage=1 (reserved NOT counted) → +15 FIRES on BOTH', async () => {
     // Plan eblast_per_year = 4. Member has:
     //   (a) 1 `sent` broadcast in the CURRENT quota year
-    //   (b) 1 `failed_to_dispatch` reserved broadcast SUBMITTED two
-    //       years ago (quota_year_consumed IS NULL — holds the slot in
-    //       F7's enforcement count forever).
+    //   (b) 1 `failed_to_dispatch` broadcast SUBMITTED two years ago
+    //       (quota_year_consumed IS NULL — ignored by D1; releases the
+    //       slot rather than holding it).
     // F9 benefit-usage `used` counts only (a) = 1/4 = 25% < 30% → the
     // engagement factor MUST fire. The pre-#8 code counted (a)+(b) = 2/4
     // = 50% >= 30% → factor suppressed (the bug). Both scorers must now
