@@ -18,6 +18,32 @@ import type { AuditPort } from '@/modules/invoicing/application/ports/audit-port
 
 export type RedactionDocumentTable = 'invoices' | 'credit_notes';
 
+/**
+ * COMP-1 PR-review FIX #6 — default per-tick cap on each §87/3 redaction cron's
+ * eligibility SELECT. Mirrors the value of the reconcile/dispatch crons' plain
+ * `MAX_PER_TICK = 50` const; with `FOR UPDATE … SKIP LOCKED` each tick drains at
+ * most this many un-contended rows, and the cron's periodic re-ticks drain the
+ * rest — bounding one tick so a large >10y backlog cannot exceed `maxDuration`,
+ * get the tx killed mid-loop, roll back, and starve forward progress.
+ */
+export const REDACTION_MAX_PER_TICK_DEFAULT = 50;
+
+/**
+ * The per-tick eligibility cap for a redaction cron, read LIVE from
+ * `process.env.REDACTION_MAX_PER_TICK` at request time (the same live-read idiom
+ * the outbox crons use for `CRON_SECRET`) so an operator — or an integration
+ * test — can shrink it without rebuilding the cached `env` object. A missing /
+ * non-numeric / non-positive value falls back to {@link REDACTION_MAX_PER_TICK_DEFAULT}.
+ * Both §87/3 crons (member-invoice + event-buyer) share this single source so the
+ * two arms stay byte-identical.
+ */
+export function redactionMaxPerTick(): number {
+  const raw = process.env.REDACTION_MAX_PER_TICK;
+  if (raw === undefined) return REDACTION_MAX_PER_TICK_DEFAULT;
+  const n = Number.parseInt(raw, 10);
+  return Number.isInteger(n) && n > 0 ? n : REDACTION_MAX_PER_TICK_DEFAULT;
+}
+
 /** PII fields tombstoned on the buyer snapshot. NAMES only — never values. */
 export const REDACTED_BUYER_FIELDS = [
   'legal_name',
@@ -49,12 +75,20 @@ export type RedactionStepOutcome =
   | { readonly kind: 'lost_race' };
 
 /**
- * The member-document discriminator merged into the audit payload (or `{}` for
- * the legacy event-buyer arm). A closed union so a call site cannot forget or
- * typo the discriminator (`document_kind` + its companion key).
+ * The document discriminator merged into the audit payload. A closed union so a
+ * call site cannot forget or typo the discriminator (`document_kind` + its
+ * companion key). Three shapes:
+ *   - NON-member (event-buyer) arm — `document_kind` ONLY, NO `member_id`. A
+ *     non-member event row has no member, so it must NEVER carry `member_id`
+ *     (that would falsely surface the redaction in the per-member F3 timeline /
+ *     erasure-evidence arm, which keys on `payload.member_id`). The literal
+ *     `document_kind` carries no PII — it just makes the audit row self-describing
+ *     (invoice-vs-credit_note) instead of relying on the id-column key.
+ *   - MEMBER invoice arm — `member_id` + `document_kind:'invoice'` + `invoice_subject`.
+ *   - MEMBER credit-note arm — `member_id` + `document_kind:'credit_note'` + `original_invoice_id`.
  */
 export type RedactionAuditExtra =
-  | Record<string, never>
+  | { readonly document_kind: 'invoice' | 'credit_note' }
   | { readonly member_id: string; readonly document_kind: 'invoice'; readonly invoice_subject: 'membership' | 'event' }
   | { readonly member_id: string; readonly document_kind: 'credit_note'; readonly original_invoice_id: string };
 

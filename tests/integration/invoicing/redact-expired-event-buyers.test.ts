@@ -554,6 +554,14 @@ describe('redact-expired-event-buyers cron — 10y PII tombstone for non-member 
     expect(payload.redacted_fields).toEqual(
       expect.arrayContaining(TOMBSTONE_FIELDS),
     );
+    // FIX #8 — the audit row is SELF-DESCRIBING: the invoice arm stamps
+    // `document_kind:'invoice'` so an event-buyer invoice redaction is
+    // distinguishable from a credit-note redaction without inferring from the
+    // id-column key. A non-member event row carries NO `member_id` (it has no
+    // member) — that minimisation invariant must hold alongside the new
+    // discriminator.
+    expect(payload.document_kind).toBe('invoice');
+    expect(Object.prototype.hasOwnProperty.call(payload, 'member_id')).toBe(false);
     // No PII value anywhere in the serialised payload.
     const payloadStr = JSON.stringify(payload);
     expect(payloadStr).not.toContain('Old Buyer Co Ltd');
@@ -1992,6 +2000,11 @@ describe('redact-expired-event-buyers cron — non-member event CREDIT NOTE arm 
     expect(payloads[0]!.credit_note_id).toBe(oldCreditNoteId);
     expect(Object.prototype.hasOwnProperty.call(payloads[0]!, 'member_id')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(payloads[0]!, 'original_invoice_id')).toBe(false);
+    // FIX #8 — the CN arm is SELF-DESCRIBING: it stamps `document_kind:'credit_note'`
+    // (the non-member document-kind union arm) so the DPO can tell which document
+    // class was redacted without inferring from the id-column key. Still NO
+    // `member_id` (non-member event buyer) — the new discriminator carries no PII.
+    expect(payloads[0]!.document_kind).toBe('credit_note');
     // No PII value anywhere in the serialised payload.
     const payloadStr = JSON.stringify(payloads[0]);
     expect(payloadStr).not.toContain('Old Buyer Co Ltd');
@@ -2016,4 +2029,197 @@ describe('redact-expired-event-buyers cron — non-member event CREDIT NOTE arm 
     const deletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
     expect(deletedKeys).not.toContain(RECENT_CN_PDF_KEY);
   }, 90_000);
+});
+
+/**
+ * COMP-1 PR-review FIX #6 — the §87/3 redaction crons must BOUND the per-tick
+ * eligibility SELECT so an unbounded backlog cannot starve forward progress.
+ *
+ * The pre-fix eligible-SELECT had NO `LIMIT`, so a high-volume / backdated
+ * tenant that accrues tens of thousands of >10y rows would try to tombstone +
+ * purge EVERY one in a SINGLE tick. One tick then exceeds `maxDuration=300`,
+ * the tx is killed mid-loop, the whole tx rolls back → ZERO forward progress;
+ * the same rows are re-selected forever (livelock). The reconcile + dispatch
+ * crons already bound their picks with `LIMIT ${MAX_PER_TICK}`; the redaction
+ * crons did not. The fix adds `LIMIT ${MAX_PER_TICK}` (after `FOR UPDATE …
+ * SKIP LOCKED`, statement-end per Postgres grammar) to BOTH eligible SELECTs
+ * (the invoice arm + the credit-note arm). With `SKIP LOCKED`, each tick drains
+ * at most N un-contended rows; the cron's periodic re-ticks drain the rest —
+ * forward progress is guaranteed.
+ *
+ * To prove the bound without seeding 50+ rows, `REDACTION_MAX_PER_TICK` is an
+ * env override (default 50, read live from `process.env` at request time so a
+ * test/operator can shrink it without rebuilding the cached env object — the
+ * same live-read idiom the outbox crons use for `CRON_SECRET`). The test sets
+ * it to 2, seeds 3 eligible >10y NON-member event invoices, runs the cron once
+ * → EXACTLY 2 are redacted and 1 stays un-redacted (its `legal_name` still
+ * real), runs the cron AGAIN → the last row is redacted (forward progress).
+ *
+ * On HEAD (no LIMIT) the first-tick assertion FAILS: all 3 are redacted at once.
+ *
+ * Migrations through 0227 MUST be applied first (`pnpm db:migrate`).
+ */
+describe('redact-expired-event-buyers cron — per-tick LIMIT + forward progress (COMP-1 FIX #6)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  let eventId: string;
+  let blobDeleteSpy: MockInstance<(key: string) => Promise<void>>;
+
+  // Three eligible (>10y, non-member, issued) event invoices — N+1 for N=2.
+  const invoiceIds: string[] = [];
+
+  let bpSeq = 970_000;
+  function nextBpSeq(): number {
+    bpSeq += 1;
+    return bpSeq;
+  }
+
+  /** Seed an ISSUED >10y NON-member event invoice; returns its invoice_id. */
+  async function seedEligibleNonMemberEventInvoice(): Promise<string> {
+    const invoiceId = randomUUID();
+    const regId = randomUUID();
+    const seq = nextBpSeq();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: regId,
+        eventId,
+        externalId: `att_bp_${seq}`,
+        attendeeEmail: 'jane@old-buyer.example',
+        attendeeName: 'Jane Doe',
+        attendeeCompany: 'Old Buyer Co Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 100,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2014-09-01T03:00:00Z'),
+      });
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        invoiceSubject: 'event',
+        eventId,
+        eventRegistrationId: regId,
+        vatInclusive: true,
+        memberId: null,
+        planId: null,
+        planYear: null,
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.execute(sql`
+        UPDATE invoices SET
+          status = 'issued',
+          pdf_doc_kind = 'invoice',
+          fiscal_year = 2014,
+          sequence_number = ${seq},
+          document_number = ${`EVT14-${seq}`},
+          issue_date = (now() - interval '11 years')::date,
+          due_date = (now() - interval '11 years' + interval '30 days')::date,
+          subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+          vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+          vat_satang = ${ISSUED_NUMBERS.vatSatang},
+          total_satang = ${ISSUED_NUMBERS.totalSatang},
+          net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+          pro_rate_policy_snapshot = NULL,
+          tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+          member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+          pdf_blob_key = ${`test/redact-evt-bp-${seq}.pdf`},
+          pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+          pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+        WHERE tenant_id = ${tenant.ctx.slug} AND invoice_id = ${invoiceId}
+      `);
+    });
+    return invoiceId;
+  }
+
+  async function legalNameOf(invoiceId: string): Promise<unknown> {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    return (row!.memberIdentitySnapshot as Record<string, unknown>).legal_name;
+  }
+
+  /** How many of the seeded invoices are tombstoned (legal_name = '[REDACTED]'). */
+  async function redactedCount(): Promise<number> {
+    let n = 0;
+    for (const id of invoiceIds) {
+      if ((await legalNameOf(id)) === '[REDACTED]') n += 1;
+    }
+    return n;
+  }
+
+  beforeAll(async () => {
+    blobDeleteSpy = vi.spyOn(vercelBlobAdapter, 'delete').mockResolvedValue(undefined);
+
+    user = await createActiveTestUser('admin');
+    // A DEDICATED tenant so the only eligible event rows in this tenant are the
+    // three seeded here — the per-tick count assertion is exact (no other suite's
+    // rows can inflate it, and SKIP LOCKED only ever returns these three).
+    tenant = await createTestTenant('test-swecham');
+
+    eventId = randomUUID();
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'หอการค้า',
+        legalNameEn: 'Chamber',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'EVT',
+        creditNoteNumberPrefix: 'EVTC',
+      });
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_redact_bp_int',
+        name: 'Backpressure Gala',
+        startDate: new Date('2014-09-10T11:00:00Z'),
+      });
+    });
+
+    for (let i = 0; i < 3; i += 1) {
+      invoiceIds.push(await seedEligibleNonMemberEventInvoice());
+    }
+  }, 90_000);
+
+  afterAll(async () => {
+    blobDeleteSpy.mockRestore();
+    delete process.env.REDACTION_MAX_PER_TICK;
+    await tenant.cleanup().catch(() => {});
+    await deleteTestUser(user).catch(() => {});
+  });
+
+  it('bounds redaction to MAX_PER_TICK per tick and makes forward progress across ticks', async () => {
+    // Shrink the per-tick cap to 2 (default 50) — read live from process.env at
+    // request time, so no env rebuild is needed.
+    process.env.REDACTION_MAX_PER_TICK = '2';
+
+    // Tick 1 — at most 2 of the 3 eligible rows are redacted.
+    const res1 = await callCron();
+    expect(res1.status).toBe(200);
+    expect(await redactedCount()).toBe(2);
+
+    // Exactly ONE row is still live (the per-tick bound held — the 3rd row was
+    // NOT processed this tick). On HEAD (no LIMIT) all 3 would already be redacted
+    // and this would FAIL (count === 3, leaving 0 un-redacted).
+    const stillLive = (
+      await Promise.all(invoiceIds.map((id) => legalNameOf(id)))
+    ).filter((name) => name !== '[REDACTED]');
+    expect(stillLive).toHaveLength(1);
+    expect(stillLive[0]).toBe('Old Buyer Co Ltd');
+
+    // Tick 2 — the remaining row is drained (forward progress guaranteed; SKIP
+    // LOCKED + periodic re-ticks empty the backlog).
+    const res2 = await callCron();
+    expect(res2.status).toBe(200);
+    expect(await redactedCount()).toBe(3);
+  }, 120_000);
 });

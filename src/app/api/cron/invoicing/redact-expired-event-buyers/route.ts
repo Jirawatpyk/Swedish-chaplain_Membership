@@ -99,6 +99,7 @@ import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/v
 import {
   applyRedactionOutcome,
   purgeBuyerPdfBlobsAndStampMarker,
+  redactionMaxPerTick,
   tombstoneBuyerPiiAndAuditInTx,
   type RedactionPurgeWorkItem,
 } from '@/modules/invoicing/infrastructure/redaction/redact-buyer-pii-step';
@@ -174,6 +175,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let tenantsSwept = 0;
   let tenantsErrored = 0;
 
+  // FIX #6 — per-tick eligibility cap (default 50, env-overridable). Read ONCE
+  // per request so every tenant's two SELECTs use the same bound this tick.
+  const maxPerTick = redactionMaxPerTick();
+
   for (const tenantSlug of tenantSlugs) {
     try {
       const ctx = asTenantContext(tenantSlug);
@@ -224,6 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 AND (pdf_blob_key IS NOT NULL OR receipt_pdf_blob_key IS NOT NULL)
               )
             )
+          LIMIT ${maxPerTick}
           FOR UPDATE SKIP LOCKED
         `)) as unknown as EligibleRow[];
 
@@ -245,10 +251,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // Per-row tombstone + audit (shared with the member-invoice cron via
           // `redact-buyer-pii-step`). The helper returns the post-commit purge
           // work item (or null for a lost concurrency race / a fresh zero-blob
-          // row already fully redacted). `auditPayloadExtra: {}` keeps the
-          // event-buyer audit payload byte-identical (no `member_id` — the row
-          // has none). RETURNING-gated audit-once + zero-blob inline-marker +
-          // jsonb-shape preservation all live in the helper.
+          // row already fully redacted). FIX #8 — `auditPayloadExtra:
+          // { document_kind: 'invoice' }` makes the audit row SELF-DESCRIBING
+          // (invoice-vs-credit_note) without inferring from the id-column key.
+          // It carries NO `member_id` — a non-member event buyer has no member,
+          // so the redaction stays OUT of the per-member F3 timeline / erasure-
+          // evidence arm (which keys on `payload.member_id`). RETURNING-gated
+          // audit-once + zero-blob inline-marker + jsonb-shape preservation all
+          // live in the helper.
           const outcome = await tombstoneBuyerPiiAndAuditInTx({
             tx,
             documentTable: 'invoices',
@@ -256,7 +266,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             blobKeys,
             alreadyTombstoned: row.already_tombstoned,
             audit: f4AuditAdapter,
-            auditPayloadExtra: {},
+            auditPayloadExtra: { document_kind: 'invoice' },
             tenantId: tenantSlug,
             requestId,
             route: ROUTE,
@@ -304,6 +314,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 AND cn.pdf_blob_key IS NOT NULL
               )
             )
+          LIMIT ${maxPerTick}
           FOR UPDATE OF cn SKIP LOCKED
         `)) as unknown as EligibleNonMemberCreditNoteRow[];
 
@@ -311,7 +322,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // Credit notes carry exactly ONE PDF (pdf_blob_key is NOT NULL).
           const blobKeys = [row.pdf_blob_key];
 
-          // `auditPayloadExtra: {}` keeps the non-member CN audit payload free of
+          // FIX #8 — `auditPayloadExtra: { document_kind: 'credit_note' }` makes
+          // the non-member CN audit row SELF-DESCRIBING while keeping it free of
           // any member discriminator — a non-member event buyer has NO member, so
           // `member_id` must NEVER appear (it would falsely surface in the F3
           // member timeline + erasure-evidence surfaces). This mirrors the
@@ -324,7 +336,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             blobKeys,
             alreadyTombstoned: row.already_tombstoned,
             audit: f4AuditAdapter,
-            auditPayloadExtra: {},
+            auditPayloadExtra: { document_kind: 'credit_note' },
             tenantId: tenantSlug,
             requestId,
             route: ROUTE,

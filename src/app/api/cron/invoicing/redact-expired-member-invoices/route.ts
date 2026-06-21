@@ -78,6 +78,7 @@ import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/v
 import {
   applyRedactionOutcome,
   purgeBuyerPdfBlobsAndStampMarker,
+  redactionMaxPerTick,
   tombstoneBuyerPiiAndAuditInTx,
   type RedactionPurgeWorkItem,
 } from '@/modules/invoicing/infrastructure/redaction/redact-buyer-pii-step';
@@ -142,6 +143,11 @@ export async function redactExpiredMemberDocumentsForTenant(
 ): Promise<{ redacted: number }> {
   const tenantSlug = ctx.slug;
 
+  // FIX #6 — per-tick eligibility cap (default 50, env-overridable). Bounds each
+  // arm's SELECT so a large >10y backlog cannot exceed `maxDuration` in one tick;
+  // `SKIP LOCKED` + the cron's re-ticks drain the rest. Read once per tenant pass.
+  const maxPerTick = redactionMaxPerTick();
+
   const { tenantRedacted, purgeWork } = await runInTenant(ctx, async (tx) => {
     // Authorise the buyer-PII tombstone + purge-marker writes for THIS tx only.
     // SET LOCAL auto-resets at tx end; the amended trigger lets ONLY
@@ -180,6 +186,7 @@ export async function redactExpiredMemberDocumentsForTenant(
             AND (i.pdf_blob_key IS NOT NULL OR i.receipt_pdf_blob_key IS NOT NULL)
           )
         )
+      LIMIT ${maxPerTick}
       FOR UPDATE OF i SKIP LOCKED
     `)) as unknown as EligibleInvoiceRow[];
 
@@ -251,6 +258,7 @@ export async function redactExpiredMemberDocumentsForTenant(
             AND cn.pdf_blob_key IS NOT NULL
           )
         )
+      LIMIT ${maxPerTick}
       FOR UPDATE OF cn SKIP LOCKED
     `)) as unknown as EligibleCreditNoteRow[];
 

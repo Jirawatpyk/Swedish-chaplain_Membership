@@ -990,6 +990,166 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     expect(pdfAfter).toContain('[REDACTED]');
   }, 120_000);
 
+  // ── FIX #6: per-tick LIMIT + forward progress ─────────────────────────────
+  // The §87/3 redaction crons must BOUND the per-tick eligibility SELECT so an
+  // unbounded backlog cannot starve forward progress. Pre-fix, the eligible
+  // SELECT had NO `LIMIT`: a high-volume / backdated tenant accruing tens of
+  // thousands of >10y rows would try to tombstone + purge EVERY one in ONE tick,
+  // exceed `maxDuration=300`, get the tx killed mid-loop, roll back → ZERO
+  // forward progress (the same rows re-selected forever). The fix adds
+  // `LIMIT ${MAX_PER_TICK}` to BOTH eligible SELECTs (invoice arm + credit-note
+  // arm), where MAX_PER_TICK reads `REDACTION_MAX_PER_TICK` (default 50) live
+  // from process.env at request time. With SKIP LOCKED, each tick drains ≤N
+  // un-contended rows; the cron's re-ticks drain the rest.
+  //
+  // Driven via `redactExpiredMemberDocumentsForTenant` against a DEDICATED
+  // tenant so the per-tick count is EXACT (the shared describe-tenant carries
+  // other tests' rows; a fresh tenant guarantees the only eligible rows are the
+  // three seeded here). On HEAD (no LIMIT) the first-tick assertion FAILS — all
+  // 3 are redacted at once.
+
+  it('FIX #6: bounds redaction to REDACTION_MAX_PER_TICK per tick and makes forward progress across ticks', async () => {
+    const t = await createTestTenant('test-chamber');
+    try {
+      await runInTenant(t.ctx, async (tx) => {
+        await tx.insert(tenantInvoiceSettings).values({
+          tenantId: t.ctx.slug,
+          currencyCode: 'THB',
+          vatRate: '0.0700',
+          registrationFeeSatang: 0n,
+          legalNameTh: 'หอการค้า',
+          legalNameEn: 'Chamber',
+          taxId: '0000000000000',
+          registeredAddressTh: 'Bangkok',
+          registeredAddressEn: 'Bangkok',
+          invoiceNumberPrefix: 'MEMBP',
+          creditNoteNumberPrefix: 'MEMBPC',
+        });
+      });
+
+      // Seed a plan + an ERASED member + 3 (= N+1 for N=2) eligible >10y
+      // membership invoices, all in tenant `t`.
+      const planIdBp = `mem-redact-plan-bp-${randomUUID().slice(0, 8)}`;
+      const memberIdBp = randomUUID();
+      const bpInvoiceIds: string[] = [];
+      let bpSeq = 980_000;
+      await runInTenant(t.ctx, async (tx) => {
+        await tx.insert(membershipPlans).values({
+          tenantId: t.ctx.slug,
+          planId: planIdBp,
+          planYear: 2026,
+          planName: { en: 'BP Plan' },
+          description: { en: 'BP' },
+          sortOrder: 10,
+          planCategory: 'corporate',
+          memberTypeScope: 'company',
+          annualFeeMinorUnits: 1_000_000,
+          includesCorporatePlanId: null,
+          minTurnoverMinorUnits: null,
+          maxTurnoverMinorUnits: null,
+          maxDurationYears: null,
+          maxMemberAge: null,
+          benefitMatrix: MATRIX,
+          isActive: true,
+          createdBy: user.userId,
+          updatedBy: user.userId,
+        });
+        await tx.insert(members).values({
+          tenantId: t.ctx.slug,
+          memberId: memberIdBp,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'BP Erased Co',
+          country: 'TH',
+          taxId: '9876543210123',
+          planId: planIdBp,
+          planYear: 2026,
+        });
+        await tx.execute(
+          sql`UPDATE members SET erased_at = now() WHERE tenant_id = ${t.ctx.slug} AND member_id = ${memberIdBp}`,
+        );
+        for (let i = 0; i < 3; i += 1) {
+          const invoiceId = randomUUID();
+          bpSeq += 1;
+          bpInvoiceIds.push(invoiceId);
+          await tx.insert(invoices).values({
+            tenantId: t.ctx.slug,
+            invoiceId,
+            invoiceSubject: 'membership',
+            memberId: memberIdBp,
+            planId: planIdBp,
+            planYear: 2026,
+            draftByUserId: user.userId,
+            status: 'draft',
+          });
+          await tx.execute(sql`
+            UPDATE invoices SET
+              status = 'issued',
+              pdf_doc_kind = 'invoice',
+              fiscal_year = 2014,
+              sequence_number = ${bpSeq},
+              document_number = ${`MEMBP14-${bpSeq}`},
+              issue_date = '2014-01-01'::date,
+              due_date = '2014-01-31'::date,
+              subtotal_satang = ${ISSUED_NUMBERS.subtotalSatang},
+              vat_rate_snapshot = ${ISSUED_NUMBERS.vatRateSnapshot},
+              vat_satang = ${ISSUED_NUMBERS.vatSatang},
+              total_satang = ${ISSUED_NUMBERS.totalSatang},
+              net_days_snapshot = ${ISSUED_NUMBERS.netDaysSnapshot},
+              pro_rate_policy_snapshot = 'none',
+              tenant_identity_snapshot = ${JSON.stringify(ISSUED_NUMBERS.tenantIdentitySnapshot)}::jsonb,
+              member_identity_snapshot = ${JSON.stringify(BUYER)}::jsonb,
+              pdf_blob_key = ${`test/redact-mem-bp-${bpSeq}.pdf`},
+              pdf_sha256 = ${ISSUED_NUMBERS.pdfSha256},
+              pdf_template_version = ${ISSUED_NUMBERS.pdfTemplateVersion}
+            WHERE tenant_id = ${t.ctx.slug} AND invoice_id = ${invoiceId}
+          `);
+        }
+      });
+
+      const legalNameOf = async (invoiceId: string): Promise<unknown> => {
+        const [row] = await db
+          .select()
+          .from(invoices)
+          .where(and(eq(invoices.tenantId, t.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+        return (row!.memberIdentitySnapshot as Record<string, unknown>).legal_name;
+      };
+      const redactedNow = async (): Promise<number> => {
+        let n = 0;
+        for (const id of bpInvoiceIds) {
+          if ((await legalNameOf(id)) === '[REDACTED]') n += 1;
+        }
+        return n;
+      };
+
+      // Shrink the per-tick cap to 2 (default 50) — read live from process.env.
+      process.env.REDACTION_MAX_PER_TICK = '2';
+
+      // Tick 1 — at most 2 of the 3 eligible rows are redacted. Drive THIS
+      // tenant only (the route sweep would visit every tenant; this isolates
+      // the bound to the 3 seeded rows). The returned `redacted` count is the
+      // per-tick bound itself.
+      const tick1 = await redactExpiredMemberDocumentsForTenant(t.ctx, null);
+      expect(tick1.redacted).toBe(2);
+      expect(await redactedNow()).toBe(2);
+
+      // Exactly ONE row is still live — the per-tick LIMIT held. On HEAD (no
+      // LIMIT) all 3 redact at once and this is 0.
+      const stillLive = (await Promise.all(bpInvoiceIds.map((id) => legalNameOf(id)))).filter(
+        (name) => name !== '[REDACTED]',
+      );
+      expect(stillLive).toHaveLength(1);
+      expect(stillLive[0]).toBe(BUYER.legal_name);
+
+      // Tick 2 — the remaining row is drained (forward progress).
+      const tick2 = await redactExpiredMemberDocumentsForTenant(t.ctx, null);
+      expect(tick2.redacted).toBe(1);
+      expect(await redactedNow()).toBe(3);
+    } finally {
+      delete process.env.REDACTION_MAX_PER_TICK;
+      await t.cleanup().catch(() => {});
+    }
+  }, 120_000);
+
   it('cross-tenant isolation (Principle I gate-blocker): a tenant-A run does NOT redact tenant-B documents', async () => {
     // A GENUINE 2-tenant live-Neon RLS test: seed an erased member + an 11y
     // invoice in a SEPARATE tenant B, then drive the REAL per-tenant body for
