@@ -77,13 +77,54 @@ describe('broadcastSourceAdapter.getEblastConsumption — fail-loud (C-1)', () =
     computeQuotaMock.mockResolvedValueOnce(ok({ counter: { used: 2 } }));
     listMemberBroadcastsMock.mockResolvedValueOnce({
       rows: [
-        { status: 'sent', sentAt: new Date('2026-05-10T00:00:00.000Z') },
-        { status: 'sent', sentAt: new Date('2026-02-01T00:00:00.000Z') },
-        { status: 'draft', sentAt: null },
+        { status: 'sent', sentAt: new Date('2026-05-10T00:00:00.000Z'), partialDeliveryAcceptedAt: null },
+        { status: 'sent', sentAt: new Date('2026-02-01T00:00:00.000Z'), partialDeliveryAcceptedAt: null },
+        { status: 'draft', sentAt: null, partialDeliveryAcceptedAt: null },
       ],
     });
     const r = await broadcastSourceAdapter.getEblastConsumption(CTX, 'm1', 2026);
     expect(r.used).toBe(2);
     expect(r.lastUsedAt).toBe('2026-05-10T00:00:00.000Z');
+  });
+
+  // FR-008c (finding C-followup) — a partial-accept-only member: used>0 (the
+  // already-fixed countForMemberQuota counts `partial_delivery_accepted`), but
+  // the row has NO `sentAt`; its only usage timestamp is
+  // `partialDeliveryAcceptedAt`. Pre-fix the scan guarded `status !== 'sent'`
+  // → null lastUsedAt ("used, but never used"). Post-fix it coalesces.
+  it('coalesces partialDeliveryAcceptedAt for a partial-accept-only member (no sentAt)', async () => {
+    computeQuotaMock.mockResolvedValueOnce(ok({ counter: { used: 1 } }));
+    listMemberBroadcastsMock.mockResolvedValueOnce({
+      rows: [
+        {
+          status: 'partial_delivery_accepted',
+          sentAt: null,
+          partialDeliveryAcceptedAt: new Date('2026-04-20T00:00:00.000Z'),
+        },
+      ],
+    });
+    const r = await broadcastSourceAdapter.getEblastConsumption(CTX, 'm1', 2026);
+    expect(r.used).toBe(1);
+    expect(r.lastUsedAt).toBe('2026-04-20T00:00:00.000Z');
+  });
+
+  // The newest usage timestamp across BOTH terminal states wins (sent and
+  // partial-accept are interleaved; the latest instant — here a partial-accept
+  // — is reported regardless of which state it belongs to).
+  it('reports the newest usage instant across sent + partial-accepted rows', async () => {
+    computeQuotaMock.mockResolvedValueOnce(ok({ counter: { used: 2 } }));
+    listMemberBroadcastsMock.mockResolvedValueOnce({
+      rows: [
+        { status: 'sent', sentAt: new Date('2026-03-01T00:00:00.000Z'), partialDeliveryAcceptedAt: null },
+        {
+          status: 'partial_delivery_accepted',
+          sentAt: null,
+          partialDeliveryAcceptedAt: new Date('2026-06-15T00:00:00.000Z'),
+        },
+      ],
+    });
+    const r = await broadcastSourceAdapter.getEblastConsumption(CTX, 'm1', 2026);
+    expect(r.used).toBe(2);
+    expect(r.lastUsedAt).toBe('2026-06-15T00:00:00.000Z');
   });
 });

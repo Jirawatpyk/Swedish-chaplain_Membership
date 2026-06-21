@@ -17,8 +17,13 @@
  * on top.
  *
  * The filters MUST stay byte-equivalent to the per-member sources:
- *   - E-Blast: `status='sent' AND quotaYearConsumed=$year` (matches
- *     `drizzle-broadcasts-repo.countForMemberQuota`).
+ *   - E-Blast: `status IN ('sent','partial_delivery_accepted') AND
+ *     quotaYearConsumed=$year` (matches `drizzle-broadcasts-repo.
+ *     countForMemberQuota`). Both terminal states stamp `quota_year_consumed`
+ *     (schema CHECK `broadcasts_quota_year_only_on_sent`) and FR-008c requires
+ *     the F9 benefit-usage count to treat a partial-accepted send exactly like a
+ *     full `sent` — counting only `sent` mis-flags a partial-accept-only member
+ *     as "didn't use their e-blast benefit".
  *   - Cultural: `isCulturalEvent=true AND startDate ∈ [yearStart, min(yearEnd,
  *     now)] AND piiPseudonymisedAt IS NULL AND archivedAt IS NULL` (matches
  *     `drizzle-event-attendees-by-member` + the F9 event-source year window;
@@ -33,7 +38,7 @@
  *
  * Pure Infrastructure — Drizzle types are confined to this file.
  */
-import { and, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
@@ -70,7 +75,13 @@ export const benefitConsumptionAggregateAdapter: BenefitConsumptionAggregateSour
           .where(
             and(
               eq(broadcasts.tenantId, ctx.slug),
-              eq(broadcasts.status, 'sent'),
+              // FR-008c — the consumed-quota set is BOTH terminal states that
+              // stamp `quota_year_consumed` (schema CHECK
+              // `broadcasts_quota_year_only_on_sent`). `acceptPartial` sets the
+              // quota fields identically to the webhook `sent` path, so a
+              // partial-accepted send is real benefit usage. Mirrors
+              // `countForMemberQuota`; the year fence below scopes the count.
+              inArray(broadcasts.status, ['sent', 'partial_delivery_accepted']),
               eq(broadcasts.quotaYearConsumed, membershipYear),
             ),
           )

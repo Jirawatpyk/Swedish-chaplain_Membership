@@ -27,6 +27,8 @@ import {
 import { broadcastSourceAdapter } from '@/modules/insights/infrastructure/sources/broadcast-source-adapter';
 import { benefitConsumptionAggregateAdapter } from '@/modules/insights/infrastructure/sources/benefit-consumption-aggregate-adapter';
 import { eventSourceAdapter } from '@/modules/insights/infrastructure/sources/event-source-adapter';
+import { planSourceAdapter } from '@/modules/insights/infrastructure/sources/plan-source-adapter';
+import { countUnderUsedQuota, planKey } from '@/modules/insights/domain/quota-underuse';
 import { dashboardMetricsCache, smartInsightDismissals } from '@/modules/insights/infrastructure/db/schema-insights';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
@@ -319,12 +321,27 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
     const eblast = await benefitConsumptionAggregateAdapter.eblastUsedByMember(tenant.ctx, SEED_YEAR);
     expect(eblast.get(mF)).toBe(3);
 
-    // 2) Live-wired snapshot: mF is full (3/3) → NOT in the unused_eblast_quota
-    //    count (which stays 3 = {mA, mB, mE}; pre-fix it would be 4 incl. mF).
-    const snap = await computeDashboardSnapshot(tenant.ctx, makeComputeDashboardSnapshotDeps(tenant.ctx.slug));
-    expect(snap.ok).toBe(true);
-    if (!snap.ok) return;
-    expect(insightCount(snap.value, 'unused_eblast_quota')).toBe(3);
+    // 2) Live-wired roll-up: mF (3/3 via partial-accept) is NOT under-using
+    //    e-blast. The `unused_eblast_quota` CARD count of exactly 3 = {mA, mB,
+    //    mE} — mF excluded — is asserted by the first test (it runs BEFORE the
+    //    dismiss test, which suppresses that card for the current cycle here).
+    //    This test pins the SAME wiring dismissal-independently: feed the live
+    //    aggregate map + real plan entitlement into the pure `countUnderUsedQuota`
+    //    rule and assert mF is excluded (used 3 === entitlement 3 → no shortfall).
+    //    Pre-fix the map lacks mF → used 0 < 3 → mF wrongly counted.
+    const entA = await planSourceAdapter.getEntitlements(tenant.ctx, planA, 2026);
+    expect(entA).not.toBeNull();
+    if (entA === null) return;
+    const cultural = await benefitConsumptionAggregateAdapter.culturalUsedByMember(tenant.ctx, SEED_YEAR);
+    const rollUp = countUnderUsedQuota({
+      members: [{ memberId: mF, planId: planA, planYear: 2026 }],
+      eblastUsedByMember: eblast,
+      culturalUsedByMember: cultural,
+      entitlementByPlanKey: new Map([
+        [planKey(planA, 2026), { eblastPerYear: entA.eblastPerYear, culturalTicketsPerYear: entA.culturalTicketsPerYear }],
+      ]),
+    });
+    expect(rollUp.unusedEblastMembers).toBe(0); // mF full on e-blast → not under
 
     // 3) Per-member source (member benefit view): used>0 AND lastUsedAt non-null.
     //    Pre-fix `getEblastConsumption` would (via computeQuotaCounter's sent-only
