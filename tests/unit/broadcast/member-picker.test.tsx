@@ -39,7 +39,12 @@ describe('MemberPicker (closed-state guard)', () => {
     render(
       <MemberPicker
         {...baseProps}
-        value={{ memberId: 'm-1', companyName: 'Acme AB', primaryContactName: 'Jo' }}
+        value={{
+          memberId: 'm-1',
+          companyName: 'Acme AB',
+          primaryContactName: 'Jo',
+          hasPrimaryContactEmail: true,
+        }}
       />,
     );
     expect(screen.getByText('Acme AB')).toBeInTheDocument();
@@ -49,5 +54,23 @@ describe('MemberPicker (closed-state guard)', () => {
     const ref = createRef<HTMLButtonElement>();
     render(<MemberPicker {...baseProps} value={null} triggerRef={ref} />);
     expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it('renders with a member that has no primary contact email (hasPrimaryContactEmail: false)', () => {
+    // The MemberPicker renders the company name regardless of email presence;
+    // the warning/disable logic lives in ProxyComposeForm. This test guards
+    // that hasPrimaryContactEmail:false in the option does not crash the picker.
+    render(
+      <MemberPicker
+        {...baseProps}
+        value={{
+          memberId: 'm-2',
+          companyName: 'NoEmail Corp',
+          primaryContactName: null,
+          hasPrimaryContactEmail: false,
+        }}
+      />,
+    );
+    expect(screen.getByText('NoEmail Corp')).toBeInTheDocument();
   });
 });

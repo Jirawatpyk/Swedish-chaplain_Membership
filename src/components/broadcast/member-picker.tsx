@@ -40,6 +40,8 @@ export interface MemberPickerOption {
   readonly memberId: string;
   readonly companyName: string;
   readonly primaryContactName: string | null;
+  /** True when the member's primary contact has an email address on record. */
+  readonly hasPrimaryContactEmail: boolean;
 }
 
 const SearchResponseSchema = z.object({
@@ -48,6 +50,7 @@ const SearchResponseSchema = z.object({
       memberId: z.string().uuid(),
       companyName: z.string(),
       primaryContactName: z.string().nullable(),
+      hasPrimaryContactEmail: z.boolean(),
     }),
   ),
 });

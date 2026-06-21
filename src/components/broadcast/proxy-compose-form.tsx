@@ -80,6 +80,7 @@ type ServerErrorField = 'subject' | 'body' | 'segment' | null;
  */
 type ProxyErrorHandling =
   | { readonly kind: 'picker' }
+  | { readonly kind: 'pickerError'; readonly key: 'missingContactEmailError' }
   | {
       readonly kind: 'field';
       readonly field: 'subject' | 'body' | 'segment';
@@ -97,6 +98,13 @@ type ProxyErrorHandling =
 
 const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
   broadcast_member_not_found: { kind: 'picker' },
+  // Defense-in-depth: the form blocks submit when hasPrimaryContactEmail===false,
+  // but if the server still 422s (e.g. stale picker data), surface a clear
+  // picker-level message rather than the generic toast.
+  broadcast_member_missing_primary_contact_email: {
+    kind: 'pickerError',
+    key: 'missingContactEmailError',
+  },
   broadcast_quota_blocked: { kind: 'toast', key: 'quotaBlockedError' },
   broadcast_not_in_plan: { kind: 'toast', key: 'notInPlanError' },
   broadcast_subject_too_long: {
@@ -165,8 +173,17 @@ export function ProxyComposeForm(): React.ReactElement {
     segment.kind !== 'custom' ||
     (customLines.length > 0 && customLines.length <= 100);
   const tierValid = segment.kind !== 'tier' || segment.tierCodes.length > 0;
+  // Disable submit when the picked member has no primary contact email — the
+  // server would 422 with broadcast_member_missing_primary_contact_email anyway;
+  // blocking early lets the admin know immediately and avoids a wasted round trip.
+  const memberMissingEmail =
+    member !== null && member.hasPrimaryContactEmail === false;
   const submitDisabled =
-    member === null || !validation.success || !customListValid || !tierValid;
+    member === null ||
+    memberMissingEmail ||
+    !validation.success ||
+    !customListValid ||
+    !tierValid;
 
   // Auto-focus the failing field when a field-level server error arrives.
   useEffect(() => {
@@ -192,6 +209,13 @@ export function ProxyComposeForm(): React.ReactElement {
         // admin can't resubmit the same dead id.
         setMember(null);
         setMemberError(t('memberNotFoundError'));
+        pickerRef.current?.focus();
+        break;
+      case 'pickerError':
+        // Server confirmed the selected member has no primary contact email.
+        // Show a picker-level error and refocus; do NOT clear the selection
+        // (the admin may want to navigate to the member to add a contact first).
+        setMemberError(t(handling.key));
         pickerRef.current?.focus();
         break;
       case 'field': {
@@ -279,7 +303,16 @@ export function ProxyComposeForm(): React.ReactElement {
               {memberError}
             </p>
           ) : null}
-          {member !== null ? (
+          {memberMissingEmail ? (
+            // Inline warning: shown immediately on member selection when the
+            // picked member has no primary contact email. Prevents submission
+            // before the admin fills in the gap. `role="alert"` announces it
+            // to SR users without stealing focus (WCAG 4.1.3 Status Messages).
+            <p role="alert" className="text-xs text-destructive">
+              {t('missingContactEmailWarning')}
+            </p>
+          ) : null}
+          {member !== null && !memberMissingEmail ? (
             // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages: this
             // notice appears when a member is picked and focus returns to
             // the picker trigger, so it must be announced. `role="status"`

@@ -2365,7 +2365,9 @@
         "audienceTooLargeError": "Mottagarlistan överstiger gränsen på 5 000.",
         "successToast": "Utskicket har kölagts för granskning å {company}:s vägnar.",
         "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
-        "noResults": "Inga medlemmar hittades."
+        "noResults": "Inga medlemmar hittades.",
+        "missingContactEmailWarning": "Den här medlemmen saknar e-postadress för primär kontakt. Det går inte att skicka utskick å deras vägnar förrän en primär kontakt med e-postadress har lagts till.",
+        "missingContactEmailError": "Den här medlemmen saknar e-postadress för primär kontakt. Lägg till en primär kontakt först och försök sedan igen."
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
