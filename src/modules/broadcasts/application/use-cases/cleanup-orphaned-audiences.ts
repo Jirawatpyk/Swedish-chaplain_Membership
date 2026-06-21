@@ -61,7 +61,7 @@ export interface CleanupOrphanedAudiencesInput {
   readonly graceMs: number;
   /**
    * Maximum candidates to process per invocation. Keeps cron execution time
-   * bounded. Default production value: 50 (configured at the route layer).
+   * bounded. Production value: 200 (configured at the route layer).
    */
   readonly limit: number;
 }
@@ -133,7 +133,10 @@ export async function cleanupOrphanedAudiences(
     } catch (e) {
       failed++;
       logger.warn(
-        { broadcastId: candidate.broadcastId, cause: e },
+        {
+          broadcastId: candidate.broadcastId,
+          cause: e instanceof Error ? e.message : 'unknown error',
+        },
         'broadcasts.audience_cleanup.delete_failed',
       );
       // Row stays with audience_deleted_at IS NULL → eligible for retry on

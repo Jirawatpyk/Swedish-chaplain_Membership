@@ -106,6 +106,7 @@ describe('PR-2 Task 2 — audience-cleanup repo methods (live Neon)', () => {
   const noAudienceId = randomUUID();  // failed_to_dispatch, no audience — must NOT appear
   const alreadyDeletedId = randomUUID(); // failed_to_dispatch + audience, already marked
   const tooRecentId = randomUUID();   // failed_to_dispatch + audience, only 30min ago — within grace
+  const tenantBTerminalId = randomUUID(); // tenant B 'sent' + audience — must NEVER appear in tenant A results
 
   beforeAll(async () => {
     const t = await createTwoTestTenants();
@@ -151,7 +152,7 @@ describe('PR-2 Task 2 — audience-cleanup repo methods (live Neon)', () => {
 
     // Tenant B — one terminal broadcast that must never appear in tenant A results
     await seedBroadcast(tenantB, {
-      broadcastId: randomUUID(),
+      broadcastId: tenantBTerminalId,
       status: 'sent',
       resendAudienceId: 'aud_seed_tenant_b',
       audienceDeletedAt: null,
@@ -220,11 +221,9 @@ describe('PR-2 Task 2 — audience-cleanup repo methods (live Neon)', () => {
       50,
     );
 
-    // Tenant A has exactly 1 eligible row (terminalId)
+    // Tenant A has exactly 1 eligible row (terminalId) and never tenant B's
     const idsA = resultsA.map((r) => r.broadcastId);
-    expect(idsA).not.toContain(
-      expect.stringMatching(/aud_seed_tenant_b/),
-    );
+    expect(idsA).not.toContain(tenantBTerminalId);
 
     // Tenant B result must not contain tenant A rows
     const idsB = resultsB.map((r) => r.broadcastId);
