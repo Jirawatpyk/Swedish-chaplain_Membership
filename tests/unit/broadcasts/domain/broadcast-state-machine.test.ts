@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BROADCAST_STATUSES,
   BROADCAST_TRANSITIONS,
+  TERMINAL_BROADCAST_STATUSES,
   canTransition,
   isTerminalStatus,
   transition,
@@ -61,6 +62,30 @@ describe('isTerminalStatus', () => {
     ['sending', false],
   ] as const)('isTerminalStatus(%s) === %s', (status, expected) => {
     expect(isTerminalStatus(status)).toBe(expected);
+  });
+});
+
+describe('TERMINAL_BROADCAST_STATUSES (Finding G — single source of truth)', () => {
+  it('equals exactly the set of statuses for which isTerminalStatus is true', () => {
+    // Guard against desync: `listTerminalBroadcastsWithLiveAudience` derives
+    // its raw-SQL IN-list from this constant, so it MUST stay equal to the
+    // statuses `isTerminalStatus` admits. Computing the expected set from the
+    // full status tuple means adding a new terminal state to either the
+    // constant or `isTerminalStatus` (but not both) fails this test.
+    const derivedFromPredicate = BROADCAST_STATUSES.filter((s) =>
+      isTerminalStatus(s),
+    );
+    expect([...TERMINAL_BROADCAST_STATUSES].sort()).toEqual(
+      [...derivedFromPredicate].sort(),
+    );
+  });
+
+  it('excludes the non-terminal `partially_sent` (admin can still retry/accept)', () => {
+    expect(TERMINAL_BROADCAST_STATUSES).not.toContain('partially_sent');
+  });
+
+  it('includes `partial_delivery_accepted` (the terminal accept state)', () => {
+    expect(TERMINAL_BROADCAST_STATUSES).toContain('partial_delivery_accepted');
   });
 });
 

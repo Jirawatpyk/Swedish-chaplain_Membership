@@ -56,6 +56,16 @@ describe('resendBroadcastsGateway.deleteAudience', () => {
     await expect(resendBroadcastsGateway.deleteAudience('gone')).resolves.toBeUndefined();
   });
 
+  it('deleteAudience treats 410 Gone as already-absent (Finding H)', async () => {
+    // Pre-fix a 410 fell through to classifyResendError → `permanent`, so the
+    // cleanup row re-failed every cron tick forever. 410 must be idempotent
+    // early-return like 404. Single call (no retry) proves it is NOT treated
+    // as retryable either.
+    removeAudMock.mockResolvedValue({ data: null, error: { statusCode: 410, message: 'gone' } });
+    await expect(resendBroadcastsGateway.deleteAudience('gone-410')).resolves.toBeUndefined();
+    expect(removeAudMock).toHaveBeenCalledTimes(1);
+  });
+
   it('deleteAudience throws retryable on 5xx', async () => {
     vi.useFakeTimers();
     removeAudMock.mockResolvedValue({ data: null, error: { statusCode: 503, message: 'down' } });

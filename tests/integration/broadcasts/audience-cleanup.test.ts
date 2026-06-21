@@ -266,11 +266,29 @@ describe('PR-2 Task 2 — audience-cleanup repo methods (live Neon)', () => {
   });
 
   it('markAudienceDeletedInTx is idempotent (re-mark is a no-op)', async () => {
-    // terminalId was marked in the previous test; re-marking must not throw
+    // Self-contained (Finding F): seed a dedicated terminal broadcast, stamp
+    // it once within THIS test, then re-stamp and assert no-throw. Does NOT
+    // depend on a preceding test having marked `terminalId`, so it stays
+    // correct under `-t` filtering / reordering.
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
+    const idempotentId = randomUUID();
+    await seedBroadcast(tenantA, {
+      broadcastId: idempotentId,
+      status: 'failed_to_dispatch',
+      resendAudienceId: 'aud_seed_idempotent',
+      audienceDeletedAt: null,
+      updatedAtOffset: -7200, // 2h ago — past the 1h grace cutoff
+    });
+
+    // First mark — stamps audience_deleted_at.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.markAudienceDeletedInTx(tx, idempotentId);
+    });
+
+    // Second mark on the already-stamped row must be a no-op (no throw).
     await expect(
       runInTenant(tenantA.ctx, async (tx) => {
-        await repo.markAudienceDeletedInTx(tx, terminalId);
+        await repo.markAudienceDeletedInTx(tx, idempotentId);
       }),
     ).resolves.not.toThrow();
   });

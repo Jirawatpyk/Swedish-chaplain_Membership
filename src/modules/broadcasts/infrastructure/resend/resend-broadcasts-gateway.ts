@@ -428,7 +428,15 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           object: string;
         }>;
         if (result.error) {
-          if (result.error.statusCode === 404) {
+          // Finding H — 404 Not Found AND 410 Gone both mean the audience is
+          // already absent → the delete goal is met (idempotent early-return).
+          // Without the 410 branch, a Resend 410 would fall through to
+          // `classifyResendError` → `permanent`, and the cleanup row would
+          // re-fail every cron tick forever.
+          if (
+            result.error.statusCode === 404 ||
+            result.error.statusCode === 410
+          ) {
             logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
             return; // idempotent: already gone
           }

@@ -25,6 +25,7 @@ import {
   type BroadcastId,
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
@@ -1376,17 +1377,18 @@ export function makeDrizzleBroadcastsRepo(
      */
     async listTerminalBroadcastsWithLiveAudience(tenantIdArg, graceCutoff, limit) {
       return runInTenant(ctx, async (tx) => {
+        // Finding G — derive the IN-list from the domain's single source of
+        // truth (`TERMINAL_BROADCAST_STATUSES`) so a future state-machine
+        // change cannot silently desync this SQL from `isTerminalStatus`.
+        const terminalStatusList = sql.join(
+          TERMINAL_BROADCAST_STATUSES.map((s) => sql`${s}`),
+          sql`, `,
+        );
         const rows = (await tx.execute(sql`
           SELECT broadcast_id, resend_audience_id
           FROM broadcasts
           WHERE tenant_id = ${tenantIdArg}
-            AND status::text IN (
-              'sent',
-              'failed_to_dispatch',
-              'cancelled',
-              'rejected',
-              'partial_delivery_accepted'
-            )
+            AND status::text IN (${terminalStatusList})
             AND resend_audience_id IS NOT NULL
             AND audience_deleted_at IS NULL
             AND updated_at < ${graceCutoff.toISOString()}::timestamptz
