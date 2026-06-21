@@ -13,6 +13,7 @@ export interface ResendBroadcastsClientLike {
   readonly broadcasts: {
     create(args: { audienceId: string; from: string; subject: string; html: string; replyTo: string; name: string }): Promise<ResendResult<{ id: string }>>;
     send(id: string, opts?: unknown): Promise<ResendResult<{ id: string }>>;
+    get(id: string): Promise<ResendResult<{ id: string }>>;
   };
   readonly audiences: {
     create(args: { name: string }): Promise<ResendResult<{ id: string }>>;
@@ -36,7 +37,13 @@ export function createResendContractFake(opts: { audienceLimit?: number } = {}):
         if ([...args.name].length > MAX_NAME_CP) {
           return { data: null, error: { statusCode: 422, message: 'Field `name` has a maximum of 70 items.', name: 'validation_error' } };
         }
-        // Valid `from`: `local@domain` or `Name <local@domain>` — no nested `<`.
+        // Reject a nested `<>` (the #3 double-wrap bug). Single-wrapped
+        // `Name <local@domain>` → the regex extracts the bare address into
+        // `inner` (no `<`/`>`, email validates → accepted). Double-wrapped
+        // `Name <X <addr>>` (trailing `>>`) → the regex matches nothing (no
+        // `<…>` can satisfy `\s*$`; `[^>]*` cannot span the inner `>`), so the
+        // `?? args.from` fallback feeds the whole string to the `includes('<')`
+        // guard below, which rejects it.
         const inner = args.from.match(/<([^>]*)>\s*$/)?.[1] ?? args.from;
         if (inner.includes('<') || inner.includes('>') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inner.trim())) {
           return { data: null, error: { statusCode: 422, message: `Invalid \`from\` field. Received \`${args.from}\`.`, name: 'validation_error' } };
@@ -44,11 +51,13 @@ export function createResendContractFake(opts: { audienceLimit?: number } = {}):
         return { data: { id: 'bcast_fake_1' }, error: null };
       },
       async send(id) { return { data: { id }, error: null }; },
+      async get(_id) { return { data: null, error: { statusCode: 404, message: 'not found', name: 'not_found' } }; },
     },
     audiences: {
       async create() {
         if (audienceCount >= audienceLimit) {
-          return { data: null, error: { statusCode: 401, message: `Your plan includes ${audienceLimit} segments. Upgrade to add more.`, name: 'restricted' } };
+          const limitLabel = Number.isFinite(audienceLimit) ? String(audienceLimit) : '3';
+          return { data: null, error: { statusCode: 401, message: `Your plan includes ${limitLabel} segments. Upgrade to add more.`, name: 'restricted' } };
         }
         audienceCount += 1;
         return { data: { id: `aud_fake_${audienceCount}` }, error: null };
