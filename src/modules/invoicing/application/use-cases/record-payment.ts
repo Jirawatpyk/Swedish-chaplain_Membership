@@ -51,6 +51,7 @@ import {
 } from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
@@ -121,6 +122,14 @@ export type RecordPaymentError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  /**
+   * The admin-entered payment date falls outside `[issue_date, today]`
+   * (today in Asia/Bangkok). Server-side mirror of the F4 record-payment
+   * client clamp — defends the §87 temporal-consistency invariant when
+   * the bypassable native date input is skipped (curl/script). The F5
+   * webhook + F8 offline-mark paths are exempt (processor/derived dates).
+   */
+  | { code: 'payment_date_out_of_range'; min: string | null; max: string }
   /**
    * REMOVE-WITH-064-REMEDIATION (site 2/15 — full checklist at the guard
    * below + docs/runbooks/event-invoice-legacy-no-tin-remediation.md) —
@@ -278,6 +287,36 @@ export async function recordPayment(
       !loaded.fiscalYear
     ) {
       return err({ code: 'no_snapshot_on_invoice' });
+    }
+
+    // Server-side payment-date guard (defense-in-depth). The F4 admin
+    // record-payment dialog clamps the date picker to
+    // `[issue_date, Asia/Bangkok today]`, but that native clamp is
+    // bypassable (curl/script) — re-validate here so a payment can't be
+    // dated before its tax invoice or in the future (§87 temporal
+    // consistency). MUST compute "today" in Asia/Bangkok via
+    // `bangkokLocalDate` (the SAME helper that stamps `issue_date`); a
+    // UTC bound would reject same-Bangkok-day payments for ~7h/day — the
+    // exact client-side bug this mirrors. Runs BEFORE any write so a
+    // rejection burns no §87 receipt number. Exempt:
+    //   • `webhook`            — F5 processor-authoritative settlement date.
+    //   • `admin_offline_mark` — F8 renewal offline-mark owns its own
+    //                            date handling; not the F4 dialog surface.
+    if (
+      input.triggeredBy !== 'webhook' &&
+      input.triggeredBy !== 'admin_offline_mark'
+    ) {
+      const bangkokToday = bangkokLocalDate(deps.clock.nowIso());
+      if (
+        (loaded.issueDate !== null && input.paymentDate < loaded.issueDate) ||
+        input.paymentDate > bangkokToday
+      ) {
+        return err({
+          code: 'payment_date_out_of_range',
+          min: loaded.issueDate,
+          max: bangkokToday,
+        });
+      }
     }
     // 054-event-fee-invoices (final-review HIGH 2) — record-payment now
     // supports NON-member EVENT invoices (spec §9 NF-B / Decision 7). A null

@@ -806,3 +806,62 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
   });
 });
 
+describe('recordPayment — server-side payment-date guard (defense-in-depth)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // clock.nowIso() = 2026-05-18T10:00Z → Asia/Bangkok today = 2026-05-18.
+  // Fixture issue_date = 2026-04-18 → valid window [2026-04-18, 2026-05-18].
+  // Mirrors the F4 admin record-payment client clamp, but server-side so a
+  // bypassed (curl/script) request can't mint a receipt dated before its
+  // invoice or in the future. MUST use Asia/Bangkok today, NOT UTC.
+
+  it('rejects an admin payment date BEFORE issue_date (client-clamp bypass)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, { ...input, paymentDate: '2026-04-01' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('payment_date_out_of_range');
+      if (r.error.code === 'payment_date_out_of_range') {
+        expect(r.error.min).toBe('2026-04-18');
+        expect(r.error.max).toBe('2026-05-18');
+      }
+    }
+    // Guard runs before any write — no receipt allocated, no apply.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+  });
+
+  it('rejects an admin payment date IN THE FUTURE (Asia/Bangkok today)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, { ...input, paymentDate: '2026-06-01' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('payment_date_out_of_range');
+  });
+
+  it('accepts an in-range admin payment date', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, { ...input, paymentDate: '2026-05-10' });
+    expect(r.ok).toBe(true);
+  });
+
+  it('EXEMPTS the F5 webhook path (processor-authoritative settlement date)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, {
+      ...input,
+      paymentDate: '2026-06-01', // future — would be rejected on an admin path
+      triggeredBy: 'webhook',
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('EXEMPTS the F8 offline-mark path (admin_offline_mark)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, {
+      ...input,
+      paymentDate: '2026-06-01',
+      triggeredBy: 'admin_offline_mark',
+    });
+    expect(r.ok).toBe(true);
+  });
+});
+
