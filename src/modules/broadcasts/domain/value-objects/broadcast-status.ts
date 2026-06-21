@@ -33,21 +33,34 @@ export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
  * means the broadcast lifecycle is over (or, in the `rejected`/
  * `cancelled`/`failed_to_dispatch` cases, was over before reaching
  * `sent`). Quota reservation is released on terminal states other
- * than `sent`; for `sent` the slot is *consumed* (FR-007).
+ * than `sent` / `partial_delivery_accepted`; for those two the slot is
+ * *consumed* (FR-007 / FR-008c).
  *
  * F7.1a Phase 3 B0: `partial_delivery_accepted` is terminal (admin
  * explicit accept). `partially_sent` is NON-terminal — admin can
  * retry up to 3 times (FR-008a `manual_retry_count` CHECK 0..3) or
  * accept partial delivery to reach the terminal state.
+ *
+ * This is the SINGLE SOURCE OF TRUTH for the terminal-status set.
+ * Infrastructure that needs the set in a raw SQL `IN (...)` clause (e.g.
+ * `listTerminalBroadcastsWithLiveAudience`) MUST derive it from this
+ * constant so a future state-machine change cannot silently desync the
+ * SQL from the domain (Finding G).
  */
+export const TERMINAL_BROADCAST_STATUSES = [
+  'sent',
+  'rejected',
+  'cancelled',
+  'failed_to_dispatch',
+  'partial_delivery_accepted',
+] as const satisfies readonly BroadcastStatus[];
+
+const TERMINAL_BROADCAST_STATUS_SET: ReadonlySet<BroadcastStatus> = new Set(
+  TERMINAL_BROADCAST_STATUSES,
+);
+
 export function isTerminalStatus(status: BroadcastStatus): boolean {
-  return (
-    status === 'sent' ||
-    status === 'rejected' ||
-    status === 'cancelled' ||
-    status === 'failed_to_dispatch' ||
-    status === 'partial_delivery_accepted'
-  );
+  return TERMINAL_BROADCAST_STATUS_SET.has(status);
 }
 
 /**

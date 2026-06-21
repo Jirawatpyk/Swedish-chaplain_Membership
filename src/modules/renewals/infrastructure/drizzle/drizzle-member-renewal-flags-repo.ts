@@ -592,27 +592,33 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             -- scorer.
             --
             -- 063 usage-notion refinement (#8) — the at-risk ENGAGEMENT
-            -- factor counts USAGE = F9 benefit-usage used (sent THIS quota
-            -- year only), matching computeQuotaCounter(...).counter.used
-            -- (= countForMemberQuota.sent, the year-fenced sent bucket).
+            -- factor counts USAGE = F9 benefit-usage used (quota CONSUMED
+            -- THIS quota year), matching computeQuotaCounter(...).counter.used
+            -- (= countForMemberQuota.sent, the year-fenced consumed bucket).
             -- This intentionally DIVERGES from F7's quota-ENFORCEMENT count
             -- (which also includes the reserved bucket): enforcement must
             -- refuse a send while a slot is in-flight, but engagement asks
             -- whether the benefit was actually delivered THIS year.
             --
+            -- BOTH 'sent' AND 'partial_delivery_accepted' consume the slot
+            -- (schema CHECK broadcasts_quota_year_only_on_sent stamps
+            -- quota_year_consumed for BOTH; FR-008c). Counting only 'sent'
+            -- UNDERCOUNTS usage for a member who partial-accepted, which
+            -- falsely FIRES the +15 risk factor for someone who did send.
+            --
             -- Reserved rows (submitted/approved/failed_to_dispatch) are
             -- DROPPED here. They carry quota_year_consumed IS NULL (schema
             -- CHECK broadcasts_quota_year_only_on_sent), so they have NO
             -- year fence. NOTE: failed_to_dispatch RELEASES the quota slot
-            -- (Design D1, 2026-06-21); this query counts only 'sent' rows
-            -- regardless, so it is unaffected by D1. Counting it would
+            -- (Design D1, 2026-06-21); this query counts only consumed rows
+            -- regardless, so it is unaffected by D1. Counting reserved would
             -- inflate this year's usage, push pct >= 30, and silently
             -- SUPPRESS the +15 risk factor for a disengaged member (#8).
-            -- Counting only sent-this-year cannot leak a stale prior-year
+            -- Counting only consumed-this-year cannot leak a stale prior-year
             -- slot. quotaYear is computed once per batch in the tenant
             -- timezone and bound as a param so the year boundary matches
             -- how F7 wrote the row.
-            AND b.status = 'sent'
+            AND b.status IN ('sent', 'partial_delivery_accepted')
             AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true
         WHERE m.status = 'active'

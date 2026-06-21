@@ -40,8 +40,10 @@ import {
   broadcasts,
   type NewBroadcastRow,
 } from '@/modules/broadcasts/infrastructure/schema';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { asMemberId } from '@/modules/members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -195,5 +197,133 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]!.status).toBe('sent');
+  });
+
+  // -------------------------------------------------------------------------
+  // Finding C — `partial_delivery_accepted` CONSUMES the quota slot exactly
+  // like `sent` (FR-008c). A member whose only broadcast this quota year is a
+  // `partial_delivery_accepted` MUST be at cap. Pre-fix `countForMemberQuota`
+  // counted only `status='sent'`, so this member read as `used=0` and would
+  // be wrongly allowed a free extra broadcast.
+  // -------------------------------------------------------------------------
+
+  it('countForMemberQuota counts a partial_delivery_accepted broadcast toward `used` (Finding C)', async () => {
+    // A SECOND member on the same eblast_per_year=1 plan whose only
+    // broadcast is `partial_delivery_accepted` in the current quota year.
+    const partialMemberId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: partialMemberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Finding-C Partial-Accept Member',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+      }),
+    );
+
+    const partialBroadcast: NewBroadcastRow = {
+      tenantId: tenant.ctx.slug,
+      broadcastId: randomUUID(),
+      requestedByMemberId: partialMemberId,
+      requestedByMemberPlanIdSnapshot: planId,
+      submittedByUserId: randomUUID(),
+      actorRole: 'member_self_service',
+      subject: 'Partial-accepted broadcast (consumes the only quota slot)',
+      bodyHtml: '<p>partial</p>',
+      bodySource: 'partial',
+      fromName: 'Finding-C Partial-Accept Member via Test Chamber',
+      replyToEmail: 'member@example.com',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      estimatedRecipientCount: 0,
+      status: 'partial_delivery_accepted',
+      // Both quota fields mandatory for this terminal state (CHECK
+      // broadcasts_quota_year_only_on_sent), mirroring acceptPartial.
+      quotaYearConsumed: quotaYear,
+      quotaConsumedAt: new Date(),
+      partialDeliveryAcceptedAt: new Date(),
+      partialDeliveryAcceptedByUserId: admin.userId,
+    };
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(broadcasts).values(partialBroadcast),
+    );
+
+    // The consumed-quota (`sent`) bucket MUST count the partial-accepted
+    // row. Pre-fix it returned 0 (only `status='sent'` counted).
+    const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+    const counts = await repo.countForMemberQuota(
+      tenant.ctx.slug,
+      asMemberId(partialMemberId),
+      quotaYear,
+    );
+    expect(counts.sent).toBe(1);
+    expect(counts.submittedOrApproved).toBe(0);
+  });
+
+  it('admin_proxy at the member cap via partial_delivery_accepted is blocked (Finding C)', async () => {
+    // The partial-accept member seeded above is at cap (used=1, cap=1).
+    // A proxy submit must be refused with `broadcast_quota_blocked` — a
+    // partial-accepted broadcast is NOT a free re-roll of the slot.
+    const partialMemberId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: partialMemberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Finding-C Partial Block Member',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+      }),
+    );
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(broadcasts).values({
+        tenantId: tenant.ctx.slug,
+        broadcastId: randomUUID(),
+        requestedByMemberId: partialMemberId,
+        requestedByMemberPlanIdSnapshot: planId,
+        submittedByUserId: randomUUID(),
+        actorRole: 'member_self_service',
+        subject: 'Partial accepted — at cap',
+        bodyHtml: '<p>partial</p>',
+        bodySource: 'partial',
+        fromName: 'Finding-C Partial Block Member via Test Chamber',
+        replyToEmail: 'member@example.com',
+        segmentType: 'all_members',
+        segmentParams: null,
+        customRecipientEmails: null,
+        estimatedRecipientCount: 0,
+        status: 'partial_delivery_accepted',
+        quotaYearConsumed: quotaYear,
+        quotaConsumedAt: new Date(),
+        partialDeliveryAcceptedAt: new Date(),
+        partialDeliveryAcceptedByUserId: admin.userId,
+      } satisfies NewBroadcastRow),
+    );
+
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const result = await proxySubmitBroadcast(deps, {
+      proxiedMemberId: partialMemberId,
+      adminUserId: admin.userId,
+      tenantDisplayName: 'Test Chamber',
+      memberLookup: {
+        status: 'found',
+        companyName: 'Finding-C Partial Block Member',
+      },
+      subject: 'Proxy at cap via partial',
+      bodySource: '<p>hi</p>',
+      bodyHtml: '<p>hi</p>',
+      segment: { kind: 'all_members' },
+      scheduledFor: null,
+      requestId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_quota_blocked');
+    }
   });
 });

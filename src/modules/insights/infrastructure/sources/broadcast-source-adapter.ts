@@ -17,11 +17,13 @@
  *
  * `lastUsedAt` is best-effort: `listMemberBroadcasts` page 1 is ordered by
  * `createdAt` desc (NOT `sentAt`), so we scan that 20-row window for the max
- * `sentAt` among `sent` rows. Exact for the common case; a member with >20
- * broadcasts whose current-year send sits outside the window may show a stale
- * or null last-used date even when `used > 0` (review-run I-1). The count is
- * unaffected. No year filter on the date: a non-zero `used` guarantees a send
- * this year, and the newest `sentAt` overall cannot post-date the current year.
+ * usage timestamp among the two quota-consuming terminal states — a full `sent`
+ * (`sentAt`) OR a partial-accepted send (`partial_delivery_accepted`, whose only
+ * usage timestamp is `partialDeliveryAcceptedAt`; FR-008c). Coalescing the two
+ * means a partial-accept-only member (used>0, no `sentAt`) is not shown "used,
+ * but never used". Exact for the common case; a member with >20 broadcasts whose
+ * current-year usage sits outside the window may show a stale or null last-used
+ * date even when `used > 0` (review-run I-1). The count is unaffected.
  */
 import {
   makeBroadcastApprovalCounter,
@@ -96,10 +98,17 @@ export const broadcastSourceAdapter: BroadcastConsumptionSource = {
       );
       let newest: Date | null = null;
       for (const b of list.rows) {
-        if (b.status !== 'sent' || b.sentAt === null) continue;
-        const ms = b.sentAt.getTime();
+        // FR-008c — both terminal states that consume the quota slot count as
+        // "used": a full `sent` (timestamped by `sentAt`) and a partial-accepted
+        // send (`partial_delivery_accepted`, timestamped by
+        // `partialDeliveryAcceptedAt` — it has NO `sentAt`). Coalesce the usage
+        // timestamp so a partial-accept-only member is not shown "used, but never
+        // used" (used>0 yet null lastUsedAt). Skip only when BOTH are null.
+        const usedAt = b.sentAt ?? b.partialDeliveryAcceptedAt;
+        if (usedAt === null) continue;
+        const ms = usedAt.getTime();
         if (ms < startMs || ms >= endMs) continue; // current membership year only
-        if (newest === null || b.sentAt > newest) newest = b.sentAt;
+        if (newest === null || usedAt > newest) newest = usedAt;
       }
       lastUsedAt = newest === null ? null : newest.toISOString();
     }

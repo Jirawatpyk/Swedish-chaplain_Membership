@@ -339,17 +339,24 @@ export function makeDrizzleAtRiskScorer(
             new Date(),
             env.tenant.timezone,
           );
-          // F9 benefit-usage `used`: sent rows whose quota_year_consumed
-          // equals the current quota year. Mirrors countForMemberQuota's
-          // `sent` bucket (the value computeQuotaCounter assigns to
-          // `counter.used`). Reserved rows (submitted/approved/
-          // failed_to_dispatch) are EXCLUDED here — see the #8 note above.
+          // F9 benefit-usage `used`: rows that CONSUMED the annual quota
+          // slot this year. Mirrors countForMemberQuota's `sent` bucket
+          // (the value computeQuotaCounter assigns to `counter.used`).
+          // Both `sent` AND `partial_delivery_accepted` consume the slot
+          // (schema CHECK `broadcasts_quota_year_only_on_sent` stamps
+          // `quota_year_consumed` for BOTH terminal states; FR-008c) — so
+          // counting only `sent` UNDERCOUNTS usage and falsely fires the
+          // "+15 didn't use e-blast" risk factor for a member who did send
+          // (partial accept). Reserved rows (submitted/approved/
+          // failed_to_dispatch) are still EXCLUDED here — see the #8 note
+          // above — they carry `quota_year_consumed IS NULL` so the year
+          // fence drops them regardless.
           const usedRows = await tx.execute<{ used_count: string }>(sql`
             SELECT count(*)::text AS used_count
             FROM ${broadcasts} b
             WHERE b.tenant_id = ${tenantId}
               AND b.requested_by_member_id = ${memberId}
-              AND b.status = 'sent'
+              AND b.status IN ('sent', 'partial_delivery_accepted')
               AND b.quota_year_consumed = ${quotaYear}
           `);
           const usedCount = Number.parseInt(

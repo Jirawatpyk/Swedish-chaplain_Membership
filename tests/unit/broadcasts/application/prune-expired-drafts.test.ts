@@ -95,6 +95,8 @@ function makeRepo(opts: {
       async redactMemberEmailFromCustomRecipientsInTx() {
         return { redactedCount: 0 };
       },
+      async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in prune-expired-drafts fixture'); },
+      async markAudienceDeletedInTx() { throw new Error('not used in prune-expired-drafts fixture'); },
     },
   };
 }

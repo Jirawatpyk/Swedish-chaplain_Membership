@@ -67,6 +67,7 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
       return { kind: 'not_found' as const };
     },
     async removeContactFromAudience() {},
+    async deleteAudience() {},
   };
 }
 

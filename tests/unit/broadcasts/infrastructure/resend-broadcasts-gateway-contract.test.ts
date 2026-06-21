@@ -7,6 +7,7 @@ vi.mock('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-client', (
 }));
 
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { stripAngleBrackets } from '@/modules/broadcasts/infrastructure/resend/bare-email';
 
 // Minimal valid createBroadcast input; individual tests override `name`/`fromName`.
 function input(over: Partial<Parameters<typeof resendBroadcastsGateway.createBroadcast>[0]>) {
@@ -44,5 +45,25 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
     // Before the fix this produced `… <SweCham <noreply@…>>` and the fake (like
     // real Resend) rejects the nested `<>`.
     await expect(resendBroadcastsGateway.createBroadcast(input({ fromName: 'E2E Alpha Co via TSCC', fromEmail: 'SweCham <noreply@zyncdata.app>' }))).resolves.toMatchObject({ broadcastId: 'bcast_fake_1' });
+  });
+
+  it('strips angle brackets from fromName so a `<Acme>` company name yields a valid `from` (Finding B)', async () => {
+    // `composeBroadcastFromName` interpolates the member company name raw. A
+    // name with `<`/`>` (e.g. `<Acme> via SweCham`) previously produced
+    // `from: "<Acme> via SweCham <noreply@…>"` — an invalid RFC 5322 address
+    // the contract-fake (like real Resend) now rejects. After stripping, the
+    // `from` is `Acme via SweCham <noreply@…>` and the create succeeds.
+    await expect(
+      resendBroadcastsGateway.createBroadcast(
+        input({ fromName: '<Acme> via SweCham', fromEmail: 'noreply@zyncdata.app' }),
+      ),
+    ).resolves.toMatchObject({ broadcastId: 'bcast_fake_1' });
+  });
+
+  it('stripAngleBrackets removes < and > and collapses whitespace (direct)', () => {
+    expect(stripAngleBrackets('<Acme> via SweCham')).toBe('Acme via SweCham');
+    expect(stripAngleBrackets('Acme> <Corp via TSCC')).toBe('Acme Corp via TSCC');
+    expect(stripAngleBrackets('  Plain Name  ')).toBe('Plain Name');
+    expect(stripAngleBrackets('No brackets here')).toBe('No brackets here');
   });
 });

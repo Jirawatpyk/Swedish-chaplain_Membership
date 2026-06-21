@@ -62,6 +62,31 @@ describe('createResendContractFake › broadcasts.create', () => {
     expect(result.error).not.toBeNull();
     expect(result.error?.name).toBe('validation_error');
   });
+
+  it('rejects angle brackets in the display-name part (Finding B)', async () => {
+    // `<Acme> via SweCham <noreply@…>` — the trailing address is valid, but
+    // the unquoted `<`/`>` in the display name is not RFC 5322 and real Resend
+    // rejects it. The fake must too, so a gateway that interpolates an
+    // un-sanitised `${fromName}` is caught here.
+    const { client } = createResendContractFake();
+    const result = await client.broadcasts.create({
+      ...baseCreateArgs,
+      from: '<Acme> via SweCham <noreply@zyncdata.app>',
+    });
+    expect(result.data).toBeNull();
+    expect(result.error).not.toBeNull();
+    expect(result.error?.name).toBe('validation_error');
+  });
+
+  it('still accepts a clean display name with the same trailing address (Finding B — no false positive)', async () => {
+    const { client } = createResendContractFake();
+    const result = await client.broadcasts.create({
+      ...baseCreateArgs,
+      from: 'Acme via SweCham <noreply@zyncdata.app>',
+    });
+    expect(result.error).toBeNull();
+    expect(result.data?.id).toBeDefined();
+  });
 });
 
 describe('createResendContractFake › audiences.create with audienceLimit', () => {
@@ -87,5 +112,40 @@ describe('createResendContractFake › audiences.create with audienceLimit', () 
     const result = await client.audiences.create({ name: 'any' });
     expect(result.error?.message).not.toContain('Infinity');
     expect(result.error?.message).toContain('segments');
+  });
+});
+
+describe('createResendContractFake › audiences.remove', () => {
+  it('succeeds when removing a previously-created audience', async () => {
+    const { client } = createResendContractFake();
+    const created = await client.audiences.create({ name: 'my-audience' });
+    const audienceId = created.data?.id ?? '';
+
+    const removed = await client.audiences.remove(audienceId);
+    expect(removed.error).toBeNull();
+    expect(removed.data?.deleted).toBe(true);
+    expect(removed.data?.id).toBe(audienceId);
+  });
+
+  it('returns 404 when removing an unknown audience (idempotent double-delete)', async () => {
+    const { client } = createResendContractFake();
+    const created = await client.audiences.create({ name: 'ephemeral' });
+    const audienceId = created.data?.id ?? '';
+
+    // First remove: succeeds
+    const first = await client.audiences.remove(audienceId);
+    expect(first.error).toBeNull();
+
+    // Second remove: 404 (already gone) — matches Resend API behaviour
+    const second = await client.audiences.remove(audienceId);
+    expect(second.data).toBeNull();
+    expect(second.error?.statusCode).toBe(404);
+  });
+
+  it('returns 404 for an audience that was never created', async () => {
+    const { client } = createResendContractFake();
+    const result = await client.audiences.remove('aud_nonexistent');
+    expect(result.data).toBeNull();
+    expect(result.error?.statusCode).toBe(404);
   });
 });

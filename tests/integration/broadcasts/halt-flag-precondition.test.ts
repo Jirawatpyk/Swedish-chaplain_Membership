@@ -199,6 +199,8 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
+    async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in halt-flag-precondition fixture'); },
+    async markAudienceDeletedInTx() { throw new Error('not used in halt-flag-precondition fixture'); },
   };
 }
 

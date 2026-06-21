@@ -260,10 +260,14 @@ When Resend sends a broadcast, it emits per-recipient delivery events
 webhook endpoint. F7 ingests those events idempotently, records each event
 on a `broadcast_deliveries` row, updates the broadcast aggregate counts, and
 when all expected events for a broadcast are received (or a 24-hour timeout
-elapses), transitions the broadcast to `sent` and **consumes the quota**
-(this is the only state transition that consumes a member's annual quota
-counter — drafts, submits, approvals, schedules, and even partial deliveries
-do NOT consume it).
+elapses), transitions the broadcast to `sent` and **consumes the quota**.
+The quota slot is consumed by **two** terminal transitions: `sending → sent`
+(this path) AND `partially_sent → partial_delivery_accepted` (an admin
+explicitly accepting a partial delivery — see FR-008a/b/c and the F7.1a US1
+extension). Drafts, submits, approvals, schedules, and a `partially_sent`
+broadcast that has NOT yet been accepted do NOT consume the slot. Both
+consuming states stamp `quota_year_consumed` (DB CHECK
+`broadcasts_quota_year_only_on_sent`).
 
 **Why this priority**: Without delivery tracking the chamber cannot tell a
 member "your E-Blast went out", cannot remediate bounces, cannot detect
@@ -375,9 +379,10 @@ per US5.
 
 #### Quota accounting
 
-- **FR-006**: The quota year MUST be the calendar year (1 Jan 00:00 to 31 Dec 23:59:59) in the tenant's configured timezone (`Asia/Bangkok` for SweCham). The quota counter MUST be `quota_consumed = COUNT(broadcasts WHERE status='sent' AND quota_year_consumed = current_year AND requested_by_member_id = M)` and MUST NOT carry over unused quota into the next year.
+- **FR-006**: The quota year MUST be the calendar year (1 Jan 00:00 to 31 Dec 23:59:59) in the tenant's configured timezone (`Asia/Bangkok` for SweCham). The quota counter MUST be `quota_consumed = COUNT(broadcasts WHERE status IN ('sent', 'partial_delivery_accepted') AND quota_year_consumed = current_year AND requested_by_member_id = M)` and MUST NOT carry over unused quota into the next year. (See FR-008c: `partial_delivery_accepted` consumes the slot exactly like `sent`.)
 - **FR-007**: The quota year that a `sent` broadcast is charged to MUST be the **calendar year of the `sending → sent` transition timestamp** (not the submission timestamp). This means a year-boundary submission that gets approved/sent in the new year consumes the new year's quota. UI MUST warn members near the boundary.
 - **FR-008**: The quota counter MUST never go negative. Any attempt to send a broadcast that would push consumption above `eblast_per_year` MUST be refused at the submit boundary AND at the dispatch boundary (defence in depth — protects against state corruption from concurrent submissions).
+- **FR-008c** (F7.1a US1 — partial-delivery quota consumption): The set of broadcast states that CONSUME a member's annual quota slot is `{'sent', 'partial_delivery_accepted'}` — both are terminal and both stamp `quota_year_consumed` + `quota_consumed_at` (DB CHECK `broadcasts_quota_year_only_on_sent`). When an admin accepts a partial delivery (`partially_sent → partial_delivery_accepted`), the slot MUST be consumed exactly as a full `sent` (the member spent real send activity). Consequently: (a) the quota-ENFORCEMENT count (`countForMemberQuota`, FR-006/FR-008) and (b) the F9 benefit-usage / at-risk ENGAGEMENT count (`computeQuotaCounter.used`, used by the at-risk e-blast factor) MUST both count `status IN ('sent', 'partial_delivery_accepted') AND quota_year_consumed = current_year`. Counting only `sent` UNDERCOUNTS consumed quota: it would let a member at cap (via a partial-accepted broadcast) send a free extra broadcast AND would falsely fire the "+15 didn't use e-blast" at-risk factor for a member who did send. The reserved bucket (`submitted ∪ approved`) is unaffected and remains enforcement-only.
 - **FR-009**: Members on a plan where `eblast_per_year = 0` MUST NOT see the compose surface; the page MUST surface an upgrade explainer instead. Direct API submissions return 403.
 
 #### Admin approval

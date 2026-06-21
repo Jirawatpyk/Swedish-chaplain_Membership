@@ -18,7 +18,13 @@
  * WHAT IT DELETES (and what it deliberately does NOT):
  *   It removes ONLY broadcasts whose status carries NO `broadcast_deliveries`
  *   — i.e. the reserved-holding + harmless pre-send rows
- *   (`draft`/`submitted`/`approved`/`rejected`/`cancelled`/`failed_to_dispatch`).
+ *   (`draft`/`submitted`/`approved`/`rejected`/`cancelled`/`failed_to_dispatch`)
+ *   — AND that do NOT still hold a live Resend audience. A row whose
+ *   `resend_audience_id IS NOT NULL AND audience_deleted_at IS NULL` (e.g. a
+ *   `failed_to_dispatch` broadcast that created its audience before failing) is
+ *   LEFT INTACT so the `cleanup-audiences` cron can still GC its Resend
+ *   audience — deleting the broadcast row first would orphan that audience
+ *   permanently (the cron lists eligible audiences by broadcast row).
  *   Send-stage / consumed broadcasts
  *   (`sending`/`sent`/`partially_sent`/`partial_delivery_accepted`) and their
  *   append-only `broadcast_deliveries` rows are INTENTIONALLY LEFT INTACT.
@@ -154,13 +160,39 @@ async function main(): Promise<void> {
     const deletable = before
       .filter((r) => !SEND_STAGE_STATUSES.includes(r.status as never))
       .reduce((s, r) => s + r.n, 0);
-    if (deletable === 0) {
+
+    // Finding E (PR-2 #5 fix-wave): a deletable-by-status row can still hold a
+    // LIVE Resend audience (resend_audience_id set, audience_deleted_at NULL) —
+    // e.g. a failed_to_dispatch broadcast that created its audience before
+    // failing. Deleting that row would orphan the audience at Resend because the
+    // cleanup-audiences cron lists eligible audiences by broadcast row. Leave
+    // such rows for the cron; count them so the prediction matches the DELETE.
+    const liveAudienceSkipped =
+      (
+        await sql<Array<{ n: number }>>`
+          SELECT COUNT(*)::int AS n
+          FROM broadcasts
+          WHERE tenant_id = ${TENANT}
+            AND requested_by_member_id IN ${sql(memberIds)}
+            AND status NOT IN ${sql(SEND_STAGE_STATUSES)}
+            AND resend_audience_id IS NOT NULL
+            AND audience_deleted_at IS NULL
+        `
+      )[0]?.n ?? 0;
+    const actuallyDeletable = deletable - liveAudienceSkipped;
+    if (liveAudienceSkipped > 0) {
+      console.log(
+        `Note: ${liveAudienceSkipped} broadcast(s) hold a live Resend audience ` +
+          `and are left for the cleanup-audiences cron (not deleted here).`,
+      );
+    }
+    if (actuallyDeletable === 0) {
       console.log('Nothing to reset (no reserved/pre-send broadcasts).');
       return;
     }
     if (dryRun) {
       console.log(
-        `[dry-run] would delete ${deletable} reserved/pre-send broadcast(s) ` +
+        `[dry-run] would delete ${actuallyDeletable} reserved/pre-send broadcast(s) ` +
           `(send-stage broadcasts + their append-only deliveries left intact).`,
       );
       // `used` counts send-stage broadcasts, which are NOT deleted, so it is
@@ -180,6 +212,10 @@ async function main(): Promise<void> {
         WHERE tenant_id = ${TENANT}
           AND requested_by_member_id IN ${tx(memberIds)}
           AND status NOT IN ${tx(SEND_STAGE_STATUSES)}
+          -- Finding E: never delete a row that still holds a live Resend
+          -- audience — leave it for the cleanup-audiences cron to GC first,
+          -- else the audience is orphaned (the cron lists by broadcast row).
+          AND (resend_audience_id IS NULL OR audience_deleted_at IS NOT NULL)
       `;
       return del.count;
     });

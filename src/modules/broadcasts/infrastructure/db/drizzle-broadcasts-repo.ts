@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -25,6 +25,7 @@ import {
   type BroadcastId,
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
@@ -788,6 +789,11 @@ export function makeDrizzleBroadcastsRepo(
       // excluded. The field name is kept as-is because callers depend
       // on it.
       readonly submittedOrApproved: number;
+      // Consumed-quota bucket: `sent` ∪ `partial_delivery_accepted`,
+      // year-fenced on `quota_year_consumed` (FR-008c). Both terminal
+      // states stamp the quota year (schema CHECK
+      // `broadcasts_quota_year_only_on_sent`). Field name kept as `sent`
+      // for caller stability even though it now covers two states.
       readonly sent: number;
     }> {
       return runInTenant(ctx, async (tx) => {
@@ -814,7 +820,17 @@ export function makeDrizzleBroadcastsRepo(
               and(
                 eq(broadcasts.tenantId, tenantIdArg),
                 eq(broadcasts.requestedByMemberId, memberId),
-                eq(broadcasts.status, 'sent'),
+                // Consumed-quota bucket = BOTH terminal states that stamp
+                // `quota_year_consumed`. The schema CHECK
+                // `broadcasts_quota_year_only_on_sent` enforces a non-null
+                // `quota_year_consumed` for `sent` AND
+                // `partial_delivery_accepted` (FR-008c) — `acceptPartial`
+                // sets it identically to the webhook `sent` path. Counting
+                // only `sent` UNDERCOUNTS the member's consumed quota, so a
+                // member at cap via a partial-accepted broadcast would be
+                // wrongly allowed to send again. The year fence below scopes
+                // the count to the current quota year (FR-006/FR-007).
+                inArray(broadcasts.status, ['sent', 'partial_delivery_accepted']),
                 eq(broadcasts.quotaYearConsumed, quotaYear),
               ),
             ),
@@ -1344,6 +1360,70 @@ export function makeDrizzleBroadcastsRepo(
           AND b.resend_audience_id IS NOT NULL
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
+    },
+
+    /**
+     * PR-2 Task 2 — list terminal broadcasts whose Resend audience is still
+     * live (not yet cleaned up by the cron).
+     *
+     * Runs its own `runInTenant` call (this is a read-only method with no
+     * in-flight caller tx). The query is tenant-scoped by both the
+     * `WHERE tenant_id = $1` clause and the RLS+FORCE policy.
+     *
+     * Terminal statuses: sent, failed_to_dispatch, cancelled, rejected,
+     * partial_delivery_accepted. Ordered `updated_at ASC` so the cron
+     * processes oldest-terminal-first (nearest any per-broadcast SLA).
+     * LIMIT keeps each cron tick's batch small and predictable.
+     */
+    async listTerminalBroadcastsWithLiveAudience(tenantIdArg, graceCutoff, limit) {
+      return runInTenant(ctx, async (tx) => {
+        // Finding G — derive the IN-list from the domain's single source of
+        // truth (`TERMINAL_BROADCAST_STATUSES`) so a future state-machine
+        // change cannot silently desync this SQL from `isTerminalStatus`.
+        const terminalStatusList = sql.join(
+          TERMINAL_BROADCAST_STATUSES.map((s) => sql`${s}`),
+          sql`, `,
+        );
+        const rows = (await tx.execute(sql`
+          SELECT broadcast_id, resend_audience_id
+          FROM broadcasts
+          WHERE tenant_id = ${tenantIdArg}
+            AND status::text IN (${terminalStatusList})
+            AND resend_audience_id IS NOT NULL
+            AND audience_deleted_at IS NULL
+            AND updated_at < ${graceCutoff.toISOString()}::timestamptz
+          ORDER BY updated_at ASC
+          LIMIT ${limit}
+        `)) as unknown as Array<{
+          broadcast_id: string;
+          resend_audience_id: string;
+        }>;
+        return rows.map((r) => ({
+          broadcastId: r.broadcast_id,
+          resendAudienceId: r.resend_audience_id,
+        }));
+      });
+    },
+
+    /**
+     * PR-2 Task 2 — stamp `audience_deleted_at = now()` on a single
+     * broadcast row, inside the caller's `runInTenant` tx.
+     *
+     * Idempotent: if the row already has `audience_deleted_at` set, the
+     * UPDATE changes it to `now()` again (harmless — the important bit
+     * is that `audience_deleted_at IS NOT NULL`, not the exact timestamp).
+     * The WHERE clause is intentionally permissive on `audience_deleted_at`
+     * so a re-drive after a partial cron failure does not silently skip.
+     */
+    async markAudienceDeletedInTx(txUnknown, broadcastId) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'markAudienceDeletedInTx');
+      await tx.execute(sql`
+        UPDATE broadcasts
+           SET audience_deleted_at = now()
+         WHERE tenant_id = ${ctx.slug}
+           AND broadcast_id = ${broadcastId}::uuid
+      `);
     },
   };
 }

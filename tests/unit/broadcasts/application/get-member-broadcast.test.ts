@@ -80,6 +80,8 @@ function makeRepoMocks(opts: {
     tombstoneDeliveriesForMemberInTx: async () => ({ tombstonedCount: 0 }),
     listMemberResendAudienceContactsInTx: async () => [],
     redactMemberEmailFromCustomRecipientsInTx: async () => ({ redactedCount: 0 }),
+    listTerminalBroadcastsWithLiveAudience: async () => { throw new Error('not used in get-member-broadcast fixture'); },
+    markAudienceDeletedInTx: async () => { throw new Error('not used in get-member-broadcast fixture'); },
   };
 }
 

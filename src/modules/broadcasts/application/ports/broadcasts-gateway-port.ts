@@ -154,4 +154,13 @@ export interface BroadcastsGatewayPort {
    * so the caller can classify it as a propagation failure.
    */
   removeContactFromAudience(audienceId: string, email: string): Promise<void>;
+
+  /**
+   * PR-2 #5 — delete an ephemeral per-broadcast Resend audience after the
+   * broadcast reaches a terminal status (sent / cancelled / failed).
+   * Best-effort: 404 (already gone) resolves (idempotent); 5xx / network
+   * errors throw a retryable `GatewayThrowable` so the cleanup cron can
+   * retry next tick without blocking normal broadcast flow.
+   */
+  readonly deleteAudience: (audienceId: string) => Promise<void>;
 }

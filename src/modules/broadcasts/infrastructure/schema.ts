@@ -235,6 +235,14 @@ export const broadcasts = pgTable(
     ),
     templateNameSnapshot: text('template_name_snapshot'),
 
+    // PR-2 Task 2 — audience cleanup tracking. Stamped by the cron
+    // (Task 3/4) after it successfully deletes the Resend audience for
+    // a terminal broadcast. NULL means the audience has not yet been
+    // cleaned up. Only meaningful when `resend_audience_id IS NOT NULL`.
+    audienceDeletedAt: timestamp('audience_deleted_at', {
+      withTimezone: true,
+    }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -31,7 +31,7 @@ import type {
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
-import { extractBareEmail } from './bare-email';
+import { extractBareEmail, stripAngleBrackets } from './bare-email';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 const CONTACTS_CHUNK_SIZE = 100;
@@ -264,9 +264,14 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           locale: input.locale,
         });
         const bareFromEmail = extractBareEmail(input.fromEmail);
+        // Finding B — strip `<`/`>` from the display name so a member company
+        // name containing angle brackets cannot produce a nested, invalid
+        // RFC 5322 `from` header that Resend rejects (permanent
+        // failed_to_dispatch). `extractBareEmail` only sanitises the address.
+        const safeFromName = stripAngleBrackets(input.fromName);
         const result = (await sdk.broadcasts.create({
           audienceId: input.audienceId,
-          from: `${input.fromName} <${bareFromEmail}>`,
+          from: `${safeFromName} <${bareFromEmail}>`,
           subject: input.subject,
           html: wrappedHtml,
           replyTo: input.replyToEmail,
@@ -411,6 +416,36 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
       throw e;
     }
+  },
+
+  async deleteAudience(audienceId: string): Promise<void> {
+    await withRetry(
+      async () => {
+        const sdk = client();
+        const result = (await sdk.audiences.remove(audienceId)) as ResendSdkResponse<{
+          deleted: boolean;
+          id: string;
+          object: string;
+        }>;
+        if (result.error) {
+          // Finding H — 404 Not Found AND 410 Gone both mean the audience is
+          // already absent → the delete goal is met (idempotent early-return).
+          // Without the 410 branch, a Resend 410 would fall through to
+          // `classifyResendError` → `permanent`, and the cleanup row would
+          // re-fail every cron tick forever.
+          if (
+            result.error.statusCode === 404 ||
+            result.error.statusCode === 410
+          ) {
+            logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
+            return; // idempotent: already gone
+          }
+          throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+        }
+        logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
+      },
+      { method: 'deleteAudience' },
+    );
   },
 };
 

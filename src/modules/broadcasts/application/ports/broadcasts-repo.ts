@@ -511,4 +511,52 @@ export interface BroadcastsRepo {
     tenantSlug: TenantSlug,
     emails: readonly string[],
   ): Promise<ReadonlyArray<{ readonly audienceId: string; readonly email: string }>>;
+
+  /**
+   * PR-2 Task 2 — Audience cleanup: list terminal broadcasts whose Resend
+   * audience is still live (not yet cleaned up).
+   *
+   * Returns broadcasts where:
+   *   - `status IN ('sent','failed_to_dispatch','cancelled','rejected',
+   *                 'partial_delivery_accepted')` — terminal (no retries)
+   *   - `resend_audience_id IS NOT NULL` — has a Resend audience to delete
+   *   - `audience_deleted_at IS NULL` — not yet cleaned up
+   *   - `updated_at < graceCutoff` — past the grace window (so a very
+   *     recent terminal status doesn't race with Resend's own processing)
+   *
+   * Ordered by `updated_at ASC` (oldest-terminal-first) and limited to
+   * `limit` rows so the cleanup cron can process in safe batches.
+   *
+   * Tenant-scoped via `WHERE tenant_id = $1` + RLS+FORCE on `broadcasts`.
+   * Does NOT use `runInTenant` (read-only, no RLS manipulation needed —
+   * the Drizzle adapter runs its own `runInTenant` internally).
+   */
+  listTerminalBroadcastsWithLiveAudience(
+    tenantId: TenantSlug,
+    graceCutoff: Date,
+    limit: number,
+  ): Promise<ReadonlyArray<{ readonly broadcastId: string; readonly resendAudienceId: string }>>;
+
+  /**
+   * PR-2 Task 2 — Audience cleanup: stamp `audience_deleted_at = now()` on
+   * a single broadcast row. Called by the cleanup cron AFTER the Resend
+   * audience has been successfully deleted, inside the caller's
+   * `runInTenant` tx so the stamp is atomic with the delete confirmation.
+   *
+   * Idempotent-safe: stamping a row that already has `audience_deleted_at`
+   * set re-writes it to a fresh `now()` — the impl's WHERE clause is
+   * intentionally permissive on `audience_deleted_at` so a re-drive after a
+   * partial cron failure does not silently skip. A re-stamp therefore still
+   * MATCHES the row (1 affected); callers MUST NOT rely on the affected-row
+   * count to detect an already-cleaned row.
+   *
+   * `tx` is `unknown` at the port boundary (the Drizzle adapter casts
+   * to its internal `TenantTx`). Callers MUST pass the live `runInTenant`
+   * tx — NOT the bare `db` singleton — so the GUC `app.current_tenant`
+   * is set for RLS+FORCE (Constitution Principle I).
+   */
+  markAudienceDeletedInTx(
+    tx: unknown,
+    broadcastId: string,
+  ): Promise<void>;
 }
