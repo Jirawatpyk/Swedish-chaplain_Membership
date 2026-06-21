@@ -6,7 +6,7 @@
  * operations in change-contact-email / verify / revert stay atomic.
  */
 
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 // Direct schema import — documented escape hatch for tx-sharing adapters.
@@ -155,6 +155,41 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         )
         .returning({ id: emailChangeTokens.id });
       return ok({ invalidatedCount: updated.length });
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
+  async invalidateAllActiveForUsersInTx(tx, userIds, consumedAt) {
+    // Empty work-list → no-op (an empty inArray would otherwise produce a
+    // degenerate `IN ()` SQL fragment in some drivers). Cheap guard, explicit.
+    if (userIds.length === 0) return ok({ invalidatedEmails: [] });
+    try {
+      // One UPDATE over EVERY still-active token (any type) for the user set.
+      // We intentionally do NOT filter `expires_at > now()`: an already-EXPIRED
+      // unconsumed token is harmless (findActiveByIdInTx rejects it on expiry),
+      // but stamping consumed_at on it too costs nothing and keeps the DPO-clean
+      // invariant "no active token survives an erasure". RETURNING the old/new
+      // emails lets the caller cancel the matching frozen-address outbox rows.
+      const updated = await tx
+        .update(emailChangeTokens)
+        .set({ consumedAt })
+        .where(
+          and(
+            inArray(emailChangeTokens.userId, [...userIds]),
+            isNull(emailChangeTokens.consumedAt),
+          ),
+        )
+        .returning({
+          oldEmail: emailChangeTokens.oldEmail,
+          newEmail: emailChangeTokens.newEmail,
+        });
+      const emails = new Set<string>();
+      for (const row of updated) {
+        if (row.oldEmail) emails.add(row.oldEmail);
+        if (row.newEmail) emails.add(row.newEmail);
+      }
+      return ok({ invalidatedEmails: [...emails] });
     } catch (e) {
       return err({ code: 'repo.unexpected', cause: e });
     }

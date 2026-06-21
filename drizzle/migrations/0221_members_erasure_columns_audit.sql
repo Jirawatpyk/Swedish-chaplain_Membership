@@ -2,7 +2,9 @@
 --
 -- erased_at: NULL until eraseMember anonymises the row. No backfill (all
 -- existing members are non-erased). No index in US1 — the reconciliation
--- sweep (US2) adds a partial index when it lands.
+-- sweep (US2) adds a partial index when it lands. DELIVERED: the partial
+-- `members_erased_at_idx` (WHERE erased_at IS NOT NULL) lands in migration
+-- 0226_members_erased_at_reconciler_idx.
 ALTER TABLE "members" ADD COLUMN IF NOT EXISTS "erased_at" timestamptz;
 --> statement-breakpoint
 -- New audit_event_type values. ADD VALUE IF NOT EXISTS is idempotent.

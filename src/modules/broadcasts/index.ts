@@ -232,6 +232,20 @@ export {
   type CancelInFlightForMemberInput,
   type CancelInFlightForMemberOutput,
 } from './application/use-cases/cancel-in-flight-broadcasts-for-member';
+// COMP-1 US2b — GDPR Art.17 / PDPA §33 F7 broadcast CONTENT redaction
+// (CONTENT-only; the delivery tombstone runs in the members-module atomic
+// scrub tx, not via this export). Exposed at the barrel because the members-
+// module erasure cascade (`BroadcastsContentScrubPort` adapter) calls into
+// F7 to redact the PII a member AUTHORED into broadcasts when the
+// originating member is erased.
+export {
+  scrubBroadcastContentForMember,
+  type ScrubBroadcastContentForMemberDeps,
+  type ScrubBroadcastContentForMemberError,
+  type ScrubBroadcastContentForMemberInput,
+  type ScrubBroadcastContentForMemberOutput,
+  type ScrubContentReason,
+} from './application/use-cases/scrub-broadcast-content-for-member';
 
 // --- Composition root factories (Phase 3) --------------------------------
 export {
@@ -258,6 +272,7 @@ export {
   makeDispatchScheduledBroadcastDeps,
   makePruneExpiredDraftsDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
+  makeScrubBroadcastContentForMemberDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) -------------------

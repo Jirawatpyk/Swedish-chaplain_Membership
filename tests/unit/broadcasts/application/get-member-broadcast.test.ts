@@ -76,6 +76,10 @@ function makeRepoMocks(opts: {
       })),
     pruneExpiredDrafts: async () => ({ prunedCount: 0 }),
     listInFlightOwnedByMember: async () => [],
+    scrubContentForMemberInTx: async () => ({ scrubbedCount: 0 }),
+    tombstoneDeliveriesForMemberInTx: async () => ({ tombstonedCount: 0 }),
+    listMemberResendAudienceContactsInTx: async () => [],
+    redactMemberEmailFromCustomRecipientsInTx: async () => ({ redactedCount: 0 }),
   };
 }
 

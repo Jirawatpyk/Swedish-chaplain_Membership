@@ -39,12 +39,22 @@ import { authSessionRevocationPort } from '@/modules/members/infrastructure/adap
 import { drizzleInvitationCascadePort } from '@/modules/members/infrastructure/adapters/invitation-cascade-adapter';
 import { noopBroadcastsCascadeAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-cascade-adapter';
 import { noopRenewalsCascadeAdapter } from '@/modules/members/infrastructure/adapters/renewals-cascade-adapter';
+import { noopBroadcastsContentScrubAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-content-scrub-adapter';
+import { noopBroadcastsDeliveryTombstoneAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
+import { authUserErasureAdapter } from '@/modules/members/infrastructure/adapters/auth-user-erasure-adapter';
+import { emailChangeTokenAdapter } from '@/modules/members/infrastructure/adapters/email-change-token-adapter';
+import { userEmailAdapter } from '@/modules/members/infrastructure/adapters/user-email-adapter';
+import { outboxCancelAdapter } from '@/modules/members/infrastructure/adapters/outbox-cancel-adapter';
+import { noopEventRegistrationErasureAdapter } from '@/modules/members/infrastructure/adapters/event-registration-erasure-adapter';
+import { noopBroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
+import { noopSubprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import {
   auditLog,
   invitations,
   sessions,
+  users,
 } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -74,6 +84,35 @@ function buildEraseMemberDeps(tenant: TestTenant): EraseMemberDeps {
     sessions: authSessionRevocationPort,
     broadcastsCascade: noopBroadcastsCascadeAdapter,
     renewalsCascade: noopRenewalsCascadeAdapter,
+    // US2b — no-op F7 content-scrub adapter (mirrors the no-op F7/F8 cancel
+    // cascades above): this test exercises ONLY the in-tx scrub + F1 cascade,
+    // not the F7 broadcast content/deliveries redaction (that has its own
+    // live-Neon coverage in erase-member-f7-content.test.ts, Task 6).
+    broadcastsContentScrub: noopBroadcastsContentScrubAdapter,
+    // US2b — no-op F7 delivery-tombstone adapter. The real in-tx tombstone is
+    // covered live in erase-member-f7-content.test.ts; here a no-op keeps the
+    // scrub tx focused on the member/contact scrub + F1 cascade.
+    broadcastsDeliveryTombstone: noopBroadcastsDeliveryTombstoneAdapter,
+    // US2a — the real F1 user-erasure adapter. The post-commit F1 cascade
+    // (Task 6) is now WIRED: every run drives this adapter against the seeded
+    // linkedUser, anonymising its `users` row (the first it() asserts the
+    // resulting sentinel email / NULL password_hash / 'disabled' status).
+    userErasure: authUserErasureAdapter,
+    // COMP-1 US2a (M1/L1) — real adapters. This test's member has no
+    // email-change tokens / outbox rows, so these run as clean no-ops.
+    tokens: emailChangeTokenAdapter,
+    userEmails: userEmailAdapter,
+    outboxCancel: outboxCancelAdapter,
+    // US2c — no-op F6 registration fan-out adapter (mirrors the no-op F7/F8
+    // cancel + content-scrub cascades above): this test exercises ONLY the
+    // in-tx scrub + F1 cascade, not the F6 event-registration erasure (that has
+    // its own live-Neon coverage in erase-member-f6-registrations.test.ts).
+    eventRegistrationErasure: noopEventRegistrationErasureAdapter,
+    // US3-C — no-op sub-processor cascade adapters (this test exercises ONLY the
+    // in-tx scrub + F1 cascade; the real Resend audience-derivation + removal
+    // are covered live in subprocessor-erasure.test.ts).
+    broadcastsAudienceDerivation: noopBroadcastsAudienceDerivationAdapter,
+    subprocessorErasure: noopSubprocessorErasureAdapter,
     audit: drizzleAuditAdapter,
     clock: { now: () => new Date() },
   };
@@ -261,6 +300,26 @@ describe('eraseMember — Art.17 session/invitation cascade (Bug I-1)', () => {
       .where(eq(contacts.contactId, contactId));
     expect(contactRows[0]?.removedAt).not.toBeNull();
     expect(contactRows[0]?.firstName).toBe('[erased]');
+
+    // 4. The linked F1 login is ANONYMISED — the post-commit F1 cascade
+    //    (real authUserErasureAdapter → eraseUser) ran against the seeded
+    //    linkedUser. Its `users` row now carries the sentinel email, a NULL
+    //    password_hash, and 'disabled' status so the erased member can no
+    //    longer authenticate (Art.17 login-revoke). Without this assertion the
+    //    now-exercised cascade would run silently unverified.
+    const userRows = await db
+      .select({
+        email: users.email,
+        passwordHash: users.passwordHash,
+        status: users.status,
+      })
+      .from(users)
+      .where(eq(users.id, linkedUser.userId));
+    expect(userRows[0]?.email).toBe(
+      `erased+${linkedUser.userId}@erased.invalid`,
+    );
+    expect(userRows[0]?.passwordHash).toBeNull();
+    expect(userRows[0]?.status).toBe('disabled');
   }, 30_000);
 
   it('soft-consumes a pending invitation for the linked user', async () => {

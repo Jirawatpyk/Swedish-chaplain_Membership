@@ -355,13 +355,21 @@ export type NewBroadcastRow = typeof broadcasts.$inferInsert;
 
 /**
  * One row per Resend delivery event (per recipient × per broadcast).
- * Insert-only; never updated. Idempotency via UNIQUE
- * (tenant_id, resend_event_id) — FR-025 webhook replay safety.
+ * Append-only audit trail: insert-only, no DELETE, and the ONLY permitted
+ * UPDATE is the GDPR Art.17 tombstone below (gated by the
+ * `app.allow_broadcast_redaction` GUC arm on
+ * `broadcast_deliveries_append_only_fn`, migration 0225). Idempotency via
+ * UNIQUE (tenant_id, resend_event_id) — FR-025 webhook replay safety.
  *
  * Retention: 5y matching F7 audit-event default (data-model § 1.2).
- * On member-erasure (Art. 17), `recipient_member_id` is set to NULL but
- * the row is retained for record-of-processing per PDPA §39 +
- * GDPR Art. 30.
+ * On member-erasure (Art. 17 / PDPA §33), `tombstoneDeliveriesForMemberInTx`
+ * (COMP-1 US2b) TOMBSTONES the matching rows — `recipient_member_id` → NULL,
+ * `recipient_email_lower` → `erased+<delivery_id>@erased.invalid`, and
+ * `error_message` → NULL (it can embed the recipient email in raw bounce
+ * diagnostics) — but the row is RETAINED for record-of-processing per PDPA
+ * §39 + GDPR Art. 30. Rows are matched by `recipient_email_lower`, NOT by
+ * `recipient_member_id` (the webhook always inserts that NULL — see the repo
+ * method comment).
  */
 export const broadcastDeliveries = pgTable(
   'broadcast_deliveries',
@@ -429,11 +437,18 @@ export type NewBroadcastDeliveryRow = typeof broadcastDeliveries.$inferInsert;
  * Tenant-scoped suppression list. Natural composite PK
  * (tenant_id, email_lower) — FR-018 + Q8 invariant.
  *
- * Retention: indefinite per GDPR Art. 21 + PDPA §32. Rows are NEVER
- * deleted on member-erasure (Art. 17): `member_id` is set to NULL but
- * the suppression record is retained — preserves the regulatory
- * invariant "we will not contact this email again" while honouring
- * the member's erasure right for member-side PII.
+ * Retention: indefinite per GDPR Art. 21 + PDPA §32. Per the COMP-1
+ * member-erasure design, these rows are NEVER erased — the WHOLE row,
+ * INCLUDING the plaintext `email_lower`, is retained so the regulatory
+ * invariant "we will not contact this email again" keeps working after
+ * the member is erased. The `email_lower` plaintext is an intentional,
+ * documented residual (see
+ * `docs/superpowers/specs/2026-06-16-member-erasure-design.md` Known
+ * limitations / deferred), NOT severed. The erasure cascade does NOT
+ * touch this table (no `member_id` SET NULL today); the legacy
+ * `MarketingUnsubscribesRepo.setMemberIdNull` is unwired. Whether to
+ * sever the `member_id` back-reference while retaining `email_lower` is
+ * a deferred US3 decision.
  */
 export const marketingUnsubscribes = pgTable(
   'marketing_unsubscribes',

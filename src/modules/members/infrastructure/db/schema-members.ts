@@ -176,7 +176,9 @@ export const members = pgTable(
     // COMP-1 Member Erasure — set by `eraseMember` inside the atomic scrub tx.
     // NULL = never erased. Presence marks the row anonymised; the
     // reconciliation sweep (US2) re-selects on `erased_at IS NOT NULL` with an
-    // incomplete cascade. Status is intentionally NOT changed by erasure.
+    // incomplete cascade (supported by the partial `members_erased_at_idx`
+    // below, delivered in migration 0226). Status is intentionally NOT changed
+    // by erasure.
     erasedAt: timestamp('erased_at', { withTimezone: true }),
   },
   (table) => [
@@ -206,6 +208,13 @@ export const members = pgTable(
     index('members_tenant_broadcasts_unack_idx')
       .on(table.tenantId, table.memberId)
       .where(sql`broadcasts_acknowledged_at IS NULL`),
+    // COMP-1 US2d — reconciler sweep candidate index (delivered in migration
+    // 0226). `findStuckErasuresInTx` selects `erased_at IS NOT NULL` and orders
+    // `erased_at ASC` (oldest-erasure-first, nearest the Art.12 deadline). The
+    // partial WHERE keeps it sparse over only the erased rows.
+    index('members_erased_at_idx')
+      .on(table.erasedAt)
+      .where(sql`erased_at IS NOT NULL`),
     // Note: pg_trgm GIN index on company_name is added via raw SQL in the
     // migration (drizzle-kit cannot emit `USING GIN (col gin_trgm_ops)`).
   ],

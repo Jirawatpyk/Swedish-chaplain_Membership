@@ -196,6 +196,31 @@ export { countActiveMembersOnPlanInTx } from './infrastructure/db/count-active-m
 // runInTenant tx (Principle I).
 export { memberTinPresenceByIdsInTx } from './infrastructure/db/member-tin-presence';
 
+// COMP-1 US3-A — narrow erasure-status read for the member-detail ErasedBanner.
+// Same free-function-through-the-barrel narrow-read pattern as the
+// countActiveMembersOnPlan / memberTinPresenceByIdsInTx pair above (avoids
+// widening the MemberRepo interface + its many test stubs). Threads its own
+// runInTenant tx internally (Principle I).
+export {
+  getMemberErasureStatus,
+  type MemberErasureStatus,
+} from './infrastructure/db/member-erasure-status';
+
+// COMP-1 US3-D — data-resolution reads for the DPO erasure-evidence log.
+// Same free-function-through-the-barrel narrow-read pattern as
+// getMemberErasureStatus above. `listMemberLinkedUserIds` binds the
+// tenant-NULL `user_erased` evidence arm to a member; `listErasedMembers`
+// is the page's keyset-paginated top-level list. Both thread their own
+// runInTenant tx internally (Principle I).
+export {
+  listMemberLinkedUserIds,
+  listErasedMembers,
+  type ErasedMemberRow,
+  type ErasedMembersCursor,
+  type ListErasedMembersInput,
+  type ListErasedMembersResult,
+} from './infrastructure/db/member-erasure-evidence-reads';
+
 // --- US1 invite-portal use case ---------------------------------------------
 
 export {
@@ -347,6 +372,10 @@ export {
 export {
   eraseMember,
   eraseMemberSchema,
+  eraseReasonSchema,
+  verificationMethodSchema,
+  type EraseReason,
+  type VerificationMethod,
   type EraseMemberInput,
   type EraseMemberError,
   type EraseMemberResult,

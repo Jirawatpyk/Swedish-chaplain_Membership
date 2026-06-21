@@ -119,6 +119,37 @@ export const userEmailAdapter: UserEmailPort = {
     }
   },
 
+  async readStatusInTx(tx, userId) {
+    try {
+      const [row] = await tx
+        .select({ status: users.status })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      // No row (hard-deleted / never existed) is a valid "refuse the revert"
+      // signal, NOT an error — return ok(null) so the use-case aborts cleanly.
+      if (!row) return ok(null);
+      return ok({ status: row.status });
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
+  async listEmailsForUsersInTx(tx, userIds) {
+    if (userIds.length === 0) return ok([]);
+    try {
+      const rows = await tx
+        .select({ email: users.email })
+        .from(users)
+        .where(inArray(users.id, [...userIds]));
+      const emails = new Set<string>();
+      for (const r of rows) if (r.email) emails.add(r.email);
+      return ok([...emails]);
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
   async setFlagsInTx(tx, userId, flags) {
     try {
       const set: { emailVerified?: boolean; requiresPasswordReset?: boolean } = {};

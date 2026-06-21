@@ -18,6 +18,7 @@ import {
   ScrollTextIcon,
   GiftIcon,
   BookUserIcon,
+  ShieldCheckIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -266,6 +267,24 @@ export const staffNavConfig: NavConfig = {
           icon: ScrollTextIcon,
           href: '/admin/audit',
           activePattern: '/admin/audit',
+        },
+      ],
+    },
+    // Compliance — DPO-facing accountability surfaces (GDPR Art.17 / PDPA §33).
+    {
+      titleKey: 'nav.staff.sections.compliance',
+      items: [
+        // COMP-1 US3-D — DPO erasure-evidence log. Admin-only ACCESS: the page
+        // returns notFound() for manager + member (no distinct DPO role; the
+        // admin acts as DPO), so the entry is hidden from the manager sidebar
+        // via the roles filter — it would otherwise 404. UNGATED (COMP-1, not
+        // F9 — no FEATURE_F9_DASHBOARD coupling).
+        {
+          titleKey: 'nav.staff.erasureLog',
+          icon: ShieldCheckIcon,
+          href: '/admin/compliance/erasure-log',
+          activePattern: '/admin/compliance/erasure-log',
+          roles: ['admin'],
         },
       ],
     },

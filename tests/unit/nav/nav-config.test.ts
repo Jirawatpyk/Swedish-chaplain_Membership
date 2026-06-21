@@ -13,8 +13,8 @@ import {
 } from '@/config/nav';
 
 describe('staffNavConfig', () => {
-  it('has exactly 6 sections: Overview, Membership, Finance, Engagement, System, Settings', () => {
-    expect(staffNavConfig.sections).toHaveLength(6);
+  it('has exactly 7 sections: Overview, Membership, Finance, Engagement, System, Compliance, Settings', () => {
+    expect(staffNavConfig.sections).toHaveLength(7);
   });
 
   it('section 0 (Overview) has no header and only Dashboard', () => {
@@ -66,13 +66,26 @@ describe('staffNavConfig', () => {
     ]);
   });
 
-  it('section 5 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
+  it('section 5 (Compliance) holds the admin-only Erasure Log (COMP-1 US3-D)', () => {
+    const compliance = staffNavConfig.sections[5]!;
+    expect(compliance.titleKey).toBe('nav.staff.sections.compliance');
+    expect(compliance.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.erasureLog',
+    ]);
+    const erasureLog = compliance.items[0]! as NavItem;
+    expect(erasureLog.href).toBe('/admin/compliance/erasure-log');
+    // Admin-only ACCESS — the page notFound()s for manager + member (no
+    // distinct DPO role; admin acts as DPO). Hidden from the manager sidebar.
+    expect(erasureLog.roles).toEqual(['admin']);
+  });
+
+  it('section 6 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
     // R7 consolidation removed the Fee Configuration page (VAT + currency
     // + registration fee live in Invoice Settings). F8 added Reminder
     // schedules; F6 added the EventCreate setup wizard; F7.1a US2 added
     // Broadcast settings (image-source allowlist) at /admin/settings/
     // broadcasts. The Settings header is unchanged by the 5-group regroup.
-    const settingsSection = staffNavConfig.sections[5]!;
+    const settingsSection = staffNavConfig.sections[6]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
     expect(settingsSection.items).toHaveLength(4);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
@@ -139,18 +152,22 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
   const hrefs = (cfg: NavConfig) =>
     cfg.sections.flatMap((s) => s.items.map((i) => (i as NavItem).href));
 
-  it('admin sees every staff entry incl. both admin-only Settings pages', () => {
+  it('admin sees every staff entry incl. both admin-only Settings pages + the Compliance erasure log', () => {
     const filtered = filterNavConfig(staffNavConfig, {}, 'admin');
-    expect(filtered.sections).toHaveLength(6);
+    // 7 sections survive — the Compliance section has an admin-visible item.
+    expect(filtered.sections).toHaveLength(7);
     const all = hrefs(filtered);
     expect(all).toContain('/admin/settings/broadcasts');
     expect(all).toContain('/admin/settings/integrations/eventcreate');
+    expect(all).toContain('/admin/compliance/erasure-log');
   });
 
-  it('manager drops the 2 admin-only Settings pages, keeps everything else', () => {
+  it('manager drops the 2 admin-only Settings pages + the whole Compliance section, keeps everything else', () => {
     const filtered = filterNavConfig(staffNavConfig, {}, 'manager');
-    // Settings section survives — Invoice Settings + Renewal Schedules stay
-    // manager-readable (rendered read-only), so no section is emptied.
+    // The Compliance section's only item is admin-only → the section empties →
+    // it is dropped. Settings survives (Invoice Settings + Renewal Schedules
+    // stay manager-readable, rendered read-only), so 6 sections remain and
+    // Settings is the last surviving section (index 5 after Compliance drops).
     expect(filtered.sections).toHaveLength(6);
     expect(filtered.sections[5]!.items.map((i) => (i as NavItem).href)).toEqual([
       '/admin/settings/invoicing',
@@ -159,6 +176,9 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
     const all = hrefs(filtered);
     expect(all).not.toContain('/admin/settings/broadcasts');
     expect(all).not.toContain('/admin/settings/integrations/eventcreate');
+    // CWE-285 — the erasure-evidence log must NEVER appear in a manager sidebar
+    // (it would 404 server-side AND the link itself hints the surface exists).
+    expect(all).not.toContain('/admin/compliance/erasure-log');
     // Read-only-but-visible surfaces stay (manager reads them; the page
     // disables writes, the nav entry is NOT hidden).
     expect(all).toContain('/admin/users');

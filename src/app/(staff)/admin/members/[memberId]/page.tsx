@@ -36,6 +36,7 @@ import {
   archiveWindowStatus,
   formatMemberNumber,
   resolveMemberNumberPrefix,
+  getMemberErasureStatus,
 } from '@/modules/members';
 import type { MemberId, Contact } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -65,6 +66,8 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
+import { EraseMemberButton } from '@/components/members/erase-member-button';
+import { ErasedBanner } from '@/components/members/erased-banner';
 import { ContactFormDialog } from '@/components/members/contact-form-dialog';
 import { ContactActions } from '@/components/members/contact-actions';
 import { SubscriptionBadge } from '@/components/members/subscription-badge';
@@ -579,6 +582,7 @@ export default async function MemberDetailPage({
     memberPrefix,
     subscriptionResult,
     verificationResult,
+    erasureStatus,
   ] = await Promise.all([
       // C6 round-10 ui-design-specialist — fetch pending portal invitations
       // and project as a Map<contactId, invitation> so each ContactBlock can
@@ -679,6 +683,10 @@ export default async function MemberDetailPage({
             errKind,
           })
         : Promise.resolve({ pending: new Set<string>() }),
+      // COMP-1 US3-A — narrow erasure-status read (erased_at + member_erased
+      // completion proof). Drives the ErasedBanner and hides write affordances
+      // once erased. Independent of the other reads — folds into the same RTT.
+      getMemberErasureStatus(tenant, member.memberId),
     ]);
 
   // S1 — derive each contact's tri-state subscription from the discriminated
@@ -704,6 +712,14 @@ export default async function MemberDetailPage({
     member.status === 'archived' && member.archivedAt
       ? archiveWindowStatus(member.archivedAt, new Date())
       : null;
+
+  const isErased = erasureStatus.erasedAt !== null;
+  // Post-erase state (COMP-1 US3-A S5): the modify affordances — Erase, Archive,
+  // Edit, add-contact, Renew — are gated on write-role AND not-yet-erased. Named
+  // once so the four call sites stay in lock-step (Archive/Edit/add-contact
+  // additionally require status !== 'archived'; the GDPR-export section keeps its
+  // own admin-only + !isErased gate).
+  const canModify = canWrite && !isErased;
 
   const legalEntityLabel = resolveLegalEntityTypeLabel(
     member.legalEntityType,
@@ -771,41 +787,59 @@ export default async function MemberDetailPage({
                 {t('sections.benefits')}
               </Link>
             )}
-            {canWrite && member.status !== 'archived' && (
+            {/* COMP-1 US3-A — write affordances all hidden once erased (post-
+                erase state S5). Erase sits LEFT of Archive/Edit (most
+                destructive, leftmost; Fitts's Law keeps Edit rightmost). The
+                Erase trigger is shown for any non-erased member INCLUDING
+                archived ones (UX M2) — erasure is orthogonal to archive; only
+                Archive/Edit keep the `status !== 'archived'` gate. */}
+            {canModify && (
               <>
-                {/* Destructive action sits LEFT of the primary — Fitts's
-                    Law: rightmost button is easiest to click, so Edit
-                    (primary + frequent) stays rightmost and Archive
-                    (destructive) is one step further from the natural
-                    click target. Matches GitHub/Stripe admin convention. */}
-                <ArchiveMemberButton
+                <EraseMemberButton
                   memberId={member.memberId}
                   companyName={member.companyName}
+                  memberNumberDisplay={memberNumberDisplay}
                 />
-                <Link
-                  href={`/admin/members/${member.memberId}/edit`}
-                  className={buttonVariants()}
-                >
-                  <PencilIcon className="size-4" />
-                  {t('editCta')}
-                </Link>
+                {member.status !== 'archived' && (
+                  <>
+                    <ArchiveMemberButton
+                      memberId={member.memberId}
+                      companyName={member.companyName}
+                    />
+                    <Link
+                      href={`/admin/members/${member.memberId}/edit`}
+                      className={buttonVariants()}
+                    >
+                      <PencilIcon className="size-4" />
+                      {t('editCta')}
+                    </Link>
+                  </>
+                )}
               </>
             )}
           </>
         }
       />
 
-      {member.status === 'archived' &&
-          member.archivedAt &&
-          windowStatus &&
-          (windowStatus.state === 'within_window' ||
-            windowStatus.state === 'window_expired') && (
-            <ArchivedBanner
-              memberId={member.memberId}
-              archivedAtIso={member.archivedAt.toISOString()}
-              windowStatus={windowStatus}
-            />
-          )}
+      {isErased && erasureStatus.erasedAt && (
+        <ErasedBanner
+          erasedAtIso={erasureStatus.erasedAt.toISOString()}
+          completed={erasureStatus.completed}
+        />
+      )}
+
+      {!isErased &&
+        member.status === 'archived' &&
+        member.archivedAt &&
+        windowStatus &&
+        (windowStatus.state === 'within_window' ||
+          windowStatus.state === 'window_expired') && (
+          <ArchivedBanner
+            memberId={member.memberId}
+            archivedAtIso={member.archivedAt.toISOString()}
+            windowStatus={windowStatus}
+          />
+        )}
         <section aria-labelledby="member-company-heading">
         <Card>
           <CardHeader>
@@ -1033,7 +1067,7 @@ export default async function MemberDetailPage({
                 in). Own Suspense boundary so the F8/F9 reads never block
                 the company/contacts paint. */}
             <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canWrite} />
+              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canModify} />
             </Suspense>
 
             {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
@@ -1046,9 +1080,12 @@ export default async function MemberDetailPage({
             </Suspense>
           </div>
         ) : (
-          /* Benefits not available: Renewal & Health renders full-width. */
+          /* Benefits not available: Renewal & Health renders full-width.
+             `canRenew` is passed explicitly (was defaulting to false) so the
+             Renew action no longer depends on the F9 dashboard flag — same
+             `canModify` gate as the 2-col branch above. */
           <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} />
+            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canModify} />
           </Suspense>
         )}
 
@@ -1083,7 +1120,7 @@ export default async function MemberDetailPage({
                   </p>
                 </PopoverContent>
               </Popover>
-              {canWrite && member.status !== 'archived' && (
+              {canModify && member.status !== 'archived' && (
                 <ContactFormDialog
                   memberId={member.memberId}
                   mode="add"
@@ -1187,8 +1224,10 @@ export default async function MemberDetailPage({
 
         {/* F9 US6 (FR-031) — admin on-behalf GDPR data export. Admin-only
             (GDPR export is an admin/DPO action; the read-only manager is
-            excluded, mirroring requestDataExport). F9-flag-gated. */}
-        {env.features.f9Dashboard && session.user.role === 'admin' && (
+            excluded, mirroring requestDataExport). F9-flag-gated. Hidden once
+            the member is erased (COMP-1 US3-A post-erase state S5) — there is no
+            PII left to export, and offering it would mislead the DPO. */}
+        {env.features.f9Dashboard && session.user.role === 'admin' && !isErased && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
             <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
           </Suspense>

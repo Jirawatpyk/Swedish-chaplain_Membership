@@ -53,3 +53,54 @@ describe('drizzleContactRepo.listLinkedUserIdsForMemberInTx — fails loud (H3)'
     ).rejects.toThrow(dbError);
   });
 });
+
+/**
+ * COMP-1 US2a — the UNFILTERED F1 erasure work-list read must share the SAME
+ * fail-loud contract. It drives the post-commit F1 linked-login erasure
+ * (erase-member.ts): a read failure swallowed to `[]` would skip a login that
+ * FAILED to erase on a prior pass while `member_erased` was emitted as
+ * "complete" → the erased member's credential survives (Art.17). The method
+ * has NO try/catch, so a rejecting SELECT propagates and the caller's atomic
+ * tx rolls back. The happy-path SQL (UNFILTERED by removed_at — survives the
+ * contacts scrub) is exercised against live Neon by
+ * `tests/integration/members/erase-member-linked-user-shadow.test.ts`.
+ */
+describe('drizzleContactRepo.listAllLinkedUserIdsForMemberInTx — fails loud (US2a)', () => {
+  it('propagates (rejects) when the SELECT errors, instead of swallowing to []', async () => {
+    const dbError = new Error('57014 canceling statement due to statement timeout');
+    const tx = makeRejectingTx(dbError);
+
+    await expect(
+      drizzleContactRepo.listAllLinkedUserIdsForMemberInTx(
+        tx,
+        'member-1' as unknown as MemberId,
+      ),
+    ).rejects.toThrow(dbError);
+  });
+});
+
+/**
+ * COMP-1 US2a (L1 over-delete fix) — the LIVE-only contact-email read that
+ * feeds the outbox cancel-set must share the SAME fail-loud contract. It is the
+ * address-keyed input to the `DELETE … WHERE to_email IN (…)` outbox cancel; a
+ * read failure swallowed to `[]` would skip the cancel under a falsely-
+ * "complete" erasure, leaving a dispatchable post-erasure mail behind. The
+ * method has NO try/catch, so a rejecting SELECT propagates and the caller's
+ * atomic erasure tx rolls back. The happy-path SQL (filters `removed_at IS
+ * NULL` so a removed contact's ambiguously-owned email is excluded) is
+ * exercised against live Neon by
+ * `tests/integration/members/erase-member-outbox-cancel.test.ts`.
+ */
+describe('drizzleContactRepo.listLiveEmailsForMemberInTx — fails loud (US2a)', () => {
+  it('propagates (rejects) when the SELECT errors, instead of swallowing to []', async () => {
+    const dbError = new Error('57014 canceling statement due to statement timeout');
+    const tx = makeRejectingTx(dbError);
+
+    await expect(
+      drizzleContactRepo.listLiveEmailsForMemberInTx(
+        tx,
+        'member-1' as unknown as MemberId,
+      ),
+    ).rejects.toThrow(dbError);
+  });
+});

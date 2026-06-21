@@ -140,6 +140,10 @@ function makeBroadcastsRepo(args: {
       return { prunedCount: 0 };
     },
     async listInFlightOwnedByMember() { return []; },
+    async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
+    async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
+    async listMemberResendAudienceContactsInTx() { return []; },
+    async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
   };
   return { port, transitions };
 }
@@ -158,6 +162,7 @@ function makeGateway(args: {
     async createBroadcast() { throw new Error('not used'); },
     async sendBroadcast() { throw new Error('not used'); },
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
+    async removeContactFromAudience() { throw new Error('not used'); },
     async retrieveBroadcast() {
       retrieveCalls++;
       if (args.retrieve instanceof Error) throw args.retrieve;

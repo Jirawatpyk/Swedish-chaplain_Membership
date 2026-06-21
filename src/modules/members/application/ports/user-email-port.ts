@@ -86,4 +86,37 @@ export interface UserEmailPort {
   isUserPending(
     userId: string,
   ): Promise<Result<boolean, RepoError>>;
+
+  /**
+   * COMP-1 US2a (M1) — read the user's `status` inside the caller's
+   * transaction. Used by `revertContactEmail`'s redemption guard: a GDPR-
+   * Art.17-erased login is left `status='disabled'`, so a stale 48h revert
+   * token redeemed against it must be REFUSED (returning `not_found`) before
+   * any PII is restored. Reading INSIDE the revert tx keeps the check
+   * consistent with the FOR-UPDATE token re-fetch (no TOCTOU window).
+   *
+   * Returns `ok(null)` when no row matches the id (hard-deleted / never
+   * existed) — also a refuse-the-revert signal. `users` is cross-tenant
+   * (no tenant_id / RLS), keyed by uuid id.
+   */
+  readStatusInTx(
+    tx: TenantTx,
+    userId: string,
+  ): Promise<
+    Result<{ readonly status: 'pending' | 'active' | 'disabled' } | null, RepoError>
+  >;
+
+  /**
+   * COMP-1 US2a (L1) — list the REAL email addresses of a SET of users inside
+   * the caller's transaction. Read during `eraseMember`'s scrub tx (BEFORE the
+   * F1 `eraseUser` cascade sentinel-izes them) so the outbox cancel can also
+   * match rows frozen to a login's address (which may differ from the contact's
+   * after a mid-flight email change). FAIL-LOUD: a DB error returns `err` so
+   * the caller's atomic tx rolls back. De-duplicated; `userIds` empty ⇒
+   * `ok([])`.
+   */
+  listEmailsForUsersInTx(
+    tx: TenantTx,
+    userIds: readonly string[],
+  ): Promise<Result<readonly string[], RepoError>>;
 }

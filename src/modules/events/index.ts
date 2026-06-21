@@ -443,6 +443,32 @@ export {
 
 export { makeDrizzleIdempotencySweepPort } from './infrastructure/drizzle-idempotency-sweep';
 
+// --- 6f. COMP-1 US2c (Member Erasure — F6 Registration Fan-out) -------
+// Per FR (GDPR Art. 17 / PDPA §33): when a member is erased, every F6
+// registration matched to that member carries the attendee's email /
+// name / company and MUST be hard-deleted (crediting back consumed
+// benefit quota per registration). The single-registration
+// `eraseAttendeePii` use-case (Phase 10 admin action) was never
+// barrel-exported; US2c surfaces it plus the new best-effort fan-out
+// `eraseAllRegistrationsForMember` so the members module can reach
+// them through this barrel (Principle III) — never deep-importing
+// `./application/use-cases/*`.
+
+export {
+  eraseAttendeePii,
+  type EraseAttendeePiiInput,
+  type EraseAttendeePiiOutput,
+  type EraseAttendeePiiError,
+  type EraseAttendeePiiDeps,
+} from './application/use-cases/erase-attendee-pii';
+
+export {
+  eraseAllRegistrationsForMember,
+  type EraseAllRegistrationsForMemberInput,
+  type EraseAllRegistrationsForMemberOutput,
+  type EraseAllRegistrationsForMemberDeps,
+} from './application/use-cases/erase-all-registrations-for-member';
+
 // Composition factory — assembles raw Infrastructure deps for the
 // pseudonymise-stale-non-member-pii use-case behind the barrel so
 // Routes don't reach into `./infrastructure/*` directly (Principle III
@@ -451,7 +477,7 @@ export { makeDrizzleIdempotencySweepPort } from './infrastructure/drizzle-idempo
 // a TenantTx (composed by the caller via `runInTenant`) plus a hasher
 // (caller-supplied because the salt lives in env) and returns the
 // fully-wired deps object the use-case expects.
-import type { TenantTx } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { makeDrizzleRegistrationsRepository as _makeRegRepo } from './infrastructure/drizzle-registrations-repository';
 import { makeDrizzleEventsRepository as _makeEventsRepo } from './infrastructure/drizzle-events-repository';
 import { makePinoAuditPort as _makePinoAudit } from './infrastructure/pino-audit-port';
@@ -466,6 +492,32 @@ import type {
   PseudonymisationHasher,
   PseudonymiseStaleNonMemberPiiDeps,
 } from './application/use-cases/pseudonymise-stale-non-member-pii';
+// COMP-1 US2c — local bindings for the F6 registration fan-out
+// composition factory below. The `export { ... }` re-exports above do
+// NOT create in-scope bindings, so import them here (aliased to avoid
+// colliding with those re-exports). The per-registration `eraseOne`
+// REUSES the route-facing `runEraseAttendeePii` from the lib
+// composition root (the same module→lib-deps pattern auth use-cases
+// follow with `@/lib/auth-deps`) so the rollback-on-`Result.err`
+// semantics + the 4-port deps bundle have a single source — if the
+// erasure wiring changes, this factory cannot silently drift.
+//
+// IMPORT-CYCLE NOTE: this value-import completes a cycle with
+// `@/lib/events-admin-deps` (which value-imports symbols back from
+// `@/modules/events`). It is safe ONLY while neither module CALLS a
+// cross-imported value at module-evaluation/top-level scope — every
+// cross-imported binding is used inside function bodies, so the ESM
+// live-bindings resolve before any call. A future top-level call to a
+// cross-imported value would TDZ-crash at import time.
+import { runEraseAttendeePii as _runEraseAttendeePii } from '@/lib/events-admin-deps';
+import type { EraseAllRegistrationsForMemberDeps as _EraseAllRegsDeps } from './application/use-cases/erase-all-registrations-for-member';
+import type { TenantContext } from '@/modules/tenants';
+import { asTenantId as _asTenantId, asMemberId as _asMemberId } from '@/modules/members';
+import { asUserId as _asUserId } from '@/modules/auth';
+import {
+  asEventId as _asEventId,
+  asRegistrationId as _asRegistrationId,
+} from './domain/branded-types';
 
 export function makePseudonymiseStaleNonMemberPiiDeps(
   tx: TenantTx,
@@ -475,6 +527,74 @@ export function makePseudonymiseStaleNonMemberPiiDeps(
     registrationsRepo: _makeRegRepo(tx),
     audit: _makePinoAudit(tx),
     hasher,
+  };
+}
+
+/**
+ * COMP-1 US2c composition factory — wires the
+ * `eraseAllRegistrationsForMember` best-effort fan-out deps for the
+ * members module's `EventRegistrationErasurePort` adapter (Task 4),
+ * which calls `makeEraseAllRegistrationsForMemberDeps(tenant)`.
+ *
+ * RLS / Principle I: each collaborator runs under `SET LOCAL
+ * app.current_tenant` on the supplied `tenant` context. `list` opens
+ * its own `runInTenant` read; `eraseOne` delegates to the route-facing
+ * `runEraseAttendeePii(tenant.slug, …)`, which opens its OWN
+ * tenant-scoped tx per call so one registration's rollback never
+ * poisons the siblings — the best-effort guarantee the fan-out depends
+ * on.
+ *
+ * Scale caveat (by design): this opens O(N) tenant transactions / Neon
+ * round-trips per member (1 for `list` + 1 per registration in
+ * `eraseOne`) — negligible at SweCham scale (a handful of registrations
+ * per member), but worth noting for a hypothetical high-registration
+ * member. The single-tx alternative would batch the round-trips but
+ * would sacrifice the per-registration best-effort isolation above (one
+ * row's rollback would poison the whole batch), so the per-call tx is
+ * the deliberate tradeoff.
+ *
+ * Rollback-on-`Result.err` (the correctness-critical piece): `eraseOne`
+ * REUSES the exported `runEraseAttendeePii`, which wraps the
+ * module-private `runInTenantWithRollbackOnErr`. Plain `runInTenant`
+ * (= `db.transaction(fn)`) only rolls back when the callback THROWS — a
+ * resolved `Result.err` is treated as success by the DB driver and
+ * COMMITS partial state. `eraseAttendeePii` emits
+ * `quota_credit_back_archive` BEFORE the `hardDelete`, so a `hardDelete`
+ * (or completion-audit) err under plain `runInTenant` would COMMIT the
+ * credit-back audit while leaving the row alive → a US2d reconciler
+ * re-drive re-emits the credit-back = a forensic DOUBLE credit-back. The
+ * wrapper turns that `Result.err` into a ROLLBACK so the credit-back +
+ * `pii_erasure_requested` audits are undone alongside the row state.
+ * `runEraseAttendeePii` derives `tenantId` from `tenant.slug` and opens
+ * its own scope, so `eraseOne` MUST NOT pass `tenantId` in the input.
+ *
+ * Return-type widening→narrowing: `runEraseAttendeePii` resolves to a
+ * `Result<{ alreadyErased; quotaReversals }, EraseAttendeePiiError>`;
+ * the `eraseOne` dep declares the narrower
+ * `Result<{ alreadyErased }, unknown>`. The wider ok-value is a
+ * structural subtype of the narrower one and `EraseAttendeePiiError`
+ * widens to `unknown`, so the Result is assignable directly — the
+ * fan-out simply ignores `quotaReversals`.
+ */
+export function makeEraseAllRegistrationsForMemberDeps(
+  tenant: TenantContext,
+): _EraseAllRegsDeps {
+  return {
+    list: (tenantId, memberId) =>
+      runInTenant(tenant, (tx) =>
+        _makeRegRepo(tx).listMemberRegistrationsInTx(
+          _asTenantId(tenantId),
+          _asMemberId(memberId),
+        ),
+      ),
+    eraseOne: (registrationId, eventId, input) =>
+      _runEraseAttendeePii(tenant.slug, {
+        eventId: _asEventId(eventId),
+        registrationId: _asRegistrationId(registrationId),
+        actorUserId: _asUserId(input.actorUserId),
+        reasonText: input.reasonText,
+        occurredAt: input.occurredAt,
+      }),
   };
 }
 

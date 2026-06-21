@@ -132,6 +132,7 @@ async function rawSelectMember(memberId: string) {
       blocked_from_auto_reactivation: members.blockedFromAutoReactivation,
       blocked_at: members.blockedFromAutoReactivationAt,
       erased_at: members.erasedAt,
+      updated_at: members.updatedAt,
     })
     .from(members)
     .where(eq(members.memberId, memberId))
@@ -197,6 +198,65 @@ describe('MemberRepo.scrubPiiInTx', () => {
     await tenant.cleanup();
     await deleteTestUser(admin);
   });
+
+  it('keeps erased_at STICKY across a reconciler re-drive — first instant wins', async () => {
+    // COMP-1 review FIX #2 — a US2d reconciler re-drive calls scrubPiiInTx again
+    // with a FRESH clock instant. `erased_at` must NOT drift forward: the
+    // Art.12/§30 date-of-erasure is the FIRST instant, and
+    // member-erasure-evidence-reads.ts paginates keyset on this column (a
+    // drifting erased_at silently skips/duplicates a re-driven member between
+    // "load more" fetches) and findStuckErasuresInTx ORDER BYs it (a drift
+    // re-sorts the row to the back of the reconciler queue each tick). Every PII
+    // column, by contrast, stays UNCONDITIONAL so the re-drive defensively
+    // re-applies anonymisation — proved here by `updated_at` advancing to the
+    // 2nd instant (the row was genuinely re-written, not skipped).
+    const { memberId } = await seedMember(tenant, {
+      companyName: 'Saab (Thailand) Ltd.',
+      taxId: '0105536000099',
+      website: 'https://saab.example',
+      description: 'Aerospace',
+      notes: 'VIP — board contact',
+      foundedYear: 1937,
+      turnoverThb: 500_000_000,
+      addressLine1: '1 Vibhavadi Rd',
+      city: 'Bangkok',
+      province: 'Bangkok',
+      postalCode: '10900',
+      blockedReason: 'BLOCKED: repeated chargebacks — contact jane@example.com',
+      riskScore: 91,
+      riskScoreBand: 'critical',
+      riskScoreFactors: { late_payments: 4 },
+    });
+
+    const firstInstant = new Date('2026-06-16T00:00:00.000Z');
+    const secondInstant = new Date('2026-06-20T12:00:00.000Z');
+
+    // First erasure pass — establishes the authoritative erased_at instant.
+    const first = await runInTenant(tenant.ctx, (tx) =>
+      drizzleMemberRepo.scrubPiiInTx(tx, memberId as MemberId, {
+        erasedAt: firstInstant,
+      }),
+    );
+    expect(first.ok, JSON.stringify(first)).toBe(true);
+
+    // Reconciler re-drive — distinct, LATER clock instant.
+    const second = await runInTenant(tenant.ctx, (tx) =>
+      drizzleMemberRepo.scrubPiiInTx(tx, memberId as MemberId, {
+        erasedAt: secondInstant,
+      }),
+    );
+    expect(second.ok, JSON.stringify(second)).toBe(true);
+
+    const row = (await rawSelectMember(memberId))!;
+    // erased_at is STICKY: COALESCE preserved the FIRST instant.
+    expect(row.erased_at?.toISOString()).toBe('2026-06-16T00:00:00.000Z');
+    // updated_at ADVANCED to the 2nd instant — proves the row was genuinely
+    // re-written (the re-drive re-applied the scrub, it was not skipped).
+    expect(row.updated_at?.toISOString()).toBe('2026-06-20T12:00:00.000Z');
+    // PII stayed scrubbed across both passes.
+    expect(row.company_name).toBe('[erased]');
+    expect(row.tax_id).toBeNull();
+  }, 30_000);
 
   it('NULLs PII incl. business quasi-identifiers, sentinels company_name, sets erased_at, keeps identity', async () => {
     const { memberId } = await seedMember(tenant, {

@@ -105,6 +105,14 @@ export const AUDIT_EVENT_TYPES = [
   //   confusing the legitimate-user-typed-wrong-password baseline.
   //   Closes silent-failure H4 / B4.
   'password_malformed_hash_detected',
+  // --- COMP-1 US2a (migration 0222) — Member Erasure F1 linked-user
+  //     erasure (GDPR Art.17 / PDPA §33). Emitted by the `eraseUser`
+  //     use-case after anonymising the cross-tenant `users` row
+  //     (email → sentinel, password_hash → NULL, status → disabled).
+  //     This IS an F1 audit-taxonomy event (it lives on this array,
+  //     not just the shared pg enum). No PII in the payload — the
+  //     summary carries the userId only.
+  'user_erased',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

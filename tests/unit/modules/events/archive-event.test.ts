@@ -203,6 +203,7 @@ function makeDeps(
       // unused but required by RegistrationsRepository shape
       insertOnConflictDoNothing: vi.fn() as never,
       findById: vi.fn() as never,
+      listMemberRegistrationsInTx: vi.fn() as never,
       findByEventId: vi.fn() as never,
       findByEmailLower: vi.fn() as never,
       findByEventAndEmail: vi.fn() as never,

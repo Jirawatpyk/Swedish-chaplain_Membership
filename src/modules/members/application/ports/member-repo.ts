@@ -519,6 +519,40 @@ export interface MemberRepo {
     ctx: TenantContext,
     memberId: MemberId,
   ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
+
+  /**
+   * COMP-1 US2d — reconciler candidate query. Returns erased members
+   * (`erased_at IS NOT NULL`) that lack the `member_erased` completion audit
+   * (a post-commit cascade failed AFTER the durable scrub tx committed),
+   * oldest-erasure-first (the rows nearest the Art.12 completion deadline are
+   * reconciled first), locked `FOR UPDATE SKIP LOCKED` (so concurrent
+   * reconciler cron ticks don't double-drive the same row). `reason` is read
+   * from the member's EARLIEST `member_erasure_requested` audit (defaults to
+   * `'gdpr_erasure_request'` when absent) so the reconciler re-drives with the
+   * original Art.17 / PDPA §33 reason — matching the insights `earliest()` fold
+   * (erasure-evidence.ts) and the Art.12-clock invariant under a concurrent
+   * double-request (two requested rows with different reasons → earliest wins).
+   *
+   * Both `audit_log` subqueries carry an EXPLICIT `tenant_id = <slug>` filter:
+   * `audit_log` uses a PERMISSIVE RLS policy (NULL-tenant F1 identity rows are
+   * visible to every context), so the filter is LOAD-BEARING — without it a
+   * NULL-tenant or cross-tenant audit row could wrongly satisfy/spoil the
+   * match. (Mirrors the at-risk-scorer's `audit_log` subquery, which documents
+   * the same load-bearing-filter requirement.) `members` uses a strict
+   * isolating RLS policy so its outer `WHERE` needs no explicit filter.
+   *
+   * Threads the runInTenant `tx` (RLS gotcha — never the global db).
+   */
+  findStuckErasuresInTx(
+    tx: TenantTx,
+    tenantSlug: string,
+    limit: number,
+  ): Promise<
+    ReadonlyArray<{
+      readonly memberId: MemberId;
+      readonly reason: 'gdpr_erasure_request' | 'pdpa_deletion_request';
+    }>
+  >;
 }
 
 // ---------------------------------------------------------------------------

@@ -1018,5 +1018,335 @@ export function makeDrizzleBroadcastsRepo(
         return rows.map((r) => rowToBroadcast(r as BroadcastRow));
       });
     },
+
+    /**
+     * COMP-1 US2b — GDPR Art.17 / PDPA §33 broadcast content redaction.
+     * Runs inside the caller's erasure tx (threaded `txUnknown` from
+     * `runInTenant`). One UPDATE redacts EVERY broadcast the member
+     * authored (all statuses, including `draft`): subject/body_html/
+     * body_source/from_name/reply_to_email → `[redacted]`,
+     * rejection_reason/cancellation_reason/failure_reason → NULL (nullable
+     * free-text that can echo the member's PII — the reason notes from a
+     * manual reject/cancel, and failure_reason from a raw gateway error that
+     * can quote the author's reply_to_email/from_name), and
+     * custom_recipient_emails → `['[redacted]']` on `custom` rows (the
+     * `broadcasts_custom_recipient_cap` CHECK, migration 0064, forbids a
+     * 0-element / NULL array on a `custom` row, so a plain `= NULL` would
+     * RAISE 23514) / NULL on non-custom rows.
+     *
+     * `SET LOCAL app.allow_broadcast_redaction = 'on'` opts into the
+     * `broadcasts_immutable_after_submit_fn` GUC arm (migration 0224) so
+     * post-`draft` rows accept the PII change; the trigger early-returns
+     * for `draft` rows, so the single UPDATE covers drafts too. No `status`
+     * filter — the GUC arm + early-return handle every status.
+     *
+     * CHANGED-ROWS COUNT (2026-06-19 /code-review #4): the WHERE adds
+     * `subject <> '[redacted]'` so an ALREADY-scrubbed row is excluded and
+     * `scrubbedCount` reflects rows CHANGED, not rows MATCHED. This makes a
+     * re-drive (US2d reconciler / manual re-run) of an already-scrubbed
+     * member return `scrubbedCount = 0`, so the use-case's zero-work guard
+     * fires and no DUPLICATE `broadcast_content_redacted` audit is emitted.
+     * Still idempotent (a re-drive is a no-op), but now the count proves it.
+     *
+     * FAIL-LOUD: any DB error (e.g. an unexpected non-PII column drift
+     * RAISE) propagates and rolls the caller's tx back — never swallowed.
+     */
+    async scrubContentForMemberInTx(txUnknown, tenantIdArg, memberId) {
+      const tx = txUnknown as TenantTx;
+      // Defence-in-depth: this method uniquely RE-ENABLES mutation of
+      // post-submit-immutable PII columns via the GUC, so a fail-fast
+      // tenant-binding assert (mirrors the sibling write methods) is most
+      // valuable here — refuse to redact against an unbound / wrong-tenant tx.
+      await assertTenantBoundTx(tx, ctx.slug, 'scrubContentForMemberInTx');
+      await tx.execute(sql`SET LOCAL app.allow_broadcast_redaction = 'on'`);
+      const rows = (await tx.execute(sql`
+        UPDATE broadcasts SET
+          subject = '[redacted]',
+          body_html = '[redacted]',
+          body_source = '[redacted]',
+          from_name = '[redacted]',
+          reply_to_email = '[redacted]',
+          -- rejection_reason + cancellation_reason are nullable free-text
+          -- columns persisted VERBATIM from the admin/user note (reject-
+          -- broadcast.ts / cancel-broadcast.ts). On a member-originated
+          -- broadcast the note can quote the member (e.g. "rejected —
+          -- contains erik@acme.com"), so NULL them to complete Art.17 /
+          -- PDPA §33 erasure.
+          rejection_reason = NULL,
+          cancellation_reason = NULL,
+          -- failure_reason is set from the raw gateway error message
+          -- (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message),
+          -- which can echo the broadcast's reply_to_email / from_name — the
+          -- author's OWN PII, the same address the scrub redacts above on
+          -- this row. NULL it too so no copy survives (2026-06-19
+          -- /code-review #8). The migration-0224 GUC arm whitelists this
+          -- column so the change is permitted on a post-draft row.
+          failure_reason = NULL,
+          custom_recipient_emails = CASE
+            WHEN segment_type = 'custom' THEN ARRAY['[redacted]']::text[]
+            ELSE NULL
+          END
+        WHERE tenant_id = ${tenantIdArg}
+          AND requested_by_member_id = ${memberId}
+          -- ZERO-WORK GUARD (2026-06-19 /code-review #4): count only rows we
+          -- actually CHANGE. subject is the canonical redaction marker (it is
+          -- NEVER legitimately '[redacted]' on a live broadcast — it is a
+          -- NOT NULL, content-validated column), so an already-scrubbed row
+          -- is excluded here and the RETURNING set reflects rows CHANGED, not
+          -- rows MATCHED. Without this filter a US2d-reconciler re-drive of an
+          -- already-scrubbed member re-matched every row (scrubbedCount >= 1),
+          -- so the use-case zero-work guard never fired and a DUPLICATE
+          -- broadcast_content_redacted audit was emitted on every re-drive.
+          AND subject <> '[redacted]'
+        RETURNING broadcast_id
+      `)) as unknown as Array<{ broadcast_id: string }>;
+      return { scrubbedCount: rows.length };
+    },
+
+    /**
+     * COMP-1 US2b — GDPR Art.17 / PDPA §33 delivery tombstone. Runs inside
+     * the caller's erasure tx. Sets `recipient_member_id` → NULL and
+     * `recipient_email_lower` → `erased+<delivery_id>@erased.invalid` for
+     * every `broadcast_deliveries` row whose `recipient_email_lower` is one
+     * of the erased member's email addresses (`recipientEmails`). Rows are
+     * RETAINED (never deleted) for record-of-processing (PDPA §39 / GDPR
+     * Art.30).
+     *
+     * KEYED ON EMAIL, NOT recipient_member_id (the 2026-06-18 /code-review
+     * fix). `recipient_member_id` is NEVER populated in production — the only
+     * inserter is the Resend webhook, which hard-codes it to NULL at both
+     * insert sites (process-webhook-event.ts:173,221); no resolver/backfill
+     * exists, and drizzle-at-risk-scorer.ts already abandoned that axis as
+     * unreliable. A `recipient_member_id = $member` tombstone therefore
+     * matched 0 rows in prod (a silent no-op), so the erased member's
+     * plaintext `recipient_email_lower` (+ the email embedded in
+     * `error_message`) survived forever while erasure reported COMPLETE.
+     * Deliveries are correlated to members by `recipient_email_lower`
+     * everywhere else (the sole recipient lookup index
+     * `broadcast_deliveries_recipient_lookup_idx (tenant_id,
+     * recipient_email_lower)`); the caller passes the member's LIVE-contact
+     * emails ONLY. Deliveries are only ever addressed to contact emails, so the
+     * linked-login axis adds zero coverage AND a cross-member over-tombstone
+     * risk — do NOT re-add it (the US2a cross-member over-scrub lesson). Live-
+     * contact only because a removed contact's address is ambiguously owned (it
+     * may now belong to a different member), so tombstoning by it could scrub a
+     * peer's delivery.
+     *
+     * Emails are lower-cased here before matching: `recipient_email_lower` is
+     * always lower-cased by the webhook, but a contact email is case-PRESERVED
+     * in storage (the unique index is on `lower(email)`), so a `Mixed.Case@…`
+     * contact would otherwise never match its own lower-stored delivery row
+     * (PII survival).
+     *
+     * Empty `recipientEmails` → short-circuit `{ tombstonedCount: 0 }` WITHOUT
+     * running the UPDATE: no email can match, and skipping the `= ANY('{}')`
+     * predicate is clearer and avoids any edge-case surprise. A re-drive is a
+     * clean no-op by construction — the sentinel `recipient_email_lower`
+     * (`erased+…@erased.invalid`) is never in a member's real email set, so a
+     * second pass over the same set matches 0 rows.
+     *
+     * `SET LOCAL app.allow_broadcast_redaction = 'on'` opts into the
+     * UPDATE-only GUC arm on `broadcast_deliveries_append_only_fn`
+     * (migration 0225) — a plain UPDATE inside `runInTenant`/`chamber_app`,
+     * NO `ALTER TABLE … DISABLE TRIGGER` (chamber_app is not the table
+     * owner). The GUC arm permits ONLY these three recipient-PII columns to
+     * change: `recipient_member_id` + `recipient_email_lower` +
+     * `error_message` (the last holds raw Resend bounce diagnostics that can
+     * embed the recipient email, so it must be NULLable under the GUC too —
+     * this method writes all three). A change to any OTHER column would RAISE
+     * `broadcast_deliveries_redaction_only_pii_cols`.
+     *
+     * FAIL-LOUD: any DB error propagates and rolls the caller's tx back.
+     */
+    async tombstoneDeliveriesForMemberInTx(txUnknown, tenantIdArg, recipientEmails) {
+      // Short-circuit: no addresses → no rows can match. Skip the UPDATE.
+      if (recipientEmails.length === 0) return { tombstonedCount: 0 };
+      const tx = txUnknown as TenantTx;
+      // Defence-in-depth: this method uniquely RE-ENABLES mutation of an
+      // append-only table via the GUC, so a fail-fast tenant-binding assert
+      // (mirrors the sibling write methods) is most valuable here — refuse
+      // to tombstone against an unbound / wrong-tenant tx.
+      await assertTenantBoundTx(tx, ctx.slug, 'tombstoneDeliveriesForMemberInTx');
+      // Lower-case every address so a case-preserved contact email matches the
+      // always-lower-cased recipient_email_lower. De-dupe for a tidy ANY array.
+      const lowered = [
+        ...new Set(recipientEmails.map((e) => e.toLowerCase())),
+      ];
+      await tx.execute(sql`SET LOCAL app.allow_broadcast_redaction = 'on'`);
+      const rows = (await tx.execute(sql`
+        UPDATE broadcast_deliveries
+        SET recipient_member_id = NULL,
+            recipient_email_lower =
+              'erased+' || delivery_id || '@erased.invalid',
+            -- error_message holds raw Resend bounce diagnostics that can
+            -- embed the recipient email (e.g. SMTP 550 5.1.1 <addr> ...);
+            -- NULL it so the erased member email does not survive as
+            -- plaintext (GDPR Art.17 / PDPA 33). The 0225 GUC arm permits
+            -- this column to change under app.allow_broadcast_redaction.
+            error_message = NULL
+        WHERE tenant_id = ${tenantIdArg}
+          AND recipient_email_lower = ANY(ARRAY[${sql.join(
+            lowered.map((e) => sql`${e}`),
+            sql`, `,
+          )}]::text[])
+        RETURNING delivery_id
+      `)) as unknown as Array<{ delivery_id: string }>;
+      return { tombstonedCount: rows.length };
+    },
+
+    /**
+     * COMP-1 FIX-9 — GDPR Art.17 / PDPA §33 cross-author custom-recipient
+     * redaction. The AUTHOR scrub (`scrubContentForMemberInTx`) keys on
+     * `requested_by_member_id`, so it only redacts the rows the erased member
+     * AUTHORED — it never reaches the erased member's email sitting in a
+     * DIFFERENT (sibling) author's `custom_recipient_emails` text[]
+     * (segment_type='custom'), leaving the erased subject's plaintext PII
+     * surviving on a peer's row (the SAME bug-class as the delivery-tombstone
+     * fix: the canonical erasure axis for recipient PII in F7 is EMAIL, not
+     * author id).
+     *
+     * This method ELEMENT-WISE redacts the erased member's email out of EVERY
+     * author's custom rows tenant-wide, keyed on EMAIL (case-insensitive),
+     * preserving the sibling author's OTHER legitimate recipients. Runs inside
+     * the caller's atomic erasure tx (FAIL-LOUD).
+     *
+     * IMPLEMENTATION NOTES:
+     *   - unnest(...) WITH ORDINALITY + array_agg(... ORDER BY ord) rebuilds
+     *     the array element-by-element (NOT array_replace, which is
+     *     case-SENSITIVE) and PRESERVES element order.
+     *   - the per-element CASE lowers BOTH sides (`lower(elem) = ANY(lowered)`)
+     *     so a case-PRESERVED stored element matches the lower-cased erasure
+     *     key (else PII survives, mirroring the delivery tombstone).
+     *   - the EXISTS guard scopes the UPDATE to rows that ACTUALLY contain a
+     *     matching element, so `redactedCount` reflects rows CHANGED — a
+     *     re-drive over an already-redacted set matches 0 rows (idempotent,
+     *     no duplicate audit churn).
+     *   - ELEMENT-WISE (not whole-array) preserves the sibling author's OTHER
+     *     recipients; the author-scrub legitimately whole-array-replaces the
+     *     member's OWN rows (there the whole audience is subject-adjacent).
+     *     The member's OWN custom rows are ALSO element-wise redacted here
+     *     harmlessly; the POST-COMMIT author-scrub subsequently
+     *     whole-array-replaces them — order-independent, non-conflicting (the
+     *     author-scrub's zero-work guard keys on `subject <> '[redacted]'`,
+     *     independent of the custom array).
+     *   - the 0224 GUC arm whitelists `custom_recipient_emails` to change on
+     *     post-draft rows under `app.allow_broadcast_redaction = 'on'`; the
+     *     `broadcasts_custom_recipient_cap` CHECK (length 1..100, non-null on
+     *     custom) is structurally satisfied — array_agg over a non-empty source
+     *     preserves length and never NULLs.
+     *
+     * Empty `recipientEmails` → short-circuit `{ redactedCount: 0 }` WITHOUT
+     * running the UPDATE. FAIL-LOUD: any DB error propagates and rolls the
+     * caller's tx back.
+     */
+    async redactMemberEmailFromCustomRecipientsInTx(
+      txUnknown,
+      tenantIdArg,
+      recipientEmails,
+    ) {
+      // Short-circuit: no addresses → no element can match. Skip the UPDATE.
+      if (recipientEmails.length === 0) return { redactedCount: 0 };
+      const tx = txUnknown as TenantTx;
+      // Defence-in-depth: this method RE-ENABLES mutation of a post-submit
+      // immutable PII column via the GUC, so a fail-fast tenant-binding assert
+      // (mirrors the sibling write methods) refuses an unbound / wrong-tenant tx.
+      await assertTenantBoundTx(
+        tx,
+        ctx.slug,
+        'redactMemberEmailFromCustomRecipientsInTx',
+      );
+      // Lower-case + de-dupe so a case-preserved stored element matches its
+      // lower-cased erasure key, and the ANY array is tidy.
+      const lowered = [
+        ...new Set(recipientEmails.map((e) => e.toLowerCase())),
+      ];
+      await tx.execute(sql`SET LOCAL app.allow_broadcast_redaction = 'on'`);
+      const rows = (await tx.execute(sql`
+        UPDATE broadcasts b SET custom_recipient_emails = sub.arr
+        FROM (
+          SELECT b2.broadcast_id,
+                 array_agg(
+                   CASE
+                     WHEN lower(elem) = ANY(ARRAY[${sql.join(
+                       lowered.map((e) => sql`${e}`),
+                       sql`, `,
+                     )}]::text[]) THEN '[redacted]'
+                     ELSE elem
+                   END
+                   ORDER BY ord
+                 ) AS arr
+          FROM broadcasts b2,
+               LATERAL unnest(b2.custom_recipient_emails)
+                 WITH ORDINALITY AS u(elem, ord)
+          WHERE b2.tenant_id = ${tenantIdArg}
+            AND b2.segment_type = 'custom'
+            AND EXISTS (
+              SELECT 1
+              FROM unnest(b2.custom_recipient_emails) e2
+              WHERE lower(e2) = ANY(ARRAY[${sql.join(
+                lowered.map((e) => sql`${e}`),
+                sql`, `,
+              )}]::text[])
+            )
+          GROUP BY b2.broadcast_id
+        ) sub
+        WHERE b.tenant_id = ${tenantIdArg}
+          AND b.broadcast_id = sub.broadcast_id
+        RETURNING b.broadcast_id
+      `)) as unknown as Array<{ broadcast_id: string }>;
+      return { redactedCount: rows.length };
+    },
+
+    /**
+     * COMP-1 US3-C — GDPR Art.17 / PDPA §33 sub-processor (Resend) audience
+     * derivation. Reads inside the caller's erasure tx the
+     * `(resend_audience_id, recipient_email_lower)` pairs the erased member
+     * received broadcasts in, so a later cascade can remove the member's email
+     * from those Resend AUDIENCES.
+     *
+     * MUST run BEFORE `tombstoneDeliveriesForMemberInTx` in the same atomic
+     * scrub tx — the tombstone redacts `recipient_email_lower` (and
+     * `recipient_member_id` is always NULL in production), destroying the join
+     * keys. Correlating the delivery to its broadcast by `broadcast_id` lets us
+     * read the broadcast's `resend_audience_id`; only audience-bearing
+     * broadcasts (`resend_audience_id IS NOT NULL`) are returned.
+     *
+     * Parity with the sibling in-tx reads/writes: `assertTenantBoundTx` as
+     * defence-in-depth (this read joins two tenant-scoped tables; a wrong-tenant
+     * tx would silently derive the WRONG audience set), the `lowered`
+     * (lower-case + de-dupe) email set, and the `= ANY(ARRAY[...]::text[])`
+     * binding form (NOT a raw JS array through the Neon serverless driver,
+     * which throws the "argument must be of type string" class). The `SELECT
+     * DISTINCT` collapses many deliveries into the same audience to one pair.
+     *
+     * Empty email set → short-circuit `[]` (no email can match; skip the `=
+     * ANY('{}')` predicate entirely). This is a READ — it mutates nothing — so
+     * NO `SET LOCAL app.allow_broadcast_redaction` GUC is needed.
+     */
+    async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
+      const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
+      if (lowered.length === 0) return [];
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(
+        tx,
+        ctx.slug,
+        'listMemberResendAudienceContactsInTx',
+      );
+      const rows = (await tx.execute(sql`
+        SELECT DISTINCT b.resend_audience_id AS audience_id,
+                        d.recipient_email_lower AS email
+        FROM broadcast_deliveries d
+        JOIN broadcasts b
+          ON b.tenant_id = d.tenant_id
+         AND b.broadcast_id = d.broadcast_id
+        WHERE d.tenant_id = ${tenantIdArg}
+          AND d.recipient_email_lower = ANY(ARRAY[${sql.join(
+            lowered.map((e) => sql`${e}`),
+            sql`, `,
+          )}]::text[])
+          AND b.resend_audience_id IS NOT NULL
+      `)) as unknown as Array<{ audience_id: string; email: string }>;
+      return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
+    },
   };
 }

@@ -344,6 +344,69 @@
         "next": "Ladda äldre händelser"
       }
     },
+    "compliance": {
+      "erasureLog": {
+        "title": "Bevislogg för radering",
+        "subtitle": "Spårbart register över varje medlemsradering och dess bevis enligt artikel 17",
+        "resultCount": "{count, plural, =0 {Inga raderingar på den här sidan} one {# radering} other {# raderingar}}",
+        "loadMore": "Ladda äldre raderingar",
+        "memberNumber": "Medlem nr {number}",
+        "erasedAt": "Raderad {at}",
+        "reDriveNote": "Slutförd via avstämningens omkörning – siffrorna ovan avser endast denna omgång (den ursprungliga körningen återkallade redan sessionerna och inbjudningarna).",
+        "credentialErasedAt": "Inloggningsuppgift raderad {at}",
+        "credentialNone": "Ingen länkad inloggningsuppgift raderades.",
+        "taxRedactionsNone": "Inga maskeringar av skattedokument registrerade.",
+        "subprocessorNone": "Ingen vidarebefordran till underbiträde registrerad.",
+        "empty": {
+          "title": "Inga raderingar registrerade",
+          "body": "Inga medlemmar har raderats för den här organisationen ännu. Raderingsbevis visas här när en medlem raderas."
+        },
+        "emptyTail": {
+          "title": "Inga fler resultat",
+          "body": "Du har nått slutet av raderingsbevisloggen."
+        },
+        "status": {
+          "complete": "Slutförd",
+          "halfRun": "Pågår",
+          "overdue": "Försenad",
+          "elapsedDays": "{count, plural, one {# dag} other {# dagar}}",
+          "elapsedHours": "{count, plural, one {# timme} other {# timmar}}",
+          "elapsedMinutes": "{count, plural, one {# minut} other {# minuter}}"
+        },
+        "halfRunNote": {
+          "pending": "Begärd för {elapsed} sedan och ännu inte slutförd. Avstämningen försöker igen automatiskt och eskalerar om den passerar den lagstadgade 30-dagarsfristen.",
+          "overdue": "Begärd för {elapsed} sedan och fortfarande inte slutförd – efter den lagstadgade 30-dagarsfristen. Detta är ett rapporteringspliktigt intrång: granska avstämningen och eskalera."
+        },
+        "sections": {
+          "requested": "Begäran och verifiering",
+          "completion": "Slutförande",
+          "credential": "Inloggningsuppgift",
+          "taxRedactions": "Maskering av skattedokument",
+          "subprocessor": "Underbiträde (Resend)"
+        },
+        "fields": {
+          "requestedAt": "Begärd",
+          "reason": "Anledning",
+          "identityVerified": "Identitet verifierad",
+          "verificationMethod": "Verifieringsmetod",
+          "note": "Anteckning",
+          "completedAt": "Slutförd",
+          "sessionsRevoked": "Återkallade sessioner",
+          "invitationsRevoked": "Återkallade inbjudningar",
+          "resendOutcome": "Resultat",
+          "contactsRemoved": "Borttagna kontakter",
+          "contactsFailed": "Misslyckade kontakter"
+        },
+        "documentKind": {
+          "invoice": "Faktura",
+          "creditNote": "Kreditnota"
+        },
+        "value": {
+          "yes": "Ja",
+          "no": "Nej"
+        }
+      }
+    },
     "dashboard": {
       "title": "Instrumentpanel",
       "subtitle": "Handelskammarens verksamhet i överblick",
@@ -1387,6 +1450,41 @@
         "undeleteSuccess": "Medlemmen har återställts.",
         "undeleteError": "Kunde inte återställa. Försök igen.",
         "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa."
+      },
+      "erase": {
+        "eraseCta": "Radera (GDPR/PDPA)…",
+        "dialogTitle": "Radera medlem (permanent)",
+        "permanenceCallout": "Detta anonymiserar ALL persondata för {companyName} ({memberNumber}). Det är permanent och kan inte ångras.",
+        "reasonLegend": "Rättslig grund",
+        "reasonGdpr": "GDPR art. 17 (rätt till radering)",
+        "reasonPdpa": "PDPA §33 (rätt till radering)",
+        "attestationLabel": "Jag intygar att den registrerades identitet har verifierats enligt GDPR art. 12 / PDPA §30.",
+        "methodLabel": "Hur verifierades identiteten?",
+        "methodPlaceholder": "Välj verifieringsmetod",
+        "method": {
+          "verified_account_login": "Verifierad kontoinloggning (inloggad begäran)",
+          "in_person": "Personligen (ID kontrollerat)",
+          "email_confirmation_loop": "E-postbekräftelse",
+          "official_document": "Officiellt dokument"
+        },
+        "noteLabel": "DPO-referens / anteckning (valfritt)",
+        "notePlaceholder": "t.ex. DPO-ärende DPO-2026-014",
+        "noteHelper": "Upp till 500 tecken. Sparas i raderingsloggen.",
+        "confirmLabel": "Skriv medlemsnumret {memberNumber} för att bekräfta",
+        "gateHeading": "Innan du kan radera, slutför:",
+        "gateReason": "Välj en rättslig grund",
+        "gateAttestation": "Bekräfta identitetsverifiering",
+        "gateMethod": "Välj verifieringsmetod",
+        "gateTyped": "Skriv medlemsnumret exakt",
+        "cancel": "Avbryt",
+        "confirmCta": "Radera permanent",
+        "erasingInProgress": "Raderar…",
+        "eraseSuccess": "{companyName} raderad.",
+        "eraseSuccessPending": "Radering av {companyName} påbörjad — slutförs strax.",
+        "eraseError": "Kunde inte radera. Försök igen.",
+        "bannerTitle": "Personuppgifter raderade {date}",
+        "bannerBody": "Den här medlemmens personuppgifter raderades (GDPR art. 17 / PDPA §33). Permanent — kan inte ångras.",
+        "bannerPending": "Slutförs strax — den automatiska reconcilern avslutar de återstående stegen."
       },
       "undelete": {
         "cta": "Återställ",
@@ -4006,6 +4104,7 @@
         "finance": "Ekonomi",
         "engagement": "Engagemang",
         "system": "System",
+        "compliance": "Efterlevnad",
         "settings": "Inställningar"
       },
       "collapse": "Fäll ihop sidofältet",
@@ -4017,7 +4116,8 @@
       "broadcasts": "Utskick",
       "renewals": "Förnyelser",
       "audit": "Granskningslogg",
-      "directory": "Katalog"
+      "directory": "Katalog",
+      "erasureLog": "Raderingslogg"
     },
     "member": {
       "dashboard": "Instrumentpanel",

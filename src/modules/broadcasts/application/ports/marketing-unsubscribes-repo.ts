@@ -6,10 +6,17 @@
  * pattern (replaying an unsubscribe is safe — last-write-wins with
  * appropriate audit chain).
  *
- * Retention: indefinite per GDPR Art. 21 + PDPA §32. The
- * `setMemberIdNull` method is the Art. 17 cascade hook called by F3
- * member erasure; the suppression record is RETAINED but the
- * `member_id` foreign key reference is severed.
+ * Retention: indefinite per GDPR Art. 21 + PDPA §32. Per the COMP-1
+ * member-erasure design, `marketing_unsubscribes` rows are NEVER erased:
+ * the WHOLE row — including the plaintext `email_lower` — is RETAINED so
+ * the suppression invariant ("we will never contact this email again")
+ * keeps working after the member is erased. `email_lower` is an
+ * intentional, documented residual (see
+ * `docs/superpowers/specs/2026-06-16-member-erasure-design.md` Known
+ * limitations / deferred). The `setMemberIdNull` method below is currently
+ * UNWIRED — no production code calls it, and the erasure path does NOT
+ * sever `member_id`. Whether to sever the `member_id` back-reference while
+ * retaining `email_lower` is a deferred US3 decision.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -74,9 +81,16 @@ export interface MarketingUnsubscribesRepo {
   ): Promise<ReadonlySet<EmailLower>>;
 
   /**
-   * Art. 17 cascade — set `member_id` to NULL on every suppression
-   * row that referenced the erased member. Suppression records are
-   * RETAINED (we still must not contact the email).
+   * Sever the `member_id` back-reference on every suppression row that
+   * referenced a given member, RETAINING the row (and its plaintext
+   * `email_lower`, so suppression survives).
+   *
+   * CURRENTLY UNWIRED — no production code calls this. The COMP-1
+   * member-erasure design retains `marketing_unsubscribes` rows whole
+   * (never-erased; `email_lower` is a documented residual), so the
+   * erasure cascade does NOT call this. Kept for a deferred US3 decision
+   * on whether to sever `member_id` while keeping `email_lower`. Do not
+   * delete — US3 may adopt it.
    */
   setMemberIdNull(
     tx: unknown,

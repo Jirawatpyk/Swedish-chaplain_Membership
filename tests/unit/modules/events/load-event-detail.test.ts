@@ -49,6 +49,7 @@ function makeMockRegistrationsRepo(): RegistrationsRepository {
   const mock: MockRecord<RegistrationsRepository> = {
     insertOnConflictDoNothing: vi.fn(),
     findById: vi.fn(),
+    listMemberRegistrationsInTx: vi.fn(),
     findByEventId: vi.fn(),
     findByEmailLower: vi.fn(),
     findByEventAndEmail: vi.fn(),

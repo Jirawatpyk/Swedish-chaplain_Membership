@@ -313,6 +313,47 @@ export const authMetrics = {
       event_type: eventType,
     });
   },
+
+  // --- F3 → F1 linked-login erasure cascade (COMP-1 US2a) --------------------
+  /**
+   * `auth_erase_cascade_outcome_total{outcome}` — F3 member-erasure → F1
+   * `eraseUser` linked-login cascade FAILURE counter. Mirrors
+   * `renewalsMetrics.cascadeOutcome` / `broadcastsMetrics.cascadeOutcome`:
+   * the members-side adapter (`auth-user-erasure-adapter.ts`) emits into the
+   * DESTINATION module's metrics surface (F1 = auth).
+   *
+   * This bridge anonymises the F1 `users` login of an erased member so they
+   * can no longer authenticate. A stuck cascade is SECURITY-relevant — an
+   * erased member can still sign in until the US2d reconciler re-drives it.
+   * Without this counter the only signal was a log grep; on-call now alerts
+   * on a bounded label. Any sustained non-zero rate pages.
+   *
+   * `outcome` is bounded:
+   *   - `'failed'`     — auth `eraseUser` returned a typed `err` (most common:
+   *                      Neon down). Cause is in the structured log line.
+   *   - `'last_admin'` — `eraseUser` returned `'erase-user-last-admin'`: the
+   *                      anonymise UPDATE tripped the `users_last_admin_protection`
+   *                      trigger (the erased member's contact is the last active
+   *                      admin login). NOT remediated by a Neon recovery — needs
+   *                      an OPERATOR to promote another admin / transfer the
+   *                      contact link. Alertable on its own label so a stuck
+   *                      last-admin erasure is not buried in the `'failed'` rate.
+   *   - `'threw'`      — the never-throws `eraseUser` contract was violated by an
+   *                      unexpected calling-convention throw (distinct forensic
+   *                      class; the adapter's catch keeps the per-user loop alive).
+   *
+   * No `tenant` label: the F1 `users` table is cross-tenant (no tenant_id, no
+   * RLS) so this cascade is not tenant-scoped — adding a tenant label would
+   * misrepresent the F1 erasure boundary.
+   */
+  eraseCascadeOutcome(outcome: 'failed' | 'last_admin' | 'threw'): void {
+    safeMetric(() => {
+      counter(
+        'auth_erase_cascade_outcome_total',
+        'F3 member-erasure → F1 linked-login erasure cascade failure outcome',
+      ).add(1, { outcome });
+    });
+  },
 } as const;
 
 // --- F3 outbox metrics -------------------------------------------------------
@@ -662,6 +703,89 @@ export const invoicingMetrics = {
         'invoicing_event_buyer_pii_redacted_total',
         'Non-member event-invoice buyer PII tombstones (10y retention sweep) by outcome + tenant',
       ).add(1, { outcome, tenant: tenantId });
+    });
+  },
+
+  /**
+   * COMP-1 US3-B — member-document (membership + matched-member-event invoice +
+   * credit-note) 10y PII-redaction sweep outcome, per tenant. Fired ONCE PER
+   * TENANT PASS with `outcome='redacted'` when that pass tombstoned ≥1 document,
+   * else `outcome='swept_zero'` when it found nothing eligible, so SRE can tell
+   * "ran, nothing due" from "cron never fired". `outcome='error'` fires (a) once
+   * per tenant pass whose DB tx threw (the GUC/trigger path or audit_log is
+   * failing — the §87/3 + GDPR Art.17 / PDPA §33 erasure obligation for an
+   * ERASED member's retained tax documents is then NOT being met), and (b) once
+   * per PDF-blob delete / marker stamp that failed AFTER a committed DB
+   * tombstone. Case (b) is RETRYABLE: the DB tombstone is durable and
+   * `pii_blob_purged_at` stays NULL, so the next daily sweep re-selects the row
+   * and retries the byte purge — no manual action unless the rate is sustained.
+   * A sustained `outcome='error'` rate is the alerting anchor for both cases.
+   *
+   * The counter name says "document" (covers invoices + credit notes), matching
+   * the method name + the runbook alert query.
+   */
+  memberDocumentPiiRedacted(outcome: 'redacted' | 'swept_zero' | 'error', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'member_document_pii_redacted_total',
+        "Erased-member tax-document buyer PII tombstones (10y retention sweep) by outcome + tenant",
+      ).add(1, { outcome, tenant: tenantId });
+    });
+  },
+} as const;
+
+// --- COMP-1 member-erasure metrics -------------------------------------------
+//
+// US2d adds a daily reconciliation sweep that re-drives members whose erasure
+// COMMITTED (`members.erased_at` set) but whose `member_erased` completion
+// audit never landed — i.e. a post-commit cascade failed after the durable
+// scrub tx committed. The sweep emits one `outcome` per re-driven member so
+// SRE can tell a self-healed tick (`reconciled`) from a still-broken cascade
+// (`still_pending`) from a sweep that itself threw (`error`).
+//
+// Cardinality ceilings:
+//   - `outcome` ∈ {reconciled, still_pending, error} — bounded enum
+//   - `tenant` — small-cardinality (≤ a few hundred over project lifetime)
+//   - NO member/user id labels (high-cardinality forbidden)
+
+export type MemberErasureOutcome = 'reconciled' | 'still_pending' | 'error';
+
+export const erasureMetrics = {
+  /** Member-erasure reconciliation sweep outcome by tenant (COMP-1 US2d). */
+  outcome(outcome: MemberErasureOutcome, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'members_erasure_outcome_total',
+        'Member-erasure reconciliation sweep outcomes (reconciled→completed this tick / still_pending→a cascade still failing / error) by tenant',
+      ).add(1, { outcome, tenant: tenantId });
+    });
+  },
+
+  /**
+   * COMP-1 US3-C — sub-processor erasure propagation outcome, per tenant.
+   * Fired once per `eraseMember` post-commit cascade. `resendOutcome` is the
+   * Resend audience-contact removal aggregate (`ok` = every captured pair
+   * removed / none to remove; `partial` = some removed, some failed; `failed`
+   * = every removal threw). The Stripe arm is a pure no-op (no member↔customer
+   * model) so it carries no outcome label here.
+   *
+   * A `failed`/`partial` value should page the DPO runbook (US3-E): the
+   * member's OWN-system PII is durably scrubbed, but an external sub-processor
+   * may still hold the erased member's email. This is NOT auto-retryable — the
+   * removal inputs (the captured audience+email pairs) are destroyed by the same
+   * erasure, so a reconciler re-drive re-captures an EMPTY set; it is closed by
+   * MANUAL DPO remediation within the Art.12 one-month window (see
+   * docs/runbooks/member-erasure.md), NOT by re-driving the cascade.
+   *
+   * Cardinality: `resend_outcome` ∈ {ok, partial, failed} (bounded enum);
+   * `tenant` small-cardinality. NO member/email/audience id labels.
+   */
+  subprocessorErasure(resendOutcome: 'ok' | 'partial' | 'failed', tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'member_subprocessor_erasure_total',
+        'Member-erasure sub-processor propagation outcome (Resend audience-contact removal) by tenant',
+      ).add(1, { resend_outcome: resendOutcome, tenant: tenantId });
     });
   },
 } as const;
@@ -1690,6 +1814,39 @@ export const broadcastsMetrics = {
         'broadcasts_cascade_outcome_total',
         'F3 archival/erasure cascade outcome per broadcast',
       ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `broadcasts.content_scrub_failed{tenant}` — COMP-1 US2b. The F3
+   * member-erasure → F7 `scrubBroadcastContentForMember` CONTENT redaction
+   * cascade (GDPR Art. 17 / PDPA §33) failed: the use-case's outer catch
+   * caught a DB/audit throw and is about to return
+   * `Result.err({ kind: 'scrub.server_error' })` (the members adapter then
+   * maps that to `outcome: 'failed'` so the erasure proof records the
+   * cascade incomplete).
+   *
+   * A DEDICATED counter rather than reusing `cascadeOutcome`: that counter
+   * is per-broadcast for the in-flight CANCEL cascade (labels `cancelled`/
+   * `concurrent_skip`/`unexpected_error`), so folding a whole-tx content-
+   * scrub failure under its `unexpected_error` label would conflate two
+   * distinct cascades (and two distinct remediation runbooks) on one alert
+   * series. This counter is the alert anchor for a STUCK content-scrub
+   * cascade — until the US2 reconciler re-drives it, the erased member's
+   * authored broadcast CONTENT still holds PII. (The received-delivery
+   * tombstone is NOT affected by this failure: it was committed ATOMICALLY
+   * in the caller's members-scrub tx, not in this post-commit content step —
+   * the 2026-06-18 2nd /code-review HIGH fix.) Pino logs roll off in 30
+   * days; this counter anchors the long-term SLO so a sustained non-zero
+   * rate pages on-call. PII-free: `tenant` is the only label (no member id /
+   * email — those belong in the structured log).
+   */
+  contentScrubFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_content_scrub_failed_total',
+        'F3 member-erasure → F7 content redaction cascade failed (stuck cascade — authored broadcast content still holds PII until reconciler re-drives; received deliveries already tombstoned atomically)',
+      ).add(1, { tenant: tenantId });
     });
   },
 } as const;

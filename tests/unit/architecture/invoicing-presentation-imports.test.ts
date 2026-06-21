@@ -127,6 +127,15 @@ const KNOWN_ALLOWLIST: ReadonlySet<string> = new Set([
   // Cron: event-buyer PII redaction — audit + blob adapters.
   "src/app/api/cron/invoicing/redact-expired-event-buyers/route.ts::@/modules/invoicing/infrastructure/adapters/audit-adapter",
   "src/app/api/cron/invoicing/redact-expired-event-buyers/route.ts::@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter",
+  // COMP-1 US3-B — the shared `redact-buyer-pii-step` infra helper (extracted so
+  // the event-buyer + member-invoice redaction crons share ONE reviewed
+  // tombstone+purge impl) + the new member-invoice redaction cron's f4 audit +
+  // blob adapter wiring. Same server-composition-root class as the event-buyer
+  // adapters above (cron routes wire infra; infra is not barrel-exported per III).
+  "src/app/api/cron/invoicing/redact-expired-event-buyers/route.ts::@/modules/invoicing/infrastructure/redaction/redact-buyer-pii-step",
+  "src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts::@/modules/invoicing/infrastructure/redaction/redact-buyer-pii-step",
+  "src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts::@/modules/invoicing/infrastructure/adapters/audit-adapter",
+  "src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts::@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter",
   // Cron: receipt-PDF reconcile — direct schema read for the sweep query.
   "src/app/api/internal/cron/receipt-pdf-reconcile/route.ts::@/modules/invoicing/infrastructure/db/schema-invoices",
   // Admin invoice LIST — dynamic `await import(...)` of the CN schema for

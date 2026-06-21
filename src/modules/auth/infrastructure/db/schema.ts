@@ -331,6 +331,19 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // COMP-1 Member Erasure (migration 0221) — F3 events, 5y retention.
   'member_erasure_requested',
   'member_erased',
+  // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure
+  // propagation outcome. F3 event, 5y retention. Payload carries ids +
+  // outcomes ONLY, never erased PII (append-only log).
+  'subprocessor_erasure_propagated',
+  // COMP-1 US2a (migration 0222) — F1 linked-user erasure. Emitted by
+  // the auth `eraseUser` use-case. Registered in domain/audit-event.ts
+  // `AUDIT_EVENT_TYPES` too (it IS an F1 audit-taxonomy event).
+  'user_erased',
+  // COMP-1 US2b (migration 0224) — F7 broadcast content redaction. Emitted
+  // by the broadcasts `scrubBroadcastContentForMember` use-case under the
+  // erasure cascade. Registered in the F7 audit-port union + parity test
+  // (it IS an F7 audit-taxonomy event), 5y retention.
+  'broadcast_content_redacted',
 ]);
 
 /**
