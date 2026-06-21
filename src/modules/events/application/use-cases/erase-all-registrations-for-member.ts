@@ -28,9 +28,10 @@
  * (idempotent: a re-run enumerates 0 already-deleted rows).
  *
  * Observability: each failure is logged with `{ registrationId, memberId }`
- * (both uuids) + the error message — NEVER the attendee email / name /
- * company (that PII is exactly what we are erasing; logging it here would
- * defeat the purpose and breach the forbidden-fields rule).
+ * (both uuids) + the error CLASS name (`errKind`) — NEVER the raw error message
+ * (a Postgres error can embed SQL param VALUES = the attendee PII) and NEVER the
+ * attendee email / name / company (that PII is exactly what we are erasing;
+ * logging it here would defeat the purpose and breach the forbidden-fields rule).
  *
  * Constitution Principle III: pure Application — the two collaborators are
  * abstracted as plain deps (no Drizzle / `runInTenant` / framework imports)
@@ -114,7 +115,9 @@ export async function eraseAllRegistrationsForMember(
         {
           registrationId,
           memberId: input.memberId,
-          err: e instanceof Error ? e.message : String(e),
+          // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name only,
+          // never the raw message (it can embed SQL param VALUES = attendee PII).
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
         },
         'erase-all-registrations: eraseOne threw',
       );

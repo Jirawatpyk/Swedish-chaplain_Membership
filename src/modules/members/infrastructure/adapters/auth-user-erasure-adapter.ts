@@ -24,7 +24,8 @@
  * `'erase-user-last-admin'` when the anonymise UPDATE tripped the
  * last-admin-protection trigger) — so the classes stay forensically
  * distinguishable. Both paths also log BEFORE returning (carrying `userId` +
- * `cascade`, plus the `cause` on the auth-err path) and emit
+ * `cascade`, plus the error CLASS name — `causeKind` on the auth-err path,
+ * `errKind` on the throw path; never a raw message, COMP-1 FIX D) and emit
  * `authMetrics.eraseCascadeOutcome` so a stuck cascade — security-relevant: an
  * erased member can still authenticate until the US2d reconciler re-drives the
  * failed login — is alertable on a bounded label, not just a log grep. The
@@ -72,10 +73,14 @@ export const authUserErasureAdapter: UserErasurePort = {
         logger.error(
           {
             err: result.error.code,
-            cause:
+            // Forbidden-log hygiene (COMP-1 PR-review FIX D): the auth `cause` is
+            // a raw PG error — a Postgres message can embed SQL param VALUES (the
+            // erased member's PII). Log only the cause CLASS name; `err` (the
+            // typed auth code) already carries the failure semantics for triage.
+            causeKind:
               result.error.cause instanceof Error
-                ? result.error.cause.message
-                : String(result.error.cause),
+                ? result.error.cause.constructor.name
+                : 'unknown',
             userId,
             requestId: auditRequestId,
             cascade: 'f1_user_erasure',
@@ -99,7 +104,9 @@ export const authUserErasureAdapter: UserErasurePort = {
       // expected-infra `'failed'` class above.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name only,
+          // never the raw message (it can embed SQL param VALUES = erased PII).
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
           userId,
           requestId: auditRequestId,
           cascade: 'f1_user_erasure',

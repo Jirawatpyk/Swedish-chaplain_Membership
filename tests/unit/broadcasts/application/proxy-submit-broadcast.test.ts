@@ -666,6 +666,25 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     expect(repo.inserted).toHaveLength(0);
   });
 
+  it('memberLookup.status="erased" -> member_erased, nothing inserted, no quota consumed (FIX C)', async () => {
+    // COMP-1 PR-review FIX C — a GDPR-Art.17/PDPA-§33-erased member must be
+    // rejected as the proxy originator. The route resolves erasure via
+    // `findErasedAtById` and sets `memberLookup = { status: 'erased' }`; the
+    // use-case must refuse with `member_erased` and never delegate to
+    // `submitBroadcast` (no row inserted → no quota reserved, no companyName
+    // stamped).
+    const { deps, repo } = makeDeps({ primaryContact: 'm@example.com' });
+    const result = await proxySubmitBroadcast(deps, {
+      ...baseInput,
+      memberLookup: { status: 'erased' },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('member_erased');
+    }
+    expect(repo.inserted).toHaveLength(0);
+  });
+
   it('memberLookup.status="lookup_failed" -> submit.server_error (infra, maps to 500)', async () => {
     const { deps, repo } = makeDeps({ primaryContact: 'm@example.com' });
     const result = await proxySubmitBroadcast(deps, {

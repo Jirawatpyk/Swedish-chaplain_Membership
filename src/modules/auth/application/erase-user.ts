@@ -161,7 +161,11 @@ export async function eraseUser(
     logger.error(
       {
         requestId: input.requestId,
-        err: e instanceof Error ? e.message : String(e),
+        // Forbidden-log hygiene (COMP-1 PR-review FIX D): never log the raw
+        // error message — a Postgres error can embed SQL param VALUES (the
+        // erased user's PII). Log only the error CLASS name. The original error
+        // is still carried structurally on the returned `cause` (not a log).
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
       },
       'erase_user.failed',
     );

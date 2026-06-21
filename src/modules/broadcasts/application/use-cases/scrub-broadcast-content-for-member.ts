@@ -227,14 +227,20 @@ export async function scrubBroadcastContentForMember(
     broadcastsMetrics.contentScrubFailed(tenantSlug);
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
-        errName: e instanceof Error ? e.name : undefined,
+        // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name only,
+        // never the raw message (a Postgres error can embed SQL param VALUES =
+        // the erased member's authored PII). `errKind` supersedes the prior
+        // `err`/`errName` pair.
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
         tenantId: tenantSlug,
         memberId: input.memberId as unknown as string,
         cascade: 'f3_member_erasure',
       },
       'broadcasts.content_scrub.failed',
     );
+    // NOTE: the returned Result `message` is NOT a log — but it propagates the
+    // raw error text to the members-side adapter. That adapter (FIX D) logs only
+    // `errKind`, never this `message`, so no raw PG message reaches a log sink.
     return err({
       kind: 'scrub.server_error',
       message: e instanceof Error ? e.message : 'unknown error',

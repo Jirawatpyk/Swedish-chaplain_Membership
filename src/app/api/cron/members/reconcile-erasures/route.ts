@@ -108,7 +108,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   } catch (e) {
     logger.error(
-      { err: e instanceof Error ? e.message : String(e), tenantId: tenant.slug },
+      {
+        // Forbidden-log hygiene (COMP-1 PR-review FIX D): never log the raw
+        // error message — a Postgres error can embed SQL param VALUES (the
+        // erased member's PII). Log only the error CLASS name.
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        tenantId: tenant.slug,
+      },
       'cron.members.reconcile_erasures.query_failed',
     );
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
@@ -159,8 +165,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       erasureMetrics.outcome('error', tenant.slug);
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
-          stack: e instanceof Error ? e.stack : undefined,
+          // Forbidden-log hygiene (COMP-1 PR-review FIX D): never log the raw
+          // message or stack — both can embed SQL param VALUES (erased PII). The
+          // error CLASS name + the (opaque) memberId are enough to triage.
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
           tenantId: tenant.slug,
           memberId,
         },

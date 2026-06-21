@@ -72,6 +72,15 @@ export async function POST(
           { error: { code: 'already_linked', message: 'Contact already has a portal account.' } },
           { status: 409 },
         );
+      case 'contact_removed':
+        // COMP-1 PR-review (FIX B) — the contact is removed (e.g. an erased
+        // member). A terminal client-state conflict, NOT a server error: a 409
+        // (mirroring already_linked) avoids the misleading 500 + on-call alert
+        // the default arm would emit, and reveals no PII (the message is static).
+        return NextResponse.json(
+          { error: { code: 'contact_removed', message: 'Contact has been removed.' } },
+          { status: 409 },
+        );
       case 'no_email':
         return NextResponse.json(
           { error: { code: 'no_email', message: 'Contact has no email address.' } },

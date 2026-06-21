@@ -90,16 +90,37 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     //   other error    → lookup_failed → submit.server_error (500)
     // Inside the try so any unexpected repo throw still maps to the route's
     // 500 handler.
+    const proxiedMemberId = asMemberId(parsed.data.requestedByMemberId);
     const memberLookupResult = await drizzleMemberRepo.findById(
       tenantCtx,
-      asMemberId(parsed.data.requestedByMemberId),
+      proxiedMemberId,
     );
     let memberLookup: ProxyMemberLookup;
     if (memberLookupResult.ok) {
-      memberLookup = {
-        status: 'found',
-        companyName: memberLookupResult.value.companyName,
-      };
+      // COMP-1 PR-review (FIX C) — `findById` does NOT filter `erased_at`, so a
+      // GDPR-Art.17/PDPA-§33-erased member resolves as `found`. Resolve erasure
+      // via the dedicated `findErasedAtById` read and reject before delegating:
+      // an erased member must never be the proxy originator (their e-blast quota
+      // would be reserved + their scrubbed companyName stamped on a fresh
+      // broadcast the erase cascade already ran past). A read failure here is an
+      // infra fault → `lookup_failed` (→ 500), never a silent pass to `found`.
+      const erasedRead = await drizzleMemberRepo.findErasedAtById(
+        tenantCtx,
+        proxiedMemberId,
+      );
+      if (!erasedRead.ok) {
+        memberLookup = {
+          status: 'lookup_failed',
+          message: erasedRead.error.code,
+        };
+      } else if (erasedRead.value.erasedAt != null) {
+        memberLookup = { status: 'erased' };
+      } else {
+        memberLookup = {
+          status: 'found',
+          companyName: memberLookupResult.value.companyName,
+        };
+      }
     } else if (memberLookupResult.error.code === 'repo.not_found') {
       memberLookup = { status: 'not_found' };
     } else {
@@ -160,6 +181,13 @@ function mapProxySubmitError(
 ): NextResponse {
   if (error.kind === 'broadcast_member_not_found') {
     return errorResponse(404, 'broadcast_member_not_found', correlationId, {
+      details: { memberId: error.memberId },
+    });
+  }
+  if (error.kind === 'member_erased') {
+    // COMP-1 PR-review (FIX C) — 409 Conflict: the member existed and was erased
+    // (terminal state), so it is neither a 404 (not_found) nor a 422 (validation).
+    return errorResponse(409, 'broadcast_member_erased', correlationId, {
       details: { memberId: error.memberId },
     });
   }

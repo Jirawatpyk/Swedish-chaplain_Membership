@@ -44,11 +44,21 @@ import type { RecipientSegment } from '../../domain/recipient-segment';
 export type ProxyMemberLookup =
   | { readonly status: 'found'; readonly companyName: string }
   | { readonly status: 'not_found' }
+  // COMP-1 PR-review (FIX C) — the proxied member is GDPR-Art.17/PDPA-§33 erased
+  // (`members.erased_at IS NOT NULL`). `findById` does NOT filter `erased_at`, so
+  // the route additionally resolves erasure via `findErasedAtById` and sets this
+  // status when erased. The use-case must reject before delegating to
+  // `submitBroadcast` (no quota reserved, no scrubbed companyName stamped on a
+  // new originator-attributed broadcast the erase cascade already ran past).
+  | { readonly status: 'erased' }
   | { readonly status: 'lookup_failed'; readonly message: string };
 
 export type ProxySubmitBroadcastError =
   | SubmitBroadcastError
-  | { readonly kind: 'broadcast_member_not_found'; readonly memberId: string };
+  | { readonly kind: 'broadcast_member_not_found'; readonly memberId: string }
+  // COMP-1 PR-review (FIX C) — proxied member is erased; the route maps this to
+  // 409 (a terminal conflict, not a 404/422 — the member existed and was erased).
+  | { readonly kind: 'member_erased'; readonly memberId: string };
 
 export type ProxySubmitBroadcastDeps = SubmitBroadcastDeps;
 
@@ -93,6 +103,18 @@ export async function proxySubmitBroadcast(
         ok: false,
         error: {
           kind: 'broadcast_member_not_found',
+          memberId: input.proxiedMemberId,
+        },
+      } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
+    case 'erased':
+      // COMP-1 PR-review (FIX C) — refuse an erased proxied originator BEFORE
+      // delegating to `submitBroadcast`: do not reserve the erased member's
+      // e-blast quota nor stamp their (scrubbed) companyName on a fresh
+      // broadcast the GDPR Art.17 / PDPA §33 erase cascade already swept past.
+      return {
+        ok: false,
+        error: {
+          kind: 'member_erased',
           memberId: input.proxiedMemberId,
         },
       } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;

@@ -228,10 +228,13 @@ describe('eraseUser (F1 linked-user erasure)', () => {
     );
   });
 
-  it('fault: a non-Error throw is stringified for the log (String(e) branch)', async () => {
+  it('fault: a non-Error throw logs errKind="unknown" and never leaks the raw value (FIX D)', async () => {
     const { deps } = makeDeps({
       users: {
         anonymiseErasedInTx: vi.fn(async () => {
+          // A non-Error throw whose string form would, pre-FIX-D, land in the
+          // log via String(e). COMP-1 FIX D forbids logging the raw value (a PG
+          // error can embed SQL param VALUES = the erased user's PII).
           throw 'raw pg fault string';
         }),
       } as unknown as EraseUserDeps['users'],
@@ -242,10 +245,18 @@ describe('eraseUser (F1 linked-user erasure)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('erase-user-failed');
+    // The raw value is still carried STRUCTURALLY on the returned cause (not a log).
     expect(result.error.cause).toBe('raw pg fault string');
+    // The log carries only the error CLASS name ('unknown' for a non-Error).
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: 'raw pg fault string' }),
+      expect.objectContaining({ errKind: 'unknown' }),
       'erase_user.failed',
     );
+    // The raw value must NEVER appear in the log payload.
+    const failCall = (logger.error as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1] === 'erase_user.failed',
+    );
+    expect(failCall).toBeDefined();
+    expect(JSON.stringify(failCall![0])).not.toContain('raw pg fault string');
   });
 });

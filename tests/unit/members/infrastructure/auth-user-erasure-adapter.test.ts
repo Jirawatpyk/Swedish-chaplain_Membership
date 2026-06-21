@@ -130,7 +130,7 @@ describe('authUserErasureAdapter', () => {
     if (!result.ok) expect(result.error.code).toBe('erase-user-failed');
   });
 
-  it('M-1: logs the auth-err path BEFORE returning, carrying userId + cascade + cause', async () => {
+  it('M-1: logs the auth-err path BEFORE returning, carrying userId + cascade + causeKind (FIX D: class name, never the raw cause message)', async () => {
     eraseUser.mockResolvedValueOnce(
       err({ code: 'erase-user-failed', cause: new Error('neon down') }),
     );
@@ -145,15 +145,20 @@ describe('authUserErasureAdapter', () => {
       .calls[0]!;
     expect(payload).toMatchObject({
       err: 'erase-user-failed',
-      cause: 'neon down',
+      // COMP-1 FIX D — the raw PG cause message ('neon down') can embed SQL param
+      // VALUES (erased PII); the log carries only the cause CLASS name.
+      causeKind: 'Error',
       userId: 'user-9',
       requestId: 'req-9',
       cascade: 'f1_user_erasure',
     });
+    // The raw cause message must NEVER appear in the log payload.
+    expect(payload).not.toHaveProperty('cause');
+    expect(JSON.stringify(payload)).not.toContain('neon down');
     expect(message).toBe('members.erase.user_erasure_failed');
   });
 
-  it('M-1: stringifies a non-Error cause on the auth-err path', async () => {
+  it('M-1: a non-Error cause logs causeKind="unknown" (no raw cause string leaks)', async () => {
     eraseUser.mockResolvedValueOnce(
       err({ code: 'erase-user-failed', cause: 'pg: 57P01 admin shutdown' }),
     );
@@ -164,7 +169,8 @@ describe('authUserErasureAdapter', () => {
     });
 
     const [payload] = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    expect(payload).toMatchObject({ cause: 'pg: 57P01 admin shutdown' });
+    expect(payload).toMatchObject({ causeKind: 'unknown' });
+    expect(JSON.stringify(payload)).not.toContain('57P01');
   });
 
   it('M-2: emits eraseCascadeOutcome("failed") on the auth-err path', async () => {
@@ -233,11 +239,14 @@ describe('authUserErasureAdapter', () => {
     const [payload, message] = (logger.error as ReturnType<typeof vi.fn>).mock
       .calls[0]!;
     expect(payload).toMatchObject({
-      err: 'boom',
+      // COMP-1 FIX D — error CLASS name only; the raw message ('boom') can embed
+      // SQL param VALUES (erased PII) and must never reach the log.
+      errKind: 'Error',
       userId: 'user-3',
       requestId: 'req-3',
       cascade: 'f1_user_erasure',
     });
+    expect(JSON.stringify(payload)).not.toContain('boom');
     expect(message).toBe('members.erase.user_erasure_threw');
     // Throw path carries the distinct 'threw' outcome label.
     expect(eraseCascadeOutcomeSpy).toHaveBeenCalledWith('threw');

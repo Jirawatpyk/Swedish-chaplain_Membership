@@ -50,9 +50,20 @@ const findMemberByIdMock = vi.fn(
   ): Promise<Result<{ companyName: string }, { code: string }>> =>
     ok({ companyName: 'Acme Co' }),
 );
+// COMP-1 PR-review (FIX C) — the route now resolves erasure via
+// `findErasedAtById` after `findById` returns `found` (an erased member is NOT
+// filtered by `findById`). Default to "not erased" so the happy/found path
+// flows unchanged; the erased contract test below overrides it once.
+const findErasedAtByIdMock = vi.fn(
+  async (
+    ..._args: unknown[]
+  ): Promise<Result<{ erasedAt: Date | null }, { code: string }>> =>
+    ok({ erasedAt: null }),
+);
 vi.mock('@/modules/members', () => ({
   drizzleMemberRepo: {
     findById: (...args: unknown[]) => findMemberByIdMock(...args),
+    findErasedAtById: (...args: unknown[]) => findErasedAtByIdMock(...args),
   },
   asMemberId: (raw: string) => raw,
 }));
@@ -266,6 +277,50 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     // use-case (mocked) maps that to submit.server_error → 500.
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(err({ code: 'repo.unexpected' }));
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'submit.server_error', message: 'lookup_failed' }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
+      memberLookup: { status: string; message?: string };
+    };
+    expect(callArgs.memberLookup.status).toBe('lookup_failed');
+    expect(callArgs.memberLookup.message).toBe('repo.unexpected');
+    expect(res.status).toBe(500);
+  });
+
+  it('FIX C: erased member → memberLookup.erased → 409 broadcast_member_erased, use-case NOT delegated with found', async () => {
+    // COMP-1 PR-review (FIX C) — `findById` returns `found` for an erased member
+    // (it does not filter `erased_at`); the route's `findErasedAtById` read flips
+    // memberLookup to `{ status: 'erased' }`. Assert the route both threads that
+    // status into the use-case AND maps the use-case's `member_erased` to 409.
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Erased Co' }));
+    findErasedAtByIdMock.mockResolvedValueOnce(
+      ok({ erasedAt: new Date('2026-06-20T00:00:00Z') }),
+    );
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'member_erased', memberId: VALID_MEMBER_ID }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
+      memberLookup: { status: string };
+    };
+    expect(callArgs.memberLookup).toEqual({ status: 'erased' });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_member_erased');
+    expect(body.error.details.memberId).toBe(VALID_MEMBER_ID);
+  });
+
+  it('FIX C: findErasedAtById read failure → memberLookup.lookup_failed → 500 (never a silent pass to found)', async () => {
+    // A fault on the erasure read must fail closed (500), never default to
+    // `found` (which would let an erased member through).
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Acme Co' }));
+    findErasedAtByIdMock.mockResolvedValueOnce(err({ code: 'repo.unexpected' }));
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'submit.server_error', message: 'lookup_failed' }),
     );

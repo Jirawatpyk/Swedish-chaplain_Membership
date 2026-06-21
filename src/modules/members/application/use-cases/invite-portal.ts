@@ -62,6 +62,10 @@ export type InvitePortalInput = {
 export type InvitePortalError =
   | { readonly code: 'not_found' }
   | { readonly code: 'already_linked' }
+  // COMP-1 PR-review (FIX B) — the contact is removed (e.g. a member erasure
+  // stamped `removed_at` on every contact). Refuse BEFORE F1 createUser so an
+  // erased member is never resurrected with a brand-new active login + invite.
+  | { readonly code: 'contact_removed' }
   | { readonly code: 'no_email' }
   | { readonly code: 'email_taken' }
   | { readonly code: 'invalid_email' }
@@ -93,6 +97,14 @@ export async function invitePortal(
   }
   const contact = contactResult.value;
   if (contact.linkedUserId) return err({ code: 'already_linked' });
+  // COMP-1 PR-review (FIX B) — erased/removed-contact guard. `findById` does NOT
+  // filter `removed_at`; a member erasure stamps `removed_at` on every contact
+  // (and clears `linked_user_id`-bearing rows for the F1 cascade). Without this
+  // guard an admin hitting the invite route directly on an erased member's
+  // removed contact (UI hidden, route reachable via a stale tab) would call F1
+  // `createUser` + `linkUser` and RESURRECT a brand-new active member account +
+  // invitation token on an erased identity. Refuse BEFORE createUser.
+  if (contact.removedAt) return err({ code: 'contact_removed' });
   if (!contact.email) return err({ code: 'no_email' });
 
   // 2. F1 createUser

@@ -59,6 +59,10 @@ export type F7RouteErrorCode =
   | 'broadcast_rejection_reason_too_long'
   | 'broadcast_cancel_reason_too_long'
   | 'broadcast_member_not_found'
+  // COMP-1 PR-review (FIX C) — proxied member is GDPR-Art.17/PDPA-§33 erased
+  // (`erased_at IS NOT NULL`). 409 (existed-then-erased terminal state), distinct
+  // from broadcast_member_not_found (404 — never existed in this tenant).
+  | 'broadcast_member_erased'
   // F7.1a US1 — admin retry + partial-delivery flows
   | 'broadcast_manual_retry_budget_exhausted'
   | 'broadcast_already_retrying_in_progress'
@@ -201,6 +205,10 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   broadcast_member_not_found: {
     message: 'Member not found in this tenant.',
     messageThai: 'ไม่พบสมาชิกในผู้เช่ารายนี้',
+  },
+  broadcast_member_erased: {
+    message: 'This member has been erased and can no longer be acted on.',
+    messageThai: 'สมาชิกรายนี้ถูกลบข้อมูลแล้ว ไม่สามารถดำเนินการต่อได้',
   },
   // F7.1a US1 — admin retry + partial-delivery error messages
   broadcast_manual_retry_budget_exhausted: {
@@ -393,6 +401,7 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   broadcast_rejection_reason_too_long: 400,
   broadcast_cancel_reason_too_long: 400,
   broadcast_member_not_found: 404,
+  broadcast_member_erased: 409,
   // F7.1a US1
   broadcast_manual_retry_budget_exhausted: 409,
   broadcast_already_retrying_in_progress: 409,

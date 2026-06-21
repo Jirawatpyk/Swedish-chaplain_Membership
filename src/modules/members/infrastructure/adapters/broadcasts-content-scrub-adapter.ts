@@ -64,7 +64,10 @@ export const f7BroadcastsContentScrubAdapter: BroadcastsContentScrubPort = {
         // re-run the scrub via the erasure-cascade cleanup runbook.
         logger.error(
           {
-            err: result.error.message,
+            // Forbidden-log hygiene (COMP-1 PR-review FIX D): the F7 use-case
+            // sets `result.error.message` to the raw PG error text, which can
+            // embed SQL param VALUES (the erased member's authored PII). Log only
+            // the typed error KIND, never that message.
             errKind: result.error.kind,
             tenantId: tenant.slug,
             memberId: memberId as string,
@@ -85,7 +88,9 @@ export const f7BroadcastsContentScrubAdapter: BroadcastsContentScrubPort = {
       // erasure flow — translate to `outcome: 'failed'` + log.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name only,
+          // never the raw message (it can embed SQL param VALUES = erased PII).
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
           tenantId: tenant.slug,
           memberId: memberId as string,
           cascade: 'f7_broadcast_content_scrub',

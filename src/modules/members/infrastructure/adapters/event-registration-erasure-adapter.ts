@@ -107,7 +107,9 @@ export const eventRegistrationErasureAdapter: EventRegistrationErasurePort = {
       // translate to `outcome: 'failed'` + log (no swallow-to-no-op).
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name only,
+          // never the raw message (it can embed SQL param VALUES = attendee PII).
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
           tenantId: tenant.slug,
           memberId: memberId as string,
           requestId: meta.requestId,
