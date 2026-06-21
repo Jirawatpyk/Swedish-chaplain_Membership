@@ -35,4 +35,14 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
     const longName = 'x'.repeat(71);
     await expect(resendBroadcastsGateway.createBroadcast(input({ broadcastNameForResendDashboard: longName }))).rejects.toThrow();
   });
+
+  it('composes a single-wrapped from when fromEmail is bare', async () => {
+    await expect(resendBroadcastsGateway.createBroadcast(input({ fromName: 'E2E Alpha Co via TSCC', fromEmail: 'noreply@zyncdata.app' }))).resolves.toMatchObject({ broadcastId: 'bcast_fake_1' });
+  });
+
+  it('does NOT double-wrap when fromEmail is "Name <email>" (the #3 regression guard)', async () => {
+    // Before the fix this produced `… <SweCham <noreply@…>>` and the fake (like
+    // real Resend) rejects the nested `<>`.
+    await expect(resendBroadcastsGateway.createBroadcast(input({ fromName: 'E2E Alpha Co via TSCC', fromEmail: 'SweCham <noreply@zyncdata.app>' }))).resolves.toMatchObject({ broadcastId: 'bcast_fake_1' });
+  });
 });
