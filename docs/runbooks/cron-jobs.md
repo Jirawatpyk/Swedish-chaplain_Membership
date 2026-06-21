@@ -36,6 +36,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
+| **F7 cleanup-audiences** (PR-2 defect #5) | **`POST /api/cron/broadcasts/cleanup-audiences`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 cleanup-audiences) — deletes terminal broadcasts' Resend audiences so the per-account audience count stays bounded |
 | **F7 broadcasts gauges** (T172) | **`GET /api/internal/metrics/broadcasts-gauges`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | emits `broadcasts.queue_pending` + `broadcasts.stuck_sending_count` gauges per tenant |
 | **F7.1a US1 split-large-broadcasts** | **`POST /api/cron/broadcasts/split-large-broadcasts`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — splits broadcasts whose recipient count exceeds the Resend per-audience cap into ≤10k batch manifests |
 | **F7.1a US1 dispatch-batches** | **`POST /api/cron/broadcasts/dispatch-batches`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — dispatches pending batch manifests created by split-large-broadcasts |
@@ -382,6 +383,75 @@ polish iteration but is intentionally not part of F7 MVP.
 | 500 + body contains `prune.server_error` | DB outage or RLS misconfiguration. Drafts NOT pruned this tick. | Investigate next morning; harness will retry on next daily tick — no action needed within 24h |
 | 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing. The route deliberately returns 200 + skips (NOT 503) so cron-job.org does not retry-storm. |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
+
+## F7 — broadcasts/cleanup-audiences (NEW — PR-2 defect #5)
+
+Periodic housekeeping cron that **deletes the ephemeral per-broadcast Resend
+audiences** created during dispatch for broadcasts that have reached a
+terminal status (`sent` / `cancelled` / `failed_to_dispatch` / `rejected` /
+`partial_delivery_accepted`). Without this sweep, Resend audiences accumulate
+indefinitely, wasting sub-processor storage and eventually hitting the
+per-account audience plan limit.
+
+Grace window: **1 hour** (`graceMs = 3600000`). Only broadcasts whose
+`updated_at` is older than 1 hour before the tick are eligible, preventing a
+race with Resend's own post-send event processing on very recently terminal
+broadcasts.
+
+Per-tick candidate limit: **200 rows** per tenant (`limit = 200`). At
+SweCham scale the steady-state queue depth is near zero (one audience per
+terminal broadcast); the next tick picks up any remainder.
+
+### What it does
+
+Per tenant, inside `cleanupOrphanedAudiences`:
+
+1. Lists terminal broadcasts with `audience_deleted_at IS NULL` AND
+   `updated_at < (now() - 1h)` via `broadcastsRepo.listTerminalBroadcastsWithLiveAudience`.
+2. For each candidate: calls `broadcastsGateway.deleteAudience(resendAudienceId)`.
+   A 404 from Resend resolves (already gone); a 5xx throws and is caught per-item.
+3. On success: stamps `audience_deleted_at = now()` via
+   `broadcastsRepo.markAudienceDeletedInTx` inside a per-item tenant-bound tx
+   (`broadcastsRepo.withTx`) — Constitution Principle I (RLS via `runInTenant`).
+4. On throw: logs a structured warning; the row stays eligible for the next tick.
+   `failed` counter increments; the batch continues (best-effort, never aborts).
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · broadcasts.cleanup-audiences`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/broadcasts/cleanup-audiences`
+   - **Schedule**: `*/15 * * * *` (every 15 minutes, UTC — same cadence as
+     reconcile-stuck-sending; audiences accumulate slowly so 15-min is
+     sufficient)
+   - **Request method**: `POST`
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7)
+   - **Timeout**: 60 seconds (200 candidates × ~200ms Resend RTT ≈ 40s worst case)
+   - **Retry on failure**: **OFF** (per § Retry policy contract — the sweep is
+     idempotent + the next 15-min tick is the natural retry)
+   - **Notifications**: email on ≥3 consecutive failures
+3. Click **Run** to verify a 200 OK response:
+   ```json
+   { "processed": 0, "deleted": 0, "failed": 0 }
+   ```
+   `processed: 0` is the expected steady state immediately after deploy; the
+   queue drains within one grace period (1h) of any terminal broadcast.
+
+### Expected response codes
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `processed: 0` | No terminal audiences due this tick | None — expected steady state |
+| 200 + `deleted > 0` | Audiences deleted this tick | None — expected |
+| 200 + `failed > 0` | Some deletes failed (Resend gateway or DB blip) | Inspect Vercel logs `broadcasts.audience_cleanup.delete_failed`; next tick retries the failed rows automatically |
+| 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing |
+| 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |
+| 500 + `{ error: { code: 'internal_error' } }` | List query failed (DB outage / RLS misconfiguration) | Inspect Vercel logs `cron.broadcasts.cleanup_audiences.server_error`; harness retries next tick |
+
+### Handler module
+
+`src/app/api/cron/broadcasts/cleanup-audiences/route.ts`
 
 ## Secret rotation
 

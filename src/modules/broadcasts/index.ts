@@ -379,6 +379,16 @@ export {
   type ReconcileStuckSendingOutcome,
 } from './application/use-cases/reconcile-stuck-sending';
 
+// --- PR-2 Task 4 — cleanup-orphaned-audiences cron (defect #5) -----------
+export {
+  cleanupOrphanedAudiences,
+  type CleanupOrphanedAudiencesDeps,
+  type CleanupOrphanedAudiencesInput,
+  type CleanupOrphanedAudiencesOutput,
+  type CleanupOrphanedAudiencesError,
+} from './application/use-cases/cleanup-orphaned-audiences';
+export { makeCleanupOrphanedAudiencesDeps } from './infrastructure/broadcasts-deps';
+
 // --- Ship-blocker A — batch completion roll-up --------------------------
 export {
   rollUpBatchBroadcast,

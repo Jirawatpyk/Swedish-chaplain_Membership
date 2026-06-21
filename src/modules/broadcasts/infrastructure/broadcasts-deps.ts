@@ -654,6 +654,30 @@ export async function resolveTenantByBatchProviderBroadcastId(
   };
 }
 
+// ----- PR-2 Task 4 — cleanup-orphaned-audiences cron composition -----------
+
+import type { CleanupOrphanedAudiencesDeps } from '../application/use-cases/cleanup-orphaned-audiences';
+
+/**
+ * PR-2 Task 4 — composition root for `cleanupOrphanedAudiences` use case
+ * (cron POST /api/cron/broadcasts/cleanup-audiences, defect #5).
+ *
+ * Deps: tenant context + `broadcastsRepo` (list + mark via `withTx`) +
+ * `broadcastsGateway` (deleteAudience) + `clock` (grace cutoff).
+ * Mirrors `makeReconcileStuckSendingDeps` — same adapters, leaner dep set.
+ */
+export function makeCleanupOrphanedAudiencesDeps(
+  tenantId: string,
+): CleanupOrphanedAudiencesDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
+    clock: systemClock,
+  };
+}
+
 // ----- F7.1a Phase 4 (US2 — Image embedding) ---------------------------------
 //
 // Composition roots for the 3 US2 use-cases. Each is per-tenant for
