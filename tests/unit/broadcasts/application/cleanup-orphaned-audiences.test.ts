@@ -90,6 +90,7 @@ function makeRepo(opts: {
     async markAudienceDeletedInTx(_tx, broadcastId) {
       markCalls.push(broadcastId);
     },
+    async existingBroadcastIds() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
   };
 
   return { port, listCalls, markCalls };

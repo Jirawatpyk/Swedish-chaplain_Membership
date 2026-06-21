@@ -208,6 +208,7 @@ function makeRepo(opts: FixtureOpts): {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in proxy-submit-broadcast fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in proxy-submit-broadcast fixture'); },
+    async existingBroadcastIds() { throw new Error('not used in proxy-submit-broadcast fixture'); },
     },
   };
 }

@@ -146,6 +146,7 @@ function makeBroadcastsRepo(args: {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in reconcile-stuck-sending fixture'); },
+    async existingBroadcastIds() { throw new Error('not used in reconcile-stuck-sending fixture'); },
   };
   return { port, transitions };
 }

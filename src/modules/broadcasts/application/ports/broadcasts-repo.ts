@@ -559,4 +559,34 @@ export interface BroadcastsRepo {
     tx: unknown,
     broadcastId: string,
   ): Promise<void>;
+
+  /**
+   * PR-2 Task 2 — Orphan-reclaim: return the subset of `broadcastIds` that
+   * still have a `broadcasts` row for the given tenant.
+   *
+   * Called by the audience orphan-reclaim use-case, which parses broadcast
+   * UUIDs out of Resend audience names and needs to know which ones STILL
+   * exist locally (so it can skip deletion for active broadcasts and reclaim
+   * only the truly orphaned Resend audiences whose local broadcast row has
+   * already been purged).
+   *
+   * Behaviour:
+   *   - Empty `broadcastIds` → returns `new Set()` immediately without
+   *     querying the database.
+   *   - Otherwise queries `broadcasts WHERE tenant_id = $1 AND
+   *     broadcast_id = ANY(ARRAY[...]::uuid[])` and returns the matching ids
+   *     as a `ReadonlySet<string>`. Non-matching ids (orphans) are simply
+   *     absent from the set.
+   *   - The caller is responsible for passing syntactically-valid UUIDs;
+   *     a malformed value causes Postgres to surface a cast error (22P02)
+   *     that propagates as a throw.
+   *
+   * Tenant-scoped via `WHERE tenant_id = $1` + RLS+FORCE policy on
+   * `broadcasts` (Constitution Principle I). Runs its own `runInTenant`
+   * call (read-only, no caller-supplied tx needed).
+   */
+  existingBroadcastIds(
+    tenantId: TenantSlug,
+    broadcastIds: ReadonlyArray<string>,
+  ): Promise<ReadonlySet<string>>;
 }
