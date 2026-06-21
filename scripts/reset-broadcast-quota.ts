@@ -6,13 +6,14 @@
  * submit → approve → dispatch flow can be re-tested without hitting
  * `broadcast_quota_blocked`.
  *
- * Why this exists: `countForMemberQuota` counts `submitted` + `approved` +
- * `failed_to_dispatch` as "reserved" (spec AS2 — a failed dispatch HOLDS its
- * slot for an admin re-trigger). But `failed_to_dispatch` is a TERMINAL state
- * (broadcast-status-transitions.ts: `failed_to_dispatch: []`) and there is no
- * re-trigger route — so once a member hits it, their slot is held forever and
- * a cap-1 member is locked out of E-Blast for the year. Until that product gap
- * is fixed, this script is the only way to reset the test member's quota.
+ * Why this exists: `countForMemberQuota` counts `submitted` + `approved` as
+ * "reserved" (in-flight broadcasts that still hold a quota slot). Fix D1
+ * (f7-broadcast-send-hardening) removed `failed_to_dispatch` from the reserved
+ * count — that status is now correctly treated as consumed-but-released so it
+ * no longer causes a permanent quota lockout. This script clears a test
+ * member's in-flight (`submitted`/`approved`) broadcasts so the compose →
+ * submit → approve → dispatch flow can be re-tested without hitting
+ * `broadcast_quota_blocked`.
  *
  * WHAT IT DELETES (and what it deliberately does NOT):
  *   It removes ONLY broadcasts whose status carries NO `broadcast_deliveries`
@@ -134,9 +135,7 @@ async function main(): Promise<void> {
       GROUP BY status ORDER BY n DESC
     `;
     const reserved = before
-      .filter((r) =>
-        ['submitted', 'approved', 'failed_to_dispatch'].includes(r.status),
-      )
+      .filter((r) => ['submitted', 'approved'].includes(r.status))
       .reduce((s, r) => s + r.n, 0);
     const used = before
       .filter((r) => ['sent', 'partial_delivery_accepted'].includes(r.status))
@@ -165,8 +164,8 @@ async function main(): Promise<void> {
           `(send-stage broadcasts + their append-only deliveries left intact).`,
       );
       // `used` counts send-stage broadcasts, which are NOT deleted, so it is
-      // unchanged; reserved goes to 0 because every reserved-holding row
-      // (submitted/approved/failed_to_dispatch) is a pre-send status.
+      // unchanged; reserved goes to 0 because every in-flight reserved row
+      // (submitted/approved) is a pre-send status deleted by this script.
       console.log(`[dry-run] quota after → reserved=0 used=${used}`);
       return;
     }
