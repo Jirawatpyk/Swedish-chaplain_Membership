@@ -412,6 +412,28 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       throw e;
     }
   },
+
+  async deleteAudience(audienceId: string): Promise<void> {
+    await withRetry(
+      async () => {
+        const sdk = client();
+        const result = (await sdk.audiences.remove(audienceId)) as ResendSdkResponse<{
+          deleted: boolean;
+          id: string;
+          object: string;
+        }>;
+        if (result.error) {
+          if (result.error.statusCode === 404) {
+            logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
+            return; // idempotent: already gone
+          }
+          throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+        }
+        logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
+      },
+      { method: 'deleteAudience' },
+    );
+  },
 };
 
 function normaliseStatus(

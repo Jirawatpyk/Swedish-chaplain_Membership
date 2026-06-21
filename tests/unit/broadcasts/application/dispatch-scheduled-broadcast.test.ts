@@ -275,6 +275,7 @@ function makeGateway(opts: GatewayOpts = {}): {
         };
       },
       async removeContactFromAudience() {},
+      async deleteAudience() {},
     },
   };
 }

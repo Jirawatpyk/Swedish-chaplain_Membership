@@ -17,6 +17,7 @@ export interface ResendBroadcastsClientLike {
   };
   readonly audiences: {
     create(args: { name: string }): Promise<ResendResult<{ id: string }>>;
+    remove(id: string): Promise<ResendResult<{ deleted: boolean; id: string; object: string }>>;
   };
   readonly contacts: {
     create(args: unknown): Promise<ResendResult<{ id: string }>>;
@@ -31,6 +32,7 @@ export function createResendContractFake(opts: { audienceLimit?: number } = {}):
 } {
   const audienceLimit = opts.audienceLimit ?? Number.POSITIVE_INFINITY;
   let audienceCount = 0;
+  const createdAudienceIds = new Set<string>();
   const client: ResendBroadcastsClientLike = {
     broadcasts: {
       async create(args) {
@@ -60,7 +62,19 @@ export function createResendContractFake(opts: { audienceLimit?: number } = {}):
           return { data: null, error: { statusCode: 401, message: `Your plan includes ${limitLabel} segments. Upgrade to add more.`, name: 'restricted' } };
         }
         audienceCount += 1;
-        return { data: { id: `aud_fake_${audienceCount}` }, error: null };
+        const id = `aud_fake_${audienceCount}`;
+        createdAudienceIds.add(id);
+        return { data: { id }, error: null };
+      },
+      async remove(id: string) {
+        // A previously-created audience: succeed and remove from the tracking set
+        // (models idempotent real-Resend behaviour: a second remove returns 404).
+        if (createdAudienceIds.has(id)) {
+          createdAudienceIds.delete(id);
+          return { data: { deleted: true, id, object: 'audience' }, error: null };
+        }
+        // Unknown or already-removed audience → 404 (matches Resend API).
+        return { data: null, error: { statusCode: 404, message: 'Audience not found', name: 'not_found' } };
       },
     },
     contacts: {

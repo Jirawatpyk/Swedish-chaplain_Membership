@@ -163,6 +163,7 @@ function makeGateway(args: {
     async sendBroadcast() { throw new Error('not used'); },
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
     async removeContactFromAudience() { throw new Error('not used'); },
+    async deleteAudience() { throw new Error('not used'); },
     async retrieveBroadcast() {
       retrieveCalls++;
       if (args.retrieve instanceof Error) throw args.retrieve;
