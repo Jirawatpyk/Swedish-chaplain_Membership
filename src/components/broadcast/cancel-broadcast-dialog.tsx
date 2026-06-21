@@ -18,6 +18,7 @@
  *     permanent error is futile and leaving the dialog open invites a loop.
  *   - Other non-409 (5xx / network throw) keep the dialog open for retry.
  */
+import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -67,7 +68,13 @@ export function CancelBroadcastDialog({
 }: CancelBroadcastDialogProps): React.ReactElement {
   const tToast = useTranslations(toastNamespace);
   const router = useRouter();
-  const finalFocus = useDialogFinalFocus(triggerRef);
+  // F7-A11Y-1 — raised on every programmatic close path below (success / 409 /
+  // 404 / 403), each of which runs router.refresh() → the cancel trigger Button
+  // unmounts as the broadcast leaves its cancellable status. finalFocus reads it
+  // to SKIP the about-to-unmount trigger; see resolve-dialog-final-focus. No
+  // reset needed: those paths unmount this wrapper, so the ref is discarded.
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
 
   async function onConfirm(reason: string): Promise<void> {
     try {
@@ -82,6 +89,7 @@ export function CancelBroadcastDialog({
         body,
       });
       if (res.ok) {
+        closedViaSuccessRef.current = true;
         toast.success(tToast(successToastKey));
         onOpenChange(false);
         router.refresh();
@@ -98,6 +106,7 @@ export function CancelBroadcastDialog({
         } else {
           toast.error(tToast('cancelError'));
         }
+        closedViaSuccessRef.current = true;
         onOpenChange(false);
         router.refresh();
       } else if (res.status === 404 || res.status === 403) {
@@ -105,6 +114,7 @@ export function CancelBroadcastDialog({
         // concurrently-deleted broadcast) or not permitted (403). Retrying is
         // futile, so close + refresh to update the stale view instead of
         // leaving the dialog open over a doomed request.
+        closedViaSuccessRef.current = true;
         toast.error(tToast('cancelError'));
         onOpenChange(false);
         router.refresh();
