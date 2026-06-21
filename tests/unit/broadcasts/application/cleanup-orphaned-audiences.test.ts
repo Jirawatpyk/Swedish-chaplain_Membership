@@ -185,6 +185,109 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     expect(repo.markCalls[0]).toBe('bc-1111');
   });
 
+  it('7 candidates across concurrency chunks: #4 throws → all 7 processed, deleted:6, failed:1 (Finding A — chunked Promise.allSettled)', async () => {
+    // > CLEANUP_CONCURRENCY (5) candidates so the chunked loop runs at least
+    // two chunks. One mid-chunk throw must NOT short-circuit the chunk or the
+    // remaining chunk — every other candidate is still deleted+marked. This
+    // is the parity-with-reconcile invariant (chunked Promise.allSettled,
+    // per-item try/catch): an isolated failure does not block progress.
+    const candidates = Array.from({ length: 7 }, (_, i) => ({
+      broadcastId: `bc-${i}`,
+      resendAudienceId: `aud-${i}`,
+    }));
+
+    const repo = makeRepo({ candidates });
+
+    // The 4th candidate (index 3) throws a retryable gateway error.
+    const retryableThrow = new GatewayThrowable({
+      kind: 'retryable',
+      subKind: 'server_5xx',
+      reason: 'Resend 503: upstream overload',
+    });
+    const gateway = makeGateway({ throws: { 'aud-3': retryableThrow } });
+
+    const result = await cleanupOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // 7 processed, 6 deleted (all but #4), 1 failed (#4 only).
+      expect(result.value).toEqual({ processed: 7, deleted: 6, failed: 1 });
+    }
+
+    // Every candidate's delete was attempted (no short-circuit).
+    expect(gateway.deleteCalls).toHaveLength(7);
+
+    // Mark called for all 6 successes; the thrown candidate (#4) is NOT marked.
+    expect(repo.markCalls).toHaveLength(6);
+    expect(repo.markCalls).not.toContain('bc-3');
+    // A candidate from the SECOND chunk (index ≥ 5) was still processed,
+    // proving the throw in chunk 1 did not abort subsequent chunks.
+    expect(repo.markCalls).toContain('bc-5');
+    expect(repo.markCalls).toContain('bc-6');
+  });
+
+  it('runs candidates within a chunk concurrently (Finding A — observes >1 in-flight delete)', async () => {
+    // Deterministic concurrency probe: each deleteAudience records the peak
+    // number of simultaneously in-flight deletes, then blocks on a shared
+    // gate. A strictly sequential loop peaks at 1; the chunked
+    // Promise.allSettled (concurrency 5) must peak at >1. We seed exactly 5
+    // candidates (one full chunk) and release the gate once all 5 are
+    // in-flight — proving they run together, not one-at-a-time.
+    const candidates = Array.from({ length: 5 }, (_, i) => ({
+      broadcastId: `cc-${i}`,
+      resendAudienceId: `aud-cc-${i}`,
+    }));
+    const repo = makeRepo({ candidates });
+
+    let inFlight = 0;
+    let peakInFlight = 0;
+    let entered = 0;
+    let resolveAllInFlight: () => void = () => {};
+    const allInFlight = new Promise<void>((resolve) => {
+      resolveAllInFlight = resolve;
+    });
+    let releaseGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+
+    const gateway: BroadcastsGatewayPort = {
+      async createAudience() { throw new Error('not used'); },
+      async addContactsToAudience() { throw new Error('not used'); },
+      async createBroadcast() { throw new Error('not used'); },
+      async sendBroadcast() { throw new Error('not used'); },
+      async retrieveBroadcast() { throw new Error('not used'); },
+      async getAudienceContactCount() { return { kind: 'not_found' as const }; },
+      async removeContactFromAudience() { throw new Error('not used'); },
+      async deleteAudience() {
+        inFlight++;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        entered++;
+        if (entered === candidates.length) resolveAllInFlight();
+        await gate;
+        inFlight--;
+      },
+    };
+
+    // Once all 5 deletes are concurrently in-flight, release the gate so they
+    // can all complete. If the loop were sequential, only 1 would ever be
+    // in-flight and `allInFlight` would never resolve → the gate never opens.
+    void allInFlight.then(() => releaseGate());
+
+    const result = await cleanupOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    // A sequential loop would peak at 1; chunked concurrency-5 peaks at 5.
+    expect(peakInFlight).toBeGreaterThan(1);
+    expect(peakInFlight).toBe(5);
+  });
+
   it('graceCutoff = clock.now() - graceMs (passed to repo list)', async () => {
     const repo = makeRepo({ candidates: [] });
     const gateway = makeGateway({});

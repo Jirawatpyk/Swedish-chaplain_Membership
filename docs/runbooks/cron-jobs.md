@@ -398,9 +398,12 @@ Grace window: **1 hour** (`graceMs = 3600000`). Only broadcasts whose
 race with Resend's own post-send event processing on very recently terminal
 broadcasts.
 
-Per-tick candidate limit: **200 rows** per tenant (`limit = 200`). At
-SweCham scale the steady-state queue depth is near zero (one audience per
-terminal broadcast); the next tick picks up any remainder.
+Per-tick candidate limit: **50 rows** per tenant (`limit = 50`, matches
+reconcile-stuck-sending's `MAX_PER_TICK`). Deletes run in chunks of 5 via
+`Promise.allSettled` so the tick stays within the function timeout even
+under a Resend 5xx backlog. At SweCham scale the steady-state queue depth is
+near zero (one audience per terminal broadcast); the next tick picks up any
+remainder.
 
 ### What it does
 
@@ -408,8 +411,9 @@ Per tenant, inside `cleanupOrphanedAudiences`:
 
 1. Lists terminal broadcasts with `audience_deleted_at IS NULL` AND
    `updated_at < (now() - 1h)` via `broadcastsRepo.listTerminalBroadcastsWithLiveAudience`.
-2. For each candidate: calls `broadcastsGateway.deleteAudience(resendAudienceId)`.
-   A 404 from Resend resolves (already gone); a 5xx throws and is caught per-item.
+2. For each candidate (in chunks of 5, `Promise.allSettled`): calls
+   `broadcastsGateway.deleteAudience(resendAudienceId)`. A 404/410 from Resend
+   resolves (already gone); a 5xx throws and is caught per-item.
 3. On success: stamps `audience_deleted_at = now()` via
    `broadcastsRepo.markAudienceDeletedInTx` inside a per-item tenant-bound tx
    (`broadcastsRepo.withTx`) — Constitution Principle I (RLS via `runInTenant`).
@@ -427,7 +431,7 @@ Per tenant, inside `cleanupOrphanedAudiences`:
      sufficient)
    - **Request method**: `POST`
    - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7)
-   - **Timeout**: 60 seconds (200 candidates × ~200ms Resend RTT ≈ 40s worst case)
+   - **Timeout**: 60 seconds (50 candidates in chunks of 5 × ~200ms Resend RTT ≈ 2s nominal; well within budget even with per-item 5xx retries)
    - **Retry on failure**: **OFF** (per § Retry policy contract — the sweep is
      idempotent + the next 15-min tick is the natural retry)
    - **Notifications**: email on ≥3 consecutive failures

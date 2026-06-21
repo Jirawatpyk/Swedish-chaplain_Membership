@@ -43,11 +43,14 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 const GRACE_MS = 60 * 60 * 1000; // 1 hour
 
 /**
- * Per-tick candidate limit: 200 rows per tenant.
- * At steady-state SweCham scale this is well above the expected queue
- * depth; the next 15-min tick picks up any remainder.
+ * Per-tick candidate limit: 50 rows per tenant (matches reconcile-stuck-
+ * sending's `MAX_PER_TICK`). The use-case parallelises deletes in chunks of
+ * 5 via `Promise.allSettled`, so 50 rows × ceil(50/5) chunks stays well
+ * within the function timeout even when some deletes hit the Resend 5xx
+ * retry path. At steady-state SweCham scale this is above the expected
+ * queue depth; the next 15-min tick picks up any remainder.
  */
-const LIMIT = 200;
+const LIMIT = 50;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

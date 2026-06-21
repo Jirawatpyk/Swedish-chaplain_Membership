@@ -61,7 +61,8 @@ export interface CleanupOrphanedAudiencesInput {
   readonly graceMs: number;
   /**
    * Maximum candidates to process per invocation. Keeps cron execution time
-   * bounded. Production value: 200 (configured at the route layer).
+   * bounded. Production value: 50 (configured at the route layer — matches
+   * reconcile-stuck-sending's `MAX_PER_TICK`).
    */
   readonly limit: number;
 }
@@ -112,13 +113,19 @@ export async function cleanupOrphanedAudiences(
   let deleted = 0;
   let failed = 0;
 
-  for (const candidate of candidates) {
-    // Best-effort per-item: a single failed delete must NOT abort the batch.
-    // Per project memory `mock-only-tests-miss-throw-paths`: per-item try/catch
-    // is MANDATORY and the throw-path test (2 candidates, #2 throws) verifies
-    // this invariant at the unit level.
+  // Per-candidate body. Each candidate issues `deleteAudience` (which retries
+  // Resend 5xx with up to ~31s cumulative backoff) + a `withTx` write, both
+  // independent across candidates. Best-effort per-item: a single failed
+  // delete must NOT abort the batch (per project memory
+  // `mock-only-tests-miss-throw-paths`: per-item try/catch is MANDATORY and
+  // the throw-path test verifies this invariant). `Promise.allSettled` is the
+  // outer isolation: one candidate's throw never short-circuits the chunk.
+  async function handleOne(candidate: {
+    broadcastId: string;
+    resendAudienceId: string;
+  }): Promise<void> {
     try {
-      // 1. Delete the Resend audience. 404 → resolves (already gone);
+      // 1. Delete the Resend audience. 404/410 → resolves (already gone);
       //    5xx / network → throws GatewayThrowable (caught below).
       await deps.broadcastsGateway.deleteAudience(candidate.resendAudienceId);
 
@@ -129,6 +136,8 @@ export async function cleanupOrphanedAudiences(
         await deps.broadcastsRepo.markAudienceDeletedInTx(tx, candidate.broadcastId);
       });
 
+      // JS is single-threaded — `deleted++`/`failed++` across concurrently
+      // awaited `handleOne` calls are not racy (no interleaving mid-statement).
       deleted++;
     } catch (e) {
       failed++;
@@ -142,6 +151,23 @@ export async function cleanupOrphanedAudiences(
       // Row stays with audience_deleted_at IS NULL → eligible for retry on
       // next cron tick (cron-job.org polls every N minutes).
     }
+  }
+
+  // Process candidates in chunks of CLEANUP_CONCURRENCY via
+  // `Promise.allSettled`. Mirrors `reconcile-stuck-sending` (the reference
+  // cron use-case), which parallelises at the same concurrency to avoid
+  // approaching the Vercel function timeout under a Resend-5xx backlog: a
+  // strictly sequential loop of 50 candidates, each retrying a 5xx delete
+  // with ~31s cumulative backoff, blows the function budget and makes no
+  // progress. Chunked concurrency bounds the per-tick wall-clock to
+  // ceil(candidates / CONCURRENCY) × (slowest delete). NOTE: the per-item
+  // 5xx-retry-during-outage characteristic is shared with reconcile — this
+  // fix brings cleanup to parity, it does not claim to fully bound a
+  // sustained-outage tick.
+  const CLEANUP_CONCURRENCY = 5;
+  for (let i = 0; i < candidates.length; i += CLEANUP_CONCURRENCY) {
+    const chunk = candidates.slice(i, i + CLEANUP_CONCURRENCY);
+    await Promise.allSettled(chunk.map(handleOne));
   }
 
   return ok({ processed: candidates.length, deleted, failed });
