@@ -782,10 +782,11 @@ export function makeDrizzleBroadcastsRepo(
       memberId: string,
       quotaYear: number,
     ): Promise<{
-      // Despite the name, this counts THREE statuses: submitted +
-      // approved + failed_to_dispatch (all hold their reservation per
-      // spec AS2). The field is kept as-is because callers depend on
-      // this name; only the comment was missing.
+      // Design D1 (2026-06-21): this counts exactly TWO statuses —
+      // submitted + approved (the only states that hold a reservation).
+      // failed_to_dispatch is terminal and RELEASES the slot, so it is
+      // excluded. The field name is kept as-is because callers depend
+      // on it.
       readonly submittedOrApproved: number;
       readonly sent: number;
     }> {
@@ -798,16 +799,12 @@ export function makeDrizzleBroadcastsRepo(
               and(
                 eq(broadcasts.tenantId, tenantIdArg),
                 eq(broadcasts.requestedByMemberId, memberId),
-                // Verify-fix R3 (Tests-Gap#1, 2026-05-02): spec AS2
-                // (line 324) requires `failed_to_dispatch` rows to HOLD
-                // their quota reservation indefinitely (admin can
-                // manually re-trigger). Previously this counter only
-                // included submitted/approved → quota silently RELEASED
-                // on permanent dispatch failure, contradicting spec.
-                // Pre-fix this caused E2E pollution that needed the
-                // `wipeE2EMemberBroadcasts` helper. Now reserved =
-                // submitted ∪ approved ∪ failed_to_dispatch.
-                sql`${broadcasts.status}::text IN ('submitted', 'approved', 'failed_to_dispatch')`,
+                // Design D1 (2026-06-21): reserved = submitted ∪ approved.
+                // failed_to_dispatch is TERMINAL (no re-trigger route), so
+                // counting it as reserved permanently locked the member out of
+                // their E-Blast benefit. FR-003 already requires release on
+                // failed_to_dispatch; spec.md AS2 (superseded) is amended to match.
+                sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
               ),
             ),
           tx

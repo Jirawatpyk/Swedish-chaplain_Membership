@@ -222,7 +222,7 @@ function makeGateway(opts: GatewayOpts = {}): {
   port: BroadcastsGatewayPort;
   audienceCalls: Array<string>;
   contactsCalls: Array<{ audienceId: string; contacts: ReadonlyArray<AudienceContact> }>;
-  createCalls: Array<{ audienceId: string; subject: string }>;
+  createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string }>;
   sendCalls: Array<{ broadcastId: string; idempotencyKey: string }>;
 } {
   const audienceCalls: Array<string> = [];
@@ -230,7 +230,7 @@ function makeGateway(opts: GatewayOpts = {}): {
     audienceId: string;
     contacts: ReadonlyArray<AudienceContact>;
   }> = [];
-  const createCalls: Array<{ audienceId: string; subject: string }> = [];
+  const createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string }> = [];
   const sendCalls: Array<{ broadcastId: string; idempotencyKey: string }> = [];
   function maybeThrow(spec?: ThrowSpec): void {
     if (!spec) return;
@@ -254,7 +254,7 @@ function makeGateway(opts: GatewayOpts = {}): {
         contactsCalls.push({ audienceId, contacts });
       },
       async createBroadcast(input) {
-        createCalls.push({ audienceId: input.audienceId, subject: input.subject });
+        createCalls.push({ audienceId: input.audienceId, subject: input.subject, broadcastNameForResendDashboard: input.broadcastNameForResendDashboard });
         maybeThrow(opts.throwOnCreateBroadcast);
         return { broadcastId: 'bcast-fake-1' };
       },
@@ -1042,6 +1042,62 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     // Subsequent calls (addContacts + createBroadcast + sendBroadcast)
     // use the existing audience id.
     expect(gw.contactsCalls[0]?.audienceId).toBe('aud-existing');
+  });
+
+  // ---- Name-cap gate (T2-M1) ------------------------------------------
+  // Regression guard: the dispatch call-site MUST pass a
+  // `broadcastNameForResendDashboard` that is ≤70 code points, produced
+  // by `resendDashboardName(fromName, subject)`. A future revert of that
+  // wiring (e.g. inline template-literal) would cause every dispatch to
+  // fail with Resend's "Field `name` has a maximum of 70 items" error.
+  // This test uses a fromName + subject that exceed 70 cp raw, so the
+  // cap MUST be applied — an uncapped inline would fail this assertion.
+
+  it('T2-M1: createBroadcast receives broadcastNameForResendDashboard ≤70 code points even when fromName+subject exceed 70 cp raw', async () => {
+    const audit = makeAudit();
+    // Build a broadcast with a long fromName (~53 cp, realistic for TSCC)
+    // and a long subject (~60 cp) — their raw concatenation is well over 70.
+    const longSubject = 'A'.repeat(60); // 60 cp subject
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        fromName: 'Thailand-Sweden Chamber of Commerce via Test Chamber',
+        subject: longSubject,
+      },
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(gw.createCalls).toHaveLength(1);
+    const capturedName = gw.createCalls[0]?.broadcastNameForResendDashboard ?? '';
+    // The raw uncapped label would be:
+    //   "Thailand-Sweden Chamber of Commerce via Test Chamber — " + "A"×60
+    // which is 114 cp — well over 70.  The cap MUST bring it to ≤70.
+    expect([...capturedName].length).toBeLessThanOrEqual(70);
+    // Sanity: the raw uncapped form IS over 70 (otherwise the test proves nothing)
+    const rawUncapped = `Thailand-Sweden Chamber of Commerce via Test Chamber — ${longSubject}`;
+    expect([...rawUncapped].length).toBeGreaterThan(70);
   });
 
   it('persists resendAudienceId immediately after createAudience succeeds', async () => {

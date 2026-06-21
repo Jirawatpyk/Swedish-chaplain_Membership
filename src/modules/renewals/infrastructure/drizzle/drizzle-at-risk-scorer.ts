@@ -301,12 +301,13 @@ export function makeDrizzleAtRiskScorer(
       // Why reserved MUST be dropped here: a reserved row
       // (submitted/approved/failed_to_dispatch) carries
       // `quota_year_consumed IS NULL` (schema CHECK
-      // `broadcasts_quota_year_only_on_sent`), so it has NO year fence and
-      // a terminal `failed_to_dispatch` from a PRIOR year holds the slot
-      // forever (spec AS2). Counting it would inflate this year's usage,
-      // push pct >= 30, and SILENTLY SUPPRESS the +15 risk factor for a
-      // disengaged member (#8). Counting only sent-this-year cannot leak a
-      // stale prior-year slot.
+      // `broadcasts_quota_year_only_on_sent`), so it has NO year fence.
+      // NOTE: `failed_to_dispatch` RELEASES the quota slot (Design D1,
+      // 2026-06-21); this query counts only `sent` rows regardless, so it
+      // is unaffected by D1. Counting reserved rows would inflate this
+      // year's usage, push pct >= 30, and SILENTLY SUPPRESS the +15 risk
+      // factor for a disengaged member (#8). Counting only sent-this-year
+      // cannot leak a stale prior-year slot.
       //
       // Returned `undefined` (skipped) when:
       //   - member's plan has no benefit_matrix (orphan)

@@ -603,13 +603,15 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             -- Reserved rows (submitted/approved/failed_to_dispatch) are
             -- DROPPED here. They carry quota_year_consumed IS NULL (schema
             -- CHECK broadcasts_quota_year_only_on_sent), so they have NO
-            -- year fence: a terminal failed_to_dispatch from a PRIOR year
-            -- holds the slot forever (spec AS2). Counting it would inflate
-            -- this year's usage, push pct >= 30, and silently SUPPRESS the
-            -- +15 risk factor for a disengaged member (#8). Counting only
-            -- sent-this-year cannot leak a stale prior-year slot. quotaYear
-            -- is computed once per batch in the tenant timezone and bound
-            -- as a param so the year boundary matches how F7 wrote the row.
+            -- year fence. NOTE: failed_to_dispatch RELEASES the quota slot
+            -- (Design D1, 2026-06-21); this query counts only 'sent' rows
+            -- regardless, so it is unaffected by D1. Counting it would
+            -- inflate this year's usage, push pct >= 30, and silently
+            -- SUPPRESS the +15 risk factor for a disengaged member (#8).
+            -- Counting only sent-this-year cannot leak a stale prior-year
+            -- slot. quotaYear is computed once per batch in the tenant
+            -- timezone and bound as a param so the year boundary matches
+            -- how F7 wrote the row.
             AND b.status = 'sent'
             AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true

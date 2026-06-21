@@ -31,6 +31,7 @@ import type {
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
+import { extractBareEmail } from './bare-email';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 const CONTACTS_CHUNK_SIZE = 100;
@@ -262,9 +263,10 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           tenantDisplayName: input.tenantDisplayName,
           locale: input.locale,
         });
+        const bareFromEmail = extractBareEmail(input.fromEmail);
         const result = (await sdk.broadcasts.create({
           audienceId: input.audienceId,
-          from: `${input.fromName} <${input.fromEmail}>`,
+          from: `${input.fromName} <${bareFromEmail}>`,
           subject: input.subject,
           html: wrappedHtml,
           replyTo: input.replyToEmail,
