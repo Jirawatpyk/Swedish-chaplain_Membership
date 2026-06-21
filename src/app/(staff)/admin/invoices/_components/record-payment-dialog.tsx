@@ -41,9 +41,16 @@ type Props = {
   readonly invoiceId: string;
   readonly documentNumber: string | null;
   readonly issueDate: string | null;
+  /**
+   * Tenant-timezone (Asia/Bangkok) "today" as YYYY-MM-DD, computed
+   * server-side. Threaded to `PaymentForm` as the payment-date default
+   * + upper bound — never derived client-side from `new Date()` (UTC),
+   * which breaks the date clamp for ~7h/day. See `PaymentForm.todayIso`.
+   */
+  readonly todayIso: string;
 };
 
-export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate }: Props) {
+export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate, todayIso }: Props) {
   const t = useTranslations('admin.invoices.pay');
   const tDetail = useTranslations('admin.invoices.detail');
   const [open, setOpen] = useState(false);
@@ -76,6 +83,7 @@ export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate }: Pr
           invoiceId={invoiceId}
           documentNumber={documentNumber}
           issueDate={issueDate}
+          todayIso={todayIso}
           onSuccess={() => setOpen(false)}
           onCancel={() => setOpen(false)}
         />

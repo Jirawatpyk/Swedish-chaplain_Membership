@@ -4,7 +4,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ export function PaymentForm({
   invoiceId,
   documentNumber,
   issueDate,
+  todayIso,
   onSuccess,
   onCancel,
 }: {
@@ -37,6 +38,22 @@ export function PaymentForm({
    * issuance of the tax document (§87 temporal consistency).
    */
   issueDate: string | null;
+  /**
+   * "Today" as a YYYY-MM-DD date in the TENANT timezone (Asia/Bangkok),
+   * computed server-side via `bangkokLocalDate(...)` — the SAME helper
+   * that stamps `issue_date`. Used as both the default payment date and
+   * the upper bound of the date picker.
+   *
+   * MUST NOT be derived on the client from `new Date()`: that yields the
+   * UTC date, which lags the Bangkok date by one during 17:00–23:59 UTC
+   * (= 00:00–06:59 Asia/Bangkok). When it lags, an invoice issued that
+   * Bangkok-day has `issue_date` (Bangkok) > `max` (UTC) → `min > max`
+   * → the native date input has no satisfiable value and the form
+   * silently refuses to submit (manual payment recording impossible for
+   * ~7h/day). Threading the server's Bangkok-local today keeps
+   * `min ≤ max` for same-day-issued invoices.
+   */
+  todayIso: string;
   /**
    * Optional callback fired after a successful submit. Used by the
    * RecordPaymentDialog wrapper to close the overlay before the
@@ -59,21 +76,35 @@ export function PaymentForm({
   const [paymentMethod, setPaymentMethod] = useState<(typeof METHODS)[number]>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
-  const [paymentDate, setPaymentDate] = useState('');
-  const [todayIso, setTodayIso] = useState('');
-  useEffect(() => {
-    // Seed with today's date on the client only to avoid SSR/CSR
-    // hydration mismatch from `new Date()`. The outer wrapper carries
-    // `suppressHydrationWarning`; the setState-on-mount pattern is the
-    // documented React 19 pattern for this case.
-    const today = new Date().toISOString().slice(0, 10);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPaymentDate(today);
-    setTodayIso(today);
-  }, []);
+  // Default to the tenant-timezone "today" supplied by the server. No
+  // client `new Date()` seeding — that produced the UTC-vs-Bangkok
+  // off-by-one date-clamp bug (see the `todayIso` prop doc). The server
+  // value is identical on SSR + CSR, so there is no hydration mismatch.
+  const [paymentDate, setPaymentDate] = useState(todayIso);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // App-controlled validation of the payment date — mirrors the native
+  // [issueDate, todayIso] clamp but surfaces an inline error + aria-invalid
+  // instead of relying solely on the browser's transient native bubble
+  // (which `noValidate` on the form suppresses). Shown only after a submit
+  // attempt to avoid nagging while the admin is still typing.
+  const dateInvalid =
+    paymentDate === '' ||
+    (issueDate !== null && paymentDate < issueDate) ||
+    paymentDate > todayIso;
+  const showDateError = submitAttempted && dateInvalid;
+  const dateErrorText = showDateError
+    ? t('errors.dateRange', { min: issueDate ?? todayIso, max: todayIso })
+    : null;
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setSubmitAttempted(true);
+    if (dateInvalid) {
+      dateInputRef.current?.focus();
+      return;
+    }
     startTransition(async () => {
       const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
         method: 'POST',
@@ -122,9 +153,13 @@ export function PaymentForm({
   return (
     <form
       onSubmit={submit}
+      // App-controlled validation (see `dateInvalid` / inline error below)
+      // — `noValidate` suppresses the browser's native bubble so the
+      // admin gets a single, consistent, screen-reader-friendly message.
+      noValidate
       className="flex flex-col gap-[var(--page-section-gap)]"
     >
-      <div suppressHydrationWarning>
+      <div>
         <Label htmlFor="method">{t('fields.method')}</Label>
         <Select
           value={paymentMethod}
@@ -157,6 +192,7 @@ export function PaymentForm({
       <div>
         <Label htmlFor="date">{t('fields.date')}</Label>
         <Input
+          ref={dateInputRef}
           id="date"
           type="date"
           value={paymentDate}
@@ -164,14 +200,21 @@ export function PaymentForm({
           required
           // Clamp [issueDate, today] — prevents typos like 2062-04-19
           // and ensures payment cannot pre-date the tax document
-          // (§87 temporal consistency).
+          // (§87 temporal consistency). `min`/`max` still clamp the
+          // native date-picker UI even with the form's `noValidate`.
           {...(issueDate ? { min: issueDate } : {})}
           {...(todayIso ? { max: todayIso } : {})}
-          aria-describedby="date-hint"
+          aria-invalid={showDateError || undefined}
+          aria-describedby={showDateError ? 'date-error date-hint' : 'date-hint'}
         />
         <p id="date-hint" className="mt-1 text-xs text-muted-foreground">
           {t('fields.dateHint')}
         </p>
+        {dateErrorText && (
+          <p id="date-error" role="alert" className="mt-1 text-xs text-destructive">
+            {dateErrorText}
+          </p>
+        )}
       </div>
       <div>
         <Label htmlFor="notes">{t('fields.notes')}</Label>
