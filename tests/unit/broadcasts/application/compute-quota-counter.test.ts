@@ -177,23 +177,24 @@ describe('compute-quota-counter โ€” Wave 6 (T067 GREEN)', () => {
     }
   });
 
-  it('R3 Tests-Gap#1: failed_to_dispatch holds the reservation slot per spec AS2', async () => {
-    // Verify-fix R3 (2026-05-02): spec.md US6 AS2 (line 324) requires
-    // `failed_to_dispatch` to HOLD the quota slot indefinitely (admin
-    // can manually re-trigger). The test mocks the repo to return
-    // reserved=1 (which now includes failed_to_dispatch per the
-    // updated SQL `IN ('submitted', 'approved', 'failed_to_dispatch')`)
-    // and asserts the use-case correctly surfaces that as "remaining
-    // quota = cap - reserved - used". Live SQL behaviour locked at
-    // the integration layer (`drizzle-broadcasts-repo.ts:667`).
-    const deps = makeDeps({ cap: 1, used: 0, reserved: 1 });
+  it('D1 (2026-06-21): failed_to_dispatch RELEASES the reservation slot', async () => {
+    // Design spec D1 / FR-003 (2026-06-21): failed_to_dispatch is terminal
+    // (no re-trigger route exists), so holding the slot is a permanent
+    // lockout. The repo SQL no longer counts failed_to_dispatch as reserved
+    // (`IN ('submitted', 'approved')`), so a member whose only broadcast
+    // failed to dispatch has the full quota available again. This mocks the
+    // repo to return reserved=0 (the post-D1 contract) and asserts the
+    // use-case surfaces "remaining quota = cap". Live SQL behaviour locked
+    // at the integration layer
+    // (`tests/integration/broadcasts/quota-release-on-failed-dispatch.test.ts`).
+    const deps = makeDeps({ cap: 1, used: 0, reserved: 0 });
     const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.counter.reserved).toBe(1);
-      expect(result.value.counter.remaining).toBe(0);
-      // Member is BLOCKED from submitting new broadcasts because the
-      // failed_to_dispatch row holds the slot โ€” spec AS2 contract.
+      expect(result.value.counter.reserved).toBe(0);
+      expect(result.value.counter.remaining).toBe(1);
+      // Member is FREE to submit again because the failed_to_dispatch
+      // row no longer holds the slot (Design D1; spec AS2 amended).
     }
   });
 
