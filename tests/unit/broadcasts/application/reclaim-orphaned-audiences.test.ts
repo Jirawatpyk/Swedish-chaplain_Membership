@@ -326,6 +326,66 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // M-1 (review fix): existingBroadcastIds throwing → server_error, no deletes
+  // ---------------------------------------------------------------------------
+
+  it('(M-1) existingBroadcastIds throws → returns err reclaim.server_error and deletes nothing', async () => {
+    // Safety gate: when the DB lookup throws, the use-case MUST abort immediately
+    // and NOT call deleteAudience. Deleting without confirming the broadcast row
+    // is absent would risk destroying live audiences.
+    const gateway = makeGateway({
+      audiences: [{ id: 'aud-aaa', name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_ISO }],
+    });
+    const repo = makeRepo({ existing: new Set([]), shouldThrow: true });
+
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('reclaim.server_error');
+    // SAFETY: deleteAudience must NOT be called when the DB lookup fails
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // M-2 (review fix): "Cannot delete last audience" via real GatewayThrowable
+  // ---------------------------------------------------------------------------
+
+  it('(M-2) deleteAudience throws GatewayThrowable("Cannot delete last audience") → benign skip (failed stays 0)', async () => {
+    // Production shape: Resend returns a 403 → gateway throws GatewayThrowable
+    // (not a plain Error). Its constructor calls super(init.reason) so
+    // .message === reason. The LAST_AUDIENCE_PATTERN (/cannot delete last audience/i)
+    // in the use-case matches via `e instanceof Error && LAST_AUDIENCE_PATTERN.test(e.message)`,
+    // which GatewayThrowable satisfies because it extends Error.
+    const audienceId = 'aud-last-gw';
+    const gateway = makeGateway({
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_ISO }],
+      throws: {
+        [audienceId]: new GatewayThrowable({
+          kind: 'permanent',
+          code: 'validation_error',
+          reason: 'Cannot delete last audience',
+        }),
+      },
+    });
+    const repo = makeRepo({ existing: new Set([]) }); // UUID_B NOT in DB → orphan
+
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toMatchObject({ orphaned: 1, deleted: 0, failed: 0 });
+    }
+    // deleteAudience WAS called (the attempt was made) but the throw was benign
+    expect(gateway.deleteCalls).toContain(audienceId);
+  });
+
   it('(g) listAudiences throws → returns err reclaim.server_error', async () => {
     const gateway = makeGateway({ audiences: [], listThrows: true });
     const repo = makeRepo({ existing: new Set([]) });
@@ -369,8 +429,10 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     expect(gateway.deleteCalls).toContain(audienceId);
   });
 
-  it('limit caps candidates before the DB existence check', async () => {
-    // 5 audiences, all orphaned, limit=2 → only 2 candidates considered
+  it('(N-1) limit caps candidates before the DB existence check — exact count asserted', async () => {
+    // 5 audiences, all orphaned (no DB rows), limit=2 → exactly 2 are deleted.
+    // Using toBe(2) (not toBeLessThanOrEqual) so an impl that ignores `limit`
+    // and deletes all 5 would fail this test.
     const audiences = Array.from({ length: 5 }, (_, i) => ({
       id: `aud-lim-${i}`,
       name: `broadcast-${TENANT_SLUG}-${UUID_A.slice(0, -1)}${i}`,
@@ -386,9 +448,11 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // scanned all 5 but only considered 2 as candidates
+      // scanned all 5 but only considered 2 as candidates (capped by limit)
       expect(result.value.scanned).toBe(5);
-      expect(gateway.deleteCalls.length).toBeLessThanOrEqual(2);
+      expect(result.value.orphaned).toBe(2);
+      expect(result.value.deleted).toBe(2);
+      expect(gateway.deleteCalls).toHaveLength(2); // exact, not ≤
     }
   });
 });
