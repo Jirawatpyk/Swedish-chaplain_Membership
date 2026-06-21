@@ -84,6 +84,13 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
   const mC = randomUUID(); // planA: full both (3 eblast, 2 cultural) — NOT under
   const mD = randomUUID(); // planB: eblast n/a, under cultural (0, 1)
   const mE = randomUUID(); // planA: PRIOR-year only → under both this year
+  // FR-008c (finding C-followup): mF's ONLY current-year e-blast is
+  // `partial_delivery_accepted`, which CONSUMES the quota slot exactly like
+  // `sent` (schema CHECK `broadcasts_quota_year_only_on_sent` stamps
+  // quota_year_consumed for BOTH states). On the pre-fix `sent`-only filter the
+  // batched aggregate reads mF as used=0 → mF is mis-flagged "didn't use e-blast"
+  // (counted in unused_eblast_quota) AND its per-member lastUsedAt is null.
+  const mF = randomUUID(); // planA: 3-of-3 eblast via partial-accept → NOT under, full
 
   function sentBroadcast(memberId: string, quotaYear: number, sentAt: Date) {
     return {
@@ -110,6 +117,31 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
   async function seedSent(tx: Parameters<Parameters<typeof runInTenant>[1]>[0], memberId: string, n: number, quotaYear: number, at: Date) {
     for (let i = 0; i < n; i += 1) {
       await tx.insert(broadcasts).values(sentBroadcast(memberId, quotaYear, at));
+    }
+  }
+
+  // FR-008c — a TERMINAL `partial_delivery_accepted` broadcast. Consumes the
+  // quota slot exactly like `sent`: the schema CHECK
+  // `broadcasts_quota_year_only_on_sent` requires quota_year_consumed +
+  // quota_consumed_at NON-NULL for this state too. `partial_delivery_accepted_at`
+  // is the timestamp the F9 last-used scan must coalesce on (no `sent_at`).
+  async function seedPartialAccepted(
+    tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+    memberId: string,
+    n: number,
+    quotaYear: number,
+    at: Date,
+  ) {
+    for (let i = 0; i < n; i += 1) {
+      await tx.insert(broadcasts).values({
+        ...sentBroadcast(memberId, quotaYear, at),
+        status: 'partial_delivery_accepted' as const,
+        // A partial-accept row has NO sent_at — the only usage timestamp is
+        // partial_delivery_accepted_at (the F9 lastUsedAt coalesce target).
+        sentAt: null,
+        partialDeliveryAcceptedAt: at,
+        partialDeliveryAcceptedByUserId: admin.userId,
+      });
     }
   }
 
@@ -178,12 +210,16 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
         member(mC, planA),
         member(mD, planB),
         member(mE, planA),
+        member(mF, planA),
       ]);
 
       // E-Blast (sent) consumption — current year unless noted.
       await seedSent(tx, mA, 1, SEED_YEAR, THIS_YEAR); // 1/3 → under
       await seedSent(tx, mC, 3, SEED_YEAR, THIS_YEAR); // 3/3 → full
       await seedSent(tx, mE, 1, SEED_YEAR - 1, PRIOR_YEAR); // prior year → excluded
+      // FR-008c — mF's whole e-blast usage is via partial-accept (3/3 → full,
+      // NOT under). On the pre-fix `sent`-only filter mF reads 0/3 → under.
+      await seedPartialAccepted(tx, mF, 3, SEED_YEAR, THIS_YEAR);
 
       // Cultural consumption — current year unless noted.
       await seedCultural(tx, mA, 1, THIS_YEAR); // 1/2 → under
@@ -212,12 +248,15 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
     const r = await computeDashboardSnapshot(tenant.ctx, makeComputeDashboardSnapshotDeps(tenant.ctx.slug));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    // unused_eblast_quota: mA (1/3), mB (0/3), mE (prior-year → 0/3). mC full, mD n/a (0 entitlement).
+    // unused_eblast_quota: mA (1/3), mB (0/3), mE (prior-year → 0/3). mC full, mD
+    // n/a (0 entitlement). mF is full via partial-accept (3/3, FR-008c) → NOT
+    // counted: on the pre-fix `sent`-only filter mF reads 0/3 → this would be 4.
     expect(insightCount(r.value, 'unused_eblast_quota')).toBe(3);
-    // underused_event_tickets: mA (1/2), mB (0/2), mD (1/2), mE (prior → 0/2). mC full.
-    expect(insightCount(r.value, 'underused_event_tickets')).toBe(4);
-    // UNION {mA, mB, mD, mE} = 4 (mC under neither).
-    expect(r.value.underDeliveredBenefitCount).toBe(4);
+    // underused_event_tickets: mA (1/2), mB (0/2), mD (1/2), mE (prior → 0/2),
+    // mF (0/2 cultural → under). mC full.
+    expect(insightCount(r.value, 'underused_event_tickets')).toBe(5);
+    // UNION {mA, mB, mD, mE, mF} = 5 (mC under neither; mF under cultural only).
+    expect(r.value.underDeliveredBenefitCount).toBe(5);
   });
 
   // EQUIVALENCE pins BOTH batched aggregates against their per-member sources so a
@@ -264,7 +303,38 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(insightCount(r.value, 'unused_eblast_quota')).toBeUndefined(); // dismissed
-    expect(insightCount(r.value, 'underused_event_tickets')).toBe(4); // survives (different key/cycle)
+    expect(insightCount(r.value, 'underused_event_tickets')).toBe(5); // survives (different key/cycle)
+  });
+
+  // ── Finding C-followup / FR-008c — the F9 benefit-usage count (the 4th query
+  // the prior finding-C fix-wave missed) must count `partial_delivery_accepted`
+  // alongside `sent` (year-fenced), so a member whose ONLY current-year e-blast
+  // was partial-accepted is NEITHER mis-flagged "didn't use their e-blast" NOR
+  // shown "used, but never used" (null lastUsedAt). RED on the pre-fix
+  // `status='sent'` filter; GREEN after `inArray(['sent','partial_delivery_accepted'])`.
+  it('FR-008c: a partial-accept-only member is COUNTED (not under-using e-blast) and has a non-null lastUsedAt', async () => {
+    // 1) Batched aggregate (eblastUsedByMember → unused_eblast_quota card):
+    //    mF's 3 partial-accepted rows are counted (=== entitlement 3 → full).
+    //    Pre-fix this map has NO mF entry (sent-only) → mF reads used=0 → under.
+    const eblast = await benefitConsumptionAggregateAdapter.eblastUsedByMember(tenant.ctx, SEED_YEAR);
+    expect(eblast.get(mF)).toBe(3);
+
+    // 2) Live-wired snapshot: mF is full (3/3) → NOT in the unused_eblast_quota
+    //    count (which stays 3 = {mA, mB, mE}; pre-fix it would be 4 incl. mF).
+    const snap = await computeDashboardSnapshot(tenant.ctx, makeComputeDashboardSnapshotDeps(tenant.ctx.slug));
+    expect(snap.ok).toBe(true);
+    if (!snap.ok) return;
+    expect(insightCount(snap.value, 'unused_eblast_quota')).toBe(3);
+
+    // 3) Per-member source (member benefit view): used>0 AND lastUsedAt non-null.
+    //    Pre-fix `getEblastConsumption` would (via computeQuotaCounter's sent-only
+    //    count) read used=0 AND the last-sent scan guards `status !== 'sent'` →
+    //    null lastUsedAt ("used, but never used"). Post-fix: used=3, the scan
+    //    accepts partial_delivery_accepted and coalesces partialDeliveryAcceptedAt.
+    const perMemberF = await broadcastSourceAdapter.getEblastConsumption(tenant.ctx, mF, SEED_YEAR);
+    expect(perMemberF.used).toBe(3);
+    expect(perMemberF.lastUsedAt).not.toBeNull();
+    expect(perMemberF.lastUsedAt).toBe(THIS_YEAR.toISOString());
   });
 });
 
