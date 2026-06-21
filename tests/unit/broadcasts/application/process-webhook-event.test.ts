@@ -149,6 +149,8 @@ function makeBroadcastsRepo(args: {
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
+    async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in process-webhook-event fixture'); },
+    async markAudienceDeletedInTx() { throw new Error('not used in process-webhook-event fixture'); },
   };
   return { port, transitions };
 }

@@ -115,6 +115,8 @@ function makeBroadcastsRepo({
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
+    async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in compute-quota-counter fixture'); },
+    async markAudienceDeletedInTx() { throw new Error('not used in compute-quota-counter fixture'); },
   };
 }
 

@@ -192,6 +192,8 @@ function makeRepo(opts: RepoOpts): {
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
+    async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
+    async markAudienceDeletedInTx() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
     },
   };
 }

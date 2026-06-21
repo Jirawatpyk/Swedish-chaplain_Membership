@@ -1345,5 +1345,68 @@ export function makeDrizzleBroadcastsRepo(
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },
+
+    /**
+     * PR-2 Task 2 — list terminal broadcasts whose Resend audience is still
+     * live (not yet cleaned up by the cron).
+     *
+     * Runs its own `runInTenant` call (this is a read-only method with no
+     * in-flight caller tx). The query is tenant-scoped by both the
+     * `WHERE tenant_id = $1` clause and the RLS+FORCE policy.
+     *
+     * Terminal statuses: sent, failed_to_dispatch, cancelled, rejected,
+     * partial_delivery_accepted. Ordered `updated_at ASC` so the cron
+     * processes oldest-terminal-first (nearest any per-broadcast SLA).
+     * LIMIT keeps each cron tick's batch small and predictable.
+     */
+    async listTerminalBroadcastsWithLiveAudience(tenantIdArg, graceCutoff, limit) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT broadcast_id, resend_audience_id
+          FROM broadcasts
+          WHERE tenant_id = ${tenantIdArg}
+            AND status::text IN (
+              'sent',
+              'failed_to_dispatch',
+              'cancelled',
+              'rejected',
+              'partial_delivery_accepted'
+            )
+            AND resend_audience_id IS NOT NULL
+            AND audience_deleted_at IS NULL
+            AND updated_at < ${graceCutoff.toISOString()}::timestamptz
+          ORDER BY updated_at ASC
+          LIMIT ${limit}
+        `)) as unknown as Array<{
+          broadcast_id: string;
+          resend_audience_id: string;
+        }>;
+        return rows.map((r) => ({
+          broadcastId: r.broadcast_id,
+          resendAudienceId: r.resend_audience_id,
+        }));
+      });
+    },
+
+    /**
+     * PR-2 Task 2 — stamp `audience_deleted_at = now()` on a single
+     * broadcast row, inside the caller's `runInTenant` tx.
+     *
+     * Idempotent: if the row already has `audience_deleted_at` set, the
+     * UPDATE changes it to `now()` again (harmless — the important bit
+     * is that `audience_deleted_at IS NOT NULL`, not the exact timestamp).
+     * The WHERE clause is intentionally permissive on `audience_deleted_at`
+     * so a re-drive after a partial cron failure does not silently skip.
+     */
+    async markAudienceDeletedInTx(txUnknown, broadcastId) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'markAudienceDeletedInTx');
+      await tx.execute(sql`
+        UPDATE broadcasts
+           SET audience_deleted_at = now()
+         WHERE tenant_id = ${ctx.slug}
+           AND broadcast_id = ${broadcastId}::uuid
+      `);
+    },
   };
 }

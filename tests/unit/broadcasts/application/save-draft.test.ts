@@ -188,6 +188,8 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
+    async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in save-draft fixture'); },
+    async markAudienceDeletedInTx() { throw new Error('not used in save-draft fixture'); },
   };
 }
 
