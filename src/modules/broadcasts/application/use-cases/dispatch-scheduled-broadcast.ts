@@ -45,6 +45,7 @@ import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
+import { resendDashboardName } from '../format/resend-dashboard-name';
 
 /**
  * FR-021 retry budget — total wall-clock window from `scheduled_for`
@@ -565,13 +566,7 @@ export async function dispatchScheduledBroadcast(
       fromName: broadcast.fromName,
       fromEmail: deps.fromEmail,
       replyToEmail: broadcast.replyToEmail,
-      // R6 staff-review #12 — Unicode-safe truncation. `String.slice`
-      // operates on UTF-16 code units, so a subject ending with an
-      // emoji (surrogate pair, 2 code units) at index 59 would be
-      // split mid-pair, producing an invalid lone-surrogate that
-      // Resend's dashboard renders as a replacement glyph. Spread to
-      // an array of grapheme-safe code points before slicing.
-      broadcastNameForResendDashboard: `${broadcast.fromName} — ${[...broadcast.subject].slice(0, 60).join('')}`,
+      broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
       tenantDisplayName: deps.tenantDisplayName,
       locale: deps.locale,
     });

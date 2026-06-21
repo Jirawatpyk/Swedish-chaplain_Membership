@@ -36,6 +36,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { safeAuditEmit } from './_safe-audit-emit';
+import { resendDashboardName } from '../format/resend-dashboard-name';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { AdvisoryLockPort } from '../ports/advisory-lock-port';
@@ -231,7 +232,10 @@ export async function dispatchBroadcastBatch(
       fromName: input.broadcastContent.fromName,
       fromEmail: input.broadcastContent.fromEmail,
       replyToEmail: input.broadcastContent.replyToEmail,
-      broadcastNameForResendDashboard: `${input.broadcastContent.fromName} — batch ${manifest.batchIndex + 1}`,
+      broadcastNameForResendDashboard: resendDashboardName(
+        input.broadcastContent.fromName,
+        `batch ${manifest.batchIndex + 1}`,
+      ),
       tenantDisplayName: input.broadcastContent.tenantDisplayName,
       locale: input.broadcastContent.locale,
     });
