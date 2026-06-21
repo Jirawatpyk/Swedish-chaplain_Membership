@@ -240,7 +240,7 @@ Feature-specific (set before flipping the feature on):
 Register the 5-minute-cadence jobs (Vercel Hobby caps native cron at 1×/day).
 Key launch-critical entries (Bearer `CRON_SECRET`, **retry OFF** per runbook):
 - [ ] F9 `snapshot-refresh-coordinator` `*/5` (**POST**) + `process-export-jobs` `*/5` **(T101)**
-- [ ] F7 `dispatch-scheduled` `*/5`, `reconcile-stuck-sending` `*/15`, `dispatch-batches` `*/5`, `split-large-broadcasts` `*/5`, `broadcasts-gauges` `*/5`, **`prune-expired-drafts` `30 4 * * *`** ← was missing
+- [ ] F7 `dispatch-scheduled` `*/5`, `reconcile-stuck-sending` `*/15`, `dispatch-batches` `*/5`, `split-large-broadcasts` `*/5`, `broadcasts-gauges` `*/5`, **`prune-expired-drafts` `30 4 * * *`** ← was missing, **`cleanup-audiences` `*/15`** (PR-2 #5 — deletes terminal broadcasts' ephemeral Resend audiences) ← new
 - [ ] F5 `stale-pending-count` `*/5`
 - [ ] F8 — **all 7** coordinators: `dispatch-coordinator`, `at-risk-recompute-coordinator`, `tier-upgrade-evaluate-coordinator`, `reconcile-pending-reactivations-coordinator`, `lapse-cycles-on-grace-expiry-coordinator`, `prune-consumed-tokens`, `reconcile-pending-applications` (cadence per `cron-jobs.md`)
 - [ ] F6 — **4 jobs**: idempotency sweep (03:30), **PII pseudonymisation sweep (04:00 — compliance-critical)**, error-CSV blob TTL sweep (22:00 UTC), match-rate gauge (hourly)
@@ -267,7 +267,11 @@ Flip on only after each feature's gates above pass:
 ### 6.6 F7 Email Broadcast — send hardening
 - [ ] `RESEND_BROADCASTS_API_KEY` has **Full access** (Broadcasts + Audiences), not "Sending access" — verified in dev, staging, prod.
 - [ ] `BROADCASTS_FROM_EMAIL` is a valid `local@domain` or `Display Name <local@domain>` (the gateway prepends the member's display name to this address).
-- [ ] F7 send hardening PR-1 merged (name ≤70, from un-wrapped, quota released on failed_to_dispatch). PR-2 (ephemeral audience + cleanup) tracked separately.
+- [ ] F7 send hardening PR-1 merged (name ≤70, from un-wrapped, quota released on failed_to_dispatch).
+- [ ] **F7 send hardening PR-2 merged** (defect #5 — ephemeral per-broadcast audience + cleanup cron). After merge, each dispatch creates its OWN Resend audience and the `cleanup-audiences` cron deletes it once the broadcast is terminal.
+- [ ] **`cleanup-audiences` cron registered** in cron-job.org: `POST /api/cron/broadcasts/cleanup-audiences`, Bearer `CRON_SECRET`, `*/15`, **retry OFF** (per `docs/runbooks/cron-jobs.md`).
+- [ ] **Resend audience count stays bounded post-deploy** — spot-check the Resend dashboard a few cron ticks after the first production broadcast: terminal broadcasts' audiences should be removed (`audience_deleted_at` stamped), not accumulating. A transient plan-segment-limit overflow surfaces as a `failed_to_dispatch` until the cron frees room (known behavior; the cron keeps the count bounded).
+- [ ] **COMP-1 GDPR erasure × cleanup interaction** is covered by `tests/integration/broadcasts/erasure-after-audience-cleanup.test.ts` (member-erasure of Resend contacts still resolves after the audience is cleaned up — the gateway is 404-tolerant). No operator action; noted for the security reviewer.
 
 ---
 
