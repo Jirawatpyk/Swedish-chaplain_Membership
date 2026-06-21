@@ -28,6 +28,7 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
   getInvoice,
   makeGetInvoiceDeps,
@@ -292,6 +293,12 @@ export default async function InvoiceDetailPage({
   // day). Fire-and-forget — swallowed-adapter errors do not 500 the
   // page because the adapter's catch logs pino and returns false.
   const nowUtcIso = new Date().toISOString();
+  // Tenant-timezone (Asia/Bangkok) "today" — the SAME helper that stamps
+  // `issue_date`. Threaded to the Record-payment dialog so its date
+  // picker clamps against the Bangkok date, not the client's UTC date
+  // (the UTC date lags Bangkok by one for ~7h/day, which made the
+  // payment-date window empty for same-day-issued invoices).
+  const bangkokTodayIso = bangkokLocalDate(nowUtcIso);
   const overdueDetected = computeIsOverdue(invoice, nowUtcIso);
   const displayStatus = overdueDetected ? 'overdue' : invoice.status;
   if (overdueDetected) {
@@ -428,6 +435,7 @@ export default async function InvoiceDetailPage({
                 invoiceId={invoice.invoiceId}
                 documentNumber={invoice.documentNumber?.raw ?? null}
                 issueDate={invoice.issueDate}
+                todayIso={bangkokTodayIso}
               />
             )}
             {invoice.status === 'issued' && isAdmin && (
