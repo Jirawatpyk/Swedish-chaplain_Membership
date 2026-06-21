@@ -26,13 +26,49 @@ export interface ResendBroadcastsClientLike {
   };
 }
 
-export function createResendContractFake(opts: { audienceLimit?: number } = {}): {
+export function createResendContractFake(opts: {
+  audienceLimit?: number;
+  /**
+   * When `true`, `contacts.remove({ audienceId, email })` returns a 404
+   * (`resource_missing`) for an audienceId that was NEVER created OR has
+   * already been deleted via `audiences.remove`. This models real Resend
+   * behaviour after an ephemeral audience is cleaned up (PR-2): the contact
+   * can no longer be removed because its audience is gone, and the gateway's
+   * `removeContactFromAudience` 404-tolerance path must treat that as "already
+   * erased". Default `false` preserves the original always-success behaviour
+   * for the existing gateway/contract consumers (PR-1) — only the
+   * erasure-after-cleanup integration test opts in.
+   */
+  contactsRemove404OnDeletedAudience?: boolean;
+} = {}): {
   client: ResendBroadcastsClientLike;
   createdAudienceCount: () => number;
+  /**
+   * The audience ids created via `audiences.create`, in creation order.
+   * Unlike `createdAudienceIds` (which is mutated on remove), this list is
+   * append-only so the cross-member isolation test can assert the COUNT and
+   * IDENTITY of audiences created across a dispatch run even if some were
+   * later deleted.
+   */
+  createdAudienceIdsInOrder: () => readonly string[];
+  /**
+   * The set of contact emails (lower-cased) recorded against `audienceId` via
+   * `contacts.create`. Returns an empty set for an unknown audience. The
+   * cross-member isolation test reads this to assert each broadcast's audience
+   * holds EXACTLY its own recipients (no cross-member PII leak).
+   */
+  getAudienceContacts: (audienceId: string) => ReadonlySet<string>;
 } {
   const audienceLimit = opts.audienceLimit ?? Number.POSITIVE_INFINITY;
+  const remove404OnDeletedAudience =
+    opts.contactsRemove404OnDeletedAudience ?? false;
   let audienceCount = 0;
   const createdAudienceIds = new Set<string>();
+  // Append-only creation log (never mutated on remove) — distinct from the
+  // `createdAudienceIds` liveness set above.
+  const createdAudienceIdsInOrder: string[] = [];
+  // audienceId → set of lower-cased contact emails added to it.
+  const audienceContacts = new Map<string, Set<string>>();
   const client: ResendBroadcastsClientLike = {
     broadcasts: {
       async create(args) {
@@ -64,6 +100,8 @@ export function createResendContractFake(opts: { audienceLimit?: number } = {}):
         audienceCount += 1;
         const id = `aud_fake_${audienceCount}`;
         createdAudienceIds.add(id);
+        createdAudienceIdsInOrder.push(id);
+        audienceContacts.set(id, new Set<string>());
         return { data: { id }, error: null };
       },
       async remove(id: string) {
@@ -78,10 +116,55 @@ export function createResendContractFake(opts: { audienceLimit?: number } = {}):
       },
     },
     contacts: {
-      async create() { return { data: { id: 'contact_fake_1' }, error: null }; },
-      async remove() { return { data: { deleted: true }, error: null }; },
+      async create(args: unknown) {
+        // Record (audienceId → lower-cased email) so a test can assert which
+        // contacts landed in which audience. The gateway's
+        // `addContactsToAudience` calls `sdk.contacts.create({ audienceId,
+        // email, ... })`, one contact per call.
+        const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
+        if (typeof a.audienceId === 'string' && typeof a.email === 'string') {
+          const set = audienceContacts.get(a.audienceId) ?? new Set<string>();
+          set.add(a.email.toLowerCase());
+          audienceContacts.set(a.audienceId, set);
+        }
+        return { data: { id: `contact_fake_${randomId()}` }, error: null };
+      },
+      async remove(args: unknown) {
+        const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
+        // Opt-in only: model a deleted/never-created audience as a 404 so the
+        // erasure-after-cleanup test exercises the gateway's
+        // `removeContactFromAudience` `resource_missing` 404-tolerance path.
+        if (
+          remove404OnDeletedAudience &&
+          typeof a.audienceId === 'string' &&
+          !createdAudienceIds.has(a.audienceId)
+        ) {
+          return {
+            data: null,
+            error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
+          };
+        }
+        // Default (back-compat): succeed. Also drop the email from the recorded
+        // set when both fields are present, so a test can observe removal.
+        if (typeof a.audienceId === 'string' && typeof a.email === 'string') {
+          audienceContacts.get(a.audienceId)?.delete(a.email.toLowerCase());
+        }
+        return { data: { deleted: true }, error: null };
+      },
       async list() { return { data: { data: [] }, error: null }; },
     },
   };
-  return { client, createdAudienceCount: () => audienceCount };
+  return {
+    client,
+    createdAudienceCount: () => audienceCount,
+    createdAudienceIdsInOrder: () => [...createdAudienceIdsInOrder],
+    getAudienceContacts: (audienceId: string) =>
+      new Set(audienceContacts.get(audienceId) ?? new Set<string>()),
+  };
+}
+
+/** Short random suffix for fake contact ids — avoids id collisions when many
+ *  contacts are created in one test (purely cosmetic; ids are unused). */
+function randomId(): string {
+  return Math.random().toString(36).slice(2, 10);
 }
