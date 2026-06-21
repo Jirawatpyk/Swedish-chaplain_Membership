@@ -69,36 +69,30 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
 });
 
 describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
-  it('returns the remaining live audience after create×2 then remove×1', async () => {
-    // Use a fresh fake so this test is isolated from the module-level fake above.
-    const localFake = createResendContractFake();
-    vi.mock('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-client', () => ({
-      getResendBroadcastsClient: () => localFake.client,
-    }));
-
-    // Create two audiences via the fake's SDK surface (bypasses gateway for setup).
-    const r1 = await localFake.client.audiences.create({ name: 'Audience Alpha' });
-    const r2 = await localFake.client.audiences.create({ name: 'Audience Beta' });
+  it('maps created_at→createdAt and returns only live audiences after create×2 then remove×1', async () => {
+    // The module-level `fake` is already wired into the gateway via the
+    // top-of-file vi.mock — calling resendBroadcastsGateway.listAudiences()
+    // goes through the REAL gateway impl (create→send→list mapping logic)
+    // against the in-memory fake, never hitting real Resend.
+    //
+    // The createBroadcast describe-block above does not call audiences.create,
+    // so the fake's audience counter is still 0 here.
+    const r1 = await fake.client.audiences.create({ name: 'Audience Alpha' });
+    const r2 = await fake.client.audiences.create({ name: 'Audience Beta' });
     expect(r1.data?.id).toBe('aud_fake_1');
     expect(r2.data?.id).toBe('aud_fake_2');
 
     // Remove the first one.
-    await localFake.client.audiences.remove('aud_fake_1');
+    await fake.client.audiences.remove('aud_fake_1');
 
-    // Now call gateway.listAudiences — should return only the surviving audience.
-    // We need the gateway to use localFake.client, but the vi.mock above is
-    // module-scoped and was already set to `fake` at the top. To test the new
-    // method in isolation we call the fake's audiences.list() directly via the
-    // gateway under a fresh mock context (see below).
-    //
-    // Instead: call fake.client.audiences.list() directly to verify the fake
-    // returns the right shape, then test the gateway method with the local fake.
-    const listResult = await localFake.client.audiences.list();
-    expect(listResult.error).toBeNull();
-    // The SDK shape: { data: { object: 'list', data: [{id, name, created_at}] } }
-    const rows = listResult.data?.data ?? [];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: 'aud_fake_2', name: 'Audience Beta' });
-    expect(typeof rows[0]?.created_at).toBe('string');
+    // Drive the REAL gateway method — this is the point of this test.
+    // If the gateway mis-reads result.data instead of result.data.data, or
+    // forgets to map created_at→createdAt, this assertion fails.
+    const audiences = await resendBroadcastsGateway.listAudiences();
+
+    expect(audiences).toHaveLength(1);
+    expect(audiences[0]).toMatchObject({ id: 'aud_fake_2', name: 'Audience Beta' });
+    // Proves the gateway maps snake_case created_at → camelCase createdAt.
+    expect(typeof audiences[0]?.createdAt).toBe('string');
   });
 });
