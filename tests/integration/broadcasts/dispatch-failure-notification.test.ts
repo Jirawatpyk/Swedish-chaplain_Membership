@@ -68,6 +68,7 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
     },
     async removeContactFromAudience() {},
     async deleteAudience() {},
+    async listAudiences() { return []; },
   };
 }
 

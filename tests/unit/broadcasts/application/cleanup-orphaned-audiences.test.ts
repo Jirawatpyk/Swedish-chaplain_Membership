@@ -124,6 +124,7 @@ function makeGateway(opts: {
       const err = opts.throws?.[audienceId];
       if (err !== undefined) throw err;
     },
+    async listAudiences() { return []; },
   };
 
   return { port, deleteCalls };
@@ -262,6 +263,7 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       async retrieveBroadcast() { throw new Error('not used'); },
       async getAudienceContactCount() { return { kind: 'not_found' as const }; },
       async removeContactFromAudience() { throw new Error('not used'); },
+      async listAudiences() { return []; },
       async deleteAudience() {
         inFlight++;
         peakInFlight = Math.max(peakInFlight, inFlight);

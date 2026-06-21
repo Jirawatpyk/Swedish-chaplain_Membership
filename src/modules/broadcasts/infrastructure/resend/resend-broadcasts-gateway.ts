@@ -418,6 +418,25 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     }
   },
 
+  async listAudiences(): Promise<ReadonlyArray<{ readonly id: string; readonly name: string; readonly createdAt: string }>> {
+    return withRetry(
+      async () => {
+        const sdk = client();
+        const result = (await sdk.audiences.list()) as ResendSdkResponse<{
+          object: string;
+          data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
+        }>;
+        if (result.error) {
+          throw classifyResendError(result.error ?? undefined, 'audience');
+        }
+        const rows = result.data?.data ?? [];
+        logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+        return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }));
+      },
+      { method: 'listAudiences' },
+    );
+  },
+
   async deleteAudience(audienceId: string): Promise<void> {
     await withRetry(
       async () => {

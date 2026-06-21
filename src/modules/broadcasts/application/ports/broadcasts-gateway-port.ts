@@ -163,4 +163,16 @@ export interface BroadcastsGatewayPort {
    * retry next tick without blocking normal broadcast flow.
    */
   readonly deleteAudience: (audienceId: string) => Promise<void>;
+
+  /**
+   * PR-2 orphan-reclaim — list all Resend audiences for the configured
+   * Broadcasts API key. Used by the orphan-reclaim cron to find audiences
+   * that exist in Resend but have no matching `broadcast_audiences` DB row
+   * (i.e. were leaked by a failed cleanup or a crash mid-dispatch).
+   *
+   * Returns a flat array of `{ id, name, createdAt }` — only the fields
+   * needed to correlate with DB records. `createdAt` is the ISO 8601 UTC
+   * string from Resend's `created_at` field (storage convention: UTC always).
+   */
+  listAudiences(): Promise<ReadonlyArray<{ readonly id: string; readonly name: string; readonly createdAt: string }>>;
 }
