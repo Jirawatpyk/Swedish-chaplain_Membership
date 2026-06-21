@@ -264,6 +264,11 @@ Flip on only after each feature's gates above pass:
 - [ ] Vercel rollback path confirmed (`vercel promote <old-url>`)
 - [ ] Neon backup/PITR confirmed before data import
 
+### 6.6 F7 Email Broadcast — send hardening
+- [ ] `RESEND_BROADCASTS_API_KEY` has **Full access** (Broadcasts + Audiences), not "Sending access" — verified in dev, staging, prod.
+- [ ] `BROADCASTS_FROM_EMAIL` is a valid `local@domain` or `Display Name <local@domain>` (the gateway prepends the member's display name to this address).
+- [ ] F7 send hardening PR-1 merged (name ≤70, from un-wrapped, quota released on failed_to_dispatch). PR-2 (ephemeral audience + cleanup) tracked separately.
+
 ---
 
 ## 6b. Data provisioning order (Stage 3 prerequisite)
