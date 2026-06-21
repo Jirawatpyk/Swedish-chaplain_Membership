@@ -7,7 +7,7 @@
  *
  * Calls POST /api/admin/broadcasts/[id]/approve.
  */
-import { useCallback, useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -28,6 +28,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { LocalDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
 const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
@@ -100,6 +101,11 @@ export function ApproveDialog({
   const [scheduledFor, setScheduledFor] = useState<string>('');
   const [pending, startTransition] = useTransition();
   const minLocal = useMemo(() => minLocalDateTime(), []);
+  // F7-A11Y-1 — raised on the success / 409 close (both run router.refresh() →
+  // the ReviewActions trigger Button unmounts). finalFocus reads it to SKIP the
+  // about-to-unmount trigger; see resolve-dialog-final-focus. No reset needed:
+  // the success path unmounts this dialog's owner, so the ref is discarded.
+  const closedViaSuccessRef = useRef<boolean>(false);
 
   // Reset state via onOpenChange wrapper (avoids setState-in-effect
   // cascade warning under React 19 strict mode).
@@ -157,10 +163,12 @@ export function ApproveDialog({
           },
         );
         if (res.ok) {
+          closedViaSuccessRef.current = true;
           toast.success(tToast('approved'));
           onOpenChange(false);
           router.refresh();
         } else if (res.status === 409) {
+          closedViaSuccessRef.current = true;
           toast.error(tToast('concurrentRace'));
           onOpenChange(false);
           router.refresh();
@@ -173,23 +181,18 @@ export function ApproveDialog({
     });
   }
 
-  // F7-A11Y-1 — focus return on close. The Approve trigger Button lives
-  // in <ReviewActions>, which UNMOUNTS after a successful approve
-  // (router.refresh flips the row out of 'submitted'), so Base UI's
-  // default trigger-return would drop focus to <body>. finalFocus chains
-  // triggerRef → fallbackFocusRef → the layout's #main-content landmark
-  // (focusable via tabIndex=-1) so SR/keyboard users land on a stable
-  // surface. WCAG 2.1 AA SC 2.4.3. Mirrors retry-confirmation-dialog; the
-  // #main-content tail is needed because — unlike batch-breakdown —
-  // <ReviewActions> owns no surviving sibling heading to fall back to.
-  const finalFocus = useCallback(
-    (): HTMLElement | null =>
-      triggerRef?.current ??
-      fallbackFocusRef?.current ??
-      (typeof document !== 'undefined'
-        ? document.getElementById('main-content')
-        : null),
-    [triggerRef, fallbackFocusRef],
+  // F7-A11Y-1 — focus return on close, via the shared useDialogFinalFocus chain
+  // (same resolver as reject/cancel). The Approve trigger Button lives in
+  // <ReviewActions>, which UNMOUNTS after a successful approve (router.refresh
+  // flips the row out of 'submitted'), so the naive trigger-return would drop
+  // focus to <body>. closedViaSuccessRef makes the resolver SKIP the
+  // about-to-unmount trigger on the success/409 close and land on
+  // fallbackFocusRef → the layout's #main-content landmark (focusable via
+  // tabIndex=-1). WCAG 2.1 AA SC 2.4.3.
+  const finalFocus = useDialogFinalFocus(
+    triggerRef,
+    fallbackFocusRef,
+    closedViaSuccessRef,
   );
 
   return (

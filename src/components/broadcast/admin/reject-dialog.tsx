@@ -15,6 +15,7 @@
  *   - success → toast 'rejected' + close + refresh; any 409 → 'concurrentRace'
  *     + close + refresh; other non-ok / network → 'error', dialog stays open.
  */
+import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -51,7 +52,16 @@ export function RejectDialog({
 }: RejectDialogProps): React.ReactElement {
   const tToast = useTranslations('admin.broadcasts.toast');
   const router = useRouter();
-  const finalFocus = useDialogFinalFocus(triggerRef, fallbackFocusRef);
+  // F7-A11Y-1 — raised on the success / 409 close (both run router.refresh() →
+  // the ReviewActions trigger Button unmounts). finalFocus reads it to SKIP the
+  // about-to-unmount trigger; see resolve-dialog-final-focus. No reset needed:
+  // the success path unmounts this wrapper, so the ref is discarded.
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const finalFocus = useDialogFinalFocus(
+    triggerRef,
+    fallbackFocusRef,
+    closedViaSuccessRef,
+  );
 
   async function onConfirm(reason: string): Promise<void> {
     try {
@@ -62,10 +72,12 @@ export function RejectDialog({
         body: JSON.stringify({ rejectionReason: reason }),
       });
       if (res.ok) {
+        closedViaSuccessRef.current = true;
         toast.success(tToast('rejected'));
         onOpenChange(false);
         router.refresh();
       } else if (res.status === 409) {
+        closedViaSuccessRef.current = true;
         toast.error(tToast('concurrentRace'));
         onOpenChange(false);
         router.refresh();

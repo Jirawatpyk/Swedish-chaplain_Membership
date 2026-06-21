@@ -51,15 +51,23 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 
 /**
- * F7-A11Y-1 — shared focus-return chain for the reason dialogs.
+ * F7-A11Y-1 — shared focus-return chain for the broadcast confirmation dialogs.
  *
- * Returns a `finalFocus` callback Base UI calls on close:
- *   triggerRef → fallbackFocusRef → the layout's #main-content landmark → null.
- * The trigger button may have unmounted (the success path flips the row out of
- * its actionable status), so we fall back to #main-content (focusable via
- * tabIndex=-1). WCAG 2.1 AA SC 2.4.3.
+ * Returns a `finalFocus` callback Base UI calls on close. The trigger button
+ * lives outside the dialog and UNMOUNTS after the programmatic close paths
+ * (success / 409 / — for cancel — 404/403), each of which runs
+ * `router.refresh()` and flips the row out of its actionable status. At the
+ * instant Base UI reads finalFocus the trigger is STILL mounted, so returning
+ * it would drop focus to <body> milliseconds later.
+ *
+ * Pass `closedViaSuccessRef` (raised by the caller on those programmatic
+ * closes): when set, the resolver SKIPS the about-to-unmount trigger and lands
+ * on the surviving fallbackFocusRef → #main-content landmark (focusable via
+ * tabIndex=-1). On Cancel / ESC the flag stays false, so the trigger is
+ * returned. WCAG 2.1 AA SC 2.4.3. See {@link resolveDialogFinalFocus}.
  *
  * Each caller invokes this hook and passes the result as `finalFocus={…}` so the
  * wiring stays visible at the call site (keeps approve-reject-final-focus.test
@@ -68,15 +76,20 @@ import { cn } from '@/lib/utils';
 export function useDialogFinalFocus(
   triggerRef?: React.RefObject<HTMLButtonElement | null>,
   fallbackFocusRef?: React.RefObject<HTMLElement | null>,
+  closedViaSuccessRef?: React.RefObject<boolean>,
 ): () => HTMLElement | null {
   return useCallback(
     (): HTMLElement | null =>
-      triggerRef?.current ??
-      fallbackFocusRef?.current ??
-      (typeof document !== 'undefined'
-        ? document.getElementById('main-content')
-        : null),
-    [triggerRef, fallbackFocusRef],
+      resolveDialogFinalFocus({
+        closedViaSuccess: closedViaSuccessRef?.current ?? false,
+        trigger: triggerRef?.current ?? null,
+        fallback: fallbackFocusRef?.current ?? null,
+        mainContent:
+          typeof document !== 'undefined'
+            ? document.getElementById('main-content')
+            : null,
+      }),
+    [triggerRef, fallbackFocusRef, closedViaSuccessRef],
   );
 }
 
