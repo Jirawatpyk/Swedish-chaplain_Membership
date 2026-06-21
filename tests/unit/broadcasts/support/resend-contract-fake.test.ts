@@ -62,6 +62,31 @@ describe('createResendContractFake › broadcasts.create', () => {
     expect(result.error).not.toBeNull();
     expect(result.error?.name).toBe('validation_error');
   });
+
+  it('rejects angle brackets in the display-name part (Finding B)', async () => {
+    // `<Acme> via SweCham <noreply@…>` — the trailing address is valid, but
+    // the unquoted `<`/`>` in the display name is not RFC 5322 and real Resend
+    // rejects it. The fake must too, so a gateway that interpolates an
+    // un-sanitised `${fromName}` is caught here.
+    const { client } = createResendContractFake();
+    const result = await client.broadcasts.create({
+      ...baseCreateArgs,
+      from: '<Acme> via SweCham <noreply@zyncdata.app>',
+    });
+    expect(result.data).toBeNull();
+    expect(result.error).not.toBeNull();
+    expect(result.error?.name).toBe('validation_error');
+  });
+
+  it('still accepts a clean display name with the same trailing address (Finding B — no false positive)', async () => {
+    const { client } = createResendContractFake();
+    const result = await client.broadcasts.create({
+      ...baseCreateArgs,
+      from: 'Acme via SweCham <noreply@zyncdata.app>',
+    });
+    expect(result.error).toBeNull();
+    expect(result.data?.id).toBeDefined();
+  });
 });
 
 describe('createResendContractFake › audiences.create with audienceLimit', () => {

@@ -31,7 +31,7 @@ import type {
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
-import { extractBareEmail } from './bare-email';
+import { extractBareEmail, stripAngleBrackets } from './bare-email';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 const CONTACTS_CHUNK_SIZE = 100;
@@ -264,9 +264,14 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           locale: input.locale,
         });
         const bareFromEmail = extractBareEmail(input.fromEmail);
+        // Finding B — strip `<`/`>` from the display name so a member company
+        // name containing angle brackets cannot produce a nested, invalid
+        // RFC 5322 `from` header that Resend rejects (permanent
+        // failed_to_dispatch). `extractBareEmail` only sanitises the address.
+        const safeFromName = stripAngleBrackets(input.fromName);
         const result = (await sdk.broadcasts.create({
           audienceId: input.audienceId,
-          from: `${input.fromName} <${bareFromEmail}>`,
+          from: `${safeFromName} <${bareFromEmail}>`,
           subject: input.subject,
           html: wrappedHtml,
           replyTo: input.replyToEmail,

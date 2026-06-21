@@ -82,8 +82,23 @@ export function createResendContractFake(opts: {
         // `<…>` can satisfy `\s*$`; `[^>]*` cannot span the inner `>`), so the
         // `?? args.from` fallback feeds the whole string to the `includes('<')`
         // guard below, which rejects it.
-        const inner = args.from.match(/<([^>]*)>\s*$/)?.[1] ?? args.from;
+        const addrMatch = args.from.match(/<([^>]*)>\s*$/);
+        const inner = addrMatch?.[1] ?? args.from;
         if (inner.includes('<') || inner.includes('>') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inner.trim())) {
+          return { data: null, error: { statusCode: 422, message: `Invalid \`from\` field. Received \`${args.from}\`.`, name: 'validation_error' } };
+        }
+        // Finding B — also reject angle brackets in the DISPLAY-NAME part
+        // (everything before the trailing `<address>`). Real Resend rejects
+        // `<Acme> via SweCham <noreply@…>` because the unquoted `<`/`>` in the
+        // display name is not valid RFC 5322. The trailing-address regex above
+        // happily extracts the valid bare address and would otherwise let this
+        // through — masking the gateway's un-sanitised `${fromName}`. The
+        // gateway's `stripAngleBrackets(fromName)` fix makes this pass.
+        const displayName =
+          addrMatch !== null
+            ? args.from.slice(0, args.from.length - addrMatch[0].length)
+            : '';
+        if (displayName.includes('<') || displayName.includes('>')) {
           return { data: null, error: { statusCode: 422, message: `Invalid \`from\` field. Received \`${args.from}\`.`, name: 'validation_error' } };
         }
         return { data: { id: 'bcast_fake_1' }, error: null };
