@@ -1,30 +1,27 @@
 /**
- * F6 → F3/F8 bridge — event attendance counts as member activity, but ONLY
- * for DETERMINISTIC matches.
+ * F6 → F3/F8 bridge — deterministic event attendance bumps
+ * `members.last_activity_at` (migration 0230 trigger), so attendance counts
+ * for the F3 directory "last active" column + the F8 at-risk recency proxy.
  *
- * The `attendee_matched_member_{contact,domain}` audit events carry snake-case
- * `member_id` so the F3 AFTER-INSERT trigger
- * (`audit_log_bump_member_last_activity`, migration 0009) refreshes the matched
- * member's `last_activity_at` — making event attendance count for the F3
- * directory "last active" column, the F8 at-risk recency proxy, and the F3
- * member timeline (US6).
- *
- * `attendee_matched_member_fuzzy` deliberately does NOT — a low-confidence
- * Levenshtein company-name guess must never bump recency, because a false
- * positive is un-correctable: `registration_relinked` (the admin fix) carries
- * no scalar `member_id`, so it can never un-bump `last_activity_at`. A wrongly
- * fuzzy-matched member would look "recently active" forever, masking a
- * genuinely at-risk member. (classify-member-activity-audits workflow,
- * 2026-06-22.)
+ * Covered:
+ *   - member_contact (deterministic) → ADVANCES last_activity_at.
+ *   - member_fuzzy   (low-confidence) → does NOT bump (the trigger WHEN clause
+ *     excludes it; a false fuzzy bump is un-correctable, so it must never fire).
+ *   - forward-only: a later, OLDER registration cannot rewind recency.
+ *   - cross-tenant: a forged `matched_member_id` pointing at another tenant's
+ *     member cannot bump that member (Principle I — the SECURITY DEFINER
+ *     trigger's `tenant_id = NEW.tenant_id` predicate is the sole guard; there
+ *     is no FK on matched_member_id).
  *
  * Live Neon Singapore — the bump is a DB trigger; a mocked audit adapter
- * cannot catch it.
+ * cannot catch it. (classify-member-activity-audits workflow, 2026-06-22.)
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import {
+  events,
   eventRegistrations,
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
@@ -38,24 +35,29 @@ import { createActiveTestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
+const OLD_ACTIVITY = new Date('2020-01-01T00:00:00.000Z');
+
+const lastActivityOf = async (
+  tenant: TestTenant,
+  memberId: string,
+): Promise<Date | null> => {
+  const rows = await runInTenant(tenant.ctx, async (tx) =>
+    tx
+      .select({ lastActivityAt: members.lastActivityAt })
+      .from(members)
+      .where(and(eq(members.tenantId, tenant.ctx.slug), eq(members.memberId, memberId))),
+  );
+  return (rows[0]?.lastActivityAt as Date | null) ?? null;
+};
+
 describe('F6 matched ingest + members.last_activity_at recency', () => {
   let tenant: TestTenant;
   const contactMemberId = randomUUID();
   const fuzzyMemberId = randomUUID();
+  const forwardMemberId = randomUUID();
   const contactEmail = 'attendee@attbump-co.example';
+  const forwardEmail = 'forward@fwd-co.example';
   const fuzzyCompany = 'Zyxwvu Corporation Limited';
-  // Seeded far in the past so any forward movement is unambiguous.
-  const OLD_ACTIVITY = new Date('2020-01-01T00:00:00.000Z');
-
-  const lastActivityOf = async (memberId: string): Promise<Date | null> => {
-    const rows = await runInTenant(tenant.ctx, async (tx) =>
-      tx
-        .select({ lastActivityAt: members.lastActivityAt })
-        .from(members)
-        .where(and(eq(members.tenantId, tenant.ctx.slug), eq(members.memberId, memberId))),
-    );
-    return (rows[0]?.lastActivityAt as Date | null) ?? null;
-  };
 
   const matchTypeOf = async (attendeeEmail: string): Promise<string | null> => {
     const rows = await runInTenant(tenant.ctx, async (tx) =>
@@ -76,6 +78,7 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
     email: string;
     fullName: string;
     company?: string;
+    registeredAt?: string;
   }) => {
     const deps = makeIngestWebhookAttendeeDeps();
     return ingestWebhookAttendee(
@@ -97,7 +100,7 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
             fullName: attendee.fullName,
             ...(attendee.company ? { companyName: attendee.company } : {}),
             paymentStatus: 'paid',
-            registeredAt: '2026-06-22T12:00:00Z',
+            registeredAt: attendee.registeredAt ?? '2026-06-22T12:00:00Z',
           },
         },
         sourceIp: '127.0.0.1',
@@ -119,30 +122,19 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
         planCategory: 'corporate',
         createdBy: user.userId,
       });
+      const base = {
+        tenantId: tenant.ctx.slug,
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        status: 'active' as const,
+      };
       await tx.insert(members).values([
-        {
-          tenantId: tenant.ctx.slug,
-          memberId: contactMemberId,
-          memberNumber: nextSeedMemberNumber(),
-          companyName: 'Att Bump Co',
-          country: 'TH',
-          planId,
-          planYear: 2026,
-          status: 'active',
-        },
-        {
-          tenantId: tenant.ctx.slug,
-          memberId: fuzzyMemberId,
-          memberNumber: nextSeedMemberNumber(),
-          companyName: fuzzyCompany,
-          country: 'TH',
-          planId,
-          planYear: 2026,
-          status: 'active',
-        },
+        { ...base, memberId: contactMemberId, memberNumber: nextSeedMemberNumber(), companyName: 'Att Bump Co' },
+        { ...base, memberId: fuzzyMemberId, memberNumber: nextSeedMemberNumber(), companyName: fuzzyCompany },
+        { ...base, memberId: forwardMemberId, memberNumber: nextSeedMemberNumber(), companyName: 'Forward Co' },
       ] as unknown as Array<typeof members.$inferInsert>);
       await tx.insert(contacts).values([
-        // member_contact target for the deterministic-match test.
         {
           tenantId: tenant.ctx.slug,
           contactId: randomUUID(),
@@ -152,8 +144,6 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
           email: contactEmail,
           isPrimary: true,
         },
-        // fuzzy member's contact lives on an UNRELATED domain so the fuzzy
-        // attendee (different email/domain) only resolves via company-name.
         {
           tenantId: tenant.ctx.slug,
           contactId: randomUUID(),
@@ -163,6 +153,15 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
           email: 'someone@zyxwvu-internal.example',
           isPrimary: true,
         },
+        {
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId: forwardMemberId,
+          firstName: 'Forward',
+          lastName: 'Contact',
+          email: forwardEmail,
+          isPrimary: true,
+        },
       ] as unknown as Array<typeof contacts.$inferInsert>);
       await tx.insert(tenantWebhookConfigs).values({
         tenantId: tenant.ctx.slug,
@@ -170,7 +169,6 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
         webhookSecretActive: 'test-secret-' + 'a'.repeat(43),
         enabled: true,
       });
-      // Pin both members' last_activity_at to the distant past.
       await tx
         .update(members)
         .set({ lastActivityAt: OLD_ACTIVITY })
@@ -191,7 +189,7 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
     expect(result.ok).toBe(true);
     expect(await matchTypeOf(contactEmail)).toBe('member_contact');
 
-    const after = await lastActivityOf(contactMemberId);
+    const after = await lastActivityOf(tenant, contactMemberId);
     expect(after).toBeTruthy();
     expect(new Date(after as Date).getTime()).toBeGreaterThan(OLD_ACTIVITY.getTime());
   });
@@ -201,14 +199,112 @@ describe('F6 matched ingest + members.last_activity_at recency', () => {
     const result = await ingest({
       email: fuzzyEmail,
       fullName: 'Fuzzy Attendee',
-      company: fuzzyCompany, // exact company-name → member_fuzzy (no email/domain match)
+      company: fuzzyCompany,
     });
     expect(result.ok).toBe(true);
-    // Guard: only meaningful if it really resolved as a fuzzy match.
     expect(await matchTypeOf(fuzzyEmail)).toBe('member_fuzzy');
 
-    const after = await lastActivityOf(fuzzyMemberId);
-    // Stayed pinned in the past — fuzzy must never refresh recency.
+    const after = await lastActivityOf(tenant, fuzzyMemberId);
+    expect(new Date(after as Date).getTime()).toBe(OLD_ACTIVITY.getTime());
+  });
+
+  it('forward-only: a later but OLDER registration does NOT rewind last_activity_at', async () => {
+    // First attendance is far in the FUTURE → recency jumps forward.
+    const future = '2027-06-01T00:00:00Z';
+    await ingest({ email: forwardEmail, fullName: 'Forward Member', registeredAt: future });
+    const afterFuture = await lastActivityOf(tenant, forwardMemberId);
+    expect(new Date(afterFuture as Date).getTime()).toBe(new Date(future).getTime());
+
+    // A second, OLDER registration must NOT lower the recency (forward-only guard).
+    await ingest({ email: forwardEmail, fullName: 'Forward Member', registeredAt: '2025-01-01T00:00:00Z' });
+    const afterPast = await lastActivityOf(tenant, forwardMemberId);
+    expect(new Date(afterPast as Date).getTime()).toBe(new Date(future).getTime());
+  });
+});
+
+describe('F6 last_activity bump is tenant-isolated (Principle I)', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  const memberInB = randomUUID();
+  const eventInA = randomUUID();
+
+  beforeAll(async () => {
+    tenantA = await createTestTenant('test-swecham');
+    tenantB = await createTestTenant('test-chamber');
+    const userB = await createActiveTestUser('admin');
+    const planId = `test-plan-xtenant-${randomUUID()}`;
+    // Member lives in tenant B, pinned to the distant past.
+    await runInTenant(tenantB.ctx, async (tx) => {
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenantB.ctx.slug,
+        planId,
+        planName: { en: 'X-Tenant Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        planCategory: 'corporate',
+        createdBy: userB.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: tenantB.ctx.slug,
+        memberId: memberInB,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Tenant B Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        status: 'active',
+      } as unknown as typeof members.$inferInsert);
+      await tx
+        .update(members)
+        .set({ lastActivityAt: OLD_ACTIVITY })
+        .where(eq(members.memberId, memberInB));
+    });
+    // In tenant A, forge an event_registrations row whose matched_member_id is
+    // tenant B's member (no FK guards matched_member_id). The trigger's
+    // tenant_id = NEW.tenant_id (= A) predicate must keep B's member untouched.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(events).values({
+        tenantId: tenantA.ctx.slug,
+        eventId: eventInA,
+        source: 'eventcreate',
+        externalId: `xtenant-ev-${Date.now()}`,
+        name: 'X-Tenant Event',
+        startDate: new Date('2026-07-01T18:00:00+07:00'),
+        isPartnerBenefit: false,
+        isCulturalEvent: false,
+      } as unknown as typeof events.$inferInsert);
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenantA.ctx.slug,
+        registrationId: randomUUID(),
+        eventId: eventInA,
+        source: 'eventcreate',
+        externalId: `xtenant-reg-${Date.now()}`,
+        attendeeEmail: 'forged@xtenant.example',
+        attendeeName: 'Forged Attendee',
+        matchType: 'member_contact', // would fire the trigger if tenant matched
+        matchedMemberId: memberInB, // forged: belongs to tenant B
+        paymentStatus: 'paid',
+        ticketType: 'standard',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+        metadata: {},
+        registeredAt: new Date('2026-06-22T12:00:00Z'),
+        piiPseudonymisedAt: null,
+      } as unknown as typeof eventRegistrations.$inferInsert);
+    });
+  });
+
+  afterAll(async () => {
+    try {
+      await tenantA.cleanup();
+    } catch {}
+    try {
+      await tenantB.cleanup();
+    } catch {}
+  });
+
+  it("a forged cross-tenant matched_member_id does NOT bump the other tenant's member", async () => {
+    const after = await lastActivityOf(tenantB, memberInB);
+    // Untouched — the tenant_id predicate found no member with that id in A.
     expect(new Date(after as Date).getTime()).toBe(OLD_ACTIVITY.getTime());
   });
 });

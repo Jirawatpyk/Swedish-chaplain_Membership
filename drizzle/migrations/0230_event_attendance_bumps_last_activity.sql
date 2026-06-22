@@ -33,9 +33,9 @@ AS $$
 DECLARE
   v_ts timestamptz;
 BEGIN
-  -- Activity time = when the member registered (bounded by now); fall back to
-  -- the ingest time when the source row omitted it (CSV registered_at is
-  -- optional).
+  -- Activity time = when the member registered (bounded by now). registered_at
+  -- is NOT NULL today; the COALESCE chain (imported_at NOT NULL DEFAULT now(),
+  -- then now()) is defensive against a future relaxation so v_ts is never NULL.
   v_ts := COALESCE(NEW.registered_at, NEW.imported_at, now());
 
   -- Scope to the registration row's tenant_id so a forged matched_member_id
