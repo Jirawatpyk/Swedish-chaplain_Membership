@@ -163,6 +163,7 @@ function makeRepo(opts: RepoOpts = {}): {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in reject-broadcast fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in reject-broadcast fixture'); },
+    async existingBroadcastIds() { throw new Error('not used in reject-broadcast fixture'); },
   };
   return { port, transitions };
 }

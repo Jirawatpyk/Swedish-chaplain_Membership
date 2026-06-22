@@ -89,6 +89,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     primaryContactName: row.primaryContact
       ? `${row.primaryContact.firstName} ${row.primaryContact.lastName}`.trim()
       : null,
+    // Boolean presence check: the Contact domain type guarantees `email` is
+    // a branded Email string (never empty string) when primaryContact exists,
+    // so a falsy-coercion is sufficient — no string-length check needed.
+    hasPrimaryContactEmail: Boolean(row.primaryContact?.email),
   }));
 
   return NextResponse.json({ items }, { status: 200 });

@@ -95,7 +95,7 @@ function buildRequest(query: string): NextRequest {
 }
 
 describe('GET /api/admin/members/search (Round-1 test-M5)', () => {
-  it('200 OK — returns mapped items with companyName + primaryContactName', async () => {
+  it('200 OK — returns mapped items with companyName + primaryContactName + hasPrimaryContactEmail', async () => {
     const { GET } = await loadRoute();
     const res = await GET(buildRequest('q=acme&limit=10'));
     expect(res.status).toBe(200);
@@ -104,12 +104,19 @@ describe('GET /api/admin/members/search (Round-1 test-M5)', () => {
         memberId: string;
         companyName: string;
         primaryContactName: string | null;
+        hasPrimaryContactEmail: boolean;
       }>;
     };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.memberId).toBe('m-1');
     expect(body.items[0]?.companyName).toBe('Acme Co Ltd');
     expect(body.items[0]?.primaryContactName).toBe('Jane Doe');
+    // Task 6: hasPrimaryContactEmail should be false when primaryContact has no email.
+    // The mock sets primaryContact: { firstName: 'Jane', lastName: 'Doe' } — the
+    // email field is undefined, so Boolean(undefined) === false. Assert the exact
+    // value (false) rather than just the type to catch a regression that always
+    // returns true regardless of the contact's email.
+    expect(body.items[0]?.hasPrimaryContactEmail).toBe(false);
     // Round-2 test-M5 closure — assert use-case was called with the
     // parsed query + limit shape so a regression that drops a field
     // or swaps in a different use-case surfaces here.
@@ -117,6 +124,52 @@ describe('GET /api/admin/members/search (Round-1 test-M5)', () => {
       expect.objectContaining({}),
       expect.objectContaining({ q: 'acme', limit: 10 }),
     );
+  });
+
+  it('200 OK — hasPrimaryContactEmail is true when contact has email', async () => {
+    directorySearchMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        items: [
+          {
+            member: { memberId: 'm-email', companyName: 'Email Co' },
+            // Simulate a Contact domain object with an email string (branded Email type)
+            primaryContact: { firstName: 'Ana', lastName: 'Smith', email: 'ana@email-co.com' },
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    const { GET } = await loadRoute();
+    const res = await GET(buildRequest('q=email'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: ReadonlyArray<{ hasPrimaryContactEmail: boolean }>;
+    };
+    expect(body.items[0]?.hasPrimaryContactEmail).toBe(true);
+  });
+
+  it('200 OK — hasPrimaryContactEmail is false when contact has no email', async () => {
+    directorySearchMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        items: [
+          {
+            member: { memberId: 'm-noemail', companyName: 'No-Email Co' },
+            // Contact without email (undefined/null email)
+            primaryContact: { firstName: 'Bob', lastName: 'Noemail', email: undefined },
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    const { GET } = await loadRoute();
+    const res = await GET(buildRequest('q=noemail'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: ReadonlyArray<{ hasPrimaryContactEmail: boolean }>;
+    };
+    expect(body.items[0]?.hasPrimaryContactEmail).toBe(false);
   });
 
   it('200 OK — primaryContact=null surfaces as primaryContactName=null (not "undefined undefined")', async () => {

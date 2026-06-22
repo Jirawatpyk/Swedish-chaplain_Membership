@@ -162,5 +162,30 @@ export interface BroadcastsGatewayPort {
    * errors throw a retryable `GatewayThrowable` so the cleanup cron can
    * retry next tick without blocking normal broadcast flow.
    */
-  readonly deleteAudience: (audienceId: string) => Promise<void>;
+  deleteAudience(audienceId: string): Promise<void>;
+
+  /**
+   * PR-2 orphan-reclaim — list all Resend audiences for the configured
+   * Broadcasts API key. Used by the orphan-reclaim cron to find audiences
+   * that exist in Resend but have no matching `broadcasts` DB row
+   * (i.e. were leaked by a failed cleanup or a crash mid-dispatch).
+   *
+   * Returns a flat array of `ResendAudienceSummary` — only the fields
+   * needed to correlate with DB records. `createdAt` is a parsed `Date`
+   * (UTC) from Resend's `created_at` field; the gateway adapter owns the
+   * parse so callers work with a proper Date, not raw strings.
+   */
+  listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>>;
 }
+
+/**
+ * Summary of a single Resend audience as returned by the `listAudiences`
+ * port method. `createdAt` is a parsed `Date` (UTC) — the gateway adapter
+ * maps `created_at: string` → `createdAt: Date` at the infrastructure
+ * boundary so Application use-cases never parse raw ISO strings.
+ */
+export type ResendAudienceSummary = {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: Date;
+};

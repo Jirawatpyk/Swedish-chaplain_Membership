@@ -67,3 +67,32 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
     expect(stripAngleBrackets('No brackets here')).toBe('No brackets here');
   });
 });
+
+describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
+  it('maps created_at→createdAt and returns only live audiences after create×2 then remove×1', async () => {
+    // The module-level `fake` is already wired into the gateway via the
+    // top-of-file vi.mock — calling resendBroadcastsGateway.listAudiences()
+    // goes through the REAL gateway impl (create→send→list mapping logic)
+    // against the in-memory fake, never hitting real Resend.
+    //
+    // The createBroadcast describe-block above does not call audiences.create,
+    // so the fake's audience counter is still 0 here.
+    const r1 = await fake.client.audiences.create({ name: 'Audience Alpha' });
+    const r2 = await fake.client.audiences.create({ name: 'Audience Beta' });
+    expect(r1.data?.id).toBe('aud_fake_1');
+    expect(r2.data?.id).toBe('aud_fake_2');
+
+    // Remove the first one.
+    await fake.client.audiences.remove('aud_fake_1');
+
+    // Drive the REAL gateway method — this is the point of this test.
+    // If the gateway mis-reads result.data instead of result.data.data, or
+    // forgets to map created_at→createdAt, this assertion fails.
+    const audiences = await resendBroadcastsGateway.listAudiences();
+
+    expect(audiences).toHaveLength(1);
+    expect(audiences[0]).toMatchObject({ id: 'aud_fake_2', name: 'Audience Beta' });
+    // Proves the gateway maps snake_case created_at → camelCase createdAt (as Date).
+    expect(audiences[0]?.createdAt).toBeInstanceOf(Date);
+  });
+});

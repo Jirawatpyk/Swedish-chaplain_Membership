@@ -28,6 +28,7 @@ import type {
   GetAudienceContactCountOutcome,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
+  ResendAudienceSummary,
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
@@ -416,6 +417,26 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
       throw e;
     }
+  },
+
+  async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
+    return withRetry(
+      async () => {
+        const sdk = client();
+        const result = (await sdk.audiences.list()) as ResendSdkResponse<{
+          object: string;
+          data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
+        }>;
+        if (result.error) {
+          throw classifyResendError(result.error ?? undefined, 'audience');
+        }
+        const rows = result.data?.data ?? [];
+        logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+        // Parse at the adapter boundary so callers work with Date, not raw strings.
+        return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
+      },
+      { method: 'listAudiences' },
+    );
   },
 
   async deleteAudience(audienceId: string): Promise<void> {

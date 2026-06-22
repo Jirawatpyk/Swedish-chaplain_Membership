@@ -146,6 +146,7 @@ function makeBroadcastsRepo(args: {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in reconcile-stuck-sending fixture'); },
+    async existingBroadcastIds() { throw new Error('not used in reconcile-stuck-sending fixture'); },
   };
   return { port, transitions };
 }
@@ -166,6 +167,7 @@ function makeGateway(args: {
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
     async removeContactFromAudience() { throw new Error('not used'); },
     async deleteAudience() { throw new Error('not used'); },
+    async listAudiences() { return []; },
     async retrieveBroadcast() {
       retrieveCalls++;
       if (args.retrieve instanceof Error) throw args.retrieve;

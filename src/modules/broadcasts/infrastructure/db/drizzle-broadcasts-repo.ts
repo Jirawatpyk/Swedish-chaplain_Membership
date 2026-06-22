@@ -1425,5 +1425,44 @@ export function makeDrizzleBroadcastsRepo(
            AND broadcast_id = ${broadcastId}::uuid
       `);
     },
+
+    /**
+     * PR-2 Task 2 — return the subset of `broadcastIds` that still have a
+     * `broadcasts` row for this tenant. Used by the orphan-reclaim use-case
+     * to distinguish live broadcasts (skip) from purged ones (reclaim).
+     *
+     * Array-param form: mirrors `tombstoneDeliveriesForMemberInTx` and
+     * `listMemberResendAudienceContactsInTx` — `= ANY(ARRAY[...]::uuid[])`
+     * with each element inserted as a separate `sql` parameter. The explicit
+     * `::uuid[]` cast lets Postgres validate each element and surface a
+     * 22P02 error on a malformed UUID rather than silently skipping it.
+     *
+     * A raw JS array through the Neon serverless driver throws "The
+     * 'string' argument must be of type string" (error 22P02) when the
+     * driver tries to serialise the array type — this repo already uses the
+     * `sql.join(ids.map(...), sql`, `)` form throughout; we follow suit for
+     * internal consistency (see `tombstoneDeliveriesForMemberInTx` above for
+     * the canonical prior example).
+     *
+     * Runs its own `runInTenant` (read-only; no caller-supplied tx needed).
+     * Tenant-scoped by both `WHERE tenant_id = $1` and RLS+FORCE on
+     * `broadcasts` (Constitution Principle I).
+     */
+    async existingBroadcastIds(tenantIdArg, broadcastIds) {
+      // Short-circuit: nothing to look up — avoid an empty ANY() query.
+      if (broadcastIds.length === 0) return new Set<BroadcastId>();
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT broadcast_id
+          FROM broadcasts
+          WHERE tenant_id = ${tenantIdArg}
+            AND broadcast_id = ANY(ARRAY[${sql.join(
+              broadcastIds.map((id) => sql`${id}::uuid`),
+              sql`, `,
+            )}])
+        `)) as unknown as Array<{ broadcast_id: string }>;
+        return new Set(rows.map((r) => asBroadcastId(r.broadcast_id)));
+      });
+    },
   };
 }

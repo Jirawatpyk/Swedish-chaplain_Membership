@@ -84,6 +84,7 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
     },
     async removeContactFromAudience() {},
     async deleteAudience() {},
+    async listAudiences() { return []; },
   };
 }
 
@@ -283,6 +284,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       },
       async removeContactFromAudience() {},
       async deleteAudience() {},
+      async listAudiences() { return []; },
     };
 
     const buildDeps = () => ({

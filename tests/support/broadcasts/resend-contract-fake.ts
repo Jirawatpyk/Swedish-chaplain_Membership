@@ -18,6 +18,7 @@ export interface ResendBroadcastsClientLike {
   readonly audiences: {
     create(args: { name: string }): Promise<ResendResult<{ id: string }>>;
     remove(id: string): Promise<ResendResult<{ deleted: boolean; id: string; object: string }>>;
+    list(): Promise<ResendResult<{ object: 'list'; data: Array<{ id: string; name: string; created_at: string }> }>>;
   };
   readonly contacts: {
     create(args: unknown): Promise<ResendResult<{ id: string }>>;
@@ -69,6 +70,12 @@ export function createResendContractFake(opts: {
   const createdAudienceIdsInOrder: string[] = [];
   // audienceId → set of lower-cased contact emails added to it.
   const audienceContacts = new Map<string, Set<string>>();
+  // audienceId → display name (populated on create; NOT removed on remove so
+  // createdAudienceIdsInOrder can still resolve names for diagnostics).
+  const audienceNames = new Map<string, string>();
+  // Fixed ISO string used for all fake audiences — tests must not depend on
+  // wall-clock time; a real cron only needs the string to be parseable.
+  const FAKE_CREATED_AT = '2026-01-01T00:00:00.000Z';
   const client: ResendBroadcastsClientLike = {
     broadcasts: {
       async create(args) {
@@ -107,7 +114,7 @@ export function createResendContractFake(opts: {
       async get(_id) { return { data: null, error: { statusCode: 404, message: 'not found', name: 'not_found' } }; },
     },
     audiences: {
-      async create() {
+      async create(args) {
         if (audienceCount >= audienceLimit) {
           const limitLabel = Number.isFinite(audienceLimit) ? String(audienceLimit) : '3';
           return { data: null, error: { statusCode: 401, message: `Your plan includes ${limitLabel} segments. Upgrade to add more.`, name: 'restricted' } };
@@ -117,6 +124,7 @@ export function createResendContractFake(opts: {
         createdAudienceIds.add(id);
         createdAudienceIdsInOrder.push(id);
         audienceContacts.set(id, new Set<string>());
+        audienceNames.set(id, args.name);
         return { data: { id }, error: null };
       },
       async remove(id: string) {
@@ -128,6 +136,16 @@ export function createResendContractFake(opts: {
         }
         // Unknown or already-removed audience → 404 (matches Resend API).
         return { data: null, error: { statusCode: 404, message: 'Audience not found', name: 'not_found' } };
+      },
+      async list() {
+        // Return the currently-live audiences (those in `createdAudienceIds`).
+        // The SDK shape: { data: { object: 'list', data: [{id, name, created_at}] } }
+        const data = [...createdAudienceIds].map((id) => ({
+          id,
+          name: audienceNames.get(id) ?? '',
+          created_at: FAKE_CREATED_AT,
+        }));
+        return { data: { object: 'list' as const, data }, error: null };
       },
     },
     contacts: {
