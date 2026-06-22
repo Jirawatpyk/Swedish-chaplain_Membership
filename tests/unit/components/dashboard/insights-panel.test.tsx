@@ -88,4 +88,25 @@ describe('InsightsPanel — optimistic dismiss', () => {
     });
     expect(toastError).toHaveBeenCalledWith('Could not dismiss insight');
   });
+
+  it('keeps the insight removed + toasts success + reconciles on a 200', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
+    render(<InsightsPanel {...PANEL_PROPS} lines={LINES} />);
+
+    fireEvent.click(screen.getByRole('button', { name: DISMISS_50 }));
+    // optimistically gone
+    expect(
+      screen.queryByText('50 members have unused E-Blast quota'),
+    ).not.toBeInTheDocument();
+
+    // success path: reconcile with the server (the suppressed insight will drop
+    // from the freshly-computed `lines` on the next render).
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    expect(toastSuccess).toHaveBeenCalledWith('Insight dismissed');
+    expect(toastError).not.toHaveBeenCalled();
+    // stays gone — no rollback on success.
+    expect(
+      screen.queryByText('50 members have unused E-Blast quota'),
+    ).not.toBeInTheDocument();
+  });
 });
