@@ -339,7 +339,14 @@ export async function changePlan(
         requestId: meta.requestId,
         summary: `member_plan_manually_changed ${memberId}`,
         payload: {
-          member_id: memberId,
+          // camelCase `memberId` (NOT snake `member_id`): this F8-supersede
+          // event is consumed by event-TYPE (f2-plan-change-bridge), not by
+          // the payload key, and has no member-timeline renderer. The sibling
+          // `member_plan_changed` (emitted in the same tx) keeps snake
+          // `member_id` to drive the F3 timeline + last_activity bump — so a
+          // snake key here would only add a DUPLICATE raw-summary timeline row
+          // + a redundant recency bump (raw event-name + UUID shown to members).
+          memberId,
           old_plan_id: locked.planId,
           old_plan_year: locked.planYear,
           new_plan_id: data.new_plan_id,
