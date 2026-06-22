@@ -130,6 +130,11 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
+      // Native (pre-hydration) fallback MUST be POST so credentials land in
+      // the request body, never the URL query string. CWE-598 — see
+      // tests/unit/auth/auth-forms-post-method.test.tsx. Inert once hydrated
+      // (RHF handleSubmit calls preventDefault).
+      method="post"
       className="space-y-4"
       noValidate
       aria-busy={submitting}
