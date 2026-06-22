@@ -129,6 +129,15 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Truncate an unknown thrown value to a safe log message (≤500 chars).
+ * Used in catch blocks to build `reclaim.server_error` results.
+ */
+function toSafeMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : 'unknown error';
+  return msg.length > 500 ? msg.slice(0, 500) + '…' : msg;
+}
+
 // ---------------------------------------------------------------------------
 // Use-case
 // ---------------------------------------------------------------------------
@@ -149,9 +158,7 @@ export async function reclaimOrphanedAudiences(
   try {
     audiences = await deps.broadcastsGateway.listAudiences();
   } catch (e) {
-    const rawMessage = e instanceof Error ? e.message : 'unknown error';
-    const message = rawMessage.length > 500 ? rawMessage.slice(0, 500) + '…' : rawMessage;
-    return err({ kind: 'reclaim.server_error', message });
+    return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
   }
 
   const scanned = audiences.length;
@@ -177,22 +184,20 @@ export async function reclaimOrphanedAudiences(
   const candidates: Array<{ audienceId: string; broadcastId: string }> = [];
 
   for (const audience of audiences) {
-    if (candidates.length >= input.limit) {
-      // Already capped — keep scanning for skippedNonMatching accounting,
-      // but stop adding candidates. Matched audiences (both within-grace and
-      // past-grace) that land here are simply capped and silently dropped;
-      // they are NOT counted as skippedNonMatching (which is reserved for
-      // audiences that do not match the naming convention at all).
-      const match = namePattern.exec(audience.name);
-      if (match === null) skippedNonMatching++;
-      continue;
-    }
-
+    // Run name-match first (single exec per audience — cap check comes after
+    // so we avoid a second exec in the already-capped branch).
     const match = namePattern.exec(audience.name);
     if (match === null) {
+      // Does not match the tenant naming convention (e.g. `General`, or an
+      // audience belonging to a different tenant sharing the same Resend key).
       skippedNonMatching++;
       continue;
     }
+
+    // Name matched. If the per-tick cap is already reached, drop silently.
+    // Matched-but-capped audiences are NOT counted as skippedNonMatching
+    // (skippedNonMatching is reserved for name-mismatches only).
+    if (candidates.length >= input.limit) continue;
 
     const capturedBroadcastId = match[1]!;
 
@@ -227,9 +232,7 @@ export async function reclaimOrphanedAudiences(
   try {
     existing = await deps.broadcastsRepo.existingBroadcastIds(deps.tenant.slug, uniqueIds);
   } catch (e) {
-    const rawMessage = e instanceof Error ? e.message : 'unknown error';
-    const message = rawMessage.length > 500 ? rawMessage.slice(0, 500) + '…' : rawMessage;
-    return err({ kind: 'reclaim.server_error', message });
+    return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
   }
 
   const orphans = candidates.filter((c) => !existing.has(c.broadcastId));
