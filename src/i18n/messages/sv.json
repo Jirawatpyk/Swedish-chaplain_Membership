@@ -490,6 +490,8 @@
           "refund_succeeded": "Återbetalning genomförd",
           "broadcast_approved": "Utskick godkänt",
           "broadcast_sent": "Utskick skickat",
+          "broadcast_submitted": "Utskick inskickat för granskning",
+          "member_acknowledged_broadcasts_terms": "Godkände utskicksvillkor",
           "broadcast_rejected": "Utskick avvisat",
           "sign_in_success": "Inloggad",
           "password_changed": "Lösenord ändrat",

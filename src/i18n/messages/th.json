@@ -490,6 +490,8 @@
           "refund_succeeded": "คืนเงินสำเร็จ",
           "broadcast_approved": "อนุมัติอีเมล",
           "broadcast_sent": "ส่งอีเมลแล้ว",
+          "broadcast_submitted": "ส่งอีเมลเพื่อขออนุมัติ",
+          "member_acknowledged_broadcasts_terms": "ยอมรับเงื่อนไขการส่งอีเมล",
           "broadcast_rejected": "ปฏิเสธอีเมล",
           "sign_in_success": "เข้าสู่ระบบ",
           "password_changed": "เปลี่ยนรหัสผ่าน",
