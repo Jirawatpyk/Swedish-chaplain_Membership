@@ -27,7 +27,10 @@
  *   5. Link the issued invoice to the cycle (`cyclesRepo.linkInvoice`).
  *   6. Emit `renewal_invoice_created` audit.
  *   7. Return `{ invoiceId, payUrl }` for the route handler to redirect
- *      to F5 `/portal/invoices/<invoiceId>/pay`.
+ *      to `/portal/invoices/<invoiceId>?pay=1` — the invoice detail page,
+ *      where `?pay=1` auto-opens the in-page F5 PaySheet (`<PayNowButton>`,
+ *      FR-025c). NOTE: there is no `/pay` sub-route page — a trailing
+ *      `/pay` 404s (fixed 2026-06-22).
  *
  * Coverage policy: Constitution Principle II — 100% branch coverage
  * required (security-critical mutating path; collects member payment
@@ -527,7 +530,15 @@ export async function confirmRenewal(
     return ok({
       invoiceId: invoiceResult.invoiceId,
       invoiceNumber: invoiceResult.invoiceNumber,
-      payUrl: `/portal/invoices/${invoiceResult.invoiceId}/pay`,
+      // Member PAY surface is the invoice detail PAGE (hosts the in-page F5
+      // PaySheet via <PayNowButton>). `?pay=1` auto-opens the PaySheet on
+      // load (FR-025c) — the SAME deep-link the F4/F5 invoice emails use
+      // (`buildPayOnlineUrl`) — so confirm lands the member directly in the
+      // pay flow. There is NO `/portal/invoices/[id]/pay` PAGE route — a
+      // trailing `/pay` 404'd the member right after a successful confirm
+      // (found 2026-06-22 /verify; only the `/api/invoices/[id]/pay`
+      // PaymentIntent API exists, not a page).
+      payUrl: `/portal/invoices/${invoiceResult.invoiceId}?pay=1`,
       planChanged,
     });
   });
