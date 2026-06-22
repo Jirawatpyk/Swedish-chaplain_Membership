@@ -120,7 +120,7 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     await expect(planSelect).not.toContainText(/^\s*regular\s*$/i);
   });
 
-  test('I12 review-fix: clicking confirm posts to API + redirects to /portal/billing/<invoiceId>/pay', async ({
+  test('I12 review-fix: clicking confirm posts to API + redirects to /portal/invoices/<invoiceId>', async ({
     page,
   }) => {
     // Lock AS6 contract: clicking the "Confirm renewal" button triggers
@@ -140,7 +140,12 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     await setCycleStatusForSuccessE2E(seed.cycleId, 'awaiting_payment');
 
     const fakeInvoiceId = 'inv-e2e-i12-fixture';
-    const fakePayUrl = `/portal/billing/${fakeInvoiceId}/pay`;
+    // Real post-confirm destination is the invoice detail PAGE with `?pay=1`
+    // (auto-opens the in-page F5 PaySheet) — NOT a `/pay` sub-route (that
+    // 404s) and NOT `/portal/billing/*`. Match the actual `payUrl` shape
+    // returned by confirm-renewal so this fixture documents the truth
+    // (fixed 2026-06-22).
+    const fakePayUrl = `/portal/invoices/${fakeInvoiceId}?pay=1`;
 
     // Intercept the F8 confirm endpoint with a stub success envelope.
     // Letting it hit production would create a real F4 invoice for the
@@ -161,8 +166,8 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
       },
     );
 
-    // Stub the redirected billing/pay page so the test does not 404
-    // against the F5 surface (which depends on a real invoice id).
+    // Stub the redirected invoice detail page so the test does not 404
+    // against the real F4/F5 surface (which depends on a real invoice id).
     await page.route(`**${fakePayUrl}`, async (route) => {
       await route.fulfill({
         status: 200,

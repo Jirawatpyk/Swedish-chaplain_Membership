@@ -223,7 +223,17 @@ describe('confirmRenewal (T122) — happy paths', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.invoiceId).toBe('inv-1');
-      expect(r.value.payUrl).toBe('/portal/invoices/inv-1/pay');
+      // `?pay=1` auto-opens the F5 PaySheet on the invoice detail page
+      // (FR-025c) — the same deep-link the F4/F5 invoice emails use.
+      expect(r.value.payUrl).toBe('/portal/invoices/inv-1?pay=1');
+      // Regression guard (2026-06-22 /verify): the member PAY surface is the
+      // invoice detail PAGE `/portal/invoices/[invoiceId]` (hosts the in-page
+      // F5 PaySheet via <PayNowButton>). There is NO `/pay` sub-route page —
+      // a trailing `/pay` (the prior bug) or any extra PATH segment 404s the
+      // member right after a successful confirm. A query string (`?pay=1`) is
+      // fine; an extra path segment is not. Pin the shape so a future
+      // re-append to a non-existent sub-route is caught at this assertion.
+      expect(r.value.payUrl).toMatch(/^\/portal\/invoices\/[^/]+$/);
       expect(r.value.planChanged).toBe(false);
     }
     expect(planLookupMock).not.toHaveBeenCalled();
