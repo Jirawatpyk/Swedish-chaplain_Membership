@@ -92,7 +92,7 @@ describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
 
     expect(audiences).toHaveLength(1);
     expect(audiences[0]).toMatchObject({ id: 'aud_fake_2', name: 'Audience Beta' });
-    // Proves the gateway maps snake_case created_at → camelCase createdAt.
-    expect(typeof audiences[0]?.createdAt).toBe('string');
+    // Proves the gateway maps snake_case created_at → camelCase createdAt (as Date).
+    expect(audiences[0]?.createdAt).toBeInstanceOf(Date);
   });
 });

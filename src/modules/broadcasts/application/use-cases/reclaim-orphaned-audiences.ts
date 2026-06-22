@@ -55,6 +55,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
+import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
@@ -77,12 +78,14 @@ export interface ReclaimOrphanedAudiencesInput {
    * than `clock.now() - graceMs` are not yet candidates — they may belong to
    * an in-flight dispatch that hasn't committed its broadcast row yet.
    * Recommended production value: 24 hours (86_400_000 ms).
+   * Must be positive (graceMs > 0).
    */
   readonly graceMs: number;
   /**
    * Maximum number of candidates to process per invocation. Applied AFTER
    * name-matching and grace filtering, BEFORE the DB existence check.
    * Keeps per-tick Resend delete throughput bounded. Production value: 200.
+   * Must be positive (limit > 0).
    */
   readonly limit: number;
 }
@@ -154,7 +157,7 @@ export async function reclaimOrphanedAudiences(
   // -------------------------------------------------------------------------
   // Step 1: List all Resend audiences for this API key.
   // -------------------------------------------------------------------------
-  let audiences: ReadonlyArray<{ readonly id: string; readonly name: string; readonly createdAt: string }>;
+  let audiences: Awaited<ReturnType<BroadcastsGatewayPort['listAudiences']>>;
   try {
     audiences = await deps.broadcastsGateway.listAudiences();
   } catch (e) {
@@ -181,7 +184,7 @@ export async function reclaimOrphanedAudiences(
   );
 
   let skippedNonMatching = 0;
-  const candidates: Array<{ audienceId: string; broadcastId: string }> = [];
+  const candidates: Array<{ audienceId: string; broadcastId: BroadcastId }> = [];
 
   for (const audience of audiences) {
     // Run name-match first (single exec per audience — cap check comes after
@@ -199,16 +202,16 @@ export async function reclaimOrphanedAudiences(
     // (skippedNonMatching is reserved for name-mismatches only).
     if (candidates.length >= input.limit) continue;
 
-    const capturedBroadcastId = match[1]!;
+    const capturedBroadcastId = asBroadcastId(match[1]!);
 
-    // Parse `createdAt` defensively: an invalid ISO string produces an
-    // Invalid Date whose `getTime()` returns NaN. NaN comparisons are always
-    // false, so `new Date(createdAt) > graceCutoff` is false → the audience
-    // is treated as NOT-fresh (eligible for the grace filter). This is the
-    // safe choice: an audience with an unreadable timestamp is more likely
-    // to be old than brand-new, and the DB existence check below still gates
-    // deletion (we only delete if the broadcast row is absent).
-    const createdAtMs = new Date(audience.createdAt).getTime();
+    // `createdAt` is a Date parsed at the gateway boundary. An invalid API
+    // date yields an Invalid Date whose `getTime()` returns NaN. NaN
+    // comparisons are always false, so the audience is treated as NOT-fresh
+    // (eligible for the grace filter). This is the safe choice: an audience
+    // with an unreadable timestamp is more likely to be old than brand-new,
+    // and the DB existence check below still gates deletion (we only delete
+    // if the broadcast row is absent).
+    const createdAtMs = audience.createdAt.getTime();
     const isFreshEnoughToSkip = !Number.isNaN(createdAtMs) && createdAtMs > graceCutoff.getTime();
     if (isFreshEnoughToSkip) {
       // Matched the pattern but is within the grace window.
@@ -226,9 +229,9 @@ export async function reclaimOrphanedAudiences(
     return ok({ scanned, orphaned: 0, deleted: 0, failed: 0, skippedLastAudience: 0, skippedNonMatching });
   }
 
-  const uniqueIds = [...new Set(candidates.map((c) => c.broadcastId))];
+  const uniqueIds: ReadonlyArray<BroadcastId> = [...new Set(candidates.map((c) => c.broadcastId))];
 
-  let existing: ReadonlySet<string>;
+  let existing: ReadonlySet<BroadcastId>;
   try {
     existing = await deps.broadcastsRepo.existingBroadcastIds(deps.tenant.slug, uniqueIds);
   } catch (e) {
@@ -247,7 +250,7 @@ export async function reclaimOrphanedAudiences(
   let failed = 0;
   let skippedLastAudience = 0;
 
-  async function handleOne(orphan: { audienceId: string; broadcastId: string }): Promise<void> {
+  async function handleOne(orphan: { audienceId: string; broadcastId: BroadcastId }): Promise<void> {
     try {
       await deps.broadcastsGateway.deleteAudience(orphan.audienceId);
       deleted++;

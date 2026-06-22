@@ -575,8 +575,8 @@ export interface BroadcastsRepo {
    *     querying the database.
    *   - Otherwise queries `broadcasts WHERE tenant_id = $1 AND
    *     broadcast_id = ANY(ARRAY[...]::uuid[])` and returns the matching ids
-   *     as a `ReadonlySet<string>`. Non-matching ids (orphans) are simply
-   *     absent from the set.
+   *     as a `ReadonlySet<BroadcastId>`. Non-matching ids (orphans) are
+   *     simply absent from the set.
    *   - The caller is responsible for passing syntactically-valid UUIDs;
    *     a malformed value causes Postgres to surface a cast error (22P02)
    *     that propagates as a throw.
@@ -587,6 +587,6 @@ export interface BroadcastsRepo {
    */
   existingBroadcastIds(
     tenantId: TenantSlug,
-    broadcastIds: ReadonlyArray<string>,
-  ): Promise<ReadonlySet<string>>;
+    broadcastIds: ReadonlyArray<BroadcastId>,
+  ): Promise<ReadonlySet<BroadcastId>>;
 }

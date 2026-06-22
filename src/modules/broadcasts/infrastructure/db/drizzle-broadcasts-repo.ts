@@ -1450,7 +1450,7 @@ export function makeDrizzleBroadcastsRepo(
      */
     async existingBroadcastIds(tenantIdArg, broadcastIds) {
       // Short-circuit: nothing to look up — avoid an empty ANY() query.
-      if (broadcastIds.length === 0) return new Set<string>();
+      if (broadcastIds.length === 0) return new Set<BroadcastId>();
       return runInTenant(ctx, async (tx) => {
         const rows = (await tx.execute(sql`
           SELECT broadcast_id
@@ -1461,7 +1461,7 @@ export function makeDrizzleBroadcastsRepo(
               sql`, `,
             )}])
         `)) as unknown as Array<{ broadcast_id: string }>;
-        return new Set(rows.map((r) => r.broadcast_id));
+        return new Set(rows.map((r) => asBroadcastId(r.broadcast_id)));
       });
     },
   };

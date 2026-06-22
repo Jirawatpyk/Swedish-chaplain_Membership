@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm';
 
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import {
   createTwoTestTenants,
   type TestTenant,
@@ -124,18 +125,18 @@ describe('PR-2 Task 5 — existingBroadcastIds repo method (live Neon)', () => {
     const nonExistentId = randomUUID();
 
     const result = await repo.existingBroadcastIds(tenantA.ctx.slug, [
-      broadcastA1,
-      broadcastA2,
-      nonExistentId,
+      asBroadcastId(broadcastA1),
+      asBroadcastId(broadcastA2),
+      asBroadcastId(nonExistentId),
     ]);
 
     // Set size must be exactly 2 (the two seeded ids)
     expect(result.size).toBe(2);
     // Both seeded ids must be present
-    expect(result.has(broadcastA1)).toBe(true);
-    expect(result.has(broadcastA2)).toBe(true);
+    expect(result.has(asBroadcastId(broadcastA1))).toBe(true);
+    expect(result.has(asBroadcastId(broadcastA2))).toBe(true);
     // The random non-existent id must NOT be present
-    expect(result.has(nonExistentId)).toBe(false);
+    expect(result.has(asBroadcastId(nonExistentId))).toBe(false);
   });
 
   // -------------------------------------------------------------------------
@@ -157,25 +158,25 @@ describe('PR-2 Task 5 — existingBroadcastIds repo method (live Neon)', () => {
   it('tenant A cannot see tenant B broadcasts (cross-tenant id returns empty)', async () => {
     const repoA = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
 
-    const result = await repoA.existingBroadcastIds(tenantA.ctx.slug, [broadcastB1]);
+    const result = await repoA.existingBroadcastIds(tenantA.ctx.slug, [asBroadcastId(broadcastB1)]);
 
     // The set must be empty — tenant A has no row for broadcastB1
     expect(result.size).toBe(0);
-    expect(result.has(broadcastB1)).toBe(false);
+    expect(result.has(asBroadcastId(broadcastB1))).toBe(false);
   });
 
   it('tenant B cannot see tenant A broadcasts (cross-tenant ids return empty)', async () => {
     const repoB = makeDrizzleBroadcastsRepo(tenantB.ctx.slug);
 
     const result = await repoB.existingBroadcastIds(tenantB.ctx.slug, [
-      broadcastA1,
-      broadcastA2,
+      asBroadcastId(broadcastA1),
+      asBroadcastId(broadcastA2),
     ]);
 
     // The set must be empty — tenant B has no rows for tenant A's broadcasts
     expect(result.size).toBe(0);
-    expect(result.has(broadcastA1)).toBe(false);
-    expect(result.has(broadcastA2)).toBe(false);
+    expect(result.has(asBroadcastId(broadcastA1))).toBe(false);
+    expect(result.has(asBroadcastId(broadcastA2))).toBe(false);
   });
 
   it('mixed cross-tenant + own-tenant lookup: only own-tenant ids returned', async () => {
@@ -184,15 +185,15 @@ describe('PR-2 Task 5 — existingBroadcastIds repo method (live Neon)', () => {
 
     // Supply: one valid tenant-A id, one tenant-B id (invisible), one non-existent id
     const result = await repoA.existingBroadcastIds(tenantA.ctx.slug, [
-      broadcastA1,
-      broadcastB1,
-      nonExistentId,
+      asBroadcastId(broadcastA1),
+      asBroadcastId(broadcastB1),
+      asBroadcastId(nonExistentId),
     ]);
 
     // Only broadcastA1 belongs to tenant A
     expect(result.size).toBe(1);
-    expect(result.has(broadcastA1)).toBe(true);
-    expect(result.has(broadcastB1)).toBe(false);
-    expect(result.has(nonExistentId)).toBe(false);
+    expect(result.has(asBroadcastId(broadcastA1))).toBe(true);
+    expect(result.has(asBroadcastId(broadcastB1))).toBe(false);
+    expect(result.has(asBroadcastId(nonExistentId))).toBe(false);
   });
 });

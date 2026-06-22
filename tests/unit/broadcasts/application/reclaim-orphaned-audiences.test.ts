@@ -31,6 +31,7 @@ import { describe, expect, it } from 'vitest';
 
 import { reclaimOrphanedAudiences } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences';
 import { asTenantContext } from '@/modules/tenants';
+import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
@@ -41,10 +42,10 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 
 const FROZEN_NOW = new Date('2026-06-22T12:00:00Z');
 const GRACE_MS = 60 * 60 * 1000; // 1 hour grace window
-// Audience created 2h ago — past grace
-const PAST_GRACE_ISO = new Date(FROZEN_NOW.getTime() - 2 * 60 * 60 * 1000).toISOString();
+// Audience created 2h ago — past grace (as Date, matching port shape)
+const PAST_GRACE_DATE = new Date(FROZEN_NOW.getTime() - 2 * 60 * 60 * 1000);
 // Audience created 30 min ago — within grace
-const WITHIN_GRACE_ISO = new Date(FROZEN_NOW.getTime() - 30 * 60 * 1000).toISOString();
+const WITHIN_GRACE_DATE = new Date(FROZEN_NOW.getTime() - 30 * 60 * 1000);
 
 const TENANT_SLUG = 'swecham';
 const tenant = asTenantContext(TENANT_SLUG);
@@ -69,13 +70,13 @@ const UUID_H = '88888888-8888-8888-8888-888888888888';
  * does NOT call must throw so an accidental call is caught immediately.
  */
 function makeRepo(opts: {
-  existing: ReadonlySet<string>;
+  existing: ReadonlySet<BroadcastId>;
   shouldThrow?: boolean;
 }): {
   port: BroadcastsRepo;
-  existingCalls: Array<{ tenantId: string; ids: ReadonlyArray<string> }>;
+  existingCalls: Array<{ tenantId: string; ids: ReadonlyArray<BroadcastId> }>;
 } {
-  const existingCalls: Array<{ tenantId: string; ids: ReadonlyArray<string> }> = [];
+  const existingCalls: Array<{ tenantId: string; ids: ReadonlyArray<BroadcastId> }> = [];
 
   const port: BroadcastsRepo = {
     async withTx(fn) { return fn({}); },
@@ -123,7 +124,7 @@ function makeRepo(opts: {
  * are instrumented; everything else throws on accidental call.
  */
 function makeGateway(opts: {
-  audiences: ReadonlyArray<{ id: string; name: string; createdAt: string }>;
+  audiences: ReadonlyArray<{ id: string; name: string; createdAt: Date }>;
   /** Keyed by audienceId. If the value is an Error, the call throws it. */
   throws?: Record<string, Error>;
   /** If true, listAudiences() throws instead of returning the list. */
@@ -165,9 +166,9 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     // Audience whose broadcast row no longer exists in the DB.
     const audienceId = 'aud-aaa';
     const gateway = makeGateway({
-      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_ISO }],
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
     });
-    const repo = makeRepo({ existing: new Set([]) }); // UUID_A is NOT in DB
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_A is NOT in DB
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -192,10 +193,10 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   it('(b) audience whose broadcastId IS in DB → NOT deleted (orphaned===0)', async () => {
     const audienceId = 'aud-bbb';
     const gateway = makeGateway({
-      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_ISO }],
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_DATE }],
     });
     // UUID_B IS in the DB (active broadcast row still exists)
-    const repo = makeRepo({ existing: new Set([UUID_B]) });
+    const repo = makeRepo({ existing: new Set([asBroadcastId(UUID_B)]) });
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -213,11 +214,11 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   it('(c) General + different-tenant audience → skippedNonMatching===2, deleteAudience never called', async () => {
     const gateway = makeGateway({
       audiences: [
-        { id: 'aud-gen', name: 'General', createdAt: PAST_GRACE_ISO },
-        { id: 'aud-other', name: `broadcast-other-tenant-${UUID_A}`, createdAt: PAST_GRACE_ISO },
+        { id: 'aud-gen', name: 'General', createdAt: PAST_GRACE_DATE },
+        { id: 'aud-other', name: `broadcast-other-tenant-${UUID_A}`, createdAt: PAST_GRACE_DATE },
       ],
     });
-    const repo = makeRepo({ existing: new Set([]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -242,9 +243,9 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   it('(d) audience matching slug but createdAt within grace → not a candidate, not deleted', async () => {
     const audienceId = 'aud-fresh';
     const gateway = makeGateway({
-      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_C}`, createdAt: WITHIN_GRACE_ISO }],
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_C}`, createdAt: WITHIN_GRACE_DATE }],
     });
-    const repo = makeRepo({ existing: new Set([]) }); // UUID_C not in DB, but still within grace
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_C not in DB, but still within grace
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -272,8 +273,8 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const aud2Id = 'aud-e2';
     const gateway = makeGateway({
       audiences: [
-        { id: aud1Id, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_ISO },
-        { id: aud2Id, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_ISO },
+        { id: aud1Id, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE },
+        { id: aud2Id, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_DATE },
       ],
       throws: {
         [aud1Id]: new GatewayThrowable({
@@ -283,7 +284,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
         }),
       },
     });
-    const repo = makeRepo({ existing: new Set([]) }); // neither UUID in DB
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // neither UUID in DB
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -306,12 +307,12 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   it('(f) deleteAudience throws "Cannot delete last audience" → benign skip (failed===0, deleted===0 for it)', async () => {
     const audienceId = 'aud-last';
     const gateway = makeGateway({
-      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_ISO }],
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
       throws: {
         [audienceId]: new Error('Cannot delete last audience'),
       },
     });
-    const repo = makeRepo({ existing: new Set([]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -341,9 +342,9 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     // and NOT call deleteAudience. Deleting without confirming the broadcast row
     // is absent would risk destroying live audiences.
     const gateway = makeGateway({
-      audiences: [{ id: 'aud-aaa', name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_ISO }],
+      audiences: [{ id: 'aud-aaa', name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
     });
-    const repo = makeRepo({ existing: new Set([]), shouldThrow: true });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]), shouldThrow: true });
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -368,7 +369,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     // which GatewayThrowable satisfies because it extends Error.
     const audienceId = 'aud-last-gw';
     const gateway = makeGateway({
-      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_ISO }],
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_DATE }],
       throws: {
         [audienceId]: new GatewayThrowable({
           kind: 'permanent',
@@ -377,7 +378,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
         }),
       },
     });
-    const repo = makeRepo({ existing: new Set([]) }); // UUID_B NOT in DB → orphan
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_B NOT in DB → orphan
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -394,7 +395,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
   it('(g) listAudiences throws → returns err reclaim.server_error', async () => {
     const gateway = makeGateway({ audiences: [], listThrows: true });
-    const repo = makeRepo({ existing: new Set([]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -417,11 +418,11 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
         {
           id: audienceId,
           name: `broadcast-${TENANT_SLUG}-${UUID_A}-batch-0`,
-          createdAt: PAST_GRACE_ISO,
+          createdAt: PAST_GRACE_DATE,
         },
       ],
     });
-    const repo = makeRepo({ existing: new Set([]) }); // UUID_A not in DB
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_A not in DB
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
@@ -446,10 +447,10 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const audiences = distinctIds.map((uuid, i) => ({
       id: `aud-lim-${i}`,
       name: `broadcast-${TENANT_SLUG}-${uuid}`,
-      createdAt: PAST_GRACE_ISO,
+      createdAt: PAST_GRACE_DATE,
     }));
     const gateway = makeGateway({ audiences });
-    const repo = makeRepo({ existing: new Set([]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
