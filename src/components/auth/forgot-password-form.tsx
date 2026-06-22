@@ -131,7 +131,14 @@ export function ForgotPasswordForm() {
   }, [getValues, sendRequest]);
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      // Keep the email out of the URL on a pre-hydration native submit
+      // (CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx).
+      method="post"
+      className="space-y-4"
+      noValidate
+    >
       <div className="space-y-2">
         <Label htmlFor="email">{t('emailLabel')}</Label>
         <Input

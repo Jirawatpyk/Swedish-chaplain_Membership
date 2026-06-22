@@ -158,7 +158,14 @@ export function ChangePasswordForm() {
   };
 
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-4" noValidate>
+    <form
+      onSubmit={handleFormSubmit}
+      // Native fallback POSTs so current/new password stays out of the URL
+      // (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
+      method="post"
+      className="space-y-4"
+      noValidate
+    >
       <div className="space-y-2">
         <Label htmlFor="current-password">{t('currentPasswordLabel')}</Label>
         <PasswordInput

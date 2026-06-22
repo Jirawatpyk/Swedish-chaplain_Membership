@@ -128,6 +128,8 @@ export function CreateDraftForm({
   return (
     <form
       onSubmit={submit}
+      // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
+      method="post"
       className="flex flex-col gap-[var(--page-section-gap)]"
     >
       <div className="flex flex-col gap-[var(--field-label-gap)]">

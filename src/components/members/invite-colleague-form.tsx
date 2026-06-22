@@ -117,7 +117,7 @@ export function InviteColleagueForm() {
   };
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate>
       <Card>
         <CardHeader>
           <CardTitle>{t('formTitle')}</CardTitle>

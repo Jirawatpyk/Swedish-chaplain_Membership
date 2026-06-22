@@ -117,7 +117,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   };
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate>
       <div className="space-y-6">
         {/* Contact fields */}
         <Card>
