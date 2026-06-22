@@ -1611,6 +1611,13 @@
 			"when": 1798535800000,
 			"tag": "0229_broadcasts_audience_deleted_at",
 			"breakpoints": true
+		},
+		{
+			"idx": 230,
+			"version": "7",
+			"when": 1798535900000,
+			"tag": "0230_event_attendance_bumps_last_activity",
+			"breakpoints": true
 		}
 	]
 }
