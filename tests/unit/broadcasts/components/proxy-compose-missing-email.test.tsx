@@ -25,7 +25,7 @@
  * so React flushes the update before assertions.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import type { MemberPickerOption } from '@/components/broadcast/member-picker';
@@ -153,6 +153,18 @@ vi.mock('@/components/ui/tiptap-loader', () => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// ---------------------------------------------------------------------------
+// Helpers for the pickerError server-response test (F8)
+// ---------------------------------------------------------------------------
+
+/** Build a minimal Response that looks like a 422 from the proxy-submit route. */
+function makeFetchResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 // Lazy-import ProxyComposeForm AFTER all vi.mock() declarations.
 // Vitest hoists vi.mock() above the import, so mocks are in place when
 // the module is loaded here.
@@ -217,5 +229,64 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
 
     // The missing-email warning must NOT appear.
     expect(screen.queryByText(/no primary contact email/i)).toBeNull();
+  });
+
+  it('server 422 broadcast_member_missing_primary_contact_email → pickerError: shows missingContactEmailError at picker level AND preserves member selection', async () => {
+    // Arrange: mock global fetch to return a 422 with the missing-email error code.
+    // The form blocks submit when hasPrimaryContactEmail===false, but the server
+    // can still 422 when the picker data is stale (e.g. the member lost their
+    // contact after the admin loaded the form). The `pickerError` path MUST:
+    //   (a) show the `missingContactEmailError` i18n message at the picker level
+    //       (NOT a generic toast — the member needs to know WHICH member is broken)
+    //   (b) preserve the member selection (the admin may want to navigate to the
+    //       member's profile to add a contact — clearing the picker loses context)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      makeFetchResponse(422, {
+        error: { code: 'broadcast_member_missing_primary_contact_email' },
+      }),
+    );
+
+    renderForm();
+
+    // Select a member that HAS a primary contact email (so the client-side guard
+    // does NOT disable submit) — stale picker scenario where server still 422s.
+    await act(async () => {
+      capturedOnSelect?.({
+        memberId: 'm-stale',
+        companyName: 'Stale Email Corp',
+        primaryContactName: 'Alex Stale',
+        hasPrimaryContactEmail: true,
+      });
+    });
+
+    // Confirm the member IS selected.
+    expect(screen.getByTestId('selected-member')).toBeInTheDocument();
+
+    // Fill in the subject so SubmitSchema.safeParse passes and submitDisabled
+    // becomes false (member is set + hasPrimaryContactEmail:true + subject ≥1).
+    // The initial bodyHtml '<p></p>' has length > 0 so body validation passes.
+    // Use the input's id directly (multiple textbox roles exist: input + tiptap stub).
+    const subjectInput = document.getElementById('proxy-broadcast-subject') as HTMLInputElement;
+    fireEvent.change(subjectInput, { target: { value: 'Test subject' } });
+
+    // Now the submit button should be enabled. Click it and await the async fetch.
+    const submitBtn = screen.getByTestId('submit-btn');
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+
+    // (a) The picker-level error message for missingContactEmailError must be
+    //     visible as a `role="alert"` paragraph. The en.json value for this key
+    //     contains "email" — assert case-insensitively so the test is not
+    //     fragile to minor copy edits.
+    const pickerError = screen.queryByRole('alert');
+    expect(pickerError).not.toBeNull();
+    expect(pickerError?.textContent?.toLowerCase()).toMatch(/email/);
+
+    // (b) Member selection is PRESERVED — the selected-member span must still
+    //     be present. The `picker` case (member_not_found) clears selection;
+    //     `pickerError` MUST NOT clear it (the admin may want to navigate to
+    //     the member profile to add a contact email first).
+    expect(screen.getByTestId('selected-member')).toBeInTheDocument();
   });
 });

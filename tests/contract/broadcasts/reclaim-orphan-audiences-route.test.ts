@@ -91,7 +91,7 @@ describe('cron reclaim-orphan-audiences — wire contract', () => {
 
   it('valid bearer + no orphans → 200 + zeroed summary', async () => {
     reclaimOrphanedAudiencesMock.mockResolvedValueOnce(
-      ok({ scanned: 0, orphaned: 0, deleted: 0, failed: 0, skippedNonMatching: 0 }),
+      ok({ scanned: 0, orphaned: 0, deleted: 0, failed: 0, skippedLastAudience: 0, skippedNonMatching: 0 }),
     );
     const { POST } = await import(
       '@/app/api/cron/broadcasts/reclaim-orphan-audiences/route'
@@ -103,13 +103,14 @@ describe('cron reclaim-orphan-audiences — wire contract', () => {
     expect(body.orphaned).toBe(0);
     expect(body.deleted).toBe(0);
     expect(body.failed).toBe(0);
+    expect(body.skippedLastAudience).toBe(0);
     expect(body.skippedNonMatching).toBe(0);
     expect(reclaimOrphanedAudiencesMock).toHaveBeenCalledTimes(1);
   });
 
   it('valid bearer + some orphans deleted → 200 + aggregated summary', async () => {
     reclaimOrphanedAudiencesMock.mockResolvedValueOnce(
-      ok({ scanned: 10, orphaned: 3, deleted: 2, failed: 1, skippedNonMatching: 4 }),
+      ok({ scanned: 10, orphaned: 3, deleted: 2, failed: 1, skippedLastAudience: 0, skippedNonMatching: 4 }),
     );
     const { POST } = await import(
       '@/app/api/cron/broadcasts/reclaim-orphan-audiences/route'
@@ -121,6 +122,7 @@ describe('cron reclaim-orphan-audiences — wire contract', () => {
     expect(body.orphaned).toBe(3);
     expect(body.deleted).toBe(2);
     expect(body.failed).toBe(1);
+    expect(body.skippedLastAudience).toBe(0);
     expect(body.skippedNonMatching).toBe(4);
   });
 

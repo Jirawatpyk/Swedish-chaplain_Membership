@@ -53,6 +53,11 @@ const clock = { now: (): Date => FROZEN_NOW };
 const UUID_A = '11111111-1111-1111-1111-111111111111';
 const UUID_B = '22222222-2222-2222-2222-222222222222';
 const UUID_C = '33333333-3333-3333-3333-333333333333';
+const UUID_D = '44444444-4444-4444-4444-444444444444';
+const UUID_E = '55555555-5555-5555-5555-555555555555';
+const UUID_F = '66666666-6666-6666-6666-666666666666';
+const UUID_G = '77777777-7777-7777-7777-777777777777';
+const UUID_H = '88888888-8888-8888-8888-888888888888';
 
 // ---------------------------------------------------------------------------
 // Stub factories
@@ -176,6 +181,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
         orphaned: 1,
         deleted: 1,
         failed: 0,
+        skippedLastAudience: 0,
         skippedNonMatching: 0,
       });
     }
@@ -318,11 +324,11 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
       // not a failure. This is a Resend 403 validation that means we can't
       // delete it right now (it's the account's last audience); it will be
       // eligible once another audience exists. Not counted as failed.
-      expect(result.value).toMatchObject({
-        orphaned: 1,
-        deleted: 0,
-        failed: 0,
-      });
+      // Invariant: orphaned === deleted + failed + skippedLastAudience (1 === 0 + 0 + 1).
+      expect(result.value.orphaned).toBe(1);
+      expect(result.value.deleted).toBe(0);
+      expect(result.value.failed).toBe(0);
+      expect(result.value.skippedLastAudience).toBe(1);
     }
   });
 
@@ -430,12 +436,16 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   });
 
   it('(N-1) limit caps candidates before the DB existence check — exact count asserted', async () => {
-    // 5 audiences, all orphaned (no DB rows), limit=2 → exactly 2 are deleted.
-    // Using toBe(2) (not toBeLessThanOrEqual) so an impl that ignores `limit`
-    // and deletes all 5 would fail this test.
-    const audiences = Array.from({ length: 5 }, (_, i) => ({
+    // 5 audiences with DISTINCT broadcast IDs (UUID_D…UUID_H), all orphaned
+    // (no DB rows), limit=2 → exactly 2 are candidates and deleted.
+    // Distinct UUIDs ensure the dedup step (Set over broadcastIds) does NOT
+    // reduce the candidate count unexpectedly — the limit-vs-dedup interaction
+    // is what this test guards. Using toBe(2) (not toBeLessThanOrEqual) so an
+    // impl that ignores `limit` and deletes all 5 would fail here.
+    const distinctIds = [UUID_D, UUID_E, UUID_F, UUID_G, UUID_H];
+    const audiences = distinctIds.map((uuid, i) => ({
       id: `aud-lim-${i}`,
-      name: `broadcast-${TENANT_SLUG}-${UUID_A.slice(0, -1)}${i}`,
+      name: `broadcast-${TENANT_SLUG}-${uuid}`,
       createdAt: PAST_GRACE_ISO,
     }));
     const gateway = makeGateway({ audiences });

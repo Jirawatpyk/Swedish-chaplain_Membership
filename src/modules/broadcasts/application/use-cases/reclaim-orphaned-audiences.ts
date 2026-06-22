@@ -76,13 +76,13 @@ export interface ReclaimOrphanedAudiencesInput {
    * Grace window in milliseconds. Audiences whose `createdAt` is MORE RECENT
    * than `clock.now() - graceMs` are not yet candidates — they may belong to
    * an in-flight dispatch that hasn't committed its broadcast row yet.
-   * Recommended production value: 30 minutes (1_800_000 ms).
+   * Recommended production value: 24 hours (86_400_000 ms).
    */
   readonly graceMs: number;
   /**
    * Maximum number of candidates to process per invocation. Applied AFTER
    * name-matching and grace filtering, BEFORE the DB existence check.
-   * Keeps per-tick Resend delete throughput bounded. Production value: 50.
+   * Keeps per-tick Resend delete throughput bounded. Production value: 200.
    */
   readonly limit: number;
 }
@@ -96,6 +96,13 @@ export interface ReclaimOrphanedAudiencesOutput {
   readonly deleted: number;
   /** Orphans whose delete threw a non-benign error (left for next tick). */
   readonly failed: number;
+  /**
+   * Orphans skipped because Resend refused to delete the account's last
+   * audience (403 "Cannot delete last audience"). These will become eligible
+   * once a new audience is created by the next broadcast dispatch.
+   * Invariant: `orphaned === deleted + failed + skippedLastAudience`.
+   */
+  readonly skippedLastAudience: number;
   /**
    * Audiences whose name did not match the tenant's naming convention
    * (`General`, other-tenant audiences, malformed names). NOT counted when
@@ -172,11 +179,12 @@ export async function reclaimOrphanedAudiences(
   for (const audience of audiences) {
     if (candidates.length >= input.limit) {
       // Already capped — keep scanning for skippedNonMatching accounting,
-      // but stop adding candidates.
+      // but stop adding candidates. Matched audiences (both within-grace and
+      // past-grace) that land here are simply capped and silently dropped;
+      // they are NOT counted as skippedNonMatching (which is reserved for
+      // audiences that do not match the naming convention at all).
       const match = namePattern.exec(audience.name);
       if (match === null) skippedNonMatching++;
-      // Within-grace matched audiences: neither skipped nor over-limit'd
-      // (they don't count as skippedNonMatching — they matched the pattern).
       continue;
     }
 
@@ -210,7 +218,7 @@ export async function reclaimOrphanedAudiences(
   // Step 4: Check which extracted broadcast IDs still exist in the DB.
   // -------------------------------------------------------------------------
   if (candidates.length === 0) {
-    return ok({ scanned, orphaned: 0, deleted: 0, failed: 0, skippedNonMatching });
+    return ok({ scanned, orphaned: 0, deleted: 0, failed: 0, skippedLastAudience: 0, skippedNonMatching });
   }
 
   const uniqueIds = [...new Set(candidates.map((c) => c.broadcastId))];
@@ -234,6 +242,7 @@ export async function reclaimOrphanedAudiences(
   // -------------------------------------------------------------------------
   let deleted = 0;
   let failed = 0;
+  let skippedLastAudience = 0;
 
   async function handleOne(orphan: { audienceId: string; broadcastId: string }): Promise<void> {
     try {
@@ -246,6 +255,7 @@ export async function reclaimOrphanedAudiences(
       // deleted. The audience will become eligible once another audience is
       // created by the next broadcast dispatch.
       if (e instanceof Error && LAST_AUDIENCE_PATTERN.test(e.message)) {
+        skippedLastAudience++;
         logger.info(
           { audienceId: orphan.audienceId },
           'broadcasts.audience_reclaim.skip_last_audience',
@@ -257,6 +267,7 @@ export async function reclaimOrphanedAudiences(
       logger.warn(
         {
           audienceId: orphan.audienceId,
+          broadcastId: orphan.broadcastId,
           cause: e instanceof Error ? e.message : 'unknown error',
         },
         'broadcasts.audience_reclaim.delete_failed',
@@ -269,5 +280,5 @@ export async function reclaimOrphanedAudiences(
     await Promise.allSettled(chunk.map(handleOne));
   }
 
-  return ok({ scanned, orphaned, deleted, failed, skippedNonMatching });
+  return ok({ scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching });
 }

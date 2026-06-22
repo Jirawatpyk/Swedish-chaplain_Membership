@@ -111,12 +111,12 @@ describe('GET /api/admin/members/search (Round-1 test-M5)', () => {
     expect(body.items[0]?.memberId).toBe('m-1');
     expect(body.items[0]?.companyName).toBe('Acme Co Ltd');
     expect(body.items[0]?.primaryContactName).toBe('Jane Doe');
-    // Task 6: hasPrimaryContactEmail should be true when primaryContact has email.
+    // Task 6: hasPrimaryContactEmail should be false when primaryContact has no email.
     // The mock sets primaryContact: { firstName: 'Jane', lastName: 'Doe' } — the
-    // email field is undefined in the mock, so Boolean(undefined) === false.
-    // This asserts the field IS returned (type: boolean), not its value per se,
-    // since the mock doesn't carry a Contact domain object with email.
-    expect(typeof body.items[0]?.hasPrimaryContactEmail).toBe('boolean');
+    // email field is undefined, so Boolean(undefined) === false. Assert the exact
+    // value (false) rather than just the type to catch a regression that always
+    // returns true regardless of the contact's email.
+    expect(body.items[0]?.hasPrimaryContactEmail).toBe(false);
     // Round-2 test-M5 closure — assert use-case was called with the
     // parsed query + limit shape so a regression that drops a field
     // or swaps in a different use-case surfaces here.

@@ -93,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.error(
       {
         tenantId: tenant.slug,
-        message: result.error.message,
+        errMessage: result.error.message,
       },
       'cron.broadcasts.reclaim_orphan_audiences.server_error',
     );
@@ -103,15 +103,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { scanned, orphaned, deleted, failed, skippedNonMatching } = result.value;
+  const { scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching } = result.value;
 
   logger.info(
-    { tenantId: tenant.slug, scanned, orphaned, deleted, failed, skippedNonMatching },
+    { tenantId: tenant.slug, scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching },
     'cron.broadcasts.reclaim_orphan_audiences.tick_complete',
   );
 
   return NextResponse.json(
-    { scanned, orphaned, deleted, failed, skippedNonMatching },
+    { scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching },
     { status: 200 },
   );
 }

@@ -167,7 +167,7 @@ export interface BroadcastsGatewayPort {
   /**
    * PR-2 orphan-reclaim — list all Resend audiences for the configured
    * Broadcasts API key. Used by the orphan-reclaim cron to find audiences
-   * that exist in Resend but have no matching `broadcast_audiences` DB row
+   * that exist in Resend but have no matching `broadcasts` DB row
    * (i.e. were leaked by a failed cleanup or a crash mid-dispatch).
    *
    * Returns a flat array of `{ id, name, createdAt }` — only the fields
