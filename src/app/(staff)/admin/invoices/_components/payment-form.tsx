@@ -153,6 +153,10 @@ export function PaymentForm({
   return (
     <form
       onSubmit={submit}
+      // method="post" — keep invoice/payment data out of the URL on a
+      // pre-hydration native submit (CWE-598; see
+      // tests/unit/components/pii-forms-post-method.test.tsx).
+      method="post"
       // App-controlled validation (see `dateInvalid` / inline error below)
       // — `noValidate` suppresses the browser's native bubble so the
       // admin gets a single, consistent, screen-reader-friendly message.

@@ -237,6 +237,8 @@ export function InvoiceSettingsForm({
   return (
     <form
       onSubmit={handleSubmit}
+      // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
+      method="post"
       className="flex flex-col gap-[var(--page-section-gap)]"
       noValidate
     >

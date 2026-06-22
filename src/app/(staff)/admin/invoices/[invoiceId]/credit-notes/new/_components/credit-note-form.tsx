@@ -140,6 +140,8 @@ export function CreditNoteForm({
         e.preventDefault();
         submit();
       }}
+      // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
+      method="post"
       className="flex flex-col gap-6"
     >
       <div className="rounded-md border bg-muted/40 p-3 text-sm">

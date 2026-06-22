@@ -971,6 +971,8 @@ export function EventFeeForm({
           inputs for picker clamping + semantics. */}
       <form
         onSubmit={submit}
+        // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
+        method="post"
         noValidate
         className="flex flex-col gap-[var(--page-section-gap)]"
       >
