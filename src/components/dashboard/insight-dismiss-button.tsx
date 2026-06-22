@@ -1,57 +1,20 @@
-'use client';
-
 /**
- * F9 (FR-004) — per-insight dismiss control. Posts to the dismiss endpoint,
- * then `router.refresh()` so the suppressed insight drops out of the
- * server-rendered panel on the next cycle. Toast confirms success/failure
- * (ux-standards § 5). The visible label is icon-only, so `aria-label` carries
- * the accessible name.
+ * F9 (FR-004) — per-insight dismiss control (icon-only trigger). The owning
+ * `InsightsPanel` handles the optimistic hide + POST + toast + `router.refresh()`
+ * (it stays mounted across the request; this button unmounts the instant its
+ * line is optimistically removed, so it must NOT own the in-flight fetch). The
+ * visible label is icon-only, so `aria-label` carries the accessible name.
  */
-import { useTransition } from 'react';
 import { XIcon } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 
 export function InsightDismissButton({
-  insightKey,
-  scopeRef,
   label,
-  successLabel,
-  errorLabel,
+  onClick,
 }: {
-  readonly insightKey: string;
-  readonly scopeRef?: string;
   readonly label: string;
-  readonly successLabel: string;
-  readonly errorLabel: string;
+  readonly onClick: () => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  function onDismiss() {
-    startTransition(async () => {
-      try {
-        const res = await fetch('/api/admin/insights/dismiss', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            insightKey,
-            ...(scopeRef !== undefined ? { scopeRef } : {}),
-          }),
-        });
-        if (!res.ok) {
-          toast.error(errorLabel);
-          return;
-        }
-        toast.success(successLabel);
-        router.refresh();
-      } catch {
-        toast.error(errorLabel);
-      }
-    });
-  }
-
   return (
     <Button
       type="button"
@@ -61,9 +24,7 @@ export function InsightDismissButton({
       // (WCAG 2.5.5 mobile) without affecting the row layout (absolute pseudo).
       className="relative size-7 shrink-0 before:absolute before:-inset-2 before:content-['']"
       aria-label={label}
-      disabled={isPending}
-      aria-busy={isPending}
-      onClick={onDismiss}
+      onClick={onClick}
     >
       <XIcon className="size-4" aria-hidden="true" />
     </Button>
