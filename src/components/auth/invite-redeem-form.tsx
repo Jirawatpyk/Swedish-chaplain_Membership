@@ -183,7 +183,14 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   }
 
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-4" noValidate>
+    <form
+      onSubmit={handleFormSubmit}
+      // Native fallback POSTs so the new account password stays out of the
+      // URL (CWE-598; see tests/unit/auth/auth-forms-post-method.test.tsx).
+      method="post"
+      className="space-y-4"
+      noValidate
+    >
       <div className="space-y-2">
         <Label htmlFor="email">{t('emailLabel')}</Label>
         <Input id="email" type="email" value={email} readOnly disabled />

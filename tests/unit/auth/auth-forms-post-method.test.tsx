@@ -27,6 +27,7 @@ import enMessages from '@/i18n/messages/en.json';
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
+import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -66,5 +67,13 @@ describe('credential-bearing auth forms declare method="post" (CWE-598)', () => 
 
   it('ChangePasswordForm posts (never GETs current/new password into the URL)', () => {
     expect(formOf(<ChangePasswordForm />).getAttribute('method')).toBe('post');
+  });
+
+  it('InviteRedeemForm posts (never GETs the new account password into the URL)', () => {
+    expect(
+      formOf(
+        <InviteRedeemForm token="tok_test" email="invitee@example.com" />,
+      ).getAttribute('method'),
+    ).toBe('post');
   });
 });
