@@ -1,0 +1,36 @@
+# Delete the Neon preview database branch when its PR closes (merged or not).
+#
+# The Vercel <-> Neon integration auto-CREATES `preview/<git-branch>` per
+# preview deployment, but does NOT reliably DELETE it on merge/close — so the
+# copy-on-write branches (which carry production PII) accumulate. This sweeps
+# them. See docs/runbooks/db-environment-branching.md.
+#
+# Requires two repo settings (Settings -> Secrets and variables -> Actions):
+#   - variable `NEON_PROJECT_ID`  = broad-silence-28093929 (the prod project)
+#   - secret   `NEON_API_KEY`     = a Neon API key (console.neon.tech -> Account -> API keys)
+# The job is skipped until `NEON_PROJECT_ID` is set, so it never fails noisily
+# before it is configured.
+name: Cleanup Neon preview branch
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  delete-neon-preview-branch:
+    if: ${{ vars.NEON_PROJECT_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      # The integration names the branch `preview/<head_ref>` (slashes kept),
+      # e.g. `preview/chore/db-branch-migration-workflow`. Tolerate a missing
+      # branch (a PR with no preview deploy) so the run stays green.
+      - name: Delete preview/${{ github.head_ref }}
+        continue-on-error: true
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/${{ github.head_ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}

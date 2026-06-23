@@ -26,9 +26,11 @@ All branches are copy-on-write from `main` at creation time and stay in `ap-sout
 
 ## 3. Preview isolation (per-PR branches)
 
-Enabled in the **Vercel ▸ Neon integration** — *"Create database branch for deployment → Preview"* (Preview only; **never** Production). Each push to a non-default branch triggers a Vercel preview deploy, and Neon auto-creates `preview/<git-branch>` (CoW from prod) + injects its connection string into the Preview env. The branch is auto-deleted when the deployment is removed (PR close / branch delete).
+Enabled in the **Vercel ▸ Neon integration** — *"Create database branch for deployment → Preview"* (Preview only; **never** Production). Each push to a non-default branch triggers a Vercel preview deploy, and Neon auto-creates `preview/<git-branch>` (CoW from prod) + injects its connection string into the Preview env.
 
-Verified 2026-06-23: a test push created `preview/chore/verify-preview-branch`, isolated from prod.
+**Cleanup is NOT automatic from the integration alone** — Neon ties the branch to the Vercel *deployment*, which Vercel retains after merge, so preview branches (CoW → carry prod PII) accumulate. `.github/workflows/neon-preview-cleanup.yml` deletes `preview/<head_ref>` on **PR close** via `neondatabase/delete-branch-action`. It requires repo settings: variable `NEON_PROJECT_ID` (= `broad-silence-28093929`) + secret `NEON_API_KEY` (Neon Console → Account → API keys). Until those are set the job is skipped — and the *first* PR that introduces the workflow won't clean its own preview branch (the workflow isn't on `main` yet at its own close), so delete that one manually once.
+
+Verified 2026-06-23: a test push created `preview/chore/verify-preview-branch`, isolated from prod; both it and PR #127's preview branch were deleted manually (the auto-delete gap that the cleanup workflow now closes).
 
 ## 4. Migration workflow (best practice: migrate-on-deploy)
 
