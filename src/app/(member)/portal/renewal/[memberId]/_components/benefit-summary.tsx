@@ -68,7 +68,13 @@ export function BenefitSummary({ benefits, benefitsAvailable }: BenefitSummaryPr
 
 function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
   const t = useTranslations('portal.renewal.benefits');
-  const { label, used, quota } = benefit;
+  const { key, used, quota } = benefit;
+  // Resolve the human-readable benefit name from its stable key via i18n
+  // (the Application layer no longer carries a `label` — that's
+  // Presentation's job, consistent with how this page resolves
+  // tier/plan keys → labels). Keys: eblast | cultural_ticket |
+  // event_attendance, all present under `portal.renewal.benefits.name.*`.
+  const label = t(`name.${key}`);
   // Unmetered benefit (e.g. "members can attend any number of …"):
   // skip the bar — there's no meaningful progress to render.
   if (quota === null) {

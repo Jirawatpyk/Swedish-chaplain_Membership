@@ -20,12 +20,15 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ok, err } from '@/lib/result';
 
 const computeBenefitUsageMock = vi.fn();
-const makeComputeBenefitUsageDepsMock = vi.fn(() => ({ stub: true }));
+const makeComputeBenefitUsageDepsMock = vi.fn((_tenantId: unknown) => ({
+  stub: true,
+}));
 
 vi.mock('@/modules/insights', () => ({
-  computeBenefitUsage: (...args: unknown[]) => computeBenefitUsageMock(...args),
-  makeComputeBenefitUsageDeps: (...args: unknown[]) =>
-    makeComputeBenefitUsageDepsMock(...args),
+  computeBenefitUsage: (ctx: unknown, input: unknown, deps: unknown) =>
+    computeBenefitUsageMock(ctx, input, deps),
+  makeComputeBenefitUsageDeps: (tenantId: unknown) =>
+    makeComputeBenefitUsageDepsMock(tenantId),
 }));
 
 // Import AFTER the mock is registered (vi.mock is hoisted, but keeping

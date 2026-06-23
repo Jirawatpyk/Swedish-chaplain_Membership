@@ -4898,7 +4898,12 @@
         "usageRatio": "{used} of {quota}",
         "usageUnmetered": "{used} used",
         "percentUsed": "{percent}% used",
-        "ariaProgress": "{label}: {used} of {quota} used"
+        "ariaProgress": "{label}: {used} of {quota} used",
+        "name": {
+          "eblast": "E-Blasts",
+          "cultural_ticket": "Cultural tickets",
+          "event_attendance": "Events attended"
+        }
       },
       "confirm": {
         "cta": "Confirm renewal",
