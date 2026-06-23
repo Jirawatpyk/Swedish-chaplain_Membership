@@ -15,9 +15,16 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 
-// Loaded via `node --env-file=.env.local` from `pnpm db:migrate`.
-// The fallback below covers direct `tsx` invocations.
-process.loadEnvFile?.('.env.local');
+// Local convenience: load `.env.local` if present (covers direct `tsx`
+// invocations alongside the `--env-file=.env.local` flag in `pnpm db:migrate`).
+// On Vercel / CI there is no `.env.local` — env comes from the injected
+// `process.env` — so a missing file is NOT an error (`?.` only guards an
+// undefined function, not ENOENT; the try/catch covers the missing file).
+try {
+  process.loadEnvFile?.('.env.local');
+} catch {
+  // .env.local absent (Vercel build / CI) — use the ambient process.env.
+}
 
 const url =
   process.env.DATABASE_URL_UNPOOLED ??

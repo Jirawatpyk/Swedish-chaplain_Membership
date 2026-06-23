@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "next dev --turbopack --port 3100",
     "build": "next build --turbopack",
+    "vercel-build": "node --import tsx scripts/run-migrations.ts && next build --turbopack",
     "build:analyse": "ANALYZE=true next build --turbopack",
     "start": "next start --port 3100",
     "lint": "eslint",
