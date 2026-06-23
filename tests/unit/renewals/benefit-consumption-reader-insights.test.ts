@@ -14,7 +14,7 @@
  *
  * `@/modules/insights` is mocked so this stays a pure mapping test — the
  * real F9 read is exercised end-to-end by the renewals integration
- * suite (`tests/integration/renewals/renewal-summary-benefits.test.ts`).
+ * suite (`tests/integration/renewals/benefit-summary-wiring.test.ts`).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ok, err } from '@/lib/result';

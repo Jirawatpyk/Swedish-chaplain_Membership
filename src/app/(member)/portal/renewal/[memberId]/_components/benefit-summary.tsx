@@ -2,9 +2,11 @@
  * F8 Phase 5 Wave C · T127 — benefit-summary panel (server component).
  *
  * Renders the cycle's benefit-consumption summary on the renewal
- * portal page (T125). When the upstream readers (F6 events / F7 quota)
- * are not yet wired, `benefitsAvailable=false` triggers the neutral
- * fallback copy.
+ * portal page (T125). Data is resolved upstream by `loadRenewalSummary`
+ * via the F9 insights `computeBenefitUsage` reader (E-Blasts / cultural
+ * tickets). `benefitsAvailable=false` (reader unavailable: member-not-found
+ * / compute error / read threw) OR an empty `benefits` list triggers the
+ * neutral fallback copy.
  *
  * Called from T125 page; pure presentation (no fetching here — the
  * page passes the resolved `summary.benefits` list).

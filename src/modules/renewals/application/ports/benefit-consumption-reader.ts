@@ -12,8 +12,11 @@
  * Returning `null` (rather than throwing) is the documented "unavailable"
  * signal: the use-case maps `null` to `benefits=[] / benefitsAvailable=false`
  * so the page renders the neutral "Benefit summary unavailable" copy
- * instead of misleading 0/N counts. A `null` covers member-not-found, a
- * compute failure, or a member with no metered entitlements.
+ * instead of misleading 0/N counts. `null` covers member-not-found OR a
+ * compute failure. NOTE: a member whose plan grants NO metered benefits is
+ * NOT `null` — it resolves to an empty array `[]` (`benefitsAvailable=true`,
+ * `benefits=[]`); the page renders the same neutral copy via its own
+ * `benefits.length > 0` guard, but the two states are distinct here.
  *
  * Pure interface — no framework imports (Constitution Principle III). The
  * `BenefitConsumptionEntry` shape is owned by the `load-renewal-summary`
@@ -25,7 +28,8 @@ import type { BenefitConsumptionEntry } from '../use-cases/load-renewal-summary'
 export interface BenefitConsumptionReader {
   /**
    * Returns the member's metered benefit consumption, or `null` when
-   * unavailable (member-not-found / compute error / no entitlements).
+   * unavailable (member-not-found / compute error). An empty array means
+   * "available, nothing metered" (distinct from `null`).
    * `null` → caller renders the neutral "unavailable" fallback.
    */
   read(

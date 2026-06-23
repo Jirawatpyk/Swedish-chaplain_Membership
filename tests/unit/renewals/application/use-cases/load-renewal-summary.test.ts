@@ -222,7 +222,7 @@ describe('loadRenewalSummary (T121)', () => {
   });
 
   it('summary_not_found + emits cross_tenant_probe audit when cycle is null', async () => {
-    const { deps, emitMock } = fakeDeps({ cycle: null });
+    const { deps, emitMock, benefitReadMock } = fakeDeps({ cycle: null });
     const r = await loadRenewalSummary(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('summary_not_found');
@@ -230,11 +230,17 @@ describe('loadRenewalSummary (T121)', () => {
       type: 'renewal_cross_tenant_probe',
       payload: { route: 'load-renewal-summary' },
     });
+    // Authorization-ordering guard (review: pr-test-analyzer): the F9
+    // benefit read MUST NOT run for an unresolved cycle — it sits AFTER
+    // the cross-tenant/null guard. A refactor that hoisted it above the
+    // guard (leaking an insights read for a member the actor can't view)
+    // must fail here.
+    expect(benefitReadMock).not.toHaveBeenCalled();
   });
 
   it('cross_member_probe — cycle.memberId mismatch + emits probe audit', async () => {
     const cycle = buildCycle({ memberId: '00000000-0000-0000-0000-000000000999' });
-    const { deps, emitMock } = fakeDeps({ cycle });
+    const { deps, emitMock, benefitReadMock } = fakeDeps({ cycle });
     const r = await loadRenewalSummary(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.kind === 'cross_member_probe') {
@@ -243,6 +249,12 @@ describe('loadRenewalSummary (T121)', () => {
     expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
       type: 'renewal_cross_member_probe',
     });
+    // Authorization-ordering guard (review: pr-test-analyzer): the F9
+    // benefit read MUST NOT run for a cross-member cycle — it sits AFTER
+    // the cross-member guard. Hoisting it above the guard would leak an
+    // insights benefit read for a member the actor is not authorized to
+    // view; this assertion fails if that ordering ever regresses.
+    expect(benefitReadMock).not.toHaveBeenCalled();
   });
 
   it('audit emit failure does NOT mask summary_not_found result', async () => {

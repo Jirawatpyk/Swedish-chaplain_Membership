@@ -18,8 +18,9 @@
  * consumes) — F6 events + F7 broadcasts have shipped, so the original
  * MVP stub (always `benefitsAvailable=false`) is retired. The reader
  * returns `null` (→ neutral "unavailable" fallback) on member-not-found
- * / compute error / no metered entitlements; any null OR throw keeps
- * the page rendering (graceful degrade, never a 500).
+ * / compute error; any null OR throw keeps the page rendering (graceful
+ * degrade, never a 500). A member with no metered entitlements resolves to
+ * an empty array (`benefitsAvailable=true`, `benefits=[]`), NOT `null`.
  *
  * Cross-tenant: `cyclesRepo.findById` returns null on RLS-hidden rows.
  * Use-case emits `renewal_cross_tenant_probe` audit on null + returns
@@ -82,10 +83,14 @@ export interface LoadRenewalSummaryOutput {
   readonly periodTo: string;
   readonly expiresAt: string;
   /**
-   * Benefit-consumption summary. Empty array + benefitsAvailable=false
-   * means "upstream module returned no data" (F6 not shipped yet, F7
-   * quota repo not exposed, etc.). Production fallback copy: "Benefit
-   * summary unavailable" rather than misleading 0/N counts.
+   * Benefit-consumption summary, resolved via `benefitConsumptionReader`
+   * (F9 insights — the same source `/portal/benefits` consumes).
+   * `benefitsAvailable=false` (with `benefits=[]`) means the reader signalled
+   * "unavailable" (member-not-found / compute error / read threw) → the page
+   * shows neutral "Benefit summary unavailable" copy rather than misleading
+   * 0/N counts. `benefitsAvailable=true` with `benefits=[]` is the distinct
+   * "available, nothing metered" state (still renders neutral via the
+   * component's `benefits.length > 0` guard).
    */
   readonly benefits: ReadonlyArray<BenefitConsumptionEntry>;
   readonly benefitsAvailable: boolean;
@@ -247,9 +252,11 @@ export async function loadRenewalSummary(
   // `computeBenefitUsage` use-case via the `benefitConsumptionReader`
   // port (the same source `/portal/benefits` consumes). The reader
   // returns `null` when the data is unavailable (member-not-found /
-  // compute error / no metered entitlements) → we keep the neutral
-  // `[] / benefitsAvailable=false` fallback so the page shows "Benefit
-  // summary unavailable" rather than misleading 0/N counts.
+  // compute error) → we keep the neutral `[] / benefitsAvailable=false`
+  // fallback so the page shows "Benefit summary unavailable" rather than
+  // misleading 0/N counts. (A member with no metered entitlements returns
+  // an empty array → benefitsAvailable=true with benefits=[], distinct
+  // from null but rendered the same by the component's length>0 guard.)
   //
   // GRACEFUL FALLBACK (REQUIRED): any null OR throw keeps `[] / false`.
   // A benefit-read failure must NEVER turn the renewal page into a 500.

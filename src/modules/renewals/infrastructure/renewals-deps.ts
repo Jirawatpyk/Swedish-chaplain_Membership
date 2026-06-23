@@ -228,7 +228,8 @@ export interface RenewalsDeps {
    * `loadRenewalSummary` read by REUSING the F9 insights
    * `computeBenefitUsage` use-case. Default factory wires the
    * insights-backed adapter; returns `null` (→ neutral "unavailable"
-   * fallback) on member-not-found / compute error / no entitlements.
+   * fallback) on member-not-found / compute error. (No metered
+   * entitlements → empty array, not `null`.)
    */
   readonly benefitConsumptionReader: BenefitConsumptionReader;
   /**

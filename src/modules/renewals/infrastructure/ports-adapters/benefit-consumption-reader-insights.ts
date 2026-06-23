@@ -32,10 +32,32 @@
 import {
   computeBenefitUsage,
   makeComputeBenefitUsageDeps,
+  type QuantifiableBenefitKey,
 } from '@/modules/insights';
 import { asTenantContext } from '@/modules/tenants';
 import type { BenefitConsumptionReader } from '../../application/ports/benefit-consumption-reader';
 import type { BenefitConsumptionEntry } from '../../application/use-cases/load-renewal-summary';
+
+/**
+ * Exhaustive insights→F8 key map. The `never` default means a NEW insights
+ * `QuantifiableBenefitKey` fails the BUILD here instead of silently
+ * mis-mapping to 'eblast' — a binary `=== 'cultural_tickets' ? … : 'eblast'`
+ * ternary would mis-route any future third key (review: type-design #1).
+ */
+function mapQuantifiableKey(
+  key: QuantifiableBenefitKey,
+): Extract<BenefitConsumptionEntry['key'], 'eblast' | 'cultural_ticket'> {
+  switch (key) {
+    case 'eblast':
+      return 'eblast';
+    case 'cultural_tickets':
+      return 'cultural_ticket';
+    default: {
+      const _exhaustive: never = key;
+      return _exhaustive;
+    }
+  }
+}
 
 export const benefitConsumptionReaderInsights: BenefitConsumptionReader = {
   async read(tenantId, memberId) {
@@ -50,7 +72,7 @@ export const benefitConsumptionReaderInsights: BenefitConsumptionReader = {
       return null;
     }
     return result.value.quantifiable.map<BenefitConsumptionEntry>((q) => ({
-      key: q.key === 'cultural_tickets' ? 'cultural_ticket' : 'eblast',
+      key: mapQuantifiableKey(q.key),
       used: q.used,
       quota: q.entitlement,
     }));
