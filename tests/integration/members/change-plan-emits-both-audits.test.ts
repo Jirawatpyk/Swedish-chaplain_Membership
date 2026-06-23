@@ -154,20 +154,27 @@ describe('Integration — changeMemberPlan emits both member_plan_changed events
           ),
         );
 
-      const matched = rows.filter(
-        (row) =>
-          (row.payload as { member_id?: string }).member_id === memberId,
+      // member_plan_changed keys the F3 member timeline + last_activity bump
+      // via snake `member_id`; member_plan_manually_changed (the F8-supersede
+      // event, no timeline renderer) carries camelCase `memberId` so it does
+      // NOT add a duplicate raw-summary timeline row / a redundant recency bump.
+      const generic = rows.filter(
+        (r) =>
+          r.eventType === 'member_plan_changed' &&
+          (r.payload as { member_id?: string }).member_id === memberId,
       );
-
+      const manual = rows.filter(
+        (r) =>
+          r.eventType === 'member_plan_manually_changed' &&
+          (r.payload as { memberId?: string }).memberId === memberId,
+      );
       // Each event should fire EXACTLY ONCE per changeMemberPlan call.
-      const generic = matched.filter(
-        (r) => r.eventType === 'member_plan_changed',
-      );
-      const manual = matched.filter(
-        (r) => r.eventType === 'member_plan_manually_changed',
-      );
       expect(generic.length).toBe(1);
       expect(manual.length).toBe(1);
+      // De-dup invariant: the manual (F8-supersede) event must NOT carry snake
+      // member_id (timeline/bump key); the generic event must.
+      expect('member_id' in (manual[0]!.payload as object)).toBe(false);
+      expect('member_id' in (generic[0]!.payload as object)).toBe(true);
 
       // Both audit rows should carry the same actor + same request id +
       // same plan-id payload — proves they came from the SAME tx.

@@ -200,7 +200,9 @@ describe('Integration — changeMemberPlan runs F8 listeners POST-COMMIT (063)',
       const manualForMember = auditRows.filter(
         (a) =>
           a.eventType === 'member_plan_manually_changed' &&
-          (a.payload as { member_id?: string }).member_id === memberId,
+          // De-dup fix: manually_changed now carries camelCase memberId (not
+          // snake member_id) so it stays out of the F3 timeline/last_activity.
+          (a.payload as { memberId?: string }).memberId === memberId,
       );
       expect(manualForMember.length).toBe(1);
       expect(
