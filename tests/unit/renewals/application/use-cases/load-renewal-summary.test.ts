@@ -3,6 +3,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { loadRenewalSummary } from '@/modules/renewals/application/use-cases/load-renewal-summary';
+import type { BenefitConsumptionEntry } from '@/modules/renewals/application/use-cases/load-renewal-summary';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
@@ -41,10 +42,27 @@ function fakeDeps(args: {
    */
   priorCompletedCycles?: ReadonlyArray<RenewalCycle>;
   listImpl?: 'throw';
+  /**
+   * `benefitConsumptionReader.read` mock behaviour. The reader is the
+   * F8 → F9 bridge that feeds the cycle's metered benefit consumption.
+   *
+   *   - `undefined` (default) → reader returns `null` (no data → the
+   *     page renders the neutral "unavailable" fallback). Matches the
+   *     pre-wiring MVP behaviour so the existing happy-path assertions
+   *     (`benefits === [] / benefitsAvailable === false`) still hold.
+   *   - an array → reader returns that consumption list (available).
+   *   - `'throw'` → reader rejects; the use-case must degrade
+   *     gracefully to `[] / false` (NEVER turn the page into a 500).
+   */
+  benefitConsumption?:
+    | ReadonlyArray<BenefitConsumptionEntry>
+    | null
+    | 'throw';
 }): {
   deps: RenewalsDeps;
   emitMock: ReturnType<typeof vi.fn>;
   listMock: ReturnType<typeof vi.fn>;
+  benefitReadMock: ReturnType<typeof vi.fn>;
 } {
   const findByIdMock = vi.fn(async () => args.cycle ?? null);
   const emitMock = vi.fn(args.emitImpl ?? (async () => {}));
@@ -57,6 +75,16 @@ function fakeDeps(args: {
       nextCursor: null,
     };
   });
+  const benefitReadMock = vi.fn(async () => {
+    if (args.benefitConsumption === 'throw') {
+      throw new Error('benefitConsumptionReader.read: simulated failure');
+    }
+    // `undefined` collapses to `null` so the default deps mirror the
+    // pre-wiring "unavailable" behaviour.
+    return args.benefitConsumption === undefined
+      ? null
+      : args.benefitConsumption;
+  });
   const deps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     cyclesRepo: {
@@ -67,8 +95,11 @@ function fakeDeps(args: {
       emit: emitMock,
       emitInTx: vi.fn(async () => {}),
     },
+    benefitConsumptionReader: {
+      read: benefitReadMock,
+    },
   } as unknown as RenewalsDeps;
-  return { deps, emitMock, listMock };
+  return { deps, emitMock, listMock, benefitReadMock };
 }
 
 const baseInput = {
@@ -95,6 +126,8 @@ describe('loadRenewalSummary (T121)', () => {
       expect(r.value.frozenPlanTermMonths).toBe(12);
       expect(r.value.frozenPlanCurrency).toBe('THB');
       expect(r.value.status).toBe('awaiting_payment');
+      // Default `fakeDeps` wires the benefit reader to return `null`
+      // (no upstream data) → the page renders the neutral fallback.
       expect(r.value.benefits).toEqual([]);
       expect(r.value.benefitsAvailable).toBe(false);
       expect(r.value.isFirstTimeRenewer).toBe(true);
@@ -263,5 +296,70 @@ describe('loadRenewalSummary (T121)', () => {
       actorUserId: null,
     });
     expect(r.ok).toBe(true);
+  });
+
+  describe('benefit-consumption wiring (F8 → F9 reuse)', () => {
+    it('reader returns entries → benefits populated + benefitsAvailable TRUE', async () => {
+      const consumption: ReadonlyArray<BenefitConsumptionEntry> = [
+        { key: 'eblast', used: 2, quota: 6 },
+        { key: 'cultural_ticket', used: 0, quota: 4 },
+      ];
+      const cycle = buildCycle();
+      const { deps, benefitReadMock } = fakeDeps({
+        cycle,
+        benefitConsumption: consumption,
+      });
+      const r = await loadRenewalSummary(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.benefitsAvailable).toBe(true);
+        expect(r.value.benefits).toEqual(consumption);
+      }
+      // The reader is called with (tenantId, cycle.memberId) — the
+      // cycle's memberId is the source of truth (it equals input.memberId
+      // past the cross-member guard).
+      expect(benefitReadMock).toHaveBeenCalledTimes(1);
+      expect(benefitReadMock.mock.calls[0]).toEqual([TENANT_ID, MEMBER_UUID]);
+    });
+
+    it('reader returns empty array → benefitsAvailable TRUE with empty list', async () => {
+      // An empty (but non-null) list is "available, nothing metered this
+      // plan" — distinct from `null` (unavailable). The UI still falls
+      // back to the neutral copy because `benefits.length === 0`, but the
+      // use-case must NOT coerce an empty list into `benefitsAvailable=false`.
+      const cycle = buildCycle();
+      const { deps } = fakeDeps({ cycle, benefitConsumption: [] });
+      const r = await loadRenewalSummary(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.benefits).toEqual([]);
+        expect(r.value.benefitsAvailable).toBe(true);
+      }
+    });
+
+    it('reader returns null → benefits empty + benefitsAvailable FALSE (neutral fallback)', async () => {
+      const cycle = buildCycle();
+      const { deps } = fakeDeps({ cycle, benefitConsumption: null });
+      const r = await loadRenewalSummary(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.benefits).toEqual([]);
+        expect(r.value.benefitsAvailable).toBe(false);
+      }
+    });
+
+    it('reader THROWS → degrades gracefully to empty + FALSE (no reject, no 500)', async () => {
+      // The graceful fallback is REQUIRED — a benefit-read failure must
+      // never turn the renewal page into a 500. Mirrors the
+      // isFirstTimeRenewer try/catch fail-safe in the same use-case.
+      const cycle = buildCycle();
+      const { deps } = fakeDeps({ cycle, benefitConsumption: 'throw' });
+      const r = await loadRenewalSummary(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.benefits).toEqual([]);
+        expect(r.value.benefitsAvailable).toBe(false);
+      }
+    });
   });
 });
