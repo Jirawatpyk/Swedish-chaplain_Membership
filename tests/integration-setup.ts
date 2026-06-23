@@ -34,4 +34,24 @@ beforeAll(() => {
         'Set it in .env.local or your CI environment. See specs/001-auth-rbac/quickstart.md.',
     );
   }
+
+  // Production-safety guard. Integration tests CREATE + mutate data (test
+  // tenants, members, export jobs) — they must NEVER run against the
+  // production database. `TEST_DB_HOST_BLOCKLIST` is a comma-separated list
+  // of host substrings (e.g. the prod Neon endpoint id) — set it in
+  // `.env.local` + CI. Keeping the value in env (not hard-coded) keeps the
+  // prod identifier OUT of the repo. See
+  // docs/runbooks/db-environment-branching.md.
+  const blocklist = (process.env.TEST_DB_HOST_BLOCKLIST ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const blocked = blocklist.find((needle) => dbUrl.includes(needle));
+  if (blocked) {
+    throw new Error(
+      `Refusing to run integration tests against a blocklisted database ` +
+        `(host matched "${blocked}" from TEST_DB_HOST_BLOCKLIST). Point ` +
+        `DATABASE_URL at a dev/test Neon branch — never production.`,
+    );
+  }
 });
