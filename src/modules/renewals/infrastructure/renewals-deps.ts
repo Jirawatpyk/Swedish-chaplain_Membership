@@ -70,6 +70,7 @@ const eventAttendeesPort = env.features.f6EventCreate
   : eventAttendeesStub;
 import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
+import { benefitConsumptionReaderInsights } from './ports-adapters/benefit-consumption-reader-insights';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
 import { memberPlanLookupDrizzle } from './ports-adapters/member-plan-lookup-drizzle';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
@@ -128,6 +129,7 @@ import type { F4InvoicingForRenewalBridge } from '../application/ports/f4-invoic
 import type { F5RefundBridge } from '../application/ports/f5-refund-bridge';
 import type { PlanLookupForRenewalPort } from '../application/ports/plan-lookup-for-renewal';
 import type { MemberPlanLookupPort } from '../application/ports/member-plan-lookup-port';
+import type { BenefitConsumptionReader } from '../application/ports/benefit-consumption-reader';
 import type { CreateCycleInTxDeps } from '../application/use-cases/create-cycle-in-tx';
 import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
 import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-token-signer';
@@ -220,6 +222,16 @@ export interface RenewalsDeps {
    * adapter delegating to F3's `findByIdInTx`.
    */
   readonly memberPlanLookup: MemberPlanLookupPort;
+  /**
+   * F8 renewal benefit-summary — F8 → F9 bridge that resolves a member's
+   * metered benefit consumption (E-Blasts / cultural tickets) for the
+   * `loadRenewalSummary` read by REUSING the F9 insights
+   * `computeBenefitUsage` use-case. Default factory wires the
+   * insights-backed adapter; returns `null` (→ neutral "unavailable"
+   * fallback) on member-not-found / compute error. (No metered
+   * entitlements → empty array, not `null`.)
+   */
+  readonly benefitConsumptionReader: BenefitConsumptionReader;
   /**
    * F8-completion Slice 3 (Task 3.1) — cycle-id generator threaded into
    * `createCycleInTx` by the admin lapsed-comeback use-case. Default
@@ -395,6 +407,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     memberPlanLookup: memberPlanLookupDrizzle,
+    benefitConsumptionReader: benefitConsumptionReaderInsights,
     cycleIdFactory: { cycleId: () => asCycleId(randomUUID()) },
     eventAttendees: eventAttendeesPort,
     schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),

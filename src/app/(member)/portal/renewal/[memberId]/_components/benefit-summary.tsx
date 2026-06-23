@@ -2,9 +2,11 @@
  * F8 Phase 5 Wave C · T127 — benefit-summary panel (server component).
  *
  * Renders the cycle's benefit-consumption summary on the renewal
- * portal page (T125). When the upstream readers (F6 events / F7 quota)
- * are not yet wired, `benefitsAvailable=false` triggers the neutral
- * fallback copy.
+ * portal page (T125). Data is resolved upstream by `loadRenewalSummary`
+ * via the F9 insights `computeBenefitUsage` reader (E-Blasts / cultural
+ * tickets). `benefitsAvailable=false` (reader unavailable: member-not-found
+ * / compute error / read threw) OR an empty `benefits` list triggers the
+ * neutral fallback copy.
  *
  * Called from T125 page; pure presentation (no fetching here — the
  * page passes the resolved `summary.benefits` list).
@@ -68,7 +70,13 @@ export function BenefitSummary({ benefits, benefitsAvailable }: BenefitSummaryPr
 
 function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
   const t = useTranslations('portal.renewal.benefits');
-  const { label, used, quota } = benefit;
+  const { key, used, quota } = benefit;
+  // Resolve the human-readable benefit name from its stable key via i18n
+  // (the Application layer no longer carries a `label` — that's
+  // Presentation's job, consistent with how this page resolves
+  // tier/plan keys → labels). Keys: eblast | cultural_ticket |
+  // event_attendance, all present under `portal.renewal.benefits.name.*`.
+  const label = t(`name.${key}`);
   // Unmetered benefit (e.g. "members can attend any number of …"):
   // skip the bar — there's no meaningful progress to render.
   if (quota === null) {

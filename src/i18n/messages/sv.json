@@ -4898,7 +4898,12 @@
         "usageRatio": "{used} av {quota}",
         "usageUnmetered": "{used} använt",
         "percentUsed": "{percent}% använt",
-        "ariaProgress": "{label}: {used} av {quota} använt"
+        "ariaProgress": "{label}: {used} av {quota} använt",
+        "name": {
+          "eblast": "E-Blast",
+          "cultural_ticket": "Kulturbiljetter",
+          "event_attendance": "Deltagna evenemang"
+        }
       },
       "confirm": {
         "cta": "Bekräfta förnyelse",

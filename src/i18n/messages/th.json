@@ -4898,7 +4898,12 @@
         "usageRatio": "{used} จาก {quota}",
         "usageUnmetered": "ใช้ไปแล้ว {used}",
         "percentUsed": "ใช้ไปแล้ว {percent}%",
-        "ariaProgress": "{label}: ใช้ไปแล้ว {used} จาก {quota}"
+        "ariaProgress": "{label}: ใช้ไปแล้ว {used} จาก {quota}",
+        "name": {
+          "eblast": "E-Blast",
+          "cultural_ticket": "บัตรงานวัฒนธรรม",
+          "event_attendance": "กิจกรรมที่เข้าร่วม"
+        }
       },
       "confirm": {
         "cta": "ยืนยันการต่ออายุ",

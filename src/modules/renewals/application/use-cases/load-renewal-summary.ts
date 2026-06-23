@@ -12,12 +12,15 @@
  * test verifies the invariant end-to-end.
  *
  * Benefit-consumption summary: per FR-021 the page shows quota usage
- * (E-Blasts sent, cultural-tickets used, events attended). These come
- * from F2/F4/F6/F7 modules — for MVP we return an empty array
- * (`benefitsAvailable=false`) and the UI falls back to a neutral
- * "Benefit summary unavailable" copy. The full integration lands when
- * F6 events ship + F7 broadcasts adds a per-member quota query
- * (cross-module read repo, deferred to F8 follow-on).
+ * (E-Blasts sent, cultural-tickets used). This now REUSES the F9
+ * insights `computeBenefitUsage` use-case via the
+ * `benefitConsumptionReader` port (the same source `/portal/benefits`
+ * consumes) — F6 events + F7 broadcasts have shipped, so the original
+ * MVP stub (always `benefitsAvailable=false`) is retired. The reader
+ * returns `null` (→ neutral "unavailable" fallback) on member-not-found
+ * / compute error; any null OR throw keeps the page rendering (graceful
+ * degrade, never a 500). A member with no metered entitlements resolves to
+ * an empty array (`benefitsAvailable=true`, `benefits=[]`), NOT `null`.
  *
  * Cross-tenant: `cyclesRepo.findById` returns null on RLS-hidden rows.
  * Use-case emits `renewal_cross_tenant_probe` audit on null + returns
@@ -32,6 +35,7 @@
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
@@ -79,10 +83,14 @@ export interface LoadRenewalSummaryOutput {
   readonly periodTo: string;
   readonly expiresAt: string;
   /**
-   * Benefit-consumption summary. Empty array + benefitsAvailable=false
-   * means "upstream module returned no data" (F6 not shipped yet, F7
-   * quota repo not exposed, etc.). Production fallback copy: "Benefit
-   * summary unavailable" rather than misleading 0/N counts.
+   * Benefit-consumption summary, resolved via `benefitConsumptionReader`
+   * (F9 insights — the same source `/portal/benefits` consumes).
+   * `benefitsAvailable=false` (with `benefits=[]`) means the reader signalled
+   * "unavailable" (member-not-found / compute error / read threw) → the page
+   * shows neutral "Benefit summary unavailable" copy rather than misleading
+   * 0/N counts. `benefitsAvailable=true` with `benefits=[]` is the distinct
+   * "available, nothing metered" state (still renders neutral via the
+   * component's `benefits.length > 0` guard).
    */
   readonly benefits: ReadonlyArray<BenefitConsumptionEntry>;
   readonly benefitsAvailable: boolean;
@@ -98,7 +106,11 @@ export interface BenefitConsumptionEntry {
   readonly key: 'eblast' | 'cultural_ticket' | 'event_attendance';
   readonly used: number;
   readonly quota: number | null;
-  readonly label: string;
+  // NOTE: no `label` — the human-readable benefit name is resolved in
+  // Presentation via i18n (`portal.renewal.benefits.name.<key>`). The
+  // Application layer must not resolve i18n strings (Constitution
+  // Principle III); the page already resolves tier/plan keys → labels
+  // the same way.
 }
 
 export type LoadRenewalSummaryError =
@@ -236,6 +248,42 @@ export async function loadRenewalSummary(
     );
   }
 
+  // Benefit-consumption summary (FR-021). Reuses the F9 insights
+  // `computeBenefitUsage` use-case via the `benefitConsumptionReader`
+  // port (the same source `/portal/benefits` consumes). The reader
+  // returns `null` when the data is unavailable (member-not-found /
+  // compute error) → we keep the neutral `[] / benefitsAvailable=false`
+  // fallback so the page shows "Benefit summary unavailable" rather than
+  // misleading 0/N counts. (A member with no metered entitlements returns
+  // an empty array → benefitsAvailable=true with benefits=[], distinct
+  // from null but rendered the same by the component's length>0 guard.)
+  //
+  // GRACEFUL FALLBACK (REQUIRED): any null OR throw keeps `[] / false`.
+  // A benefit-read failure must NEVER turn the renewal page into a 500.
+  // Mirrors the `isFirstTimeRenewer` try/catch fail-safe above.
+  let benefits: ReadonlyArray<BenefitConsumptionEntry> = [];
+  let benefitsAvailable = false;
+  try {
+    const consumption = await deps.benefitConsumptionReader.read(
+      input.tenantId,
+      cycle.memberId,
+    );
+    if (consumption !== null) {
+      benefits = consumption;
+      benefitsAvailable = true;
+    }
+  } catch (e) {
+    logger.warn(
+      {
+        errKind: errKind(e),
+        tenantId: input.tenantId,
+        cycleId: cycle.cycleId,
+        memberId: cycle.memberId,
+      },
+      '[load-renewal-summary] benefit-consumption read failed; rendering unavailable',
+    );
+  }
+
   return ok({
     cycleId: cycle.cycleId,
     memberId: cycle.memberId,
@@ -248,8 +296,8 @@ export async function loadRenewalSummary(
     periodFrom: cycle.periodFrom,
     periodTo: cycle.periodTo,
     expiresAt: cycle.expiresAt,
-    benefits: [],
-    benefitsAvailable: false,
+    benefits,
+    benefitsAvailable,
     isFirstTimeRenewer,
   });
 }
