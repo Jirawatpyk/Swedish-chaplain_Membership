@@ -72,7 +72,7 @@ neonctl connection-string <branch> --project-id $PROD --org-id $ORG --role-name 
 
 ## 6. Pending (before go-live)
 
-- [ ] **CI** still uses a `DATABASE_URL` secret pointing at prod — create a `ci`/`test` branch and repoint the GitHub Actions secret (+ set `TEST_DB_HOST_BLOCKLIST`).
+- [x] **CI** (done 2026-06-24) — the `ci` Neon branch + `CI_DATABASE_URL` repo secret point the `multi-tenant-readiness` workflow at an isolated branch (it was unset → DB steps skipped, never prod). The workflow also passes `TEST_DB_HOST_BLOCKLIST` (repo var) so the integration guard refuses prod even if `CI_DATABASE_URL` is ever mis-set.
 - [ ] **PII sanitise** the `dev` (and any long-lived) branch — `dev` is CoW from prod and contains real member PII. Truncate `members` / `contacts` / `users` and reseed synthetic data, or restrict access.
 - [ ] **UAT** — create a `uat` branch + a Vercel Custom Environment pointing at it; refresh from prod (sanitised) per UAT cycle.
 - [ ] Run the `vercel-build` migrate path through a real schema-changing PR once to confirm preview-branch migration end-to-end.
