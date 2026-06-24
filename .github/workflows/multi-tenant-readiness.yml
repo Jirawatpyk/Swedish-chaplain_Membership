@@ -58,6 +58,9 @@ jobs:
       # Disposable Neon branch URL (NOT production). Empty when the
       # operator has not yet configured the secret — DB steps skip.
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # Production-safety guard (tests/integration-setup.ts): refuse the suite
+      # if CI_DATABASE_URL is ever mis-set to the prod endpoint. Repo variable.
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
@@ -105,6 +108,9 @@ jobs:
       # Disposable Neon branch URL (NOT production). Empty when the
       # operator has not yet configured the secret — DB steps skip.
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # Production-safety guard (tests/integration-setup.ts): refuse the suite
+      # if CI_DATABASE_URL is ever mis-set to the prod endpoint. Repo variable.
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
