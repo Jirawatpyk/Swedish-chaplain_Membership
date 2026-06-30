@@ -314,6 +314,56 @@ describe('auditQuery', () => {
     if (res.ok) expect(res.value.rows[0]!.actorLabel).toBe(RESOLVABLE_ACTOR); // raw id fallback
   });
 
+  // --- bidirectional keyset (Previous page) --------------------------------
+
+  /** Encode an `iso|id` keyset token the way the use-case does. */
+  function tok(iso: string, id: string): string {
+    return Buffer.from(`${iso}|${id}`, 'utf8').toString('base64url');
+  }
+
+  it('first page (no cursor) has no prevCursor', async () => {
+    const res = await auditQuery({}, meta('admin'), ctx, deps([row()]));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.prevCursor).toBeNull();
+  });
+
+  it('forward WITH a cursor derives a prevCursor (so a Previous link exists)', async () => {
+    const cursor = tok('2026-05-20 04:00:00.000000+00', 'z');
+    const res = await auditQuery({ limit: 50, cursor }, meta('admin'), ctx, deps([row({ id: 'a' })]));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.prevCursor).not.toBeNull();
+    // Forward path passes NO direction to the source (older/DESC is the default).
+  });
+
+  it('backward (Previous): passes direction, reverses the ASC page to newest-first, derives prevCursor', async () => {
+    // The reader returns backward rows ASC (closest-newer first); 3 rows, limit 2.
+    const ascNewer = [
+      row({ id: 'p', occurredAt: new Date('2026-05-20T05:00:00Z'), occurredAtIso: '2026-05-20 05:00:00.000000+00' }),
+      row({ id: 'q', occurredAt: new Date('2026-05-20T06:00:00Z'), occurredAtIso: '2026-05-20 06:00:00.000000+00' }),
+      row({ id: 'r', occurredAt: new Date('2026-05-20T07:00:00Z'), occurredAtIso: '2026-05-20 07:00:00.000000+00' }), // extra → hasNewer
+    ];
+    const d = deps(ascNewer);
+    const cursor = tok('2026-05-20 04:00:00.000000+00', 'z');
+    const res = await auditQuery({ limit: 2, cursor, direction: 'backward' }, meta('admin'), ctx, d);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(d._calls[0]!.limit).toBe(3); // limit + 1
+    expect(d._calls[0]!.direction).toBe('backward');
+    // Reversed to newest-first display: q (06:00) before p (05:00); 'r' dropped.
+    expect(res.value.rows.map((r) => r.id)).toEqual(['q', 'p']);
+    // hasNewer (3 > 2) → Previous exists; older rows always exist → Next exists.
+    expect(res.value.prevCursor).not.toBeNull();
+    expect(res.value.nextCursor).not.toBeNull();
+  });
+
+  it('dir=backward WITHOUT a cursor degrades to the forward first page (no direction sent)', async () => {
+    const d = deps([row()]);
+    const res = await auditQuery({ direction: 'backward' }, meta('admin'), ctx, d);
+    expect(res.ok).toBe(true);
+    expect(d._calls[0]!.direction).toBeUndefined(); // forward — no backward scan without a cursor
+    if (res.ok) expect(res.value.prevCursor).toBeNull();
+  });
+
   void pad;
 });
 

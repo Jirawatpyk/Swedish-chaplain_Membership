@@ -346,7 +346,11 @@
         "utcLabel": "UTC"
       },
       "pagination": {
-        "next": "โหลดเหตุการณ์เก่ากว่า"
+        "label": "หน้าของบันทึกการตรวจสอบ",
+        "first": "ล่าสุด",
+        "previous": "ใหม่กว่า",
+        "next": "เก่ากว่า",
+        "page": "หน้า {page}"
       }
     },
     "compliance": {

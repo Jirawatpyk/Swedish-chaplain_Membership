@@ -346,7 +346,11 @@
         "utcLabel": "UTC"
       },
       "pagination": {
-        "next": "Load older events"
+        "label": "Audit log pages",
+        "first": "Latest",
+        "previous": "Newer",
+        "next": "Older",
+        "page": "Page {page}"
       }
     },
     "compliance": {

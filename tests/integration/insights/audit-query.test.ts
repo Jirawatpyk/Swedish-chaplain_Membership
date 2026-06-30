@@ -249,6 +249,26 @@ describe('F9 auditQuery — integration (T040)', () => {
     if (page2.ok) {
       // The same-ms older row MUST appear on page 2 (not silently dropped).
       expect(page2.value.rows.map((r) => r.summary)).toContain('same-ms older');
+
+      // Bidirectional: from page 2 (older), the backward (gt + ASC) keyset via
+      // prevCursor must recover the NEWER same-ms row — proving Previous pages
+      // honour the same µs-precision keyset, not just forward ones.
+      expect(page2.value.prevCursor).not.toBeNull();
+      const back = await auditQuery(
+        {
+          actorUserId: sameMsActor,
+          limit: 1,
+          cursor: page2.value.prevCursor!,
+          direction: 'backward',
+        },
+        meta('admin'),
+        tenantA.ctx,
+        makeAuditQueryDeps(),
+      );
+      expect(back.ok).toBe(true);
+      if (back.ok) {
+        expect(back.value.rows.map((r) => r.summary)).toContain('same-ms newer');
+      }
     }
   });
 

@@ -32,6 +32,7 @@ export const auditEventSourceAdapter: AuditEventSource = {
       ...(filters.from ? { from: filters.from } : {}),
       ...(filters.to ? { to: filters.to } : {}),
       ...(filters.cursor ? { cursor: filters.cursor } : {}),
+      ...(filters.direction ? { direction: filters.direction } : {}),
     });
     return rows.map((r) => ({
       id: r.id,

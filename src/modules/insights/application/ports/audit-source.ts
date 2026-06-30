@@ -37,6 +37,11 @@ export interface AuditSourceFilters {
   readonly from?: string;
   readonly to?: string;
   readonly cursor?: AuditSourceCursor;
+  /**
+   * Keyset direction (default `'forward'`): `'forward'` = older rows / DESC,
+   * `'backward'` = newer rows / ASC (the Previous page). Ignored without a cursor.
+   */
+  readonly direction?: 'forward' | 'backward';
   /** Reader fetches exactly this many rows (the use-case passes `limit + 1`). */
   readonly limit: number;
 }

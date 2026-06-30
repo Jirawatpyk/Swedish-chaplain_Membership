@@ -346,7 +346,11 @@
         "utcLabel": "UTC"
       },
       "pagination": {
-        "next": "Ladda äldre händelser"
+        "label": "Granskningsloggens sidor",
+        "first": "Senaste",
+        "previous": "Nyare",
+        "next": "Äldre",
+        "page": "Sida {page}"
       }
     },
     "compliance": {

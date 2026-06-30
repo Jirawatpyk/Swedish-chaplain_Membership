@@ -86,6 +86,13 @@ export default async function AuditLogPage({
   const from = str(params.from);
   const to = str(params.to);
   const cursor = str(params.cursor);
+  // `dir=prev` follows prevCursor to NEWER rows (the Previous page). `page` is a
+  // display-only click-depth counter for orientation (never a server offset).
+  const dir = str(params.dir);
+  const pageNum = (() => {
+    const n = Number.parseInt(str(params.page), 10);
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  })();
 
   // A malformed `from`/`to` (tampered URL) must surface as the invalid-range
   // state, NOT throw inside js-joda (`tenantDayParse`) → generic error card. Guard
@@ -115,6 +122,7 @@ export default async function AuditLogPage({
     ...(from ? { from: tenantDayStartUtc(from, tz) } : {}),
     ...(to ? { to: tenantDayEndUtc(to, tz) } : {}),
     ...(cursor ? { cursor } : {}),
+    ...(dir === 'prev' && cursor ? { direction: 'backward' as const } : {}),
     limit: 50,
   };
 
@@ -202,10 +210,30 @@ export default async function AuditLogPage({
       : [],
   }));
 
-  const nextParams = new URLSearchParams(exportParams);
-  if (result.value.nextCursor !== null) nextParams.set('cursor', result.value.nextCursor);
+  // Bidirectional keyset nav. `exportParams` already carries the active filters;
+  // each link layers the cursor/dir/page on top. Keyset stays O(page) + stable
+  // under concurrent appends (no offset, no page-drift), unlike numbered pages.
+  const hrefWith = (extra: Record<string, string>): string => {
+    const p = new URLSearchParams(exportParams);
+    for (const [k, v] of Object.entries(extra)) p.set(k, v);
+    const q = p.toString();
+    return `/admin/audit${q ? `?${q}` : ''}`;
+  };
+  // "Latest" → the cursor-less first page; shown whenever we're not already on it.
+  const firstHref = hrefWith({});
+  const showFirst = cursor !== '';
+  const prevHref =
+    result.value.prevCursor !== null
+      ? hrefWith({
+          cursor: result.value.prevCursor,
+          dir: 'prev',
+          page: String(Math.max(pageNum - 1, 1)),
+        })
+      : null;
   const nextHref =
-    result.value.nextCursor !== null ? `/admin/audit?${nextParams.toString()}` : null;
+    result.value.nextCursor !== null
+      ? hrefWith({ cursor: result.value.nextCursor, page: String(pageNum + 1) })
+      : null;
 
   return (
     <TableContainer>
@@ -237,12 +265,34 @@ export default async function AuditLogPage({
             }}
           />
 
-          {nextHref ? (
-            <div className="flex justify-center">
-              <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
-                {t('pagination.next')}
-              </a>
-            </div>
+          {showFirst || prevHref || nextHref ? (
+            <nav
+              aria-label={t('pagination.label')}
+              className="flex flex-wrap items-center justify-between gap-2"
+            >
+              <div className="flex gap-2">
+                {showFirst ? (
+                  <a href={firstHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.first')}
+                  </a>
+                ) : null}
+                {prevHref ? (
+                  <a href={prevHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.previous')}
+                  </a>
+                ) : null}
+              </div>
+              <span className="text-sm text-muted-foreground">
+                {t('pagination.page', { page: pageNum })}
+              </span>
+              {nextHref ? (
+                <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
+                  {t('pagination.next')}
+                </a>
+              ) : (
+                <span aria-hidden />
+              )}
+            </nav>
           ) : null}
         </CardContent>
       </Card>

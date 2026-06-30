@@ -15,7 +15,7 @@
  * excludes those null-tenant rows and cannot leak once a 2nd tenant onboards.
  * (Mirrors `audit-read-repo.ts`, the activity-feed reader.)
  */
-import { and, desc, eq, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { auditLog } from './schema';
@@ -53,19 +53,25 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
       if (filters.to) {
         conds.push(lte(auditLog.timestamp, sql`${filters.to}::timestamptz`));
       }
-      // Keyset on `(timestamp DESC, id DESC)`: rows strictly "older" than the
-      // cursor — (ts < c.ts) OR (ts = c.ts AND id < c.id). An offset-free scan
-      // that stays O(page) regardless of how deep the operator paginates.
-      // The cursor carries the FULL-PRECISION (µs) timestamp text and is cast
-      // back to `timestamptz` here, so the equality arm matches exactly (a
-      // ms-truncated cursor would never equal a µs-precise column value, and
-      // same-millisecond rows straddling a page boundary would be dropped).
+      // Keyset on `(timestamp, id)`: rows strictly past the cursor in the paging
+      // direction. An offset-free scan that stays O(page) regardless of depth.
+      // The cursor carries the FULL-PRECISION (µs) timestamp text cast back to
+      // `timestamptz`, so the equality arm matches exactly (a ms-truncated cursor
+      // would never equal a µs-precise column, dropping same-ms boundary rows).
+      //   - forward  (Next, default): rows OLDER — (ts < c) OR (ts = c AND id < c.id)
+      //   - backward (Previous):      rows NEWER — (ts > c) OR (ts = c AND id > c.id)
+      const backward = filters.direction === 'backward';
       if (filters.cursor) {
         const cursorTs = sql`${filters.cursor.iso}::timestamptz`;
-        const keyset = or(
-          lt(auditLog.timestamp, cursorTs),
-          and(eq(auditLog.timestamp, cursorTs), lt(auditLog.id, filters.cursor.id)),
-        );
+        const keyset = backward
+          ? or(
+              gt(auditLog.timestamp, cursorTs),
+              and(eq(auditLog.timestamp, cursorTs), gt(auditLog.id, filters.cursor.id)),
+            )
+          : or(
+              lt(auditLog.timestamp, cursorTs),
+              and(eq(auditLog.timestamp, cursorTs), lt(auditLog.id, filters.cursor.id)),
+            );
         if (keyset) conds.push(keyset);
       }
 
@@ -83,7 +89,13 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
         })
         .from(auditLog)
         .where(and(...conds))
-        .orderBy(desc(auditLog.timestamp), desc(auditLog.id))
+        // Backward pages scan UPWARD from the cursor, so order ASC to take the
+        // rows CLOSEST-newer first; the use-case reverses them to newest-first.
+        .orderBy(
+          ...(backward
+            ? [asc(auditLog.timestamp), asc(auditLog.id)]
+            : [desc(auditLog.timestamp), desc(auditLog.id)]),
+        )
         .limit(filters.limit);
 
       return rows.map((r) => ({
