@@ -30,7 +30,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
-  estimatePasswordStrength,
+  usePasswordStrengthMeter,
 } from './password-strength';
 
 // H2 (Round 2) — schema built inside the component so error messages
@@ -93,7 +93,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   }, [setFocus]);
 
   const newPasswordValue = useWatch({ control, name: 'newPassword' });
-  const strength = estimatePasswordStrength(newPasswordValue ?? '');
+  const meter = usePasswordStrengthMeter(newPasswordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
@@ -132,6 +132,9 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
               ? t('errors.passwordBreached')
               : t('errors.weakPassword'),
         });
+        // Pin the strength bar to red for this value so it agrees with the
+        // inline error instead of contradicting it.
+        meter.markRejected(values.newPassword);
         setFocus('newPassword');
         return;
       }
@@ -195,7 +198,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
           {...register('newPassword')}
         />
         <div id="new-password-strength">
-          <PasswordStrength level={strength} />
+          <PasswordStrength level={meter.level} weakReason={meter.weakReason} />
         </div>
         {errors.newPassword ? (
           <p
