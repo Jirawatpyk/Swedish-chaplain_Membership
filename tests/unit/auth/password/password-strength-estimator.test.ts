@@ -10,7 +10,10 @@
  * so any unintended drift is caught early.
  */
 import { describe, expect, it } from 'vitest';
-import { estimatePasswordStrength } from '@/components/auth/password-strength';
+import {
+  estimatePasswordStrength,
+  weakReasonFor,
+} from '@/components/auth/password-strength';
 
 describe('estimatePasswordStrength', () => {
   it('returns "empty" for an empty string', () => {
@@ -70,5 +73,29 @@ describe('estimatePasswordStrength', () => {
     // client stays "acceptable" and only the server's HIBP check could still
     // reject it on submit (the genuine client/server drift case).
     expect(estimatePasswordStrength('aB3xK9mZ2pQ7')).toBe('acceptable');
+  });
+});
+
+describe('weakReasonFor', () => {
+  it('returns null for inputs that are not weak (empty / acceptable / strong)', () => {
+    expect(weakReasonFor('')).toBeNull();
+    expect(weakReasonFor('aB3xK9mZ2pQ7')).toBeNull(); // acceptable
+    expect(weakReasonFor('correct horse battery staple')).toBeNull(); // strong
+  });
+
+  it('returns "tooShort" for under-12-char passwords', () => {
+    expect(weakReasonFor('short')).toBe('tooShort');
+    expect(weakReasonFor('12345678901')).toBe('tooShort'); // 11 chars
+  });
+
+  it('returns "lowVariety" for long-but-low-entropy passwords', () => {
+    expect(weakReasonFor('111111111111')).toBe('lowVariety'); // 1 distinct
+    expect(weakReasonFor('121212121212')).toBe('lowVariety'); // 2 distinct
+    expect(weakReasonFor('112233112233')).toBe('lowVariety'); // 3 distinct
+  });
+
+  it('prefers "tooShort" when a password is BOTH short and low-variety', () => {
+    // "1111" is <12 AND 1-distinct; length is the more actionable hint.
+    expect(weakReasonFor('1111')).toBe('tooShort');
   });
 });

@@ -52,6 +52,9 @@
     },
     "passwordStrength": {
       "weak": "Svagt — använd ett längre och mer varierat lösenord.",
+      "weakTooShort": "Svagt — använd minst 12 tecken.",
+      "weakLowVariety": "Svagt — blanda in fler olika tecken.",
+      "weakRejected": "Svagt — välj ett annat lösenord.",
       "acceptable": "Godtagbar styrka.",
       "strong": "Starkt lösenord."
     },

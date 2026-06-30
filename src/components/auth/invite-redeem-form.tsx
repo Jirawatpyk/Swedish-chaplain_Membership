@@ -28,7 +28,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
-  estimatePasswordStrength,
+  usePasswordStrengthMeter,
 } from './password-strength';
 
 // H2 + O1 (Round 2/3) — schema built inside component via shared
@@ -106,7 +106,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   }, [setFocus]);
 
   const passwordValue = useWatch({ control, name: 'password' });
-  const strength = estimatePasswordStrength(passwordValue ?? '');
+  const meter = usePasswordStrengthMeter(passwordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
@@ -146,6 +146,9 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
               ? tReset('errors.passwordBreached')
               : tReset('errors.weakPassword'),
         });
+        // Pin the strength bar to red for this value so it agrees with the
+        // inline error instead of contradicting it.
+        meter.markRejected(values.password);
         setFocus('password');
         return;
       }
@@ -231,7 +234,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
           {...register('password')}
         />
         <div id="password-strength">
-          <PasswordStrength level={strength} />
+          <PasswordStrength level={meter.level} weakReason={meter.weakReason} />
         </div>
         {errors.password ? (
           <p

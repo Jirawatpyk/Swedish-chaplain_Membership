@@ -17,13 +17,26 @@
  *   - Colour is paired with a text label so the message is legible to
  *     colour-blind users
  */
+import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
 export type PasswordStrengthLevel = 'weak' | 'acceptable' | 'strong' | 'empty';
 
+/**
+ * Why a 'weak' score was assigned, so the bar can show a reason-specific
+ * caption instead of one generic line:
+ *   - `tooShort`    → under the 12-char minimum
+ *   - `lowVariety`  → long enough but ≤3 distinct characters
+ *   - `rejected`    → the server rejected this exact value on submit
+ *     (e.g. HIBP-breached); the bar is forced to red to match the inline error
+ */
+export type PasswordWeakReason = 'tooShort' | 'lowVariety' | 'rejected';
+
 export interface PasswordStrengthProps {
   readonly level: PasswordStrengthLevel;
+  /** Only consulted when `level === 'weak'`; picks the reason-specific caption. */
+  readonly weakReason?: PasswordWeakReason | undefined;
 }
 
 /**
@@ -64,8 +77,11 @@ export interface PasswordStrengthProps {
  * On a server rejection the three forms surface the inline error via
  * `setError(passwordField, …)` + `setFocus(...)` — `change-password-form`
  * and `reset-password-form` use the `newPassword` field, `invite-redeem-form`
- * uses `password`. They do NOT clear the field, so the bar is not
- * auto-reset; it re-evaluates only as the user edits the watched value.
+ * uses `password`. They also call `markRejected(value)` from
+ * `usePasswordStrengthMeter`, which forces the bar to 'weak' (red) for that
+ * exact value so the meter agrees with the error instead of contradicting it
+ * (no more green bar beside a "breached" message). The bar returns to the live
+ * estimate as soon as the user edits the value.
  *
  * Previously duplicated verbatim in `change-password-form.tsx`,
  * `invite-redeem-form.tsx`, and `reset-password-form.tsx`. A rule
@@ -98,6 +114,56 @@ function isLowEntropy(password: string): boolean {
   return new Set(password).size <= MAX_LOW_ENTROPY_DISTINCT;
 }
 
+/**
+ * Why `estimatePasswordStrength` would score this value 'weak' — for the
+ * reason-specific caption. Returns `null` when the value is NOT weak by the
+ * local rules (so callers map it to `undefined`).
+ */
+export function weakReasonFor(
+  password: string,
+): Exclude<PasswordWeakReason, 'rejected'> | null {
+  if (password.length === 0) return null;
+  if (password.length < 12) return 'tooShort';
+  if (isLowEntropy(password)) return 'lowVariety';
+  return null;
+}
+
+export interface PasswordStrengthMeter {
+  readonly level: PasswordStrengthLevel;
+  readonly weakReason: PasswordWeakReason | undefined;
+  /** Pin the bar to 'weak' for `value` after the server rejects it on submit. */
+  readonly markRejected: (value: string) => void;
+  /** Drop the pin (e.g. after a successful change while the form stays mounted). */
+  readonly clearRejected: () => void;
+}
+
+/**
+ * Drives a `<PasswordStrength />` bar from the live field value, and lets the
+ * form pin it to 'weak' when the server rejects that exact value — keeping the
+ * meter from contradicting the inline error. Shared by all three password
+ * forms so the behaviour stays identical.
+ */
+export function usePasswordStrengthMeter(password: string): PasswordStrengthMeter {
+  const [rejectedValue, setRejectedValue] = useState<string | null>(null);
+  const markRejected = useCallback(
+    (value: string) => setRejectedValue(value),
+    [],
+  );
+  const clearRejected = useCallback(() => setRejectedValue(null), []);
+
+  // The pin only holds while the value is unchanged; any edit re-runs the
+  // live estimate (a different string no longer matches `rejectedValue`).
+  const rejected = rejectedValue !== null && rejectedValue === password;
+  const level = rejected ? 'weak' : estimatePasswordStrength(password);
+  const weakReason: PasswordWeakReason | undefined = rejected
+    ? 'rejected'
+    : level === 'weak'
+      ? (weakReasonFor(password) ?? undefined)
+      : undefined;
+
+  return { level, weakReason, markRejected, clearRejected };
+}
+
 const SEGMENT_COUNT = 3;
 
 function activeSegments(level: PasswordStrengthLevel): number {
@@ -128,10 +194,21 @@ function barColour(level: PasswordStrengthLevel): string {
   }
 }
 
-export function PasswordStrength({ level }: PasswordStrengthProps) {
+const WEAK_REASON_KEY: Record<PasswordWeakReason, string> = {
+  tooShort: 'weakTooShort',
+  lowVariety: 'weakLowVariety',
+  rejected: 'weakRejected',
+};
+
+export function PasswordStrength({ level, weakReason }: PasswordStrengthProps) {
   const t = useTranslations('auth.passwordStrength');
   const filled = activeSegments(level);
   const colour = barColour(level);
+  // Reason-specific caption for the weak case ('too short' vs 'low variety' vs
+  // server-rejected); falls back to the generic `weak` key when no reason is
+  // supplied, and to the level key for acceptable/strong.
+  const messageKey =
+    level === 'weak' && weakReason ? WEAK_REASON_KEY[weakReason] : level;
 
   return (
     <div className="space-y-1" aria-live="polite">
@@ -147,7 +224,7 @@ export function PasswordStrength({ level }: PasswordStrengthProps) {
         ))}
       </div>
       {level !== 'empty' ? (
-        <p className="text-xs text-muted-foreground">{t(level)}</p>
+        <p className="text-xs text-muted-foreground">{t(messageKey)}</p>
       ) : null}
     </div>
   );
