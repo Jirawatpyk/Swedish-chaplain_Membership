@@ -116,16 +116,16 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             'website',
             'description',
           ];
-          for (const issue of issues as Array<{ path?: unknown; message?: unknown }>) {
+          for (const issue of issues as Array<{ path?: unknown }>) {
             const path = Array.isArray(issue.path) ? issue.path : [];
             const tail = path[path.length - 1];
             const field = FIELDS.find((f) => f === tail);
             if (field) {
-              form.setError(field, {
-                type: 'server',
-                message:
-                  typeof issue.message === 'string' ? issue.message : t('saveError'),
-              });
+              // Use a LOCALISED message, never the server's raw `issue.message`
+              // (e.g. "invalid phone: <code>") — rendering the dev token inline
+              // is the same leak XF-02 fixed for refund. The inline highlight +
+              // focus tells the user which field; the message stays localised.
+              form.setError(field, { type: 'server', message: t('saveError') });
               form.setFocus(field);
               return;
             }

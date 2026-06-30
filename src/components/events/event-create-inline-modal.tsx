@@ -132,6 +132,10 @@ export function EventCreateInlineModal(
   const handleClose = useCallback(() => {
     reset();
     setServerError(null);
+    // The success path closes WITHOUT a setSubmitting(false), and the parent
+    // keeps this modal mounted (only `open` toggles) — so clear it here too,
+    // else reopening after a successful create shows a stuck "Creating…".
+    setSubmitting(false);
     props.onOpenChange(false);
   }, [props, reset]);
 

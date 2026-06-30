@@ -156,9 +156,12 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
     // inline #signin-error banner (role="alert"), not a sonner toast.
     // The EN copy is "Too many failed attempts. Try again later.";
     // Thai and Swedish use their translations.
-    await expect(
-      page.getByText(/too many failed attempts|try again later/i).first(),
-    ).toBeVisible({ timeout: 5_000 });
+    // Scope to the inline #signin-error banner (not just "visible somewhere")
+    // so the test actually enforces the inline-banner-not-toast contract.
+    await expect(page.locator('#signin-error')).toContainText(
+      /too many failed attempts|try again later/i,
+      { timeout: 5_000 },
+    );
   });
 
   test.afterAll(async () => {

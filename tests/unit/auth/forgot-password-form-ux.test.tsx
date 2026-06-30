@@ -6,7 +6,7 @@
  * (not a generic "went wrong"). Rendered against real en.json with mocked fetch.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { ForgotPasswordForm } from '@/components/auth/forgot-password-form';
@@ -53,12 +53,19 @@ describe('ForgotPasswordForm', () => {
       });
       fireEvent.submit(container.querySelector('form')!);
       // Flush the first submit → success card + 60s resend countdown start.
-      await vi.advanceTimersByTimeAsync(0);
+      // Wrap the state-updating flushes in act() so React doesn't warn.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
       expect(screen.getByRole('status')).toBeTruthy();
       // Run the countdown so the Resend button re-enables, then click it.
-      await vi.advanceTimersByTimeAsync(60_000);
-      fireEvent.click(screen.getByRole('button', { name: /resend/i }));
-      await vi.advanceTimersByTimeAsync(0); // flush the resend fetch
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /resend/i }));
+        await vi.advanceTimersByTimeAsync(0); // flush the resend fetch
+      });
       // The 429 banner must render even though submitted===true.
       expect(
         screen.getByText(

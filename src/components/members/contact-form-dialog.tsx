@@ -164,12 +164,15 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
       error?: { code?: string };
     };
     const code = body.error?.code;
-    if (res.status === 409 && code === 'conflict') {
+    if (res.status === 409 && code === 'conflict' && mode === 'add') {
       // Field-level rejection — surface inline on the email input (+ focus)
-      // instead of a transient toast, since the offending field is right here
-      // (audit XF-01). Email is only submitted on ADD, so it always renders.
+      // instead of a transient toast (audit XF-01). Guarded on add mode: email
+      // is read-only/not submitted on edit, so a future edit-side 409 must NOT
+      // be pinned onto the disabled email field (setFocus would no-op there).
       setError('email', { type: 'server', message: tA('errors.emailTaken') });
       setFocus('email');
+    } else if (res.status === 409 && code === 'conflict') {
+      toast.error(tA('errors.emailTaken'));
     } else if (res.status === 400) {
       toast.error(tA('errors.validation'));
     } else if (res.status === 404) {

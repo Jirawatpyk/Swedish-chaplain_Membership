@@ -11,13 +11,17 @@ import { cn } from '@/lib/utils';
  * Why: per-field inline errors below the fold are invisible on a long form
  * (e.g. the ~15-field member form). The GOV.UK error-summary pattern renders
  * one focusable region listing every error, each a link that jumps focus to
- * the offending field. The consuming form should pass `shouldFocusError:false`
- * to react-hook-form so this summary is the single focus target instead of
- * RHF racing it to the first field.
+ * the offending field.
  *
- * Renders nothing when there are no items. When the error set changes (a fresh
- * failed submit), the region re-takes focus so keyboard/SR users are always
- * delivered to the summary.
+ * Two valid integrations (pick one — see the `autoFocus` prop):
+ *   - default (`autoFocus` true): the summary is the SINGLE focus target —
+ *     pair it with react-hook-form `shouldFocusError:false` so the two don't
+ *     race; on a fresh failed submit the region re-takes focus.
+ *   - `autoFocus={false}`: keep RHF's default first-field focus (the pattern
+ *     MemberForm uses); the summary still renders and announces via
+ *     role="alert", it just doesn't grab focus.
+ *
+ * Renders nothing when there are no items.
  */
 export interface FormErrorSummaryItem {
   /** DOM id of the input this error belongs to — used as the `#id` jump anchor. */

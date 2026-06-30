@@ -41,6 +41,24 @@ describe('SignInForm', () => {
     );
   });
 
+  it('DOES mark the email field invalid for a malformed email (positive branch)', async () => {
+    // Pins the other side of the aria-invalid restriction: a real email-FORMAT
+    // error must set aria-invalid='true' + render #email-error (no server call).
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#email')!, {
+      target: { value: 'notanemail' },
+    });
+    fireEvent.change(container.querySelector('#password')!, {
+      target: { value: 'some-password' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+
+    await screen.findByText((_t, node) => node?.id === 'email-error');
+    expect(container.querySelector('#email')?.getAttribute('aria-invalid')).toBe(
+      'true',
+    );
+  });
+
   it('shows account-disabled inline in the root banner (not a toast), tied to email', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

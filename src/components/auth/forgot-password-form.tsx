@@ -11,8 +11,9 @@
  *   - After submission, a 60-second countdown gates the resend
  *     affordance (FR-025 / SC-017). Until the countdown expires, the
  *     resend link is disabled and shows the remaining seconds.
- *   - Rate-limited responses (429) surface a toast + temporarily
- *     disable the submit button.
+ *   - Failures (429 rate-limit / non-ok / network) surface an inline
+ *     role="alert" banner above the form (never a toast — see
+ *     ux-standards § 4.1), on both the first submit and a resend.
  *   - Keyboard: Enter submits. Esc is a no-op (spec explicitly does
  *     NOT want Esc to clear the form since that is surprising).
  */

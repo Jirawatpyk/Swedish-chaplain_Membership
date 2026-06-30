@@ -113,8 +113,9 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     expect(toast.info).toHaveBeenCalledWith(
       'You were signed out due to inactivity. Please sign in again.',
     );
-    // Must NOT reuse the countdown description ("Signing out in 0 s").
-    expect(toast.info).not.toHaveBeenCalledWith('Signing out in 0 s');
+    // Exactly one toast with that message — catches an accidental extra/wrong
+    // toast.info (e.g. someone re-routing the countdown copy through a toast).
+    expect(toast.info).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 

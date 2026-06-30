@@ -389,7 +389,13 @@ export function MemberForm({
     ['last_name', errors.primary_contact?.last_name?.message],
     ['contact_email', errors.primary_contact?.email?.message],
     ['contact_phone', errors.primary_contact?.phone?.message],
-    ['date_of_birth', errors.primary_contact?.date_of_birth?.message],
+    // Only when the DOB field is actually rendered (needsDob) — otherwise a
+    // stale DOB error after switching to a non-DOB plan would make the summary
+    // jump-link point at an unmounted #date_of_birth.
+    [
+      'date_of_birth',
+      needsDob ? errors.primary_contact?.date_of_birth?.message : undefined,
+    ],
   ];
   const summaryItems = summaryEntries
     .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
@@ -875,14 +881,9 @@ export function MemberForm({
               autoComplete="bday"
               aria-invalid={Boolean(errors.primary_contact?.date_of_birth)}
               aria-describedby={
-                [
-                  errors.primary_contact?.date_of_birth
-                    ? 'date_of_birth-error'
-                    : null,
-                  'date_of_birth-hint',
-                ]
-                  .filter(Boolean)
-                  .join(' ')
+                errors.primary_contact?.date_of_birth
+                  ? 'date_of_birth-error date_of_birth-hint'
+                  : 'date_of_birth-hint'
               }
             />
             <p id="date_of_birth-hint" className="mt-1 text-xs text-muted-foreground">

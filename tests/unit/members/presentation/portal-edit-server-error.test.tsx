@@ -6,7 +6,7 @@
  * against real en.json with a mocked fetch.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
@@ -41,7 +41,9 @@ describe('PortalEditForm — inline server field error', () => {
       json: async () => ({
         error: {
           code: 'validation_error',
-          details: [{ path: ['website'], message: 'That website is not allowed' }],
+          // Server messages can be raw dev tokens (e.g. "invalid phone: <code>");
+          // the form must NOT render them verbatim.
+          details: [{ path: ['website'], message: 'invalid website: bad_scheme' }],
         },
       }),
     });
@@ -59,13 +61,16 @@ describe('PortalEditForm — inline server field error', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
 
-    // The website rejection renders inline (role=alert), not as a toast.
-    expect(
-      await screen.findByText('That website is not allowed'),
-    ).toBeTruthy();
-    expect(container.querySelector('#website')?.getAttribute('aria-invalid')).toBe(
-      'true',
+    // The website rejection renders inline (role=alert) on the field, not as a
+    // toast — with a LOCALISED message, never the raw server token.
+    await waitFor(() =>
+      expect(
+        container.querySelector('#website')?.getAttribute('aria-invalid'),
+      ).toBe('true'),
     );
+    expect(container.querySelector('#website-error')).not.toBeNull();
+    // The raw server token must not reach the user.
+    expect(screen.queryByText('invalid website: bad_scheme')).toBeNull();
     expect(toastError).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
