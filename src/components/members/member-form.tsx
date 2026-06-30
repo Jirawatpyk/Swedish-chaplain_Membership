@@ -33,10 +33,11 @@ import { Loader2Icon } from 'lucide-react';
 // (pulls only `@/lib/result`) so it is safe in this client component and
 // keeps the E.164 rule single-sourced with the domain value object.
 import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
-// Deep import (pure TS, no framework deps — same pattern as phone) so the
-// client mirrors the server's Thai tax-id checksum and rejects a bad value
-// inline instead of on a 400 round-trip.
+// Deep imports (no framework deps — same pattern as phone) so the client
+// mirrors the server's Thai tax-id checksum + ISO-3166 country validity and
+// rejects a bad value inline instead of on a 400 round-trip.
 import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
+import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -165,6 +166,20 @@ function buildMemberFormSchema(
         code: z.ZodIssueCode.custom,
         path: ['tax_id'],
         message: tf('errors.taxIdChecksum'),
+      });
+    }
+    // The base country rule only checks the 2-letter SHAPE, so e.g. "ZZ" passes
+    // it but the server's ISO-3166 lookup rejects it. Mirror that here (guarded
+    // on a well-formed code so we don't double up with the shape error).
+    if (
+      data.country &&
+      /^[A-Za-z]{2}$/.test(data.country) &&
+      !isIsoCountryCode(data.country.toUpperCase())
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['country'],
+        message: tf('errors.countryCode'),
       });
     }
   });

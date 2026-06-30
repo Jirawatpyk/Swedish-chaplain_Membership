@@ -168,6 +168,17 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
       toast.error(message);
       return;
     }
+    // The selected plan was deactivated/deleted between page-load and submit —
+    // retrying the same plan can never succeed, so say what to do.
+    if (res.status === 404 && body?.error?.code === 'plan_not_found') {
+      toast.error(t('errors.planUnavailable'));
+      return;
+    }
+    // Idempotency reservation (Upstash) outage — surfaced as a retryable 503.
+    if (res.status === 503) {
+      toast.error(t('errors.serverBusy'));
+      return;
+    }
     if (res.status === 403) {
       toast.error(t('errors.forbidden'));
       return;

@@ -1325,7 +1325,9 @@
           "forbidden": "Only administrators can add members.",
           "planMissing": "No active plans found — create a plan first.",
           "emailInUse": "This email is already used by another member in this chamber.",
-          "taxIdInvalid": "This Tax ID is invalid. Check the 13-digit number and its checksum."
+          "taxIdInvalid": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
+          "planUnavailable": "This plan is no longer available. Refresh the page and choose another.",
+          "serverBusy": "The server is busy. Please try again in a moment."
         },
         "success": "Member created."
       },

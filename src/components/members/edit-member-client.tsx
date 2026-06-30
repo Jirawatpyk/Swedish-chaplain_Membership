@@ -139,6 +139,17 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         message: t('errors.invalidPhone'),
       });
       toast.error(t('errors.invalidPhone'));
+    } else if (
+      res.status === 400 &&
+      code === 'validation_error' &&
+      body?.error?.details?.field === 'email'
+    ) {
+      // Email-change route reports the field via `details.field` (not `.type`).
+      // The shared client `.email()` rule usually blocks malformed emails first;
+      // this highlights the field for any server-only rejection (parity).
+      const message = tCreate('fields.errors.emailFormat');
+      setServerFieldError({ field: 'primary_contact.email', message });
+      toast.error(message);
     } else if (res.status === 400) {
       toast.error(t('errors.validation'));
     } else {
@@ -181,8 +192,18 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       toast.error(t('errors.generic'));
       return;
     }
+    // The target plan was deactivated/deleted between load and submit.
+    if (res.status === 404 && code === 'plan_not_found') {
+      toast.error(tCreate('errors.planUnavailable'));
+      return;
+    }
     if (res.status === 404) {
       toast.error(t('errors.notFound'));
+      return;
+    }
+    // Idempotency reservation (Upstash) outage — surfaced as a retryable 503.
+    if (res.status === 503) {
+      toast.error(tCreate('errors.serverBusy'));
       return;
     }
     // Field-attributable domain rejection (invalid tax-id checksum / country)

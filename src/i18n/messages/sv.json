@@ -1325,7 +1325,9 @@
           "forbidden": "Endast administratörer kan lägga till medlemmar.",
           "planMissing": "Inga aktiva planer hittades — skapa en plan först.",
           "emailInUse": "Denna e-postadress används redan av en annan medlem i handelskammaren.",
-          "taxIdInvalid": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran."
+          "taxIdInvalid": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
+          "planUnavailable": "Denna plan är inte längre tillgänglig. Uppdatera sidan och välj en annan.",
+          "serverBusy": "Servern är upptagen. Försök igen om en stund."
         },
         "success": "Medlem skapad."
       },

@@ -155,4 +155,28 @@ describe('CreateMemberClient orchestration', () => {
     );
     expect(screen.getByTestId('sfe').textContent).toBe('none');
   });
+
+  it('a 404 plan_not_found shows the plan-unavailable message (not generic)', async () => {
+    fetchMock.mockResolvedValueOnce(res(404, { error: { code: 'plan_not_found' } }));
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.error).toHaveBeenCalledWith('errors.planUnavailable'),
+    );
+    expect(h.toast.error).not.toHaveBeenCalledWith('errors.generic');
+  });
+
+  it('a 503 shows the retryable server-busy message (not generic)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      res(503, { error: { code: 'idempotency_reservation_failed' } }),
+    );
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.error).toHaveBeenCalledWith('errors.serverBusy'),
+    );
+    expect(h.toast.error).not.toHaveBeenCalledWith('errors.generic');
+  });
 });
