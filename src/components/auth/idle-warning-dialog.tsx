@@ -108,7 +108,9 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     } catch {
       // Swallow — we're redirecting anyway.
     }
-    toast.info(t('description', { seconds: 0 }));
+    // Dedicated past-tense reason — NOT the countdown copy (which reads
+    // "signed out in 0 seconds" and never states the inactivity reason).
+    toast.info(t('signedOutInactive'));
     router.replace(signInPath);
     // Force a server round-trip so the layout guard re-runs.
     router.refresh();

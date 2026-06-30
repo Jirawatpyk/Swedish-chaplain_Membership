@@ -84,7 +84,8 @@
       "title": "Still there?",
       "description": "You'll be signed out in {seconds} seconds.",
       "stay": "Stay signed in",
-      "signOut": "Sign out now"
+      "signOut": "Sign out now",
+      "signedOutInactive": "You've been signed out due to inactivity. Please sign in again."
     },
     "denied": {
       "readOnly": "Your role does not permit this action.",
