@@ -337,6 +337,26 @@ For truly irreversible actions (F2+: delete member, delete event), require
 the user to type a specific phrase (e.g., the entity name or `DELETE`) into
 a confirmation input before the Confirm button enables.
 
+### 6.4 Consistency across destructive flows (single contract, not per-form)
+
+Every destructive / money / PII flow MUST reuse the § 6.2–6.3 contract rather
+than reinvent it. As F4/F5 add **void invoice**, **issue credit-note**, and
+GDPR **member erasure** alongside the existing **refund** flow, divergence is
+the risk — so the contract is a review-gate checklist, not a per-form choice:
+
+- [ ] Confirmation is a modal (`<AlertDialog>`), not an inline toggle.
+- [ ] Focus starts on **Cancel** (the safe action); Escape cancels.
+- [ ] Confirm uses the **destructive (red)** variant.
+- [ ] Confirm shows a **spinner** while running and the dialog **stays open**
+      until success/failure (no optimistic close on a money/PII mutation).
+- [ ] **Irreversible** actions (erasure, full refund) gate Confirm behind a
+      **typed phrase** (§ 6.3) with its own visible + announced mismatch error.
+- [ ] On failure the reason is surfaced **inline** (role="alert", focused),
+      not a transient toast (see § 4.1).
+
+New destructive surfaces are reviewed against this list as a group, so the
+refund/void/erasure dialogs stay identical in behaviour.
+
 ---
 
 ## 7. Focus Management & Keyboard Navigation
