@@ -33,6 +33,10 @@ import { Loader2Icon } from 'lucide-react';
 // (pulls only `@/lib/result`) so it is safe in this client component and
 // keeps the E.164 rule single-sourced with the domain value object.
 import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
+// Deep import (pure TS, no framework deps — same pattern as phone) so the
+// client mirrors the server's Thai tax-id checksum and rejects a bad value
+// inline instead of on a 400 round-trip.
+import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -145,12 +149,41 @@ function buildMemberFormSchema(
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
   }),
+  }).superRefine((data, ctx) => {
+    // Mirror the server's Thai tax-id checksum so a bad value is rejected +
+    // highlighted inline (like the email .email() rule) instead of via a 400
+    // round-trip — whose highlight briefly clears on the next resubmit because
+    // the base tax_id rule is only max(50) and can't see the checksum. Only TH
+    // tax-ids carry the Mod-11 check digit; non-TH ids stay length-only.
+    const taxId = data.tax_id?.trim();
+    if (
+      taxId &&
+      (data.country ?? '').toUpperCase() === 'TH' &&
+      !validateThaiTaxIdChecksum(taxId)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tax_id'],
+        message: tf('errors.taxIdChecksum'),
+      });
+    }
   });
 }
 
 export type MemberFormValues = z.infer<
   ReturnType<typeof buildMemberFormSchema>
 >;
+
+/**
+ * A server-rejected field, resolved to a display message. Shared by the
+ * `serverFieldError` prop + both client wrappers' state so the shape stays in
+ * one place (was duplicated inline across three sites). `field` is a real RHF
+ * path so `setError` against it is compile-checked.
+ */
+export type ResolvedServerFieldError = {
+  readonly field: Path<MemberFormValues>;
+  readonly message: string;
+};
 
 
 // --- Props -------------------------------------------------------------------
@@ -178,10 +211,7 @@ type Props = {
    * focuses the input and shows `message` under it, instead of a generic
    * toast with nothing marked. Each new object reference re-applies the error.
    */
-  readonly serverFieldError?: {
-    readonly field: Path<MemberFormValues>;
-    readonly message: string;
-  } | null;
+  readonly serverFieldError?: ResolvedServerFieldError | null;
 };
 
 // --- Small visual helpers ----------------------------------------------------
@@ -286,12 +316,15 @@ export function MemberForm({
   // the old generic toast with nothing marked. A new `serverFieldError` object
   // reference (one per failed submit) re-runs this even for the same field.
   //
-  // INVARIANT: this only SETS an error, never clears it. A `type:'server'`
-  // error is removed by RHF's resolver re-running on the next submit (the field
-  // now passes its own zod rule) — which always happens because the parent only
-  // sets serverFieldError back to null at the start of a fresh submit. If a
-  // future caller sets it to null expecting the highlight to vanish WITHOUT a
-  // resubmit (a "dismiss" affordance), add a clearErrors() of the prior field.
+  // INVARIANT: this only SETS an error, never clears it. Two separate
+  // mechanisms keep that safe: (1) a `type:'server'` error is removed by RHF's
+  // resolver re-running on the next submit (every submit runs the resolver; the
+  // field then passes its own zod rule) — this is what actually clears the
+  // highlight; (2) the parent resets serverFieldError to null at the start of
+  // each submit purely so this effect does not RE-APPLY a stale error (the
+  // effect early-returns on null). Nulling the prop does not itself clear the
+  // RHF error. If a future caller nulls it expecting the highlight to vanish
+  // WITHOUT a resubmit (a "dismiss" affordance), add a clearErrors() here.
   useEffect(() => {
     if (!serverFieldError) return;
     setError(

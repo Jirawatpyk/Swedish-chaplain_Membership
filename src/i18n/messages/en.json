@@ -1312,7 +1312,8 @@
             "countryCode": "Use the ISO 3166-1 alpha-2 code, e.g. TH, SE, US.",
             "url": "Enter a valid URL, e.g. https://example.com.",
             "planYear": "Enter a year between 2020 and 2100.",
-            "emailFormat": "Enter a valid email address, e.g. name@example.com."
+            "emailFormat": "Enter a valid email address, e.g. name@example.com.",
+            "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",

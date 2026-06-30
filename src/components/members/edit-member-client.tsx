@@ -15,11 +15,15 @@
  */
 
 import { useRef, useState } from 'react';
-import type { Path } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { MemberForm, type MemberFormValues, type PlanOption } from './member-form';
+import {
+  MemberForm,
+  type MemberFormValues,
+  type PlanOption,
+  type ResolvedServerFieldError,
+} from './member-form';
 import { mapMemberCreateServerError } from './member-create-error-map';
 import {
   BundleChangeWarningDialog,
@@ -65,10 +69,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const [overrideState, setOverrideState] = useState<{ message: string } | null>(
     null,
   );
-  const [serverFieldError, setServerFieldError] = useState<{
-    readonly field: Path<MemberFormValues>;
-    readonly message: string;
-  } | null>(null);
+  const [serverFieldError, setServerFieldError] =
+    useState<ResolvedServerFieldError | null>(null);
   const lastValuesRef = useRef<MemberFormValues | null>(null);
   const idemKeyRef = useRef<string>(uuid());
 

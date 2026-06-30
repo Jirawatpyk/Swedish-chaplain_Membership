@@ -1312,7 +1312,8 @@
             "countryCode": "Använd ISO 3166-1 alpha-2-koden, t.ex. TH, SE, US.",
             "url": "Ange en giltig webbadress, t.ex. https://example.com.",
             "planYear": "Ange ett år mellan 2020 och 2100.",
-            "emailFormat": "Ange en giltig e-postadress, t.ex. namn@example.com."
+            "emailFormat": "Ange en giltig e-postadress, t.ex. namn@example.com.",
+            "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",

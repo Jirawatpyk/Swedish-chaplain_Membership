@@ -36,13 +36,15 @@ export function mapMemberCreateServerError(
   // (`contacts_tenant_email_uniq`). `soft_duplicate` (company+country) is a
   // separate code handled by its own confirm dialog, so it never reaches here.
   //
-  // ASSUMPTION (pinned by the unit test): on the CREATE path the only
-  // member/contact unique index that can realistically fire is the primary
-  // email — `contacts_one_primary_per_member` cannot trip on a brand-new
-  // member and the member-number index is serialised by an advisory lock. The
-  // server's `conflict` is constraint-agnostic (mapDbError → repo.conflict), so
-  // IF a member-level unique constraint is ever added (e.g. per-tenant tax_id),
-  // revisit this hard-mapping or thread a constraint discriminator from the API.
+  // ASSUMPTION: on the CREATE path the only member/contact unique index that
+  // can realistically fire is the primary email — `contacts_one_primary_per_member`
+  // cannot trip on a brand-new member and the member-number index is serialised
+  // by an advisory lock. (The 409→email mapping itself is pinned by the unit
+  // test; this premise rests on the schema + member-number allocator, not the
+  // test.) The server's `conflict` is constraint-agnostic (mapDbError →
+  // repo.conflict), so IF a member-level unique constraint is ever added (e.g.
+  // per-tenant tax_id), revisit this hard-mapping or thread a constraint
+  // discriminator from the API.
   if (status === 409 && errorCode === 'conflict') {
     return { field: 'primary_contact.email', messageKey: 'errors.emailInUse' };
   }

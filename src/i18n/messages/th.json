@@ -1312,7 +1312,8 @@
             "countryCode": "ใช้รหัสประเทศ ISO 3166-1 alpha-2 เช่น TH, SE, US",
             "url": "กรอก URL ให้ถูกต้อง เช่น https://example.com",
             "planYear": "กรอกปีระหว่าง 2020 ถึง 2100",
-            "emailFormat": "กรอกอีเมลให้ถูกต้อง เช่น name@example.com"
+            "emailFormat": "กรอกอีเมลให้ถูกต้อง เช่น name@example.com",
+            "taxIdChecksum": "เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง ตรวจสอบเลข 13 หลักและ checksum"
           },
           "notes": "บันทึก (สำหรับผู้ดูแลระบบเท่านั้น)",
           "notesPlaceholder": "บันทึกภายในสำหรับผู้ดูแลระบบ…",
