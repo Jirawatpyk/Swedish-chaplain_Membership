@@ -59,7 +59,9 @@ import { type Translator } from '@/lib/zod-i18n';
 // (key) => string at the call site (next-intl's namespaced key typing doesn't
 // structurally match a plain string param). Mirrors the in-component schema
 // pattern in contact-form-dialog.tsx.
-function buildMemberFormSchema(
+// Exported for the schema-level unit test (the superRefine TH-gating + country
+// shape-guard wiring). The component builds it per-render via the memo below.
+export function buildMemberFormSchema(
   tf: (key: string) => string,
   tv: Translator,
 ) {
@@ -199,7 +201,6 @@ export type ResolvedServerFieldError = {
   readonly field: Path<MemberFormValues>;
   readonly message: string;
 };
-
 
 // --- Props -------------------------------------------------------------------
 

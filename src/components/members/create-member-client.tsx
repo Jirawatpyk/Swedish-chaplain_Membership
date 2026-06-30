@@ -197,6 +197,11 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
     try {
       const res = await submit(toPayload(values));
       await handleResponse(res);
+    } catch {
+      // Network / unexpected failure (incl. a malformed 201 body whose
+      // res.json() rejects) — without this the rejected promise surfaces no
+      // user feedback. Matches edit-member-client's onSubmit.
+      toast.error(t('errors.generic'));
     } finally {
       setSubmitting(false);
     }

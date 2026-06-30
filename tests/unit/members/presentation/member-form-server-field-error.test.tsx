@@ -12,7 +12,6 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import type { Path } from 'react-hook-form';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -20,17 +19,15 @@ vi.mock('next-intl', () => ({
 
 import {
   MemberForm,
-  type MemberFormValues,
   type PlanOption,
+  type ResolvedServerFieldError,
 } from '@/components/members/member-form';
 
 const PLANS: PlanOption[] = [
   { plan_id: 'premium', plan_year: 2026, display_name: 'Premium — 2026' },
 ];
 
-function renderForm(
-  serverFieldError: { field: Path<MemberFormValues>; message: string } | null,
-) {
+function renderForm(serverFieldError: ResolvedServerFieldError | null) {
   return render(
     <MemberForm
       plans={PLANS}
