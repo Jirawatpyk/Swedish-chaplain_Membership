@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -16,7 +16,9 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { EmailInput } from '@/components/ui/email-input';
 import { Label } from '@/components/ui/label';
+import { RequiredMark } from '@/components/ui/required-mark';
 import {
   Select,
   SelectContent,
@@ -74,6 +76,13 @@ export function InviteColleagueForm() {
 
   const { errors } = form.formState;
 
+  // Auto-focus the primary input on mount (ux-standards § 7.2), matching the
+  // auth/PII forms (forgot-password, sign-in, …).
+  const { setFocus } = form;
+  useEffect(() => {
+    setFocus('first_name');
+  }, [setFocus]);
+
   const onSubmit = async (values: InviteFormValues) => {
     setSubmitting(true);
     try {
@@ -94,7 +103,10 @@ export function InviteColleagueForm() {
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.error?.code === 'email_taken') {
-          toast.error(t('emailTaken'));
+          // Field-scoped — surface inline on the email input (+ focus) rather
+          // than a transient toast (audit XF-01).
+          form.setError('email', { type: 'server', message: t('emailTaken') });
+          form.setFocus('email');
         } else if (data?.error?.code === 'forbidden') {
           toast.error(t('notPrimary'));
         } else if (data?.error?.code === 'link_failed') {
@@ -125,7 +137,7 @@ export function InviteColleagueForm() {
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="first_name">
-              {t('fields.firstName')} <span className="text-destructive">*</span>
+              {t('fields.firstName')} <RequiredMark />
             </Label>
             <Input
               id="first_name"
@@ -143,7 +155,7 @@ export function InviteColleagueForm() {
           </div>
           <div>
             <Label htmlFor="last_name">
-              {t('fields.lastName')} <span className="text-destructive">*</span>
+              {t('fields.lastName')} <RequiredMark />
             </Label>
             <Input
               id="last_name"
@@ -161,12 +173,10 @@ export function InviteColleagueForm() {
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="email">
-              {t('fields.email')} <span className="text-destructive">*</span>
+              {t('fields.email')} <RequiredMark />
             </Label>
-            <Input
+            <EmailInput
               id="email"
-              type="email"
-              autoComplete="email"
               aria-required="true"
               aria-invalid={Boolean(errors.email)}
               aria-describedby={errors.email ? 'email-error' : undefined}
