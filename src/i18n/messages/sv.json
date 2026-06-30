@@ -1311,7 +1311,8 @@
             "required": "Detta fält är obligatoriskt.",
             "countryCode": "Använd ISO 3166-1 alpha-2-koden, t.ex. TH, SE, US.",
             "url": "Ange en giltig webbadress, t.ex. https://example.com.",
-            "planYear": "Ange ett år mellan 2020 och 2100."
+            "planYear": "Ange ett år mellan 2020 och 2100.",
+            "emailFormat": "Ange en giltig e-postadress, t.ex. namn@example.com."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
@@ -1321,7 +1322,9 @@
           "generic": "Något gick fel. Försök igen.",
           "validation": "Rätta markerade fält.",
           "forbidden": "Endast administratörer kan lägga till medlemmar.",
-          "planMissing": "Inga aktiva planer hittades — skapa en plan först."
+          "planMissing": "Inga aktiva planer hittades — skapa en plan först.",
+          "emailInUse": "Denna e-postadress används redan av en annan medlem i handelskammaren.",
+          "taxIdInvalid": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran."
         },
         "success": "Medlem skapad."
       },

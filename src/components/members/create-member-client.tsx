@@ -16,10 +16,12 @@
  */
 
 import { useRef, useState } from 'react';
+import type { Path } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { MemberForm, type MemberFormValues, type PlanOption } from './member-form';
+import { mapMemberCreateServerError } from './member-create-error-map';
 import {
   OverrideReasonDialog,
   type OverrideReasonResult,
@@ -93,6 +95,10 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [softDup, setSoftDup] = useState<SoftDupState | null>(null);
   const [override, setOverride] = useState<OverrideState | null>(null);
+  const [serverFieldError, setServerFieldError] = useState<{
+    readonly field: Path<MemberFormValues>;
+    readonly message: string;
+  } | null>(null);
   const lastValuesRef = useRef<MemberFormValues | null>(null);
   const idemKeyRef = useRef<string>(uuid());
 
@@ -122,6 +128,12 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
       return;
     }
     const body = await res.json().catch(() => ({}));
+    // Bug-C fix: a failed attempt records this idempotency key against its
+    // payload hash server-side, so the user's corrected retry would otherwise
+    // keep returning `idempotency_conflict` (409) until a full page reload.
+    // Refresh the key now so the next submit is a clean logical request. (The
+    // soft-dup / override re-submit paths already mint their own key first.)
+    idemKeyRef.current = uuid();
     if (res.status === 409 && body?.error?.code === 'soft_duplicate') {
       const details = body.error.details ?? {};
       setSoftDup({
@@ -138,6 +150,22 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
       });
       return;
     }
+    // Field-attributable rejection (409 unique-email conflict, or 400 domain
+    // validation: email format / Thai tax-id checksum / phone / country) — the
+    // server names the field, so highlight + focus it and show its precise
+    // message instead of the generic "fix the highlighted fields" toast that
+    // marked nothing (UAT 2026-06-30).
+    const fieldError = mapMemberCreateServerError(
+      res.status,
+      body?.error?.code,
+      body?.error?.details?.type,
+    );
+    if (fieldError) {
+      const message = t(fieldError.messageKey);
+      setServerFieldError({ field: fieldError.field, message });
+      toast.error(message);
+      return;
+    }
     if (res.status === 403) {
       toast.error(t('errors.forbidden'));
       return;
@@ -151,6 +179,7 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
 
   const onSubmit = async (values: MemberFormValues) => {
     lastValuesRef.current = values;
+    setServerFieldError(null);
     setSubmitting(true);
     try {
       const res = await submit(toPayload(values));
@@ -203,6 +232,7 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
         onSubmit={onSubmit}
         submitting={submitting}
         onCancel={() => router.push('/admin/members')}
+        serverFieldError={serverFieldError}
       />
 
       <SoftDuplicateDialog

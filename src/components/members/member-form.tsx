@@ -23,8 +23,8 @@
  *     confirmations + redirect.
  */
 
-import { useMemo, useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useEffect, useMemo, useState } from 'react';
+import { useForm, Controller, type Path } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
@@ -125,6 +125,7 @@ function buildMemberFormSchema(
       .string()
       .trim()
       .min(1, tf('errors.required'))
+      .email(tf('errors.emailFormat'))
       .max(254, tv('tooLong', { max: 254 })),
     // Phone must be E.164 (matches the `asPhone` domain value object used
     // by create-member + updateContactFields). Validating client-side
@@ -172,6 +173,15 @@ type Props = {
   readonly initialValues?: Partial<MemberFormValues>;
   /** 'create' (default) or 'edit' — switches submit/submitting labels. */
   readonly mode?: 'create' | 'edit';
+  /**
+   * A server-rejected field (POST 400/409) to surface inline: highlights +
+   * focuses the input and shows `message` under it, instead of a generic
+   * toast with nothing marked. Each new object reference re-applies the error.
+   */
+  readonly serverFieldError?: {
+    readonly field: Path<MemberFormValues>;
+    readonly message: string;
+  } | null;
 };
 
 // --- Small visual helpers ----------------------------------------------------
@@ -207,6 +217,7 @@ export function MemberForm({
   onCancel,
   initialValues,
   mode = 'create',
+  serverFieldError,
 }: Props) {
   // Shared copy (section headers, required note, field labels) lives
   // under `admin.members.create.*` since it's identical for create +
@@ -239,6 +250,7 @@ export function MemberForm({
     handleSubmit,
     watch,
     control,
+    setError,
     formState: { errors },
   } = useForm<MemberFormValues>({
     resolver: zodResolver(schema),
@@ -268,6 +280,26 @@ export function MemberForm({
     initialValues?.country ?? 'TH',
   );
   const countryIsTH = country.toUpperCase() === 'TH';
+
+  // Surface a server-rejected field (email-in-use, bad tax-id checksum, …)
+  // inline: highlight + focus the originating input per WCAG 3.3.1 instead of
+  // the old generic toast with nothing marked. A new `serverFieldError` object
+  // reference (one per failed submit) re-runs this even for the same field.
+  //
+  // INVARIANT: this only SETS an error, never clears it. A `type:'server'`
+  // error is removed by RHF's resolver re-running on the next submit (the field
+  // now passes its own zod rule) — which always happens because the parent only
+  // sets serverFieldError back to null at the start of a fresh submit. If a
+  // future caller sets it to null expecting the highlight to vanish WITHOUT a
+  // resubmit (a "dismiss" affordance), add a clearErrors() of the prior field.
+  useEffect(() => {
+    if (!serverFieldError) return;
+    setError(
+      serverFieldError.field,
+      { type: 'server', message: serverFieldError.message },
+      { shouldFocus: true },
+    );
+  }, [serverFieldError, setError]);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-[var(--page-section-gap)]">

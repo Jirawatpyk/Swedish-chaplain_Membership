@@ -1311,7 +1311,8 @@
             "required": "This field is required.",
             "countryCode": "Use the ISO 3166-1 alpha-2 code, e.g. TH, SE, US.",
             "url": "Enter a valid URL, e.g. https://example.com.",
-            "planYear": "Enter a year between 2020 and 2100."
+            "planYear": "Enter a year between 2020 and 2100.",
+            "emailFormat": "Enter a valid email address, e.g. name@example.com."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
@@ -1321,7 +1322,9 @@
           "generic": "Something went wrong. Please try again.",
           "validation": "Please fix the highlighted fields.",
           "forbidden": "Only administrators can add members.",
-          "planMissing": "No active plans found — create a plan first."
+          "planMissing": "No active plans found — create a plan first.",
+          "emailInUse": "This email is already used by another member in this chamber.",
+          "taxIdInvalid": "This Tax ID is invalid. Check the 13-digit number and its checksum."
         },
         "success": "Member created."
       },

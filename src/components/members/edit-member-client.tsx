@@ -15,10 +15,12 @@
  */
 
 import { useRef, useState } from 'react';
+import type { Path } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { MemberForm, type MemberFormValues, type PlanOption } from './member-form';
+import { mapMemberCreateServerError } from './member-create-error-map';
 import {
   BundleChangeWarningDialog,
   type BundleChangePayload,
@@ -52,6 +54,10 @@ import { uuid } from '@/lib/uuid';
 
 export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const t = useTranslations('admin.members.edit');
+  // mapMemberCreateServerError returns i18n keys relative to the
+  // `admin.members.create` namespace (shared field-error vocabulary); resolve
+  // them through this translator so the edit form reuses the same messages.
+  const tCreate = useTranslations('admin.members.create');
   const tOverride = useTranslations('admin.members.overrideReason');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +65,10 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const [overrideState, setOverrideState] = useState<{ message: string } | null>(
     null,
   );
+  const [serverFieldError, setServerFieldError] = useState<{
+    readonly field: Path<MemberFormValues>;
+    readonly message: string;
+  } | null>(null);
   const lastValuesRef = useRef<MemberFormValues | null>(null);
   const idemKeyRef = useRef<string>(uuid());
 
@@ -108,6 +118,12 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     if (res.status === 409 && code === 'not_supported') {
       toast.error(t('errors.emailChangeNotSupported'));
     } else if (res.status === 409 && code === 'conflict') {
+      // Highlight the email input (parity with the create flow) on top of the
+      // existing specific toast.
+      setServerFieldError({
+        field: 'primary_contact.email',
+        message: t('errors.emailTaken'),
+      });
       toast.error(t('errors.emailTaken'));
     } else if (res.status === 404) {
       toast.error(t('errors.contactNotFound'));
@@ -116,6 +132,10 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       code === 'validation_error' &&
       body?.error?.details?.type === 'invalid_phone'
     ) {
+      setServerFieldError({
+        field: 'primary_contact.phone',
+        message: t('errors.invalidPhone'),
+      });
       toast.error(t('errors.invalidPhone'));
     } else if (res.status === 400) {
       toast.error(t('errors.validation'));
@@ -161,6 +181,21 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     }
     if (res.status === 404) {
       toast.error(t('errors.notFound'));
+      return;
+    }
+    // Field-attributable domain rejection (invalid tax-id checksum / country)
+    // on the member-company PATCH — highlight + focus the field with its precise
+    // message (parity with the create flow), instead of the generic toast that
+    // marked nothing.
+    const fieldError = mapMemberCreateServerError(
+      res.status,
+      code,
+      body?.error?.details?.type,
+    );
+    if (fieldError) {
+      const message = tCreate(fieldError.messageKey);
+      setServerFieldError({ field: fieldError.field, message });
+      toast.error(message);
       return;
     }
     if (res.status === 400) {
@@ -209,6 +244,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
 
   const onSubmit = async (values: MemberFormValues) => {
     lastValuesRef.current = values;
+    setServerFieldError(null);
     setSubmitting(true);
     // Tracks whether an earlier request already persisted a mutation, so a
     // later-step failure can tell the admin "some changes were saved"
@@ -357,6 +393,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         submitting={submitting}
         onCancel={() => router.push(`/admin/members/${member.memberId}`)}
         mode="edit"
+        serverFieldError={serverFieldError}
       />
       <BundleChangeWarningDialog
         open={bundleState !== null}
