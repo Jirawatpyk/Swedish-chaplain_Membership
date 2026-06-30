@@ -30,34 +30,42 @@ export interface PasswordStrengthProps {
  * Lightweight client-side strength estimator — used by every
  * password-entering form to drive the `<PasswordStrength />` bar
  * while the user types. Does NOT replace the server-side
- * `checkPasswordPolicy` (HIBP + common-list) which runs on submit.
+ * `checkPasswordPolicy` (length + common-list + HIBP) which runs on
+ * submit and is the authoritative gate.
  *
  * Rules approximate the server `scoreStrength` in
  * `src/modules/auth/application/password-policy.ts`:
  *   - empty  → no bar
  *   - <12 chars → weak
- *   - obvious low-entropy junk (one repeated char, or ≤3 distinct
- *     chars — e.g. "111111111111") → weak. This is a local
- *     approximation of what the server's HIBP/common-list check will
- *     reject, so the bar isn't falsely encouraging.
+ *   - obvious low-entropy junk (≤3 distinct characters —
+ *     e.g. "111111111111") → weak. This is a best-effort local guard,
+ *     NOT a security control: such inputs are very likely (not certain)
+ *     to be in the HIBP breach corpus, which only the server can check,
+ *     so flagging them keeps the bar from being falsely encouraging. It
+ *     does not approximate the curated common-list, whose 10 entries are
+ *     a disjoint set the client can't see.
  *   - ≥16 chars AND has a non-alphanumeric → strong
  *   - otherwise → acceptable
  *
- * **Known client/server drift** (accepted trade-off): the client
- * cannot replicate the HIBP breach check without making a network
- * round-trip on every keystroke. A 16+ character password with a
- * symbol that happens to be in the HIBP corpus will show a green
- * bar on the client but will be rejected by the server with
- * `{ error: 'weak-password', issues: ['breached'] }`. The three
- * password forms MUST handle that response by showing the inline
- * error AND resetting the displayed bar — `change-password-form`,
- * `reset-password-form`, and `invite-redeem-form` all do this via
- * their `setError('newPassword', …)` + re-render path (the bar is
- * driven by the form's watched value; clearing or re-typing will
- * re-run this estimator).
+ * **Known client/server drift** (accepted trade-off) — in BOTH
+ * directions:
+ *   - *client green / server red*: the client cannot replicate the HIBP
+ *     breach check without a network round-trip on every keystroke, so a
+ *     16+ char password with a symbol that happens to be in the HIBP
+ *     corpus shows a green bar but is rejected by the server with
+ *     `{ error: 'weak-password', issues: ['breached'] }`.
+ *   - *client red / server (maybe) green*: the low-entropy guard above
+ *     is deliberately STRICTER than `scoreStrength`, which has no entropy
+ *     check. Because the HIBP gate fails open on an outage, a low-variety
+ *     12+ char string can score 'acceptable' on the server while the
+ *     client shows 'weak'. This is the safe direction — the client only
+ *     ever demotes a score, never upgrades it.
  *
- * The client/server drift is documented in
- * `docs/ux-standards.md § 11.4` as a deliberate choice.
+ * On a server rejection the three forms surface the inline error via
+ * `setError(passwordField, …)` + `setFocus(...)` — `change-password-form`
+ * and `reset-password-form` use the `newPassword` field, `invite-redeem-form`
+ * uses `password`. They do NOT clear the field, so the bar is not
+ * auto-reset; it re-evaluates only as the user edits the watched value.
  *
  * Previously duplicated verbatim in `change-password-form.tsx`,
  * `invite-redeem-form.tsx`, and `reset-password-form.tsx`. A rule
@@ -68,20 +76,26 @@ export function estimatePasswordStrength(
 ): PasswordStrengthLevel {
   if (password.length === 0) return 'empty';
   if (password.length < 12) return 'weak';
-  // Obvious low-entropy junk (a single repeated character, or ≤3 distinct
-  // characters) is near-certain to be in the HIBP corpus and rejected on
-  // submit. Flag it locally so the bar never reads "acceptable" for e.g.
-  // "111111111111" — this needs no network round-trip, unlike the full breach
-  // check which stays server-side (see the client/server-drift note above).
+  // Obvious low-entropy junk (≤3 distinct characters, e.g. "111111111111" or
+  // "121212121212") is very likely to be in the HIBP corpus the server checks.
+  // Flag it locally — no network round-trip — so the bar never reads
+  // "acceptable" for it (see the client/server-drift note above).
   if (isLowEntropy(password)) return 'weak';
   if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
   return 'acceptable';
 }
 
-/** Trivially-weak patterns detectable locally, without the HIBP network call. */
+/** Distinct-character floor below which a password counts as trivially weak. */
+const MAX_LOW_ENTROPY_DISTINCT = 3;
+
+/**
+ * Trivially-weak patterns detectable locally, without the HIBP network call.
+ * `new Set(...)` spreads by code point, so a single repeated character — and
+ * even a repeated emoji (one grapheme → size 1) that a UTF-16 regex would miss
+ * — collapses to a tiny distinct-character count.
+ */
 function isLowEntropy(password: string): boolean {
-  if (/^(.)\1+$/.test(password)) return true; // one repeated character
-  return new Set(password).size <= 3; // too few distinct characters
+  return new Set(password).size <= MAX_LOW_ENTROPY_DISTINCT;
 }
 
 const SEGMENT_COUNT = 3;
